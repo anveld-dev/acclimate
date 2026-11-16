@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { AcclimateClient, resolveAndCache, prepareFiles } from '@acclimate/sdk';
+const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
+const client = new AcclimateClient({baseUrl:config.baseUrl,token:config.token,scope:'operator',retries:0});
+const policy = {cacheDir:join(process.cwd(),'cache')};
+const released = await resolveAndCache(client,{projectId:config.project,bundleId:config.bundleId,channel:'stable'},policy);
+assert.equal(released.version.id,config.version.id);
+assert.equal(released.version.digest,config.version.digest);
+const pinned = await resolveAndCache(client,{projectId:config.project,bundleId:config.bundleId,versionId:config.version.id},policy);
+assert.equal(pinned.version.digest,released.version.digest);
+await prepareFiles(pinned,join(process.cwd(),'prepared'));
+assert.equal(await readFile(join(process.cwd(),'prepared/AGENTS.md'),'utf8'),'Review duplicate retries.');
+console.log('Clean packed SDK: resolve, pin, prepare passed');

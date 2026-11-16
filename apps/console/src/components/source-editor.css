@@ -1,0 +1,43 @@
+/* The toolbar wraps within the workbench, independent of viewport width. */
+.file-editor-workbench {
+  container-type: inline-size;
+}
+.file-editor-workbench .draft-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.file-editor-workbench .draft-status {
+  display: flex;
+  flex: 1 1 280px;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.file-editor-workbench .draft-toolbar-actions {
+  display: flex;
+  flex: 0 1 auto;
+  width: auto;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.file-editor-workbench .draft-toolbar-actions .draft-review-action,
+.file-editor-workbench .draft-toolbar-actions .draft-save-action,
+.file-editor-workbench .draft-toolbar-actions .draft-evaluation-action {
+  display: inline-flex;
+  flex: 0 1 auto;
+  white-space: normal;
+}
+.file-editor-workbench .draft-toolbar-actions .draft-mobile-actions {
+  display: none;
+}
+.selected-file-path:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+@container (max-width: 600px) {
+  .file-editor-workbench .draft-toolbar-actions {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}

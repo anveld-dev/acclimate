@@ -1,0 +1,135 @@
+import { randomUUID } from 'node:crypto';
+import type { Selection } from './cache.js';
+import type { VerifiedBundle } from './types.js';
+import type { AcclimateClient } from './client.js';
+import type { DeliveryReceiptRequest } from './types.js';
+
+export interface DeliveryObservation {
+  selection: Selection;
+  bundle: VerifiedBundle;
+  source: DeliveryReceiptRequest['source'];
+  downloaded: boolean;
+}
+export interface DeliveryObserver {
+  observeDelivery(observation: DeliveryObservation): void | Promise<void>;
+}
+export interface ReceiptReporterOptions {
+  client: AcclimateClient;
+  projectId: string;
+  integrationId: string;
+  maxPending?: number;
+  now?: () => number;
+}
+
+/** Explicit, opt-in, memory-only reporting. Failure never changes content delivery. */
+export function createReceiptReporter(options: ReceiptReporterOptions) {
+  const maxPending = options.maxPending ?? 100;
+  if (!Number.isInteger(maxPending) || maxPending < 1 || maxPending > 1000)
+    throw new RangeError('maxPending must be an integer between 1 and 1000');
+  const now = options.now ?? Date.now;
+  const pending = new Map<string, { receipt: DeliveryReceiptRequest; queuedAt: number }>();
+  let running: Promise<void> | undefined;
+  let closed = false;
+  const bindings = new WeakMap<
+    VerifiedBundle,
+    Omit<DeliveryReceiptRequest, 'eventId' | 'stage' | 'occurredAt'>
+  >();
+  function reportStage(bundle: VerifiedBundle, stage: DeliveryReceiptRequest['stage']): boolean {
+    const binding = bindings.get(bundle);
+    if (!binding) throw new TypeError('Bundle has not been observed by this reporter');
+    const accepted = enqueue({
+      ...binding,
+      eventId: randomUUID(),
+      stage,
+      occurredAt: new Date(now()).toISOString(),
+    });
+    void flush();
+    return accepted;
+  }
+  function observeDelivery({ selection, bundle, source, downloaded }: DeliveryObservation): void {
+    if (selection.projectId !== options.projectId || bundle.version.bundleId !== selection.bundleId)
+      throw new TypeError('Delivery scope must match reporter scope');
+    const binding: Omit<DeliveryReceiptRequest, 'eventId' | 'stage' | 'occurredAt'> = {
+      integrationId: options.integrationId,
+      projectId: selection.projectId,
+      bundleId: selection.bundleId,
+      versionId: bundle.version.id,
+      digest: bundle.version.digest,
+      source,
+      ...(bundle.resolution
+        ? {
+            channel: bundle.resolution.channel,
+            revision: bundle.resolution.revision,
+            resolvedAt: new Date(bundle.resolvedAt).toISOString(),
+            stale: bundle.stale,
+          }
+        : {}),
+    };
+    bindings.set(bundle, binding);
+    if (bundle.resolution) reportStage(bundle, 'resolved');
+    if (downloaded) {
+      // This stage reports network bytes even when an older mapping was permitted offline.
+      const original = binding.source;
+      binding.source = 'network';
+      reportStage(bundle, 'downloaded');
+      binding.source = original;
+    }
+    reportStage(bundle, 'verified');
+  }
+  function enqueue(receipt: DeliveryReceiptRequest): boolean {
+    if (closed) return false;
+    if (receipt.projectId !== options.projectId || receipt.integrationId !== options.integrationId)
+      throw new TypeError('Receipt scope must match reporter scope');
+    if (pending.has(receipt.eventId)) return false;
+    if (pending.size >= maxPending) return false;
+    pending.set(receipt.eventId, { receipt: structuredClone(receipt), queuedAt: now() });
+    return true;
+  }
+  function flush(): Promise<void> {
+    if (closed) return Promise.resolve();
+    if (running) return running;
+    running = (async () => {
+      // Assign running before even an empty pass completes. Clear it in the same
+      // continuation as the final iterator check, so fresh arrivals cannot attach
+      // to a finished pass during a later .finally microtask.
+      await Promise.resolve();
+      try {
+        for (const [id, item] of pending) {
+          if (closed) break;
+          if (now() - item.queuedAt >= 24 * 60 * 60 * 1000) {
+            pending.delete(id);
+            continue;
+          }
+          try {
+            await options.client.reportDeliveryReceipt(
+              options.projectId,
+              options.integrationId,
+              item.receipt,
+              id,
+            );
+            pending.delete(id);
+          } catch {
+            // Keep the exact event and key for the next explicit flush.
+          }
+        }
+      } finally {
+        running = undefined;
+      }
+    })();
+    return running;
+  }
+  return {
+    enqueue,
+    flush,
+    observeDelivery,
+    reportPrepared: (bundle: VerifiedBundle) => reportStage(bundle, 'prepared'),
+    reportStarted: (bundle: VerifiedBundle) => reportStage(bundle, 'started'),
+    /** Stop claiming events. An already in-flight request may still finish. */
+    close() {
+      closed = true;
+    },
+    get pendingCount() {
+      return pending.size;
+    },
+  };
+}

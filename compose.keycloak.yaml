@@ -1,0 +1,70 @@
+# Co-hosted Keycloak. Merge with compose.yaml; existing application volumes are preserved.
+services:
+  keycloak-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: keycloak
+      POSTGRES_DB: keycloak
+      POSTGRES_PASSWORD_FILE: /run/secrets/keycloak_postgres_password
+    secrets: [keycloak_postgres_password]
+    volumes: [keycloak-postgres-data:/var/lib/postgresql/data]
+    networks: [backend]
+    restart: unless-stopped
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  keycloak:
+    build:
+      context: .
+      dockerfile: deploy/keycloak/Dockerfile
+    command: ["start", "--optimized", "--import-realm"]
+    env_file:
+      - ${ACCLIMATE_KEYCLOAK_ENV:?Set ACCLIMATE_KEYCLOAK_ENV to a private Keycloak runtime file}
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_HOSTNAME: https://${KEYCLOAK_HOST:?Set KEYCLOAK_HOST to the public identity hostname}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_MANAGEMENT_SCHEME: http
+      KC_HTTP_PORT: "8080"
+      KC_HTTP_MANAGEMENT_PORT: "9000"
+      KC_CACHE: local
+    volumes:
+      - ./deploy/keycloak/acclimate-realm.json:/opt/keycloak/data/import/acclimate-realm.json:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    networks: [backend, outbound]
+    restart: unless-stopped
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD", "/bin/bash", "/opt/keycloak/bin/acclimate-health.sh"]
+      interval: 10s
+      timeout: 4s
+      retries: 24
+      start_period: 90s
+  proxy:
+    environment:
+      KEYCLOAK_HOST: ${KEYCLOAK_HOST:?Set KEYCLOAK_HOST to the public identity hostname}
+    volumes:
+      - ./deploy/keycloak/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    networks:
+      backend:
+        # Node uses the public issuer and certificate over the private TLS proxy route.
+        aliases:
+          - ${KEYCLOAK_HOST:?Set KEYCLOAK_HOST to the public identity hostname}
+      edge: {}
+volumes:
+  keycloak-postgres-data:
+secrets:
+  keycloak_postgres_password:
+    file: ${ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE:?Set ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE to a private database password file}

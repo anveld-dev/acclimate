@@ -1,0 +1,32 @@
+{
+  "name": "@acclimate/pi-plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./native": {
+      "types": "./dist/native.d.ts",
+      "import": "./dist/native.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@acclimate/sdk": "0.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.2"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  }
+}

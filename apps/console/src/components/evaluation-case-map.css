@@ -1,0 +1,25 @@
+.evaluation-case-grid {
+  max-height: 216px;
+  overflow: auto;
+  padding: 3px;
+}
+
+.evaluation-case-tile[data-slot='button']:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: -3px;
+  box-shadow:
+    0 0 0 2px var(--background),
+    0 0 0 4px var(--foreground);
+  position: relative;
+  z-index: 1;
+}
+
+@media (pointer: coarse) {
+  .evaluation-case-grid {
+    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  }
+
+  .evaluation-case-tile[data-slot='button'] {
+    min-height: 44px;
+  }
+}

@@ -1,0 +1,122 @@
+import { lstat, mkdir, open, realpath, rm, rmdir, chmod, readdir } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import type { VerifiedBundle, FileKind } from './types.js';
+import { validatePayload, DeliveryError } from './cache.js';
+
+export interface PreparedFile {
+  path: string;
+  kind: FileKind;
+  absolutePath: string;
+}
+export interface PreparedFiles {
+  files: PreparedFile[];
+  cleanup(): Promise<void>;
+}
+export interface PrepareOptions {
+  collision?: 'error';
+}
+
+async function ensureSafeRoot(input: string): Promise<string> {
+  if (process.platform === 'win32')
+    throw new DeliveryError('unsupported_platform', 'Private filesystem helpers require POSIX');
+  const root = resolve(input),
+    parts = root.split('/').filter(Boolean);
+  let cursor = '/';
+  for (const part of parts) {
+    cursor = join(cursor, part);
+    try {
+      const s = await lstat(cursor);
+      if (s.isSymbolicLink() || !s.isDirectory())
+        throw new DeliveryError(
+          'unsafe_destination',
+          'Destination contains a symlink or non-directory',
+        );
+    } catch (e: any) {
+      if (e?.code !== 'ENOENT') throw e;
+      await mkdir(cursor, { mode: 0o700 });
+      await chmod(cursor, 0o700);
+    }
+  }
+  const real = await realpath(root);
+  if (real !== root)
+    throw new DeliveryError('unsafe_destination', 'Destination resolves through a symlink');
+  const final = await lstat(root);
+  if ((final.mode & 0o077) !== 0 || (process.getuid && final.uid !== process.getuid()))
+    throw new DeliveryError(
+      'unsafe_destination',
+      'Existing directory must be private and owned by the current user',
+    );
+  return root;
+}
+export async function prepareFiles(
+  bundle: VerifiedBundle,
+  destination: string,
+  options: PrepareOptions = {},
+): Promise<PreparedFiles> {
+  if (options.collision !== undefined && options.collision !== 'error')
+    throw new TypeError('Only collision="error" is supported');
+  validatePayload(bundle.payload);
+  const root = await ensureSafeRoot(destination),
+    rootReal = await realpath(root);
+  const prepared: PreparedFile[] = [],
+    createdFiles: string[] = [],
+    createdDirs: string[] = [];
+  try {
+    for (const file of bundle.payload.files) {
+      const target = resolve(root, ...file.path.split('/'));
+      if (!target.startsWith(rootReal + '/'))
+        throw new DeliveryError('unsafe_path', 'Bundle path escapes destination');
+      const segments = file.path.split('/');
+      let dir = root;
+      for (const segment of segments.slice(0, -1)) {
+        const existing = await readdir(dir);
+        if (
+          existing.some((name) => name.toLowerCase() === segment.toLowerCase() && name !== segment)
+        )
+          throw new DeliveryError('collision', 'Destination contains a case-colliding path');
+        dir = join(dir, segment);
+        try {
+          const s = await lstat(dir);
+          if (s.isSymbolicLink() || !s.isDirectory())
+            throw new DeliveryError(
+              'unsafe_destination',
+              'Destination path contains a symlink or non-directory',
+            );
+        } catch (e: any) {
+          if (e?.code !== 'ENOENT') throw e;
+          await mkdir(dir, { mode: 0o700 });
+          await chmod(dir, 0o700);
+          createdDirs.push(dir);
+        }
+      }
+      const filename = segments[segments.length - 1]!;
+      const existing = await readdir(dir);
+      if (
+        existing.some((name) => name.toLowerCase() === filename.toLowerCase() && name !== filename)
+      )
+        throw new DeliveryError('collision', 'Destination contains a case-colliding path');
+      const handle = await open(target, 'wx', 0o600);
+      createdFiles.push(target);
+      try {
+        await handle.writeFile(file.text, 'utf8');
+      } finally {
+        await handle.close();
+      }
+      prepared.push({ path: file.path, kind: file.kind, absolutePath: target });
+    }
+  } catch (error) {
+    for (const f of createdFiles.reverse()) await rm(f, { force: true }).catch(() => {});
+    for (const d of createdDirs.reverse()) await rmdir(d).catch(() => {});
+    throw error;
+  }
+  let cleaned = false;
+  return {
+    files: prepared,
+    async cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      for (const f of [...createdFiles].reverse()) await rm(f, { force: true });
+      for (const d of [...createdDirs].reverse()) await rmdir(d).catch(() => {});
+    },
+  };
+}

@@ -1,0 +1,284 @@
+/* Setup is a checklist beside the code it configures, not a stack of documentation cards. */
+.sdk-setup.sdk-setup-workspace {
+  max-width: 1440px;
+  margin-inline: auto;
+  border: 0;
+  background: transparent;
+  container-type: inline-size;
+}
+.sdk-setup-workspace .sdk-setup-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 8px 0 20px;
+}
+.sdk-setup-workspace .sdk-setup-header h2 {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 650;
+  letter-spacing: -0.35px;
+}
+.sdk-setup-workspace .sdk-setup-header p {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  line-height: 21px;
+}
+.sdk-setup-workspace .sdk-setup-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 28px;
+  min-width: 0;
+}
+.sdk-setup-workspace .sdk-setup-checklist {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.sdk-setup-workspace .sdk-step {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.sdk-setup-workspace .sdk-step h3 {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.sdk-setup-workspace .sdk-step p {
+  line-height: 21px;
+  margin-block: 8px;
+}
+.sdk-setup-workspace .sdk-install-step {
+  padding-bottom: 20px;
+}
+.sdk-setup-workspace .sdk-access-step {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+.sdk-setup-workspace .sdk-install-command,
+.sdk-setup-workspace .sdk-run-command-line {
+  display: flex;
+  align-items: start;
+  min-width: 0;
+  gap: 6px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+}
+.sdk-setup-workspace .sdk-command-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 6px;
+  margin: 0;
+  background: transparent;
+  font-size: 14px;
+  line-height: 21px;
+}
+.sdk-setup-workspace .sdk-install-help {
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-required-environment {
+  display: grid;
+  min-width: 0;
+  gap: 0;
+  margin-block: 12px;
+}
+.sdk-setup-workspace .sdk-required-environment > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  gap: 2px;
+  padding-block: 7px;
+  border-bottom: 1px solid var(--border);
+}
+.sdk-setup-workspace .sdk-required-environment > div:last-child {
+  border-bottom: 0;
+}
+.sdk-setup-workspace .sdk-required-environment dt {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 14px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.sdk-setup-workspace .sdk-required-environment dd {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 20px;
+}
+.sdk-setup-workspace .sdk-disclosure > [data-slot='disclosure-trigger'] {
+  min-height: 36px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-disclosure > [data-slot='disclosure-trigger']:hover {
+  color: var(--foreground);
+}
+.sdk-setup-workspace .sdk-detail-content {
+  gap: 10px;
+  min-width: 0;
+  padding-block: 8px;
+  line-height: 21px;
+}
+.sdk-setup-workspace .sdk-detail-content[data-state='open'] {
+  display: grid;
+}
+.sdk-setup-workspace .sdk-detail-content p {
+  margin: 0;
+}
+.sdk-setup-workspace .sdk-api-url {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.sdk-setup-workspace .sdk-api-url code,
+.sdk-setup-workspace .sdk-selection-details code {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.sdk-setup-workspace .sdk-recipe-heading p {
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-recipe-file {
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  margin-top: 14px;
+}
+.sdk-setup-workspace .sdk-recipe-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.sdk-setup-workspace .sdk-recipe-toolbar code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.sdk-setup-workspace .sdk-recipe-code {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 620px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 21px;
+}
+.sdk-setup-workspace .sdk-run-command {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.sdk-setup-workspace .sdk-run-command > span,
+.sdk-setup-workspace .sdk-expected-output {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 21px;
+}
+.sdk-setup-workspace .sdk-expected-output {
+  padding: 10px 0 0;
+}
+.sdk-setup-workspace .sdk-setup-support {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+  padding-top: 8px;
+}
+.sdk-setup-workspace .sdk-setup-support > .sdk-disclosure {
+  border-bottom: 1px solid var(--border);
+  padding-block: 4px;
+}
+.sdk-setup-workspace .sdk-setup-support > .sdk-disclosure:last-child {
+  border-bottom: 0;
+}
+.sdk-setup-workspace .sdk-selection-details {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.sdk-setup-workspace .sdk-selection-details > div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+.sdk-setup-workspace .sdk-selection-details dt {
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-selection-details dd {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+@container (min-width: 860px) {
+  .sdk-setup-workspace .sdk-setup-layout {
+    grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
+  }
+}
+.sdk-setup-workspace [aria-label='Recipe language'] button {
+  min-height: 32px;
+}
+.sdk-setup-workspace [aria-label='Recipe language'] button[data-state='on'] {
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 currentColor;
+}
+.sdk-setup-workspace .sdk-step pre.sdk-recipe-code,
+.sdk-setup-workspace .sdk-disclosure pre.sdk-reporting-code {
+  max-width: 100%;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+@media (pointer: coarse) {
+  .sdk-setup-workspace [aria-label='Recipe language'] button {
+    min-height: 44px;
+  }
+  .sdk-setup-workspace .sdk-disclosure > [data-slot='disclosure-trigger'] {
+    min-height: 44px;
+  }
+}
+
+.sdk-setup-workspace .sdk-install-command > span,
+.sdk-setup-workspace .sdk-run-command-line > span {
+  flex: 0 0 auto;
+}
+.sdk-setup-workspace .sdk-reporting-recipe-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sdk-setup-workspace .sdk-reporting-recipe-heading h4 {
+  font-weight: 600;
+  font-size: 14px;
+}
+.sdk-setup-workspace .sdk-reporting-code {
+  padding: 12px;
+  max-height: 480px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+}

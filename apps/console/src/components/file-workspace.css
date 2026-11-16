@@ -1,0 +1,224 @@
+/* File actions live with the explorer; counts stay out of the working header. */
+.file-navigator.file-navigator-polished {
+  position: relative;
+  min-height: 0;
+}
+.file-navigator-polished .file-navigator-body:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.file-navigator-polished .file-navigator-controls {
+  flex: 0 0 auto;
+}
+.file-navigator-polished .file-navigator-heading {
+  min-height: 36px;
+}
+.file-navigator-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+}
+:is(.file-navigator-actions, .file-editor-workbench) .file-icon-action[data-slot='button'] {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+:is(.file-navigator-actions, .file-editor-workbench) .file-icon-action:hover {
+  color: var(--foreground);
+  background: var(--muted);
+}
+.file-icon-action > svg {
+  width: 16px;
+  height: 16px;
+}
+.file-navigator-polished .file-tree {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.file-navigator-footer {
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 20px;
+}
+.draft-details-dialog dl {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+.draft-details-dialog dt {
+  margin-bottom: 4px;
+  color: var(--muted-foreground);
+}
+.draft-details-dialog dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.draft-details-dialog .draft-snapshot-history {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.draft-details-dialog .draft-snapshot-history ul {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  line-height: 21px;
+}
+.file-editor-workbench .draft-utility-footer {
+  justify-content: flex-end;
+  padding: 4px 12px;
+}
+@media (max-width: 899px) {
+  .file-navigator-polished .file-navigator-body:not([hidden]) {
+    position: static;
+    inset: auto;
+  }
+  .file-navigator-polished .file-navigator-heading:not(:has(.file-navigator-actions)) {
+    display: none;
+  }
+  .file-navigator-footer {
+    margin-top: 8px;
+  }
+}
+@media (pointer: coarse) {
+  :is(.file-navigator-actions, .file-editor-workbench) .file-icon-action[data-slot='button'] {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+@media (max-width: 899px) and (max-height: 500px) and (pointer: fine) {
+  .file-editor-workbench .draft-toolbar {
+    min-height: 40px;
+    padding-block: 2px;
+  }
+  .content-workspace .content-entry-heading,
+  .content-workspace:has(> .file-navigator > .file-navigator-body[hidden])
+    > .content-detail
+    > .content-entry-heading {
+    min-height: 36px;
+    padding-block: 2px;
+  }
+  .content-workspace .file-navigator-toggle[data-slot='button'] {
+    top: 2px;
+    min-height: 32px;
+    height: 32px;
+  }
+}
+
+/* One measured state drives the rail, picker and focus visibility at any viewport. */
+.content-workspace:has(> .file-navigator[data-compact]) {
+  position: relative;
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+.file-navigator[data-compact='false'] {
+  border-right: 1px solid var(--border);
+  border-bottom: 0;
+  background: color-mix(in srgb, var(--card) 60%, var(--muted));
+}
+.file-navigator[data-compact='false'] .file-navigator-toggle[data-slot='button'] {
+  display: none;
+}
+.file-navigator[data-compact='false'] .file-navigator-body:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  padding-top: 0;
+}
+.file-navigator[data-compact='false'] .file-navigator-heading:not(:has(.file-navigator-actions)) {
+  display: flex;
+}
+.file-navigator[data-compact='false'] .file-navigator-desktop-label {
+  display: inline;
+}
+.file-navigator[data-compact='false'] .file-tree {
+  max-height: var(--file-tree-max-height, 650px);
+}
+.file-navigator[data-compact='false'] .file-navigator-footer {
+  margin-top: auto;
+}
+.content-workspace:has(> .file-navigator[data-compact='false'])
+  > .content-detail
+  > .content-entry-heading {
+  padding-left: 12px;
+  min-height: 40px;
+}
+.content-workspace:has(> .file-navigator[data-compact='false'])
+  > .content-detail:not(:has(> .content-entry-heading)) {
+  padding-top: 0;
+}
+.content-workspace:has(> .file-navigator[data-compact='false']) .content-entry-heading .file-glyph {
+  display: flex;
+}
+.content-workspace:has(> .file-navigator[data-compact='true']) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.file-navigator[data-compact='true'] {
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+.file-navigator[data-compact='true'] .file-navigator-toggle[data-slot='button'] {
+  position: absolute;
+  display: flex;
+  z-index: 1;
+  top: 4px;
+  left: 4px;
+  width: 92px;
+  min-height: 44px;
+  padding-inline: 8px;
+  border-radius: 4px;
+  gap: 4px;
+}
+.file-navigator[data-compact='true'] .file-navigator-toggle > span {
+  white-space: nowrap;
+}
+.file-navigator[data-compact='true'] .file-navigator-body:not([hidden]) {
+  position: static;
+  inset: auto;
+  padding-top: 48px;
+}
+.file-navigator[data-compact='true'] .file-tree {
+  max-height: min(240px, var(--file-tree-max-height, 240px));
+}
+.file-navigator[data-compact='true'] .file-navigator-heading:not(:has(.file-navigator-actions)) {
+  display: none;
+}
+.file-navigator[data-compact='true'] .file-navigator-desktop-label {
+  display: none;
+}
+.file-navigator[data-compact='true'] .file-navigator-footer {
+  margin-top: 8px;
+}
+.content-workspace:has(> .file-navigator[data-compact='true'] > .file-navigator-body[hidden])
+  > .file-navigator {
+  border-bottom: 0;
+}
+.content-workspace:has(> .file-navigator[data-compact='true'] > .file-navigator-body[hidden])
+  > .content-detail
+  > .content-entry-heading {
+  min-height: 52px;
+  padding-left: 100px;
+}
+.content-workspace:has(> .file-navigator[data-compact='true'] > .file-navigator-body[hidden])
+  > .content-detail:not(:has(> .content-entry-heading)) {
+  padding-top: 52px;
+}
+.content-workspace:has(> .file-navigator[data-compact='true']) .content-entry-heading .file-glyph {
+  display: none;
+}

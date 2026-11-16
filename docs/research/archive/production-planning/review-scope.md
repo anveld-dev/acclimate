@@ -1,0 +1,71 @@
+# Independent production scope review
+
+2026-11-14. Review only of the production-only plan and current source/deployment files. No application edits, builds, tests, services, databases, browser sessions, private configuration or model calls were used. This review proposes decisions for the plan owner; it does not authorize a deployment or database cutover.
+
+The plan has the right product boundary: one Rust API/worker process, one built TanStack Node process, PostgreSQL and the user's external OIDC client behind a trusted TLS proxy. Production-only means removing the implicit local browser operator, not removing intentional machine SDK clients. The remaining ambiguity is concentrated in a few operational choices. Resolve them before implementation instead of turning each into an additional subsystem.
+
+## Recommended concrete choices
+
+1. Retain automatic embedded migrations during startup, under the existing exclusive database ownership lock. Do not add `migrate`/`serve`, a second database-role model or a new schema-version service in this change.
+2. Retain startup-only idempotent registration of projects named by explicit machine grants. Remove request-time registration. Registration creates project rows only; it never creates users or memberships.
+3. Keep the SDK's optional `sessionToken` interface. Require a session and the dedicated console credential in the console's server-only client helper, unconditionally.
+4. Make runtime configuration validation part of the actual Rust, built-console and development launch entrypoints. Builds require no runtime secrets. A validator that only runs on the first request is insufficient.
+5. Make readiness and bounded shutdown a small lifecycle contract, with precise limited claims. Do not add HA, worker fleets, a queue monitoring product or provider health checks.
+6. Ship both application runtime artifacts and one complete canonical single-host deployment recipe. Two independently qualified orchestration stacks are unnecessary.
+7. Use one test-owned HTTPS OIDC issuer/TLS fixture for browser protocol acceptance. Never ship a selectable fake identity provider in application runtime.
+
+## Migration split adds machinery without solving this rollout
+
+[`src/main.rs`](../../../../src/main.rs) currently validates grants/access, connects PostgreSQL, obtains advisory lock `729183421001`, runs the embedded SQLx migrator, registers grant projects, recovers interrupted proposals and starts the worker before binding HTTP. The lock already excludes a second server during schema changes. The supported topology has one process and accepts a stopped-service upgrade; there is no rolling update requirement.
+
+Splitting migrations adds CLI dispatch, role/credential documentation, startup schema inspection and more failure combinations. It is justified if a deployment actually requires a DDL-free serving role; the current user goal does not establish that requirement. Keep one release binary/image and one documented sequence: stop the old API/console authority, back up, start the new API so it takes ownership and applies its append-only migrations, verify readiness, start/verify console and route traffic. A failed migration prevents listening. Keep SQLx checksum/applied-migration validation and the existing exclusive owner. Never present an older binary over a newer database as a supported rollback.
+
+Migration 0013 can add the narrow adoption audit and revoke pre-cutover browser sessions. State why it is an authorization cutover despite preserving business records. Stop the old login/session authority before this migration; otherwise the old process could issue another legacy session after the revocation statement. The planner/implementer must not run this against the user's existing database merely to prove the feature.
+
+## Resolve project registration without breaking machine clients
+
+[`src/workspaces.rs`](../../../../src/workspaces.rs) has the same `backfill_projects` helper at startup and in `GET /v1/projects`. It inserts only `projects(id,name)`. [`migrations/0006_workspaces.sql`](../../../../migrations/0006_workspaces.sql) adds the foreign key from bundles to projects; [`src/bundles.rs`](../../../../src/bundles.rs) authenticates and inserts a bundle without creating its project. Removing both registrations means a newly configured machine project's first bundle fails unless a human separately creates the project. A one-time historical database migration cannot register future configuration changes.
+
+Keep startup idempotent registration from explicitly configured machine grants, after schema migration and before serving. This is intentional configuration materialization and preserves the current SDK contract; it is not an implicit human owner or local login. Remove registration from `GET`, so listing becomes read-only. Update tests to register new machine projects at their intended startup boundary instead of depending on a list request to mutate the database.
+
+The proposed adoption endpoint/UI is a bounded way to recover existing unowned projects. Keep it separate from ordinary membership-gated project routes and require an exact ID, reason, verified current operator session and dedicated console transport. No global orphan inventory, arbitrary identity assignment, invitations or organizational provisioning is required. Same-operator retry may return the original adoption result, but must never restore admin after a later demotion/removal or change the original reason/audit. Current authorization must still be checked on retry. Adoption and membership writers must share a locking protocol.
+
+## Startup configuration is a real entrypoint requirement
+
+Rust already has a before-bind validation call, but [`src/auth.rs`](../../../../src/auth.rs) and workspace handlers still read environment configuration during requests. Parse the required production access configuration once into process state where practical; reject invalid configuration without printing secret values. This is a small configuration object, not a general configuration framework.
+
+The console differs: [`src/server/identity.ts`](../../../../apps/console/src/server/identity.ts) checks identity settings inside an auth request. [`src/start.ts`](../../../../apps/console/src/start.ts) currently configures CSRF middleware, and [`package.json`](../../../../apps/console/package.json) runs Nitro's generated server entry directly. Validating an auth route or a console request helper cannot guarantee failure before listen. Choose a real launch preflight, for example a shipped Node wrapper that validates runtime environment and only then dynamically imports the built server. The development command must invoke the same validation before starting Vite. Avoid top-level secret checks in source modules evaluated by `vite build`; a secret-free build and a missing-config runtime failure are separate assertions. Directly test the documented built launch command, not just the parser in isolation.
+
+Retain the current maintained OIDC client's discovery/code exchange/ID-token checks and the narrow console-to-Rust assertion trust. A second OIDC implementation in Rust is unnecessary. Configure exact issuer and public origin. Document the TLS proxy's header/origin reconstruction and direct-backend restrictions: current auth code compares `request.url.origin` with the configured HTTPS origin. An example proxy that leaves Node seeing an internal HTTP origin will make correct callbacks fail; blindly trusting arbitrary forwarded headers is also wrong.
+
+Keep `CONSOLE_SERVICE_URL` as a private upstream address. Add a separate canonical public SDK API URL for setup recipes; neither a container hostname nor either server credential belongs in browser configuration. [`setup.ts`](../../../../apps/console/src/server/setup.ts) currently creates SDK clients from the internal URL and optional session, so enforce the console boundary there and in the other shared transports while retaining the SDK interface for existing consumers.
+
+The authentication review also found that logout currently clears the cookie on any upstream 401/404. Neither a bad transport credential nor a wrong upstream route proves session revocation. Require committed revocation or an explicit structured invalid/expired/revoked-session result before clearing it; preserve the cookie on generic authentication/path failures so the user can retry after configuration repair.
+
+## Readiness and shutdown must say exactly what they prove
+
+[`src/lib.rs`](../../../../src/lib.rs) exposes cheap `/health`; retain its process-liveness meaning. Add bounded `/ready` returning success only while the database query succeeds, startup/recovery is complete, ownership is retained, the worker task is initialized/alive and draining has not started. A task being alive does not prove queue progress: [`src/improvement.rs`](../../../../src/improvement.rs) swallows several SQL failures and continues looping. Do not claim that readiness verifies successful proposal execution or model availability. Do not send paid requests or query an identity provider from health probes. Console readiness can check its validated configuration and Rust readiness with a deadline; IdP interoperability belongs to a release check.
+
+Current SIGTERM asks Axum to drain while the worker continues claiming work, then aborts the worker. There is no application deadline. Worker exit/ownership loss takes a different `select!` path that drops the server future rather than following the described graceful drain. A supervisor timeout is not evidence of an application drain guarantee.
+
+Use one explicit coordinator: mark draining/unready, stop new accepts and worker claims, bound in-flight HTTP and active work, then close the ownership connection last. Pick and test one total deadline, for example 40 seconds for application shutdown and 50 seconds for the supervisor/container stop allowance. The deadline must include cleanup, not just HTTP. Stop/cancel active worker work immediately on ownership loss and exit fatally; ordinary termination may cancel the active attempt while HTTP drains. Preserve durable attempt-limited recovery. Cancellation does not prove that a remote provider stopped execution or charging. No job-scheduling platform is needed for these promises.
+
+## Deploy the application, not just Rust
+
+[`deploy/Dockerfile`](../../../../deploy/Dockerfile) ships only Rust. [`.dockerignore`](../../../../.dockerignore) excludes all console/package sources. [`deploy/acclimate.service`](../../../../deploy/acclimate.service) supervises only Rust. [`compose.service.yaml`](../../../../compose.service.yaml) has only the API overlay, and [`compose.yaml`](../../../../compose.yaml) uses an explicitly local fixed database password. These cannot currently substantiate a complete production application recipe.
+
+Ship the Rust release artifact and built Node runtime with its needed dependencies/static assets, then choose one canonical single-host recipe that starts both with private configuration and PostgreSQL persistence, routes TLS correctly, sets probes/restarts/grace, and documents the public/internal URL split. A complete native/systemd recipe or a complete Compose recipe is sufficient; the plan need not grow two equally elaborate deployment platforms. Label any remaining Rust-only/development artifacts precisely or retire their misleading launch instructions. There is no need for Kubernetes, HA, automatic DNS/certificates, hosted identity, an internal secret manager or public deployment automation.
+
+Container manifest/build review and native execution remain different evidence from executed container qualification. The earlier runtime input records an unavailable Docker daemon; do not claim the application image ran without executing it. Extend any retained container qualification to both real application processes rather than reusing Rust-only health/persistence evidence.
+
+## Keep acceptance focused and honest
+
+The shared test issuer should implement the protocol endpoints needed by the installed `openid-client`, use test-owned identities/keys and trusted test TLS, and live entirely under test-owned code/configuration. Do not add a runtime HTTP issuer override, fake identity mode, magic login endpoint or developer auto-operator to make tests easier. Reuse one fixture lifecycle across the built-console and browser/dev acceptance lanes; machine SDK and ordinary Rust tests do not need to start an OIDC browser session.
+
+Preserve the existing behavior/outcome inventory while changing its identity/launch setup. Decisive added evidence is missing/invalid config failing before either listener; secret-free builds; session-required console and token-only SDK compatibility; explicit race-safe adoption; real discovery/exchange/JWKS/login/logout against the fixture; both built processes; database readiness failure; second-owner refusal; lock loss; and SIGTERM under active work within the documented bound. Backup/restore uses the existing PostgreSQL tooling and disposable data. Real provider registration, deployed proxy/TLS and Docker execution remain explicitly separate gates.
+
+Retain the app-owned evaluator helper only through an explicit private config contract or use request-ID handoff. Do not add a runner registry, execution fleet or secret-manager adapter to replace `.local/console-demo`. Preserve journal/attempt/principal binding and describe the installed helper honestly as a checkout/app example unless it is deliberately packaged end to end.
+
+## Cross-review conclusions
+
+The authentication and acceptance reviewers agreed on preserving `sessionToken`, actual launch preflight, secret-free builds and the test-only issuer boundary. Both also agreed that startup migrations are sufficient for this topology. The compatibility reviewer identified the foreign-key/first-machine-bundle failure from removing startup project registration; this review adopts their startup-only projects-without-memberships recommendation. Authentication review additionally requires adoption retries never regrant removed privileges, proxy origin trust to be explicit, confirmed logout semantics and the old login authority to be stopped before session cutover. The plan owner resolves the final text.

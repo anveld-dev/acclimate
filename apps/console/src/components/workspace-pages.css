@@ -1,0 +1,175 @@
+/* A shared page measure; existing shell and detail-page headers keep their own layout. */
+.workspace-main > :is(.bundle-library, .workspace-connections, .workspace-members) {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: 0;
+}
+.workspace-members .workspace-members-panel,
+.workspace-members .member-feedback {
+  max-width: none;
+}
+.bundle-library {
+  container: bundle-page / inline-size;
+}
+.workspace-connections {
+  container: connection-page / inline-size;
+}
+.workspace-connections .connection-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+.workspace-connections .connection-row {
+  padding: 12px;
+  gap: 6px 12px;
+}
+.workspace-connections .connection-row > div {
+  flex-basis: 140px;
+}
+.workspace-connections .connection-row[aria-current='page'] {
+  box-shadow: inset 2px 0 var(--ring);
+  background: var(--accent);
+}
+.workspace-connections .connection-directory-header {
+  align-items: center;
+  gap: 8px;
+}
+.connection-directory-header > h2 {
+  font-size: 14px;
+}
+.connection-directory-header > [data-slot='button'] {
+  margin-left: auto;
+}
+.connection-detail-jump {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  font-size: 14px;
+}
+.connection-detail {
+  outline-offset: 4px;
+}
+.connection-identity {
+  border-block: 1px solid var(--border);
+  padding-block: 6px;
+}
+.connection-credential-groups {
+  display: grid;
+  gap: 16px;
+}
+.connection-read-credentials {
+  min-width: 0;
+}
+.connection-reporting-credentials {
+  border-block: 1px solid var(--border);
+  padding-block: 8px;
+}
+.connection-reporting-credentials > [data-slot='disclosure-trigger'] {
+  font-weight: 600;
+}
+.connection-reporting-credentials > [data-slot='disclosure-content'][data-state='open'] {
+  display: grid;
+  gap: 12px;
+  padding-block: 8px;
+}
+.connection-issued-credentials {
+  min-width: 0;
+}
+.connection-credential-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-block: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+.connection-credential-row > div {
+  min-width: 0;
+}
+.connection-credential-row [data-slot='button'] {
+  margin-left: auto;
+}
+.connection-report-list {
+  border-block: 1px solid var(--border);
+}
+.connection-report-row + .connection-report-row {
+  border-top: 1px solid var(--border);
+}
+.connection-report-trigger[data-slot='disclosure-trigger'] {
+  display: flex;
+  width: 100%;
+  padding: 10px 0;
+  min-height: 52px;
+}
+.connection-report-trigger > span {
+  flex: 1;
+}
+.connection-report-summary {
+  display: grid;
+  gap: 4px 12px;
+  align-items: center;
+}
+.connection-report-stage {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.connection-report-received {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 14px;
+}
+.connection-report-details {
+  padding: 0 0 14px 22px;
+}
+.connection-report-details dl {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+.connection-report-details dl > div {
+  display: grid;
+  gap: 2px 12px;
+}
+.connection-report-details dt {
+  color: var(--muted-foreground);
+}
+.connection-report-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@container connection-page (min-width: 860px) {
+  .workspace-connections .connection-workspace[data-selected='true'] {
+    grid-template-columns: 248px minmax(0, 1fr);
+  }
+  .connection-detail-jump {
+    display: none;
+  }
+  .connection-report-details dl > div {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+}
+@container (max-width: 520px) {
+  .workspace-page-header .page-header-primary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: start;
+  }
+  .workspace-page-header .page-header-identity {
+    display: block;
+    flex-basis: 220px;
+  }
+  .workspace-page-header .page-header-identity > p {
+    margin-top: 4px;
+  }
+}
+@media (pointer: coarse) {
+  .connection-detail-jump {
+    min-height: 44px;
+  }
+}

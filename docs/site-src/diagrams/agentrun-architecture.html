@@ -1,0 +1,5 @@
+<figure class="diagram" aria-labelledby="agentrun-arch-caption"><figcaption id="agentrun-arch-caption">AgentRun separates the harness from durable state and external work.</figcaption>
+<ol class="dg-flow dg-four"><li><b>Runner</b><span>Claim the run</span></li><li><b>Harness adapter</b><span>Drive the native agent loop</span></li><li><b>Gateways</b><span>Model/tool admission</span></li><li><b>External work</b><span>Provider or tool operation</span></li></ol>
+<div class="dg-store"><b>↕ Run state + journal</b><span>Runner and gateways use durable records to track ownership and effects.</span></div>
+<p class="dg-footnote">These are code roles, not a claim of independent deployment or sandbox isolation. A write fence cannot undo an already admitted external request.</p>
+</figure>

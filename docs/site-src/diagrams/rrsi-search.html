@@ -1,0 +1,8 @@
+<figure class="diagram" aria-labelledby="rrsi-caption"><figcaption id="rrsi-caption">RRSI searches over harness versions, not model weights.</figcaption>
+<div class="dg-input"><b>Incumbent = currently accepted harness</b><span>Its traces and the search history inform the next proposal.</span></div>
+<div class="dg-arrow" aria-hidden="true">↓</div>
+<ol class="dg-flow"><li><b>Propose edits</b><span>Candidate worktrees; bounded edit scope</span></li><li><b>Screen</b><span>Leakage critic + smoke checks</span></li><li><b>Evaluate</b><span>Measure score, cost, and guards</span></li></ol>
+<div class="dg-bridge">Selection rule ↓</div>
+<div class="dg-outcomes"><div><b>Candidate passes</b><span>Choose the winner as the next incumbent.</span></div><div><b>No candidate passes</b><span>Keep the previous incumbent.</span></div></div>
+<div class="dg-loop-back"><b>↶ Record history and begin another bounded round</b><span>Search acceptance is an exploration choice. Acclimate v1 records app-run comparisons and uses reviewer-approved promotion instead of this automatic search policy.</span></div>
+</figure>

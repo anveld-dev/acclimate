@@ -1,0 +1,62 @@
+/** Optional observation has its own credential, deadline and failure boundary. */
+import { AcclimateClient, createReceiptReporter } from '../packages/sdk/src/index.js';
+
+export function optionalReceipts(env: NodeJS.ProcessEnv, projectId: string) {
+  if (!env.ACCLIMATE_RECEIPT_TOKEN && !env.ACCLIMATE_INTEGRATION) return undefined;
+  try {
+    if (!env.ACCLIMATE_RECEIPT_TOKEN || !env.ACCLIMATE_INTEGRATION)
+      throw new Error('Both receipt token and integration ID are required');
+    return createReceiptReporter({
+      client: new AcclimateClient({
+        baseUrl: env.ACCLIMATE_URL ?? 'http://127.0.0.1:3000',
+        token: env.ACCLIMATE_RECEIPT_TOKEN,
+        scope: `${env.ACCLIMATE_SCOPE ?? 'demo-app'}:receipts`,
+        timeoutMs: 1000,
+        retries: 0,
+      }),
+      projectId,
+      integrationId: env.ACCLIMATE_INTEGRATION,
+    });
+  } catch {
+    console.error('Optional delivery reporting is unavailable.');
+    return undefined;
+  }
+}
+
+export function observeOptional(action: () => unknown): void {
+  try {
+    Promise.resolve(action()).catch(() => {});
+  } catch {}
+}
+
+/** Give optional observations a short chance to finish before a CLI exits. */
+export async function settleOptional(reporter: ReturnType<typeof optionalReceipts>): Promise<void> {
+  if (!reporter) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      reporter.flush(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, 1200);
+      }),
+    ]);
+  } catch {
+  } finally {
+    if (timer) clearTimeout(timer);
+    reporter.close();
+  }
+}
+
+/** Called by actual app events; repeated observations report only one start. */
+export function observeStartOnce(
+  matches: (event: { type: string; status?: string }) => boolean,
+  reportStarted: () => unknown,
+) {
+  let started = false;
+  return (event: { type: string; status?: string }) => {
+    if (!started && matches(event)) {
+      started = true;
+      observeOptional(reportStarted);
+    }
+  };
+}

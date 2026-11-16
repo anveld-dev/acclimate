@@ -1,0 +1,194 @@
+/* EXPERIMENT D — read-only CSS overlay for the frozen service fixture.
+ * Load after the production stylesheet, then evaluate d-layout.js.
+ * Existing elements, handlers, focus order and named narrow Files picker remain intact.
+ * This is a geometry experiment, not shipping proof. A very long scope on a short
+ * desktop can exhaust rail space; measure --d-files-available before interpreting it.
+ */
+@media (min-width: 1001px) {
+  :root {
+    --d-rail-width: 256px;
+    --d-scope-top: 124px;
+    --d-files-top: 452px;
+    --d-footer-height: 202px;
+  }
+
+  .workspace-desktop-header {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    width: var(--d-rail-width);
+    height: 100dvh;
+    min-height: 0;
+    padding: 16px 12px 12px;
+    border-right: 1px solid var(--border);
+    border-bottom: 0;
+    background: var(--card);
+  }
+  .workspace-desktop-header .workspace-brand { min-height: 32px; }
+  .workspace-header-switcher.workspace-switcher {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: start;
+    gap: 4px;
+    padding: 0 0 10px;
+    border-left: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .workspace-header-switcher .workspace-switcher-label {
+    position: static;
+    width: 100%;
+    height: auto;
+    padding: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+    margin: 0;
+  }
+  .workspace-header-switcher [data-slot='native-select-wrapper'],
+  .workspace-header-switcher .workspace-switcher-name {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .workspace-header-switcher .workspace-switcher-name {
+    height: auto;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    padding: 4px 0;
+  }
+  .workspace-header-switcher .workspace-create-button[data-slot='button'] {
+    white-space: normal;
+    justify-content: flex-start;
+  }
+  .workspace-header-navigation {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    margin: auto 0 0;
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+  }
+  .workspace-header-navigation::before,
+  .workspace-header-account::before {
+    display: block;
+    color: var(--muted-foreground);
+    font-size: 14px;
+    line-height: 18px;
+    font-weight: 600;
+  }
+  .workspace-header-navigation::before { content: 'Workspace'; padding: 0 8px 2px; }
+  .workspace-header-navigation .navigation-link {
+    min-height: 32px;
+    padding: 6px 8px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .workspace-header-navigation .navigation-link > svg { display: block; flex-shrink: 0; }
+  .workspace-header-account { padding: 0 8px; border: 0; }
+  .workspace-header-account::before { display: none; }
+  .workspace-header-account [data-slot='button'] { max-width: 100%; }
+  .workspace-column { width: calc(100% - var(--d-rail-width)); margin-left: var(--d-rail-width); }
+  .workspace-main { padding: 20px 24px; }
+
+  .bundle-scope-header {
+    position: fixed;
+    z-index: 40;
+    top: var(--d-scope-top);
+    left: 12px;
+    width: calc(var(--d-rail-width) - 24px);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin: 0;
+    padding: 0 0 8px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+  }
+  .bundle-scope-primary,
+  .bundle-scope-secondary {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    gap: 6px;
+    width: 100%;
+  }
+  .bundle-scope-return { align-self: flex-start; max-width: 100%; }
+  .bundle-scope-identity h1 { font-size: 18px; overflow-wrap: anywhere; }
+  .bundle-scope-header .bundle-context { display: block; width: 100%; }
+  .bundle-scope-header .bundle-channel-picker { width: 100%; }
+  .bundle-channel-picker [data-slot='native-select-wrapper'] { flex: 1; min-width: 0; }
+  .bundle-tabs.bundle-scope-navigation {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+  }
+  .bundle-scope-navigation a {
+    min-height: 32px;
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 5px;
+    white-space: normal;
+  }
+  .bundle-scope-navigation a[aria-current='page'] { background: var(--accent); }
+  .bundle-scope-header .workspace-header-refresh { align-self: flex-start; min-height: 32px; }
+
+  .content-workspace,
+  .draft-workbench .content-workspace { grid-template-columns: minmax(0, 1fr); }
+  .content-workspace > .file-navigator {
+    position: fixed;
+    z-index: 40;
+    top: var(--d-files-top);
+    bottom: var(--d-footer-height);
+    left: 8px;
+    width: calc(var(--d-rail-width) - 16px);
+    min-height: 0;
+    margin: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    border: 0;
+    border-radius: 0;
+    background: var(--card);
+  }
+  .file-navigator .file-navigator-body { overflow: visible; max-height: none; }
+  .file-navigator .content-file-buttons { overflow: visible; max-height: none; }
+  .file-navigator-controls { padding: 4px 6px 8px; }
+  .file-navigator .file-row-name {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+  }
+  .content-file-buttons { padding-inline: 0; }
+}
+
+/* Fair comparisons keep the application's actual coarse-pointer target floor. */
+@media (min-width: 1001px) and (pointer: coarse) {
+  .workspace-header-navigation .navigation-link,
+  .workspace-header-switcher .workspace-create-button[data-slot='button'],
+  .bundle-scope-navigation a,
+  .bundle-scope-header .workspace-header-refresh { min-height: 44px; }
+}
+@media (min-width: 1001px) {
+  :is(.entry-textarea, .draft-source-textarea)[data-slot='textarea'] {
+    height: var(--experiment-source-height, max(360px, calc(100dvh - 224px)));
+  }
+  .read-only-content { min-height: var(--experiment-source-height, max(360px, calc(100dvh - 238px))); }
+}

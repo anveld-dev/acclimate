@@ -1,0 +1,277 @@
+@browser @console
+Feature: Work with content through the console
+  These scenarios use a real browser, console, Rust service and private database.
+
+  @UI-SETUP-01
+  Scenario Outline: Create content only after an explicit action
+    Given I opened an empty console workspace
+    When I explicitly create <origin> content in Bundles
+    Then the bundle is selected and its stored origin is <origin>
+    Examples:
+      | origin   |
+      | created  |
+      | imported |
+      | example  |
+
+  @UI-SETUP-02
+  Scenario: Correct a rejected setup without getting stuck on a pending operation
+    Given I opened an empty console workspace
+    When I submit invalid setup and then correct it
+    Then the corrected bundle is created once
+
+  @UI-CONTENT-01
+  Scenario: Browse, filter and download published content
+    Given a published bundle with instructions, a skill and reusable memory
+    And I opened its Content page
+    When I filter published entries and download the memory file
+    Then the downloaded file contains the published memory
+
+  @UI-CONTENT-02
+  Scenario: Add, rename, classify and save a new entry
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I add and rename an entry as shared memory
+    And I save the browser draft
+    Then reopening the draft preserves that entry's path, kind and text
+
+  @UI-CONTENT-03
+  Scenario: Rename and remove an entire skill package without orphaning support files
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I add a skill with a support file and rename the package
+    And I save the browser draft
+    Then both skill paths and the manifest name use the new package name
+    When I remove that skill package and save again
+    Then neither its manifest nor its support files remain
+
+  @UI-IMPORT-01
+  Scenario: Folder import previews nested skill paths before applying them
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I select a bundle folder containing a skill and support file
+    Then both relative skill paths appear in the import preview
+    When I apply the preview and save the browser draft
+    Then the saved bundle contains the complete skill package
+
+  @UI-IMPORT-02
+  Scenario Outline: Rejected imports leave the current browser edits intact
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I select an import with <invalid>
+    Then the import is rejected and the original text remains
+    Examples:
+      | invalid       |
+      | a collision   |
+      | invalid UTF-8 |
+      | a flat skill  |
+
+  @UI-DRAFT-01
+  Scenario Outline: Unsaved navigation asks before discarding text
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I edit text and try to navigate away
+    And I choose to <choice>
+    Then the unsaved edit is <outcome>
+    Examples:
+      | choice       | outcome   |
+      | keep editing | preserved |
+      | leave editor | discarded |
+
+  @UI-DRAFT-02
+  Scenario: Reopen the exact saved generation after closing the browser and restarting Rust
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I save two browser draft generations
+    And I close the browser and restart the service
+    Then the saved generation reopens with its exact snapshot and history
+
+  @UI-DRAFT-03
+  Scenario: Explicitly leaving edits before refresh really discards those edits
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I edit text and choose to leave the editor during refresh
+    Then the unsaved text is replaced with the published content
+
+  @UI-DRAFT-04
+  Scenario: A pristine new draft follows a newly published release on refresh
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    And I opened a new draft for that entry
+    When another operator publishes "New current instructions."
+    And I refresh the console
+    Then a new browser draft starts with "New current instructions."
+
+  @UI-EVAL-01
+  Scenario: Review and publish a saved snapshot after actual app-owned fixture evaluation
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I save a browser draft and request its evaluation
+    And the application runs the displayed fixture evaluator
+    And I inspect the comparison and publish through the console
+    Then the released version is exactly the evaluated saved snapshot
+
+  @UI-EVAL-02
+  Scenario: Incomplete evidence shows all missing grades and unknown cost
+    Given a draft with a comparison that has no returned grades
+    When I inspect that comparison in the console
+    Then the page shows 4 missing grades and unknown cost
+    And measured publication is unavailable
+
+  @UI-EVAL-03
+  Scenario: Select the native app evaluator without launching a model from the browser
+    Given a published bundle with instructions, a skill and reusable memory
+    And I opened its Content page
+    When I save a browser candidate and select the native Luna evaluation configuration
+    Then its strict frozen request and copied command select the native installed adapter without executing it
+
+  @UI-EVAL-04
+  Scenario: Freeze an app supplied evaluator configuration after rejecting malformed intent
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I select my app evaluator and enter malformed then valid public configuration
+    Then only the valid strict configuration is persisted and later form edits cannot change it
+
+  @UI-RECOVERY-01
+  Scenario Outline: Retrying a lost snapshot response preserves later edits in the same editor
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When the browser loses a successful <command> snapshot response for text A
+    And I edit the uncertain snapshot to text B and retry the exact request
+    Then the service retains only text A and the same editor keeps unsaved text B
+    Examples:
+      | command |
+      | create  |
+      | save    |
+
+  @UI-RECOVERY-02
+  Scenario Outline: Authorization loss cannot settle an uncertain browser write
+    Given a published bundle containing "Review code."
+    When the browser loses a successful <operation> response
+    And the operator loses mutation rights and retries or looks up that pending operation
+    Then the exact recovery record remains until rights return and the commit is reconciled
+    Examples:
+      | operation |
+      | draft     |
+      | restore   |
+
+  @UI-RELEASE-01
+  Scenario: Inspect, download and restore a historical release with a reason
+    Given a published bundle containing "Review code."
+    And I have saved a draft containing "Review retries."
+    And I published the saved draft manually
+    When I inspect the old release and restore it through the console
+    Then the original content is current at revision 3 with the restore reason
+
+  @UI-INTEGRATION-01
+  Scenario: Issue a one-time credential and revoke it through the console
+    Given a published bundle containing "Review code."
+    When I create an integration and issue a read credential in the console
+    Then its secret is shown once and missing delivery is labelled unknown
+    When I close the secret dialog and revoke that credential
+    Then the closed secret is not displayed and its next fetch is denied
+
+  @UI-STATUS-01
+  Scenario: A failed refresh shows the last observation without displaying stale content as current
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When the service becomes unavailable
+    And I refresh the console
+    Then the page shows the last read and unknown current state without editable content
+
+  @UI-NAV-01
+  Scenario: Main routes remain readable and navigable on desktop and mobile
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I visit every main route at desktop and mobile sizes
+    Then the routes have no browser errors or horizontal overflow
+
+  @UI-SETUP-03
+  Scenario: Source changes preview real content and cannot conceal an unresolved publication
+    Given I opened an empty console workspace
+    When I compare all three creation sources without publishing
+    Then only the selected source is rendered and no content has been created
+    When the browser loses the successful initial publication response
+    Then source changes cannot replace the frozen publication and checking its result opens it once
+
+  @UI-RELEASE-02
+  Scenario: Manually release the reviewed saved generation without requesting evaluation
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I save a draft and leave later unsaved text to review its manual release
+    Then manual publication requires its own reason and confirms the saved generation
+    When I confirm the manual release
+    Then only the saved snapshot is released with its manual reason and no evaluation
+
+  @UI-EVAL-05
+  Scenario: Recording an interruption never supplies a manual publication reason
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I save a browser draft and request its evaluation
+    And I record an interruption while keeping a separate manual release reason
+    Then the request records only its interruption reason and the manual reason remains independent
+
+  @UI-NAV-02
+  Scenario: App setup and a scoped connection preserve bundle and channel ownership
+    Given a published bundle containing "Review code."
+    And a connection for its bundle and channel
+    When I follow App setup to Connections and back from the selected connection
+    Then App setup remains active for the same bundle and channel
+
+  @UI-KEYBOARD-01
+  Scenario: Search, rename, dismiss a dialog and change tabs using the keyboard
+    Given a published bundle with instructions, a skill and reusable memory
+    And I opened its Content page
+    When I search and rename an entry using only the keyboard
+    And I dismiss the unsaved-work dialog and return to the invoking link
+    Then the renamed browser text is preserved and tabs remain keyboard reachable
+
+  @UI-RECOVERY-03
+  Scenario Outline: Reverting to older browser text still preserves edits when a lost save is reconciled
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When the browser loses a successful <command> snapshot response for text A
+    And I revert the uncertain browser text to its previously displayed saved text and check the result
+    Then the committed snapshot remains text A while the same editor keeps the reverted text as unsaved
+    Examples:
+      | command |
+      | create  |
+      | save    |
+
+  @UI-RECOVERY-04 @provider_fixture
+  Scenario Outline: Recovering a submitted suggestion preserves a later hypothesis and evidence
+    Given a published bundle containing "Review code."
+    When the browser loses a successfully submitted suggestion response
+    And I change the suggestion hypothesis and evidence before <recovery>
+    Then the earlier suggestion is reconciled once and my later suggestion form stays intact
+    Examples:
+      | recovery            |
+      | checking its result |
+      | retrying exactly    |
+
+  @UI-RECOVERY-05
+  Scenario Outline: Another bundle page reconciles the original uncertain save before permitting new writes
+    Given a published bundle containing "Review code."
+    And an older historical release exists before the uncertain draft
+    And I opened its Content page
+    When the browser loses a successful save snapshot response for text A
+    And I leave the uncertain editor for <destination>
+    Then that page blocks new writes until its notice checks the original save result
+    Examples:
+      | destination    |
+      | Review release |
+      | Releases       |
+
+  @UI-POLL-01
+  Scenario: Published content updates without a refresh button
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When another operator publishes "Updated policy."
+    Then the published entry becomes "Updated policy." without a refresh control
+
+  @UI-POLL-02
+  Scenario: Background updates leave unsaved draft text alone
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When I type an unsaved change for the background update check
+    And another operator publishes "Updated policy."
+    Then background updates keep my unsaved text

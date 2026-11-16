@@ -10,6 +10,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from playwright.sync_api import expect
+from scripts.bdd.editor import editor_value, expect_editor_value
 from scripts.bdd.run import pg_bin
 from scripts.bdd.world import World
 from scripts.bdd.layout import capture_layout
@@ -78,8 +79,8 @@ def run(args):
                 profile = page.get_by_label('Evaluation configuration', exact=True)
                 original_profile = profile.input_value()
                 profile.select_option('custom')
-                config = page.get_by_label('Public evaluator configuration (JSON)', exact=True)
-                original_config = config.input_value()
+                config = page.get_by_label('Public evaluator configuration (JSON)', exact=True).filter(visible=True)
+                original_config = editor_value(config)
                 config.fill('{')
                 expect(page.get_by_role('button', name='Create evaluation request', exact=True)).to_be_disabled()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
@@ -88,9 +89,9 @@ def run(args):
                 expect(config).to_be_hidden()
                 setup.focus()
                 page.keyboard.press('Tab')
-                assert not config.evaluate('e => e === document.activeElement')
+                assert not page.locator('.evaluation-setup [data-slot=disclosure-content]').evaluate('e=>e.contains(document.activeElement)')
                 setup.click()
-                expect(config).to_have_value('{')
+                expect_editor_value(config, '{')
                 config.fill(original_config)
                 profile.select_option(original_profile)
             checks.append('Actual 899/901px board transition with expanded request/setup, invalid JSON, hidden controls and retained form values')

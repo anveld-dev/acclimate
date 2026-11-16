@@ -13,6 +13,8 @@ export type EditorOptions = {
   language?: string;
   disabled: boolean;
   label: string;
+  describedBy?: string;
+  invalid?: boolean | 'true' | 'false' | 'grammar' | 'spelling';
 };
 
 const colors = HighlightStyle.define([
@@ -74,6 +76,8 @@ export function createCodeEditor(
     EditorView.editable.of(!options.disabled),
     EditorView.contentAttributes.of({
       'aria-label': options.label,
+      ...(options.describedBy !== undefined && { 'aria-describedby': options.describedBy }),
+      ...(options.invalid !== undefined && { 'aria-invalid': String(options.invalid) }),
       'aria-disabled': String(options.disabled),
       tabindex: options.disabled ? '-1' : '0',
       spellcheck: 'false',
@@ -141,7 +145,12 @@ export function createCodeEditor(
         if (focused && !next.disabled) view.focus();
         void highlight();
       } else if (next.language !== previous.language) void highlight();
-      if (next.disabled !== previous.disabled || next.label !== previous.label)
+      if (
+        next.disabled !== previous.disabled ||
+        next.label !== previous.label ||
+        next.describedBy !== previous.describedBy ||
+        next.invalid !== previous.invalid
+      )
         view.dispatch({ effects: editing.reconfigure(editSettings()) });
     },
     destroy() {

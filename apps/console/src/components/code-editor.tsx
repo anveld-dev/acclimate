@@ -22,6 +22,8 @@ type CodeEditorProps = {
   id?: string;
   className?: string;
   'aria-label'?: string;
+  'aria-describedby'?: string;
+  'aria-invalid'?: boolean | 'true' | 'false' | 'grammar' | 'spelling';
 };
 
 /** Shared native-input editor. The public read-only handle also supports host form integrations. */
@@ -35,6 +37,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     id,
     className = '',
     'aria-label': label = 'Content',
+    'aria-describedby': describedBy,
+    'aria-invalid': invalid,
   },
   forwardedRef,
 ) {
@@ -42,8 +46,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   const surface = useRef<HTMLDivElement>(null);
   const fallback = useRef<HTMLTextAreaElement>(null);
   const engine = useRef<ReturnType<typeof createCodeEditor> | undefined>(undefined);
-  const latest = useRef({ value, onChange, path, language, disabled, label });
-  latest.current = { value, onChange, path, language, disabled, label };
+  const latest = useRef({ value, onChange, path, language, disabled, label, describedBy, invalid });
+  latest.current = { value, onChange, path, language, disabled, label, describedBy, invalid };
   const focusRequest = useRef<Element | null | undefined>(undefined);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'fallback'>('loading');
   const handle = useMemo<CodeEditorHandle>(
@@ -80,9 +84,9 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     };
   }, [handle]);
   useLayoutEffect(() => {
-    const options: EditorOptions = { value, path, language, disabled, label };
+    const options: EditorOptions = { value, path, language, disabled, label, describedBy, invalid };
     engine.current?.update(options);
-  }, [value, path, language, disabled, label]);
+  }, [value, path, language, disabled, label, describedBy, invalid]);
   useEffect(() => {
     let active = true;
     void import('./code-editor-engine')
@@ -122,6 +126,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
         <Textarea
           ref={fallback}
           aria-label={label}
+          aria-describedby={describedBy}
+          aria-invalid={invalid}
           aria-busy={phase === 'loading' || undefined}
           disabled={disabled || phase === 'loading'}
           value={value}

@@ -33,9 +33,7 @@ def run(args):
     try:
         if not args.skip_build:
             subprocess.run(['cargo', 'build', '--locked'], cwd=ROOT, check=True)
-        h.pg('initdb', '-D', str(h.dir / 'pg'), '-U', 'qualification', '-A', 'trust', '--no-locale')
-        h.pg('pg_ctl', '-D', str(h.dir / 'pg'), '-l', str(h.dir / 'postgres.log'),
-             '-o', f"-p {h.pg_port} -h 127.0.0.1 -c unix_socket_directories=''", '-w', 'start')
+        h.start_database()
         command = ['node', '--import', 'tsx', 'scripts/full-roadmap/run.ts'] + (['--live'] if args.live else [])
         env = {key: value for key, value in h.env.items() if not key.startswith('PG')}
         env['EVALUATION_TEST_DATABASE_URL'] = h.env['DATABASE_URL']

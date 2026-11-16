@@ -1,10 +1,51 @@
-//! Scoped chronological cursors. Timestamps remain PostgreSQL microseconds end to end.
+//! Chronological list policy and scoped cursors. Timestamps preserve PostgreSQL microseconds.
 use crate::{ApiResult, db, err};
 use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ListQuery {
+    pub limit: Option<i64>,
+    pub cursor: Option<String>,
+}
+impl ListQuery {
+    pub(crate) fn bounds(&self) -> ApiResult<i64> {
+        let n = self.limit.unwrap_or(50);
+        if !(1..=100).contains(&n) {
+            return Err(err(
+                StatusCode::BAD_REQUEST,
+                "invalid_content",
+                "Limit must be between 1 and 100",
+            ));
+        }
+        Ok(n)
+    }
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Page<T: Serialize> {
+    pub items: Vec<T>,
+    pub next_cursor: Option<String>,
+}
+
+/// Callers fetch one extra item using a validated limit; only retained items produce cursors.
+pub(crate) fn page<T: Serialize>(
+    mut items: Vec<T>,
+    limit: i64,
+    cursor: impl FnOnce(&T) -> String,
+) -> Page<T> {
+    let next_cursor = if items.len() > limit as usize {
+        items.truncate(limit as usize);
+        items.last().map(cursor)
+    } else {
+        None
+    };
+    Page { items, next_cursor }
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

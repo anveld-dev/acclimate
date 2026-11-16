@@ -50,6 +50,11 @@ The npm monorepo uses `apps/*` for applications and `packages/*` for reusable SD
 
 Console cursor traversal lives in the internal [listing module](../../apps/console/src/server/listing.ts). Setup, navigation, channel, access, and connection reads share its opaque-cursor traversal and cycle detection; callers retain their existing page budgets, transport, field validation, and safe projections. Channel reads no longer borrow traversal from the setup module.
 
+Canonical durable Operation result targets live in the browser-safe [target module](../../apps/console/src/lib/operation-target.ts). Browser recovery freezing and server replay share route grammar and scope comparison; authorization and command-specific retry restrictions remain with their existing owners. Bundle setup constructs one request body for validation and transmission.
+
+Chronological evidence listing uses the existing [pagination module](../../src/pagination.rs) for shared query bounds, page types, truncation, and scoped continuation. Collection queries and authorization remain in their feature modules. Qualification runners use the existing [Harness](../../scripts/productization/qualify.py) for database-only startup or full startup with the Rust process.
+
+
 Keep content delivery as one Rust server deployable. A folder is a module ownership seam, not a new network service or Rust crate. The thin Python SDK lives in `python/`.
 
 ## The modules that matter

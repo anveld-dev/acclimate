@@ -52,9 +52,12 @@ class Harness:
     def pg(self, tool, *args):
         return subprocess.run([str(self.pg_bin / tool), *args], check=True, capture_output=True, text=True)
 
-    def start(self):
+    def start_database(self):
         self.pg('initdb', '-D', str(self.dir / 'pg'), '-U', 'qualification', '-A', 'trust', '--no-locale')
         self.pg('pg_ctl', '-D', str(self.dir / 'pg'), '-l', str(self.dir / 'postgres.log'), '-o', f"-p {self.pg_port} -h 127.0.0.1 -c unix_socket_directories=''", '-w', 'start')
+
+    def start(self):
+        self.start_database()
         self.restart()
 
     def identity(self):
@@ -110,7 +113,8 @@ class Harness:
         raw = response.read()
         value = json.loads(raw) if raw else None
         accepted = response.status == status if status is not None else 200 <= response.status < 300
-        code = value.get('error', {}).get('code') if isinstance(value, dict) else None
+        error = value.get('error') if isinstance(value, dict) else None
+        code = error.get('code') if isinstance(error, dict) else None
         assert accepted, (method, route, response.status, code)
         return value
 

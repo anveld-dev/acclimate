@@ -1,3 +1,4 @@
+import { validateOperationTarget } from './operation-target';
 // Only submitted text lives here. Unresolved metadata outlives explicit text forgetting.
 export type PendingScope = {
   actorScope: string;
@@ -105,15 +106,11 @@ export function freezePendingExact(
   key: string = crypto.randomUUID(),
   disclosure?: PendingOperation['disclosure'],
 ): PendingOperation {
-  if (
-    !action.startsWith(`/v1/projects/${encodeURIComponent(scope.projectId)}/`) ||
-    !/(?:\/bundle-setups|\/proposals|\/evaluation-requests|\/promotions|\/drafts(?:\/[^/]+\/(?:save|publish|discard))?)$/.test(
-      action,
-    ) ||
-    /[%?#\\]/.test(action) ||
-    action.split('/').some((part) => part === '.' || part === '..')
-  )
+  try {
+    validateOperationTarget(scope.projectId, action, scope);
+  } catch {
     throw Error('Unsupported pending operation.');
+  }
   if (!exact || new TextEncoder().encode(exact).length > MAX_BYTES)
     throw Error('Submitted request exceeds recovery storage limit.');
   JSON.parse(exact);

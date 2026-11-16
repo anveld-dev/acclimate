@@ -14,6 +14,7 @@ import { FilePenLine, GitPullRequest, Plus, Sparkles } from 'lucide-react';
 import { ChangeRecordDetails } from './change-record-details';
 import { mergeHistory, refreshKnownActive } from '../lib/improvement-history';
 import { ChangesOverview } from './changes-overview';
+import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 
 type Ready = Extract<ConsoleState, { status: 'ready' }>;
 const text = (value: unknown) => (typeof value === 'string' ? value : '');
@@ -146,6 +147,21 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
   const [draftBusy, setDraftBusy] = useState(true),
     [proposalBusy, setProposalBusy] = useState(true);
   const [showClosedDrafts, setShowClosedDrafts] = useState(false);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const draftTrigger = useRef<HTMLButtonElement>(null);
+  const suggestionTrigger = useRef<HTMLButtonElement>(null);
+  const draftBody = useRef<HTMLDivElement>(null);
+  const suggestionBody = useRef<HTMLDivElement>(null);
+  function changeOpen(
+    open: boolean,
+    body: HTMLDivElement | null,
+    trigger: HTMLButtonElement | null,
+    setOpen: (value: boolean) => void,
+  ) {
+    if (!open && body?.contains(document.activeElement)) trigger?.focus();
+    setOpen(open);
+  }
   const visibleDrafts = showClosedDrafts
     ? drafts
     : drafts.filter((draft) => draft.status === 'open');
@@ -252,200 +268,245 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
     <ChangesOverview state={state} search={search}>
       <div className="change-queues">
         <section className="change-queue" aria-label="Saved drafts">
-          <div className="change-queue-heading">
-            <div>
-              <h3>{showClosedDrafts ? 'All drafts' : 'Open drafts'}</h3>
-              <p>
-                {state.channel} channel · {drafts.length} loaded
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-pressed={showClosedDrafts}
-              aria-label={
-                showClosedDrafts ? 'Show open drafts' : 'Include published and discarded drafts'
-              }
-              onClick={() => setShowClosedDrafts(!showClosedDrafts)}
-            >
-              {showClosedDrafts ? 'Open only' : 'Include closed'}
-            </Button>
-          </div>
-          {draftError && (
-            <p role="alert" className="change-queue-message text-destructive">
-              {draftError}
-            </p>
-          )}
-          {draftBusy && !drafts.length ? (
-            <p role="status" className="change-queue-message">
-              Loading saved drafts…
-            </p>
-          ) : !draftError && !visibleDrafts.length ? (
-            <div className="change-queue-empty">
-              <FilePenLine aria-hidden="true" />
-              <p>
-                {showClosedDrafts
-                  ? 'No saved drafts in this channel.'
-                  : draftCursor
-                    ? 'No open drafts on the loaded pages. Load more drafts to check older entries.'
-                    : 'No open drafts. Start a new draft to edit the current release.'}
-              </p>
-            </div>
-          ) : (
-            <ul className="change-record-list">
-              {visibleDrafts.map((draft) => (
-                <li key={draft.id} className="change-record-row">
-                  <FilePenLine aria-hidden="true" className="change-record-icon" />
-                  <div className="change-record-copy">
-                    <ConsoleLink
-                      className="change-record-title"
-                      aria-label={`Draft ${draft.id}`}
-                      href={bundleHref(scope, 'changes', { draft: draft.id })}
-                    >
-                      Draft <span className="change-record-short-id">{draft.id.slice(0, 8)}</span>
-                    </ConsoleLink>
-                    <p className="change-record-meta">
-                      Generation {draft.generation} · updated{' '}
-                      <time dateTime={draft.updatedAt}>
-                        {new Date(draft.updatedAt).toLocaleString()}
-                      </time>
-                    </p>
-                  </div>
-                  <div className="change-record-actions">
-                    {showClosedDrafts && (
-                      <Badge variant="outline">
-                        {draft.status === 'open'
-                          ? 'Open'
-                          : draft.status === 'published'
-                            ? 'Published'
-                            : 'Discarded'}
-                      </Badge>
-                    )}
-                    <ChangeRecordDetails
-                      title="Draft details"
-                      identity={draft.id}
-                      triggerLabel={`Draft details for ${draft.id}`}
-                      description="The saved snapshot and the release it started from."
-                      copyLabel="Copy draft details"
-                      value={JSON.stringify(draft, null, 2)}
-                      fields={[
-                        ['Status', draft.status],
-                        ['Generation', draft.generation],
-                        ['Updated', new Date(draft.updatedAt).toLocaleString()],
-                        ['Base revision', draft.baseRevision],
-                        ['Draft ID', draft.id],
-                        ['Base version', draft.baseVersionId],
-                        ['Snapshot version', draft.snapshotVersion.id],
-                      ]}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          {draftCursor && (
-            <div className="change-queue-footer">
+          <Disclosure
+            open={draftsOpen}
+            onOpenChange={(open) =>
+              changeOpen(open, draftBody.current, draftTrigger.current, setDraftsOpen)
+            }
+          >
+            <div className="change-queue-heading">
+              <h3>
+                <DisclosureTrigger ref={draftTrigger} className="change-queue-trigger">
+                  <span className="change-queue-title">
+                    {showClosedDrafts ? 'All drafts' : 'Open drafts'}
+                  </span>
+                  <span className="change-queue-scope">
+                    {state.channel} channel ·{' '}
+                    {showClosedDrafts ? '' : `${visibleDrafts.length} open in `}
+                    {drafts.length} loaded{draftBusy ? ' · Loading…' : ''}
+                  </span>
+                </DisclosureTrigger>
+              </h3>
               <Button
-                variant="outline"
-                disabled={draftBusy}
-                onClick={() => void loadDrafts(draftCursor)}
+                variant="ghost"
+                size="sm"
+                aria-pressed={showClosedDrafts}
+                aria-label={
+                  showClosedDrafts ? 'Show open drafts' : 'Include published and discarded drafts'
+                }
+                onClick={() => setShowClosedDrafts(!showClosedDrafts)}
               >
-                Load more drafts
+                {showClosedDrafts ? 'Open only' : 'Include closed'}
               </Button>
             </div>
-          )}
+            {draftError && (
+              <p role="alert" className="change-queue-message text-destructive">
+                {draftError}
+              </p>
+            )}
+            <DisclosureContent className="change-queue-content" hidden={!draftsOpen}>
+              <div ref={draftBody} className="change-queue-body">
+                {draftBusy && !drafts.length ? (
+                  <p role="status" className="change-queue-message">
+                    Loading saved drafts…
+                  </p>
+                ) : !draftError && !visibleDrafts.length ? (
+                  <div className="change-queue-empty">
+                    <FilePenLine aria-hidden="true" />
+                    <p>
+                      {showClosedDrafts
+                        ? 'No saved drafts in this channel.'
+                        : draftCursor
+                          ? 'No open drafts on the loaded pages. Load more drafts to check older entries.'
+                          : 'No open drafts. Start a new draft to edit the current release.'}
+                    </p>
+                  </div>
+                ) : (
+                  <ul className="change-record-list">
+                    {visibleDrafts.map((draft) => (
+                      <li key={draft.id} className="change-record-row">
+                        <FilePenLine aria-hidden="true" className="change-record-icon" />
+                        <div className="change-record-copy">
+                          <ConsoleLink
+                            className="change-record-title"
+                            aria-label={`Draft ${draft.id}`}
+                            href={bundleHref(scope, 'changes', { draft: draft.id })}
+                          >
+                            Draft{' '}
+                            <span className="change-record-short-id">{draft.id.slice(0, 8)}</span>
+                          </ConsoleLink>
+                          <p className="change-record-meta">
+                            Generation {draft.generation} · updated{' '}
+                            <time dateTime={draft.updatedAt}>
+                              {new Date(draft.updatedAt).toLocaleString()}
+                            </time>
+                          </p>
+                        </div>
+                        <div className="change-record-actions">
+                          {showClosedDrafts && (
+                            <Badge variant="outline">
+                              {draft.status === 'open'
+                                ? 'Open'
+                                : draft.status === 'published'
+                                  ? 'Published'
+                                  : 'Discarded'}
+                            </Badge>
+                          )}
+                          <ChangeRecordDetails
+                            title="Draft details"
+                            identity={draft.id}
+                            triggerLabel={`Draft details for ${draft.id}`}
+                            description="The saved snapshot and the release it started from."
+                            copyLabel="Copy draft details"
+                            value={JSON.stringify(draft, null, 2)}
+                            fields={[
+                              ['Status', draft.status],
+                              ['Generation', draft.generation],
+                              ['Updated', new Date(draft.updatedAt).toLocaleString()],
+                              ['Base revision', draft.baseRevision],
+                              ['Draft ID', draft.id],
+                              ['Base version', draft.baseVersionId],
+                              ['Snapshot version', draft.snapshotVersion.id],
+                            ]}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {draftCursor && (
+                  <div className="change-queue-footer">
+                    <Button
+                      variant="outline"
+                      disabled={draftBusy}
+                      onClick={() => void loadDrafts(draftCursor)}
+                    >
+                      Load more drafts
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </DisclosureContent>
+          </Disclosure>
         </section>
         <section className="change-queue" aria-label="Suggestions">
-          <div className="change-queue-heading">
-            <div>
-              <h3>Suggestions</h3>
-              <p>All bundle channels · {proposals.length} loaded</p>
+          <Disclosure
+            open={suggestionsOpen}
+            onOpenChange={(open) =>
+              changeOpen(
+                open,
+                suggestionBody.current,
+                suggestionTrigger.current,
+                setSuggestionsOpen,
+              )
+            }
+          >
+            <div className="change-queue-heading">
+              <h3>
+                <DisclosureTrigger ref={suggestionTrigger} className="change-queue-trigger">
+                  <span className="change-queue-title">Suggestions</span>
+                  <span className="change-queue-scope">
+                    All bundle channels · {proposals.length} loaded
+                    {proposalBusy ? ' · Loading…' : ''}
+                  </span>
+                </DisclosureTrigger>
+              </h3>
             </div>
-          </div>
-          {proposalError && (
-            <p role="alert" className="change-queue-message text-destructive">
-              {proposalError}
-            </p>
-          )}
-          {proposalBusy && !proposals.length ? (
-            <p role="status" className="change-queue-message">
-              Loading suggestions…
-            </p>
-          ) : !proposalError && !proposals.length ? (
-            <div className="change-queue-empty">
-              <GitPullRequest aria-hidden="true" />
-              <p>No suggestions yet.</p>
-            </div>
-          ) : (
-            <ul className="change-record-list">
-              {proposals.map((proposal) => (
-                <li key={proposal.id} className="change-record-row">
-                  <GitPullRequest aria-hidden="true" className="change-record-icon" />
-                  <div className="change-record-copy">
-                    <ConsoleLink
-                      className="change-record-title change-proposal-title"
-                      href={bundleHref(scope, 'changes', { proposal: proposal.id })}
+            {proposalError && (
+              <p role="alert" className="change-queue-message text-destructive">
+                {proposalError}
+              </p>
+            )}
+            <DisclosureContent className="change-queue-content" hidden={!suggestionsOpen}>
+              <div ref={suggestionBody} className="change-queue-body">
+                {proposalBusy && !proposals.length ? (
+                  <p role="status" className="change-queue-message">
+                    Loading suggestions…
+                  </p>
+                ) : !proposalError && !proposals.length ? (
+                  <div className="change-queue-empty">
+                    <GitPullRequest aria-hidden="true" />
+                    <p>No suggestions yet.</p>
+                  </div>
+                ) : (
+                  <ul className="change-record-list">
+                    {proposals.map((proposal) => (
+                      <li key={proposal.id} className="change-record-row">
+                        <GitPullRequest aria-hidden="true" className="change-record-icon" />
+                        <div className="change-record-copy">
+                          <ConsoleLink
+                            className="change-record-title change-proposal-title"
+                            href={bundleHref(scope, 'changes', { proposal: proposal.id })}
+                          >
+                            {proposal.rationale?.trim().split('\n')[0] ||
+                              (proposal.candidate ? 'Suggested update' : 'Suggestion request')}{' '}
+                            <span className="change-record-short-id">
+                              {proposal.id.slice(0, 8)}
+                            </span>
+                          </ConsoleLink>
+                          <p className="change-record-meta">
+                            Created{' '}
+                            <time dateTime={proposal.createdAt}>
+                              {new Date(proposal.createdAt).toLocaleString()}
+                            </time>
+                          </p>
+                          {proposal.error && (
+                            <p className="change-record-error">{proposal.error}</p>
+                          )}
+                        </div>
+                        <div className="change-record-actions">
+                          <Badge variant={proposal.status === 'failed' ? 'destructive' : 'outline'}>
+                            {proposal.status === 'queued'
+                              ? 'Queued'
+                              : proposal.status === 'running'
+                                ? 'Preparing'
+                                : proposal.status === 'succeeded'
+                                  ? proposal.candidate
+                                    ? 'Ready to review'
+                                    : 'No candidate'
+                                  : 'Failed'}
+                          </Badge>
+                          <ChangeRecordDetails
+                            title="Suggestion details"
+                            identity={proposal.id}
+                            triggerLabel={`Suggestion details for ${proposal.id}`}
+                            description="The provider’s explanation and the version it started from."
+                            copyLabel="Copy suggestion details"
+                            value={JSON.stringify(proposal, null, 2)}
+                            fields={[
+                              ['Status', proposal.status],
+                              ['Created', new Date(proposal.createdAt).toLocaleString()],
+                              ['Rationale', proposal.rationale || 'No rationale reported.'],
+                              ['Attempts', proposal.attempts],
+                              ['Suggestion ID', proposal.id],
+                              ['Parent version', proposal.parentVersionId],
+                              ...(proposal.candidate
+                                ? [['Candidate version', proposal.candidate.id] as [string, string]]
+                                : []),
+                              ...(proposal.error
+                                ? [['Error', proposal.error] as [string, string]]
+                                : []),
+                            ]}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {proposalCursor && (
+                  <div className="change-queue-footer">
+                    <Button
+                      variant="outline"
+                      disabled={proposalBusy}
+                      onClick={() => void loadProposals(proposalCursor)}
                     >
-                      {proposal.rationale?.trim().split('\n')[0] ||
-                        (proposal.candidate ? 'Suggested update' : 'Suggestion request')}{' '}
-                      <span className="change-record-short-id">{proposal.id.slice(0, 8)}</span>
-                    </ConsoleLink>
-                    <p className="change-record-meta">
-                      Created{' '}
-                      <time dateTime={proposal.createdAt}>
-                        {new Date(proposal.createdAt).toLocaleString()}
-                      </time>
-                    </p>
-                    {proposal.error && <p className="change-record-error">{proposal.error}</p>}
+                      Load more suggestions
+                    </Button>
                   </div>
-                  <div className="change-record-actions">
-                    <Badge variant={proposal.status === 'failed' ? 'destructive' : 'outline'}>
-                      {proposal.status === 'queued'
-                        ? 'Queued'
-                        : proposal.status === 'running'
-                          ? 'Preparing'
-                          : proposal.status === 'succeeded'
-                            ? proposal.candidate
-                              ? 'Ready to review'
-                              : 'No candidate'
-                            : 'Failed'}
-                    </Badge>
-                    <ChangeRecordDetails
-                      title="Suggestion details"
-                      identity={proposal.id}
-                      triggerLabel={`Suggestion details for ${proposal.id}`}
-                      description="The provider’s explanation and the version it started from."
-                      copyLabel="Copy suggestion details"
-                      value={JSON.stringify(proposal, null, 2)}
-                      fields={[
-                        ['Status', proposal.status],
-                        ['Created', new Date(proposal.createdAt).toLocaleString()],
-                        ['Rationale', proposal.rationale || 'No rationale reported.'],
-                        ['Attempts', proposal.attempts],
-                        ['Suggestion ID', proposal.id],
-                        ['Parent version', proposal.parentVersionId],
-                        ...(proposal.candidate
-                          ? [['Candidate version', proposal.candidate.id] as [string, string]]
-                          : []),
-                        ...(proposal.error ? [['Error', proposal.error] as [string, string]] : []),
-                      ]}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          {proposalCursor && (
-            <div className="change-queue-footer">
-              <Button
-                variant="outline"
-                disabled={proposalBusy}
-                onClick={() => void loadProposals(proposalCursor)}
-              >
-                Load more suggestions
-              </Button>
-            </div>
-          )}
+                )}
+              </div>
+            </DisclosureContent>
+          </Disclosure>
         </section>
       </div>
     </ChangesOverview>

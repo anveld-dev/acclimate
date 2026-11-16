@@ -186,7 +186,7 @@ def custom_evaluator_navigation(context):
         runtime=dict(configId='ux-installed-fixture', configRevision='1', app='ux-app', model='none'),
         expectedCases=[dict(caseId='ux-case', repetition=0)])
     w.ux_configuration_text = ' \n' + json.dumps(configuration, indent=3) + '\n\n'
-    p.get_by_label('Public evaluator configuration (JSON)', exact=True).fill(w.ux_configuration_text)
+    p.get_by_label('Public evaluator configuration (JSON)', exact=True).filter(visible=True).fill(w.ux_configuration_text)
     expect(p.get_by_role('button', name='Create evaluation request', exact=True)).to_be_enabled()
     w.ux_evaluation_url = p.url
     p.get_by_role('navigation', name='Bundle navigation', exact=True).get_by_role('link', name='Releases', exact=True).click()
@@ -212,7 +212,7 @@ def exact_custom_evaluator(context):
     expect(p).to_have_url(w.ux_evaluation_url)
     expect(p.get_by_role('heading', name='Leave current edits?', exact=True)).to_have_count(0)
     expect(p.get_by_label('Evaluation configuration', exact=True)).to_have_value('custom')
-    expect(p.get_by_label('Public evaluator configuration (JSON)', exact=True)).to_have_value(w.ux_configuration_text)
+    expect_editor_value(p.get_by_label('Public evaluator configuration (JSON)', exact=True).filter(visible=True), w.ux_configuration_text)
     expect(p.get_by_role('button', name='Create evaluation request', exact=True)).to_be_enabled()
     assert w.call('GET', w.bundle + '/evaluation-requests')['items'] == []
     assert w.call('GET', w.bundle + '/comparisons')['items'] == []

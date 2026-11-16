@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import type { Evaluation } from '@acclimate/sdk';
 import type { ConsoleState } from '../server/channel';
@@ -9,9 +9,10 @@ import { EvaluationHistoryView } from './evaluation-history-view';
 import { HistoryFiles, useHistoryVersion } from './history-files';
 import { ConsoleLink } from './console-link';
 import { Button } from './ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
+import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from './ui/native-select';
+import { evaluationVersionOptions } from '../lib/evaluation-version-options';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { ChevronDown, FileClock, History, Plus, Sparkles } from 'lucide-react';
+import { Plus, Sparkles } from 'lucide-react';
 
 type Ready = Extract<ConsoleState, { status: 'ready' }>;
 const string = (value: unknown) => (typeof value === 'string' ? value : '');
@@ -51,63 +52,21 @@ export function ChangesOverview({
   const tab = search.tab === 'files' && selectedCandidate ? 'files' : 'evaluations';
   const invalidTab =
     search.tab !== undefined && !['files', 'evaluations'].includes(String(search.tab));
-  const groups = new Map<string, number>();
-  for (const request of model.requests)
-    groups.set(request.candidateVersionId, (groups.get(request.candidateVersionId) || 0) + 1);
-  const outside = selectedCandidate && !groups.has(selectedCandidate);
+  const { versions, outside } = evaluationVersionOptions(model.requests, selectedCandidate);
   const fileCount =
     version.status === 'ready'
       ? version.base
         ? artifactChanges(version.base.payload, version.payload).length
         : version.payload.files.length
       : undefined;
-  const [compact, setCompact] = useState(true);
-  const [browseOpen, setBrowseOpen] = useState(false);
-  const host = useRef<HTMLDivElement>(null);
-  const navigator = useRef<HTMLDivElement>(null);
-  const toggle = useRef<HTMLButtonElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  const browseRef = useRef(browseOpen);
-  browseRef.current = browseOpen;
-  const compactRef = useRef(compact);
-  compactRef.current = compact;
-  const browseId = useId();
+  const selectorId = useId();
   const focusRegion = useRef('');
-  const restoreDesktopFocus = useRef(false);
-  useLayoutEffect(() => {
-    if (!compact && restoreDesktopFocus.current) {
-      restoreDesktopFocus.current = false;
-      (
-        navigator.current?.querySelector<HTMLElement>('a[aria-current="page"], a[href]') ||
-        heading.current
-      )?.focus();
-    }
-  }, [compact]);
-  useEffect(() => {
-    if (!host.current) return;
-    const observer = new ResizeObserver(([entry]) => {
-      const next = entry.contentRect.width < 1000;
-      if (next && !compactRef.current && navigator.current?.contains(document.activeElement))
-        setBrowseOpen(true);
-      if (!next && compactRef.current && document.activeElement === toggle.current)
-        restoreDesktopFocus.current = true;
-      setCompact(next);
-    });
-    observer.observe(host.current);
-    return () => observer.disconnect();
-  }, []);
   useEffect(() => {
     if (focusRegion.current === 'files' && document.activeElement === document.body)
       heading.current?.focus();
   }, [selectedCandidate, version.status, tab]);
 
-  function closeBrowse() {
-    if (compactRef.current && browseRef.current) {
-      if (navigator.current?.contains(document.activeElement))
-        requestAnimationFrame(() => toggle.current?.focus());
-      setBrowseOpen(false);
-    }
-  }
   function href(values: Record<string, string | number | undefined> = {}) {
     return bundleHref(scope, 'changes', {
       history: 1,
@@ -137,9 +96,6 @@ export function ChangesOverview({
     });
   }
   const allHistoryHref = bundleHref(scope, 'changes', { history: 1 });
-  const context = selectedCandidate
-    ? `Version ${selectedCandidate.slice(0, 8)}`
-    : 'All evaluations';
   const selectionMismatch =
     model.selectedState === 'mismatch' ||
     (search.comparison &&
@@ -174,7 +130,7 @@ export function ChangesOverview({
   );
 
   return (
-    <div ref={host} className="changes-overview" data-compact={compact}>
+    <div className="changes-overview">
       <header className="changes-overview-toolbar">
         <div>
           <h2 ref={heading} tabIndex={-1}>
@@ -203,121 +159,67 @@ export function ChangesOverview({
           </div>
         )}
       </header>
+      <div className="changes-overview-queues">{children}</div>
       <div className="changes-overview-grid">
-        <Collapsible
-          open={!compact || browseOpen}
-          onOpenChange={setBrowseOpen}
-          className="changes-collection"
-        >
-          <CollapsibleTrigger asChild hidden={!compact}>
-            <Button
-              ref={toggle}
-              type="button"
-              variant="outline"
-              className="changes-browse-trigger"
-              aria-controls={browseId}
-            >
-              <span>
-                Browse changes{' '}
-                <span className="text-muted-foreground">· {context} · all bundle channels</span>
-              </span>
-              <ChevronDown aria-hidden="true" />
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent
-            id={browseId}
-            ref={navigator}
-            className="changes-collection-body"
-            onClickCapture={(event) => {
-              if ((event.target as HTMLElement).closest('a[href]')) closeBrowse();
-            }}
-          >
-            {children}
-            <section
-              className="changes-history-navigation"
-              aria-label="Evaluation history navigation"
-            >
-              <h3>Evaluation history</h3>
-              <p>All bundle channels · {model.requests.length} loaded requests</p>
-              <ConsoleLink
-                href={allHistoryHref}
-                className="changes-collection-link"
-                aria-current={!selectedCandidate ? 'page' : undefined}
-              >
-                <History aria-hidden="true" />
-                <span>All evaluations</span>
-              </ConsoleLink>
-              <h4>Versions in loaded history</h4>
-              {!groups.size && (
-                <p className="changes-navigation-empty">
-                  {model.loading
-                    ? 'Loading history…'
-                    : model.error
-                      ? 'History unavailable.'
-                      : 'No loaded requests yet.'}
-                </p>
-              )}
-              {[...groups].map(([id, count]) => (
-                <ConsoleLink
-                  key={id}
-                  href={href({
-                    candidate: id,
-                    request: undefined,
-                    path: undefined,
-                    comparison: undefined,
-                  })}
-                  className="changes-collection-link"
-                  aria-current={selectedCandidate === id ? 'page' : undefined}
-                  aria-label={`Version ${id}, ${count} loaded requests`}
-                >
-                  <FileClock aria-hidden="true" />
-                  <span>
-                    <strong>Version {id.slice(0, 8)}</strong>
-                    <small>
-                      {count} loaded {count === 1 ? 'request' : 'requests'}
-                    </small>
-                  </span>
-                </ConsoleLink>
-              ))}
-              {outside && (
-                <div className="changes-selected-version" aria-current="page">
-                  <strong>{context}</strong>
-                  <p>Selected outside loaded history</p>
-                </div>
-              )}
-              {model.cursor && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={model.loading}
-                  onClick={() => void model.loadMore()}
-                >
-                  Load older history
-                </Button>
-              )}
-            </section>
-          </CollapsibleContent>
-        </Collapsible>
         <section
           className="changes-main"
           aria-label="Changes workspace"
           onFocusCapture={(event) => {
-            focusRegion.current = (event.target as HTMLElement).closest('.history-files')
+            focusRegion.current = (event.target as HTMLElement).closest(
+              '.history-files, [role="tablist"]',
+            )
               ? 'files'
               : 'main';
           }}
         >
-          {selectedCandidate && (
-            <div className="changes-main-heading">
-              <div>
-                <h3>{context}</h3>
-                <p>Requests for this version · all bundle channels</p>
-              </div>
-              <ConsoleLink className="underline text-sm" href={allHistoryHref}>
-                All evaluations
-              </ConsoleLink>
-            </div>
-          )}
+          <div className="changes-version-selector">
+            <label htmlFor={selectorId}>Evaluation version</label>
+            <NativeSelect
+              id={selectorId}
+              value={selectedCandidate || (requestId ? '__unresolved__' : '')}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (
+                  value === '__unresolved__' ||
+                  (value === selectedCandidate && (value !== '' || !requestId))
+                )
+                  return;
+                void router.navigate({
+                  href: value
+                    ? href({
+                        candidate: value,
+                        request: undefined,
+                        comparison: undefined,
+                        path: undefined,
+                      })
+                    : allHistoryHref,
+                });
+              }}
+            >
+              <NativeSelectOption value="">All evaluations</NativeSelectOption>
+              {requestId && !selectedCandidate && (
+                <NativeSelectOption value="__unresolved__" disabled>
+                  Request selection unresolved
+                </NativeSelectOption>
+              )}
+              {outside && (
+                <NativeSelectOption value={outside}>
+                  Selected outside loaded history: {outside}
+                </NativeSelectOption>
+              )}
+              <NativeSelectOptGroup label="Versions in loaded history">
+                {versions.map(({ id, count }) => (
+                  <NativeSelectOption key={id} value={id}>
+                    {id} · {count} loaded {count === 1 ? 'request' : 'requests'}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelectOptGroup>
+            </NativeSelect>
+            <p>Versions and counts come from loaded history only.</p>
+            {selectedCandidate && (
+              <p className="changes-selected-version-id">Selected version: {selectedCandidate}</p>
+            )}
+          </div>
           {(invalidTab || (search.tab === 'files' && !selectedCandidate)) && (
             <p role="status" className="changes-view-note">
               That file view is unavailable here. Showing evaluations.

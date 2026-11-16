@@ -270,6 +270,7 @@ def overlays(w, b, e, routes, candidate):
     e.capture(p,'1440-account-hover')
     activate(p,account)
     expect(p.get_by_role('dialog',name='Your account',exact=True)).to_be_visible()
+    activate(p,p.get_by_role('button',name='Sign-in details',exact=True))
     tab_to(p,p.get_by_role('button',name='Copy ID',exact=True))
     e.capture(p,'1440-account-focus')
     p.keyboard.press('Escape')
@@ -404,17 +405,15 @@ def focus_ownership(b,e,routes,candidate):
     activate(p,account)
     dialog=p.get_by_role('dialog',name='Your account',exact=True)
     expect(dialog).to_be_visible()
+    activate(p,dialog.get_by_role('button',name='Sign-in details',exact=True))
     copy=dialog.get_by_role('button',name='Copy ID',exact=True)
     tab_to(p,copy);expect(copy).to_be_focused()
     p.set_viewport_size(dict(width=899,height=768))
-    expect(copy).to_be_focused(timeout=5000)
-    e.capture(p,'899-account-dialog-focus-retained')
-    p.keyboard.press('Escape')
     expect(dialog).to_have_count(0)
-    expect(p.get_by_role('main')).to_be_focused(timeout=5000)
-    e.capture(p,'899-account-hidden-invoker-main-fallback')
+    expect(p.get_by_role('button',name='Open navigation',exact=True)).to_be_focused(timeout=5000)
+    e.capture(p,'899-account-hidden-anchor-navigation-fallback')
     return dict(sourceFocusPreservedBothDirections=True,unsavedSourceRetained=True,
-      openModalFocusNotStolen=True,escapeHiddenInvokerFallsBackToVisibleMain=True)
+      accountPopupClosesWithHiddenAnchor=True,hiddenInvokerFallsBackToVisibleNavigation=True)
 
 
 def build_fingerprint():

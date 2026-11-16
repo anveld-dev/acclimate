@@ -55,7 +55,7 @@ def native_handoff(context):
 def custom_profile(context):
     w, p = candidate(context)
     p.get_by_label('Evaluation configuration', exact=True).select_option('custom')
-    field = p.get_by_label('Public evaluator configuration (JSON)', exact=True)
+    field = p.get_by_label('Public evaluator configuration (JSON)', exact=True).filter(visible=True)
     valid = dict(datasetRevision='bdd-custom-dataset-v7', graderRevision='bdd-custom-grader-v3',
         runtime=dict(configId='bdd-installed-app', configRevision='opaque-revision-42', app='bdd-app', model='none',
                      writes='disabled', maxCases='2', maxDurationMs='1000'),
@@ -88,7 +88,7 @@ def custom_frozen(context):
     expect(article.locator('code').filter(has_text='npm run evaluate:app')).to_have_count(0)
     changed = dict(w.custom_configuration, runtime=dict(w.custom_configuration['runtime'], configRevision='later-unsubmitted-revision'))
     open_details(p, 'Create another evaluation request')
-    p.get_by_label('Public evaluator configuration (JSON)', exact=True).fill(json.dumps(changed))
+    p.get_by_label('Public evaluator configuration (JSON)', exact=True).filter(visible=True).fill(json.dumps(changed))
     article.locator('[data-slot=disclosure-trigger]').filter(has_text='Request details').click()
     frozen = json.loads(article.locator('pre').last.inner_text())
     assert frozen['runtime']['configRevision'] == 'opaque-revision-42'

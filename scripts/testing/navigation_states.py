@@ -134,8 +134,8 @@ def account(p,e,prefix,coarse=False,collapsed=False,clipboard=False):
         try:
             cdp.send('Browser.setPermission',dict(perm,setting='denied'))
             p.get_by_role('button',name='Copy ID',exact=True).click()
-            expect(dialog.get_by_role('status')).to_have_text('Clipboard unavailable. Select and copy the text instead.')
-            e.check(prefix+'-id-selectable',dialog.locator('code').evaluate("e=>getComputedStyle(e).userSelect!=='none'"))
+            expect(dialog.get_by_role('status').filter(has_text='Clipboard unavailable.')).to_have_text('Clipboard unavailable. Select and copy the text instead.')
+            e.check(prefix+'-id-selectable',dialog.locator('code').first.evaluate("e=>getComputedStyle(e).userSelect!=='none'"))
         finally:
             cdp.send('Browser.setPermission',dict(perm,setting='granted'));cdp.detach()
     p.keyboard.press('Escape');expect(dialog).to_have_count(0);expect(trigger).to_be_focused()
@@ -146,7 +146,11 @@ def account(p,e,prefix,coarse=False,collapsed=False,clipboard=False):
 
 
 def workspace(p,e,prefix,coarse=False,adopt=False):
-    menu(p);visible(p,'button','New workspace').click()
+    menu(p)
+    if p.get_by_role('button',name='Workspaces',exact=True).is_visible():
+        p.get_by_role('button',name='Workspaces',exact=True).click()
+        p.get_by_role('menuitem',name='New workspace',exact=True).click()
+    else: visible(p,'button','New workspace').click()
     dialog=p.get_by_role('dialog',name='Create a workspace',exact=True)
     expect(dialog).to_be_visible()
     name=p.get_by_label('Workspace name',exact=True);name.fill('Review engineering team')
@@ -178,6 +182,17 @@ def workspace(p,e,prefix,coarse=False,adopt=False):
 def singleton(p,b,e,prefix,coarse=False,tooltip=False):
     visit(p,b,b.workspace_path());menu(p)
     link=p.locator('.workspace-switcher-name').filter(visible=True).first
+    desktop=p.get_by_role('button',name='Workspaces',exact=True)
+    if desktop.is_visible():
+        desktop.hover();expect(p.get_by_role('tooltip')).to_contain_text(NAME)
+        e.capture(p,prefix+'-singleton-hover')
+        p.keyboard.press('Escape');p.mouse.move(1000,500)
+        tab_to(p,desktop);p.keyboard.press('Enter')
+        expect(p.get_by_role('menuitemradio')).to_contain_text(NAME)
+        expect(p.get_by_role('menuitemradio')).to_have_attribute('aria-checked','true')
+        e.capture(p,prefix+'-singleton-selected')
+        p.keyboard.press('Escape');expect(desktop).to_be_focused()
+        return
     expect(link).to_have_text(NAME)
     e.check(prefix+'-no-native-title',link.get_attribute('title') is None)
     if coarse:
@@ -257,13 +272,19 @@ def sources(w,b,p,e):
 
 
 def create_workspace(w,b,p,e):
-    visit(p,b,b.workspace_path());menu(p);visible(p,'button','New workspace').click()
+    visit(p,b,b.workspace_path());menu(p)
+    if p.get_by_role('button',name='Workspaces',exact=True).is_visible():
+        p.get_by_role('button',name='Workspaces',exact=True).click()
+        p.get_by_role('menuitem',name='New workspace',exact=True).click()
+    else: visible(p,'button','New workspace').click()
     p.get_by_label('Workspace name',exact=True).fill('Navigation acceptance second workspace')
     project='navigation-'+uuid.uuid4().hex
     p.get_by_label('Workspace ID',exact=True).fill(project)
     p.get_by_role('button',name='Create workspace',exact=True).click()
     expect(p).to_have_url(b.base+b.workspace_path(project_id=project))
-    expect(p.get_by_role('combobox',name='Workspace',exact=True).filter(visible=True)).to_have_value(project)
+    p.get_by_role('button',name='Workspaces',exact=True).click()
+    expect(p.locator('[data-workspace-id="'+project+'"]')).to_have_attribute('aria-checked','true')
+    p.keyboard.press('Escape')
     projects=w.personal_projects('admin')
     e.check('workspace-create-persisted-admin-membership',any(x['id']==project and x['role']=='admin' for x in projects))
 

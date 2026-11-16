@@ -121,6 +121,7 @@ def run(args):
             bounds = detail.evaluate("e => { const a=e.getBoundingClientRect(), b=e.closest('.evaluation-ledger-scroll').getBoundingClientRect(); return {left:a.left,right:a.right,outerLeft:b.left,outerRight:b.right,width:e.clientWidth,scroll:e.scrollWidth}; }")
             assert bounds['left'] >= bounds['outerLeft'] - 1 and bounds['right'] <= bounds['outerRight'] + 1, bounds
             assert bounds['scroll'] <= bounds['width'] + 1, bounds
+        assert ledger.locator('.evaluation-ledger-table tbody tr:not(.evaluation-ledger-detail-row) td:nth-child(2)').evaluate_all("cells => cells.every(e => getComputedStyle(e).whiteSpace === 'nowrap' && e.scrollWidth <= e.clientWidth + 1)")
         assert_detail_fits()
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
         capture_layout(page, output, 'ledger-expanded-390')
@@ -162,6 +163,11 @@ def run(args):
         expect(ledger.get_by_role('button', name=re.compile('workspace-round-000'))).to_have_count(1)
         page.reload(wait_until='networkidle')
         expect(ledger).to_contain_text('Selected outside loaded history')
+        effective_selector = page.get_by_label('Evaluation version')
+        expect(effective_selector).to_have_value(oldest['candidateVersionId'])
+        direct_url = page.url
+        effective_selector.select_option(oldest['candidateVersionId'])
+        assert page.url == direct_url, 'Reselecting current version must preserve the direct request'
         checks.append('direct oldest request without comparison is pinned without inflating loaded count and survives reload')
         for _ in range(5):
             ledger.get_by_role('button', name='Load older evaluations').click()
@@ -196,6 +202,8 @@ def run(args):
         expect(files_view.locator('.content-diff')).to_contain_text('AGENTS.md')
         visit(page, browser, route(history=1, candidate=world.original['version']['id'], tab='files'))
         expect(files_view).to_contain_text('no creation base')
+        expect(page.get_by_label('Evaluation version')).to_have_value(world.original['version']['id'])
+        expect(page.get_by_label('Evaluation version').locator('option').filter(has_text='Selected outside loaded history')).to_have_count(1)
         expect(files_view.get_by_label('Saved content of AGENTS.md')).to_be_visible()
         checks.append('Files uses creation base, recovers missing paths, restores navigation and shows root content')
         tabs = page.get_by_role('tablist', name='Selected version view')
@@ -207,39 +215,106 @@ def run(args):
         capture_layout(page, output, 'files-desktop')
         checks.append('tab arrow keys change the active view and preserve the selected version')
 
-        page.set_viewport_size(dict(width=1024, height=1000))
-        browse = page.get_by_role('button', name=re.compile('Browse changes'))
-        expect(browse).to_be_visible()
-        browse.focus()
-        page.set_viewport_size(dict(width=1440, height=1000))
-        expect(browse).to_be_hidden()
-        assert page.evaluate('document.activeElement !== document.body && document.activeElement.getClientRects().length > 0')
-        active_link = page.locator('.changes-collection a[aria-current="page"]')
-        if active_link.count():
-            active_link.focus()
-        page.set_viewport_size(dict(width=1024, height=1000))
-        expect(browse).to_have_attribute('aria-expanded', 'true')
-        assert page.evaluate('document.activeElement !== document.body && document.activeElement.getClientRects().length > 0')
-        browse.click()
-        expect(browse).to_be_focused()
-        checks.append('responsive layout changes preserve navigator focus and closing Browse returns focus')
+        visit(page, browser, route(history=1))
+        selector = page.get_by_label('Evaluation version')
+        drafts_queue = page.get_by_role('region', name='Saved drafts')
+        suggestions_queue = page.get_by_role('region', name='Suggestions')
+        drafts_trigger = drafts_queue.locator('.change-queue-trigger')
+        suggestions_trigger = suggestions_queue.locator('.change-queue-trigger')
+        expect(drafts_trigger).to_have_attribute('aria-expanded', 'false')
+        expect(suggestions_trigger).to_have_attribute('aria-expanded', 'false')
+        expect(drafts_trigger).to_contain_text('loaded')
+        expect(suggestions_trigger).to_contain_text('loaded')
+        original_url = page.url
+        drafts_trigger.focus()
+        page.keyboard.press('Enter')
+        expect(drafts_trigger).to_have_attribute('aria-expanded', 'true')
+        expect(suggestions_trigger).to_have_attribute('aria-expanded', 'false')
+        suggestions_trigger.click()
+        drafts_trigger.click()
+        expect(suggestions_trigger).to_have_attribute('aria-expanded', 'true')
+        expect(drafts_trigger).to_have_attribute('aria-expanded', 'false')
+        assert page.url == original_url
+        selector.focus()
+        for width in (1024, 390, 320, 1440):
+            page.set_viewport_size(dict(width=width, height=1000))
+            expect(selector).to_be_focused()
+            expect(suggestions_trigger).to_have_attribute('aria-expanded', 'true')
+        page.reload(wait_until='networkidle')
+        expect(drafts_trigger).to_have_attribute('aria-expanded', 'false')
+        expect(suggestions_trigger).to_have_attribute('aria-expanded', 'false')
+        checks.append('queue disclosures are independent local state and selector focus survives reflow')
+
+        selector.select_option(versions[1]['id'])
+        expect(selector).to_have_value(versions[1]['id'])
+        selected_url = page.url
+        ledger.get_by_role('button', name='Load older evaluations').click()
+        expect(selector).to_have_value(versions[1]['id'])
+        assert page.url == selected_url
+        selector.select_option('')
+        query = parse_qs(urlsplit(page.url).query)
+        assert not any(key in query for key in ('candidate', 'request', 'comparison', 'path', 'tab'))
+        page.go_back(wait_until='networkidle')
+        expect(selector).to_have_value(versions[1]['id'])
+        checks.append('version selection survives paging, clears route fields and restores on Back')
+        selector.select_option('')
+        selector.select_option(versions[1]['id'])
+        selected_tabs = page.get_by_role('tablist', name='Selected version view')
+        files_tab = selected_tabs.get_by_role('tab', name=re.compile('Files'))
+        files_tab.click()
+        expect(files_view).to_be_visible()
+        files_tab.focus()
+        page.go_back(wait_until='networkidle')
+        page.go_back(wait_until='networkidle')
+        expect(selector).to_have_value('')
+        expect(page.get_by_role('heading', name='Changes', exact=True)).to_be_focused()
+        checks.append('Back removing a focused candidate Files tab returns focus to the stable Changes heading')
+        selector.select_option(versions[1]['id'])
+        page.get_by_role('tablist', name='Selected version view').get_by_role('tab', name=re.compile('Files')).click()
+        files_view.get_by_role('treeitem', name='Open AGENTS.md').focus()
+        page.go_back(wait_until='networkidle')
+        page.go_back(wait_until='networkidle')
+        expect(selector).to_have_value('')
+        expect(page.get_by_role('heading', name='Changes', exact=True)).to_be_focused()
+        checks.append('Back removing a focused Files tree control returns focus to the stable Changes heading')
+
+
+        # Keep the open count scoped to the loaded draft records, including an all-closed page.
+        for draft in drafts:
+            world.call('POST', world.channel + '/drafts/' + draft['id'] + '/discard',
+                       dict(expectedGeneration=draft['generation']))
+        expect(drafts_trigger).to_contain_text('0 open in 2 loaded', timeout=15000)
+        drafts_trigger.click()
+        expect(drafts_queue).to_contain_text('No open drafts.')
+        drafts_queue.get_by_role('button', name='Include published and discarded drafts').click()
+        expect(drafts_trigger).to_contain_text('2 loaded')
+        expect(drafts_trigger).not_to_contain_text('open in')
+        expect(drafts_queue.locator('.change-record-row')).to_have_count(2)
+        capture_layout(page, output, 'closed-drafts-count-and-filter')
+        drafts_queue.get_by_role('button', name='Show open drafts').click()
+        expect(drafts_trigger).to_contain_text('0 open in 2 loaded')
+        # Restore a new open draft for the later discard-dialog workflow.
+        replacement = world.call('POST', world.channel + '/drafts', dict(
+            baseVersionId=world.original['version']['id'], baseRevision=world.original['revision'],
+            payload=dict(schemaVersion=1, files=files)))
+        drafts[0] = replacement
+        checks.append('Open count and loaded inventory remain distinct when every loaded draft is closed')
+
 
         visit(page, browser, route(history=1))
         for width in (1024, 1180, 1280, 1440, 1920, 320, 390):
             page.set_viewport_size(dict(width=width, height=1000))
             overview = page.locator('.changes-overview')
             expect(ledger).to_be_visible()
-            geometry = overview.evaluate('e => ({width:e.getBoundingClientRect().width, compact:e.dataset.compact})')
-            expect(overview).to_have_attribute('data-compact', 'true' if geometry['width'] < 1000 else 'false')
-            geometry = overview.evaluate('e => ({width:e.getBoundingClientRect().width, compact:e.dataset.compact})')
-            assert (geometry['compact'] == 'true') == (geometry['width'] < 1000), geometry
+            geometry = overview.evaluate('e => ({width:e.getBoundingClientRect().width, queueColumns:getComputedStyle(e.querySelector(".change-queues")).gridTemplateColumns.split(" ").length})')
+            assert geometry['queueColumns'] == (2 if geometry['width'] >= 740 else 1), geometry
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), width
             widths.append(dict(viewport=width, **geometry))
             capture_layout(page, output, f'changes-overview-{width}')
         page.emulate_media(reduced_motion='reduce')
         capture_layout(page, output, 'changes-reduced-motion-390')
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
-        checks.append('actual container breakpoint and outer overflow at seven widths and reduced motion')
+        checks.append('overview and outer overflow at seven widths and reduced motion')
 
         page.set_viewport_size(dict(width=1440, height=1000))
         # Browser zoom reduces the CSS viewport; a 720px CSS viewport exercises

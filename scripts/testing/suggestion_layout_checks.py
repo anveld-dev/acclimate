@@ -1,5 +1,6 @@
 """Focused real-service checks for the suggestion brief and record inspection."""
 import json
+from scripts.testing.compact_console import improvement_server_function_path
 from urllib.parse import parse_qs,urlsplit
 from playwright.sync_api import expect
 from scripts.bdd.layout import capture_layout
@@ -95,12 +96,18 @@ def verify(w,b,p,out,checks):
     checks.append('Large-list search preserves hidden selections and order; exact multiline request reaches localhost provider with whole parent bundle and creates a candidate without publication')
 
     visit(p,b,b.bundle_path('changes'))
+    drafts=p.get_by_role('region',name='Saved drafts',exact=True)
+    records=p.get_by_role('region',name='Suggestions',exact=True)
+    draft_trigger=drafts.locator('.change-queue-trigger');record_trigger=records.locator('.change-queue-trigger')
+    expect(draft_trigger).to_have_attribute('aria-expanded','false');expect(record_trigger).to_have_attribute('aria-expanded','false')
+    draft_trigger.click();expect(draft_trigger).to_have_attribute('aria-expanded','true');expect(record_trigger).to_have_attribute('aria-expanded','false')
+    record_trigger.click();expect(record_trigger).to_have_attribute('aria-expanded','true')
+    draft_trigger.click();expect(draft_trigger).to_have_attribute('aria-expanded','false');expect(record_trigger).to_have_attribute('aria-expanded','true')
+    checks.append('Saved drafts and Suggestions queues start collapsed and expand independently')
     for width in [1440,390,320]:
         p.set_viewport_size(dict(width=width,height=1000))
-        p.wait_for_function("()=>{const e=document.querySelector('.changes-overview');return e.dataset.compact===String(e.getBoundingClientRect().width<1000)}")
-        browse=p.get_by_role('button',name='Browse changes',exact=False)
-        if browse.is_visible() and browse.get_attribute('aria-expanded')!='true':browse.click()
         records=p.get_by_role('region',name='Suggestions',exact=True)
+        if records.locator('.change-queue-trigger').get_attribute('aria-expanded')!='true':records.locator('.change-queue-trigger').click()
         expect(records).to_contain_text('Ready to review')
         expect(records.locator('.change-record-row')).to_have_count(2)
         assert records.locator('.change-record-row').evaluate_all("rows=>rows.every(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length===1)")
@@ -126,6 +133,25 @@ def verify(w,b,p,out,checks):
     dialog=p.get_by_role('dialog');assert dialog.evaluate('e=>e.scrollWidth<=e.clientWidth+1');capture_layout(p,out,'record-dialog-320')
     p.keyboard.press('Escape');expect(trigger).to_be_focused()
     checks.append('Record details have full unique identities, hover/focus tooltips, labelled dialogs, keyboard containment, Escape/focus return and narrow wrapping')
+
+    # A failed background read must remain visible while its queue is closed.
+    records=p.get_by_role('region',name='Suggestions',exact=True)
+    records.locator('.change-queue-trigger').click()
+    expect(records.locator('.change-queue-trigger')).to_have_attribute('aria-expanded','false')
+    pattern='**'+improvement_server_function_path()+'*'
+    p.route(pattern,lambda route:route.abort('failed'))
+    try:
+        expect(records.get_by_role('alert')).to_be_visible(timeout=15000)
+        expect(records.locator('.change-queue-content')).to_be_hidden()
+        capture_layout(p,out,'closed-suggestion-polling-error')
+        records.locator('.change-queue-trigger').click()
+        expect(records.locator('.change-record-row')).to_have_count(2)
+        expect(records).to_contain_text('Ready to review')
+        capture_layout(p,out,'retained-suggestions-during-outage')
+    finally:p.unroute(pattern)
+    expect(records.get_by_role('alert')).to_have_count(0,timeout=15000)
+    expect(records.locator('.change-record-row')).to_have_count(2)
+    checks.append('Closed suggestion queue surfaces background transport failure, preserves saved rows when opened and clears the error after polling recovers')
 
     visit(p,b,b.bundle_path('changes',proposal=w.proposals[1]['id']))
     result=p.get_by_role('region',name='Saved change review',exact=True)

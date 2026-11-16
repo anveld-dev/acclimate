@@ -30,17 +30,20 @@ const scope = {
   actorScope: 'actor',
   serviceIdentity: 'actor',
   projectId: 'p',
-  bundleId: 'bundle',
+  bundleId: '11111111-1111-4111-8111-111111111111',
   channel: 'stable',
 };
 const key = '33333333-3333-4333-8333-333333333333';
 
 test('discard recovery retains the exact draft, generation and operation key and blocks competing writes', () => {
   const storage = new MemoryStorage();
-  const wire = draftRequest({ action: 'discard', id: 'draft-id', expectedGeneration: 7 }, scope);
+  const wire = draftRequest(
+    { action: 'discard', id: '22222222-2222-4222-8222-222222222222', expectedGeneration: 7 },
+    scope,
+  );
   const record = freezePendingExact(storage, scope, wire.operationPath, wire.body, key);
   assert.deepEqual(loadPending(storage, scope), record);
-  assert.match(record.action, /drafts\/draft-id\/discard$/);
+  assert.match(record.action, /drafts\/22222222-2222-4222-8222-222222222222\/discard$/);
   assert.equal(record.body, '{"expectedGeneration":7}');
   assert.equal(record.key, key);
   assert.deepEqual(freezePendingExact(storage, scope, wire.operationPath, wire.body, key), record);
@@ -57,7 +60,10 @@ test('a storage failure prevents a discard request from being prepared', () => {
   storage.setItem = () => {
     throw Error('storage unavailable');
   };
-  const wire = draftRequest({ action: 'discard', id: 'draft-id', expectedGeneration: 7 }, scope);
+  const wire = draftRequest(
+    { action: 'discard', id: '22222222-2222-4222-8222-222222222222', expectedGeneration: 7 },
+    scope,
+  );
   assert.throws(
     () => freezePendingExact(storage, scope, wire.operationPath, wire.body, key),
     /storage unavailable/,
@@ -66,12 +72,15 @@ test('a storage failure prevents a discard request from being prepared', () => {
 
 test('discard recovery rejects unsupported paths and oversized requests before storage', () => {
   const storage = new MemoryStorage();
-  const wire = draftRequest({ action: 'discard', id: 'draft-id', expectedGeneration: 7 }, scope);
+  const wire = draftRequest(
+    { action: 'discard', id: '22222222-2222-4222-8222-222222222222', expectedGeneration: 7 },
+    scope,
+  );
   for (const path of [
     '/discard',
     wire.operationPath.replace('/projects/p/', '/projects/other/'),
     wire.operationPath + '?x=1',
-    wire.operationPath.replace('draft-id', '..'),
+    wire.operationPath.replace('22222222-2222-4222-8222-222222222222', '..'),
   ]) {
     assert.throws(() => freezePendingExact(storage, scope, path, wire.body, key), /Unsupported/);
   }

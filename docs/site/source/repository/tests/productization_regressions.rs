@@ -1,7 +1,7 @@
 mod common;
 use acclimate_service::{AppState, Grant, router};
 use axum::{
-    body::Body,
+    body::{Body, to_bytes},
     http::{Request, StatusCode},
 };
 use sha2::{Digest, Sha256};
@@ -142,5 +142,88 @@ async fn crossed_admin_updates_do_not_deadlock() {
         assert_eq!(a.unwrap().status(), StatusCode::NO_CONTENT);
         assert_eq!(b.unwrap().status(), StatusCode::NO_CONTENT);
     }
+    state.db.close().await;
+}
+
+#[tokio::test]
+async fn integration_replay_rechecks_current_administrator_membership() {
+    let Some((state, project, people)) = fixture(3).await else {
+        return;
+    };
+    let bundle = Uuid::new_v4();
+    let version = Uuid::new_v4();
+    sqlx::query("INSERT INTO bundles(id,project_id,name) VALUES($1,$2,'integration replay')")
+        .bind(bundle)
+        .bind(&project)
+        .execute(&state.db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO versions(id,project_id,bundle_id,digest,payload) VALUES($1,$2,$3,$4,$5)",
+    )
+    .bind(version)
+    .bind(&project)
+    .bind(bundle)
+    .bind(format!("sha256:{}", "a".repeat(64)))
+    .bind(b"{}".as_slice())
+    .execute(&state.db)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'stable',1,$3)")
+        .bind(&project).bind(bundle).bind(version).execute(&state.db).await.unwrap();
+    let app = router(state.clone());
+    let path = format!("/v1/projects/{project}/integrations");
+    let body =
+        serde_json::json!({"displayName":"replay fixture","bundleId":bundle,"channel":"stable"})
+            .to_string();
+    let key = Uuid::new_v4().to_string();
+    let make_request = || {
+        let mut request = request("POST", &path, Some(&people[0].1), &body);
+        request
+            .headers_mut()
+            .insert("idempotency-key", key.parse().unwrap());
+        request
+    };
+    let created = app.clone().oneshot(make_request()).await.unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let original_bytes = to_bytes(created.into_body(), 64 * 1024).await.unwrap();
+
+    sqlx::query("UPDATE project_memberships SET role='editor' WHERE project_id=$1 AND user_id=$2")
+        .bind(&project)
+        .bind(people[0].0)
+        .execute(&state.db)
+        .await
+        .unwrap();
+    let denied = app.clone().oneshot(make_request()).await.unwrap();
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+
+    let changed_body =
+        serde_json::json!({"displayName":"changed replay","bundleId":bundle,"channel":"stable"})
+            .to_string();
+    let mut changed_request = request("POST", &path, Some(&people[0].1), &changed_body);
+    changed_request
+        .headers_mut()
+        .insert("idempotency-key", key.parse().unwrap());
+    let conflict = app.clone().oneshot(changed_request).await.unwrap();
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+
+    sqlx::query("UPDATE project_memberships SET role='admin' WHERE project_id=$1 AND user_id=$2")
+        .bind(&project)
+        .bind(people[0].0)
+        .execute(&state.db)
+        .await
+        .unwrap();
+    let replay = app.oneshot(make_request()).await.unwrap();
+    assert_eq!(replay.status(), StatusCode::CREATED);
+    assert_eq!(
+        to_bytes(replay.into_body(), 64 * 1024).await.unwrap(),
+        original_bytes
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM integrations WHERE project_id=$1")
+        .bind(&project)
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
     state.db.close().await;
 }

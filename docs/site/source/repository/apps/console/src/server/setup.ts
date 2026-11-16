@@ -1,5 +1,6 @@
 import { consoleClient } from './console-client';
-import { AcclimateClient, ApiError, validatePayload } from '@acclimate/sdk';
+import { allPages } from './listing';
+import { ApiError, validatePayload } from '@acclimate/sdk';
 import { exactOperation } from './exact-operation';
 import { setupRequest } from '../lib/content-operation';
 import type { BundleSetup, CompatibilityTarget, BundlePayload } from '@acclimate/sdk';
@@ -21,22 +22,6 @@ export function setupError(error: unknown) {
   if (error instanceof ApiError && [401, 403].includes(error.status))
     return 'Access denied. Sign in or ask your workspace administrator for access.';
   return 'Could not confirm the service response. Current state is unknown. Refresh to retry; check Releases before repeating a creation.';
-}
-export async function allPages<T>(
-  read: (cursor?: string) => Promise<{ items: T[]; nextCursor: string | null }>,
-): Promise<T[]> {
-  const items: T[] = [];
-  let cursor: string | undefined;
-  const seen = new Set<string>();
-  do {
-    if (seen.size >= 1000) throw new Error('Listing exceeds safe page limit');
-    const page = await read(cursor);
-    items.push(...page.items);
-    cursor = page.nextCursor ?? undefined;
-    if (cursor && seen.has(cursor)) throw new Error('Repeated listing cursor');
-    if (cursor) seen.add(cursor);
-  } while (cursor);
-  return items;
 }
 export async function listSetup(
   env: Environment,
@@ -120,10 +105,9 @@ export async function createSetup(
   },
   fetcher: typeof fetch = fetch,
 ) {
-  let client: AcclimateClient;
-  let payload: BundlePayload;
+  let body: ReturnType<typeof setupRequest>;
   try {
-    client = setupClient(env, fetcher);
+    setupClient(env, fetcher);
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(input.channel))
       throw new Error('Use a channel name with letters, numbers, hyphens or underscores.');
     if (env.CONSOLE_ALLOW_EDITS !== 'true') throw new Error('Editing is disabled.');
@@ -136,26 +120,13 @@ export async function createSetup(
       throw new Error('Invalid setup request.');
     if (!['created', 'imported', 'example'].includes(input.origin))
       throw new Error('Invalid origin.');
-    payload =
-      input.origin === 'example'
-        ? {
-            schemaVersion: 1,
-            files: [
-              {
-                path: 'AGENTS.md',
-                kind: 'instruction',
-                text: '# Example instructions\n\nReview changes carefully and explain your validation.\n',
-              },
-            ],
-          }
-        : (input.payload ?? { schemaVersion: 1, files: [] });
-    validatePayload(payload);
+    body = setupRequest(input);
+    validatePayload(body.payload);
   } catch (error) {
     throw new SetupValidationError(
       error instanceof Error ? error.message : 'Invalid setup request.',
     );
   }
-  const body = setupRequest({ ...input, payload });
   return exactOperation<BundleSetup>(
     scopedEnvironment(env, { projectId: input.projectId }),
     {

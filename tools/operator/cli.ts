@@ -1,9 +1,8 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { lstat, open } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { AcclimateClient } from '../../packages/sdk/src/index.js';
-import { validatePayload } from '../../packages/sdk/src/cache.js';
+import { AcclimateClient, DeliveryError, verifyPayloadBytes } from '../../packages/sdk/src/index.js';
 import type {
   BundlePayload,
   Comparison,
@@ -62,11 +61,13 @@ async function verified(client: AcclimateClient, project: string, bundle: string
   )
     throw new Error('Invalid version metadata');
   const bytes = await client.getPayload(project, bundle, id);
-  if (`sha256:${createHash('sha256').update(bytes).digest('hex')}` !== version.digest)
-    throw new Error('Payload digest mismatch');
-  const payload: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-  validatePayload(payload);
-  return { version, payload };
+  try {
+    return { version, payload: verifyPayloadBytes(bytes, version.digest) };
+  } catch (error) {
+    if (error instanceof DeliveryError && error.code === 'digest_mismatch')
+      throw new Error('Payload digest mismatch');
+    throw error;
+  }
 }
 function excerpt(text: string) {
   return { text: text.slice(0, 4096), truncated: text.length > 4096 };

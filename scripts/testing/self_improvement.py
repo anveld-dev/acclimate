@@ -51,16 +51,7 @@ def main():
     try:
         if not args.skip_build:
             subprocess.run(['cargo', 'build', '--locked'], cwd=ROOT, check=True)
-        harness.pg(
-            'initdb', '-D', str(harness.dir / 'pg'), '-U', 'qualification',
-            '-A', 'trust', '--no-locale',
-        )
-        harness.pg(
-            'pg_ctl', '-D', str(harness.dir / 'pg'),
-            '-l', str(harness.dir / 'postgres.log'),
-            '-o', f"-p {harness.pg_port} -h 127.0.0.1 -c unix_socket_directories=''",
-            '-w', 'start',
-        )
+        harness.start_database()
         env = dict(
             harness.env,
             EVALUATION_TEST_DATABASE_URL=harness.env['DATABASE_URL'],

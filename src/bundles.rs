@@ -107,11 +107,11 @@ pub(crate) async fn create_bundle(
         ));
     }
     let route = format!("/v1/projects/{project}/bundles");
-    let (mut command, replay) =
-        crate::commands::begin_mutation(&s, &a, &project, &route, &h, &body).await?;
-    if let Some(r) = replay {
-        return Ok(r);
-    }
+    let mut command =
+        match crate::commands::begin_mutation(&s, &a, &project, &route, &h, &body).await? {
+            crate::commands::MutationStart::Execute(command) => command,
+            crate::commands::MutationStart::Replay(response) => return Ok(response),
+        };
     sqlx::query("INSERT INTO projects(id,name) VALUES($1,$1) ON CONFLICT(id) DO NOTHING")
         .bind(&project)
         .execute(&mut *command.tx)
@@ -163,11 +163,11 @@ pub(crate) async fn create_version(
         .map_err(|e| crate::err(StatusCode::BAD_REQUEST, "invalid_content", e))?;
     let payload = crate::encode_payload(&req.payload)?;
     let route = format!("/v1/projects/{project}/bundles/{bundle}/versions");
-    let (mut command, replay) =
-        crate::commands::begin_mutation(&s, &a, &project, &route, &h, &body).await?;
-    if let Some(r) = replay {
-        return Ok(r);
-    }
+    let mut command =
+        match crate::commands::begin_mutation(&s, &a, &project, &route, &h, &body).await? {
+            crate::commands::MutationStart::Execute(command) => command,
+            crate::commands::MutationStart::Replay(response) => return Ok(response),
+        };
     let id = Uuid::new_v4();
     let par = req.parent_version_id.as_deref().map(path).transpose()?;
     let row=sqlx::query("INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload,created_by) SELECT $1,$2,$3,$4,$5,$6,$7 WHERE EXISTS(SELECT 1 FROM bundles WHERE project_id=$2 AND id=$3) AND ($4::uuid IS NULL OR EXISTS(SELECT 1 FROM versions WHERE project_id=$2 AND bundle_id=$3 AND id=$4)) RETURNING id,bundle_id,parent_version_id,digest,created_at").bind(id).bind(&project).bind(bid).bind(par).bind(crate::digest(&payload)).bind(payload).bind(&a.principal).fetch_optional(&mut *command.tx).await.map_err(db)?.ok_or_else(||crate::err(StatusCode::NOT_FOUND,"not_found","Bundle or parent not found"))?;

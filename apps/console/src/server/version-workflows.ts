@@ -1,7 +1,6 @@
 import { consoleClient } from './console-client';
 import { requireSession } from './selection';
-import { createHash } from 'node:crypto';
-import { validatePayload } from '@acclimate/sdk';
+import { DeliveryError, verifyPayloadBytes } from '@acclimate/sdk';
 import type { BundlePayload, PromotionPage, VersionMetadata } from '@acclimate/sdk';
 
 type Env = Record<string, string | undefined>;
@@ -35,12 +34,11 @@ export async function readVersion(
     const id = (input as { versionId: string }).versionId;
     const version = await client.getVersion(env.CONSOLE_PROJECT!, env.CONSOLE_BUNDLE!, id);
     const bytes = await client.getPayload(env.CONSOLE_PROJECT!, env.CONSOLE_BUNDLE!, id);
-    if (`sha256:${createHash('sha256').update(bytes).digest('hex')}` !== version.digest)
-      return { ok: false, message: 'Content verification failed. No files were displayed.' };
-    const payload: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-    validatePayload(payload);
+    const payload = verifyPayloadBytes(bytes, version.digest);
     return { ok: true, version, payload };
-  } catch {
+  } catch (error) {
+    if (error instanceof DeliveryError && error.code === 'digest_mismatch')
+      return { ok: false, message: 'Content verification failed. No files were displayed.' };
     return { ok: false, message: 'Could not read this version. Check the connection and retry.' };
   }
 }

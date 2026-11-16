@@ -1,5 +1,7 @@
 # Implementation architecture
 
+The [deepening review](deepening-review.md) records the latest committee decisions, preserved behavior, and test surfaces.
+
 Current work: [production-only plan](production-only/plan.md), [review](production-only/review.md), [parallel ownership](production-only/parallel-work.md) and [evidence](production-only/evidence.md). PostgreSQL and verified OIDC are the only app path.
 
 **Implementation map.** This breaks the [small service design](../design/README.md) into modules and parallel work packages. The first implementation now exists; [run locally](../development.md) describes setup and validation. Codex is the live native test target; Claude and Pi have preparation checks.
@@ -45,6 +47,13 @@ scripts/service-e2e.ts         real process/database flow with a local fixture m
 ```
 
 The npm monorepo uses `apps/*` for applications and `packages/*` for reusable SDKs/plugins. The console has its own build and TypeScript config; the Rust crate and Python package stay in place.
+
+Console cursor traversal lives in the internal [listing module](../../apps/console/src/server/listing.ts). Setup, navigation, channel, access, and connection reads share its opaque-cursor traversal and cycle detection; callers retain their existing page budgets, transport, field validation, and safe projections. Channel reads no longer borrow traversal from the setup module.
+
+Canonical durable Operation result targets live in the browser-safe [target module](../../apps/console/src/lib/operation-target.ts). Browser recovery freezing and server replay share route grammar and scope comparison; authorization and command-specific retry restrictions remain with their existing owners. Bundle setup constructs one request body for validation and transmission.
+
+Chronological evidence listing uses the existing [pagination module](../../src/pagination.rs) for shared query bounds, page types, truncation, and scoped continuation. Collection queries and authorization remain in their feature modules. Qualification runners use the existing [Harness](../../scripts/productization/qualify.py) for database-only startup or full startup with the Rust process.
+
 
 Keep content delivery as one Rust server deployable. A folder is a module ownership seam, not a new network service or Rust crate. The thin Python SDK lives in `python/`.
 

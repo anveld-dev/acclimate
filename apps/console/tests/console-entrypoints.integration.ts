@@ -147,7 +147,11 @@ for (const kind of ['built', 'dev'] as const) {
     `${kind} executable starts with production identity config and exposes process probes`,
     { timeout: 30000 },
     async () => {
-      const runtime = await start(kind, {});
+      // Use an unused upstream address instead of contacting an ambient local server.
+      const upstreamPort = await freePort();
+      const runtime = await start(kind, {
+        CONSOLE_SERVICE_URL: `http://127.0.0.1:${upstreamPort}`,
+      });
       try {
         let health: Response | undefined;
         for (let elapsed = 0; elapsed < 15000; elapsed += 50) {

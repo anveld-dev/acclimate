@@ -15,7 +15,8 @@ import { join, resolve } from 'node:path';
 import type { AcclimateClient } from './client.js';
 import { ApiError } from './client.js';
 import type { BundlePayload, ChannelResolution, VerifiedBundle, VersionMetadata } from './types.js';
-import { DeliveryError, validatePayload } from './validation.js';
+import { DeliveryError } from './validation.js';
+import { verifyPayloadBytes } from './verification.js';
 export { DeliveryError, validatePayload } from './validation.js';
 export type Selection =
   | { projectId: string; bundleId: string; channel: string }
@@ -31,9 +32,6 @@ export interface CachePolicy {
 }
 const MAX_PAYLOAD = 1024 * 1024;
 
-function digest(bytes: Uint8Array): string {
-  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
-}
 function validateVersion(v: VersionMetadata, bundleId: string): void {
   if (
     !v ||
@@ -258,33 +256,23 @@ export async function resolveAndCache(
   const cached = await loadEntry(entryDir);
   if (cached?.digest === version.digest && typeof cached.payloadBytes === 'string') {
     const bytes = Buffer.from(cached.payloadBytes, 'base64');
-    if (digest(bytes) === version.digest) {
-      try {
-        const parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-        validatePayload(parsed);
-        payload = parsed;
-      } catch {
-        await rm(entryDir, { recursive: true, force: true });
-      }
-    } else await rm(entryDir, { recursive: true, force: true });
+    try {
+      payload = verifyPayloadBytes(bytes, version.digest);
+    } catch {
+      await rm(entryDir, { recursive: true, force: true });
+    }
   }
   if (!payload) {
     const bytes = await client.getPayload(selection.projectId, selection.bundleId, version.id);
     if (bytes.byteLength > MAX_PAYLOAD)
       throw new DeliveryError('invalid_payload', 'Downloaded payload exceeds size limit');
-    if (digest(bytes) !== version.digest)
-      throw new DeliveryError(
-        'digest_mismatch',
-        'Downloaded payload SHA-256 does not match version metadata',
-      );
-    let parsed: unknown;
     try {
-      parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-    } catch {
-      throw new DeliveryError('invalid_payload', 'Downloaded payload is not valid UTF-8 JSON');
+      payload = verifyPayloadBytes(bytes, version.digest);
+    } catch (error) {
+      if (error instanceof SyntaxError || error instanceof TypeError)
+        throw new DeliveryError('invalid_payload', 'Downloaded payload is not valid UTF-8 JSON');
+      throw error;
     }
-    validatePayload(parsed);
-    payload = parsed;
     downloaded = true;
     await saveEntry(entryDir, {
       digest: version.digest,

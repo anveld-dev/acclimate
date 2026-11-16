@@ -144,10 +144,10 @@ async fn create(
     let a = crate::auth::actor(&h, &s, &p, "write")?;
     let req: Create = decode(&body)?;
     let route = format!("/v1/projects/{p}/bundles/{b}/channels/{c}/drafts");
-    let (mut cmd, replay) = crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await?;
-    if let Some(r) = replay {
-        return Ok(r);
-    }
+    let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
+        crate::commands::MutationStart::Execute(command) => command,
+        crate::commands::MutationStart::Replay(response) => return Ok(response),
+    };
     let b = path(&b)?;
     let base = path(&req.base_version_id)?;
     let bytes = payload(&req.payload)?;
@@ -228,10 +228,10 @@ async fn change(
         return Err(invalid());
     }
     let route = format!("/v1/projects/{p}/bundles/{b}/channels/{c}/drafts/{d}/{kind}");
-    let (mut cmd, replay) = crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await?;
-    if let Some(r) = replay {
-        return Ok(r);
-    }
+    let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
+        crate::commands::MutationStart::Execute(command) => command,
+        crate::commands::MutationStart::Replay(response) => return Ok(response),
+    };
     let b = path(&b)?;
     let id = path(&d)?;
     sqlx::query("SELECT id FROM drafts WHERE project_id=$1 AND bundle_id=$2 AND channel=$3 AND id=$4 FOR UPDATE").bind(&p).bind(b).bind(&c).bind(id).fetch_optional(&mut *cmd.tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Draft not found"))?;
@@ -441,10 +441,10 @@ async fn setup(
     crate::auth::actor(&h, &s, &p, "promote")?;
     let req: Setup = decode(&body)?;
     let route = format!("/v1/projects/{p}/bundle-setups");
-    let (mut cmd, replay) = crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await?;
-    if let Some(r) = replay {
-        return Ok(r);
-    }
+    let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
+        crate::commands::MutationStart::Execute(command) => command,
+        crate::commands::MutationStart::Replay(response) => return Ok(response),
+    };
     if !crate::compatibility::valid_target(&req.compatibility_target)
         || req.name.trim().is_empty()
         || req.name.len() > 240

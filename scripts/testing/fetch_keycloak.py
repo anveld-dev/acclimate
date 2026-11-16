@@ -26,7 +26,10 @@ def fetch(output):
     # Exclusive creation prevents overwriting an installation or previous evidence.
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     api = f'https://api.github.com/repos/keycloak/keycloak/releases/tags/{VERSION}'
-    with urlopen(Request(api, headers={'User-Agent': 'Acclimate-qualification'}), timeout=30) as response:
+    headers = {'User-Agent': 'Acclimate-qualification'}
+    if token := os.environ.get('GITHUB_TOKEN'):
+        headers['Authorization'] = f'Bearer {token}'
+    with urlopen(Request(api, headers=headers), timeout=30) as response:
         release = json.load(response)
     name = f'keycloak-{VERSION}.tar.gz'
     asset = next(item for item in release['assets'] if item['name'] == name)

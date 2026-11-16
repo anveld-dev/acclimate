@@ -64,6 +64,49 @@ test('rejects duplicate skill names and orphan skill reference trees', async () 
   await assert.rejects(prepare(orphan), /requires an exact SKILL.md/);
 });
 
+test('keeps skill and original memory order when a bundle has no instruction', async () => {
+  const input = bundle();
+  input.payload.files = [
+    { path: 'memory/z-last.md', kind: 'memory', text: 'First selected memory.' },
+    {
+      path: 'skills/zebra/SKILL.md',
+      kind: 'skill',
+      text: '---\nname: zebra\ndescription: Review zebra.\n---\nFirst selected skill.',
+    },
+    input.payload.files[2]!,
+    { path: 'memory/a-first.md', kind: 'memory', text: 'Second selected memory.' },
+    input.payload.files[1]!,
+  ];
+  const result = await prepare(input);
+  try {
+    assert.equal(result.instructionPath, null);
+    assert.deepEqual(
+      result.skillPaths.map((file) => file.slice(result.cwd.length + 1)),
+      ['.agents/skills/zebra/SKILL.md', '.agents/skills/lookup/SKILL.md'],
+    );
+    assert.deepEqual(
+      result.memoryFiles.map(({ path, text }) => ({ path, text })),
+      [
+        { path: 'memory/z-last.md', text: 'First selected memory.' },
+        { path: 'memory/a-first.md', text: 'Second selected memory.' },
+      ],
+    );
+    for (const memory of result.memoryFiles)
+      assert.equal(await readFile(memory.absolutePath, 'utf8'), memory.text);
+    assert.deepEqual(Object.keys(result).sort(), [
+      'cleanup',
+      'cwd',
+      'digest',
+      'instructionPath',
+      'memoryFiles',
+      'skillPaths',
+      'versionId',
+    ]);
+  } finally {
+    await result.cleanup();
+  }
+});
+
 test('delegates payload size and schema limits to shared delivery validation', async () => {
   const tooLarge = bundle();
   tooLarge.payload.files[0]!.text = 'x'.repeat(256 * 1024 + 1);

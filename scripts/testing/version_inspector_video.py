@@ -41,15 +41,15 @@ def main(args):
         click('Version details');run('wait','1200');run('screenshot',str(out/'desktop-metadata.png'));click('Version details')
         search('data.json');click('Open skills/a/references/data.json','treeitem');click('Clear search');run('wait','1000')
         search('no matching entry');run('wait','1000');click('Clear search')
-        run('set','viewport','390','844');run('wait','800');click('Files');search('shared.md');click('Open skills/a/references/shared.md','treeitem');run('wait','1000');run('screenshot',str(out/'compact-source.png'))
-        run('set','viewport','1440','900');run('wait','800');click('Close');run('wait','800')
+        search('shared.md');click('Open skills/a/references/shared.md','treeitem');click('Clear search');run('wait','1000');run('screenshot',str(out/'unicode-source.png'))
+        click('Close');run('wait','800')
         run('record','stop');active=False
         probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','json',str(source)]));duration=float(probe['format']['duration']);assert duration>2
         stretch=max(1,min(6,42/duration));video=out/'inspector.mp4'
         subprocess.run(['ffmpeg','-v','error','-i',str(source),'-vf',f'setpts={stretch}*PTS','-an','-c:v','libx264','-crf','20','-pix_fmt','yuv420p','-movflags','+faststart',str(video)],check=True)
         probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration:stream=width,height,codec_name','-of','json',str(video)]))
         assert before==build_fingerprint(),'Build changed during recording'
-        (out/'summary.json').write_text(json.dumps(dict(tool='agent-browser',passed=True,fixtureOnly=True,modelCalls=0,sourceBuildSha256=before,rawDuration=duration,playbackStretch=stretch,probe=probe,states=['release entry','historical tree','nested duplicate selection','search and clear','copy tooltip','version identity','JSON syntax','no results','compact picker','return to release'],limits=['Disposable PostgreSQL/OIDC and fixture source, no real workspace edits.','Playback may be slowed for readability; no browser navigation occurs during capture.']),indent=2)+'\n')
+        (out/'summary.json').write_text(json.dumps(dict(tool='agent-browser',passed=True,fixtureOnly=True,modelCalls=0,sourceBuildSha256=before,rawDuration=duration,playbackStretch=stretch,probe=probe,states=['release entry','historical tree','nested duplicate selection','search and clear','copy tooltip','version identity','JSON syntax','no results','Unicode source','return to release'],limits=['Disposable PostgreSQL/OIDC and fixture source, no real workspace edits.','Playback may be slowed for readability; viewport and page stay fixed during capture. Narrow layouts are qualified separately.']),indent=2)+'\n')
         (out/'snapshots.txt').write_text('\n\n'.join(log))
     finally:
         if active:subprocess.run([*prefix,'record','stop'],capture_output=True,timeout=30)

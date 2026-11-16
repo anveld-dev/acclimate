@@ -46,7 +46,9 @@ def run(args):
         p.set_viewport_size(dict(width=1440,height=1000))
         # Reloading an edited form deliberately discards fixture-only browser inputs.
         visit(p,b,b.bundle_path('changes'))
-        expect(p.get_by_role('region',name='Suggestions',exact=True)).to_contain_text('Ready to review')
+        suggestions=p.get_by_role('region',name='Suggestions',exact=True)
+        suggestions.locator('.change-queue-trigger').click()
+        expect(suggestions).to_contain_text('Ready to review')
         capture_layout(p,out,'changes-overview-1440')
         for value in w.proposals:
             visit(p,b,b.bundle_path('changes',proposal=value['id']))

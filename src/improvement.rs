@@ -103,11 +103,10 @@ pub async fn create_comparison(
         )
     })?;
     let route = format!("/v1/projects/{p}/bundles/{b}/comparisons");
-    let (mut command, replay) =
-        crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await?;
-    if let Some(r) = replay {
-        return Ok(r);
-    }
+    let mut command = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
+        crate::commands::MutationStart::Execute(command) => command,
+        crate::commands::MutationStart::Replay(response) => return Ok(response),
+    };
     let complete =
         validate_comparison(&q).map_err(|e| err(StatusCode::BAD_REQUEST, "invalid_content", e))?;
     let bid = path(&b)?;
@@ -201,11 +200,10 @@ pub async fn create_proposal(
         )
     })?;
     let route = format!("/v1/projects/{p}/bundles/{b}/proposals");
-    let (mut command, replay) =
-        crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await?;
-    if let Some(r) = replay {
-        return Ok(r);
-    }
+    let mut command = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
+        crate::commands::MutationStart::Execute(command) => command,
+        crate::commands::MutationStart::Replay(response) => return Ok(response),
+    };
     if q.allowed_paths.is_empty()
         || q.allowed_paths.len() > 128
         || q.hypothesis.trim().is_empty()

@@ -112,6 +112,10 @@ pub(crate) struct MutationTx<'a> {
     user_id: Option<uuid::Uuid>,
     service_principal: String,
 }
+pub(crate) enum MutationStart<'a> {
+    Execute(MutationTx<'a>),
+    Replay(Response),
+}
 pub(crate) async fn begin_mutation<'a>(
     s: &'a AppState,
     a: &Actor,
@@ -119,7 +123,30 @@ pub(crate) async fn begin_mutation<'a>(
     path: &str,
     h: &HeaderMap,
     body: &[u8],
-) -> ApiResult<(MutationTx<'a>, Option<Response>)> {
+) -> ApiResult<MutationStart<'a>> {
+    begin_mutation_inner(s, a, project, path, h, body, false).await
+}
+
+pub(crate) async fn begin_admin_mutation<'a>(
+    s: &'a AppState,
+    a: &Actor,
+    project: &str,
+    path: &str,
+    h: &HeaderMap,
+    body: &[u8],
+) -> ApiResult<MutationStart<'a>> {
+    begin_mutation_inner(s, a, project, path, h, body, true).await
+}
+
+async fn begin_mutation_inner<'a>(
+    s: &'a AppState,
+    a: &Actor,
+    project: &str,
+    path: &str,
+    h: &HeaderMap,
+    body: &[u8],
+    require_admin: bool,
+) -> ApiResult<MutationStart<'a>> {
     let key = h
         .get("idempotency-key")
         .and_then(|x| x.to_str().ok())
@@ -204,26 +231,28 @@ pub(crate) async fn begin_mutation<'a>(
     }
     let result = replay.map(response);
     sqlx::query("DELETE FROM idempotency WHERE principal_id=$1 AND project_id=$2 AND method='POST' AND path=$3 AND key=$4 AND expires_at<=now()").bind(&a.principal).bind(project).bind(path).bind(key).execute(&mut *tx).await.map_err(db)?;
-    if result.is_some() && retained {
-        tx.commit().await.map_err(db)?;
-        tx = s.db.begin().await.map_err(db)?;
+    if require_admin {
+        crate::auth::authorize_transaction(&mut tx, a, project, "admin").await?;
     }
-    Ok((
-        MutationTx {
-            tx,
-            principal: a.principal.clone(),
-            project: project.into(),
-            path: path.into(),
-            key: key.into(),
-            fingerprint,
-            durable,
-            retained,
-            required_right: a.required_right.clone(),
-            user_id: a.user_id,
-            service_principal: a.service_principal.clone(),
-        },
-        result,
-    ))
+    if let Some(response) = result {
+        if retained {
+            tx.commit().await.map_err(db)?;
+        }
+        return Ok(MutationStart::Replay(response));
+    }
+    Ok(MutationStart::Execute(MutationTx {
+        tx,
+        principal: a.principal.clone(),
+        project: project.into(),
+        path: path.into(),
+        key: key.into(),
+        fingerprint,
+        durable,
+        retained,
+        required_right: a.required_right.clone(),
+        user_id: a.user_id,
+        service_principal: a.service_principal.clone(),
+    }))
 }
 async fn store_receipt(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,

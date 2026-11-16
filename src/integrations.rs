@@ -93,12 +93,11 @@ async fn create(
         crate::auth::actor(&h, &s, &p, "promote")?;
     }
     let route = format!("/v1/projects/{p}/integrations");
-    let (mut command, replay) =
-        crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await?;
-    crate::auth::authorize_transaction(&mut command.tx, &a, &p, "admin").await?;
-    if let Some(response) = replay {
-        return Ok(response);
-    }
+    let mut command =
+        match crate::commands::begin_admin_mutation(&s, &a, &p, &route, &h, &body).await? {
+            crate::commands::MutationStart::Execute(command) => command,
+            crate::commands::MutationStart::Replay(response) => return Ok(response),
+        };
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM channels WHERE project_id=$1 AND bundle_id=$2 AND name=$3)",
     )

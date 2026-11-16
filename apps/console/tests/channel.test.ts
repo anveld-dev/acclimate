@@ -33,7 +33,7 @@ const resolution = {
   },
 };
 
-function fixture(content = bytes, role = 'admin') {
+function fixture(content = bytes, role = 'admin', versionDigest = resolution.version.digest) {
   const calls: string[] = [];
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -53,7 +53,7 @@ function fixture(content = bytes, role = 'admin') {
     );
     if (url.includes('/promotions?')) return Response.json({ items: [], nextBeforeRevision: null });
     if (url.endsWith('/payload')) return new Response(content);
-    return Response.json(resolution);
+    return Response.json({ ...resolution, version: { ...resolution.version, digest: versionDigest } });
   };
   return { calls, fetcher };
 }
@@ -91,6 +91,17 @@ test('rejects a payload whose bytes do not match the resolved digest', async () 
   assert.equal(result.status, 'error');
   if (result.status === 'error') assert.match(result.message, /verification failed/);
   assert.ok(!('payload' in result));
+});
+
+test('authenticated malformed channel payloads keep the generic error and hide all content', async () => {
+  for (const content of ['{private-invalid-json', '{"schemaVersion":1,"files":[]}']) {
+    const versionDigest = `sha256:${createHash('sha256').update(content).digest('hex')}`;
+    const result = await readChannel(env, fixture(content, 'admin', versionDigest).fetcher);
+    assert.equal(result.status, 'error');
+    if (result.status === 'error')
+      assert.equal(result.message, 'Could not read the service. Check the connection and server configuration, then retry.');
+    assert.ok(!('payload' in result));
+  }
 });
 
 test('denial is an error, never an empty library or fallback data', async () => {

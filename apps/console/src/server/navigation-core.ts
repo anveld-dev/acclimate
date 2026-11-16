@@ -1,6 +1,7 @@
 import { scopedEnvironment, actorScope, type Environment } from './selection';
 import { readAccessState } from './access-core';
-import { allPages, setupClient } from './setup';
+import { allPages } from './listing';
+import { setupClient } from './setup';
 import { parseConsoleLocation, workspaceHref, bundleHref } from '../navigation';
 export async function navigationState(
   env: Environment,

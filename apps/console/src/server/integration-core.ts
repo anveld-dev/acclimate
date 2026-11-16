@@ -1,4 +1,5 @@
 import { consoleClient } from './console-client';
+import { allPages } from './listing';
 import { ApiError } from '@acclimate/sdk';
 import type { Integration, IntegrationCredential, DeliveryReceipt, Page } from '@acclimate/sdk';
 import { requireSession, actorScope, type Environment } from './selection';
@@ -41,6 +42,8 @@ export type IntegrationResult =
       integration?: Integration;
     };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Preserve the terminal page allowed after 1000 continuation cursors.
+const MAX_LISTING_PAGES = 1001;
 function failure(error?: unknown): IntegrationResult {
   if (error instanceof ApiError && error.code === 'credential_already_issued')
     return {
@@ -76,19 +79,6 @@ function issuedMetadata(value: unknown): IssuedCredentialMetadata | undefined {
     revokedAt: record.revokedAt as string | null,
   };
 }
-async function pages<T>(read: (cursor?: string) => Promise<Page<T>>) {
-  let cursor: string | undefined;
-  const seen = new Set<string>();
-  const items: T[] = [];
-  do {
-    const page = await read(cursor);
-    items.push(...page.items);
-    cursor = page.nextCursor || undefined;
-    if (cursor && (seen.has(cursor) || seen.size >= 1000)) throw Error('Invalid pagination');
-    if (cursor) seen.add(cursor);
-  } while (cursor);
-  return items;
-}
 async function context(env: Environment, fetcher: typeof fetch) {
   if (!env.CONSOLE_PROJECT || !env.CONSOLE_BUNDLE) throw Error('Select a workspace');
   const workspace = await workspaceContext(env, env.CONSOLE_PROJECT, fetcher);
@@ -107,14 +97,18 @@ async function workspaceContext(env: Environment, projectId: string, fetcher: ty
   requireSession(env);
   if (!validScopePart(projectId) || !env.CONSOLE_SERVICE_TOKEN) throw Error('Select a workspace');
   const client = consoleClient(env, fetcher);
-  const projects = await pages((cursor) => client.listProjects({ limit: 100, cursor }));
+  const projects = await allPages(
+    (cursor) => client.listProjects({ limit: 100, cursor }),
+    MAX_LISTING_PAGES,
+  );
   const project = projects.find((p) => p.id === projectId);
   if (!project) throw new ApiError(403, 'denied', 'Project unavailable', '');
   // The list itself is an admin route. Recheck live rights for every server command.
   const admin = project.role === 'admin';
   if (!admin) throw new ApiError(403, 'denied', 'Administrator required', '');
-  const integrations = await pages((cursor) =>
-    client.listIntegrations(projectId, { limit: 100, cursor }),
+  const integrations = await allPages(
+    (cursor) => client.listIntegrations(projectId, { limit: 100, cursor }),
+    MAX_LISTING_PAGES,
   );
   if (integrations.some((i) => i.projectId !== projectId))
     throw Error('Integration scope mismatch');
@@ -312,16 +306,18 @@ export async function readConnectionsState(
 ): Promise<ConnectionsResult> {
   try {
     const c = await workspaceContext(env, input.projectId, fetcher);
-    const summaries = await pages((cursor) =>
-      c.client.listBundles(c.projectId, { limit: 100, cursor }),
+    const summaries = await allPages(
+      (cursor) => c.client.listBundles(c.projectId, { limit: 100, cursor }),
+      MAX_LISTING_PAGES,
     );
     const bundles = await Promise.all(
       summaries.map(async (bundle) => ({
         id: bundle.id,
         name: bundle.name,
         compatibilityTarget: bundle.compatibilityTarget,
-        channels: await pages((cursor) =>
-          c.client.listChannels(c.projectId, bundle.id, { limit: 100, cursor }),
+        channels: await allPages(
+          (cursor) => c.client.listChannels(c.projectId, bundle.id, { limit: 100, cursor }),
+          MAX_LISTING_PAGES,
         ),
       })),
     );

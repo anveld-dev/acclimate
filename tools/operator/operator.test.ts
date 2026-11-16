@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { AcclimateClient } from '../../packages/sdk/src/index.js';
+import { AcclimateClient, DeliveryError } from '../../packages/sdk/src/index.js';
 import { parseArgs, run } from './cli.js';
 
 const payload = (text: string) =>
@@ -51,7 +51,7 @@ const comparison = {
   submitter: 's',
   createdAt: 'now',
 };
-function fixture(deny = false) {
+function fixture(deny = false, parentBytes = p, parentDigest = parent.digest) {
   const calls: { method: string; path: string; body: any }[] = [];
   const fetcher: typeof fetch = async (input, init) => {
     const path = new URL(String(input)).pathname,
@@ -66,9 +66,9 @@ function fixture(deny = false) {
     if (path.endsWith('/comparisons/cmp')) return Response.json(comparison);
     if (path.endsWith('/channels/live'))
       return Response.json({ channel: 'live', revision: '3', version: parent });
-    if (path.endsWith('/versions/p/payload')) return new Response(p);
+    if (path.endsWith('/versions/p/payload')) return new Response(parentBytes);
     if (path.endsWith('/versions/c/payload')) return new Response(c);
-    if (path.endsWith('/versions/p')) return Response.json(parent);
+    if (path.endsWith('/versions/p')) return Response.json({ ...parent, digest: parentDigest });
     if (path.endsWith('/versions/c')) return Response.json(candidate);
     if (path.endsWith('/proposals/pr'))
       return Response.json({ id: 'pr', parentVersionId: 'p', candidate });
@@ -105,6 +105,19 @@ test('denials propagate and do not promote', async () => {
   const { client, calls } = fixture(true);
   await assert.rejects(run(['review', ...scope, '--comparison', 'cmp'], client), /denied/);
   assert.ok(calls.every((call) => call.method === 'GET'));
+});
+
+test('review preserves digest errors and does not misclassify authenticated malformed content', async () => {
+  const malformed = Buffer.from('{');
+  const mismatch = fixture(false, malformed);
+  await assert.rejects(run(['review', ...scope, '--comparison', 'cmp'], mismatch.client),
+    (error) => error instanceof Error && error.message === 'Payload digest mismatch' && !(error instanceof DeliveryError));
+  const badJson = fixture(false, malformed, digest(malformed));
+  await assert.rejects(run(['review', ...scope, '--comparison', 'cmp'], badJson.client), SyntaxError);
+  const badSchema = Buffer.from('{"schemaVersion":1,"files":[]}');
+  await assert.rejects(run(['review', ...scope, '--comparison', 'cmp'], fixture(false, badSchema, digest(badSchema)).client),
+    (error) => error instanceof DeliveryError && error.code === 'unsupported_schema');
+  assert.ok(mismatch.calls.every((call) => call.method === 'GET'));
 });
 test('promotion and rollback require their explicit evidence and revision', async () => {
   const { client, calls } = fixture();

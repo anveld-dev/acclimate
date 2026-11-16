@@ -1,4 +1,5 @@
 import { requireSession, actorScope, type Environment } from './selection';
+import { allPages } from './listing';
 export type AccessIdentity = {
   userId: string;
   issuer: string;
@@ -123,20 +124,17 @@ const failure = (
         : 'Could not confirm the service response. Refresh access before repeating an action.',
 });
 async function projects(request: ReturnType<typeof accessTransport>): Promise<AccessProject[]> {
-  const items: AccessProject[] = [];
-  let cursor: string | undefined;
-  const seen = new Set<string>();
-  do {
+  // Preserve the terminal page allowed after 1000 continuation cursors.
+  return allPages(async (cursor) => {
     const page = await request(
       `/v1/projects?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
     );
     if (!Array.isArray(page.items)) throw new Error('Invalid projects');
-    items.push(...page.items.map((p: AccessProject) => ({ id: p.id, name: p.name, role: p.role })));
-    cursor = page.nextCursor || undefined;
-    if (cursor && (seen.has(cursor) || seen.size >= 1000)) throw new Error('Invalid pagination');
-    if (cursor) seen.add(cursor);
-  } while (cursor);
-  return items;
+    return {
+      items: page.items.map((p: AccessProject) => ({ id: p.id, name: p.name, role: p.role })),
+      nextCursor: page.nextCursor || undefined,
+    };
+  }, 1001);
 }
 export async function readAccessState(
   env: Environment,

@@ -144,10 +144,10 @@ async fn create(
     let q: CreateEvaluationRequest =
         serde_json::from_slice(&body).map_err(|_| invalid("Malformed request"))?;
     let route = format!("/v1/projects/{p}/bundles/{b}/evaluation-requests");
-    let (mut cmd, replay) = crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await?;
-    if let Some(r) = replay {
-        return Ok(r);
-    }
+    let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
+        crate::commands::MutationStart::Execute(command) => command,
+        crate::commands::MutationStart::Replay(response) => return Ok(response),
+    };
     if !bounded(&q) {
         return Err(invalid(
             "Evaluation request exceeds limits or has duplicate cases",
@@ -280,10 +280,10 @@ async fn transition(
 ) -> ApiResult<Response> {
     let a = crate::auth::actor(&h, &s, &p, "write")?;
     let route = format!("/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/{action}");
-    let (mut cmd, replay) = crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await?;
-    if let Some(r) = replay {
-        return Ok(r);
-    }
+    let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
+        crate::commands::MutationStart::Execute(command) => command,
+        crate::commands::MutationStart::Replay(response) => return Ok(response),
+    };
     let bid = path(&b)?;
     let eid = path(&id)?;
     let row=sqlx::query("SELECT * FROM evaluation_requests WHERE project_id=$1 AND bundle_id=$2 AND id=$3 FOR UPDATE").bind(&p).bind(bid).bind(eid).fetch_optional(&mut *cmd.tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Evaluation request not found"))?;

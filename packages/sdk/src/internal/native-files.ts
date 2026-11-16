@@ -29,7 +29,13 @@ export async function prepareNativeFiles(
   mapping: NativePathMapping,
   prefix: string,
   target: Exclude<CompatibilityTarget, 'generic'> = 'codex',
-): Promise<NativePreparation> {
+): Promise<
+  NativePreparation & {
+    instructionPath: string | null;
+    skillPaths: string[];
+    memoryFiles: Array<{ path: string; text: string; absolutePath: string }>;
+  }
+> {
   if (process.platform === 'win32')
     throw new DeliveryError('unsupported_platform', 'Private filesystem helpers require POSIX');
   validatePayload(bundle.payload);
@@ -83,6 +89,13 @@ export async function prepareNativeFiles(
   return {
     cwd: root,
     files,
+    instructionPath: files.find((file) => file.kind === 'instruction')?.absolutePath ?? null,
+    skillPaths: files
+      .filter((file) => file.kind === 'skill' && file.path.endsWith('/SKILL.md'))
+      .map((file) => file.absolutePath),
+    memoryFiles: files
+      .filter((file) => file.kind === 'memory')
+      .map((file) => ({ path: file.sourcePath, text: file.text, absolutePath: file.absolutePath })),
     async cleanup() {
       if (cleaned) return;
       await rm(root, { recursive: true, force: true });

@@ -147,11 +147,10 @@ pub(crate) async fn promote(
         )
     })?;
     let route = format!("/v1/projects/{p}/bundles/{b}/channels/{c}/promotions");
-    let (mut command, replay) =
-        crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await?;
-    if let Some(r) = replay {
-        return Ok(r);
-    }
+    let mut command = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
+        crate::commands::MutationStart::Execute(command) => command,
+        crate::commands::MutationStart::Replay(response) => return Ok(response),
+    };
     let promotion = promote_in_tx(&mut command.tx, &p, path(&b)?, &c, &a.principal, req).await?;
     crate::commands::finish_mutation(command, StatusCode::CREATED, promotion).await
 }

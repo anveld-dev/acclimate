@@ -94,18 +94,6 @@ test('selection rechecks the exact scoped channel with current session', async (
   assert.deepEqual(result, selection);
 });
 
-test('listing traverses cursor pages and rejects a repeated cursor', async () => {
-  const { allPages } = await import('../src/server/setup');
-  const pages = await allPages(async (cursor) =>
-    cursor ? { items: [2], nextCursor: null } : { items: [1], nextCursor: 'opaque' },
-  );
-  assert.deepEqual(pages, [1, 2]);
-  await assert.rejects(
-    allPages(async () => ({ items: [], nextCursor: 'same' })),
-    /Repeated/,
-  );
-});
-
 test('invalid setup is a definitive rejection while lost responses stay uncertain', async () => {
   const { setupFailure } = await import('../src/server/setup');
   let calls = 0;

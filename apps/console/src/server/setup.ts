@@ -1,4 +1,5 @@
 import { consoleClient } from './console-client';
+import { allPages } from './listing';
 import { AcclimateClient, ApiError, validatePayload } from '@acclimate/sdk';
 import { exactOperation } from './exact-operation';
 import { setupRequest } from '../lib/content-operation';
@@ -21,22 +22,6 @@ export function setupError(error: unknown) {
   if (error instanceof ApiError && [401, 403].includes(error.status))
     return 'Access denied. Sign in or ask your workspace administrator for access.';
   return 'Could not confirm the service response. Current state is unknown. Refresh to retry; check Releases before repeating a creation.';
-}
-export async function allPages<T>(
-  read: (cursor?: string) => Promise<{ items: T[]; nextCursor: string | null }>,
-): Promise<T[]> {
-  const items: T[] = [];
-  let cursor: string | undefined;
-  const seen = new Set<string>();
-  do {
-    if (seen.size >= 1000) throw new Error('Listing exceeds safe page limit');
-    const page = await read(cursor);
-    items.push(...page.items);
-    cursor = page.nextCursor ?? undefined;
-    if (cursor && seen.has(cursor)) throw new Error('Repeated listing cursor');
-    if (cursor) seen.add(cursor);
-  } while (cursor);
-  return items;
 }
 export async function listSetup(
   env: Environment,

@@ -1,8 +1,8 @@
 import { consoleClient } from './console-client';
 import { actorScope, requireSession } from './selection';
-import { allPages, setupClient } from './setup';
+import { allPages } from './listing';
 import { createHash } from 'node:crypto';
-import { ApiError, validatePayload } from '@acclimate/sdk';
+import { ApiError, DeliveryError, verifyPayloadBytes } from '@acclimate/sdk';
 import type {
   BundlePayload,
   ChannelResolution,
@@ -72,18 +72,10 @@ export async function readChannel(
       client.getPayload(projectId, bundleId, resolution.version.id),
       client.listPromotions(projectId, bundleId, channel, { limit: 20 }),
       allPages((cursor) =>
-        setupClient(env, fetcher).listBundles(projectId, { limit: 100, cursor }),
+        client.listBundles(projectId, { limit: 100, cursor }),
       ).then((items) => ({ items })),
     ]);
-    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
-    if (digest !== resolution.version.digest)
-      return {
-        status: 'error',
-        lastSuccessfulRead: priorRead,
-        message: 'Content verification failed. No files were displayed.',
-      };
-    const payload: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-    validatePayload(payload);
+    const payload = verifyPayloadBytes(bytes, resolution.version.digest);
     const observedAt = new Date().toISOString();
     if (observations.size > 1000) observations.clear();
     observations.set(observationKey, observedAt);
@@ -127,6 +119,12 @@ export async function readChannel(
       history,
     };
   } catch (error) {
+    if (error instanceof DeliveryError && error.code === 'digest_mismatch')
+      return {
+        status: 'error',
+        lastSuccessfulRead: priorRead,
+        message: 'Content verification failed. No files were displayed.',
+      };
     if (error instanceof ApiError) {
       if (error.status === 401 || error.status === 403)
         return {

@@ -294,6 +294,11 @@
     "title": "Earlier proposal"
   },
   {
+    "source": "docs/architecture/deepening-review.md",
+    "route": "source/architecture/deepening-review.md",
+    "kind": "source"
+  },
+  {
     "source": "docs/design/compact-layouts/README.md",
     "route": "source/design/compact-layouts/README.md",
     "kind": "source"

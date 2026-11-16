@@ -35,6 +35,8 @@ The client also exposes the R0 version, proposal, comparison and promotion opera
 
 A verified bundle view carries version ID, digest, parsed content and resolution metadata. Hash the downloaded bytes against the metadata **before** parsing and validating the schema. Never derive the digest from reserialized JSON. Channel revisions and version IDs are opaque strings. A conditional `304` confirms the cached mapping; it does not create a version.
 
+The Node-side [verification module](../../packages/sdk/src/verification.ts) owns this exact-byte verification sequence behind `verifyPayloadBytes`: digest, strict UTF-8 decoding, JSON parsing, then payload validation. Cache reads, console channel/version reads, and operator review use the same interface. Transport, metadata identity, download limits, freshness, cache repair, and caller-facing error messages remain with their existing callers. Browser content validation uses the separate browser-safe validation entry point.
+
 ## Cache and preparation
 
 Scope cache keys by service origin, authenticated scope, project, bundle and digest. Create private directories and files from the first write; never store credentials in payloads. Write to a temporary directory on the same filesystem and atomically rename only after digest and schema validation. A failed or partial download leaves the previous entry intact. Bound cache size and age without removing files needed by active preparations.
@@ -46,6 +48,8 @@ Preparation makes job-local copies or native inputs, leaving cached bytes immuta
 ## Native mapping and comparison
 
 Use Codex for the live check, with Claude/Pi mappings to test whether the same verified bundle boundary is useful. Each plugin validates what it can map, returns prepared locations and native options, and reports unsupported content. It must not claim a skill was invoked merely because it was delivered. Memory is bundle content, not an assumed native memory option. Prompt replacement requires explicit app policy.
+
+The shared [native preparation module](../../packages/sdk/src/internal/native-files.ts) owns staging and the common instruction, skill-manifest, and original-memory-path projections. Each native adapter retains its harness-specific mapping and policy: Claude/Cursor settings, Cursor's approved-memory selection, and Pi's resource list. Plugin result shapes and application-owned cleanup remain unchanged.
 
 Consult the current [native SDK research](../research/sdk-file-delivery.md) for discovery and configuration routes; pin and validate the actual native SDK version in each example. Do not invent native option fields. Test fresh and resumed sessions separately: refresh affects future preparations, while a running session changes only through an explicit app action supported by its SDK. Paths with spaces and existing files deserve separate checks.
 

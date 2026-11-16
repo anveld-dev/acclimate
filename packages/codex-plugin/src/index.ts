@@ -27,13 +27,9 @@ export async function prepare(bundle: VerifiedBundle): Promise<PreparedCodexBund
     cwd: staged.cwd,
     versionId: bundle.version.id,
     digest: bundle.version.digest,
-    instructionPath: staged.files.find((f) => f.kind === 'instruction')?.absolutePath ?? null,
-    skillPaths: staged.files
-      .filter((f) => f.kind === 'skill' && f.path.endsWith('/SKILL.md'))
-      .map((f) => f.absolutePath),
-    memoryFiles: staged.files
-      .filter((f) => f.kind === 'memory')
-      .map((f) => ({ path: f.sourcePath, text: f.text, absolutePath: f.absolutePath })),
+    instructionPath: staged.instructionPath,
+    skillPaths: staged.skillPaths,
+    memoryFiles: staged.memoryFiles,
     cleanup: staged.cleanup,
   };
 }

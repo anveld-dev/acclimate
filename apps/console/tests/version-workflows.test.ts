@@ -15,8 +15,17 @@ test('stored versions use fixed scope and reject mismatched bytes', async () => 
     return String(input).endsWith('/payload') ? new Response(bytes + ' ') : Response.json(metadata);
   };
   const result = await readVersion(env, { versionId: 'v1', projectId: 'other', bundleId: 'other' }, fetcher);
-  assert.equal(result.ok, false);
+  assert.deepEqual(result, { ok: false, message: 'Content verification failed. No files were displayed.' });
   assert.ok(urls.every((url) => url.includes('/projects/fixed-project/bundles/fixed-bundle/')));
+});
+
+test('authenticated malformed version bytes keep the generic read failure and never expose content', async () => {
+  for (const content of ['{private-invalid-json', '{"schemaVersion":1,"files":[]}']) {
+    const version = { ...metadata, digest: `sha256:${createHash('sha256').update(content).digest('hex')}` };
+    const result = await readVersion(env, { versionId: 'v1' }, async (input) =>
+      String(input).endsWith('/payload') ? new Response(content) : Response.json(version));
+    assert.deepEqual(result, { ok: false, message: 'Could not read this version. Check the connection and retry.' });
+  }
 });
 
 test('history validates canonical positive i64 cursors and fixes scope and limit', async () => {

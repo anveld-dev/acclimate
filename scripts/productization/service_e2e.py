@@ -15,9 +15,7 @@ def main():
     try:
         if not args.skip_build:
             subprocess.run(['cargo','build','--locked'],cwd=ROOT,check=True)
-        h.pg('initdb','-D',str(h.dir/'pg'),'-U','qualification','-A','trust','--no-locale')
-        h.pg('pg_ctl','-D',str(h.dir/'pg'),'-l',str(h.dir/'postgres.log'),
-             '-o',f"-p {h.pg_port} -h 127.0.0.1 -c unix_socket_directories=''",'-w','start')
+        h.start_database()
         env=dict(h.env,EVALUATION_TEST_DATABASE_URL=h.env['DATABASE_URL'])
         subprocess.run(['node','--import','tsx','scripts/service-e2e.ts'],cwd=ROOT,
                        env=env,check=True,timeout=120)

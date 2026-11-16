@@ -2,7 +2,14 @@ import { consoleEnvironment } from './console-fixture';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { openSelection, sealSelection, selectedEnvironment } from '../src/server/selection';
-import { authorizeSelection, createSetup, listSetup } from '../src/server/setup';
+import {
+  authorizeSelection,
+  createSetup,
+  listSetup,
+  setupFailure,
+  SetupValidationError,
+} from '../src/server/setup';
+import type { BundlePayload } from '@acclimate/sdk';
 const env = {
   ...consoleEnvironment,
   CONSOLE_SERVICE_TOKEN: 'server-secret',
@@ -81,6 +88,127 @@ test('example creation uses one atomic command and trusted session transport', a
   assert.equal(calls, 2);
 });
 
+const suppliedPayload: BundlePayload = {
+  schemaVersion: 1,
+  files: [{ path: 'AGENTS.md', kind: 'instruction', text: 'Review café\r\n確認\n' }],
+};
+const examplePayload: BundlePayload = {
+  schemaVersion: 1,
+  files: [
+    {
+      path: 'AGENTS.md',
+      kind: 'instruction',
+      text: '# Example instructions\n\nReview changes carefully and explain your validation.\n',
+    },
+  ],
+};
+for (const fixture of [
+  { label: 'created content', origin: 'created', payload: suppliedPayload },
+  {
+    label: 'imported content with an explicit target',
+    origin: 'imported',
+    payload: suppliedPayload,
+    compatibilityTarget: 'codex',
+  },
+  { label: 'example content', origin: 'example' },
+  {
+    label: 'example content overriding a supplied payload',
+    origin: 'example',
+    payload: suppliedPayload,
+  },
+] as const) {
+  test(`setup preserves exact request bytes for ${fixture.label}`, async () => {
+    const payload = 'payload' in fixture ? fixture.payload : undefined;
+    const compatibilityTarget =
+      'compatibilityTarget' in fixture ? fixture.compatibilityTarget : undefined;
+    const key = '11111111-1111-4111-8111-111111111111';
+    const expected = JSON.stringify({
+      name: 'Reviewed bundle',
+      channel: 'stable',
+      origin: fixture.origin,
+      payload: fixture.origin === 'example' ? examplePayload : payload,
+      compatibilityTarget: compatibilityTarget ?? 'generic',
+      reason:
+        fixture.origin === 'example'
+          ? 'Explicit example creation; no model evaluation was run.'
+          : 'Initial content setup; no model evaluation was run.',
+    });
+    const methods: string[] = [];
+    await createSetup(
+      env,
+      { projectId: 'one', name: 'Reviewed bundle', channel: 'stable', key, ...fixture },
+      async (url, init) => {
+        methods.push(init?.method ?? 'GET');
+        if (init?.method === 'GET')
+          return Response.json({ status: 'not_observed', operationId: key });
+        assert.equal(new URL(String(url)).pathname, '/v1/projects/one/bundle-setups');
+        assert.equal(new Headers(init?.headers).get('Idempotency-Key'), key);
+        assert.equal(init?.body, expected);
+        return Response.json({});
+      },
+    );
+    assert.deepEqual(methods, ['GET', 'POST']);
+  });
+}
+
+test('created and imported setups without content retain definitive empty-payload rejection', async () => {
+  let calls = 0;
+  for (const origin of ['created', 'imported'] as const) {
+    await assert.rejects(
+      createSetup(
+        env,
+        {
+          projectId: 'one',
+          name: 'Reviewed bundle',
+          channel: 'stable',
+          origin,
+          key: '11111111-1111-4111-8111-111111111111',
+        },
+        async () => {
+          calls++;
+          throw new Error('Unexpected transport');
+        },
+      ),
+      (error) => {
+        assert.ok(error instanceof SetupValidationError);
+        assert.equal(setupFailure(error).uncertain, false);
+        return true;
+      },
+    );
+  }
+  assert.equal(calls, 0);
+});
+
+test('invalid imported payload is a definitive validation failure before transport', async () => {
+  let calls = 0;
+  await assert.rejects(
+    createSetup(
+      env,
+      {
+        projectId: 'one',
+        name: 'Reviewed bundle',
+        channel: 'stable',
+        origin: 'imported',
+        key: '11111111-1111-4111-8111-111111111111',
+        payload: {
+          schemaVersion: 1,
+          files: [{ path: '../escape', kind: 'instruction', text: '' }],
+        },
+      },
+      async () => {
+        calls++;
+        throw new Error('Unexpected transport');
+      },
+    ),
+    (error) => {
+      assert.ok(error instanceof SetupValidationError);
+      assert.equal(setupFailure(error).uncertain, false);
+      return true;
+    },
+  );
+  assert.equal(calls, 0);
+});
+
 test('selection rechecks the exact scoped channel with current session', async () => {
   const result = await authorizeSelection(
     { ...env, CONSOLE_SESSION_TOKEN: 'current' },
@@ -95,7 +223,6 @@ test('selection rechecks the exact scoped channel with current session', async (
 });
 
 test('invalid setup is a definitive rejection while lost responses stay uncertain', async () => {
-  const { setupFailure } = await import('../src/server/setup');
   let calls = 0;
   const fetcher: typeof fetch = async () => {
     calls++;

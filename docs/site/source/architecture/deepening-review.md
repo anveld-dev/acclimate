@@ -42,3 +42,36 @@ The deletion test supports each shared module: removing it would redistribute ex
 - Generated documentation was rebuilt and its link, fingerprint, and export checks passed.
 
 Final acceptance: Inventory, Skeptic, and Testability are satisfied with the reviewed architecture. All material objections were resolved; no further refactor was recommended in these areas.
+
+
+## Follow-up review from `1ea4d2f`
+
+A second committee pass on 2026-11-16 explored Rust, console server workflows, SDK/native preparation, Python delivery, console client workflows, and qualification scripts. Four explorer agents identified four bounded improvements; Skeptic and Testability independently approved every idea before implementation.
+
+| Change | Independent idea approvals | Result |
+| --- | --- | --- |
+| Durable Operation result target validation | Skeptic, Testability | A browser-safe module owns canonical route grammar and scope comparison for browser freezing and server replay. |
+| Bundle setup request construction | Skeptic, Testability | The setup module validates and serializes the same request body already used by browser preview and recovery. |
+| Chronological evidence pagination | Skeptic, Testability | The existing pagination module owns query bounds, page types, truncation, and continuation construction for Evaluation requests, Proposals, and Comparisons. |
+| Disposable PostgreSQL startup | Skeptic, Testability | The existing Harness module owns database-only startup; five callers use that interface, and full startup composes it with process startup. |
+
+### Preserved behavior and test surfaces
+
+- [Operation target validation](../../apps/console/src/lib/operation-target.ts) preserves the server's grammar, scope pinning, validation order, and messages. New browser submissions reject malformed or crossed bundle/channel targets before storage. Existing pending envelope loading, storage keys, exact bytes, authorization, and caller-specific retry restrictions remain unchanged. Tests cross browser freezing and server replay, covering every valid operation family and invalid targets without storage or transport effects.
+- [Bundle setup](../../apps/console/src/server/setup.ts) retains guard ordering, example precedence, reason strings, compatibility defaults, property order, exact serialization, and definitive-versus-uncertain error classification. Public command tests cover created/imported/example content, Unicode and line endings, supplied example override, invalid paths, and existing rejection of empty content.
+- [Chronological pagination](../../src/pagination.rs) retains SQL, authorization ordering, extra-row decoding, descending timestamp/UUID ordering, microseconds, scoped and legacy cursors, and serialized page shape. The existing PostgreSQL-backed HTTP regression traverses all three collections; additional cases check limit errors and unknown query fields.
+- [Qualification Harness](../../scripts/productization/qualify.py) retains identical PostgreSQL startup arguments, synchronous readiness, caller environments, private cluster ownership, and cleanup. A real database-only smoke check confirmed SQL access without starting Rust, followed by process shutdown and directory removal.
+
+Skeptic, Testability, and an independent SDK reviewer accepted the final implementations and found no further worthwhile architectural changes in the explored scope. Existing SDK/native seams and client evaluation workflows remain appropriate; broader transport, storage, and workflow frameworks did not earn implementation.
+
+
+### Follow-up validation
+
+- All 231 console tests and 105 package/script tests passed, with no skips.
+- All 59 Rust tests passed against an owned disposable PostgreSQL cluster, including the chronological pagination regression and process lifecycle checks. No database-dependent tests were accepted as skipped.
+- Package and console typechecking, package builds, and the production console build passed. Rust formatting, Clippy with warnings denied, and changed TypeScript formatting checks passed.
+- Model-free SDK/server end-to-end validation passed. Full Harness startup plus product qualification passed all 13 flows, including restart/recovery and deliberate publication.
+- That extra gate exposed an existing Harness diagnostic bug: a successful Evaluation response with `error: null` raised an exception while extracting a diagnostic code. Skeptic and Testability independently approved a narrow guard for nullable/nonobject error values; status acceptance and returned responses are unchanged. The real product qualification passed after the fix.
+- The disposable database-only lifecycle smoke passed. Generated documentation was rebuilt and its source, fingerprint, link, and diagram checks passed.
+
+Final acceptance for this pass: Skeptic, Testability, and the independent SDK reviewer are satisfied. Their acceptance was conditional on validation; the checks above satisfy that condition. No further material architecture work remains in the explored scope.

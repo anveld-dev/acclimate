@@ -1,3 +1,4 @@
+use crate::pagination::{ListQuery, Page};
 use crate::{ApiResult, AppState, CaseKey, ComparisonRequest, db, err, path};
 use axum::{
     Json, Router,
@@ -42,27 +43,6 @@ pub struct Evaluation {
     pub error: Option<String>,
     pub created_at: String,
     pub updated_at: String,
-}
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct ListQuery {
-    pub limit: Option<i64>,
-    pub cursor: Option<String>,
-}
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Page<T: Serialize> {
-    pub items: Vec<T>,
-    pub next_cursor: Option<String>,
-}
-impl ListQuery {
-    pub(crate) fn bounds(&self) -> ApiResult<i64> {
-        let n = self.limit.unwrap_or(50);
-        if !(1..=100).contains(&n) {
-            return Err(invalid("Limit must be between 1 and 100"));
-        }
-        Ok(n)
-    }
 }
 fn invalid(m: &str) -> crate::ApiErr {
     err(StatusCode::BAD_REQUEST, "invalid_content", m)
@@ -214,22 +194,13 @@ async fn list(
         crate::pagination::resolve(&mut tx, "evaluation_requests", &p, bid, q.cursor.as_deref())
             .await?;
     let rows=sqlx::query("SELECT * FROM evaluation_requests WHERE project_id=$1 AND bundle_id=$2 AND ($3::timestamptz IS NULL OR (created_at,id)<($3,$4)) ORDER BY created_at DESC,id DESC LIMIT $5").bind(&p).bind(bid).bind(c.map(|x|x.0)).bind(c.map(|x|x.1)).bind(n+1).fetch_all(&mut *tx).await.map_err(db)?;
-    let mut items = rows
+    let items = rows
         .into_iter()
         .map(decode)
         .collect::<ApiResult<Vec<_>>>()?;
-    let next = if items.len() > n as usize {
-        items.truncate(n as usize);
-        items.last().map(|x| {
-            crate::pagination::encode("evaluation_requests", &p, bid, &x.created_at, &x.id)
-        })
-    } else {
-        None
-    };
-    Ok(Json(Page {
-        items,
-        next_cursor: next,
-    }))
+    Ok(Json(crate::pagination::page(items, n, |x| {
+        crate::pagination::encode("evaluation_requests", &p, bid, &x.created_at, &x.id)
+    })))
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

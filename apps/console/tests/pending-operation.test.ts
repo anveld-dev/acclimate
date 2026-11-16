@@ -4,6 +4,7 @@ import test from 'node:test';
 import { createHash } from 'node:crypto';
 import {
   freezePending,
+  freezePendingExact,
   loadPending,
   forgetPending,
   resolvePending,
@@ -44,7 +45,8 @@ const scope = {
   bundleId: bundle,
   channel: 'stable',
 };
-const env = { ...consoleEnvironment,
+const env = {
+  ...consoleEnvironment,
   CONSOLE_SERVICE_TOKEN: 'machine-test',
   CONSOLE_SESSION_TOKEN: 'current-session',
   CONSOLE_ALLOW_EDITS: 'true',
@@ -324,4 +326,76 @@ test('new skill allocation reserves all support paths and case collisions', () =
     ]),
     'new-skill-3',
   );
+});
+
+test('canonical operation families preserve exact bytes through browser freezing and server replay', async () => {
+  const root = `/v1/projects/p/bundles/${bundle}`;
+  const channel = `${root}/channels/stable`;
+  const paths = [
+    '/v1/projects/p/bundle-setups',
+    `${root}/proposals`,
+    `${root}/evaluation-requests`,
+    `${channel}/promotions`,
+    `${channel}/drafts`,
+    ...['save', 'publish', 'discard'].map((action) => `${channel}/drafts/${draft}/${action}`),
+  ];
+  const exact = ' { "expectedGeneration" : 2 }\n';
+  for (const action of paths) {
+    const storage = new MemoryStorage();
+    const record = freezePendingExact(storage, scope, action, exact, key);
+    assert.equal(loadPending(storage, scope)?.body, exact);
+    let posts = 0;
+    await exactOperation(
+      { ...env, CONSOLE_CHANNEL: 'stable' },
+      { projectId: 'p', operationPath: record.action, body: record.body!, key: record.key },
+      async (_url, init) => {
+        if (init?.method === 'GET')
+          return Response.json({ status: 'not_observed', operationId: key });
+        posts++;
+        assert.equal(init?.body, exact);
+        assert.equal(new Headers(init?.headers).get('Idempotency-Key'), key);
+        return Response.json({});
+      },
+    );
+    assert.equal(posts, 1);
+  }
+});
+
+test('invalid operation targets never enter recovery storage or reach transport', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls++;
+    throw Error('unexpected request');
+  };
+  const invalid = [
+    path.replace('/projects/p/', '/projects/other/'),
+    path.replace(bundle, '44444444-4444-4444-8444-444444444444'),
+    path.replace('stable', 'canary'),
+    path.replace(bundle, 'not-a-bundle'),
+    path.replace(draft, 'not-a-draft'),
+    path.replace('stable', 'bad channel'),
+    path + '/extra',
+    path + '?x=1',
+    path + '#fragment',
+    path.replace(bundle, '%2e%2e'),
+    path.replace('stable', '..'),
+    path.replace('stable', 'a\\b'),
+    path.replace('/drafts/', '/credentials/'),
+  ];
+  for (const operationPath of invalid) {
+    const storage = new MemoryStorage();
+    assert.throws(
+      () => freezePendingExact(storage, scope, operationPath, '{}', key),
+      /Unsupported pending operation/,
+    );
+    assert.equal(storage.length, 0);
+    await assert.rejects(
+      exactOperation(
+        { ...env, CONSOLE_CHANNEL: 'stable' },
+        { projectId: 'p', operationPath, body: '{}', key },
+        fetcher,
+      ),
+    );
+  }
+  assert.equal(calls, 0);
 });

@@ -320,6 +320,33 @@ async fn chronological_pages_cover_thirty_rows_ties_microseconds_and_scoped_old_
     }
     for table in ["evaluation_requests", "comparisons", "proposals"] {
         let route = table.replace('_', "-");
+        for limit in [-1, 0, 101] {
+            let (status, error) = call(
+                &f.app,
+                "GET",
+                &format!("{}/{route}?limit={limit}", f.root),
+                "one",
+                Value::Null,
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{error}");
+            assert_eq!(error["error"]["code"], "invalid_content");
+            assert_eq!(error["error"]["message"], "Limit must be between 1 and 100");
+        }
+        // Extractor rejections use a text response, unlike domain errors above.
+        let unknown_field = f
+            .app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("{}/{route}?unexpected=true", f.root))
+                    .header("authorization", "Bearer one")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unknown_field.status(), StatusCode::BAD_REQUEST);
         let sql = format!(
             "SELECT id FROM {table} WHERE project_id=$1 AND bundle_id=$2 ORDER BY created_at DESC,id DESC"
         );

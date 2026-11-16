@@ -440,15 +440,15 @@ pub async fn list_comparisons(
     State(s): State<AppState>,
     Path((p, b)): Path<(String, String)>,
     h: HeaderMap,
-    axum::extract::Query(q): axum::extract::Query<crate::evaluations::ListQuery>,
-) -> ApiResult<Json<crate::evaluations::Page<Comparison>>> {
+    axum::extract::Query(q): axum::extract::Query<crate::pagination::ListQuery>,
+) -> ApiResult<Json<crate::pagination::Page<Comparison>>> {
     let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
     let n = q.bounds()?;
     let bid = path(&b)?;
     let c =
         crate::pagination::resolve(&mut tx, "comparisons", &p, bid, q.cursor.as_deref()).await?;
     let rows=sqlx::query("SELECT * FROM comparisons WHERE project_id=$1 AND bundle_id=$2 AND ($3::timestamptz IS NULL OR (created_at,id)<($3,$4)) ORDER BY created_at DESC,id DESC LIMIT $5").bind(&p).bind(bid).bind(c.map(|x|x.0)).bind(c.map(|x|x.1)).bind(n+1).fetch_all(&mut *tx).await.map_err(db)?;
-    let mut items = rows
+    let items = rows
         .into_iter()
         .map(|r| {
             Ok(Comparison {
@@ -460,28 +460,22 @@ pub async fn list_comparisons(
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;
-    let next_cursor = if items.len() > n as usize {
-        items.truncate(n as usize);
-        items
-            .last()
-            .map(|x| crate::pagination::encode("comparisons", &p, bid, &x.created_at, &x.id))
-    } else {
-        None
-    };
-    Ok(Json(crate::evaluations::Page { items, next_cursor }))
+    Ok(Json(crate::pagination::page(items, n, |x| {
+        crate::pagination::encode("comparisons", &p, bid, &x.created_at, &x.id)
+    })))
 }
 pub async fn list_proposals(
     State(s): State<AppState>,
     Path((p, b)): Path<(String, String)>,
     h: HeaderMap,
-    axum::extract::Query(q): axum::extract::Query<crate::evaluations::ListQuery>,
-) -> ApiResult<Json<crate::evaluations::Page<Proposal>>> {
+    axum::extract::Query(q): axum::extract::Query<crate::pagination::ListQuery>,
+) -> ApiResult<Json<crate::pagination::Page<Proposal>>> {
     let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
     let n = q.bounds()?;
     let bid = path(&b)?;
     let c = crate::pagination::resolve(&mut tx, "proposals", &p, bid, q.cursor.as_deref()).await?;
     let rows=sqlx::query("SELECT p.id,p.parent_version_id AS proposal_parent_version_id,p.status,p.attempts,p.candidate_version_id,p.rationale,p.error,p.created_at,v.bundle_id,v.parent_version_id,v.digest,v.created_at AS v_created FROM proposals p LEFT JOIN versions v ON v.id=p.candidate_version_id WHERE p.project_id=$1 AND p.bundle_id=$2 AND ($3::timestamptz IS NULL OR (p.created_at,p.id)<($3,$4)) ORDER BY p.created_at DESC,p.id DESC LIMIT $5").bind(&p).bind(bid).bind(c.map(|x|x.0)).bind(c.map(|x|x.1)).bind(n+1).fetch_all(&mut *tx).await.map_err(db)?;
-    let mut items = rows
+    let items = rows
         .into_iter()
         .map(|r| Proposal {
             id: r.get::<Uuid, _>("id").to_string(),
@@ -504,15 +498,9 @@ pub async fn list_proposals(
             created_at: r.get::<DateTime<Utc>, _>("created_at").to_rfc3339(),
         })
         .collect::<Vec<_>>();
-    let next_cursor = if items.len() > n as usize {
-        items.truncate(n as usize);
-        items
-            .last()
-            .map(|x| crate::pagination::encode("proposals", &p, bid, &x.created_at, &x.id))
-    } else {
-        None
-    };
-    Ok(Json(crate::evaluations::Page { items, next_cursor }))
+    Ok(Json(crate::pagination::page(items, n, |x| {
+        crate::pagination::encode("proposals", &p, bid, &x.created_at, &x.id)
+    })))
 }
 
 #[cfg(test)]

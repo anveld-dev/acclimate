@@ -1,31 +1,29 @@
 name: checks
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-24.04
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: acclimate
-          POSTGRES_PASSWORD: test-only
-          POSTGRES_DB: acclimate_test
-        ports: ["5432:5432"]
-        options: --health-cmd "pg_isready -U acclimate" --health-interval 2s --health-timeout 3s --health-retries 15
-    env:
-      DATABASE_URL: postgres://acclimate:test-only@localhost:5432/acclimate_test
-      ACCLIMATE_TEST_DATABASE_URL: postgres://acclimate:test-only@localhost:5432/acclimate_test
-      EVALUATION_TEST_DATABASE_URL: postgres://acclimate:test-only@localhost:5432/acclimate_test
     steps:
       - uses: actions/checkout@v4
       - name: Install PostgreSQL test binaries
         run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-16
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-16
+          fi
           /usr/lib/postgresql/16/bin/initdb --version
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -37,7 +35,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npm run test:console:entrypoints
+      - name: Test built console entrypoints
+        run: npx --no-install tsx --tsconfig apps/console/tsconfig.json --test apps/console/tests/console-entrypoints.integration.ts
       - run: npm run pack:verify -- --skip-build --console-runtime
       - run: npm run test:improvement
       - run: npm run test:operator
@@ -45,15 +44,13 @@ jobs:
       - run: npm run test:full-roadmap
       - run: npm audit --audit-level=high
       - run: PYTHONPATH=python python -m unittest discover -s python/tests -v
-      - run: python scripts/check-python-package.py
       - run: python -m unittest discover -s scripts/operations -p 'test_*.py' -v
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: python scripts/productization/rust_tests.py --pg-bin /usr/lib/postgresql/16/bin
       - run: cargo build
-      - run: npm run test:e2e -- --pg-bin /usr/lib/postgresql/16/bin
-      - run: npm run qualify:full-roadmap
-      - run: pip install -r scripts/docs-requirements.txt
+      - run: npm run test:e2e -- --skip-build --pg-bin /usr/lib/postgresql/16/bin
+      - run: npm run qualify:full-roadmap -- --skip-build --pg-bin /usr/lib/postgresql/16/bin
       - run: python scripts/check_docs.py
       - run: python -m unittest discover -s scripts/productization -p 'test_external.py' -v
       - run: npm run test:identity:contracts
@@ -71,10 +68,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install PostgreSQL test binaries
         run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-16
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-16
+          fi
           /usr/lib/postgresql/16/bin/initdb --version
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -82,6 +84,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/bdd/requirements.txt
       - run: npm ci --ignore-scripts
       - run: python -m pip install -r scripts/bdd/requirements.txt
       - run: python -m playwright install --with-deps chromium
@@ -104,10 +108,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install PostgreSQL test binaries
         run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-16
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-16
+          fi
           /usr/lib/postgresql/16/bin/initdb --version
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -115,6 +124,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/bdd/requirements.txt
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

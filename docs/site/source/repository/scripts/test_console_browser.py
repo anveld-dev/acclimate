@@ -59,11 +59,11 @@ def main():
         expect(page.get_by_test_id('entry-content')).to_contain_text(literal)
         assert page.locator('script[data-untrusted]').count()==0
         assert not page.evaluate('Boolean(window.compromised)')
-        field=page.get_by_label('Find an entry',exact=True)
+        field=page.get_by_label('Published content',exact=True)
         field.fill('retry-review');field.press('Enter')
-        page.get_by_role('link',name='Open skills/retry-review/SKILL.md',exact=True).click()
+        page.get_by_role('treeitem',name='Open skills/retry-review/SKILL.md',exact=True).click()
         expect(page.get_by_test_id('entry-content')).to_contain_text('duplicate side effects')
-        field=page.get_by_label('Find an entry',exact=True)
+        field=page.get_by_label('Published content',exact=True)
         field.fill('no-such-file');field.press('Enter')
         expect(page.get_by_text('No matching entries.',exact=False)).to_be_visible()
         b.visit(b.bundle_path('releases'))
@@ -74,7 +74,7 @@ def main():
         assert business_snapshot(w.h)==original,'Read-only browsing changed stored business state'
         w.manual_release(w.original['version'],reason='Explicit refresh fixture.')
         after_release=business_snapshot(w.h)
-        page.get_by_role('button',name='Refresh',exact=True).first.click()
+        page.reload(wait_until='networkidle')
         expect(page.get_by_role('heading',name='Revision 23',exact=True)).to_be_visible()
         assert business_snapshot(w.h)==after_release,'Refresh wrote business state'
         response=page.goto(b.base+'/not-a-page',wait_until='networkidle')
@@ -84,7 +84,8 @@ def main():
         w.sessions['_qa-browser']=dict(secret=cookie['value'])
         w.call('DELETE','/v1/auth/session',actor='_qa-browser')
         page.goto(b.base+b.bundle_path('releases'),wait_until='networkidle')
-        expect(page.get_by_role('link',name='Sign in',exact=True)).to_be_visible()
+        assert page.url.startswith(b.identity.issuer+'/authorize?')
+        expect(page.get_by_role('button',name='Sign in to fixture',exact=True)).to_be_visible()
         expect(page.get_by_test_id('release-decision')).to_have_count(0)
         assert not any(secret in page.content() for secret in secrets+[cookie['value']])
         assert business_snapshot(w.h)==after_release,'Denied read wrote business state'

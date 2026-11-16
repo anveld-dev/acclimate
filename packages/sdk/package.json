@@ -1,0 +1,25 @@
+{
+  "name": "@acclimate/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./validation": {
+      "types": "./dist/validation.d.ts",
+      "import": "./dist/validation.js"
+    },
+    "./native-files": {
+      "types": "./dist/internal/native-files.d.ts",
+      "import": "./dist/internal/native-files.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  }
+}

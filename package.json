@@ -1,0 +1,100 @@
+{
+  "name": "acclimate",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm run test:packages && npm run test:console",
+    "typecheck": "npm run typecheck:packages && npm run typecheck --workspace @acclimate/console && npm run typecheck --workspace @acclimate/keycloak-theme",
+    "test:codex": "tsx examples/codex-smoke.ts",
+    "test:e2e": "python3 scripts/productization/service_e2e.py",
+    "example:compare": "tsx examples/compare-review.ts",
+    "build": "npm run build:packages && npm run build:console",
+    "example:publish": "tsx examples/publish.ts",
+    "example:codex": "tsx examples/codex-agent.ts",
+    "pack:verify": "node scripts/packaging/verify.mjs",
+    "test:codex-session": "tsx examples/codex-session-check.ts",
+    "example:improve": "tsx examples/improve-review.ts",
+    "test:improvement": "tsx --test scripts/improvement-tests/*.test.ts",
+    "operator": "tsx tools/operator/cli.ts",
+    "test:operator": "tsx --test tools/operator/*.test.ts",
+    "test:full-roadmap": "tsx --test scripts/full-roadmap/fixture.test.ts",
+    "qualify:full-roadmap": "python3 scripts/productization/full_roadmap.py",
+    "qualify:full-roadmap:live": "python3 scripts/productization/full_roadmap.py --live",
+    "build:packages": "tsc -p tsconfig.build.json && node scripts/build-packages.mjs",
+    "typecheck:packages": "tsc --noEmit",
+    "test:packages": "tsx --test packages/*/tests/**/*.test.ts scripts/*.test.ts",
+    "dev": "tsx scripts/start-production.ts dev",
+    "build:console": "npm run build --workspace @acclimate/console",
+    "test:console": "npm test --workspace @acclimate/console",
+    "start:console": "tsx scripts/start-production.ts console",
+    "demo": "tsx scripts/dev-console.ts --example",
+    "local": "tsx scripts/dev-console.ts",
+    "test:evaluator": "tsx --test examples/evaluate-request.test.ts examples/evaluation/*.test.ts",
+    "qualify:productization": "python3 scripts/productization/qualify.py",
+    "test:productization:browser": "python3 scripts/test_productization_browser.py",
+    "test:bdd": "python3 scripts/bdd/run.py",
+    "qualify:local-recovery": "python3 scripts/productization/local_recovery.py",
+    "evaluate:local": "tsx scripts/evaluate-local.ts",
+    "example:delivery": "tsx examples/delivery-check.ts",
+    "example:delivery:python": "python3 python/examples/delivery_check.py",
+    "start": "tsx scripts/start-production.ts service",
+    "check:console-config": "tsx scripts/start-production.ts check",
+    "evaluate:app": "tsx scripts/evaluate-app.ts",
+    "test:console:entrypoints": "npm run build:console && tsx --tsconfig apps/console/tsconfig.json --test apps/console/tests/console-entrypoints.integration.ts",
+    "test:identity:protocol": "python3 scripts/testing/console_protocol.py",
+    "test:identity:contracts": "python3 -m unittest scripts.productization.test_keycloak scripts.productization.test_deployment scripts.testing.test_identity scripts.testing.test_world_identity -v",
+    "test:identity:keycloak": "python3 scripts/testing/keycloak_protocol.py",
+    "build:theme": "npm run build --workspace @acclimate/keycloak-theme",
+    "mail:start": "python3 scripts/mailpit.py start",
+    "mail:status": "python3 scripts/mailpit.py status",
+    "mail:stop": "python3 scripts/mailpit.py stop",
+    "test:email": "python3 scripts/testing/email_invitations.py",
+    "qualify:self-improvement:live": "python3 scripts/testing/self_improvement.py --live",
+    "qualify:self-improvement:twenty": "python3 scripts/testing/self_improvement.py --live --twenty-rounds",
+    "qualify:self-improvement:large": "python3 scripts/testing/self_improvement.py --live --large",
+    "freeze:self-improvement:large": "tsx examples/self-improvement/large/freeze.ts",
+    "qualify:self-improvement:repair": "python3 scripts/testing/self_improvement.py --live --repair-helper"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.325",
+    "@cursor/sdk": "1.3.1",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@types/node": "^22.0.0",
+    "prettier": "3.6.2",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "0.169.0"
+  },
+  "exports": {
+    "./sdk": {
+      "types": "./dist/packages/sdk/src/index.d.ts",
+      "import": "./dist/packages/sdk/src/index.js"
+    },
+    "./codex-plugin": {
+      "types": "./dist/packages/codex-plugin/src/index.d.ts",
+      "import": "./dist/packages/codex-plugin/src/index.js"
+    },
+    "./claude-plugin": {
+      "types": "./dist/packages/claude-plugin/src/index.d.ts",
+      "import": "./dist/packages/claude-plugin/src/index.js"
+    },
+    "./pi-plugin": {
+      "types": "./dist/packages/pi-plugin/src/index.d.ts",
+      "import": "./dist/packages/pi-plugin/src/index.js"
+    },
+    "./cursor-plugin": {
+      "types": "./dist/packages/cursor-plugin/src/index.d.ts",
+      "import": "./dist/packages/cursor-plugin/src/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "version": "0.1.0"
+}

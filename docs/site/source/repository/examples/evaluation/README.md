@@ -1,0 +1,58 @@
+# Installed application evaluation
+
+The console creates a frozen request and hands its ID and public configuration to your application. Creating a request does not run an adapter. **Copy configuration** includes the configured public HTTPS API URL, project, bundle, request and descriptor; it contains no evaluator credential or private filesystem path.
+
+To use an adapter included in this checkout, install and configure the checkout separately. Create an owner-only directory (0700) and a JSON file (0600) outside version control with this shape. Replace every placeholder privately; do not paste the resulting credentials into chat, the console, logs or a command line:
+
+```json
+{
+  "schemaVersion": 1,
+  "serviceUrl": "https://api.example.com",
+  "projectId": "YOUR_PROJECT_ID",
+  "evaluatorPrincipalId": "YOUR_DEDICATED_EVALUATOR_PRINCIPAL",
+  "evaluatorToken": "YOUR_SCOPED_EVALUATOR_TOKEN",
+  "journalRoot": "/absolute/private/evaluation-journals"
+}
+```
+
+The evaluator credential needs read/write access to the selected project; it needs neither propose nor promote. The service URL, project and principal must identify the same application as the request. Remote API URLs require HTTPS. HTTP is accepted only for an explicitly configured same-host private hop at 127.0.0.1, localhost or [::1]; it is never a public deployment recipe. `journalRoot` must be absolute and owner-only; the helper creates it when absent. Symlinks, shared permissions, unknown fields, oversized files and missing configuration are rejected. The helper reads only the file supplied through `--config`; environment credentials, launcher files and default state directories are never consulted.
+
+After setup, replace the placeholder in the optional console example and run it from your installed checkout:
+
+```sh
+npm run evaluate:app -- --config /absolute/private/evaluator.json --bundleID UUID --requestID UUID --adapter payment-retry
+```
+
+A compatible public descriptor only explains which included adapter could match. It does not establish that the viewer has an installed checkout, credentials or a runnable evaluator. Custom app evaluators consume the default request/configuration handoff through the public SDK instead.
+
+The installed `payment-retry` adapter uses `localEvaluationDescriptor` from `descriptor.ts`. It executes an in-memory payment processor under response loss, transient failure and ordinary success. Each version supplies declarative data in a bundle file at `payment-policy.json`, for example:
+
+```json
+{"maxAttempts":2,"idempotency":"request"}
+```
+
+The allowed attempt count is 1–3, and idempotency is `request`, `attempt` or `none`. The grader independently requires a successful response and exactly one charge. A missing or invalid policy earns zero, with the saved trace explaining the result. Changing an instruction sentence alone does not improve this score. This simulator is orchestration regression evidence only.
+
+`--adapter presence-contract` runs the explicitly named instruction/skill presence contract using `presenceDescriptor`. It makes no behavioral quality claim.
+
+For native review evaluation, create a request with `nativeReviewDescriptor` and opt in explicitly:
+
+```sh
+npm run evaluate:app -- --config /absolute/private/evaluator.json --bundleID UUID --requestID UUID --adapter codex-luna-review --live
+```
+
+This installed adapter prepares each immutable bundle using the Codex plugin, then runs the existing `service-proposer` saved review cases and independent exact-finding grader. It authorizes at most four Luna turns, each with a 110-second timeout, read-only filesystem, disabled network and no approvals. Use it only when paid execution is intended and Codex authentication is already configured. No paid calls run in the default tests. The fake native adapter test verifies wiring and identifies itself as `fake-native-review`; it provides no evidence of native improvement. No new live native quality claim has been qualified.
+
+Applications can supply their own installed `InstalledAdapter` to `runEvaluation`. Its `describe()` returns dataset/grader revisions, a fixed case inventory, and runtime identity including app-owned `configId`/`configRevision`. Its installed callbacks own execution and grading. The request must structurally match those values before any execution starts. A service request cannot name a script, module, URL, path or credential to execute. The CLI selects only names installed in its explicit allowlist.
+
+Each request has an owner-only journal scoped to service/project/bundle/request/evaluator. New journal writes also record the absolute journal root and refuse recovery from a relocated copy. A kernel file lock (Python 3 `fcntl`) grants exclusive process ownership. The helper saves attempt and idempotency keys before start, the execution marker before callbacks, and the exact report before submission. A response lost during start, report submission or finish can be recovered with the same private configuration and command. Keep the exact service URL, project, evaluator principal and original journal root for unfinished requests. Token rotation is possible only for the same authorized principal. Per-case outputs are private JSON files referenced by the report. Complete losses finish `completed`; retained infrastructure or grading failures finish `failed` with partial evidence.
+
+If a process dies after execution starts without saving a report, another invocation refuses to execute again. Interrupt that request in the console and create a new request. Do not delete the journal to retry an execution. A lock file's presence or PID is never treated as proof that execution did or did not happen.
+
+## Explicit migration from the retired launcher
+
+`evaluate:local`, `--state-root` and implicit `.local/console-demo` lookup are retired. No command scans, prints, moves, rewrites or deletes legacy state. Back up the original private state and journals before cutover, without changing their permissions.
+
+For an unfinished legacy request, privately inspect its existing configuration and attempt journal. Manually create the schemaVersion 1 file above using the **same exact** service URL, project, evaluator principal and original absolute evaluations directory. Retain the original evaluator credential, or rotate it to an authorized credential for that same principal. Do not substitute your new human session or reassign receipt ownership. Legacy journals retain their original schema and exact keys; a legacy journal without a recorded root can only be safely resumed in its known original directory. The first successful write records that selected root. Do not copy or relocate an unfinished legacy attempt.
+
+Run the new command with that explicit configuration and installed matching adapter. Saved reports recover without callbacks. A running request without its original journal, a changed principal, or an execution marker without a complete report must be inspected and explicitly interrupted before creating another request. Old operations outside the operator's current workspace membership may require the original machine principal for inspection; no global access or automatic replay is granted.

@@ -1,0 +1,38 @@
+{
+  "service-delivery": {
+    "source": "docs/design/overview.md",
+    "file": "service-delivery.html"
+  },
+  "cache-update": {
+    "source": "docs/design/bundles-and-cache.md",
+    "file": "cache-update.html"
+  },
+  "improvement-loop": {
+    "source": "docs/design/improvement.md",
+    "file": "improvement-loop.html"
+  },
+  "service-roadmap": {
+    "source": "docs/design/roadmap.md",
+    "file": "service-roadmap.html"
+  },
+  "agentrun-architecture": {
+    "source": "docs/research/agentrun.md",
+    "file": "agentrun-architecture.html"
+  },
+  "agentrun-learning": {
+    "source": "docs/research/agentrun.md",
+    "file": "agentrun-learning.html"
+  },
+  "rrsi-search": {
+    "source": "docs/research/rrsi.md",
+    "file": "rrsi-search.html"
+  },
+  "architecture-parallel": {
+    "source": "docs/architecture/parallel-work.md",
+    "file": "architecture-parallel.html"
+  },
+  "productization-paths": {
+    "source": "docs/architecture/productization/README.md",
+    "file": "productization-paths.html"
+  }
+}

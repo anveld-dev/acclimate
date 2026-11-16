@@ -1,0 +1,11 @@
+{
+  "buildSha256": "91510cb60e16a04e626f7808892151c0ea5b86ebd6bc51f0b7e688259f4c7161",
+  "files": {
+    "apps/console/src/components/file-tree.tsx": "010774f9062f88c835916704e0b3b669b386a5e130a9c3a43626a1d4c94d179d",
+    "apps/console/src/lib/file-tree.ts": "43ec0ec2e3ebf4cb13b240540e27aa5871371c4052769a0d06ab565464b1e649",
+    "apps/console/src/components/bundle-content.tsx": "4bafb16c0c3f0b327fa20796650e67a9d43277738367123a7a990284dc6214d4",
+    "apps/console/src/components/draft-workspace.tsx": "ede46b040df043c3d2c2d4d403795e52e76a3838c0fa1518ab928dde7b6eef65",
+    "apps/console/src/styles.css": "70c59b3baa710790cbd593f01b8fc346240b9380c05029e6f1d497fbc6d6e0e0",
+    "apps/console/tests/file-tree.test.ts": "b040dc6324d893a13f3d76fb1abb4df37e86502e8e9c984a2408dc678e78b1f1"
+  }
+}

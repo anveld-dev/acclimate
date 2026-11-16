@@ -1,0 +1,6 @@
+{
+  "baseManifest": "manifest.json",
+  "extraFiles": {
+    "d-baseline-workspace-name.css": "db530d95ebd46288afd258e1bf8b0a65d426e041ef5ce972f5352d1627291d97"
+  }
+}

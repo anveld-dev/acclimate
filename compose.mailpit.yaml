@@ -1,0 +1,27 @@
+# Development inbox only. Run standalone or merge with the application stack.
+services:
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    environment:
+      MP_DATABASE: /data/messages.db
+      MP_MAX_MESSAGES: "1000"
+      MP_MAX_MESSAGE_SIZE: "5"
+      MP_DISABLE_VERSION_CHECK: "true"
+      MP_BLOCK_REMOTE_CSS_AND_FONTS: "true"
+      MP_ALLOWED_HOSTS: localhost,127.0.0.1,mailpit
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+    volumes: [mailpit-data:/data]
+    networks: [backend]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  mailpit-data:
+networks:
+  backend:
+    internal: true

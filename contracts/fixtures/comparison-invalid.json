@@ -1,0 +1,40 @@
+{
+  "parentVersionId": "v1",
+  "candidateVersionId": "v2",
+  "parentDigest": "sha256:0067f5c5211d303528a731b3b2e4c169935dd62b40e8444c671204605a53557b",
+  "candidateDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "datasetRevision": "saved-prs/1",
+  "runtime": {
+    "sdk": "fixture/1",
+    "model": "fake"
+  },
+  "graderRevision": "deterministic/1",
+  "expectedCases": [
+    {
+      "caseId": "case-1",
+      "repetition": 0
+    }
+  ],
+  "results": [
+    {
+      "caseId": "case-1",
+      "repetition": 0,
+      "parent": {
+        "executionStatus": "completed",
+        "gradingStatus": "scored",
+        "reward": 1.0,
+        "outputRef": "artifact:review/case-1",
+        "error": null,
+        "usage": null
+      },
+      "candidate": {
+        "executionStatus": "completed",
+        "gradingStatus": "scored",
+        "reward": 1.0,
+        "outputRef": "artifact:review/case-1",
+        "error": null,
+        "usage": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { atomicPrivateWrite } from '../../scripts/private-state.js';
+import { parseEvaluatorArguments } from '../../scripts/evaluate-app.js';
+import { fixture, projectId, bundleId, requestId, evaluatorPrincipalId } from './fixture.js';
+import { localEvaluationDescriptor } from './descriptor.js';
+import { includedEvaluatorSetupCommand } from '../../apps/console/src/lib/evaluation-config.js';
+
+const identifiers = ['--bundleID', bundleId, '--requestID', requestId];
+const required = ['--config', '/absolute/private/evaluator.json', ...identifiers];
+const args = [...required, '--adapter', 'payment-retry'];
+test('command accepts identifiers and installed names, never a request-selected executable or URL', () => {
+  assert.equal(parseEvaluatorArguments(args).adapter, 'payment-retry');
+  for (const adapter of ['https://example.com/executor', '../evil.ts', 'node:child_process'])
+    assert.throws(() => parseEvaluatorArguments([...required, '--adapter', adapter]), /installed allowlisted/);
+  assert.throws(() => parseEvaluatorArguments([...required, '--adapter', 'codex-luna-review']), /explicit --live/);
+  assert.equal(parseEvaluatorArguments([...required, '--adapter', 'codex-luna-review', '--live']).adapter, 'codex-luna-review');
+  assert.throws(() => parseEvaluatorArguments([...args, '--module', './evil']), /Invalid/);
+  assert.throws(() => parseEvaluatorArguments([...args, '--bundleID', bundleId]), /Invalid/);
+  assert.throws(() => parseEvaluatorArguments(['--bundleID', '../escape', '--requestID', requestId]), /Usage/);
+});
+
+test('actual setup-required copied npm helper consumes explicit test-owned private configuration and stays on selected bundle', async () => {
+  const stateRoot = await mkdtemp(path.join(await realpath(tmpdir()), 'acclimate-command-'));
+  const f = fixture(localEvaluationDescriptor);
+  const token = randomUUID();
+  const requests: string[] = [];
+  const server = createServer(async (req, res) => {
+    const send = (status: number, value: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
+    try {
+      assert.equal(req.headers.authorization, `Bearer ${token}`);
+      const route = req.url ?? '';
+      requests.push(route);
+      assert.ok(route.startsWith(`/v1/projects/${projectId}/bundles/${bundleId}/`));
+      let text = '';
+      for await (const chunk of req) text += chunk;
+      const body = text ? JSON.parse(text) : undefined;
+      const key = String(req.headers['idempotency-key'] ?? '');
+      if (route.endsWith(`/evaluation-requests/${requestId}`)) return send(200, await f.api.getEvaluation(projectId, bundleId, requestId));
+      if (route.endsWith('/start')) return send(200, await f.api.startEvaluation(projectId, bundleId, requestId, body, key));
+      if (route.endsWith('/comparisons')) return send(201, await f.api.createComparison(projectId, bundleId, body, key));
+      if (route.endsWith('/finish')) return send(200, await f.api.finishEvaluation(projectId, bundleId, requestId, body, key));
+      const match = /\/versions\/([^/]+)(\/payload)?$/.exec(route);
+      if (match) {
+        if (match[2]) { res.writeHead(200, { 'content-type': 'application/octet-stream' }); return res.end(f.bytes.get(match[1])); }
+        return send(200, f.version(match[1]));
+      }
+      send(404, {});
+    } catch { send(500, { error: { code: 'fixture', message: 'fixture assertion', requestId: 'fixture' } }); }
+  });
+  server.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const address = server.address() as { port: number };
+  try {
+    await atomicPrivateWrite(path.join(stateRoot, 'evaluator.json'), JSON.stringify({
+      schemaVersion: 1, serviceUrl: `http://127.0.0.1:${address.port}`, projectId, evaluatorToken: token, evaluatorPrincipalId,
+      journalRoot: path.join(stateRoot, 'evaluations'),
+    }));
+    const env = { ...process.env };
+    for (const key of Object.keys(env)) if (key.startsWith('ACCLIMATE_')) delete env[key];
+    // The public example has a placeholder, never access to this test's path or token.
+    const copied = includedEvaluatorSetupCommand(bundleId, requestId, localEvaluationDescriptor)!;
+    assert.ok(copied.includes('--config /absolute/private/evaluator.json'));
+    const [executable, ...command] = copied.split(' ').map(value =>
+      value === '/absolute/private/evaluator.json' ? path.join(stateRoot, 'evaluator.json') : value);
+    const child = spawn(executable, command, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', (data) => { stdout += String(data); });
+    child.stderr.on('data', (data) => { stderr += String(data); });
+    const code = await new Promise((resolve, reject) => { child.on('exit', resolve); child.on('error', reject); });
+    assert.equal(code, 0, stderr);
+    assert.ok(stdout.includes('"status":"completed"'), stdout);
+    assert.ok(!stdout.includes(token) && !stderr.includes(token));
+    assert.ok(requests.some((r) => r.endsWith('/comparisons')));
+    assert.equal(f.request.evaluatorPrincipal, evaluatorPrincipalId);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});

@@ -88,7 +88,7 @@ fn page(mut items: Vec<Value>, limit: i64, key: &str) -> Json<Value> {
     };
     Json(json!({"items":items,"nextCursor":next}))
 }
-fn identity(h: &HeaderMap) -> ApiResult<(Uuid, Uuid)> {
+pub(crate) fn identity(h: &HeaderMap) -> ApiResult<(Uuid, Uuid)> {
     let parse = |k| {
         h.get(k)
             .and_then(|v| v.to_str().ok())
@@ -199,6 +199,12 @@ async fn channels(
 struct Login {
     issuer: String,
     subject: String,
+    #[serde(default, rename = "displayName")]
+    display_name: Option<String>,
+    #[serde(default)]
+    email: Option<String>,
+    #[serde(default, rename = "emailVerified")]
+    email_verified: bool,
 }
 async fn login(
     State(s): State<AppState>,
@@ -218,8 +224,17 @@ async fn login(
     if v.issuer != s.access.oidc_issuer() || v.subject.trim().is_empty() || v.subject.len() > 512 {
         return Err(invalid());
     }
+    let display_name = v
+        .display_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty() && name.chars().count() <= 200);
+    let email = v.email.as_deref().and_then(crate::mail::normalize_email);
+    if v.email_verified && email.is_none() {
+        return Err(invalid());
+    }
     let mut tx = s.db.begin().await.map_err(db)?;
-    let user:Uuid=sqlx::query_scalar("INSERT INTO users(id,issuer,subject) VALUES($1,$2,$3) ON CONFLICT(issuer,subject) DO UPDATE SET issuer=EXCLUDED.issuer RETURNING id").bind(Uuid::new_v4()).bind(v.issuer).bind(v.subject).fetch_one(&mut *tx).await.map_err(db)?;
+    let user:Uuid=sqlx::query_scalar("INSERT INTO users(id,issuer,subject,display_name,email,email_verified) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(issuer,subject) DO UPDATE SET display_name=EXCLUDED.display_name,email=EXCLUDED.email,email_verified=EXCLUDED.email_verified RETURNING id").bind(Uuid::new_v4()).bind(v.issuer).bind(v.subject).bind(display_name).bind(email).bind(v.email_verified).fetch_one(&mut *tx).await.map_err(db)?;
     // A fresh secret rotates the caller's previous session when supplied.
     if let Some(secret) = h.get("x-acclimate-session").and_then(|v| v.to_str().ok()) {
         sqlx::query("UPDATE browser_sessions SET revoked_at=now() WHERE secret_hash=$1")
@@ -241,17 +256,20 @@ async fn session(State(s): State<AppState>, h: HeaderMap) -> ApiResult<Json<Valu
     machine(&h, &s)?;
     let (user, session) = identity(&h)?;
     let mut tx = auth::session_read_transaction(&s, &h).await?;
-    let row = sqlx::query("SELECT issuer,subject FROM users WHERE id=$1")
+    let row = sqlx::query("SELECT issuer,subject,display_name FROM users WHERE id=$1")
         .bind(user)
         .fetch_one(&mut *tx)
         .await
         .map_err(db)?;
     let issuer = row.get::<String, _>("issuer");
     let subject = row.get::<String, _>("subject");
-    Ok(Json(json!({
-        "userId":user,"sessionId":session,"issuer":issuer,"subject":subject,
-        "canCreateWorkspace":s.access.is_operator(&issuer, &subject)
-    })))
+    Ok(Json(with_display_name(
+        json!({
+            "userId":user,"sessionId":session,"issuer":issuer,"subject":subject,
+            "canCreateWorkspace":s.access.is_operator(&issuer, &subject)
+        }),
+        row.get("display_name"),
+    )))
 }
 
 async fn logout(State(s): State<AppState>, h: HeaderMap) -> ApiResult<StatusCode> {
@@ -415,7 +433,7 @@ fn service(h: &HeaderMap, s: &AppState) -> String {
         .map(|g| g.principal_id.clone())
         .unwrap_or_else(|| "console".into())
 }
-async fn audit(
+pub(crate) async fn audit(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     project: &str,
     user: Uuid,
@@ -447,9 +465,9 @@ async fn memberships(
     }
     let mut tx = s.db.begin().await.map_err(db)?;
     auth::authorize_transaction(&mut tx, &a, &project, "admin").await?;
-    let rows = sqlx::query("SELECT u.id,u.issuer,u.subject,m.role FROM project_memberships m JOIN users u ON u.id=m.user_id WHERE m.project_id=$1 AND u.id::text>$2 ORDER BY u.id::text LIMIT $3 FOR SHARE OF m")
+    let rows = sqlx::query("SELECT u.id,u.issuer,u.subject,u.display_name,m.role FROM project_memberships m JOIN users u ON u.id=m.user_id WHERE m.project_id=$1 AND u.id::text>$2 ORDER BY u.id::text LIMIT $3 FOR SHARE OF m")
         .bind(&project).bind(cursor).bind(limit+1).fetch_all(&mut *tx).await.map_err(db)?;
-    let items = rows.iter().map(|r| json!({"id":r.get::<Uuid,_>("id"),"issuer":r.get::<String,_>("issuer"),"subject":r.get::<String,_>("subject"),"role":r.get::<String,_>("role")})).collect();
+    let items = rows.iter().map(|r| with_display_name(json!({"id":r.get::<Uuid,_>("id"),"issuer":r.get::<String,_>("issuer"),"subject":r.get::<String,_>("subject"),"role":r.get::<String,_>("role")}),r.get("display_name"))).collect();
     tx.commit().await.map_err(db)?;
     Ok(page(items, limit, "id"))
 }
@@ -470,7 +488,7 @@ async fn verified_user(
     let user = crate::path(&user)?;
     let mut tx = s.db.begin().await.map_err(db)?;
     auth::authorize_transaction(&mut tx, &a, &project, "admin").await?;
-    let row = sqlx::query("SELECT u.issuer,u.subject,m.role FROM users u LEFT JOIN project_memberships m ON m.user_id=u.id AND m.project_id=$2 WHERE u.id=$1")
+    let row = sqlx::query("SELECT u.issuer,u.subject,u.display_name,m.role FROM users u LEFT JOIN project_memberships m ON m.user_id=u.id AND m.project_id=$2 WHERE u.id=$1")
         .bind(user).bind(&project)
         .fetch_optional(&mut *tx)
         .await
@@ -482,7 +500,10 @@ async fn verified_user(
                 "Verified user not found",
             )
         })?;
-    let result = json!({"id":user,"issuer":row.get::<String,_>("issuer"),"subject":row.get::<String,_>("subject"),"role":row.get::<Option<String>,_>("role")});
+    let result = with_display_name(
+        json!({"id":user,"issuer":row.get::<String,_>("issuer"),"subject":row.get::<String,_>("subject"),"role":row.get::<Option<String>,_>("role")}),
+        row.get("display_name"),
+    );
     tx.commit().await.map_err(db)?;
     Ok(Json(result))
 }
@@ -615,4 +636,12 @@ async fn adopt_workspace(
     Ok(Json(
         json!({ "projectId":v.project_id, "userId":user, "reason":reason, "createdAt":created_at, "alreadyAdopted":already_adopted, "currentRole":current_role }),
     ))
+}
+
+// Names are optional display metadata, never an authorization identity.
+fn with_display_name(mut identity: Value, name: Option<String>) -> Value {
+    if let Some(name) = name {
+        identity["displayName"] = json!(name);
+    }
+    identity
 }

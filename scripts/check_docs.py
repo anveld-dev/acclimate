@@ -51,8 +51,13 @@ class Page(HTMLParser):
 def main():
     allow_pending = '--allow-pending' in sys.argv
     manifest = json.loads((SITE / 'site-manifest.json').read_text())
-    paths = [SITE / item['route'] for item in manifest]
+    paths = [SITE / item['route'] for item in manifest if item.get('kind') != 'source']
     errors = []
+    for item in manifest:
+        if item.get('kind') == 'source':
+            source, exported = ROOT / item['source'], SITE / item['route']
+            if not exported.is_file() or exported.read_bytes() != source.read_bytes():
+                errors.append('Missing/stale source note: ' + item['source'])
     fingerprints = json.loads((SITE / 'build-info.json').read_text())['inputs']
     for name, expected_digest in fingerprints.items():
         source = ROOT / name

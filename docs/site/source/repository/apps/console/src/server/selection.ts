@@ -97,9 +97,14 @@ export function storeSelection(env: Environment, selection: Selection) {
     maxAge: 60 * 60 * 24 * 365,
   });
 }
+export class SessionRequiredError extends Error {
+  constructor() {
+    super('Sign in to access your workspaces.');
+  }
+}
 export function requireSession(env: Environment) {
   rejectObsoleteConsoleModes(env);
-  if (!env.CONSOLE_SESSION_TOKEN) throw new Error('Sign in to access your workspaces.');
+  if (!env.CONSOLE_SESSION_TOKEN) throw new SessionRequiredError();
   if (!env.CONSOLE_SERVICE_TOKEN || !env.CONSOLE_SERVICE_URL)
     throw new Error('Console service transport is not configured.');
 }

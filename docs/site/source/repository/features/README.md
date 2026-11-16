@@ -89,3 +89,23 @@ without execution, no-store responses, filtering, 22-release cursor pagination,
 refresh, revoked-session denial, secret redaction, 404 and unchanged stored business
 state. Its former unconfigured-render expectation is replaced by the entrypoint
 fail-before-listen tests; there is no unconfigured application entrypoint.
+
+### Email invitations
+
+Members now invites by email and role. `UI-ACCESS-02` checks that sending an invite
+alone grants no access; the verified recipient must accept. `NAV-12` checks that
+losing admin access closes an in-progress invitation form. These fixtures start a
+private Mailpit inbox and preserve the reviewed story IDs.
+
+`scripts/testing/email_invitations.py` checks real SMTP delivery, matching verified
+email, expiry, revocation, existing-role preservation and interrupted delivery.
+The real Keycloak gate's `--email` option covers registration → inbox verification
+→ password setup → invitation acceptance on each selected console runtime.
+See [local email setup](../deploy/mailpit.md).
+
+The email provider gate also checks HTML and text parts for invitation, verification
+and password reset, plus 600px/320px email layouts. Its Members checks leave the
+Invite button focused, preserve an in-progress invite form, and watch delivery and
+acceptance update without navigation. `scripts/testing/member_live_updates.py`
+covers multiple loaded pages, scrolled focus, outage recovery and role revocation.
+CI runs both checks.

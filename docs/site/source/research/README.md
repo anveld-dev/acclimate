@@ -4,6 +4,8 @@ The current product is a small content-improvement service with application-side
 
 ## Current questions
 
+- [Larger self-improvement tests](self-improvement-stress-test.md): twenty rounds, distributed evidence, failed audits and a qualified reusable helper.
+- [Live self-improvement qualification](self-improvement-qualification.md): real Luna runs, failed candidates, file changes and later-job delivery checks.
 - [Authentication setups](auth-setups.md): direct social login, Rust account libraries, Better Auth and self-hosted identity services, with PostgreSQL and migration tradeoffs.
 - [Scope audit](service-scope-audit.md): where the earlier design became an execution platform, and what was cut.
 - [SDK file delivery](sdk-file-delivery.md): native instructions/skills/context delivery in Claude, Codex, Cursor, and Pi, including local and remote limits.
@@ -16,7 +18,7 @@ The current product is a small content-improvement service with application-side
 
 The [.repos.json](../../.repos.json) manifest pins the five read-only reference clones. AgentRun and RRSI declare Apache-2.0 at the top level; added SDKs and vendored material have their own notices to check before copying code. These docs borrow ideas, not implementations.
 
-SDK facts use the dated primary sources linked in their notes. No native agent sessions, paid experiments, upstream builds, or upstream tests were run. Inspected test code is evidence of intent, not passing behavior.
+SDK facts use the dated primary sources linked in their notes. The original source investigations did not run native sessions or paid experiments. Later local Luna runs are recorded separately in the qualification report above. No upstream builds or tests were run. Inspected test code is evidence of intent, not passing behavior.
 
 ## Earlier work
 

@@ -58,6 +58,20 @@ pub fn validate_comparison(q: &ComparisonRequest) -> Result<bool, String> {
         }))
 }
 
+// Only fixed local edit-validation errors are public. Never reflect arbitrary provider details.
+fn public_proposal_failure(reason: &str) -> &'static str {
+    match reason {
+        "Anchor does not match original text" => {
+            "provider edit anchor does not match original text"
+        }
+        "Anchor is ambiguous in original text" => {
+            "provider edit anchor is ambiguous in original text"
+        }
+        "Original edit ranges overlap" => "provider edit ranges overlap in original text",
+        _ => "provider request failed",
+    }
+}
+
 use crate::{
     ApiResult, AppState, BundleFile, BundlePayload, Comparison, Proposal, ProposalRequest,
     VersionMetadata, db, err, path,
@@ -337,10 +351,10 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
     .await;
     let output = match result {
         Ok(Ok(v)) => v,
-        Ok(Err(_)) => {
+        Ok(Err(reason)) => {
             let _ = sqlx::query("UPDATE proposals SET status='failed',error=$2 WHERE id=$1 AND status='running' AND attempts=$3")
                 .bind(id)
-                .bind("provider request failed")
+                .bind(public_proposal_failure(&reason))
                 .bind(attempt)
                 .execute(&s.db)
                 .await;
@@ -404,6 +418,7 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
     }
     let _ = tx.commit().await;
 }
+
 fn validate_edits(
     base: &BundlePayload,
     out: &BundlePayload,
@@ -500,4 +515,32 @@ pub async fn list_proposals(
         None
     };
     Ok(Json(crate::evaluations::Page { items, next_cursor }))
+}
+
+#[cfg(test)]
+mod proposal_failure_tests {
+    use super::public_proposal_failure;
+    #[test]
+    fn edit_rejections_are_actionable_without_reflecting_provider_details() {
+        assert_eq!(
+            public_proposal_failure("Anchor does not match original text"),
+            "provider edit anchor does not match original text"
+        );
+        assert_eq!(
+            public_proposal_failure("Anchor is ambiguous in original text"),
+            "provider edit anchor is ambiguous in original text"
+        );
+        assert_eq!(
+            public_proposal_failure("Original edit ranges overlap"),
+            "provider edit ranges overlap in original text"
+        );
+        assert_eq!(
+            public_proposal_failure("secret provider details"),
+            "provider request failed"
+        );
+        assert_eq!(
+            public_proposal_failure("Anchor does not match original text: private contents"),
+            "provider request failed"
+        );
+    }
 }

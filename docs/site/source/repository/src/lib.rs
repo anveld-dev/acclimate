@@ -19,12 +19,15 @@ mod drafts;
 mod evaluations;
 mod improvement;
 mod integrations;
+mod invitations;
+pub mod mail;
 pub mod pagination;
 pub mod proposal_edits;
 mod store;
 mod types;
 mod workspaces;
 pub use improvement::proposal_worker;
+pub use invitations::{invitation_worker, recover_invitation_mail};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -134,6 +137,7 @@ pub fn router(state: AppState) -> Router {
         .merge(drafts::routes())
         .merge(evaluations::routes())
         .merge(workspaces::routes())
+        .merge(invitations::routes())
         .route("/health", get(|| async { "ok" }))
         .route("/ready", get(runtime::readiness))
         .route(

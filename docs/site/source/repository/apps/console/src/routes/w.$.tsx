@@ -1,9 +1,15 @@
+import { ArrowLeft, GitBranch } from 'lucide-react';
+import { PageHeader } from '../components/page-header';
+import { Button } from '@/components/ui/button';
+import { WorkspaceMenuButton } from '../components/workspace-chrome';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import {
   parseConsoleLocation,
   bundleHref,
   bundleViewLabels,
   channelSwitchSearch,
+  workspaceHref,
+  type BundleView,
 } from '../navigation';
 import { readWorkspaceBundles } from '../server/setup-actions';
 import { readConsole } from '../server/read-console';
@@ -19,7 +25,13 @@ import { WorkspaceMembers } from '../components/workspace-members';
 import { ConsoleLink, consoleDestination } from '../components/console-link';
 import { ConnectionNotice } from '../components/shared';
 import { useNavigation } from '../components/use-navigation';
-import { NativeSelect } from '../components/ui/native-select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 
 export const Route = createFileRoute('/w/$')({
   validateSearch: (search: Record<string, unknown>): Record<string, string | number> =>
@@ -37,6 +49,9 @@ export const Route = createFileRoute('/w/$')({
             'candidate',
             'generation',
             'comparison',
+            'request',
+            'history',
+            'tab',
             'integration',
             'bundleId',
           ].includes(key) &&
@@ -119,17 +134,17 @@ function ScopedPage() {
       />
     );
   const { state, scope, location } = data;
+  const view = location.view as BundleView;
   if (state.status !== 'ready')
     return (
       <div className="space-y-5">
-        <ConsoleLink
-          href={
-            navigation?.projectId ? `/w/${encodeURIComponent(navigation.projectId)}/bundles` : '/'
-          }
-          className="text-sm font-medium text-primary hover:underline"
-        >
-          Back to bundles
-        </ConsoleLink>
+        <BundleScopeHeader
+          name={navigation?.bundleName || scope.bundleId}
+          scope={scope}
+          view={view}
+          search={search}
+          description="This bundle is currently unavailable."
+        />
         <ConnectionNotice state={state} />
         {navigation?.projectId === scope.projectId &&
           navigation.bundleId === scope.bundleId &&
@@ -154,7 +169,6 @@ function ScopedPage() {
           )}
       </div>
     );
-  const view = location.view as 'content' | 'changes' | 'releases' | 'connect';
   const description = {
     content: 'The instructions, skills and memory your app receives.',
     changes: 'Edit, evaluate and review updates before publishing.',
@@ -163,23 +177,69 @@ function ScopedPage() {
   }[view];
   const identity = `${state.actorScope}:${scope.projectId}:${scope.bundleId}:${scope.channel}`;
   return (
-    <div className="space-y-4">
-      <section className="bundle-overview" aria-label="Bundle">
-        <header className="bundle-heading">
-          <div className="min-w-0 space-y-1">
-            <h1>{state.bundleName || scope.bundleId}</h1>
-            <p className="bundle-subtitle text-sm text-muted-foreground">{description}</p>
-          </div>
-          {view !== 'changes' && (
-            <div className="bundle-context">
-              <ChannelPicker scope={scope} view={view} search={search} />
-              <span className="text-xs text-muted-foreground">
-                Published revision {state.resolution.revision}
+    <div className="bundle-page bundle-workspace">
+      <BundleScopeHeader
+        name={state.bundleName || scope.bundleId}
+        scope={scope}
+        view={view}
+        search={search}
+        description={description}
+      />
+      {view === 'content' ? (
+        <BundleContent key={identity} state={state} search={search} />
+      ) : view === 'changes' ? (
+        <BundleChanges key={identity} state={state} search={search} />
+      ) : view === 'releases' ? (
+        <BundleReleases key={identity + ':' + state.resolution.revision} state={state} />
+      ) : (
+        <SdkSetup key={identity} state={state} role={navigation?.role} />
+      )}
+    </div>
+  );
+}
+function BundleScopeHeader({
+  name,
+  scope,
+  view,
+  search,
+  description,
+}: {
+  name: string;
+  scope: { projectId: string; bundleId: string; channel: string };
+  view: BundleView;
+  search: Record<string, unknown>;
+  description: string;
+}) {
+  const isChangeDetail =
+    view === 'changes' &&
+    Boolean(search.draft || search.proposal || search.candidate || search.comparison);
+  const parentLabel = isChangeDetail ? 'Back to changes' : 'Back to bundles';
+  return (
+    <PageHeader
+      title={name}
+      description={description}
+      variant="bundle"
+      label="Bundle"
+      utility={
+        <>
+          <WorkspaceMenuButton />
+          <Button asChild variant="ghost" size="sm" className="bundle-scope-return">
+            <ConsoleLink
+              aria-label={parentLabel}
+              href={isChangeDetail ? bundleHref(scope, 'changes') : workspaceHref(scope.projectId)}
+            >
+              <ArrowLeft aria-hidden="true" className="size-4" />
+              <span className="bundle-scope-return-label">{parentLabel}</span>
+              <span className="bundle-scope-return-short" aria-hidden="true">
+                {isChangeDetail ? 'Changes' : 'Bundles'}
               </span>
-            </div>
-          )}
-        </header>
-        <nav aria-label="Bundle navigation" className="bundle-tabs">
+            </ConsoleLink>
+          </Button>
+        </>
+      }
+      actions={<ChannelPicker scope={scope} view={view} search={search} />}
+      footer={
+        <nav aria-label="Bundle navigation" className="bundle-tabs bundle-scope-navigation">
           {(['content', 'changes', 'releases', 'connect'] as const).map((tab) => (
             <ConsoleLink
               key={tab}
@@ -190,22 +250,8 @@ function ScopedPage() {
             </ConsoleLink>
           ))}
         </nav>
-      </section>
-      {view === 'content' ? (
-        <BundleContent key={identity} state={state} search={search} />
-      ) : view === 'changes' ? (
-        <BundleChanges
-          key={identity}
-          state={state}
-          search={search}
-          draftChannelControl={<ChannelPicker scope={scope} view={view} search={search} />}
-        />
-      ) : view === 'releases' ? (
-        <BundleReleases key={identity + ':' + state.resolution.revision} state={state} />
-      ) : (
-        <SdkSetup key={identity} state={state} role={navigation?.role} />
-      )}
-    </div>
+      }
+    />
   );
 }
 function ChannelPicker({
@@ -219,32 +265,35 @@ function ChannelPicker({
 }) {
   const nav = useNavigation();
   const navigate = useNavigate();
+  const channels = nav?.channels ?? [];
+  const options = channels.some((channel) => channel.name === scope.channel)
+    ? channels
+    : [{ name: scope.channel, revision: '' }, ...channels];
   return (
-    <label className="flex min-w-0 items-center gap-2 text-sm">
-      Channel
-      <NativeSelect
-        aria-label="Channel"
+    <div className="bundle-channel-picker">
+      <span className="bundle-channel-label">Channel</span>
+      <Select
         value={scope.channel}
-        onChange={(e) => {
+        onValueChange={(channel) => {
           void navigate(
             consoleDestination(
-              bundleHref(
-                { ...scope, channel: e.target.value },
-                view,
-                channelSwitchSearch(view, search),
-              ),
+              bundleHref({ ...scope, channel }, view, channelSwitchSearch(view, search)),
             ),
           );
         }}
       >
-        {(nav?.channels.length ? nav.channels : [{ name: scope.channel, revision: '' }]).map(
-          (channel) => (
-            <option key={channel.name} value={channel.name}>
+        <SelectTrigger aria-label="Channel" className="bundle-channel-trigger">
+          <GitBranch aria-hidden="true" className="size-4" />
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper" align="end" className="bundle-channel-options">
+          {options.map((channel) => (
+            <SelectItem key={channel.name} value={channel.name} className="bundle-channel-option">
               {channel.name}
-            </option>
-          ),
-        )}
-      </NativeSelect>
-    </label>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }

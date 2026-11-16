@@ -71,7 +71,7 @@ export async function draftCommand(
     if (input.action === 'list')
       return {
         ok: true as const,
-        page: await client.listDrafts(p, b, c, { limit: 20, cursor: input.cursor }),
+        page: await client.listDrafts(p, b, c, { limit: 20, cursor: input.cursor, status: 'all' }),
       };
     if (input.action === 'recover' || input.action === 'close')
       return {

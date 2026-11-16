@@ -6,9 +6,12 @@ Feature: Navigate by workspace and bundle ownership
   Scenario: Workspace navigation and bundle tabs have different jobs
     Given a published bundle containing "Review code."
     When I open its scoped Content URL
-    Then the workspace sidebar contains Bundles and Connections
+    Then the workspace navigation contains Bundles and Connections
     And the bundle tabs contain Content, Changes, Releases and App setup
     And the old seven-peer navigation and inert footer are absent
+    And desktop navigation uses labelled icons with hover and keyboard tooltips
+    And workspace switching sits above the account at the bottom of the rail
+    And bundle identity and tabs occupy separate header rows
 
   @NAV-02
   Scenario: Edit the selected published entry in one draft editor
@@ -88,10 +91,10 @@ Feature: Navigate by workspace and bundle ownership
   Scenario: A role downgrade clears a stale membership-management form
     Given an administrator created a workspace with published content
     And the administrator grants the member the admin role
-    When the member opens Members and looks up the operator
+    When the member opens Members and starts an email invitation
     And the operator downgrades that member to viewer
     And the member refreshes the membership page
-    Then membership controls and the cached verified identity are removed
+    Then membership controls and the pending invite form are removed
 
   @NAV-13
   Scenario: Bundle creation asks before discarding browser-only instructions

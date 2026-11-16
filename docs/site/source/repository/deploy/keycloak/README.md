@@ -8,6 +8,14 @@ The co-hosted option pins **Keycloak 26.8.2**, runs its production command with 
 
 This recipe runs one Keycloak instance with local cache mode; it does not promise identity-server high availability. Internal clients resolve the public identity hostname directly to the private TLS proxy, preserving the public issuer and certificate without depending on public-IP loopback routing.
 
+## Sign-in theme
+
+The image builds our [Keycloakify app](../../apps/keycloak-theme/package.json) and installs `acclimate-keycloak-theme.jar` before Keycloak's optimized build. The realm selects `acclimate` for both login and email. Its colors and fonts match the console; upstream Keycloakify pages still handle passwords, MFA, passkeys and recovery.
+
+For an existing external Keycloak server, run `npm ci` and `npm run build:theme` with Java 17+ and Apache Maven available. Copy `apps/keycloak-theme/dist_keycloak/acclimate-keycloak-theme.jar` into Keycloak's `providers/`, rebuild and restart Keycloak, then choose **acclimate** under Realm settings → Themes → Login theme and Email theme. Updating an already-imported realm JSON does not change its stored settings.
+
+Sign-in requests the standard `profile` and `email` scopes so member lists can show names and invitations can check verified email. Display names are optional and never grant access; authorization continues to use the exact issuer and subject. Existing accounts get their current name on their next sign-in. Workspace administrators invite people by email and role. The recipient signs in with that verified email and explicitly accepts; issuer and subject remain the account identity. Configure application SMTP and Keycloak email separately. For development, see [Mailpit](../mailpit.md).
+
 ## Addresses and client
 
 Replace `example.com` with your owned domain:
@@ -92,7 +100,7 @@ Initial accounts are admin-provisioned. Email verification and forgotten-passwor
 
 For externally hosted Keycloak, use only `compose.yaml`; register an equivalent confidential client in its realm and copy the exact issuer and secret into the application settings. The co-hosted overlay is optional, not a second login implementation.
 
-Changing issuers does not merge existing users. Preserve business data and plan any account linking/migration explicitly. Application sign-out revokes the Rust session; it does not end Keycloak SSO. Provider account disablement does not automatically revoke an already issued application session.
+Changing issuers does not merge existing users. Preserve business data and plan any account linking/migration explicitly. Application sign-out revokes the Rust session and opens the credential form with `prompt=login`. Keycloak SSO remains available to other applications. Provider account disablement does not automatically revoke an already issued application session.
 
 ## Qualification and operations
 

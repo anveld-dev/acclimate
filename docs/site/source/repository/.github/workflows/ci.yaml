@@ -109,8 +109,11 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - run: cargo build --locked
       - run: npm run build
+      - run: npm run build:theme
+      - run: npm run test:email -- --pg-bin /usr/lib/postgresql/16/bin --report artifacts/keycloak/email-protocol.json
+      - run: python scripts/testing/member_live_updates.py --pg-bin /usr/lib/postgresql/16/bin --report artifacts/keycloak/members-auto.json
       - run: python scripts/testing/fetch_keycloak.py --output /tmp/acclimate-keycloak-tools
-      - run: npm run test:identity:keycloak -- --keycloak-home /tmp/acclimate-keycloak-tools/keycloak-26.8.2 --java-home "$JAVA_HOME" --pg-bin /usr/lib/postgresql/16/bin --report artifacts/keycloak/real-protocol.json
+      - run: npm run test:identity:keycloak -- --email --keycloak-home /tmp/acclimate-keycloak-tools/keycloak-26.8.2 --java-home "$JAVA_HOME" --pg-bin /usr/lib/postgresql/16/bin --report artifacts/keycloak/real-protocol.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

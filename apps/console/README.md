@@ -92,7 +92,7 @@ The runners own disposable databases and credentials. Browser QA uses the real R
 
 UI uses shadcn’s compact **Mira** style (`radix-mira` in `components.json`), Tailwind and Lucide. Registry components use the Mira style, with readable task-control overrides in the console. Desktop controls are compact; body content stays at 14px, and touch devices keep 44px button/navigation targets and 16px form text. Layout spacing lives in `src/styles.css`. Avoid global control minimums that override component sizes.
 
-Components live in `src/components/ui`; routes and server functions live under `src/routes` and `src/server`. All 63 file-providing entries in the official `radix-mira` UI registry are installed. The upstream `form` entry currently provides no files; use Field for form composition. The [registry audit](../../artifacts/changes-concepts/round-9/shadcn-audit.md) records the inventory and versions.
+Components live in `src/components/ui`; routes and server functions live under `src/routes` and `src/server`. All 63 file-providing entries in the official `radix-mira` UI registry are installed. The upstream `form` entry currently provides no files; use Field for form composition. The registry inventory was verified against shadcn 4.23.0; existing application customizations are preserved.
 
 Charts use the existing `ui/chart` components with Recharts 3.8: ChartContainer, themed config, tooltip and legend. Compose area, bar, line, pie, radar and radial charts with Recharts primitives inside that wrapper. Reuse these before introducing another chart library. See the [official chart guide](https://ui.shadcn.com/docs/components/chart).
 

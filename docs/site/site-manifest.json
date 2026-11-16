@@ -292,5 +292,495 @@
     "route": "research/archive.html",
     "group": "History",
     "title": "Earlier proposal"
+  },
+  {
+    "source": "docs/design/compact-layouts/README.md",
+    "route": "source/design/compact-layouts/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v2/README.md",
+    "route": "source/design/compact-layouts-v2/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v2/reviews/accessibility.md",
+    "route": "source/design/compact-layouts-v2/reviews/accessibility.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v2/reviews/editor.md",
+    "route": "source/design/compact-layouts-v2/reviews/editor.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v2/reviews/hierarchy.md",
+    "route": "source/design/compact-layouts-v2/reviews/hierarchy.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v2/reviews/skeptic.md",
+    "route": "source/design/compact-layouts-v2/reviews/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v2/reviews/visual.md",
+    "route": "source/design/compact-layouts-v2/reviews/visual.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v2/reviews/workflow.md",
+    "route": "source/design/compact-layouts-v2/reviews/workflow.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v3/README.md",
+    "route": "source/design/compact-layouts-v3/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v3/reviews/accessibility.md",
+    "route": "source/design/compact-layouts-v3/reviews/accessibility.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v3/reviews/developer.md",
+    "route": "source/design/compact-layouts-v3/reviews/developer.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v3/reviews/information.md",
+    "route": "source/design/compact-layouts-v3/reviews/information.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v3/reviews/skeptic.md",
+    "route": "source/design/compact-layouts-v3/reviews/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v3/reviews/visual.md",
+    "route": "source/design/compact-layouts-v3/reviews/visual.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v3/reviews/workflow.md",
+    "route": "source/design/compact-layouts-v3/reviews/workflow.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v4/README.md",
+    "route": "source/design/compact-layouts-v4/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v4/reviews/accessibility.md",
+    "route": "source/design/compact-layouts-v4/reviews/accessibility.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v4/reviews/editor.md",
+    "route": "source/design/compact-layouts-v4/reviews/editor.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v4/reviews/hierarchy.md",
+    "route": "source/design/compact-layouts-v4/reviews/hierarchy.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v4/reviews/skeptic.md",
+    "route": "source/design/compact-layouts-v4/reviews/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v4/reviews/visual.md",
+    "route": "source/design/compact-layouts-v4/reviews/visual.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v4/reviews/workflow.md",
+    "route": "source/design/compact-layouts-v4/reviews/workflow.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v5/README.md",
+    "route": "source/design/compact-layouts-v5/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v5/reviews/accessibility.md",
+    "route": "source/design/compact-layouts-v5/reviews/accessibility.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v5/reviews/admin.md",
+    "route": "source/design/compact-layouts-v5/reviews/admin.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v5/reviews/editor.md",
+    "route": "source/design/compact-layouts-v5/reviews/editor.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v5/reviews/navigation.md",
+    "route": "source/design/compact-layouts-v5/reviews/navigation.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v5/reviews/release.md",
+    "route": "source/design/compact-layouts-v5/reviews/release.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v5/reviews/systems.md",
+    "route": "source/design/compact-layouts-v5/reviews/systems.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v5/state-inventory.md",
+    "route": "source/design/compact-layouts-v5/state-inventory.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v6/README.md",
+    "route": "source/design/compact-layouts-v6/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v6/reviews/accessibility.md",
+    "route": "source/design/compact-layouts-v6/reviews/accessibility.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v6/reviews/evaluation.md",
+    "route": "source/design/compact-layouts-v6/reviews/evaluation.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v6/reviews/information.md",
+    "route": "source/design/compact-layouts-v6/reviews/information.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v6/reviews/skeptic.md",
+    "route": "source/design/compact-layouts-v6/reviews/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v6/reviews/systems.md",
+    "route": "source/design/compact-layouts-v6/reviews/systems.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v6/reviews/workflow.md",
+    "route": "source/design/compact-layouts-v6/reviews/workflow.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/compact-layouts-v6/state-inventory.md",
+    "route": "source/design/compact-layouts-v6/state-inventory.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/console-golden-path/README.md",
+    "route": "source/design/console-golden-path/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/console-golden-path/headers-members-auth.md",
+    "route": "source/design/console-golden-path/headers-members-auth.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/console-navigation-evaluations/README.md",
+    "route": "source/design/console-navigation-evaluations/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/console-navigation-evaluations/review-evaluation.md",
+    "route": "source/design/console-navigation-evaluations/review-evaluation.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v10/README.md",
+    "route": "source/design/desktop-layouts-v10/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v10/reviews/editor.md",
+    "route": "source/design/desktop-layouts-v10/reviews/editor.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v10/reviews/interaction.md",
+    "route": "source/design/desktop-layouts-v10/reviews/interaction.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v10/reviews/library.md",
+    "route": "source/design/desktop-layouts-v10/reviews/library.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v10/reviews/review.md",
+    "route": "source/design/desktop-layouts-v10/reviews/review.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v10/reviews/skeptic.md",
+    "route": "source/design/desktop-layouts-v10/reviews/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v10/reviews/visual.md",
+    "route": "source/design/desktop-layouts-v10/reviews/visual.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v10/states.md",
+    "route": "source/design/desktop-layouts-v10/states.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v11/README.md",
+    "route": "source/design/desktop-layouts-v11/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v11/reviews/editor.md",
+    "route": "source/design/desktop-layouts-v11/reviews/editor.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v11/reviews/interaction.md",
+    "route": "source/design/desktop-layouts-v11/reviews/interaction.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v11/reviews/library.md",
+    "route": "source/design/desktop-layouts-v11/reviews/library.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v11/reviews/review.md",
+    "route": "source/design/desktop-layouts-v11/reviews/review.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v11/reviews/skeptic.md",
+    "route": "source/design/desktop-layouts-v11/reviews/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v11/reviews/visual.md",
+    "route": "source/design/desktop-layouts-v11/reviews/visual.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v11/states.md",
+    "route": "source/design/desktop-layouts-v11/states.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v12/README.md",
+    "route": "source/design/desktop-layouts-v12/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v12/reviews/editor.md",
+    "route": "source/design/desktop-layouts-v12/reviews/editor.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v12/reviews/interaction.md",
+    "route": "source/design/desktop-layouts-v12/reviews/interaction.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v12/reviews/library.md",
+    "route": "source/design/desktop-layouts-v12/reviews/library.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v12/reviews/review.md",
+    "route": "source/design/desktop-layouts-v12/reviews/review.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v12/reviews/skeptic.md",
+    "route": "source/design/desktop-layouts-v12/reviews/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v12/reviews/visual.md",
+    "route": "source/design/desktop-layouts-v12/reviews/visual.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v7/README.md",
+    "route": "source/design/desktop-layouts-v7/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v7/reviews/accessibility.md",
+    "route": "source/design/desktop-layouts-v7/reviews/accessibility.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v7/reviews/evaluation.md",
+    "route": "source/design/desktop-layouts-v7/reviews/evaluation.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v7/reviews/hierarchy.md",
+    "route": "source/design/desktop-layouts-v7/reviews/hierarchy.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v7/reviews/skeptic.md",
+    "route": "source/design/desktop-layouts-v7/reviews/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v7/reviews/systems.md",
+    "route": "source/design/desktop-layouts-v7/reviews/systems.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v7/reviews/workflow.md",
+    "route": "source/design/desktop-layouts-v7/reviews/workflow.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v7/states.md",
+    "route": "source/design/desktop-layouts-v7/states.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v8/README.md",
+    "route": "source/design/desktop-layouts-v8/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v8/reviews/editor.md",
+    "route": "source/design/desktop-layouts-v8/reviews/editor.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v8/reviews/interaction.md",
+    "route": "source/design/desktop-layouts-v8/reviews/interaction.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v8/reviews/library.md",
+    "route": "source/design/desktop-layouts-v8/reviews/library.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v8/reviews/review.md",
+    "route": "source/design/desktop-layouts-v8/reviews/review.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v8/reviews/skeptic.md",
+    "route": "source/design/desktop-layouts-v8/reviews/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v8/reviews/visual.md",
+    "route": "source/design/desktop-layouts-v8/reviews/visual.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v8/states.md",
+    "route": "source/design/desktop-layouts-v8/states.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v9/README.md",
+    "route": "source/design/desktop-layouts-v9/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v9/reviews/editor.md",
+    "route": "source/design/desktop-layouts-v9/reviews/editor.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v9/reviews/interaction.md",
+    "route": "source/design/desktop-layouts-v9/reviews/interaction.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v9/reviews/library.md",
+    "route": "source/design/desktop-layouts-v9/reviews/library.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v9/reviews/review.md",
+    "route": "source/design/desktop-layouts-v9/reviews/review.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v9/reviews/skeptic.md",
+    "route": "source/design/desktop-layouts-v9/reviews/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v9/reviews/visual.md",
+    "route": "source/design/desktop-layouts-v9/reviews/visual.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/desktop-layouts-v9/states.md",
+    "route": "source/design/desktop-layouts-v9/states.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/file-tree/README.md",
+    "route": "source/design/file-tree/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/file-tree/reviews/editor.md",
+    "route": "source/design/file-tree/reviews/editor.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/file-tree/reviews/interaction.md",
+    "route": "source/design/file-tree/reviews/interaction.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/file-tree/reviews/library.md",
+    "route": "source/design/file-tree/reviews/library.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/file-tree/reviews/review.md",
+    "route": "source/design/file-tree/reviews/review.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/file-tree/reviews/skeptic.md",
+    "route": "source/design/file-tree/reviews/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/file-tree/reviews/visual.md",
+    "route": "source/design/file-tree/reviews/visual.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/self-improvement-qualification.md",
+    "route": "source/research/self-improvement-qualification.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/self-improvement-stress-test.md",
+    "route": "source/research/self-improvement-stress-test.md",
+    "kind": "source"
   }
 ]

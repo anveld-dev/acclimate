@@ -1,3 +1,18 @@
+import { SuggestionComposer } from './suggestion-composer';
+import { SyntaxCode } from './syntax-code';
+import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
+import {
+  ArrowRight,
+  ChartNoAxesCombined,
+  CircleCheck,
+  CircleDashed,
+  CirclePause,
+  CircleX,
+  FlaskConical,
+  Radio,
+} from 'lucide-react';
+import { EvaluationScorecard } from './evaluation-scorecard';
+import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
 import { assertInstalledConfiguration } from '../../../../examples/evaluation/adapter';
 import { NativeSelect } from './ui/native-select';
 import {
@@ -7,8 +22,7 @@ import {
   includedEvaluatorSetupCommand,
   type EvaluationPreset,
 } from '../lib/evaluation-config';
-import { Checkbox } from './ui/checkbox';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { compatibilityIssues } from '@acclimate/sdk/validation';
 import type {
   BundlePayload,
@@ -18,7 +32,6 @@ import type {
   Proposal,
 } from '@acclimate/sdk';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { CopyButton } from './copy-button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
@@ -31,7 +44,6 @@ import { RelatedPendingNotice, useRelatedPending } from './related-pending';
 import { runImprovement } from '../server/improvement-actions';
 import type { ConsoleState } from '../server/channel';
 import { ContentDiff } from './diff-content';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from './ui/table';
 import {
   Dialog,
   DialogContent,
@@ -40,8 +52,11 @@ import {
   DialogDescription,
   DialogFooter,
 } from './ui/dialog';
-import { comparisonSummary } from '../lib/comparison-summary';
+import { ComparisonEvidence, comparisonIncompleteReason } from './comparison-evidence';
+import { reviewNextStep } from '../lib/review-next-step';
 import { mergeHistory, refreshKnownActive } from '../lib/improvement-history';
+import { requestEvidence } from '../lib/evaluation-history';
+import { evaluationRequestLabels } from '../lib/evaluation-request-labels';
 import {
   freezePending,
   loadPending,
@@ -55,7 +70,6 @@ export function ImprovementWorkspace({
   state,
   initial,
   mode = 'review',
-  releaseTargetControl,
 }: {
   state: Ready;
   initial: {
@@ -64,9 +78,9 @@ export function ImprovementWorkspace({
     generation: number;
     proposal?: string;
     comparison?: string;
+    request?: string;
   };
   mode?: 'proposal' | 'review';
-  releaseTargetControl?: ReactNode;
 }) {
   const router = useRouter();
   const mounted = useRef(true);
@@ -81,6 +95,30 @@ export function ImprovementWorkspace({
   const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [requests, setRequests] = useState<Evaluation[]>([]);
+  const [directRequest, setDirectRequest] = useState<Evaluation | null>(null);
+  const [requestError, setRequestError] = useState('');
+  const [requestLoading, setRequestLoading] = useState(false);
+  const [showAllRequests, setShowAllRequests] = useState(false);
+  const releaseReturnRef = useRef<HTMLElement | null>(null);
+  const createRequestAction = useRef<HTMLButtonElement>(null);
+  const requestOwnsFocus = useRef(false);
+  const requestFocusId = useRef<string | null>(null);
+  useEffect(() => {
+    const releaseFocus = (event: Event) => {
+      if (event.target !== createRequestAction.current && event.target !== document.body)
+        requestOwnsFocus.current = false;
+    };
+    const releaseOnPointer = (event: PointerEvent) => {
+      if (!createRequestAction.current?.contains(event.target as Node))
+        requestOwnsFocus.current = false;
+    };
+    document.addEventListener('focusin', releaseFocus);
+    document.addEventListener('pointerdown', releaseOnPointer);
+    return () => {
+      document.removeEventListener('focusin', releaseFocus);
+      document.removeEventListener('pointerdown', releaseOnPointer);
+    };
+  }, []);
   const [requestCursor, setRequestCursor] = useState<string | null>(null);
   const loadedMoreRequests = useRef(false);
   const [candidate, setCandidate] = useState(initial.candidate),
@@ -113,6 +151,8 @@ export function ImprovementWorkspace({
   const [comparisonId, setComparisonId] = useState(''),
     [comparison, setComparison] = useState<Comparison | null>(null),
     [reason, setReason] = useState('');
+  const comparisonRef = useRef(comparison);
+  comparisonRef.current = comparison;
   const [interruptionReasons, setInterruptionReasons] = useState<Record<string, string>>({});
   const [releaseReview, setReleaseReview] = useState<{
     reason?: string;
@@ -172,6 +212,27 @@ export function ImprovementWorkspace({
   }
 
   const requestsRef = useRef<Evaluation[]>([]);
+  const directRequestRef = useRef<Evaluation | null>(null);
+  const selectionRef = useRef({
+    request: initial.request,
+    candidate,
+    initialCandidate: initial.candidate,
+    comparison: initial.comparison,
+    actor: state.actorScope,
+    project: state.projectId,
+    bundle: state.bundleId,
+    channel: state.channel,
+  });
+  selectionRef.current = {
+    request: initial.request,
+    candidate,
+    initialCandidate: initial.candidate,
+    comparison: initial.comparison,
+    actor: state.actorScope,
+    project: state.projectId,
+    bundle: state.bundleId,
+    channel: state.channel,
+  };
   const scopeEpoch = useRef(0);
   useEffect(() => {
     requestsRef.current = requests;
@@ -179,6 +240,10 @@ export function ImprovementWorkspace({
   useEffect(() => {
     scopeEpoch.current++;
     setRequests([]);
+    setDirectRequest(null);
+    directRequestRef.current = null;
+    setRequestError('');
+    setRequestLoading(false);
     requestsRef.current = [];
     loadedMoreRequests.current = false;
     setRequestCursor(null);
@@ -213,8 +278,21 @@ export function ImprovementWorkspace({
       if (cursor) loadedMoreRequests.current = true;
     }
     // Every known active row is refreshed directly, including rows on older pages.
+    const selected = directRequestRef.current;
+    const selection = selectionRef.current;
+    const currentSelection = () =>
+      epoch === scopeEpoch.current &&
+      mounted.current &&
+      selectionRef.current.request === selection.request &&
+      selectionRef.current.candidate === selection.candidate &&
+      selectionRef.current.initialCandidate === selection.initialCandidate &&
+      selectionRef.current.comparison === selection.comparison &&
+      selectionRef.current.actor === selection.actor &&
+      selectionRef.current.project === selection.project &&
+      selectionRef.current.bundle === selection.bundle &&
+      selectionRef.current.channel === selection.channel;
     const updated = await refreshKnownActive(
-      requestsRef.current,
+      requestsRef.current.filter((row) => row.id !== selection.request),
       async (id) => {
         const value = await invoke({ action: 'request', id });
         return 'request' in value ? value.request : undefined;
@@ -225,6 +303,65 @@ export function ImprovementWorkspace({
     setRequests((previous) =>
       previous.map((row) => updated.find((next) => next.id === row.id) || row),
     );
+    if (selection.request && currentSelection()) {
+      let expectedDirect = selected;
+      try {
+        const result = await invoke({ action: 'request', id: selection.request });
+        if (!currentSelection() || directRequestRef.current !== selected) return;
+        const refreshedDirect = 'request' in result ? result.request : undefined;
+        if (!refreshedDirect || refreshedDirect.id !== selection.request)
+          throw Error('The requested evaluation request was not found.');
+        if (
+          selection.initialCandidate &&
+          refreshedDirect.candidateVersionId !== selection.initialCandidate
+        )
+          throw Error(
+            'The requested evaluation belongs to a different candidate. Open the request with its matching candidate.',
+          );
+        if (selection.candidate && refreshedDirect.candidateVersionId !== selection.candidate)
+          return;
+        directRequestRef.current = refreshedDirect;
+        expectedDirect = refreshedDirect;
+        setDirectRequest((previous) =>
+          JSON.stringify(previous) === JSON.stringify(refreshedDirect) ? previous : refreshedDirect,
+        );
+        setRequests((previous) =>
+          previous.map((row) => (row.id === refreshedDirect.id ? refreshedDirect : row)),
+        );
+        if (!selection.candidate) {
+          setCandidate(refreshedDirect.candidateVersionId);
+          return;
+        }
+        if (selection.comparison && selection.comparison !== refreshedDirect.comparisonId)
+          throw Error('The requested comparison does not match this evaluation request.');
+        if (refreshedDirect.comparisonId) {
+          const existing = comparisonRef.current;
+          if (!existing || requestEvidence(refreshedDirect, existing).status !== 'bound') {
+            const report = await invoke({ action: 'comparison', id: refreshedDirect.comparisonId });
+            if (!currentSelection() || directRequestRef.current !== refreshedDirect) return;
+            const value = 'comparison' in report ? report.comparison : undefined;
+            if (!value) throw Error('The comparison for this request is unavailable.');
+            const binding = requestEvidence(refreshedDirect, value);
+            if (binding.status !== 'bound')
+              throw Error(
+                binding.status === 'mismatch' || binding.status === 'unbound'
+                  ? binding.message
+                  : 'The comparison for this request is unavailable.',
+              );
+            setComparison(value);
+            setComparisonId(value.id);
+          }
+        }
+        setRequestError('');
+      } catch (error) {
+        if (currentSelection() && directRequestRef.current === expectedDirect) {
+          setComparison(null);
+          setRequestError(
+            error instanceof Error ? error.message : 'The requested evaluation is unavailable.',
+          );
+        }
+      }
+    }
     if (initial.proposal && initial.proposal !== 'new') {
       const proposal = await invoke({ action: 'proposal', id: initial.proposal });
       if (epoch !== scopeEpoch.current || !mounted.current) return;
@@ -322,7 +459,7 @@ export function ImprovementWorkspace({
     let stale = false;
     setComparison(null);
     setReleaseReview(null);
-    if (initial.comparison)
+    if (initial.comparison && !initial.request)
       void invoke({ action: 'comparison', id: initial.comparison })
         .then((result) => {
           if (!stale && 'comparison' in result && result.comparison) {
@@ -338,19 +475,101 @@ export function ImprovementWorkspace({
     };
   }, [
     initial.comparison,
+    initial.request,
     candidate,
     state.actorScope,
     state.projectId,
     state.bundleId,
     state.channel,
   ]);
-  function comparisonHref(id: string) {
+  useEffect(() => {
+    let stale = false;
+    setDirectRequest(null);
+    directRequestRef.current = null;
+    setRequestError('');
+    if (!initial.request) {
+      setRequestLoading(false);
+      return () => {
+        stale = true;
+      };
+    }
+    setRequestLoading(true);
+    setComparison(null);
+    async function restore() {
+      try {
+        const result = await invoke({ action: 'request', id: initial.request });
+        if (stale) return;
+        const request = 'request' in result ? result.request : undefined;
+        if (!request || request.id !== initial.request)
+          throw Error('The requested evaluation request was not found.');
+        if (initial.candidate && request.candidateVersionId !== initial.candidate)
+          throw Error(
+            'The requested evaluation belongs to a different candidate. Open the request with its matching candidate.',
+          );
+        directRequestRef.current = request;
+        setDirectRequest(request);
+        if (candidate !== request.candidateVersionId) {
+          setCandidate(request.candidateVersionId);
+          return;
+        }
+        if (initial.comparison && initial.comparison !== request.comparisonId)
+          throw Error('The requested comparison does not match this evaluation request.');
+        if (!request.comparisonId) return;
+        const report = await invoke({ action: 'comparison', id: request.comparisonId });
+        if (stale) return;
+        const value = 'comparison' in report ? report.comparison : undefined;
+        if (!value) throw Error('The comparison for this request is unavailable.');
+        const binding = requestEvidence(request, value);
+        if (binding.status !== 'bound')
+          throw Error(
+            binding.status === 'mismatch' || binding.status === 'unbound'
+              ? binding.message
+              : 'The comparison for this request is unavailable.',
+          );
+        setComparison(value);
+        setComparisonId(value.id);
+      } catch (error) {
+        if (!stale)
+          setRequestError(
+            error instanceof Error ? error.message : 'The requested evaluation is unavailable.',
+          );
+      } finally {
+        if (!stale) setRequestLoading(false);
+      }
+    }
+    void restore();
+    return () => {
+      stale = true;
+    };
+  }, [
+    initial.request,
+    initial.candidate,
+    initial.comparison,
+    candidate,
+    state.actorScope,
+    state.projectId,
+    state.bundleId,
+    state.channel,
+  ]);
+  useLayoutEffect(() => {
+    if (busy || !requestFocusId.current) return;
+    const current = document.activeElement;
+    if (
+      requestOwnsFocus.current &&
+      (current === createRequestAction.current || current === document.body)
+    )
+      document.getElementById(`evaluation-request-${requestFocusId.current}`)?.focus();
+    requestFocusId.current = null;
+    requestOwnsFocus.current = false;
+  }, [busy, requests]);
+  function comparisonHref(id: string, request?: string) {
     return bundleHref(scope, 'changes', {
       candidate: candidate || undefined,
       draft: initial.draft || undefined,
       generation: initial.generation || undefined,
       proposal: initial.proposal && initial.proposal !== 'new' ? initial.proposal : undefined,
       comparison: id,
+      request,
     });
   }
   async function act(data: Record<string, unknown>) {
@@ -424,7 +643,10 @@ export function ImprovementWorkspace({
         }
       }
       if ('request' in r && r.request) {
-        if (data.action === 'evaluate') acceptEvaluationForm(r.request);
+        if (data.action === 'evaluate') {
+          acceptEvaluationForm(r.request);
+          requestFocusId.current = r.request.id;
+        }
         setRequests((previous) => [
           r.request!,
           ...previous.filter((row) => row.id !== r.request!.id),
@@ -534,13 +756,191 @@ export function ImprovementWorkspace({
     ? compatibilityIssues(detail.candidate.payload, state.compatibilityTarget)
     : [];
   const currentBase = detail?.candidate.version.parentVersionId === state.resolution.version.id;
-  const candidateRequests = requests.filter((request) => request.candidateVersionId === candidate);
+  const loadedCandidateRequests = requests.filter(
+    (request) => request.candidateVersionId === candidate,
+  );
+  const candidateRequests =
+    directRequest &&
+    directRequest.candidateVersionId === candidate &&
+    !loadedCandidateRequests.some((row) => row.id === directRequest.id)
+      ? [directRequest, ...loadedCandidateRequests]
+      : loadedCandidateRequests;
+  const selectedRequest =
+    candidateRequests.find((request) => request.id === initial.request) ||
+    (!initial.request
+      ? candidateRequests.find(
+          (request) =>
+            request.comparisonId === comparison?.id &&
+            comparison?.evaluation?.requestId === request.id,
+        )
+      : undefined);
+  const visibleRequests = showAllRequests
+    ? candidateRequests
+    : candidateRequests.filter(
+        (request, index) =>
+          index < (selectedRequest && candidateRequests.indexOf(selectedRequest) >= 5 ? 4 : 5) ||
+          request === selectedRequest,
+      );
   const isCurrentRelease = Boolean(candidate) && candidate === state.resolution.version.id;
-  const publishStage = Boolean(comparison) || isCurrentRelease;
+  const savedReviewDetails = detail?.candidate && (
+    <>
+      <Disclosure>
+        <DisclosureTrigger className="cursor-pointer font-medium">
+          Review file changes
+        </DisclosureTrigger>
+        <DisclosureContent>
+          <div className="mt-4">
+            <ContentDiff base={detail.parentPayload} current={detail.candidate.payload} />
+          </div>
+        </DisclosureContent>
+      </Disclosure>
+      <Disclosure>
+        <DisclosureTrigger className="cursor-pointer">Saved snapshot details</DisclosureTrigger>
+        <DisclosureContent>
+          <p className="mt-3">
+            Channel {state.channel} · current revision {state.resolution.revision}
+          </p>
+          <p>
+            Compatibility target {state.compatibilityTarget}
+            {state.compatibilityTarget === 'generic' ? ' · native compatibility unchecked' : ''}
+          </p>
+          {selectedProposal && (
+            <p>
+              Suggestion {selectedProposal.id} · {selectedProposal.attempts} attempts
+            </p>
+          )}
+          <p className="break-all">Immutable version ID: {candidate}</p>
+          <CopyButton value={candidate} label="Copy version ID" />
+          <p className="break-all">Verified digest: {detail.candidate.version.digest}</p>
+          <p className="break-all">
+            Base: {detail.candidate.version.parentVersionId} · current:{' '}
+            {state.resolution.version.id}
+          </p>
+          <SyntaxCode
+            className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs"
+            code={JSON.stringify(detail.candidate, null, 2)}
+            language="json"
+          />
+        </DisclosureContent>
+      </Disclosure>
+    </>
+  );
+  const evaluationSetup = detail?.candidate && !isCurrentRelease && (
+    <section
+      className="review-section evaluation-setup space-y-3 px-4 py-3"
+      aria-label="Create evaluation request"
+    >
+      <Disclosure
+        key={candidateRequests.length === 0 ? 'first-request' : 'another-request'}
+        defaultOpen={candidateRequests.length === 0}
+      >
+        <DisclosureTrigger className="cursor-pointer font-medium">
+          <span className="evaluation-setup-title">
+            <FlaskConical aria-hidden="true" />
+            {candidateRequests.length
+              ? 'Create another evaluation request'
+              : 'Set up evaluation request'}
+          </span>
+        </DisclosureTrigger>
+        <DisclosureContent>
+          <div className="evaluation-configuration-form mt-3 space-y-3">
+            <p className="evaluation-step-label">
+              1. Configure · 2. Run in your app · 3. Review evidence
+            </p>
+            <Label className="block space-y-1">
+              Evaluation configuration
+              <NativeSelect
+                className="w-full"
+                aria-label="Evaluation configuration"
+                value={evaluationProfile}
+                disabled={busy || !!pending || related.blocked}
+                onChange={(event) =>
+                  setEvaluationProfile(event.target.value as EvaluationPreset | 'custom')
+                }
+              >
+                <option value="custom">My app's installed evaluator</option>
+                <optgroup label="Examples from this checkout">
+                  <option value="payment-retry">
+                    Example: Payment retry simulator · model-free
+                  </option>
+                  <option value="presence-contract">
+                    Example: File presence contract · model-free
+                  </option>
+                  <option value="codex-luna-review">Example: Native Codex review · Luna</option>
+                </optgroup>
+              </NativeSelect>
+            </Label>
+            {evaluationProfile === 'custom' && (
+              <Label className="block space-y-1">
+                Public evaluator configuration (JSON)
+                <Textarea
+                  aria-label="Public evaluator configuration (JSON)"
+                  className="min-h-40 font-mono"
+                  value={customConfiguration}
+                  disabled={busy || !!pending || related.blocked}
+                  onChange={(event) => setCustomConfiguration(event.target.value)}
+                />
+                <span className="text-muted-foreground">
+                  Paste the configuration your installed app describes: datasetRevision,
+                  graderRevision, runtime (including configId/configRevision), and expectedCases.
+                  Keep credentials and case contents in the app.
+                </span>
+              </Label>
+            )}
+            <p id="evaluation-prerequisites" className="text-muted-foreground">
+              {evaluationProfile === 'payment-retry'
+                ? 'The simulator needs payment-policy.json data. Three scenarios × two repetitions, no model calls. This checks orchestration, not native agent quality.'
+                : evaluationProfile === 'presence-contract'
+                  ? 'Checks nonempty instruction and skill files. This is a delivery contract check, not a behavioral score.'
+                  : evaluationProfile === 'codex-luna-review'
+                    ? 'The included checkout review and grader use Codex. After separate setup, that adapter requires --live and allows up to four bounded Luna turns. Creating a request makes no model call.'
+                    : 'Your app runs its installed adapter and grader. The service freezes these settings and records evidence; it never executes configuration as code.'}
+            </p>
+            {configurationError && (
+              <p role="alert" className="text-destructive">
+                {configurationError}
+              </p>
+            )}
+            <Button
+              disabled={
+                busy ||
+                !!pending ||
+                related.blocked ||
+                !state.canEdit ||
+                !currentBase ||
+                !evaluationConfig
+              }
+              ref={createRequestAction}
+              aria-describedby="evaluation-prerequisites"
+              onClick={(event) => {
+                requestOwnsFocus.current = document.activeElement === event.currentTarget;
+                void act({ action: 'evaluate', ...base, configuration: evaluationConfig });
+              }}
+            >
+              Create evaluation request
+            </Button>
+          </div>
+        </DisclosureContent>
+      </Disclosure>
+    </section>
+  );
   return (
-    <div className="min-w-0 space-y-4 text-sm">
+    <div className={`min-w-0 space-y-4 text-sm${mode === 'proposal' ? ' proposal-page' : ''}`}>
       <RelatedPendingNotice recovery={related} scope={scope} canEdit={state.canEdit} />
       {message && <p role="status">{message}</p>}
+      {requestLoading && <p role="status">Loading requested evaluation…</p>}
+      {requestError && (
+        <div role="alert">
+          <p>{requestError}</p>
+          {(initial.comparison || directRequest?.comparisonId) && (
+            <ConsoleLink
+              href={comparisonHref((initial.comparison || directRequest?.comparisonId)!)}
+            >
+              Inspect comparison independently
+            </ConsoleLink>
+          )}
+        </div>
+      )}
       {confirmedProposal && (
         <ConsoleLink
           href={bundleHref(scope, 'changes', { proposal: confirmedProposal.id })}
@@ -563,178 +963,112 @@ export function ImprovementWorkspace({
           <Button disabled={busy} onClick={() => void recover('lookup')}>
             Check result
           </Button>
-          <details>
-            <summary className="cursor-pointer">Recovery details</summary>
-            <div className="mt-3 space-y-3">
-              {pending.body && (
-                <Button disabled={busy} variant="outline" onClick={() => void recover('retry')}>
-                  Retry exact submitted snapshot
-                </Button>
-              )}{' '}
-              <Button disabled={busy} variant="outline" onClick={() => void recover('close')}>
-                Close earlier operation before a new request
-              </Button>{' '}
-              {pending.body && (
-                <Button
-                  disabled={busy}
-                  variant="outline"
-                  onClick={() => setPending(forgetPending(sessionStorage, pendingScope))}
-                >
-                  Forget submitted text
-                </Button>
-              )}
-              <p>
-                Closing preserves any known commit and rejects delayed writes. Forgetting text does
-                not cancel the submission or prove that execution failed. Without submitted text,
-                exact retry is unavailable.
-              </p>
-              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs">
-                {JSON.stringify(pending, null, 2)}
-              </pre>
-            </div>
-          </details>
+          <Disclosure>
+            <DisclosureTrigger className="cursor-pointer">Recovery details</DisclosureTrigger>
+            <DisclosureContent>
+              <div className="mt-3 space-y-3">
+                {pending.body && (
+                  <Button disabled={busy} variant="outline" onClick={() => void recover('retry')}>
+                    Retry exact submitted snapshot
+                  </Button>
+                )}{' '}
+                <Button disabled={busy} variant="outline" onClick={() => void recover('close')}>
+                  Close earlier operation before a new request
+                </Button>{' '}
+                {pending.body && (
+                  <Button
+                    disabled={busy}
+                    variant="outline"
+                    onClick={() => setPending(forgetPending(sessionStorage, pendingScope))}
+                  >
+                    Forget submitted text
+                  </Button>
+                )}
+                <p>
+                  Closing preserves any known commit and rejects delayed writes. Forgetting text
+                  does not cancel the submission or prove that execution failed. Without submitted
+                  text, exact retry is unavailable.
+                </p>
+                <SyntaxCode
+                  className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs"
+                  code={JSON.stringify(pending, null, 2)}
+                  language="json"
+                />
+              </div>
+            </DisclosureContent>
+          </Disclosure>
         </section>
       )}
       {mode === 'proposal' && (
-        <section className="workspace-panel space-y-4 p-4">
-          <h2 className="text-lg font-semibold">Suggest a change</h2>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-muted-foreground">
-              Based on {state.channel} · revision {state.resolution.revision}
-            </p>
-            {releaseTargetControl}
-          </div>
-          <p className="text-muted-foreground">
-            Describe the change and choose which files the provider may edit. You’ll review its
-            suggestion before publishing.
-          </p>
-          <details className="text-muted-foreground">
-            <summary className="cursor-pointer">Source release details</summary>
-            <p className="mt-2 break-all">
-              Published parent: {state.resolution.version.id} · {state.resolution.version.digest}
-            </p>
-          </details>
-          <div className="space-y-1">
-            <Label htmlFor="proposal-hypothesis">Hypothesis</Label>
-            <Textarea
-              id="proposal-hypothesis"
-              disabled={busy || !state.canEdit}
-              value={hypothesis}
-              onChange={(e) => setHypothesis(e.target.value)}
-            />
-          </div>
-          <fieldset>
-            <legend>Editable paths</legend>
-            {state.payload.files.map((f) => (
-              <label
-                key={f.path}
-                data-slot="label"
-                className="flex min-h-8 items-center gap-2 text-sm"
-              >
-                <Checkbox
-                  aria-label={f.path}
-                  disabled={busy || !state.canEdit}
-                  checked={paths.includes(f.path)}
-                  onCheckedChange={(checked) =>
-                    setPaths((p) =>
-                      checked === true ? [...p, f.path] : p.filter((x) => x !== f.path),
-                    )
-                  }
-                />{' '}
-                {f.path}
-              </label>
-            ))}
-          </fieldset>
-          <div className="space-y-1">
-            <Label htmlFor="proposal-evidence">Authorized evidence (one item per line)</Label>
-            <Textarea
-              id="proposal-evidence"
-              disabled={busy || !state.canEdit}
-              value={evidence}
-              onChange={(e) => setEvidence(e.target.value)}
-            />
-          </div>
-          <p className="text-sm">
-            The operator-configured provider receives the whole parent bundle, including reusable
-            memory, and this evidence. Editable paths restrict changes, not reading. Private session
-            memory remains app-owned.
-          </p>
-          <label data-slot="label" className="block min-h-8">
-            <Checkbox
-              aria-label="Authorize bundle disclosure"
-              disabled={busy || !state.canEdit}
-              checked={consent}
-              onCheckedChange={(checked) => setConsent(checked === true)}
-            />{' '}
-            I authorize sharing the entire selected bundle and supplied evidence with the provider.
-          </label>
-          <Button
-            disabled={
-              !state.canEdit ||
-              busy ||
-              !!pending ||
-              related.blocked ||
-              !consent ||
-              !hypothesis.trim() ||
-              !paths.length
-            }
-            onClick={() =>
-              void act({
-                action: 'propose',
-                parentVersionId: state.resolution.version.id,
-                hypothesis,
-                allowedPaths: paths,
-                evidence: evidence.split('\n').filter(Boolean),
-                consent,
-              })
-            }
-          >
-            Request suggestion
-          </Button>
-        </section>
+        <SuggestionComposer
+          files={state.payload.files}
+          channel={state.channel}
+          revision={state.resolution.revision}
+          parentVersionId={state.resolution.version.id}
+          parentDigest={state.resolution.version.digest}
+          hypothesis={hypothesis}
+          evidence={evidence}
+          paths={paths}
+          consent={consent}
+          canEdit={state.canEdit}
+          busy={busy}
+          pending={!!pending}
+          blocked={related.blocked}
+          blockedReason={
+            related.error ||
+            (related.record
+              ? 'Resolve the pending submission above before requesting another suggestion.'
+              : undefined)
+          }
+          onHypothesisChange={setHypothesis}
+          onEvidenceChange={setEvidence}
+          onPathsChange={setPaths}
+          onConsentChange={setConsent}
+          onSubmit={() =>
+            void act({
+              action: 'propose',
+              parentVersionId: state.resolution.version.id,
+              hypothesis,
+              allowedPaths: paths,
+              evidence: evidence.split('\n').filter(Boolean),
+              consent,
+            })
+          }
+        />
       )}
       {mode === 'review' && (
-        <>
-          <section className="workspace-panel space-y-4 p-4" aria-label="Saved change review">
-            <ol
-              aria-label="Change workflow"
-              className="flex flex-wrap items-center gap-2 text-muted-foreground"
-            >
-              <li aria-current={!candidate ? 'step' : undefined}>
-                {candidate ? '1. Saved change' : <Badge>1. Prepare suggestion</Badge>}
-              </li>
-              <li aria-hidden="true">→</li>
-              <li aria-current={candidate && !publishStage ? 'step' : undefined}>
-                {candidate && !publishStage ? <Badge>2. Evaluate</Badge> : '2. Evaluate'}
-              </li>
-              <li aria-hidden="true">→</li>
-              <li aria-current={publishStage ? 'step' : undefined}>
-                {publishStage ? <Badge>3. Publish</Badge> : '3. Publish'}
-              </li>
-            </ol>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">
+        <div className="review-workspace evaluation-workspace min-w-0">
+          <section className="review-summary space-y-3 px-4 py-3" aria-label="Saved change review">
+            <div className="workflow-status-row flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="review-identity flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                <h2 className="evaluation-page-title">
                   {isCurrentRelease
-                    ? `Published to ${state.channel}`
-                    : publishStage
-                      ? 'Review evidence and publish'
-                      : candidate
-                        ? 'Evaluate saved change'
-                        : selectedProposal?.status === 'failed'
-                          ? 'Suggestion failed'
-                          : 'Suggestion in progress'}
+                    ? 'Published change'
+                    : candidate
+                      ? 'Evaluate saved change'
+                      : 'Suggestion'}
                 </h2>
-                <p className="text-muted-foreground">
-                  {initial.draft ? `Saved draft · generation ${initial.generation}` : 'Suggestion'}
-                  {candidate && ' · Saved snapshot'}
-                </p>
+                {!state.canEdit && <span className="text-muted-foreground">Read only</span>}
+                {initial.draft && (
+                  <span className="text-muted-foreground">
+                    Generation {initial.generation} saved
+                  </span>
+                )}
+                {!candidate && !selectedProposal && <span>Preparing suggestion</span>}
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <strong>Release target: {state.channel}</strong>
-                {releaseTargetControl}
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                {initial.draft && (
+                  <Button asChild variant="outline">
+                    <ConsoleLink
+                      aria-label="Back to draft editor"
+                      href={bundleHref(scope, 'changes', { draft: initial.draft })}
+                    >
+                      Back to draft
+                    </ConsoleLink>
+                  </Button>
+                )}
                 {isCurrentRelease && (
-                  <Button asChild>
+                  <Button asChild variant="outline">
                     <ConsoleLink href={bundleHref(scope, 'releases')}>
                       View release history
                     </ConsoleLink>
@@ -742,9 +1076,14 @@ export function ImprovementWorkspace({
                 )}
               </div>
             </div>
+            {candidate && !isCurrentRelease && (
+              <p className="review-boundary text-muted-foreground">
+                {reviewNextStep(candidateRequests, Boolean(comparison), Boolean(requestCursor))}
+              </p>
+            )}
             {selectedProposal && (
-              <div className="space-y-2">
-                <p>
+              <div className="suggestion-result space-y-2" data-status={selectedProposal.status}>
+                <p className="suggestion-result-status" role="status">
                   {selectedProposal.status === 'queued'
                     ? 'Waiting for provider'
                     : selectedProposal.status === 'running'
@@ -776,14 +1115,6 @@ export function ImprovementWorkspace({
                 )}
               </div>
             )}
-            {initial.draft && (
-              <ConsoleLink
-                className="inline-block underline"
-                href={bundleHref(scope, 'changes', { draft: initial.draft })}
-              >
-                Back to draft editor
-              </ConsoleLink>
-            )}
             {detail?.candidate && (
               <>
                 {compatibility.length > 0 && (
@@ -808,433 +1139,638 @@ export function ImprovementWorkspace({
                     </ConsoleLink>
                   </p>
                 )}
-                <details>
-                  <summary className="cursor-pointer font-medium">Review file changes</summary>
-                  <div className="mt-4">
-                    <ContentDiff base={detail.parentPayload} current={detail.candidate.payload} />
-                  </div>
-                </details>
-                <details>
-                  <summary className="cursor-pointer">Saved snapshot details</summary>
-                  <p className="mt-3">
-                    Revision {state.resolution.revision} · compatibility target{' '}
-                    {state.compatibilityTarget}
-                    {state.compatibilityTarget === 'generic'
-                      ? ' · native compatibility unchecked'
-                      : ''}
-                  </p>
-                  {selectedProposal && (
-                    <p>
-                      Suggestion {selectedProposal.id} · {selectedProposal.attempts} attempts
-                    </p>
-                  )}
-                  <p className="break-all">Immutable version ID: {candidate}</p>
-                  <CopyButton value={candidate} label="Copy version ID" />
-                  <p className="break-all">Verified digest: {detail.candidate.version.digest}</p>
-                  <p className="break-all">
-                    Base: {detail.candidate.version.parentVersionId} · current:{' '}
-                    {state.resolution.version.id}
-                  </p>
-                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs">
-                    {JSON.stringify(detail.candidate, null, 2)}
-                  </pre>
-                </details>
+                {candidateRequests.length === 0 && savedReviewDetails}
               </>
             )}
           </section>
-          {detail?.candidate && !isCurrentRelease && (
-            <section className="workspace-panel space-y-4 p-4" aria-label="Release path">
-              <h2 className="font-semibold">2. Evaluate in your app</h2>
-              <p className="text-muted-foreground">
-                Create a request, run it with your app’s evaluator, then return to inspect the
-                results. The console does not run evaluations.
-              </p>
-              <details open={candidateRequests.length === 0}>
-                <summary className="cursor-pointer font-medium">
-                  {candidateRequests.length
-                    ? 'Create another evaluation request'
-                    : 'Set up evaluation request'}
-                </summary>
-                <div className="mt-4 space-y-4">
-                  <label className="block space-y-1">
-                    Evaluation configuration
-                    <NativeSelect
-                      className="w-full"
-                      aria-label="Evaluation configuration"
-                      value={evaluationProfile}
-                      disabled={busy || !!pending || related.blocked}
-                      onChange={(event) =>
-                        setEvaluationProfile(event.target.value as EvaluationPreset | 'custom')
-                      }
-                    >
-                      <option value="payment-retry">Payment retry simulator · model-free</option>
-                      <option value="presence-contract">File presence contract · model-free</option>
-                      <option value="codex-luna-review">Native Codex review · Luna</option>
-                      <option value="custom">My app's installed evaluator</option>
-                    </NativeSelect>
-                  </label>
-                  {evaluationProfile === 'custom' && (
-                    <label className="block space-y-1">
-                      Public evaluator configuration (JSON)
-                      <Textarea
-                        aria-label="Public evaluator configuration (JSON)"
-                        className="min-h-40 font-mono"
-                        value={customConfiguration}
-                        disabled={busy || !!pending || related.blocked}
-                        onChange={(event) => setCustomConfiguration(event.target.value)}
-                      />
-                      <span className="text-muted-foreground">
-                        Paste the configuration your installed app describes: datasetRevision,
-                        graderRevision, runtime (including configId/configRevision), and
-                        expectedCases. Keep credentials and case contents in the app.
-                      </span>
-                    </label>
-                  )}
-                  {configurationError && (
-                    <p role="alert" className="text-destructive">
-                      {configurationError}
-                    </p>
-                  )}
-                  <Button
-                    disabled={
-                      busy ||
-                      !!pending ||
-                      related.blocked ||
-                      !state.canEdit ||
-                      !currentBase ||
-                      !evaluationConfig
-                    }
-                    onClick={() =>
-                      void act({ action: 'evaluate', ...base, configuration: evaluationConfig })
-                    }
-                  >
-                    Create new evaluation request
-                  </Button>
-                  <p className="text-muted-foreground">
-                    {evaluationProfile === 'payment-retry'
-                      ? 'The simulator needs payment-policy.json data. Three scenarios × two repetitions, no model calls. This checks orchestration, not native agent quality.'
-                      : evaluationProfile === 'presence-contract'
-                        ? 'Checks nonempty instruction and skill files. This is a delivery contract check, not a behavioral score.'
-                        : evaluationProfile === 'codex-luna-review'
-                          ? 'The included checkout review and grader use Codex. After separate setup, that adapter requires --live and allows up to four bounded Luna turns. Creating a request makes no model call.'
-                          : 'Your app runs its installed adapter and grader. The service freezes these settings and records evidence; it never executes configuration as code.'}
-                  </p>
-                </div>
-              </details>
-            </section>
-          )}
           {candidate && (
-            <>
-              <section className="workspace-panel space-y-4 p-4" aria-label="Evaluation requests">
-                <h2 className="font-semibold">Evaluation results</h2>
-                {!candidateRequests.length && (
-                  <div className="space-y-3">
-                    <p className="text-muted-foreground">
-                      {requestCursor
-                        ? 'No matching requests on the loaded pages. Check older requests for this saved change.'
-                        : 'No evaluation requests found for this saved change.'}
+            <div
+              className={`evaluation-board${candidateRequests.length || requestCursor ? ' has-runs' : ''}${comparison ? ' has-evidence' : ''}`}
+            >
+              <div className="evaluation-run-sidebar">
+                {evaluationSetup}
+                {(candidateRequests.length > 0 || requestCursor) && (
+                  <section
+                    className="review-section evaluation-runs space-y-3 px-4 py-3"
+                    aria-label="Evaluation requests"
+                  >
+                    <div className="evaluation-panel-heading">
+                      <h2 className="font-semibold">Evaluation results</h2>
+                      <span className="text-muted-foreground">
+                        {candidateRequests.length} loaded
+                      </span>
+                    </div>
+                    <p className="evaluation-section-description text-muted-foreground">
+                      Requests and results for this saved change.
                     </p>
-                    {requestCursor && (
+                    {candidateRequests.some(
+                      (request) => request.runtime.source === 'simulated-example',
+                    ) && (
+                      <p className="evaluation-history-example text-muted-foreground">
+                        <FlaskConical aria-hidden="true" />
+                        Includes simulated examples · no model runs
+                      </p>
+                    )}
+                    {!candidateRequests.length && (
+                      <div className="space-y-3">
+                        <p className="text-muted-foreground">
+                          {requestCursor
+                            ? 'No matching requests on the loaded pages. Check older requests for this saved change.'
+                            : 'No evaluation requests found for this saved change.'}
+                        </p>
+                        {requestCursor && (
+                          <Button
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => void refresh(requestCursor)}
+                          >
+                            Load older requests
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                    {visibleRequests.map((request, index) => {
+                      const selectedEvidence = Boolean(
+                        comparison && requestEvidence(request, comparison).status === 'bound',
+                      );
+                      const labels = evaluationRequestLabels(request, selectedEvidence);
+                      const command = includedEvaluatorSetupCommand(
+                        state.bundleId,
+                        request.id,
+                        request,
+                      );
+                      const handoff = evaluationHandoff(
+                        state.publicApiUrl,
+                        state.projectId,
+                        state.bundleId,
+                        request.id,
+                        request,
+                      );
+                      return (
+                        <Disclosure
+                          key={`${request.id}-${initial.request === request.id}`}
+                          defaultOpen={
+                            initial.request === request.id ||
+                            (candidateRequests.length === 1 && index === 0 && !request.comparisonId)
+                          }
+                          className={`evaluation-request space-y-2${selectedEvidence ? ' is-selected-evidence' : ''}`}
+                          aria-label={`Evaluation request ${request.id}`}
+                        >
+                          <div className="evaluation-request-row flex flex-wrap items-center justify-between gap-2">
+                            <DisclosureTrigger
+                              id={`evaluation-request-${request.id}`}
+                              aria-label={labels.details}
+                              className="cursor-pointer font-medium"
+                            >
+                              <span className="evaluation-run-summary">
+                                {directRequest?.id === request.id &&
+                                  !loadedCandidateRequests.some((row) => row.id === request.id) && (
+                                    <span>Selected outside loaded pages · </span>
+                                  )}
+                                <span className="evaluation-run-title">
+                                  <span
+                                    className={`evaluation-run-status-icon is-${request.status}`}
+                                    aria-hidden="true"
+                                  >
+                                    {request.status === 'completed' ? (
+                                      <CircleCheck />
+                                    ) : request.status === 'failed' ? (
+                                      <CircleX />
+                                    ) : request.status === 'interrupted' ? (
+                                      <CirclePause />
+                                    ) : request.status === 'running' ? (
+                                      <Radio />
+                                    ) : (
+                                      <CircleDashed />
+                                    )}
+                                  </span>
+                                  <span
+                                    className="evaluation-run-name"
+                                    title={request.datasetRevision}
+                                  >
+                                    {request.datasetRevision}
+                                  </span>
+                                </span>
+                                <span className="evaluation-run-meta">
+                                  <span className={`evaluation-run-status is-${request.status}`}>
+                                    {request.status === 'requested'
+                                      ? 'Ready'
+                                      : request.status === 'interrupted'
+                                        ? 'Interrupted'
+                                        : request.status.charAt(0).toUpperCase() +
+                                          request.status.slice(1)}
+                                  </span>{' '}
+                                  · {request.expectedCases.length} pairs
+                                </span>
+                                <span className="evaluation-run-meta" title={request.id}>
+                                  Request {request.id.slice(0, 8)}
+                                </span>
+                              </span>
+                            </DisclosureTrigger>
+                            {request.comparisonId && (
+                              <Tooltip>
+                                <TooltipTrigger asChild data-slot="button">
+                                  <Button
+                                    asChild
+                                    size="icon"
+                                    variant={selectedEvidence ? 'secondary' : 'outline'}
+                                  >
+                                    <ConsoleLink
+                                      href={comparisonHref(request.comparisonId, request.id)}
+                                      aria-label={labels.inspect}
+                                      aria-current={selectedEvidence ? 'true' : undefined}
+                                    >
+                                      <ArrowRight aria-hidden="true" />
+                                    </ConsoleLink>
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Inspect evidence</TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
+                          <DisclosureContent className="space-y-2">
+                            {request.error && <p role="alert">{request.error}</p>}
+                            <p className="text-muted-foreground">
+                              {request.status === 'requested'
+                                ? 'Ready to run in your app'
+                                : request.status === 'interrupted'
+                                  ? 'Recorded interruption'
+                                  : `App reported ${request.status}`}
+                            </p>
+                            {!request.comparisonId && (
+                              <div className="flex flex-wrap gap-2">
+                                <CopyButton value={request.id} label="Copy request ID" />
+                                <CopyButton value={handoff} label="Copy configuration" />
+                              </div>
+                            )}
+                            {request.status === 'running' && (
+                              <p>Check your app for current execution status.</p>
+                            )}
+                            {!request.comparisonId && request.status !== 'running' && (
+                              <p className="text-muted-foreground">
+                                {request.status === 'requested'
+                                  ? 'Run in your app with the request ID and frozen public configuration.'
+                                  : 'No comparison was reported. Check the app logs before creating another request.'}
+                              </p>
+                            )}
+                            <Disclosure>
+                              <DisclosureTrigger className="cursor-pointer">
+                                Request details
+                              </DisclosureTrigger>
+                              <DisclosureContent>
+                                {request.comparisonId && (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    <CopyButton value={request.id} label="Copy request ID" />
+                                    <CopyButton value={handoff} label="Copy configuration" />
+                                  </div>
+                                )}
+                                <p className="mt-2 break-all">Dataset: {request.datasetRevision}</p>
+                                <p className="text-muted-foreground">
+                                  Updated{' '}
+                                  <time dateTime={request.updatedAt}>
+                                    {new Date(request.updatedAt).toLocaleString()}
+                                  </time>
+                                </p>
+                                <p className="mt-2 text-muted-foreground">
+                                  {request.requireBoundEvidence
+                                    ? 'Bound evidence required'
+                                    : 'Legacy completion allowed'}
+                                </p>
+                                <p className="break-all">Request ID: {request.id}</p>
+                                <p className="break-all">Public API: {state.publicApiUrl}</p>
+                                <SyntaxCode
+                                  className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs"
+                                  code={handoff}
+                                  language="json"
+                                />
+                                <SyntaxCode
+                                  className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs"
+                                  code={JSON.stringify(request, null, 2)}
+                                  language="json"
+                                />
+                              </DisclosureContent>
+                            </Disclosure>
+                            {command && (
+                              <Disclosure>
+                                <DisclosureTrigger className="cursor-pointer">
+                                  {request.comparisonId
+                                    ? 'Checkout evaluator setup details'
+                                    : 'Included checkout setup (required)'}
+                                </DisclosureTrigger>
+                                <DisclosureContent>
+                                  <div className="my-3 space-y-3 text-muted-foreground">
+                                    <p>
+                                      Install this checkout on the machine that will run
+                                      evaluations. Ask your service operator for a dedicated
+                                      evaluator machine principal with read/write access to this
+                                      project; propose and promote access are not needed.
+                                    </p>
+                                    <p>
+                                      Connections issues content-read and receipt-write credentials
+                                      for published delivery. Those credentials cannot run
+                                      evaluations or read unpublished candidates. Use the dedicated
+                                      evaluator credential below.
+                                    </p>
+                                    <p>
+                                      Create a private directory (0700) and a JSON file (0600)
+                                      outside version control. Replace these placeholders privately
+                                      with your app’s settings. Keep credentials out of the console,
+                                      chat, logs and command arguments.
+                                    </p>
+                                    <SyntaxCode
+                                      tabIndex={0}
+                                      aria-label="Private evaluator configuration template"
+                                      className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs"
+                                      code={JSON.stringify(
+                                        {
+                                          schemaVersion: 1,
+                                          serviceUrl: 'https://api.example.com',
+                                          projectId: 'YOUR_PROJECT_ID',
+                                          evaluatorPrincipalId:
+                                            'YOUR_DEDICATED_EVALUATOR_PRINCIPAL',
+                                          evaluatorToken: 'YOUR_SCOPED_EVALUATOR_TOKEN',
+                                          journalRoot: '/absolute/private/evaluation-journals',
+                                        },
+                                        null,
+                                        2,
+                                      )}
+                                      language="json"
+                                    />
+                                    <p>
+                                      Use the same service and project as this request. Set
+                                      journalRoot to an absolute, owner-only directory. Replace the
+                                      --config path below with your private JSON file, then run the
+                                      command from your installed checkout. Matching public settings
+                                      do not mean the adapter is installed. The console does not
+                                      execute this command.
+                                    </p>
+                                    <p>
+                                      For recovery, retain the same service, project, evaluator
+                                      principal and original journal directory. Do not delete or
+                                      relocate journals to retry execution.
+                                    </p>
+                                  </div>
+                                  <CopyButton value={command} label="Copy setup-required command" />
+                                  <SyntaxCode
+                                    className="block overflow-auto whitespace-pre-wrap break-all"
+                                    code={command}
+                                    language="bash"
+                                  />
+                                </DisclosureContent>
+                              </Disclosure>
+                            )}
+                            {['requested', 'running'].includes(request.status) && (
+                              <Disclosure>
+                                <DisclosureTrigger className="cursor-pointer">
+                                  Record an interruption
+                                </DisclosureTrigger>
+                                <DisclosureContent>
+                                  <div className="mt-3 space-y-3">
+                                    <p role="note">
+                                      Recording an interruption does not stop the external app or
+                                      its charges.
+                                    </p>
+                                    <Label className="block space-y-1">
+                                      Interruption reason (required)
+                                      <Textarea
+                                        aria-label={`Interruption reason for ${request.id}`}
+                                        required
+                                        value={interruptionReasons[request.id] || ''}
+                                        maxLength={1000}
+                                        onChange={(event) =>
+                                          setInterruptionReasons((previous) => ({
+                                            ...previous,
+                                            [request.id]: event.target.value,
+                                          }))
+                                        }
+                                      />
+                                    </Label>
+                                    <Button
+                                      variant="outline"
+                                      disabled={
+                                        busy ||
+                                        !state.canEdit ||
+                                        !interruptionReasons[request.id]?.trim()
+                                      }
+                                      onClick={() =>
+                                        void act({
+                                          action: 'interrupt',
+                                          id: request.id,
+                                          reason: interruptionReasons[request.id],
+                                        })
+                                      }
+                                    >
+                                      Mark interrupted
+                                    </Button>
+                                  </div>
+                                </DisclosureContent>
+                              </Disclosure>
+                            )}
+                          </DisclosureContent>
+                        </Disclosure>
+                      );
+                    })}
+                    {candidateRequests.length > 5 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowAllRequests(!showAllRequests)}
+                      >
+                        {showAllRequests
+                          ? 'Show fewer results'
+                          : `Show all ${candidateRequests.length} loaded results`}
+                      </Button>
+                    )}
+                    {requestCursor && candidateRequests.length > 0 && (
                       <Button
                         variant="outline"
                         disabled={busy}
-                        onClick={() => void refresh(requestCursor)}
+                        onClick={() => {
+                          setShowAllRequests(true);
+                          void refresh(requestCursor);
+                        }}
                       >
-                        Load older requests
+                        Load more evaluation requests
                       </Button>
                     )}
-                  </div>
+                  </section>
                 )}
-                {candidateRequests.map((request, index) => {
-                  const command = includedEvaluatorSetupCommand(
-                    state.bundleId,
-                    request.id,
-                    request,
-                  );
-                  const handoff = evaluationHandoff(
-                    state.publicApiUrl,
-                    state.projectId,
-                    state.bundleId,
-                    request.id,
-                    request,
-                  );
-                  return (
-                    <details
-                      key={request.id}
-                      open={index === 0}
-                      className="space-y-3 border-t pt-3"
-                      aria-label={`Evaluation request ${request.id.slice(0, 8)}`}
-                    >
-                      <summary className="cursor-pointer font-medium">
-                        {request.comparisonId
-                          ? 'Results available'
-                          : request.status === 'requested'
-                            ? 'Ready to run in your app'
-                            : `Last reported: ${request.status}`}{' '}
-                        · {new Date(request.updatedAt).toLocaleString()}
-                      </summary>
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <h3 className="font-medium">
-                            Request {request.id.slice(0, 8)} · last reported {request.status}
-                          </h3>
-                          <p className="text-muted-foreground">
-                            Updated{' '}
-                            <time dateTime={request.updatedAt}>
-                              {new Date(request.updatedAt).toLocaleString()}
-                            </time>{' '}
-                            ·{' '}
-                            {request.requireBoundEvidence
-                              ? 'bound evidence required'
-                              : 'legacy completion allowed'}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <CopyButton value={request.id} label="Copy request ID" />
-                          <CopyButton value={handoff} label="Copy configuration" />
-                        </div>
-                      </div>
-                      {request.status === 'running' && (
-                        <p>Last reported running. Check your app for current execution status.</p>
-                      )}
-                      {request.error && <p role="alert">{request.error}</p>}
-                      <p>
-                        {request.comparisonId
-                          ? 'Inspect the returned evidence before deciding to release.'
-                          : ['requested', 'running'].includes(request.status)
-                            ? "Hand the request ID and public configuration to your app's installed evaluator. It must match the frozen configuration. Creating a request does not execute work."
-                            : 'No comparison was reported. Review the last reported state and app logs before creating another request.'}
-                      </p>
-                      {request.comparisonId && (
-                        <Button asChild variant="outline">
-                          <ConsoleLink href={comparisonHref(request.comparisonId)}>
-                            Inspect evidence
-                          </ConsoleLink>
-                        </Button>
-                      )}
-                      <details>
-                        <summary className="cursor-pointer">Request details</summary>
-                        <p className="break-all">Request ID: {request.id}</p>
-                        <p className="break-all">Public API: {state.publicApiUrl}</p>
-                        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs">
-                          {handoff}
-                        </pre>
-                        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs">
-                          {JSON.stringify(request, null, 2)}
-                        </pre>
-                      </details>
-                      {command && (
-                        <details>
-                          <summary className="cursor-pointer">
-                            Included checkout setup (required)
-                          </summary>
-                          <div className="my-3 space-y-3 text-muted-foreground">
-                            <p>
-                              Install this checkout on the machine that will run evaluations. Ask
-                              your service operator for a dedicated evaluator machine principal with
-                              read/write access to this project; propose and promote access are not
-                              needed.
-                            </p>
-                            <p>
-                              Connections issues content-read and receipt-write credentials for
-                              published delivery. Those credentials cannot run evaluations or read
-                              unpublished candidates. Use the dedicated evaluator credential below.
-                            </p>
-                            <p>
-                              Create a private directory (0700) and a JSON file (0600) outside
-                              version control. Replace these placeholders privately with your app’s
-                              settings. Keep credentials out of the console, chat, logs and command
-                              arguments.
-                            </p>
-                            <pre
-                              tabIndex={0}
-                              aria-label="Private evaluator configuration template"
-                              className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs"
-                            >
-                              {JSON.stringify(
-                                {
-                                  schemaVersion: 1,
-                                  serviceUrl: 'https://api.example.com',
-                                  projectId: 'YOUR_PROJECT_ID',
-                                  evaluatorPrincipalId: 'YOUR_DEDICATED_EVALUATOR_PRINCIPAL',
-                                  evaluatorToken: 'YOUR_SCOPED_EVALUATOR_TOKEN',
-                                  journalRoot: '/absolute/private/evaluation-journals',
-                                },
-                                null,
-                                2,
-                              )}
-                            </pre>
-                            <p>
-                              Use the same service and project as this request. Set journalRoot to
-                              an absolute, owner-only directory. Replace the --config path below
-                              with your private JSON file, then run the command from your installed
-                              checkout. Matching public settings do not mean the adapter is
-                              installed. The console does not execute this command.
-                            </p>
-                            <p>
-                              For recovery, retain the same service, project, evaluator principal
-                              and original journal directory. Do not delete or relocate journals to
-                              retry execution.
-                            </p>
-                          </div>
-                          <CopyButton value={command} label="Copy setup-required command" />
-                          <code className="block overflow-auto whitespace-pre-wrap break-all">
-                            {command}
-                          </code>
-                        </details>
-                      )}
-                      {['requested', 'running'].includes(request.status) && (
-                        <details>
-                          <summary className="cursor-pointer">Record an interruption</summary>
-                          <div className="mt-3 space-y-3">
-                            <p role="note">
-                              Recording an interruption does not stop the external app or its
-                              charges.
-                            </p>
-                            <label className="block space-y-1">
-                              Interruption reason (required)
-                              <Textarea
-                                aria-label={`Interruption reason for ${request.id}`}
-                                required
-                                value={interruptionReasons[request.id] || ''}
-                                maxLength={1000}
-                                onChange={(event) =>
-                                  setInterruptionReasons((previous) => ({
-                                    ...previous,
-                                    [request.id]: event.target.value,
-                                  }))
-                                }
-                              />
-                            </label>
-                            <Button
-                              variant="outline"
-                              disabled={
-                                busy || !state.canEdit || !interruptionReasons[request.id]?.trim()
-                              }
-                              onClick={() =>
-                                void act({
-                                  action: 'interrupt',
-                                  id: request.id,
-                                  reason: interruptionReasons[request.id],
-                                })
-                              }
-                            >
-                              Mark interrupted
-                            </Button>
-                          </div>
-                        </details>
-                      )}
-                    </details>
-                  );
-                })}
-                {requestCursor && candidateRequests.length > 0 && (
-                  <Button
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => void refresh(requestCursor)}
+              </div>
+              <div className="evaluation-result-detail">
+                {(comparison || candidateRequests.length > 0 || requestCursor) && (
+                  <section
+                    className="review-section review-evidence space-y-3 px-4 py-3"
+                    aria-label="Evidence and release decision"
                   >
-                    Load more evaluation requests
-                  </Button>
-                )}
-              </section>
-              <section
-                className="workspace-panel space-y-4 p-4"
-                aria-label="Evidence and release decision"
-              >
-                <h2 className="font-semibold">3. Publish to {state.channel}</h2>
-                <details>
-                  <summary className="cursor-pointer">Comparison lookup and details</summary>
-                  <div className="mt-3 space-y-3">
-                    <label className="block space-y-1">
-                      Comparison ID
-                      <Input
-                        value={comparisonId}
-                        onChange={(event) => {
-                          setComparisonId(event.target.value);
-                          setComparison(null);
-                          setReleaseReview(null);
-                        }}
-                      />
-                    </label>
-                    <Button
-                      variant="outline"
-                      disabled={busy || !comparisonId}
-                      onClick={() => void act({ action: 'comparison', id: comparisonId })}
-                    >
-                      Inspect comparison
-                    </Button>
-                    {comparison && (
+                    <div className="evaluation-panel-heading">
+                      <div className="min-w-0">
+                        <h2 className="font-semibold">
+                          {comparison ? 'Reported evidence' : 'Compare results'}
+                        </h2>
+                        {comparison && (
+                          <p className="evaluation-evidence-dataset">
+                            {comparison.datasetRevision}
+                          </p>
+                        )}
+                      </div>
+                      {comparison && (
+                        <span className="text-muted-foreground">
+                          {new Date(comparison.createdAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    {comparison ? (
                       <>
-                        <p className="break-all">Selected comparison: {comparison.id}</p>
-                        <CopyButton value={comparison.id} label="Copy comparison ID" />
-                        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs">
-                          {JSON.stringify(comparison, null, 2)}
-                        </pre>
+                        {!initial.request && !comparison.evaluation && (
+                          <p>
+                            Legacy unbound evidence: this comparison is not attached to an
+                            evaluation request.
+                          </p>
+                        )}
+                        {(comparison.candidateVersionId !== candidate ||
+                          (!isCurrentRelease &&
+                            comparison.parentVersionId !== state.resolution.version.id)) && (
+                          <p role="alert">
+                            {isCurrentRelease
+                              ? 'This evidence belongs to a different candidate. It does not describe this release.'
+                              : 'This evidence does not match the saved candidate and current release target. Release with this evidence is unavailable.'}
+                          </p>
+                        )}
+                        {comparison.candidateVersionId === candidate && (
+                          <EvaluationScorecard comparison={comparison} />
+                        )}
+                        {comparison.runtime.source === 'simulated-example' && (
+                          <p className="evaluation-example-note">
+                            <FlaskConical aria-hidden="true" />
+                            Simulated example evidence. No agent or model ran for these results.
+                          </p>
+                        )}
+                        <ComparisonEvidence comparison={comparison} compact />
+                        {!isCurrentRelease && (
+                          <div className="review-evidence-action">
+                            <Button
+                              aria-describedby={
+                                !comparison.complete ? 'reported-evidence-incomplete' : undefined
+                              }
+                              disabled={
+                                busy ||
+                                !!pending ||
+                                related.blocked ||
+                                compatibility.length > 0 ||
+                                !state.canEdit ||
+                                !detail?.candidate ||
+                                !currentBase ||
+                                !comparison.complete ||
+                                comparison.candidateVersionId !== candidate ||
+                                comparison.parentVersionId !== state.resolution.version.id
+                              }
+                              onClick={(event) => {
+                                releaseReturnRef.current = event.currentTarget;
+                                setReleaseReview({
+                                  comparisonId: comparison.id,
+                                  versionId: candidate,
+                                  revision: state.resolution.revision,
+                                  generation: initial.generation,
+                                });
+                              }}
+                            >
+                              Review release with this evidence
+                            </Button>
+                            {!comparison.complete && (
+                              <p
+                                id="reported-evidence-incomplete"
+                                className="text-muted-foreground"
+                              >
+                                {comparisonIncompleteReason(comparison)}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </>
+                    ) : (
+                      <div className="evaluation-empty-evidence">
+                        <ChartNoAxesCombined aria-hidden="true" />
+                        <h3>
+                          {candidateRequests.some((request) => request.comparisonId)
+                            ? 'Choose a reported result'
+                            : 'Your results will appear here'}
+                        </h3>
+                        <p className="text-muted-foreground">
+                          {candidateRequests.some((request) => request.comparisonId)
+                            ? 'Use the arrow beside a reported run to compare the parent and candidate, see each case, and review a release.'
+                            : 'Run the request in your app, then report its comparison. This service records results; your app owns execution.'}
+                        </p>
+                      </div>
                     )}
-                  </div>
-                </details>
-                {comparison ? (
-                  <>
-                    <ComparisonEvidence comparison={comparison} />
-                    {(comparison.candidateVersionId !== candidate ||
-                      comparison.parentVersionId !== state.resolution.version.id) && (
-                      <p role="alert">
-                        This evidence does not match the saved candidate and current release target.
-                        Release with this evidence is unavailable.
-                      </p>
-                    )}
-                    <Button
-                      disabled={
-                        busy ||
-                        !!pending ||
-                        related.blocked ||
-                        compatibility.length > 0 ||
-                        !state.canEdit ||
-                        !detail?.candidate ||
-                        !currentBase ||
-                        !comparison.complete ||
-                        comparison.candidateVersionId !== candidate ||
-                        comparison.parentVersionId !== state.resolution.version.id
-                      }
-                      onClick={() =>
-                        setReleaseReview({
-                          comparisonId: comparison.id,
-                          versionId: candidate,
-                          revision: state.resolution.revision,
-                          generation: initial.generation,
-                        })
-                      }
-                    >
-                      Review release with this evidence
-                    </Button>
-                  </>
-                ) : (
-                  <p className="text-muted-foreground">
-                    Open “Inspect evidence” on a completed request to review the results before
-                    publishing.
-                  </p>
+                  </section>
+                )}
+                {candidateRequests.length > 0 && (
+                  <section
+                    className="review-section evaluation-snapshot-details space-y-3 px-4 py-3"
+                    aria-label="Saved change details"
+                  >
+                    {savedReviewDetails}
+                  </section>
+                )}
+                {(!isCurrentRelease || comparison) && (
+                  <section
+                    className="review-section evaluation-lookup px-4 py-3"
+                    aria-label="Comparison lookup"
+                  >
+                    <Disclosure>
+                      <DisclosureTrigger className="cursor-pointer">
+                        Comparison lookup and details
+                      </DisclosureTrigger>
+                      <DisclosureContent>
+                        <div className="mt-3 space-y-3">
+                          <Label className="block space-y-1">
+                            Comparison ID
+                            <Input
+                              value={comparisonId}
+                              onChange={(event) => {
+                                setComparisonId(event.target.value);
+                                setComparison(null);
+                                setReleaseReview(null);
+                              }}
+                            />
+                          </Label>
+                          <Button
+                            variant="outline"
+                            disabled={busy || !comparisonId}
+                            onClick={() => void act({ action: 'comparison', id: comparisonId })}
+                          >
+                            Inspect comparison
+                          </Button>
+                          {comparison && (
+                            <>
+                              <p className="break-all">Selected comparison: {comparison.id}</p>
+                              <CopyButton value={comparison.id} label="Copy comparison ID" />
+                              <SyntaxCode
+                                className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs"
+                                code={JSON.stringify(comparison, null, 2)}
+                                language="json"
+                              />
+                            </>
+                          )}
+                        </div>
+                      </DisclosureContent>
+                    </Disclosure>
+                  </section>
                 )}
                 {detail?.candidate && !isCurrentRelease && (
-                  <details className="border-t pt-3">
-                    <summary className="cursor-pointer font-medium">
-                      Publish without evaluation
-                    </summary>
-                    <div className="mt-4 space-y-4">
-                      <p>
-                        This release will record that no evaluation supports it. Only the saved
-                        snapshot above will be published.
-                      </p>
-                      <label className="block space-y-1">
-                        Manual release reason (required)
-                        <Textarea
-                          aria-label="Manual release reason"
-                          required
-                          value={reason}
-                          onChange={(event) => setReason(event.target.value)}
-                          maxLength={1000}
-                        />
-                      </label>
+                  <section
+                    className="review-section review-release space-y-3 px-4 py-3"
+                    aria-label="Release options"
+                  >
+                    <h2 className="font-semibold">Release options</h2>
+                    <Disclosure>
+                      <DisclosureTrigger className="cursor-pointer font-medium">
+                        Publish without evaluation
+                      </DisclosureTrigger>
+                      <DisclosureContent>
+                        <div className="mt-3 space-y-3">
+                          <p>
+                            This release will record that no evaluation supports it. Only the saved
+                            snapshot above will be published.
+                          </p>
+                          <Label className="block space-y-1">
+                            Manual release reason (required)
+                            <Textarea
+                              aria-label="Manual release reason"
+                              required
+                              value={reason}
+                              onChange={(event) => setReason(event.target.value)}
+                              maxLength={1000}
+                            />
+                          </Label>
+                          <Button
+                            disabled={
+                              busy ||
+                              !!pending ||
+                              related.blocked ||
+                              compatibility.length > 0 ||
+                              !state.canEdit ||
+                              !currentBase ||
+                              !reason.trim()
+                            }
+                            onClick={(event) => {
+                              releaseReturnRef.current = event.currentTarget;
+                              setReleaseReview({
+                                reason,
+                                versionId: candidate,
+                                revision: state.resolution.revision,
+                                generation: initial.generation,
+                              });
+                            }}
+                          >
+                            Review manual release
+                          </Button>
+                        </div>
+                      </DisclosureContent>
+                    </Disclosure>
+                    <Disclosure className="text-muted-foreground">
+                      <DisclosureTrigger className="cursor-pointer">
+                        What publishing changes
+                      </DisclosureTrigger>
+                      <DisclosureContent>
+                        <p className="mt-2">
+                          Publishing updates {state.channel} for future resolutions. Pinned
+                          workspaces stay pinned. A changed draft generation, parent or channel
+                          revision requires fresh review.
+                        </p>
+                      </DisclosureContent>
+                    </Disclosure>
+                  </section>
+                )}
+                <Dialog
+                  open={!!releaseReview}
+                  onOpenChange={(open) => {
+                    if (!open && !busy) setReleaseReview(null);
+                  }}
+                >
+                  <DialogContent
+                    size="decision"
+                    returnFocusRef={releaseReturnRef}
+                    className="max-h-[85dvh] overflow-y-auto text-sm"
+                  >
+                    <DialogHeader>
+                      <DialogTitle>Publish to {state.channel}?</DialogTitle>
+                      <DialogDescription>
+                        Publish the saved snapshot reviewed on this page. The full diff remains on
+                        the page.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <p>
+                      Bundle: <strong>{state.bundleName || state.bundleId}</strong>
+                    </p>
+                    <p>
+                      Target: <strong>{state.channel}</strong> · revision {releaseReview?.revision}
+                    </p>
+                    <p className="break-all">Published parent: {state.resolution.version.id}</p>
+                    <p className="break-all">
+                      Candidate: {releaseReview?.versionId}
+                      {initial.draft
+                        ? ` · generation ${releaseReview?.generation}`
+                        : ' · immutable suggestion snapshot'}
+                    </p>
+                    {releaseReview?.comparisonId ? (
+                      <p className="break-all">Selected evidence: {releaseReview.comparisonId}</p>
+                    ) : (
+                      <>
+                        <p>No evaluation supports this release.</p>
+                        <p className="whitespace-pre-wrap break-words">
+                          Reason: {releaseReview?.reason}
+                        </p>
+                      </>
+                    )}
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => setReleaseReview(null)}
+                      >
+                        Back to review
+                      </Button>
                       <Button
                         disabled={
                           busy ||
@@ -1242,193 +1778,41 @@ export function ImprovementWorkspace({
                           related.blocked ||
                           compatibility.length > 0 ||
                           !state.canEdit ||
+                          isCurrentRelease ||
                           !currentBase ||
-                          !reason.trim()
+                          !releaseReview ||
+                          releaseReview.versionId !== candidate ||
+                          releaseReview.revision !== state.resolution.revision ||
+                          releaseReview.generation !== initial.generation ||
+                          (!!releaseReview.comparisonId &&
+                            (!comparison?.complete ||
+                              comparison.id !== releaseReview.comparisonId ||
+                              comparison.candidateVersionId !== candidate ||
+                              comparison.parentVersionId !== state.resolution.version.id))
                         }
-                        onClick={() =>
-                          setReleaseReview({
-                            reason,
-                            versionId: candidate,
-                            revision: state.resolution.revision,
-                            generation: initial.generation,
-                          })
-                        }
+                        onClick={() => {
+                          if (releaseReview)
+                            void act({
+                              action: 'publish',
+                              ...base,
+                              ...(releaseReview.comparisonId
+                                ? { comparisonId: releaseReview.comparisonId }
+                                : { reason: releaseReview.reason }),
+                            });
+                        }}
                       >
-                        Review manual release
+                        {releaseReview?.comparisonId
+                          ? 'Publish with selected evidence'
+                          : 'Publish without evaluation'}
                       </Button>
-                    </div>
-                  </details>
-                )}
-                <details className="text-muted-foreground">
-                  <summary className="cursor-pointer">What publishing changes</summary>
-                  <p className="mt-2">
-                    Publishing updates {state.channel} for future resolutions. Pinned workspaces
-                    stay pinned. A changed draft generation, parent or channel revision requires
-                    fresh review.
-                  </p>
-                </details>
-              </section>
-              <Dialog
-                open={!!releaseReview}
-                onOpenChange={(open) => {
-                  if (!open && !busy) setReleaseReview(null);
-                }}
-              >
-                <DialogContent className="max-h-[85dvh] overflow-y-auto text-sm">
-                  <DialogHeader>
-                    <DialogTitle>Publish to {state.channel}?</DialogTitle>
-                    <DialogDescription>
-                      Publish the saved snapshot reviewed on this page. The full diff remains on the
-                      page.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <p>
-                    Target: <strong>{state.channel}</strong> · revision {releaseReview?.revision}
-                  </p>
-                  <p className="break-all">
-                    Candidate: {releaseReview?.versionId}
-                    {initial.draft
-                      ? ` · generation ${releaseReview?.generation}`
-                      : ' · immutable suggestion snapshot'}
-                  </p>
-                  {releaseReview?.comparisonId ? (
-                    <p className="break-all">Selected evidence: {releaseReview.comparisonId}</p>
-                  ) : (
-                    <>
-                      <p>No evaluation supports this release.</p>
-                      <p className="whitespace-pre-wrap break-words">
-                        Reason: {releaseReview?.reason}
-                      </p>
-                    </>
-                  )}
-                  <DialogFooter>
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => setReleaseReview(null)}
-                    >
-                      Back to review
-                    </Button>
-                    <Button
-                      disabled={
-                        busy ||
-                        !!pending ||
-                        related.blocked ||
-                        compatibility.length > 0 ||
-                        !state.canEdit ||
-                        !currentBase ||
-                        !releaseReview ||
-                        releaseReview.versionId !== candidate ||
-                        releaseReview.revision !== state.resolution.revision ||
-                        releaseReview.generation !== initial.generation ||
-                        (!!releaseReview.comparisonId &&
-                          (!comparison?.complete ||
-                            comparison.id !== releaseReview.comparisonId ||
-                            comparison.candidateVersionId !== candidate ||
-                            comparison.parentVersionId !== state.resolution.version.id))
-                      }
-                      onClick={() => {
-                        if (releaseReview)
-                          void act({
-                            action: 'publish',
-                            ...base,
-                            ...(releaseReview.comparisonId
-                              ? { comparisonId: releaseReview.comparisonId }
-                              : { reason: releaseReview.reason }),
-                          });
-                      }}
-                    >
-                      {releaseReview?.comparisonId
-                        ? 'Publish with selected evidence'
-                        : 'Publish without evaluation'}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
           )}
-        </>
+        </div>
       )}
-    </div>
-  );
-}
-
-function ComparisonEvidence({ comparison }: { comparison: Comparison }) {
-  const summary = comparisonSummary(comparison);
-  return (
-    <div className="space-y-3">
-      <p>
-        <strong>
-          {comparison.complete ? 'Complete inventory' : 'Incomplete evidence; not a win'}
-        </strong>{' '}
-        · {summary.scoredPairs} scored pairs / {comparison.expectedCases.length} expected pairs
-      </p>
-      <p>
-        {summary.missingGrades} missing grades · {summary.executionFailures} execution failures ·
-        total cost {summary.costUsd === null ? 'unknown' : `$${summary.costUsd}`}
-      </p>
-      <p>
-        {comparison.evaluation
-          ? `Bound to request ${comparison.evaluation.requestId.slice(0, 8)}, attempt ${comparison.evaluation.attemptId}`
-          : 'Legacy / unbound comparison evidence'}
-      </p>
-      <p className="break-all">
-        Dataset {comparison.datasetRevision} · grader {comparison.graderRevision}
-      </p>
-      <Table className="min-w-[32rem] text-sm">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Case / repetition</TableHead>
-            <TableHead>Parent</TableHead>
-            <TableHead>Candidate</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {summary.rows.map(({ key, pair }) => (
-            <TableRow key={`${key.caseId}:${key.repetition}`}>
-              <TableCell className="whitespace-normal break-words align-top">
-                {key.caseId} / {key.repetition}
-              </TableCell>
-              {([pair?.parent, pair?.candidate] as const).map((outcome, index) => (
-                <TableCell key={index} className="whitespace-normal align-top">
-                  {outcome ? (
-                    <div className="space-y-1">
-                      <p>
-                        {outcome.executionStatus} · {outcome.gradingStatus}
-                      </p>
-                      <p>
-                        Reward {outcome.reward ?? 'missing'} · cost{' '}
-                        {outcome.usage?.costUsd === undefined
-                          ? 'unknown'
-                          : `$${outcome.usage.costUsd}`}
-                      </p>
-                      {(outcome.outputRef || outcome.error) && (
-                        <details>
-                          <summary className="cursor-pointer">Output / error</summary>
-                          {outcome.error && (
-                            <p className="whitespace-pre-wrap break-all">{outcome.error}</p>
-                          )}
-                          {outcome.outputRef && (
-                            <pre className="max-h-80 min-w-0 overflow-auto whitespace-pre-wrap break-all text-sm">
-                              {outcome.outputRef}
-                            </pre>
-                          )}
-                        </details>
-                      )}
-                    </div>
-                  ) : (
-                    <p>Missing outcome · grade missing · cost unknown</p>
-                  )}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      <p className="text-muted-foreground">
-        Missing outcomes and grades remain missing. Unknown usage is not zero. Complete evidence
-        alone is not a win, statistical proof or release approval.
-      </p>
     </div>
   );
 }

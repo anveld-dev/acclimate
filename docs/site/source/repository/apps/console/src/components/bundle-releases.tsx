@@ -1,7 +1,11 @@
+import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { useRouter } from '@tanstack/react-router';
 import { RelatedPendingNotice, useRelatedPending } from './related-pending';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { CircleCheck, GitCommitHorizontal } from 'lucide-react';
+import { ChangeRecordDetails } from './change-record-details';
+import { SyntaxCode } from './syntax-code';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -36,6 +40,7 @@ import type { ConsoleState } from '../server/channel';
 
 export function BundleReleases({ state }: { state: Extract<ConsoleState, { status: 'ready' }> }) {
   const router = useRouter();
+  const restoreReturnRef = useRef<HTMLElement | null>(null);
   const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
@@ -209,76 +214,80 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
       <Button disabled={submitting} onClick={() => void reconcile()}>
         Check result
       </Button>
-      <details className="text-sm">
-        <summary className="cursor-pointer font-medium">Recovery details</summary>
-        <div className="mt-3 space-y-3">
-          <p className="break-all">Operation {operation.key}</p>
-          <CopyButton value={operation.key} label="Copy operation ID" />
-          {operation.body ? (
-            <>
+      <Disclosure className="text-sm">
+        <DisclosureTrigger className="cursor-pointer font-medium">
+          Recovery details
+        </DisclosureTrigger>
+        <DisclosureContent>
+          <div className="mt-3 space-y-3">
+            <p className="break-all">Operation {operation.key}</p>
+            <CopyButton value={operation.key} label="Copy operation ID" />
+            {operation.body ? (
+              <>
+                <p>
+                  Retry sends exactly the stored request with the same operation ID. It does not
+                  include edits to the reason.
+                </p>
+                <Button
+                  disabled={submitting || !state.canEdit}
+                  variant="outline"
+                  onClick={() => void restore()}
+                >
+                  Retry exact restore
+                </Button>
+                <SyntaxCode
+                  code={operation.body}
+                  language="json"
+                  tabIndex={0}
+                  aria-label="Frozen restore request"
+                  className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3"
+                />
+                <CopyButton value={operation.body} label="Copy frozen request" />
+              </>
+            ) : (
               <p>
-                Retry sends exactly the stored request with the same operation ID. It does not
-                include edits to the reason.
+                Submitted text is unavailable. Exact retry is unavailable; check the result or close
+                this operation.
               </p>
-              <Button
-                disabled={submitting || !state.canEdit}
-                variant="outline"
-                onClick={() => void restore()}
-              >
-                Retry exact restore
-              </Button>
-              <pre
-                tabIndex={0}
-                aria-label="Frozen restore request"
-                className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3"
-              >
-                {operation.body}
-              </pre>
-              <CopyButton value={operation.body} label="Copy frozen request" />
-            </>
-          ) : (
+            )}
             <p>
-              Submitted text is unavailable. Exact retry is unavailable; check the result or close
-              this operation.
+              Closing records a closed operation after checking its result. Review a new restore
+              request only after closure is confirmed.
             </p>
-          )}
-          <p>
-            Closing records a closed operation after checking its result. Review a new restore
-            request only after closure is confirmed.
-          </p>
-          <Button disabled={submitting} variant="outline" onClick={() => void reconcile(true)}>
-            Close unresolved restore
-          </Button>
-          {operation.body && (
-            <>
-              <p>
-                Forgetting text removes the stored payload and exact retry. It does not cancel the
-                restore or clear uncertainty.
-              </p>
-              <Button
-                disabled={submitting}
-                variant="outline"
-                onClick={() => {
-                  try {
-                    setOperation(forgetPending(sessionStorage, recoveryScope));
-                  } catch {
-                    setError(
-                      'Submitted text could not be forgotten. The restore remains unresolved.',
-                    );
-                  }
-                }}
-              >
-                Forget submitted text
-              </Button>
-            </>
-          )}
-        </div>
-      </details>
+            <Button disabled={submitting} variant="outline" onClick={() => void reconcile(true)}>
+              Close unresolved restore
+            </Button>
+            {operation.body && (
+              <>
+                <p>
+                  Forgetting text removes the stored payload and exact retry. It does not cancel the
+                  restore or clear uncertainty.
+                </p>
+                <Button
+                  disabled={submitting}
+                  variant="outline"
+                  onClick={() => {
+                    try {
+                      setOperation(forgetPending(sessionStorage, recoveryScope));
+                    } catch {
+                      setError(
+                        'Submitted text could not be forgotten. The restore remains unresolved.',
+                      );
+                    }
+                  }}
+                >
+                  Forget submitted text
+                </Button>
+              </>
+            )}
+          </div>
+        </DisclosureContent>
+      </Disclosure>
     </section>
   );
 
   return (
-    <div className="space-y-4">
+    <div className="bundle-releases release-page-layout space-y-4">
       <RelatedPendingNotice recovery={related} scope={scope} canEdit={state.canEdit} />
       {!target && recovery}
       {status && (
@@ -286,92 +295,105 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
           {status}
         </p>
       )}
-      <section className="workspace-panel">
-        <div className="border-b px-4 py-4 sm:px-4">
+      <section className="release-history release-history-layout">
+        <div className="release-history-header">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold">Release history</h2>
-            <Badge variant="outline">
-              {state.channel} · current revision {state.resolution.revision}
-            </Badge>
+            <h2 className="text-sm font-semibold">Release history</h2>
+            {!state.canEdit && <span className="text-sm text-muted-foreground">Read only</span>}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Inspect past releases or restore an earlier version as a new release.
+            Channel revisions record release decisions. The same immutable content version can be
+            released more than once.
           </p>
         </div>
         {page.items.length ? (
-          <div className="divide-y">
+          <div className="release-record-list">
             {page.items.map((item) => (
               <article
                 data-testid="release-decision"
                 key={item.id}
-                className="flex flex-col gap-4 px-4 py-3 sm:px-4 md:flex-row md:items-start md:justify-between"
+                aria-label={`Revision ${item.revision}${item.revision === state.resolution.revision ? ' · Current' : ''}`}
+                className={`release-row release-record-row${item.revision === state.resolution.revision ? ' is-current-release' : ''}`}
               >
-                <div className="min-w-0 space-y-2">
+                <span className="release-track-marker" aria-hidden="true">
+                  {item.revision === state.resolution.revision ? (
+                    <CircleCheck />
+                  ) : (
+                    <GitCommitHorizontal />
+                  )}
+                </span>
+                <div className="release-summary min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-sm font-semibold">Revision {item.revision}</h3>
                     {item.revision === state.resolution.revision && <Badge>Current</Badge>}
-                    <Badge variant="outline">
-                      {item.comparisonId ? 'Evaluation recorded' : 'Manual release'}
-                    </Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    <time dateTime={item.createdAt}>
-                      {new Date(item.createdAt).toISOString().replace('T', ' ').slice(0, 19)} UTC
+                    <time dateTime={item.createdAt} title={item.createdAt}>
+                      {new Date(item.createdAt).toLocaleString(undefined, {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      })}
                     </time>
                   </p>
-                  <p className="break-words text-sm">
-                    {item.unevaluatedReason ?? 'Released with recorded comparison evidence.'}
-                  </p>
-                  <details className="text-sm">
-                    <summary className="cursor-pointer text-muted-foreground">Details</summary>
-                    <dl className="mt-2 space-y-2 break-all">
-                      <div>
-                        <dt className="text-muted-foreground">Reviewer</dt>
-                        <dd>{item.reviewer}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">Evaluation</dt>
-                        <dd>
-                          {item.comparisonId
-                            ? 'Recorded comparison evidence'
-                            : 'No evaluation supports this release.'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">Release ID</dt>
-                        <dd>{item.id}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">Version</dt>
-                        <dd>{item.version.id}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">Digest</dt>
-                        <dd>{item.version.digest}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">Previous version</dt>
-                        <dd>{item.previousVersionId ?? 'None'}</dd>
-                      </div>
-                      {item.comparisonId && (
-                        <div>
-                          <dt className="text-muted-foreground">Comparison</dt>
-                          <dd>{item.comparisonId}</dd>
-                        </div>
-                      )}
-                    </dl>
-                    <CopyButton
-                      className="mt-2"
-                      value={JSON.stringify(item, null, 2)}
-                      label="Copy release details"
-                    />
-                  </details>
                 </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  <VersionInspector scope={scope} versionId={item.version.id} />
+                <div className="release-decision min-w-0">
+                  <div className="release-decision-heading">
+                    <span className="release-evidence-kind">
+                      {item.comparisonId ? 'Evaluation recorded' : 'Manual release'}
+                    </span>
+                    <span
+                      className="release-content-version text-muted-foreground"
+                      title={item.version.id}
+                    >
+                      Content {item.version.id.slice(0, 8)}
+                    </span>
+                  </div>
+                  <p className="release-reason">
+                    {item.unevaluatedReason ||
+                      (item.comparisonId
+                        ? 'Published with recorded evaluation evidence.'
+                        : 'No release reason recorded.')}
+                  </p>
+                </div>
+                <div className="release-actions">
+                  <div className="release-inspection-actions">
+                    <VersionInspector
+                      scope={scope}
+                      versionId={item.version.id}
+                      label="Inspect content"
+                      contextLabel={`revision ${item.revision}`}
+                    />
+                    <ChangeRecordDetails
+                      title="Release details"
+                      triggerLabel={`Release details for revision ${item.revision}`}
+                      description="The saved content, release decision and recorded evidence."
+                      copyLabel="Copy release details"
+                      value={JSON.stringify(item, null, 2)}
+                      fields={[
+                        ['Revision', item.revision],
+                        ['Published', new Date(item.createdAt).toLocaleString()],
+                        ['Reviewer', item.reviewer],
+                        [
+                          'Reason',
+                          item.unevaluatedReason ||
+                            (item.comparisonId
+                              ? 'Recorded evaluation evidence.'
+                              : 'No release reason recorded.'),
+                        ],
+                        ['Release ID', item.id],
+                        ['Version', item.version.id],
+                        ['Digest', item.version.digest],
+                        ['Previous version', item.previousVersionId || 'None'],
+                        ...(item.comparisonId
+                          ? [['Comparison', item.comparisonId] as [string, string]]
+                          : []),
+                      ]}
+                    />
+                  </div>
                   {item.comparisonId && (
                     <Button asChild variant="outline">
                       <ConsoleLink
+                        aria-label={`Inspect evidence for revision ${item.revision}`}
                         href={bundleHref(scope, 'changes', {
                           candidate: item.version.id,
                           comparison: item.comparisonId,
@@ -384,8 +406,10 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
                   {state.canEdit && item.version.id !== state.resolution.version.id && (
                     <Button
                       variant="outline"
+                      aria-label={`Restore revision ${item.revision}`}
                       disabled={!hydrated || Boolean(operation) || related.blocked}
-                      onClick={() => {
+                      onClick={(event) => {
+                        restoreReturnRef.current = event.currentTarget;
                         setError('');
                         setStatus('');
                         setReason('');
@@ -403,7 +427,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
           <p className="px-4 py-5 text-sm text-muted-foreground">No release decisions yet.</p>
         )}
         {page.nextBeforeRevision && (
-          <div className="border-t px-4 py-4 sm:px-4">
+          <div className="border-t px-4 py-3">
             <Button
               variant="outline"
               disabled={!hydrated || loading}
@@ -428,20 +452,38 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
           }
         }}
       >
-        <DialogContent className="max-h-[90dvh] overflow-y-auto">
+        <DialogContent
+          size="decision"
+          returnFocusRef={restoreReturnRef}
+          className="max-h-[90dvh] overflow-y-auto"
+        >
           <DialogHeader>
             <DialogTitle>Restore revision {target?.revision}?</DialogTitle>
             <DialogDescription>
               Replace the current {state.channel} release (revision {state.resolution.revision})
-              with this version. A new release records your reason without claiming evaluation
-              support.
+              with this content version. This creates a new manual revision and retains the existing
+              history, without inheriting evaluation support.
             </DialogDescription>
           </DialogHeader>
-          <details className="text-sm text-muted-foreground">
-            <summary className="cursor-pointer">Selected version details</summary>
-            <p className="mt-2 break-all">Version: {target?.version.id}</p>
-            <p>Compatibility target: {state.compatibilityTarget}</p>
-          </details>
+          <div className="space-y-2 break-words text-sm">
+            <p>
+              Bundle: <strong>{state.bundleName || state.bundleId}</strong>
+            </p>
+            <p>
+              Target: <strong>{state.channel}</strong> · current revision{' '}
+              {state.resolution.revision}
+            </p>
+            <p>Selected revision: {target?.revision}</p>
+            <p className="break-all">Version: {target?.version.id}</p>
+          </div>
+          <Disclosure className="text-sm text-muted-foreground">
+            <DisclosureTrigger className="cursor-pointer">
+              Selected version details
+            </DisclosureTrigger>
+            <DisclosureContent>
+              <p>Compatibility target: {state.compatibilityTarget}</p>
+            </DisclosureContent>
+          </Disclosure>
           {recovery}
           <div className="space-y-2">
             <Label htmlFor="restore-reason" className="text-sm">

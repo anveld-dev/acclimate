@@ -90,9 +90,21 @@ python3 scripts/productization/hosted_authority.py --pg-bin /path/to/postgresql/
 
 The runners own disposable databases and credentials. Browser QA uses the real Rust service and Chrome. Hosted-authority QA checks Rust sessions, bootstrap and revocation; it does not exercise a live OIDC provider. No model call is required. Any optional live model check must use Luna.
 
-UI uses shadcn’s compact **Mira** style (`radix-mira` in `components.json`), Tailwind and Lucide. The 63 shared components use the Mira registry style, with readable task-control overrides in the console. Desktop controls are compact; body content stays at 14px, and touch devices keep 44px button/navigation targets and 16px form text. Layout spacing lives in `src/styles.css`. Avoid global control minimums that override component sizes.
+UI uses shadcn’s compact **Mira** style (`radix-mira` in `components.json`), Tailwind and Lucide. Registry components use the Mira style, with readable task-control overrides in the console. Desktop controls are compact; body content stays at 14px, and touch devices keep 44px button/navigation targets and 16px form text. Layout spacing lives in `src/styles.css`. Avoid global control minimums that override component sizes.
 
-Components live in `src/components/ui`; routes and server functions live under `src/routes` and `src/server`. To refresh the full component library, run `npx shadcn add --all --overwrite --yes --cwd apps/console` from the repo root, then typecheck and run the browser behaviors.
+Components live in `src/components/ui`; routes and server functions live under `src/routes` and `src/server`. All 63 file-providing entries in the official `radix-mira` UI registry are installed. The upstream `form` entry currently provides no files; use Field for form composition. The registry inventory was verified against shadcn 4.23.0; existing application customizations are preserved.
+
+Charts use the existing `ui/chart` components with Recharts 3.8: ChartContainer, themed config, tooltip and legend. Compose area, bar, line, pie, radar and radial charts with Recharts primitives inside that wrapper. Reuse these before introducing another chart library. See the [official chart guide](https://ui.shadcn.com/docs/components/chart).
+
+Use the shared Button, Input, Textarea, Label, Checkbox, RadioGroup and NativeSelect for controls. NativeSelect is a [shadcn component](https://ui.shadcn.com/docs/components/native-select), so native selection and form behavior stay intact. Navigation between routes stays links with `aria-current`; it isn't an in-page Tabs widget.
+
+Expandable sections use `ui/disclosure`, a compact composition of shadcn's [Collapsible](https://ui.shadcn.com/docs/components/collapsible) and button styles. Its content stays mounted but hidden when closed, preserving edits while removing hidden controls from keyboard navigation. Use `defaultOpen` for an initial preference, or `open`/`onOpenChange` for stateful deep links. Don't add native `details` or duplicate disclosure styling in feature pages.
+
+Add a missing primitive with `npx shadcn add <component> --cwd apps/console`, then review the generated changes. Don't overwrite the full library: our compact sizing, touch targets and application compositions are intentional. After library changes, typecheck, build and run the browser behaviors.
+
+Bundle pages share one scope header; collection pages use PageTitle. Data updates through the existing polling hooks. Keep refresh buttons out of routine page chrome, and preserve unsaved browser edits during background updates.
+
+Draft toolbar actions wrap within the workbench, keeping Save, Review and Continue available without a duplicate mobile menu. Evaluation always names its saved snapshot. Keep the published-parent comparison label, dirty-navigation guards and focus return when changing this layout.
 
 Browser components import payload and native validators from `@acclimate/sdk/validation`. The main SDK entry includes Node filesystem helpers and belongs in server/app code. Check this boundary with `npm run test:bdd -- --dev-console --tags @UI-DRAFT-02`; production bundling alone can hide an unsafe import.
 
@@ -109,3 +121,12 @@ The behavior suite covers responsive layouts, touch controls, keyboard focus and
 ```
 
 The output path must be new. This check needs installed Chrome, PostgreSQL server binaries and the BDD Python dependencies; it does not read the running workspace's private configuration or call models.
+
+Evaluation cases use shared Table and Disclosure components: compact paired summaries, adjacent Parent/Candidate details, and labeled stacking in narrow containers. Keep signed rewards, missing evidence, unknown cost and output references honest. Case maps keep one roving tab stop inside a bounded scroll area. For the focused PostgreSQL/OIDC browser qualification after building:
+
+```sh
+.venv-bdd/bin/python scripts/testing/evaluation_layouts.py --verify --cases 600 --output artifacts/evaluation-check
+.venv-bdd/bin/python scripts/testing/evaluation_focus.py --output artifacts/evaluation-focus-check
+```
+
+Use fresh output directories. The second runner mounts actual components in Vite to check comparison replacement focus and the shared chart; it does not change stored comparisons.

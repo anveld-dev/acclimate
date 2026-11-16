@@ -1,3 +1,5 @@
+import { SyntaxCode } from './syntax-code';
+import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { ArrowRight, BookOpen, Files, FileText, Layers3, Plus, Upload } from 'lucide-react';
 import { NativeSelect } from './ui/native-select';
 import {
@@ -17,7 +19,8 @@ import { setupRequest } from '../lib/content-operation';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useRouter } from '@tanstack/react-router';
 import { ConsoleLink, consoleDestination } from './console-link';
-import { bundleHref } from '../navigation';
+import { bundleHref, workspaceHref } from '../navigation';
+import { signInHref } from '../lib/return-destination';
 import { useEffect, useRef, useState } from 'react';
 import { usePendingChanges } from './pending-changes';
 import type { BundleScope } from '../server/selection';
@@ -25,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PageTitle } from './shared';
 import { ImportContent } from './import-content';
 import type { BundlePayload } from '@acclimate/sdk';
@@ -303,7 +307,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
     }
   }
   return (
-    <div className="space-y-4">
+    <div className="bundle-library mx-auto w-full max-w-5xl space-y-4">
       <PageTitle
         title={showCreate ? 'Create a bundle' : 'Bundles'}
         description={
@@ -343,80 +347,96 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
           <Button disabled={pending} onClick={() => void reconcile()}>
             Check result
           </Button>
-          <details className="space-y-3">
-            <summary>Creation recovery details</summary>
-            <p className="break-all text-sm">
-              Operation: {operation.key}. New creation stays blocked until this operation is
-              resolved or closed.
-            </p>
-            {operation.body ? (
-              <>
-                <pre
-                  className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-sm"
-                  aria-label="Exact submitted creation"
-                >
-                  {operation.body}
-                </pre>
-                <Button variant="outline" disabled={pending} onClick={() => void create('created')}>
-                  Retry exact submitted creation
-                </Button>
-                <p className="text-sm text-muted-foreground">
-                  Retry sends this frozen request with the same operation key.
-                </p>
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => {
-                    forgetPending(sessionStorage, recoveryScope);
-                    setOperation({ ...operation, body: undefined });
-                    setMessage(
-                      'Submitted text forgotten; reconciliation or close is still required.',
-                    );
-                  }}
-                >
-                  Forget submitted text
-                </Button>
-              </>
-            ) : (
-              <p>
-                Submitted text is unavailable. Exact retry is unavailable; check the result or close
-                this operation.
+          <Disclosure className="space-y-3">
+            <DisclosureTrigger>Creation recovery details</DisclosureTrigger>
+            <DisclosureContent className="space-y-3">
+              <p className="break-all text-sm">
+                Operation: {operation.key}. New creation stays blocked until this operation is
+                resolved or closed.
               </p>
-            )}
-            <p className="text-sm text-muted-foreground">
-              Forgetting text does not cancel submission. Closing preserves any committed result;
-              older expired legacy writes may remain unprovable.
-            </p>
-            <Button
-              variant="outline"
-              disabled={pending}
-              onClick={async () => {
-                setPending(true);
-                try {
-                  const result = await closeSetup({ data: { projectId, key: operation.key } });
-                  if (result.ok && result.operation.status === 'closed') {
-                    resolvePending(sessionStorage, recoveryScope);
-                    localStorage.removeItem(storageKey);
-                    setOperation(undefined);
-                    setMessage(
-                      'Creation operation closed. Older expired legacy writes may remain unprovable.',
-                    );
-                  } else if (result.ok) await reconcile();
-                  else setMessage(result.message);
-                } catch {
-                  setMessage('Close outcome unknown. Check the result before another creation.');
-                } finally {
-                  setPending(false);
-                }
-              }}
-            >
-              Close unresolved creation
-            </Button>
-          </details>
+              {operation.body ? (
+                <>
+                  <SyntaxCode
+                    className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-sm"
+                    aria-label="Exact submitted creation"
+                    code={operation.body}
+                    language="json"
+                  />
+                  <Button
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() => void create('created')}
+                  >
+                    Retry exact submitted creation
+                  </Button>
+                  <p className="text-sm text-muted-foreground">
+                    Retry sends this frozen request with the same operation key.
+                  </p>
+                  <Button
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() => {
+                      forgetPending(sessionStorage, recoveryScope);
+                      setOperation({ ...operation, body: undefined });
+                      setMessage(
+                        'Submitted text forgotten; reconciliation or close is still required.',
+                      );
+                    }}
+                  >
+                    Forget submitted text
+                  </Button>
+                </>
+              ) : (
+                <p>
+                  Submitted text is unavailable. Exact retry is unavailable; check the result or
+                  close this operation.
+                </p>
+              )}
+              <p className="text-sm text-muted-foreground">
+                Forgetting text does not cancel submission. Closing preserves any committed result;
+                older expired legacy writes may remain unprovable.
+              </p>
+              <Button
+                variant="outline"
+                disabled={pending}
+                onClick={async () => {
+                  setPending(true);
+                  try {
+                    const result = await closeSetup({ data: { projectId, key: operation.key } });
+                    if (result.ok && result.operation.status === 'closed') {
+                      resolvePending(sessionStorage, recoveryScope);
+                      localStorage.removeItem(storageKey);
+                      setOperation(undefined);
+                      setMessage(
+                        'Creation operation closed. Older expired legacy writes may remain unprovable.',
+                      );
+                    } else if (result.ok) await reconcile();
+                    else setMessage(result.message);
+                  } catch {
+                    setMessage('Close outcome unknown. Check the result before another creation.');
+                  } finally {
+                    setPending(false);
+                  }
+                }}
+              >
+                Close unresolved creation
+              </Button>
+            </DisclosureContent>
+          </Disclosure>
         </section>
       )}
       {!state.ok ? (
-        <p role="alert">{state.message}</p>
+        state.requiresSignIn ? (
+          <section className="workspace-panel space-y-4 p-6" aria-label="Sign in required">
+            <h2 className="text-lg font-semibold">Sign in to open this workspace</h2>
+            <p className="text-muted-foreground">Sign in to view your bundles and saved changes.</p>
+            <Button asChild>
+              <a href={signInHref(workspaceHref(projectId, 'bundles'))}>Sign in</a>
+            </Button>
+          </section>
+        ) : (
+          <p role="alert">{state.message}</p>
+        )
       ) : (
         <>
           <section hidden={showCreate} aria-labelledby="bundle-list-heading">
@@ -466,71 +486,79 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                     />
                   </div>
                 )}
-                <ul className="divide-y overflow-hidden rounded-xl border bg-card">
-                  {visibleEntries.map(({ bundle, channels }) => (
-                    <li
-                      className="bundle-library-row flex flex-wrap items-center justify-between gap-4 px-5 py-5"
-                      key={bundle.id}
-                    >
-                      <div className="flex min-w-0 items-center gap-4">
-                        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-                          <BookOpen className="size-5 text-muted-foreground" aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0 space-y-1">
-                          <h3 className="break-words font-medium">
-                            {channels[0] ? (
+                <div className="bundle-directory">
+                  <div className="bundle-directory-heading" aria-hidden="true">
+                    <span>Bundle</span>
+                    <span>Published channels</span>
+                  </div>
+                  <ul className="divide-y overflow-hidden rounded-md border bg-card">
+                    {visibleEntries.map(({ bundle, channels }) => (
+                      <li className="bundle-library-row px-4 py-3" key={bundle.id}>
+                        <div className="bundle-directory-name flex min-w-0 flex-1 items-center gap-3">
+                          <BookOpen
+                            className="size-4 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                          <div className="min-w-0">
+                            <h3 className="break-words font-medium">
+                              {channels[0] ? (
+                                <ConsoleLink
+                                  className="underline-offset-4 hover:underline"
+                                  aria-description={`Opens the ${channels[0].name} channel`}
+                                  href={bundleHref(
+                                    { projectId, bundleId: bundle.id, channel: channels[0].name },
+                                    'content',
+                                  )}
+                                >
+                                  {bundle.name}
+                                </ConsoleLink>
+                              ) : (
+                                bundle.name
+                              )}
+                            </h3>
+                            <p className="bundle-directory-meta text-sm text-muted-foreground">
+                              {(
+                                {
+                                  created: 'Created content',
+                                  imported: 'Imported content',
+                                  example: 'Example content',
+                                } as Record<string, string>
+                              )[bundle.origin] || 'Stored content'}{' '}
+                              {bundle.compatibilityTarget &&
+                              bundle.compatibilityTarget !== 'generic'
+                                ? ` · ${bundle.compatibilityTarget}`
+                                : ''}
+                              {channels[0] && <> · Opens {channels[0].name}</>}
+                            </p>
+                          </div>
+                        </div>
+                        <div
+                          className="bundle-directory-channels"
+                          aria-label={`Published channels for ${bundle.name}`}
+                        >
+                          <span className="bundle-directory-channel-label">Published channels</span>
+                          {channels.map((item) => (
+                            <Button key={item.name} size="sm" variant="ghost" asChild>
                               <ConsoleLink
-                                className="underline-offset-4 hover:underline"
                                 href={bundleHref(
-                                  { projectId, bundleId: bundle.id, channel: channels[0].name },
+                                  { projectId, bundleId: bundle.id, channel: item.name },
                                   'content',
                                 )}
                               >
-                                {bundle.name}
+                                {item.name} <ArrowRight className="size-3.5" aria-hidden="true" />
                               </ConsoleLink>
-                            ) : (
-                              bundle.name
-                            )}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">
-                            {(
-                              {
-                                created: 'Created content',
-                                imported: 'Imported content',
-                                example: 'Example content',
-                              } as Record<string, string>
-                            )[bundle.origin] || 'Stored content'}{' '}
-                            {bundle.compatibilityTarget && bundle.compatibilityTarget !== 'generic'
-                              ? ` · ${bundle.compatibilityTarget}`
-                              : ''}
-                          </p>
+                            </Button>
+                          ))}
+                          {!channels.length && (
+                            <span className="text-sm text-muted-foreground">
+                              No published channels
+                            </span>
+                          )}
                         </div>
-                      </div>
-                      <div
-                        className="flex flex-wrap gap-2"
-                        aria-label={`Channels for ${bundle.name}`}
-                      >
-                        {channels.map((item) => (
-                          <Button key={item.name} size="sm" variant="ghost" asChild>
-                            <ConsoleLink
-                              href={bundleHref(
-                                { projectId, bundleId: bundle.id, channel: item.name },
-                                'content',
-                              )}
-                            >
-                              {item.name} <ArrowRight className="size-3.5" aria-hidden="true" />
-                            </ConsoleLink>
-                          </Button>
-                        ))}
-                        {!channels.length && (
-                          <span className="text-sm text-muted-foreground">
-                            No published channels
-                          </span>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
                 {!visibleEntries.length && (
                   <p className="py-6 text-sm text-muted-foreground">
                     No bundles match “{bundleQuery}”.
@@ -546,7 +574,17 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
             >
               <fieldset className="space-y-2" disabled={pending}>
                 <legend className="sr-only">Source</legend>
-                <div className="grid grid-cols-2 gap-2">
+                <RadioGroup
+                  name="bundle-source"
+                  aria-label="Bundle source"
+                  className="grid grid-cols-2 gap-2"
+                  value={source}
+                  disabled={pending}
+                  onValueChange={(value) => {
+                    setSource(value as typeof source);
+                    setConfirmed(false);
+                  }}
+                >
                   {(
                     [
                       ['created', 'Write instructions', FileText],
@@ -555,25 +593,17 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                       ['example', 'Use example', BookOpen],
                     ] as const
                   ).map(([value, label, Icon]) => (
-                    <label
+                    <Label
                       key={value}
+                      htmlFor={`bundle-source-${value}`}
                       className={`flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-2 py-2.5 text-sm sm:px-3 ${source === value ? 'border-primary bg-primary/5 font-medium' : 'text-muted-foreground hover:bg-muted/50'}`}
                     >
-                      <input
-                        type="radio"
-                        name="bundle-source"
-                        value={value}
-                        checked={source === value}
-                        onChange={() => {
-                          setSource(value);
-                          setConfirmed(false);
-                        }}
-                      />
+                      <RadioGroupItem id={`bundle-source-${value}`} value={value} />
                       <Icon className="hidden size-4 shrink-0 sm:block" aria-hidden="true" />
                       {label}
-                    </label>
+                    </Label>
                   ))}
-                </div>
+                </RadioGroup>
               </fieldset>
               <div className="space-y-2">
                 <Label htmlFor="new-bundle-name">Bundle name</Label>
@@ -660,49 +690,51 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                   This example is stored as real, editable bundle content.
                 </p>
               )}
-              <details className="rounded-lg border px-4 py-3">
-                <summary className="cursor-pointer text-sm font-medium">
+              <Disclosure className="rounded-lg border px-4 py-3">
+                <DisclosureTrigger className="cursor-pointer text-sm font-medium">
                   Publishing settings{' '}
                   <span className="font-normal text-muted-foreground">
                     · {channel || 'Choose a channel'}
-                    {compatibilityTarget !== 'generic' ? ` · ${compatibilityTarget}` : ''}
+                    {` · ${compatibilityTarget}`}
                   </span>
-                </summary>
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="new-bundle-channel">Initial channel</Label>
-                    <Input
-                      disabled={pending}
-                      id="new-bundle-channel"
-                      value={channel}
-                      onChange={(e) => setChannel(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      A named release your agents can follow. Stable works for most teams.
-                    </p>
+                </DisclosureTrigger>
+                <DisclosureContent>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="new-bundle-channel">Initial channel</Label>
+                      <Input
+                        disabled={pending}
+                        id="new-bundle-channel"
+                        value={channel}
+                        onChange={(e) => setChannel(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        A named release your agents can follow. Stable works for most teams.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-bundle-target">Compatibility target</Label>
+                      <NativeSelect
+                        disabled={pending}
+                        id="new-bundle-target"
+                        value={compatibilityTarget}
+                        onChange={(e) =>
+                          setCompatibilityTarget(e.target.value as CompatibilityTarget)
+                        }
+                      >
+                        {['generic', 'codex', 'claude', 'pi', 'cursor'].map((target) => (
+                          <option key={target} value={target}>
+                            {target === 'generic' ? 'Generic · no native checks' : target}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                      <p className="text-xs text-muted-foreground">
+                        Fixed after creation. Choose your agent for native compatibility checks.
+                      </p>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="new-bundle-target">Compatibility target</Label>
-                    <NativeSelect
-                      disabled={pending}
-                      id="new-bundle-target"
-                      value={compatibilityTarget}
-                      onChange={(e) =>
-                        setCompatibilityTarget(e.target.value as CompatibilityTarget)
-                      }
-                    >
-                      {['generic', 'codex', 'claude', 'pi', 'cursor'].map((target) => (
-                        <option key={target} value={target}>
-                          {target === 'generic' ? 'Generic · no native checks' : target}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                    <p className="text-xs text-muted-foreground">
-                      Fixed after creation. Choose your agent for native compatibility checks.
-                    </p>
-                  </div>
-                </div>
-              </details>
+                </DisclosureContent>
+              </Disclosure>
               {preview && preview.length > 0 && source !== 'created' && (
                 <div className="space-y-3 rounded-lg border p-4">
                   <h3 className="font-medium">
@@ -714,17 +746,21 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                     · {compatibilityTarget}
                   </h3>
                   {preview.map((file, index) => (
-                    <details key={index} open={source === 'example'}>
-                      <summary className="break-all text-sm">
+                    <Disclosure key={`${source}-${index}`} defaultOpen={source === 'example'}>
+                      <DisclosureTrigger className="break-all text-sm">
                         {file.path} · {file.kind}
-                      </summary>
-                      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-sm">
-                        {file.text}
-                      </pre>
-                    </details>
+                      </DisclosureTrigger>
+                      <DisclosureContent>
+                        <SyntaxCode
+                          className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-sm"
+                          code={file.text}
+                          path={file.path}
+                        />
+                      </DisclosureContent>
+                    </Disclosure>
                   ))}
                   {(source === 'imported' || source === 'files') && (
-                    <label className="flex items-center gap-2 text-sm">
+                    <Label className="flex items-center gap-2 text-sm">
                       <Checkbox
                         aria-label="Confirm these entries for import"
                         disabled={pending || readingFiles}
@@ -732,7 +768,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                         onCheckedChange={(checked) => setConfirmed(checked === true)}
                       />
                       Confirm these entries for import
-                    </label>
+                    </Label>
                   )}
                 </div>
               )}

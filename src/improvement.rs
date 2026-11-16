@@ -419,33 +419,6 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
     let _ = tx.commit().await;
 }
 
-#[cfg(test)]
-mod proposal_failure_tests {
-    use super::public_proposal_failure;
-    #[test]
-    fn edit_rejections_are_actionable_without_reflecting_provider_details() {
-        assert_eq!(
-            public_proposal_failure("Anchor does not match original text"),
-            "provider edit anchor does not match original text"
-        );
-        assert_eq!(
-            public_proposal_failure("Anchor is ambiguous in original text"),
-            "provider edit anchor is ambiguous in original text"
-        );
-        assert_eq!(
-            public_proposal_failure("Original edit ranges overlap"),
-            "provider edit ranges overlap in original text"
-        );
-        assert_eq!(
-            public_proposal_failure("secret provider details"),
-            "provider request failed"
-        );
-        assert_eq!(
-            public_proposal_failure("Anchor does not match original text: private contents"),
-            "provider request failed"
-        );
-    }
-}
 fn validate_edits(
     base: &BundlePayload,
     out: &BundlePayload,
@@ -542,4 +515,32 @@ pub async fn list_proposals(
         None
     };
     Ok(Json(crate::evaluations::Page { items, next_cursor }))
+}
+
+#[cfg(test)]
+mod proposal_failure_tests {
+    use super::public_proposal_failure;
+    #[test]
+    fn edit_rejections_are_actionable_without_reflecting_provider_details() {
+        assert_eq!(
+            public_proposal_failure("Anchor does not match original text"),
+            "provider edit anchor does not match original text"
+        );
+        assert_eq!(
+            public_proposal_failure("Anchor is ambiguous in original text"),
+            "provider edit anchor is ambiguous in original text"
+        );
+        assert_eq!(
+            public_proposal_failure("Original edit ranges overlap"),
+            "provider edit ranges overlap in original text"
+        );
+        assert_eq!(
+            public_proposal_failure("secret provider details"),
+            "provider request failed"
+        );
+        assert_eq!(
+            public_proposal_failure("Anchor does not match original text: private contents"),
+            "provider request failed"
+        );
+    }
 }

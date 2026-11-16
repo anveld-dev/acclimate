@@ -1,16 +1,21 @@
+import './source-editor.css';
 import { useEffect, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { Download, Search } from 'lucide-react';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
+import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupButton } from './ui/input-group';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
-import { NativeSelect } from './ui/native-select';
-import { FileGlyph, KindBadge, fileDirectory, fileTitle } from './shared';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { FileGlyph, KindBadge, PathText, fileTitle } from './shared';
 import type { ConsoleState } from '../server/channel';
 import { bundleHref } from '../navigation';
 import { ConsoleLink } from './console-link';
 import { CopyButton } from './copy-button';
+import { FileNavigator } from './file-navigator';
+import { FileTree } from './file-tree';
+import { SyntaxCode } from './syntax-code';
 
 type Ready = Extract<ConsoleState, { status: 'ready' }>;
 export function BundleContent({
@@ -23,27 +28,22 @@ export function BundleContent({
   const router = useRouter();
   const [query, setQuery] = useState(typeof search.q === 'string' ? search.q : '');
   useEffect(() => setQuery(typeof search.q === 'string' ? search.q : ''), [search.q]);
-  const kind = ['instruction', 'skill', 'memory'].includes(String(search.kind))
-    ? String(search.kind)
-    : '';
   const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
   const searchTerm = String(search.q || '')
     .trim()
     .toLowerCase();
   const files = state.payload.files.filter(
     (file) =>
-      (!kind || file.kind === kind) &&
-      (!searchTerm ||
-        file.path.toLowerCase().includes(searchTerm) ||
-        file.text.toLowerCase().includes(searchTerm)),
+      !searchTerm ||
+      file.path.toLowerCase().includes(searchTerm) ||
+      file.text.toLowerCase().includes(searchTerm),
   );
-  const filtered = Boolean(kind || search.q);
+  const filtered = Boolean(search.q);
   const requestedPath = typeof search.path === 'string' ? search.path : undefined;
   const selected = requestedPath ? files.find((file) => file.path === requestedPath) : files[0];
   const link = (values: Record<string, string | undefined>) =>
     bundleHref(scope, 'content', {
       path: typeof search.path === 'string' ? search.path : undefined,
-      kind: kind || undefined,
       q: typeof search.q === 'string' ? search.q : undefined,
       ...values,
     });
@@ -60,41 +60,52 @@ export function BundleContent({
   }
   return (
     <div className="space-y-4">
-      <section data-testid="file-browser" className="content-workspace">
-        <aside className="content-file-sidebar">
+      <section data-testid="file-browser" className="content-workspace file-explorer-workspace">
+        <FileNavigator
+          count={files.length}
+          totalCount={state.payload.files.length}
+          filtered={filtered}
+          selectedPath={selected?.path}
+        >
           <form
-            className="space-y-3 p-4"
+            className="file-navigator-controls"
             onSubmit={(event) => {
               event.preventDefault();
               void router.navigate({ href: link({ q: query || undefined }) });
             }}
           >
-            <div className="flex items-center justify-between gap-2">
-              <Label htmlFor="file-search">Published content</Label>
-              <span className="text-xs text-muted-foreground" role="status">
-                {filtered ? `${files.length} of ${state.payload.files.length}` : files.length}{' '}
-                {files.length === 1 ? 'entry' : 'entries'}
-              </span>
+            <div className="file-navigator-heading">
+              <span className="file-navigator-desktop-label text-sm font-medium">Files</span>
+              <Label htmlFor="file-search" className="sr-only">
+                Published content
+              </Label>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative min-w-0 flex-1">
-                <Search
-                  className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <Input
-                  id="file-search"
-                  type="search"
-                  className="content-search-input"
-                  placeholder="Search paths or content…"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </div>
-              <Button type="submit" variant="outline" size="sm">
-                Search
-              </Button>
-            </div>
+            <InputGroup className="content-search-group">
+              <InputGroupInput
+                id="file-search"
+                type="search"
+                className="content-search-input"
+                placeholder="Search files…"
+                aria-description="Search published paths or content"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <InputGroupAddon align="inline-end">
+                <Tooltip>
+                  <TooltipTrigger asChild data-slot="button">
+                    <InputGroupButton
+                      type="submit"
+                      size="icon-sm"
+                      className="file-search-submit"
+                      aria-label="Search published paths or content"
+                    >
+                      <Search aria-hidden="true" />
+                    </InputGroupButton>
+                  </TooltipTrigger>
+                  <TooltipContent>Search published paths or content</TooltipContent>
+                </Tooltip>
+              </InputGroupAddon>
+            </InputGroup>
             {filtered && (
               <Button
                 type="button"
@@ -109,57 +120,20 @@ export function BundleContent({
                 Clear filters
               </Button>
             )}
-            <label className="block space-y-1 text-sm">
-              Entry type
-              <NativeSelect
-                aria-label="Entry type"
-                className="w-full"
-                value={kind}
-                onChange={(event) =>
-                  void router.navigate({
-                    href: link({ kind: event.target.value || undefined, path: undefined }),
-                  })
-                }
-              >
-                <option value="">All types</option>
-                <option value="instruction">Instructions</option>
-                <option value="skill">Skills</option>
-                <option value="memory">Memory</option>
-              </NativeSelect>
-            </label>
           </form>
-          <div className="content-file-buttons">
-            {files.map((file) => (
-              <Button
-                key={file.path}
-                asChild
-                variant="ghost"
-                className={`content-file-button ${selected?.path === file.path ? 'is-selected' : ''}`}
-              >
-                <ConsoleLink
-                  href={link({ path: file.path })}
-                  aria-label={`Open ${file.path}`}
-                  aria-current={selected?.path === file.path ? 'true' : undefined}
-                >
-                  <FileGlyph kind={file.kind} />
-                  <span className="min-w-0 flex-1">
-                    <strong className="block break-words text-sm font-medium">
-                      {fileTitle(file)}
-                    </strong>
-                    <span className="block break-all text-xs text-muted-foreground">
-                      {fileDirectory(file) === '/'
-                        ? file.kind === 'instruction'
-                          ? 'Instructions'
-                          : file.kind === 'skill'
-                            ? 'Skill'
-                            : 'Memory'
-                        : fileDirectory(file)}
-                    </span>
-                  </span>
-                </ConsoleLink>
-              </Button>
-            ))}
-          </div>
+          <FileTree
+            items={files.map((file) => ({ id: file.path, path: file.path, kind: file.kind }))}
+            selectedId={selected?.path}
+            scopeKey={JSON.stringify([
+              state.actorScope,
+              state.projectId,
+              state.bundleId,
+              state.channel,
+            ])}
+            filtered={filtered}
+            filterKey={String(search.q || '')}
+            hrefForItem={(item) => link({ path: item.path })}
+          />
           {!files.length && (
             <p className="p-4 text-sm text-muted-foreground">
               {filtered
@@ -169,32 +143,33 @@ export function BundleContent({
                   : 'No published entries. Ask a workspace editor to add content.'}
             </p>
           )}
-        </aside>
+        </FileNavigator>
         <div className="content-detail">
           {selected ? (
             <>
-              <header className="content-entry-heading">
+              <header className="content-entry-heading compact-selected-file">
                 <div className="flex min-w-0 items-start gap-3">
                   <FileGlyph kind={selected.kind} />
                   <div className="min-w-0">
-                    <h2 className="break-words text-lg font-semibold">{fileTitle(selected)}</h2>
-                    <p className="break-all font-mono text-sm text-muted-foreground">
-                      {selected.path}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <h2 className="break-words text-sm font-semibold">{fileTitle(selected)}</h2>
+                      <div className="content-entry-metadata flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Published</span>
+                        <KindBadge kind={selected.kind} />
+                        {!state.canEdit && <Badge variant="outline">Read only</Badge>}
+                      </div>
+                    </div>
+                    {selected.path !== fileTitle(selected) && (
+                      <p
+                        tabIndex={0}
+                        className="selected-file-path break-all font-mono text-sm text-muted-foreground"
+                      >
+                        <PathText value={selected.path} />
+                      </p>
+                    )}
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <KindBadge kind={selected.kind} />
-                  {!state.canEdit && <Badge variant="outline">Read only</Badge>}
-                  <CopyButton value={selected.text} label="Copy content" />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label="Download published entry"
-                    onClick={download}
-                  >
-                    <Download aria-hidden="true" />
-                  </Button>
+                <div className="content-entry-actions flex flex-wrap items-center gap-2">
                   {state.canEdit && (
                     <Button asChild>
                       <ConsoleLink
@@ -204,17 +179,47 @@ export function BundleContent({
                       </ConsoleLink>
                     </Button>
                   )}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" aria-label="Content actions">
+                        Actions
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="end"
+                      aria-label="Published entry actions"
+                      className="w-60 max-w-[calc(100vw-2rem)] gap-2"
+                    >
+                      <div className="flex flex-col items-stretch gap-2 [&>span]:w-full">
+                        <CopyButton
+                          value={selected.text}
+                          label="Copy content"
+                          size="default"
+                          className="w-full justify-between"
+                        />
+                        <Button
+                          variant="outline"
+                          className="justify-between"
+                          aria-label="Download published entry"
+                          onClick={download}
+                        >
+                          Download
+                          <Download aria-hidden="true" />
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </header>
               <div className="content-editor-body">
-                <pre
+                <SyntaxCode
+                  code={selected.text}
+                  path={selected.path}
                   data-testid="entry-content"
                   className="read-only-content text-sm leading-7"
                   tabIndex={0}
                   aria-label={`Content of ${selected.path}`}
-                >
-                  <code>{selected.text}</code>
-                </pre>
+                />
               </div>
             </>
           ) : (

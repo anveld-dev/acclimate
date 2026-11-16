@@ -6,6 +6,7 @@ import type { BundleSetup, CompatibilityTarget, BundlePayload } from '@acclimate
 import {
   actorScope,
   requireSession,
+  SessionRequiredError,
   validSelection,
   scopedEnvironment,
   type Environment,
@@ -16,6 +17,7 @@ export function setupClient(env: Environment, fetcher: typeof fetch = fetch) {
   return consoleClient(env, fetcher);
 }
 export function setupError(error: unknown) {
+  if (error instanceof SessionRequiredError) return error.message;
   if (error instanceof ApiError && [401, 403].includes(error.status))
     return 'Access denied. Sign in or ask your workspace administrator for access.';
   return 'Could not confirm the service response. Current state is unknown. Refresh to retry; check Releases before repeating a creation.';
@@ -85,7 +87,13 @@ export async function listSetup(
         projects.some((p) => p.id === selectedProject && ['editor', 'admin'].includes(p.role)),
     };
   } catch (error) {
-    return { ok: false as const, message: setupError(error) };
+    return {
+      ok: false as const,
+      requiresSignIn:
+        error instanceof SessionRequiredError ||
+        (error instanceof ApiError && error.status === 401),
+      message: setupError(error),
+    };
   }
 }
 export async function authorizeSelection(

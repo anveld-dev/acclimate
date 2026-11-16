@@ -1,6 +1,8 @@
 {
   "realm": "acclimate",
   "displayName": "Acclimate",
+  "loginTheme": "acclimate",
+  "emailTheme": "acclimate",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,

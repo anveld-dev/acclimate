@@ -9,14 +9,26 @@ const SESSION_COOKIE = 'acclimate_session';
 const TTL = 300_000;
 type Flow = { binding: string; verifier: string; nonce: string; expires: number; returnTo: string };
 export type IdentityProvider = {
-  authorization(env: Environment, state: string, verifier: string, nonce: string): Promise<string>;
+  authorization(
+    env: Environment,
+    state: string,
+    verifier: string,
+    nonce: string,
+    forceLogin?: boolean,
+  ): Promise<string>;
   claims(
     env: Environment,
     url: URL,
     state: string,
     verifier: string,
     nonce: string,
-  ): Promise<{ iss: string; sub: string }>;
+  ): Promise<{
+    iss: string;
+    sub: string;
+    displayName?: string;
+    email?: string;
+    emailVerified?: boolean;
+  }>;
 };
 async function configuration(env: Environment) {
   const config = await oidc.discovery(
@@ -29,16 +41,17 @@ async function configuration(env: Environment) {
 }
 export function createOidcProvider(discover = configuration): IdentityProvider {
   return {
-    async authorization(env, state, verifier, nonce) {
+    async authorization(env, state, verifier, nonce, forceLogin) {
       const config = await discover(env);
       return oidc.buildAuthorizationUrl(config, {
         redirect_uri: `${env.CONSOLE_ORIGIN}/auth/callback`,
-        scope: 'openid',
+        scope: 'openid profile email',
         response_type: 'code',
         state,
         nonce,
         code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
         code_challenge_method: 'S256',
+        ...(forceLogin ? { prompt: 'login' } : {}),
       }).href;
     },
     async claims(env, url, state, verifier, nonce) {
@@ -51,7 +64,18 @@ export function createOidcProvider(discover = configuration): IdentityProvider {
       const claims = tokens.claims();
       if (!claims || typeof claims.iss !== 'string' || typeof claims.sub !== 'string')
         throw new Error('Invalid identity');
-      return { iss: claims.iss, sub: claims.sub };
+      const name = [claims.name, claims.preferred_username].find(
+        (value): value is string =>
+          typeof value === 'string' && Boolean(value.trim()) && value.trim().length <= 200,
+      );
+      return {
+        iss: claims.iss,
+        sub: claims.sub,
+        ...(name ? { displayName: name.trim() } : {}),
+        ...(typeof claims.email === 'string'
+          ? { email: claims.email, emailVerified: claims.email_verified === true }
+          : {}),
+      };
     },
   };
 }
@@ -111,7 +135,13 @@ export function createIdentityHandler(
         const nonce = oidc.randomNonce();
         flows.set(state, { binding, verifier, nonce, expires: now() + TTL, returnTo });
         try {
-          const location = await provider.authorization(env, state, verifier, nonce);
+          const location = await provider.authorization(
+            env,
+            state,
+            verifier,
+            nonce,
+            url.searchParams.get('prompt') === 'login',
+          );
           return redirect(location, [setCookie(FLOW_COOKIE, binding, TTL / 1000)]);
         } catch (error) {
           flows.delete(state);
@@ -136,7 +166,14 @@ export function createIdentityHandler(
         const result = await fetcher(`${config.serviceUrl}/v1/auth/sessions`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ issuer: claims.iss, subject: claims.sub }),
+          body: JSON.stringify({
+            issuer: claims.iss,
+            subject: claims.sub,
+            displayName: claims.displayName,
+            ...(claims.email
+              ? { email: claims.email, emailVerified: claims.emailVerified === true }
+              : {}),
+          }),
           signal: AbortSignal.timeout(10_000),
           redirect: 'error',
         });
@@ -179,7 +216,7 @@ export function createIdentityHandler(
               return response(503, 'Could not sign out. Please retry.');
           }
         }
-        return redirect('/setup', [setCookie(SESSION_COOKIE, '', 0)]);
+        return redirect('/auth/login?prompt=login', [setCookie(SESSION_COOKIE, '', 0)]);
       }
       return response(405, 'Method unavailable.');
     } catch {

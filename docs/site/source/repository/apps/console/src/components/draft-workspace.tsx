@@ -1,5 +1,21 @@
+import './source-editor.css';
+import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { NativeSelect } from './ui/native-select';
-import { FileGlyph, KindBadge, fileDirectory, fileTitle } from './shared';
+import { Info, Plus } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+import { CodeEditor } from './code-editor';
+import { SyntaxCode } from './syntax-code';
+import { FileNavigator } from './file-navigator';
+import { FileTree } from './file-tree';
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from './ui/dialog';
+import { FileGlyph, KindBadge, PathText, fileTitle } from './shared';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -7,11 +23,11 @@ import {
   DropdownMenuItem,
 } from './ui/dropdown-menu';
 import { renameSkillPackage } from '../lib/rename-skill-package';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { compatibilityIssues, DeliveryError, validatePayload } from '@acclimate/sdk/validation';
 import {
-  freezePending,
+  freezePendingExact,
   loadPending,
   resolvePending,
   forgetPending,
@@ -25,9 +41,7 @@ import { bundleHref } from '../navigation';
 import { ConsoleLink } from './console-link';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { Input } from './ui/input';
-import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
 import { usePendingChanges } from './pending-changes';
 import { runDraftCommand } from '../server/content-actions';
@@ -35,6 +49,7 @@ import type { DraftCommand } from '../server/drafts';
 import { ContentDiff } from './diff-content';
 import { ImportContent } from './import-content';
 import { RelatedPendingNotice, useRelatedPending } from './related-pending';
+import { DraftDiscardDialog } from './draft-discard-dialog';
 export function DraftWorkspace({
   published,
   compatibilityTarget = 'generic',
@@ -48,6 +63,8 @@ export function DraftWorkspace({
   detailOnly = false,
   onSaved,
   onSelectPath,
+  focusOnOpen = false,
+  onOpenFocusHandled,
 }: {
   published: BundlePayload;
   compatibilityTarget?: CompatibilityTarget;
@@ -61,6 +78,8 @@ export function DraftWorkspace({
   detailOnly?: boolean;
   onSaved?: (draft: Draft, path?: string) => void | Promise<void>;
   onSelectPath?: (path: string) => void;
+  focusOnOpen?: boolean;
+  onOpenFocusHandled?: () => void;
 }) {
   const router = useRouter();
   const recoveryScope: PendingScope = {
@@ -101,12 +120,20 @@ export function DraftWorkspace({
     [diff, setDiff] = useState(false),
     [history, setHistory] = useState<string[]>([]);
   const [entryQuery, setEntryQuery] = useState('');
-  const [entryKind, setEntryKind] = useState('');
   const [packageName, setPackageName] = useState('');
+  const [entryError, setEntryError] = useState('');
   const [historyCursor, setHistoryCursor] = useState<string | null>(null);
   const [opening, setOpening] = useState(Boolean(initialDraftId));
   const [cursor, setCursor] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const [discardTarget, setDiscardTarget] = useState<{
+    id: string;
+    generation: number;
+    key: string;
+  } | null>(null);
+  const [discardError, setDiscardError] = useState('');
+  const discardTrigger = useRef<HTMLElement | null>(null);
+  const draftHeading = useRef<HTMLHeadingElement>(null);
   // A reload hydrates the published/saved baseline, which can differ from a
   // pending snapshot without being a browser edit. Track user mutation intent
   // separately so deliberately reverting to that baseline still counts.
@@ -124,6 +151,44 @@ export function DraftWorkspace({
   const [newBase, setNewBase] = useState({ versionId, revision });
   const diagnostics = compatibilityIssues(payload, compatibilityTarget);
   const dirty = JSON.stringify(payload) !== JSON.stringify(saved);
+  const saveAction = useRef<HTMLButtonElement>(null);
+  const toolbarActions = useRef<HTMLDivElement>(null);
+  const saveOwnsFocus = useRef(false);
+  const openFocusHandled = useRef(false);
+  useEffect(() => {
+    const releaseFocus = (event: Event) => {
+      if (event.target !== saveAction.current && event.target !== document.body)
+        saveOwnsFocus.current = false;
+    };
+    const releaseOnPointer = (event: PointerEvent) => {
+      if (!saveAction.current?.contains(event.target as Node)) saveOwnsFocus.current = false;
+    };
+    document.addEventListener('focusin', releaseFocus);
+    document.addEventListener('pointerdown', releaseOnPointer);
+    return () => {
+      document.removeEventListener('focusin', releaseFocus);
+      document.removeEventListener('pointerdown', releaseOnPointer);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const opening = focusOnOpen && !openFocusHandled.current;
+    if (busy || !draft || dirty || (!saveOwnsFocus.current && !opening)) return;
+    const current = document.activeElement;
+    if (
+      current === saveAction.current ||
+      current === document.body ||
+      (opening && current?.id === 'main')
+    ) {
+      // Save becomes disabled (and is replaced on mobile). Only carry its own
+      // focus to the next action; a user who moved elsewhere keeps that focus.
+      toolbarActions.current?.querySelector<HTMLAnchorElement>('.draft-evaluation-action')?.focus();
+    }
+    saveOwnsFocus.current = false;
+    if (opening) {
+      openFocusHandled.current = true;
+      onOpenFocusHandled?.();
+    }
+  }, [busy, dirty, draft, focusOnOpen, onOpenFocusHandled]);
   const lastDiscardVersion = useRef(discardVersion);
   useEffect(() => {
     if (lastDiscardVersion.current === discardVersion) return;
@@ -132,7 +197,9 @@ export function DraftWorkspace({
     setIndex(0);
   }, [discardVersion, saved]);
   useEffect(() => {
-    if (!draft && !dirty && !pending) {
+    // Reverting to the old baseline still carries local edit intent. In
+    // particular, recovery can clear `pending` before its verified open returns.
+    if (!draft && !dirty && !pending && !hasLocalPayloadEdits.current) {
       hydratePayload(published);
       setSaved(published);
       setBase(published);
@@ -231,7 +298,23 @@ export function DraftWorkspace({
       return false;
     }
   }
-  async function command(data: DraftCommand) {
+  function confirmSavedDiscard(target: Draft, trigger: HTMLElement) {
+    discardTrigger.current = trigger;
+    setDiscardError('');
+    setDiscardTarget({ id: target.id, generation: target.generation, key: crypto.randomUUID() });
+  }
+  function discarded(result: Draft, preserveEdits = false) {
+    setDraft(result);
+    if (!preserveEdits) {
+      hydratePayload(saved);
+      setPendingChanges(false);
+    }
+    setMessage(
+      `Discarded draft ${result.id}, generation ${result.generation}. The published release is unchanged.`,
+    );
+    toast.success('Saved draft discarded.');
+  }
+  async function command(data: DraftCommand): Promise<boolean> {
     const replayingUncertain = data.action === 'retry' || Boolean(pending);
     if (data.action === 'create' || data.action === 'save') {
       try {
@@ -240,7 +323,7 @@ export function DraftWorkspace({
         const message = error instanceof DeliveryError ? error.message : 'Check the draft content.';
         setMessage(message);
         toast.error('Draft could not be saved.', { description: message });
-        return;
+        return false;
       }
     }
     let handoff = false;
@@ -255,23 +338,23 @@ export function DraftWorkspace({
             'Submitted text was forgotten or expired. Check the result or close this operation before another write.',
           );
           setBusy(false);
-          return;
+          return false;
         }
       } catch {
         setMessage('Recovery data could not be read. Check the result before another write.');
         setBusy(false);
-        return;
+        return false;
       }
     }
-    if ('key' in data && data.action !== 'discard') {
+    if ('key' in data) {
       try {
         if (!commandScope) throw Error('Explicit scope required.');
         const wire = data.action === 'retry' ? data : draftRequest(data, commandScope);
-        const frozen = freezePending(
+        const frozen = freezePendingExact(
           sessionStorage,
           recoveryScope,
           wire.operationPath,
-          JSON.parse(wire.body),
+          wire.body,
           data.key,
         );
         request.current = {
@@ -285,16 +368,32 @@ export function DraftWorkspace({
         // frozen exact bytes are still retained for an unknown outcome.
         if (data.action === 'retry') data = request.current;
       } catch {
-        setMessage(
-          'Cannot persist the exact submitted request. Enable browser session storage and resolve any earlier operation before saving.',
-        );
+        const error =
+          'Cannot persist the exact submitted request. Enable browser session storage and resolve any earlier operation before another write.';
+        setMessage(error);
+        if (data.action === 'discard') setDiscardError(error);
         setBusy(false);
-        return;
+        return false;
       }
     }
     try {
       const r = await invoke(data);
       if (r.ok && r.draft) {
+        if (r.draft.status === 'discarded') {
+          discarded(r.draft, data.action === 'retry' && hasLocalPayloadEdits.current);
+          resolvePending(sessionStorage, recoveryScope);
+          localStorage.removeItem('acclimate:pending:' + scope);
+          setPending(null);
+          request.current = null;
+          if (!detailOnly) await refresh();
+          return true;
+        }
+        if (data.action === 'discard') {
+          setDiscardError(
+            'The service did not confirm the draft was discarded. Check the operation result before another write.',
+          );
+          return false;
+        }
         setDraft(r.draft);
         const submitted =
           data.action === 'retry'
@@ -331,8 +430,10 @@ export function DraftWorkspace({
           handoff = await savedNavigation(r.draft, payload.files[index]?.path);
         if (laterEdits) setMessage('Save confirmed. Your later browser edits are preserved.');
         if (r.draft.status === 'published') await router.invalidate();
+        return true;
       } else if (!r.ok) {
         setMessage(r.message);
+        if (data.action === 'discard') setDiscardError(r.message);
         if (!replayingUncertain && !('uncertain' in r && r.uncertain)) {
           resolvePending(sessionStorage, recoveryScope);
           localStorage.removeItem('acclimate:pending:' + scope);
@@ -341,12 +442,14 @@ export function DraftWorkspace({
         }
       }
     } catch {
-      setMessage(
-        'Outcome unknown. Recover the operation before another write. Your text remains in this tab.',
-      );
+      const error =
+        'Outcome unknown. Recover the operation before another write. Your text remains in this tab.';
+      setMessage(error);
+      if (data.action === 'discard') setDiscardError(error);
     } finally {
       if (mounted.current && !handoff) setBusy(false);
     }
+    return false;
   }
   async function recover(): Promise<boolean> {
     if (!pending) return false;
@@ -380,7 +483,12 @@ export function DraftWorkspace({
           setPending(null);
           request.current = null;
           if (!detailOnly) await refresh();
-          if ('snapshotVersion' in r.operation.result) {
+          if (
+            'snapshotVersion' in r.operation.result &&
+            r.operation.result.status === 'discarded'
+          ) {
+            discarded(r.operation.result as Draft, hasLocalPayloadEdits.current);
+          } else if ('snapshotVersion' in r.operation.result) {
             const recovered = await invoke({ action: 'open', id: String(r.operation.result.id) });
             if (recovered.ok && recovered.draft && recovered.payload && recovered.base) {
               setDraft(recovered.draft);
@@ -437,22 +545,38 @@ export function DraftWorkspace({
   const file = payload.files[index];
   const visibleFiles = payload.files
     .map((entry, entryIndex) => ({ entry, entryIndex }))
-    .filter(
-      ({ entry }) =>
-        (!entryKind || entry.kind === entryKind) &&
-        entry.path.toLowerCase().includes(entryQuery.toLowerCase()),
-    );
+    .filter(({ entry }) => entry.path.toLowerCase().includes(entryQuery.toLowerCase()));
   useEffect(() => setPackageName(''), [index, file?.path]);
   if (initialDraftId && !draft)
     return (
       <section className="workspace-panel p-4" role="status">
         {opening
           ? 'Opening saved draft…'
-          : message || 'Draft unavailable. Refresh or return to Changes.'}
+          : message || 'Draft unavailable. Return to Changes to try again.'}
       </section>
     );
   return (
     <section className="space-y-4">
+      <DraftDiscardDialog
+        target={discardTarget}
+        error={discardError}
+        busy={busy}
+        pending={Boolean(pending)}
+        returnFocusRef={discardTrigger}
+        fallbackFocusRef={draftHeading}
+        onClose={() => setDiscardTarget(null)}
+        onDiscard={async () => {
+          if (!discardTarget) return;
+          setDiscardError('');
+          const success = await command({
+            action: 'discard',
+            id: discardTarget.id,
+            expectedGeneration: discardTarget.generation,
+            key: discardTarget.key,
+          });
+          if (success) setDiscardTarget(null);
+        }}
+      />
       {commandScope && (
         <RelatedPendingNotice recovery={related} scope={commandScope} canEdit={canEdit} />
       )}
@@ -460,9 +584,6 @@ export function DraftWorkspace({
         <>
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-lg font-semibold">Durable drafts</h2>
-            <Button variant="outline" disabled={busy} onClick={() => void refresh()}>
-              Refresh drafts
-            </Button>
             {cursor && (
               <Button variant="outline" disabled={busy} onClick={() => void refresh(cursor)}>
                 Load more drafts
@@ -517,125 +638,226 @@ export function DraftWorkspace({
           <Button disabled={busy} onClick={() => void recover()}>
             Check result
           </Button>
-          <details className="space-y-3">
-            <summary>Draft recovery details</summary>
-            <p className="break-all text-sm">
-              Unresolved operation: {pending}. A missing outcome does not establish failure.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Closing preserves a committed result. Forgetting submitted text does not cancel
-              submission; another write remains blocked until the outcome is resolved or the
-              operation is closed.
-            </p>
-            {request.current?.action === 'retry' && (
-              <pre
-                className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-sm"
-                aria-label="Exact submitted draft request"
-              >
-                {request.current.body}
-              </pre>
-            )}
-            {!request.current && (
-              <p className="text-sm">Submitted text is unavailable. Exact retry is unavailable.</p>
-            )}
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={async () => {
-                let handoff = false;
-                setBusy(true);
-                try {
-                  const record = loadPending(sessionStorage, recoveryScope);
-                  const result = await invoke({
-                    action: 'close',
-                    key: pending,
-                    operationPath: record?.action,
-                  });
-                  if (result.ok && result.operation?.status === 'committed') {
-                    handoff = await recover();
-                  } else if (result.ok && result.operation?.status === 'closed') {
-                    resolvePending(sessionStorage, recoveryScope);
-                    localStorage.removeItem('acclimate:pending:' + scope);
-                    setPending(null);
-                    request.current = null;
-                    setMessage(
-                      'Operation closed. Older expired legacy writes may remain unprovable. Review a new request.',
-                    );
-                  } else if (!result.ok) setMessage(result.message);
-                } catch {
-                  setMessage(
-                    'Close outcome unknown. Keep this operation pending and retry reconciliation.',
-                  );
-                } finally {
-                  if (mounted.current && !handoff) setBusy(false);
-                }
-              }}
-            >
-              Close unresolved operation
-            </Button>
-            {request.current && (
+          <Disclosure className="space-y-3">
+            <DisclosureTrigger>Draft recovery details</DisclosureTrigger>
+            <DisclosureContent className="space-y-3">
+              <p className="break-all text-sm">
+                Unresolved operation: {pending}. A missing outcome does not establish failure.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Closing preserves a committed result. Forgetting submitted text does not cancel
+                submission; another write remains blocked until the outcome is resolved or the
+                operation is closed.
+              </p>
+              {request.current?.action === 'retry' && (
+                <SyntaxCode
+                  code={request.current.body}
+                  language="json"
+                  className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-sm"
+                  aria-label="Exact submitted draft request"
+                />
+              )}
+              {!request.current && (
+                <p className="text-sm">
+                  Submitted text is unavailable. Exact retry is unavailable.
+                </p>
+              )}
               <Button
                 variant="outline"
                 disabled={busy}
-                onClick={() => {
-                  forgetPending(sessionStorage, recoveryScope);
-                  request.current = null;
-                  setMessage(
-                    'Submitted text forgotten. Close or reconcile the operation before another write.',
-                  );
+                onClick={async () => {
+                  let handoff = false;
+                  setBusy(true);
+                  try {
+                    const record = loadPending(sessionStorage, recoveryScope);
+                    const result = await invoke({
+                      action: 'close',
+                      key: pending,
+                      operationPath: record?.action,
+                    });
+                    if (result.ok && result.operation?.status === 'committed') {
+                      handoff = await recover();
+                    } else if (result.ok && result.operation?.status === 'closed') {
+                      resolvePending(sessionStorage, recoveryScope);
+                      localStorage.removeItem('acclimate:pending:' + scope);
+                      setPending(null);
+                      request.current = null;
+                      setMessage(
+                        'Operation closed. Older expired legacy writes may remain unprovable. Review a new request.',
+                      );
+                    } else if (!result.ok) setMessage(result.message);
+                  } catch {
+                    setMessage(
+                      'Close outcome unknown. Keep this operation pending and retry reconciliation.',
+                    );
+                  } finally {
+                    if (mounted.current && !handoff) setBusy(false);
+                  }
                 }}
               >
-                Forget submitted text
+                Close unresolved operation
               </Button>
-            )}
-            {request.current && (
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => void command(request.current!)}
-              >
-                Retry exact request
-              </Button>
-            )}
-          </details>
+              {request.current && (
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => {
+                    forgetPending(sessionStorage, recoveryScope);
+                    request.current = null;
+                    setMessage(
+                      'Submitted text forgotten. Close or reconcile the operation before another write.',
+                    );
+                  }}
+                >
+                  Forget submitted text
+                </Button>
+              )}
+              {request.current && (
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void command(request.current!)}
+                >
+                  Retry exact request
+                </Button>
+              )}
+            </DisclosureContent>
+          </Disclosure>
         </div>
       )}
-      <header className="workspace-panel space-y-4 p-4">
-        <ol
-          aria-label="Change workflow"
-          className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
-        >
-          <li aria-current="step">
-            <Badge>1. Edit draft</Badge>
-          </li>
-          <li aria-hidden="true">→</li>
-          <li>2. Evaluate</li>
-          <li aria-hidden="true">→</li>
-          <li>3. Publish</li>
-        </ol>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0 space-y-1">
-            <h2 className="text-lg font-semibold">
-              {draft ? 'Edit draft' : 'New draft'}
+      <div className="draft-workbench file-editor-workbench">
+        <header className="draft-toolbar" data-dirty={dirty} data-new={!draft}>
+          <div className="draft-status">
+            <h2 ref={draftHeading} tabIndex={-1} className="text-sm font-semibold">
+              {draft ? 'Draft' : 'New draft'}
               {!canEdit && ' · Read only'}
             </h2>
-            <p className="text-sm text-muted-foreground" role="status">
+            <p className="text-sm text-muted-foreground" data-unsaved={dirty} role="status">
               {pending
-                ? 'Submission unconfirmed. Check its result to continue.'
+                ? `Submission unconfirmed${draft ? ` · Generation ${draft.generation} saved` : ''}${dirty ? ' · Unsaved changes' : ''}. Check its result to continue.`
                 : draft && draft.status !== 'open'
-                  ? `This draft is ${draft.status}.`
-                  : dirty
-                    ? 'Unsaved changes. Save before evaluating or publishing.'
-                    : draft
-                      ? `Generation ${draft.generation} saved. Ready to evaluate.`
-                      : 'Edit your content, then save a draft.'}
+                  ? `Generation ${draft.generation} · ${draft.status}${dirty ? ' · Unsaved changes' : ''}`
+                  : draft
+                    ? `Generation ${draft.generation} saved${dirty ? ` · Unsaved changes. Evaluation uses saved generation ${draft.generation}.` : ' · Ready to evaluate'}`
+                    : dirty
+                      ? 'Unsaved changes · Save to create a draft'
+                      : 'Edit your content, then save a draft'}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div ref={toolbarActions} className="draft-toolbar-actions">
+            <Dialog>
+              <Tooltip>
+                <TooltipTrigger asChild data-slot="button">
+                  <DialogTrigger asChild data-slot="button">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="file-icon-action draft-details-trigger"
+                      aria-label="Draft details"
+                    >
+                      <Info aria-hidden="true" />
+                    </Button>
+                  </DialogTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Draft details</TooltipContent>
+              </Tooltip>
+              <DialogContent className="draft-details-dialog sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Draft details</DialogTitle>
+                  <DialogDescription>
+                    Saved state and the release this draft started from.
+                  </DialogDescription>
+                </DialogHeader>
+                <dl className="mt-3 space-y-2 break-all">
+                  {draft && (
+                    <div>
+                      <dt>Draft</dt>
+                      <dd>
+                        {draft.id} · {draft.status} · generation {draft.generation}
+                      </dd>
+                    </div>
+                  )}
+                  <div>
+                    <dt>Base revision</dt>
+                    <dd>{draft?.baseRevision || newBase.revision}</dd>
+                  </div>
+                  {draft && (
+                    <div>
+                      <dt>Saved snapshot</dt>
+                      <dd>{draft.snapshotVersion.id}</dd>
+                    </div>
+                  )}
+                  <div>
+                    <dt>Compatibility target</dt>
+                    <dd>
+                      {compatibilityTarget}
+                      {compatibilityTarget === 'generic' ? ' · Native compatibility unchecked' : ''}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-2">Saving keeps work separate from the published release.</p>
+                {draft && (
+                  <section className="draft-snapshot-history space-y-3">
+                    <h3 className="text-sm font-semibold">Saved snapshot history</h3>
+                    <ul>
+                      {history.map((h) => (
+                        <li className="break-all" key={h}>
+                          {h}
+                        </li>
+                      ))}
+                    </ul>
+                    {historyCursor && (
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={async () => {
+                          setBusy(true);
+                          try {
+                            const result = await invoke({
+                              action: 'history',
+                              id: draft.id,
+                              cursor: historyCursor,
+                            });
+                            if (result.ok && result.history) {
+                              setHistory((previous) => [
+                                ...previous,
+                                ...result.history!.items.map(
+                                  (item) => `Generation ${item.generation}: ${item.version.id}`,
+                                ),
+                              ]);
+                              setHistoryCursor(result.history.nextCursor);
+                            } else if (!result.ok) setMessage(result.message);
+                          } catch {
+                            setMessage('Could not read older saved snapshots.');
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                      >
+                        Load more snapshots
+                      </Button>
+                    )}
+                  </section>
+                )}
+              </DialogContent>
+            </Dialog>
             <Button
+              className="draft-review-action"
+              variant="outline"
+              onClick={() => setDiff(!diff)}
+            >
+              {diff ? 'Edit entries' : 'Review changes'}
+            </Button>
+            <Button
+              ref={saveAction}
+              className="draft-save-action"
+              data-clean={Boolean(draft) && !dirty}
               variant={draft && !dirty ? 'outline' : 'default'}
-              disabled={busy || !active || Boolean(pending) || (!dirty && Boolean(draft))}
-              onClick={() =>
+              disabled={!busy && (!active || Boolean(pending) || (!dirty && Boolean(draft)))}
+              aria-disabled={busy || undefined}
+              onClick={(event) => {
+                if (busy) return;
+                saveOwnsFocus.current = document.activeElement === event.currentTarget;
                 void command(
                   draft
                     ? {
@@ -652,23 +874,24 @@ export function DraftWorkspace({
                         payload,
                         key: crypto.randomUUID(),
                       },
-                )
-              }
+                );
+              }}
             >
               {busy ? 'Working…' : 'Save draft'}
             </Button>
-            {draft && (
+            {draft && commandScope && (
               <Button
-                variant="ghost"
-                disabled={busy || Boolean(pending) || related.blocked}
-                onClick={() => confirmDiscard(() => void open(draft.id))}
+                asChild
+                className="draft-evaluation-action"
+                data-primary={!dirty}
+                variant={draft.status === 'open' && !dirty ? 'default' : 'outline'}
               >
-                Reload saved draft
-              </Button>
-            )}
-            {draft && commandScope && !pending && (
-              <Button asChild variant={draft.status === 'open' ? 'default' : 'outline'}>
                 <ConsoleLink
+                  aria-description={
+                    draft.status === 'open' && !dirty
+                      ? `Saved generation ${draft.generation}`
+                      : undefined
+                  }
                   href={bundleHref(commandScope, 'changes', {
                     draft: draft.id,
                     candidate: draft.snapshotVersion.id,
@@ -676,393 +899,426 @@ export function DraftWorkspace({
                     path: file?.path,
                   })}
                 >
-                  {draft.status === 'open' ? 'Continue to evaluation' : 'View saved change'}
+                  {draft.status === 'open'
+                    ? dirty
+                      ? `Evaluate saved generation ${draft.generation}`
+                      : 'Continue to evaluation'
+                    : 'View saved change'}
                 </ConsoleLink>
               </Button>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="draft-mobile-actions">
+                  Draft actions
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="draft-actions-menu">
+                <DropdownMenuItem className="min-h-11 text-sm" onSelect={() => setDiff(!diff)}>
+                  {diff ? 'Edit entries' : 'Review changes'}
+                </DropdownMenuItem>
+                {draft && commandScope && dirty && (
+                  <DropdownMenuItem asChild className="min-h-11 text-sm">
+                    <ConsoleLink
+                      href={bundleHref(commandScope, 'changes', {
+                        draft: draft.id,
+                        candidate: draft.snapshotVersion.id,
+                        generation: draft.generation,
+                        path: file?.path,
+                      })}
+                    >
+                      {draft.status === 'open'
+                        ? `Evaluate saved generation ${draft.generation}`
+                        : 'View saved change'}
+                    </ConsoleLink>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        </div>
-        <details className="text-sm text-muted-foreground">
-          <summary className="cursor-pointer">Draft details</summary>
-          <dl className="mt-3 space-y-2 break-all">
-            {draft && (
-              <div>
-                <dt>Draft</dt>
-                <dd>
-                  {draft.id} · {draft.status} · generation {draft.generation}
-                </dd>
-              </div>
-            )}
-            <div>
-              <dt>Base revision</dt>
-              <dd>{draft?.baseRevision || newBase.revision}</dd>
-            </div>
-            {draft && (
-              <div>
-                <dt>Saved snapshot</dt>
-                <dd>{draft.snapshotVersion.id}</dd>
-              </div>
-            )}
-            <div>
-              <dt>Compatibility target</dt>
-              <dd>
-                {compatibilityTarget}
-                {compatibilityTarget === 'generic' ? ' · Native compatibility unchecked' : ''}
-              </dd>
-            </div>
-          </dl>
-          <p className="mt-2">Saving keeps work separate from the published release.</p>
-        </details>
-      </header>
-      {message && (
-        <p role="status" className="break-words rounded-md border p-4">
-          {message}
-        </p>
-      )}
-      {diagnostics.length > 0 && (
-        <div role="status">
-          <p>
-            Native compatibility needs repair before publication. Draft snapshots can still be
-            saved.
+        </header>
+        {message && (
+          <p
+            role="status"
+            className={
+              message === 'Opened verified saved snapshot.' ||
+              /^Confirmed (create|save|retry)\. Generation/.test(message)
+                ? 'sr-only'
+                : 'break-words rounded-md border p-4'
+            }
+          >
+            {message}
           </p>
-          <ul>
-            {diagnostics.map((issue, i) => (
-              <li key={i}>
-                {issue.path || issue.package || issue.code}: {issue.message}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {!draft && newBase.revision !== revision && (
-        <p role="alert">
-          The release changed while you were editing. Your edits still belong to revision{' '}
-          {newBase.revision}. Start from the current release and reapply them before saving.
-        </p>
-      )}
-      {draft && draft.baseRevision !== revision && (
-        <p role="alert">
-          The published channel changed. This draft is preserved, but cannot be published against
-          its old base.
-        </p>
-      )}
-      <div className="flex flex-wrap items-center gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" disabled={busy || !active}>
-              Add entry
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem
-              className="min-h-8 text-sm"
-              onSelect={() => {
-                setEntryQuery('');
-                setEntryKind('');
-                add('instruction');
-              }}
-            >
-              Add instruction
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="min-h-8 text-sm"
-              onSelect={() => {
-                setEntryQuery('');
-                setEntryKind('');
-                add('skill');
-              }}
-            >
-              Add skill package
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="min-h-8 text-sm"
-              onSelect={() => {
-                setEntryQuery('');
-                setEntryKind('');
-                add('memory');
-              }}
-            >
-              Add shared memory
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button variant="outline" onClick={() => setDiff(!diff)}>
-          {diff ? 'Edit entries' : 'Review changes'}
-        </Button>
-      </div>
-      {diff ? (
-        <ContentDiff base={base} current={payload} />
-      ) : (
-        <div className="content-workspace" data-testid="draft-file-browser">
-          <aside className="content-file-sidebar">
-            <div className="space-y-3 p-4">
-              <Label htmlFor="draft-search">Find an entry</Label>
-              <Input
-                id="draft-search"
-                type="search"
-                value={entryQuery}
-                onChange={(e) => setEntryQuery(e.target.value)}
-                placeholder="Search files…"
-              />
-              <Label htmlFor="draft-entry-filter">Entry type</Label>
-              <NativeSelect
-                id="draft-entry-filter"
-                value={entryKind}
-                onChange={(e) => setEntryKind(e.target.value)}
-              >
-                <option value="">All types</option>
-                <option value="instruction">Instructions</option>
-                <option value="skill">Skills</option>
-                <option value="memory">Memory</option>
-              </NativeSelect>
-              {(entryQuery || entryKind) && (
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setEntryQuery('');
-                    setEntryKind('');
-                  }}
-                >
-                  Clear filters
-                </Button>
-              )}
-              <p className="text-sm text-muted-foreground">
-                {visibleFiles.length} {visibleFiles.length === 1 ? 'entry' : 'entries'}
-              </p>
-            </div>
-            <div className="content-file-buttons">
-              {visibleFiles.map(({ entry, entryIndex }) => (
-                <Button
-                  className={`content-file-button ${entryIndex === index ? 'is-selected' : ''}`}
-                  variant="ghost"
-                  key={entryIndex}
-                  disabled={busy}
-                  aria-label={`Open ${entry.path || '(unnamed)'}`}
-                  aria-pressed={entryIndex === index}
-                  onClick={() => {
-                    setIndex(entryIndex);
-                    onSelectPath?.(entry.path);
-                  }}
-                >
-                  <FileGlyph kind={entry.kind} />
-                  <span className="min-w-0 flex-1">
-                    <strong className="block break-words text-sm font-medium">
-                      {fileTitle(entry) || '(unnamed)'}
-                    </strong>
-                    <span className="block break-all text-sm text-muted-foreground">
-                      {fileDirectory(entry)}
-                    </span>
-                  </span>
-                </Button>
-              ))}
-            </div>
-            {!visibleFiles.length && (
-              <p className="p-4 text-sm text-muted-foreground">
-                {payload.files.length
-                  ? 'No matching entries. Clear filters to see all entries.'
-                  : active
-                    ? 'No entries yet. Use Add entry to begin.'
-                    : 'This saved draft has no entries.'}
-              </p>
-            )}
-          </aside>
-          <div className="content-detail">
-            {file ? (
-              <>
-                <header className="content-entry-heading">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <FileGlyph kind={file.kind} />
-                    <div className="min-w-0">
-                      <h3 className="break-words text-lg font-semibold">
-                        {fileTitle(file) || '(unnamed)'}
-                      </h3>
-                      <p className="break-all font-mono text-sm text-muted-foreground">
-                        {file.path}
-                      </p>
-                    </div>
-                  </div>
-                  <KindBadge kind={file.kind} />
-                </header>
-                <div className="space-y-3 p-4">
-                  <details className="space-y-3">
-                    <summary className="text-sm font-medium">
-                      Entry settings · Rename or remove
-                    </summary>
-                    <Label htmlFor="draft-path">Entry path (rename)</Label>
-                    <Input
-                      id="draft-path"
-                      value={file.path}
-                      disabled={busy || !active}
-                      onChange={(e) => update('path', e.target.value)}
-                    />
-                    <Label htmlFor="draft-kind">Entry kind</Label>
-                    <NativeSelect
-                      id="draft-kind"
-                      className="w-full"
-                      value={file.kind}
-                      disabled={busy || !active}
-                      onChange={(e) => update('kind', e.target.value)}
-                    >
-                      <option value="instruction">Instruction</option>
-                      <option value="skill">Skill</option>
-                      <option value="memory">Shared memory</option>
-                    </NativeSelect>
-                    {file.kind === 'skill' && (
-                      <>
-                        <Button
-                          variant="outline"
-                          disabled={busy || !active}
-                          onClick={() => {
-                            editPayload({
-                              ...payload,
-                              files: [
-                                ...payload.files,
-                                {
-                                  kind: 'skill',
-                                  path: `skills/${file.path.split('/')[1]}/references/new-${payload.files.length}.md`,
-                                  text: '',
-                                },
-                              ],
-                            });
-                            setIndex(payload.files.length);
-                          }}
-                        >
-                          Add skill support file
-                        </Button>
-                        <Label htmlFor="skill-name">Rename entire skill package</Label>
-                        <div className="flex flex-wrap gap-2">
-                          <Input
-                            id="skill-name"
-                            className="min-w-0 flex-1"
-                            placeholder="new-skill-name"
-                            value={packageName}
-                            onChange={(e) => setPackageName(e.target.value)}
-                            disabled={busy || !active}
-                          />
-                          <Button
-                            variant="outline"
-                            disabled={busy || !active || !packageName.trim()}
-                            onClick={() => {
-                              try {
-                                editPayload(
-                                  renameSkillPackage(payload, file.path.split('/')[1], packageName),
-                                );
-                                setPackageName('');
-                              } catch (error) {
-                                setMessage(
-                                  error instanceof Error
-                                    ? error.message
-                                    : 'Could not rename skill package.',
-                                );
-                              }
-                            }}
-                          >
-                            Apply package rename
-                          </Button>
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          Applies the package path and manifest name to all its files in browser
-                          edits.
-                        </p>
-                      </>
-                    )}
-                    <Button
-                      variant="outline"
-                      disabled={busy || !active}
-                      onClick={() => {
-                        const prefix =
-                          file.kind === 'skill'
-                            ? file.path.split('/').slice(0, 2).join('/') + '/'
-                            : null;
-                        editPayload({
-                          ...payload,
-                          files: payload.files.filter((f, i) =>
-                            prefix ? !f.path.startsWith(prefix) : i !== index,
-                          ),
-                        });
-                        setIndex(0);
-                      }}
-                    >
-                      Remove {file.kind === 'skill' ? 'skill package' : 'entry'}
-                    </Button>
-                  </details>
-                  <Label htmlFor="draft-text" className="block">
-                    Content
-                  </Label>
-                  <Textarea
-                    id="draft-text"
-                    className="min-h-[360px] font-mono"
-                    value={file.text}
-                    disabled={busy || !active}
-                    onChange={(e) => update('text', e.target.value)}
-                  />
-                </div>
-              </>
-            ) : (
-              <p className="p-4 text-sm text-muted-foreground">
-                {active ? 'Add an entry to start editing.' : 'No entry selected.'}
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-      <details className="workspace-panel p-4">
-        <summary className="cursor-pointer text-sm font-medium">
-          Import files into this draft
-        </summary>
-        <div className="mt-4">
-          <ImportContent
-            compatibilityTarget={compatibilityTarget}
-            payload={payload}
-            onApply={editPayload}
-            disabled={busy || !active}
-            commandScope={commandScope}
-          />
-        </div>
-      </details>
-      {draft && (
-        <>
-          <details>
-            <summary>Saved snapshot history</summary>
+        )}
+        {diagnostics.length > 0 && (
+          <div role="status">
+            <p>
+              Native compatibility needs repair before publication. Draft snapshots can still be
+              saved.
+            </p>
             <ul>
-              {history.map((h) => (
-                <li className="break-all" key={h}>
-                  {h}
+              {diagnostics.map((issue, i) => (
+                <li key={i}>
+                  {issue.path || issue.package || issue.code}: {issue.message}
                 </li>
               ))}
             </ul>
-            {historyCursor && (
-              <Button
-                variant="outline"
+          </div>
+        )}
+        {!draft && newBase.revision !== revision && (
+          <p role="alert">
+            The release changed while you were editing. Your edits still belong to revision{' '}
+            {newBase.revision}. Start from the current release and reapply them before saving.
+          </p>
+        )}
+        {draft && draft.baseRevision !== revision && (
+          <p role="alert">
+            The published channel changed. This draft is preserved, but cannot be published against
+            its old base.
+          </p>
+        )}
+        {diff ? (
+          <section className="draft-review" aria-label="Review changes from the creation base">
+            <p className="draft-review-baseline text-sm text-muted-foreground">
+              Creation base{' '}
+              <code title={draft?.baseVersionId || newBase.versionId}>
+                {(draft?.baseVersionId || newBase.versionId).slice(0, 8)}
+              </code>{' '}
+              compared with current browser content{dirty ? ' · unsaved edits' : ''}. This is the
+              whole draft; evaluation evidence identifies its own comparison parent.
+            </p>
+            <ContentDiff base={base} current={payload} variant="workspace" />
+          </section>
+        ) : (
+          <div
+            className="content-workspace file-explorer-workspace"
+            data-testid="draft-file-browser"
+          >
+            <FileNavigator
+              count={visibleFiles.length}
+              totalCount={payload.files.length}
+              filtered={Boolean(entryQuery)}
+              selectedPath={file?.path}
+            >
+              <div className="file-navigator-controls">
+                <div className="file-navigator-heading">
+                  <span className="file-navigator-desktop-label text-sm font-medium">Files</span>
+                  <div className="file-navigator-actions">
+                    <DropdownMenu>
+                      <Tooltip>
+                        <TooltipTrigger asChild data-slot="button">
+                          <DropdownMenuTrigger asChild data-slot="button">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="file-icon-action"
+                              aria-label="Add entry"
+                              disabled={busy || !active}
+                            >
+                              <Plus aria-hidden="true" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent>Add entry</TooltipContent>
+                      </Tooltip>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem
+                          className="min-h-8 text-sm"
+                          onSelect={() => {
+                            setEntryQuery('');
+                            add('instruction');
+                          }}
+                        >
+                          Add instruction
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="min-h-8 text-sm"
+                          onSelect={() => {
+                            setEntryQuery('');
+                            add('skill');
+                          }}
+                        >
+                          Add skill package
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="min-h-8 text-sm"
+                          onSelect={() => {
+                            setEntryQuery('');
+                            add('memory');
+                          }}
+                        >
+                          Add shared memory
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <ImportContent
+                      presentation="dialog"
+                      iconOnly
+                      compatibilityTarget={compatibilityTarget}
+                      payload={payload}
+                      onApply={(next) => {
+                        setEntryQuery('');
+                        editPayload(next);
+                      }}
+                      disabled={busy || !active}
+                      commandScope={commandScope}
+                    />
+                  </div>
+                </div>
+
+                <Label htmlFor="draft-search" className="sr-only">
+                  Find an entry
+                </Label>
+                <Input
+                  id="draft-search"
+                  type="search"
+                  value={entryQuery}
+                  onChange={(e) => setEntryQuery(e.target.value)}
+                  placeholder="Search files…"
+                />
+                {entryQuery && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setEntryQuery('');
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+              <FileTree
+                items={visibleFiles.map(({ entry, entryIndex }) => ({
+                  id: String(entryIndex),
+                  path: entry.path,
+                  kind: entry.kind,
+                }))}
+                selectedId={file ? String(index) : undefined}
+                scopeKey={`${scope}:${draft?.id ?? initialDraftId ?? 'new'}`}
+                filtered={Boolean(entryQuery)}
+                filterKey={entryQuery}
                 disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    const result = await invoke({
-                      action: 'history',
-                      id: draft.id,
-                      cursor: historyCursor,
-                    });
-                    if (result.ok && result.history) {
-                      setHistory((previous) => [
-                        ...previous,
-                        ...result.history!.items.map(
-                          (item) => `Generation ${item.generation}: ${item.version.id}`,
-                        ),
-                      ]);
-                      setHistoryCursor(result.history.nextCursor);
-                    } else if (!result.ok) setMessage(result.message);
-                  } catch {
-                    setMessage('Could not read older saved snapshots.');
-                  } finally {
-                    setBusy(false);
-                  }
+                onSelectItem={(item) => {
+                  setIndex(Number(item.id));
+                  onSelectPath?.(item.path);
                 }}
+              />
+              {!visibleFiles.length && (
+                <p className="p-4 text-sm text-muted-foreground">
+                  {payload.files.length
+                    ? 'No matching entries. Clear filters to see all entries.'
+                    : active
+                      ? 'No entries yet. Use Add entry to begin.'
+                      : 'This saved draft has no entries.'}
+                </p>
+              )}
+            </FileNavigator>
+            <div className="content-detail">
+              {file ? (
+                <>
+                  <header className="content-entry-heading compact-selected-file">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <FileGlyph kind={file.kind} />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="break-words text-sm font-semibold">
+                            {fileTitle(file) || '(unnamed)'}
+                          </h3>
+                          <KindBadge kind={file.kind} />
+                        </div>
+                        {file.path !== fileTitle(file) && (
+                          <p
+                            tabIndex={0}
+                            className="selected-file-path break-all font-mono text-sm text-muted-foreground"
+                          >
+                            <PathText value={file.path} />
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="selected-entry-actions flex flex-wrap items-center gap-2">
+                      <Dialog
+                        onOpenChange={(open) => {
+                          if (open) setEntryError('');
+                        }}
+                      >
+                        <DialogTrigger asChild>
+                          <Button variant="outline" aria-label="Entry actions">
+                            <span className="entry-actions-full-label">Entry actions</span>
+                            <span className="entry-actions-short-label" aria-hidden="true">
+                              Actions
+                            </span>
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Entry actions</DialogTitle>
+                            <DialogDescription>
+                              Rename, change type, or remove this entry. Changes stay in this draft
+                              until saved.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-3">
+                            <Label htmlFor="draft-path">Entry path (rename)</Label>
+                            <Input
+                              id="draft-path"
+                              value={file.path}
+                              disabled={busy || !active}
+                              onChange={(e) => update('path', e.target.value)}
+                            />
+                            <Label htmlFor="draft-kind">Entry kind</Label>
+                            <NativeSelect
+                              id="draft-kind"
+                              className="w-full"
+                              value={file.kind}
+                              disabled={busy || !active}
+                              onChange={(e) => update('kind', e.target.value)}
+                            >
+                              <option value="instruction">Instruction</option>
+                              <option value="skill">Skill</option>
+                              <option value="memory">Shared memory</option>
+                            </NativeSelect>
+                            {file.kind === 'skill' && (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  disabled={busy || !active}
+                                  onClick={() => {
+                                    editPayload({
+                                      ...payload,
+                                      files: [
+                                        ...payload.files,
+                                        {
+                                          kind: 'skill',
+                                          path: `skills/${file.path.split('/')[1]}/references/new-${payload.files.length}.md`,
+                                          text: '',
+                                        },
+                                      ],
+                                    });
+                                    setIndex(payload.files.length);
+                                  }}
+                                >
+                                  Add skill support file
+                                </Button>
+                                <Label htmlFor="skill-name">Rename entire skill package</Label>
+                                <div className="flex flex-wrap gap-2">
+                                  <Input
+                                    id="skill-name"
+                                    className="min-w-0 flex-1"
+                                    placeholder="new-skill-name"
+                                    value={packageName}
+                                    onChange={(e) => {
+                                      setPackageName(e.target.value);
+                                      setEntryError('');
+                                    }}
+                                    aria-invalid={Boolean(entryError)}
+                                    aria-describedby={
+                                      entryError ? 'skill-package-error' : undefined
+                                    }
+                                    disabled={busy || !active}
+                                  />
+                                  <Button
+                                    variant="outline"
+                                    disabled={busy || !active || !packageName.trim()}
+                                    onClick={() => {
+                                      try {
+                                        editPayload(
+                                          renameSkillPackage(
+                                            payload,
+                                            file.path.split('/')[1],
+                                            packageName,
+                                          ),
+                                        );
+                                        setPackageName('');
+                                        setEntryError('');
+                                      } catch (error) {
+                                        setEntryError(
+                                          error instanceof Error
+                                            ? error.message
+                                            : 'Could not rename skill package.',
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    Apply package rename
+                                  </Button>
+                                </div>
+                                {entryError && (
+                                  <p
+                                    id="skill-package-error"
+                                    role="alert"
+                                    className="text-sm text-destructive"
+                                  >
+                                    {entryError}
+                                  </p>
+                                )}
+                                <p className="text-sm text-muted-foreground">
+                                  Applies the package path and manifest name to all its files in
+                                  browser edits.
+                                </p>
+                              </>
+                            )}
+                            <Button
+                              variant="outline"
+                              disabled={busy || !active}
+                              onClick={() => {
+                                const prefix =
+                                  file.kind === 'skill'
+                                    ? file.path.split('/').slice(0, 2).join('/') + '/'
+                                    : null;
+                                editPayload({
+                                  ...payload,
+                                  files: payload.files.filter((f, i) =>
+                                    prefix ? !f.path.startsWith(prefix) : i !== index,
+                                  ),
+                                });
+                                setIndex(0);
+                              }}
+                            >
+                              Remove {file.kind === 'skill' ? 'skill package' : 'entry'}
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </header>
+                  <div className="draft-editor-body">
+                    <CodeEditor
+                      key={`${index}:${payload.files.length}`}
+                      id="draft-text"
+                      aria-label="Content"
+                      path={file.path}
+                      className="draft-source-textarea min-h-[360px] font-mono text-sm"
+                      value={file.text}
+                      disabled={busy || !active}
+                      onChange={(value) => update('text', value)}
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="p-4 text-sm text-muted-foreground">
+                  {active ? 'Add an entry to start editing.' : 'No entry selected.'}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+        {draft && (
+          <footer className="draft-utility-footer">
+            <div className="draft-footer-actions">
+              <Button
+                variant="ghost"
+                disabled={busy || Boolean(pending) || related.blocked}
+                onClick={() => confirmDiscard(() => void open(draft.id))}
               >
-                Load more snapshots
+                Reload saved draft
               </Button>
-            )}
-          </details>
+            </div>
+          </footer>
+        )}
+      </div>
+      {draft && (
+        <>
           {!detailOnly && (
             <div className="space-y-3 rounded-md border p-4">
               <h3 className="font-medium">Publish reviewed snapshot</h3>
@@ -1114,49 +1370,33 @@ export function DraftWorkspace({
               <Button
                 variant="outline"
                 disabled={busy || Boolean(pending) || !active}
-                onClick={() =>
-                  confirmDiscard(
-                    () =>
-                      void command({
-                        action: 'discard',
-                        id: draft.id,
-                        expectedGeneration: draft.generation,
-                        key: crypto.randomUUID(),
-                      }),
-                  )
-                }
+                onClick={(event) => confirmSavedDiscard(draft, event.currentTarget)}
               >
                 Discard saved draft
               </Button>
             </div>
           )}
           {detailOnly && commandScope && (
-            <details className="text-sm">
-              <summary className="cursor-pointer text-muted-foreground">Discard draft</summary>
-              <p className="my-3 text-muted-foreground">
-                Discard this saved draft and any browser edits. The published release stays as it
-                is.
-              </p>
-              {active && (
-                <Button
-                  variant="outline"
-                  disabled={busy || Boolean(pending)}
-                  onClick={() =>
-                    confirmDiscard(
-                      () =>
-                        void command({
-                          action: 'discard',
-                          id: draft.id,
-                          expectedGeneration: draft.generation,
-                          key: crypto.randomUUID(),
-                        }),
-                    )
-                  }
-                >
-                  Discard saved draft
-                </Button>
-              )}
-            </details>
+            <Disclosure className="text-sm">
+              <DisclosureTrigger className="cursor-pointer text-muted-foreground">
+                Discard draft
+              </DisclosureTrigger>
+              <DisclosureContent>
+                <p className="my-3 text-muted-foreground">
+                  Discard this saved draft and any browser edits. The published release stays as it
+                  is.
+                </p>
+                {active && (
+                  <Button
+                    variant="outline"
+                    disabled={busy || Boolean(pending)}
+                    onClick={(event) => confirmSavedDiscard(draft, event.currentTarget)}
+                  >
+                    Discard saved draft
+                  </Button>
+                )}
+              </DisclosureContent>
+            </Disclosure>
           )}
         </>
       )}

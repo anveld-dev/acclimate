@@ -117,6 +117,9 @@ def rewrite_url(url, source, current):
         exported = 'source/' + target.relative_to(ROOT / 'docs').as_posix()
         SOURCE_EXPORTS[target] = exported
         dest = relative(exported, current)
+    elif target.is_file() and target.suffix == '.html' and target.is_relative_to(ROOT / 'docs/design'):
+        # Standalone visual studies are repository attachments, not docs-shell pages.
+        return 'https://github.com/anveld-dev/acclimate/blob/main/' + target.relative_to(ROOT).as_posix()
     else:
         raise ValueError('Unmapped local link in {}: {}'.format(source.relative_to(ROOT), url))
     return dest + ('?' + parsed.query if parsed.query else '') + ('#' + parsed.fragment if parsed.fragment else '')
@@ -302,6 +305,18 @@ def build():
         source_dest = OUT / 'source' / source_export(src)
         source_dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / src, source_dest)
+    # Keep implementation/review notes downloadable without adding every historical
+    # experiment to the primary reading path or duplicating it into global search.
+    source_notes = set((ROOT / 'docs/design').rglob('*.md'))
+    source_notes |= set((ROOT / 'docs/architecture').rglob('*.md'))
+    source_notes |= set((ROOT / 'docs/implementation').rglob('*.md'))
+    source_notes |= set((ROOT / 'docs/research').glob('*.md'))
+    published_sources = {ROOT / src for src, *_ in PAGES}
+    note_manifest = []
+    for source_path in sorted(source_notes - published_sources):
+        exported = 'source/' + source_export(source_path.relative_to(ROOT)).as_posix()
+        SOURCE_EXPORTS[source_path] = exported
+        note_manifest.append({'source': source_path.relative_to(ROOT).as_posix(), 'route': exported, 'kind': 'source'})
     for source_path, exported in SOURCE_EXPORTS.items():
         destination = OUT / exported
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -312,6 +327,8 @@ def build():
         shutil.copyfile(archived, archived_dest)
     current_routes = {page[1] for page in PAGES}
     for previous in prior_manifest:
+        if previous.get('kind') == 'source':
+            continue  # The source directory was replaced above.
         if previous['route'] not in current_routes:
             stale = (OUT / previous['route']).resolve()
             if not stale.is_relative_to(OUT.resolve()) or stale.suffix != '.html':
@@ -320,7 +337,7 @@ def build():
                 stale.unlink()
     (OUT / 'source').mkdir(exist_ok=True)
     shutil.copyfile(ROOT / '.repos.json', OUT / 'source/repositories.json')
-    (OUT / 'site-manifest.json').write_text(json.dumps([{'source': src, 'route': route, 'group': group, 'title': title} for src, route, group, title, _ in PAGES], indent=2) + '\n')
+    (OUT / 'site-manifest.json').write_text(json.dumps([{'source': src, 'route': route, 'group': group, 'title': title} for src, route, group, title, _ in PAGES] + note_manifest, indent=2) + '\n')
     inputs = [ROOT / src for src, *_ in PAGES] + [ROOT / '.repos.json', ROOT / 'scripts/build_docs.py', ROOT / 'scripts/docs-requirements.txt']
     inputs += [ASSETS / name for name in ('styles.css', 'app.js', 'diagrams.css', 'diagrams.json')]
     inputs += sorted((ASSETS / 'diagrams').glob('*.html'))

@@ -1,5 +1,7 @@
 # Acclimate design guide
 
+[Current console cleanup](console-golden-path/README.md) · [Navigation and evaluations](console-navigation-evaluations/README.md) · [File tree](file-tree/README.md) · [Console layout](desktop-layouts-v11/README.md) · [Latest desktop comparison](desktop-layouts-v12/README.md) · [Six directions](desktop-layouts-v12/comparison.html) · [Measured results](desktop-layouts-v12/results.html)
+
 The [console productization guide](../architecture/productization/README.md) records the implemented local workflow and remaining deployment gates. Real-service and browser checks establish the local draft/evaluate/release path; hosted provider readiness remains separate.
 
 **First implementation.** [Run locally](../development.md) for setup, checks, and current limits.

@@ -135,3 +135,101 @@
     min-height: 44px;
   }
 }
+
+/* Keep routine account actions compact; technical identity stays opt-in. */
+.account-dialog[data-slot='dialog-content'] {
+  gap: 16px;
+  padding: 20px;
+}
+.account-identity {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.account-identity-name {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.account-identity-guidance {
+  margin-top: 6px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.account-details {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+.account-details dl {
+  display: grid;
+  gap: 16px;
+  padding: 8px 0;
+}
+.account-details dt {
+  margin-bottom: 4px;
+  color: var(--muted-foreground);
+}
+.account-details dd {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+.account-details code {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.6;
+  user-select: all;
+}
+.workspace-rail-workspace-menu[data-slot='dropdown-menu-content'] {
+  display: flex;
+  flex-direction: column;
+  width: 304px;
+  overflow: hidden;
+}
+.workspace-rail-workspace-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  max-height: min(420px, calc(var(--radix-dropdown-menu-content-available-height) - 96px));
+}
+.workspace-rail-workspace-menu > :not(.workspace-rail-workspace-list) {
+  flex-shrink: 0;
+}
+.workspace-rail-workspace-option[data-state='checked'] {
+  background: var(--muted);
+}
+.workspace-rail-workspace-role {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+}
+.workspace-rail-workspace-id {
+  font-size: 12px;
+  line-height: 18px;
+}
+@media (pointer: coarse) {
+  .account-dialog button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+.account-details dd > span {
+  display: contents;
+}
+.account-details dd button {
+  grid-column: 2;
+  grid-row: 1;
+}
+.account-details dd [role='status'] {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}

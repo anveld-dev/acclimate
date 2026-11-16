@@ -10,7 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from './ui/dialog';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CopyButton } from './copy-button';
 import { clearPendingOperations, listenForPendingPurge } from '../lib/pending-operation';
 import type { AccessState } from '../server/access-core';
@@ -21,13 +21,16 @@ export function AccountMenu({
   returnTo,
   compact = false,
   iconOnly = false,
+  suppressTooltip = false,
 }: {
   access: AccessState;
   returnTo?: string;
   compact?: boolean;
   iconOnly?: boolean;
+  suppressTooltip?: boolean;
 }) {
   const returnFocusRef = useRef<HTMLButtonElement>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const userId = access.ok ? (access.actorScope ?? access.identity?.userId) : undefined;
   const actorKnown = access.ok;
   useEffect(() => {
@@ -111,49 +114,64 @@ export function AccountMenu({
     </DialogTrigger>
   );
   return (
-    <Dialog>
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
       {iconOnly ? (
         <Tooltip>
           <TooltipTrigger asChild data-slot="button">
             {trigger}
           </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={10}>
+          <TooltipContent side="right" sideOffset={10} hidden={dialogOpen || suppressTooltip}>
             Account
           </TooltipContent>
         </Tooltip>
       ) : (
         trigger
       )}
-      <DialogContent returnFocusRef={returnFocusRef}>
+      <DialogContent returnFocusRef={returnFocusRef} className="account-dialog">
         <DialogHeader>
           <DialogTitle>Your account</DialogTitle>
-          <DialogDescription>
-            Your verified sign-in identity. Workspace membership is managed separately.
+          <DialogDescription className="sr-only">
+            Sign-in identity and account actions.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
-          <h3 className="font-medium">Your user ID</h3>
-          <code tabIndex={0} className="block break-all text-sm select-all">
-            {access.identity.userId}
-          </code>
-          <CopyButton value={access.identity.userId} label="Copy ID" />
-          <p className="text-sm text-muted-foreground">
-            Give this ID to a workspace administrator to request access.
+        <div className="account-identity">
+          <p className="account-identity-name">
+            {access.identity.displayName?.trim() || 'Signed in'}
+          </p>
+          <p className="account-identity-guidance">
+            Ask a workspace administrator to invite your sign-in email.
           </p>
         </div>
-        <Disclosure className="text-sm">
-          <DisclosureTrigger className="cursor-pointer font-medium">
-            Sign-in details
-          </DisclosureTrigger>
+        <Disclosure className="account-details">
+          <DisclosureTrigger className="account-details-trigger">Sign-in details</DisclosureTrigger>
           <DisclosureContent>
-            <dl className="mt-3 space-y-3">
-              <div>
-                <dt className="text-muted-foreground">Subject</dt>
-                <dd className="break-all">{access.identity.subject}</dd>
+            <dl className="account-details-list">
+              <div className="account-details-row">
+                <dt>User ID</dt>
+                <dd>
+                  <code tabIndex={0} className="account-details-value break-all select-all">
+                    {access.identity.userId}
+                  </code>
+                  <CopyButton value={access.identity.userId} label="Copy ID" iconOnly />
+                </dd>
               </div>
-              <div>
-                <dt className="text-muted-foreground">Issuer</dt>
-                <dd className="break-all">{access.identity.issuer}</dd>
+              <div className="account-details-row">
+                <dt>Subject</dt>
+                <dd>
+                  <code tabIndex={0} className="account-details-value break-all select-all">
+                    {access.identity.subject}
+                  </code>
+                  <CopyButton value={access.identity.subject} label="Copy subject" iconOnly />
+                </dd>
+              </div>
+              <div className="account-details-row">
+                <dt>Issuer</dt>
+                <dd>
+                  <code tabIndex={0} className="account-details-value break-all select-all">
+                    {access.identity.issuer}
+                  </code>
+                  <CopyButton value={access.identity.issuer} label="Copy issuer" iconOnly />
+                </dd>
               </div>
             </dl>
           </DisclosureContent>

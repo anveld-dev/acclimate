@@ -409,14 +409,11 @@ def focus_ownership(b,e,routes,candidate):
     copy=dialog.get_by_role('button',name='Copy ID',exact=True)
     tab_to(p,copy);expect(copy).to_be_focused()
     p.set_viewport_size(dict(width=899,height=768))
-    expect(copy).to_be_focused(timeout=5000)
-    e.capture(p,'899-account-dialog-focus-retained')
-    p.keyboard.press('Escape')
     expect(dialog).to_have_count(0)
-    expect(p.get_by_role('main')).to_be_focused(timeout=5000)
-    e.capture(p,'899-account-hidden-invoker-main-fallback')
+    expect(p.get_by_role('button',name='Open navigation',exact=True)).to_be_focused(timeout=5000)
+    e.capture(p,'899-account-hidden-anchor-navigation-fallback')
     return dict(sourceFocusPreservedBothDirections=True,unsavedSourceRetained=True,
-      openModalFocusNotStolen=True,escapeHiddenInvokerFallsBackToVisibleMain=True)
+      accountPopupClosesWithHiddenAnchor=True,hiddenInvokerFallsBackToVisibleNavigation=True)
 
 
 def build_fingerprint():

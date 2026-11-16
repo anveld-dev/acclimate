@@ -49,9 +49,9 @@ def run(args):
         page.set_viewport_size({'width': 390, 'height': 900})
         page.keyboard.press('Escape')
         expect(dialog).to_have_count(0)
-        expect(page.locator('main#main')).to_be_focused()
+        expect(page.get_by_role('button',name='Open navigation',exact=True)).to_be_focused()
         visible_focus(page)
-        checks.append('Desktop account dialog closes to visible main after resizing to mobile')
+        checks.append('Desktop account popup closes to visible navigation after resizing to mobile')
 
         page.get_by_role('button', name='Open navigation', exact=True).click()
         sheet = page.get_by_role('dialog', name='Acclimate', exact=True)

@@ -136,26 +136,33 @@
   }
 }
 
-/* Keep routine account actions compact; technical identity stays opt-in. */
-.account-dialog[data-slot='dialog-content'] {
-  gap: 16px;
-  padding: 20px;
+/* Account actions stay attached to their rail control, without an overlay. */
+.account-menu[data-slot='popover-content'] {
+  width: 304px;
+  gap: 4px;
+  padding: 6px;
+  font-size: 14px;
+}
+.account-menu .account-identity {
+  padding: 8px;
+}
+.account-menu .account-details {
+  padding: 4px 8px;
+}
+.account-menu .account-details-trigger {
+  width: 100%;
+}
+.account-sign-out {
+  min-height: 36px;
 }
 .account-identity {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .account-identity-name {
-  font-size: 20px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1.35;
-}
-.account-identity-guidance {
-  margin-top: 6px;
-  color: var(--muted-foreground);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.5;
 }
 .account-details {
   border-top: 1px solid var(--border);
@@ -217,7 +224,7 @@
   line-height: 18px;
 }
 @media (pointer: coarse) {
-  .account-dialog button {
+  .account-menu button {
     min-width: 44px;
     min-height: 44px;
   }

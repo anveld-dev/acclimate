@@ -46,7 +46,11 @@ def verify(w,b,extra,out,checks):
         account.click();dialog=p.get_by_role('dialog',name='Your account',exact=True)
         expect(dialog).to_be_visible()
         expect(dialog.get_by_text('Morgan Lee',exact=True)).to_be_visible()
-        expect(dialog.get_by_text('Ask a workspace administrator to invite your sign-in email.',exact=True)).to_be_visible()
+        expect(dialog).to_have_attribute('aria-modal','false')
+        if not mobile:
+            expect(p.locator('[data-slot=dialog-overlay]')).to_have_count(0)
+            rect=dialog.bounding_box();anchor=account.bounding_box()
+            assert rect['x']>=anchor['x']+anchor['width'],dict(popup=rect,anchor=anchor)
         for value in identity.values(): expect(dialog.get_by_text(value,exact=True)).not_to_be_visible()
         capture(p,out/f'account-{width}.png')
         dialog.get_by_role('button',name='Sign-in details',exact=True).click()
@@ -103,7 +107,14 @@ def verify(w,b,extra,out,checks):
     bounds=dialog.bounding_box();assert bounds['y']>=0 and bounds['y']+bounds['height']<=420
     expect(dialog.get_by_role('button',name='Sign out',exact=True)).to_be_in_viewport()
     capture(p,out/'account-low-height.png');p.keyboard.press('Escape');p.keyboard.press('Escape')
-    checks.append('Expanded account scrolls within a320x420 viewport with Sign out reachable; menu keyboard End/Home reaches both regions')
+    checks.append('Expanded account popup scrolls within a320x420 viewport with Sign out reachable; menu keyboard End/Home reaches both regions')
+
+    p.set_viewport_size(dict(width=1440,height=900));visit(p,b,b.workspace_path())
+    p.get_by_role('button',name='Account',exact=True).click()
+    popup=p.get_by_role('dialog',name='Your account',exact=True)
+    p.get_by_role('heading',name='Bundles',exact=True).click()
+    expect(popup).to_have_count(0)
+    checks.append('Anchored nonmodal account has no overlay and dismisses on outside interaction')
 
     # Exercise the browser failure path without changing the real identity source.
     p.set_viewport_size(dict(width=1440,height=900));visit(p,b,b.workspace_path())

@@ -43,14 +43,19 @@ def check_email_join(*, browser, admin_context, console_origin, issuer, project,
         expect(trigger).to_be_enabled(timeout=15000)
         trigger.click()
         dialog=admin.get_by_role('dialog')
+        phase='invitation dialog focus'
         expect(dialog.get_by_label('Email',exact=True)).to_be_focused()
         dialog.get_by_label('Email',exact=True).fill(recipient)
         dialog.get_by_label('Workspace role').select_option('editor')
         dialog.get_by_role('button',name='Send invite',exact=True).click()
+        phase='invitation dialog closes'
         expect(dialog).not_to_be_visible(timeout=15000)
+        phase='invitation trigger regains focus'
         expect(trigger).to_be_focused()
         pending_row=admin.get_by_role('row').filter(has=admin.get_by_role('cell',name=recipient,exact=True))
-        expect(pending_row.get_by_role('cell',name='Sent',exact=True)).to_be_visible(timeout=12000)
+        phase='invitation delivery becomes sent'
+        expect(pending_row.get_by_role('cell',name=re.compile(r'\bSent\b'))).to_be_visible(timeout=12000)
+        phase='invitation polling preserves focus'
         expect(trigger).to_be_focused()
         record('Invitation delivery changes to Sent automatically while Invite member keeps keyboard focus')
 
@@ -139,7 +144,7 @@ def check_email_join(*, browser, admin_context, console_origin, issuer, project,
         dialog.get_by_role('button',name='Cancel',exact=True).click()
         expect(trigger).to_be_focused()
         joined_row=admin.get_by_role('row').filter(has=admin.get_by_text('Invited Teammate',exact=True))
-        expect(joined_row.get_by_role('button',name='Role for Invited Teammate: Editor',exact=True)).to_be_visible(timeout=12000)
+        expect(joined_row.get_by_role('button',name=f'Role for Invited Teammate, user ID {person["userId"]}: Editor',exact=True)).to_be_visible(timeout=12000)
         expect(pending_row).to_have_count(0)
         expect(trigger).to_be_focused()
         assert not admin_navigations

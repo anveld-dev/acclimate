@@ -116,6 +116,7 @@ def bottom_workspace_account(context):
     tab_to(p,account)
     tooltip_visible(p,'Account')
     p.keyboard.press('Escape')
+    expect(p.locator('[data-slot=tooltip-content]')).to_have_count(0)
     p.keyboard.press('Enter')
     expect(p.get_by_role('dialog',name='Your account',exact=True)).to_be_visible()
     p.wait_for_function("document.querySelector('[role=dialog]')?.contains(document.activeElement)")

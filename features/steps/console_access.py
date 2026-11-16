@@ -54,7 +54,7 @@ def remove(context):
     w.browser().visit('/access')
     p=w.browser_fixture.page
     member=p.get_by_role('row').filter(has=p.get_by_text('ordinary-person',exact=True))
-    member.get_by_role('button',name='Actions for ordinary-person',exact=True).click()
+    member.get_by_role('button',name=f'Actions for ordinary-person, user ID {w.sessions["member"]["userId"]}',exact=True).click()
     p.get_by_role('menuitem',name='Remove access',exact=True).click()
     confirmation=p.get_by_role('alertdialog',name='Remove workspace access?',exact=True)
     expect(confirmation).to_contain_text('ordinary-person')
@@ -94,11 +94,12 @@ def open_members(context):
 
 @then('the existing member can be selected with their current role')
 def existing_member(context):
-    p=context.world.browser_fixture.page
+    w=context.world
+    p=w.browser_fixture.page
     member=p.get_by_role('row').filter(has=p.get_by_text('ordinary-person',exact=True))
     expect(member.get_by_text('ordinary-person',exact=True)).to_be_visible()
     expect(member.get_by_text('Viewer',exact=True)).to_be_visible()
-    trigger=member.get_by_role('button',name='Role for ordinary-person: Viewer',exact=True)
+    trigger=member.get_by_role('button',name=f'Role for ordinary-person, user ID {w.sessions["member"]["userId"]}: Viewer',exact=True)
     trigger.click()
     expect(p.get_by_role('menuitemradio').filter(has_text='Viewer')).to_have_attribute('aria-checked','true')
     expect(p.get_by_role('dialog')).to_have_count(0)

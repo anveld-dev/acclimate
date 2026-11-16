@@ -2,7 +2,7 @@ name: checks
 on: [push, pull_request]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine
@@ -18,6 +18,11 @@ jobs:
       EVALUATION_TEST_DATABASE_URL: postgres://acclimate:test-only@localhost:5432/acclimate_test
     steps:
       - uses: actions/checkout@v4
+      - name: Install PostgreSQL test binaries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16
+          /usr/lib/postgresql/16/bin/initdb --version
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -64,6 +69,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Install PostgreSQL test binaries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16
+          /usr/lib/postgresql/16/bin/initdb --version
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:
@@ -92,6 +102,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Install PostgreSQL test binaries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16
+          /usr/lib/postgresql/16/bin/initdb --version
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:

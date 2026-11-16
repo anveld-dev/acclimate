@@ -13,7 +13,9 @@ import {
 import { readStoredVersion } from '../server/read-console';
 import { CopyButton } from './copy-button';
 import { Input } from './ui/input';
-import { FileGlyph, fileTitle, KindBadge } from './shared';
+import { fileTitle, KindBadge } from './shared';
+import { FileNavigator } from './file-navigator';
+import { FileTree } from './file-tree';
 
 import type { BundleScope } from '../server/selection';
 
@@ -30,6 +32,30 @@ export function VersionInspector({
   label?: string;
   contextLabel?: string;
 }) {
+  return (
+    <ScopedVersionInspector
+      key={JSON.stringify([scope.projectId, scope.bundleId, scope.channel, versionId])}
+      versionId={versionId}
+      scope={scope}
+      label={label}
+      contextLabel={contextLabel}
+    />
+  );
+}
+
+function ScopedVersionInspector({
+  versionId,
+  scope,
+  label,
+  contextLabel,
+}: {
+  versionId: string;
+  scope: BundleScope;
+  label: string;
+  contextLabel?: string;
+}) {
+  const searchRef = useRef<HTMLInputElement>(null);
+  const scopeKey = JSON.stringify([scope.projectId, scope.bundleId, scope.channel, versionId]);
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
   const [result, setResult] = useState<Result | null>(null);
@@ -46,9 +72,11 @@ export function VersionInspector({
 
   async function load() {
     const sequence = ++loadSequence.current;
+    setResult(null);
     setLoading(true);
     try {
       const next = await readStoredVersion({ data: { versionId, scope } });
+      if (!next || typeof next.ok !== 'boolean') throw new Error('Version response unavailable');
       if (sequence === loadSequence.current) setResult(next);
     } catch {
       if (sequence === loadSequence.current)
@@ -101,139 +129,150 @@ export function VersionInspector({
           {label}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-5xl">
-        <DialogHeader>
+      <DialogContent className="version-inspector-dialog">
+        <DialogHeader className="version-inspector-header">
           <DialogTitle>Version content</DialogTitle>
           <DialogDescription>
-            {contextLabel && <>{contextLabel}. </>}Browse the files saved in this version.
-          </DialogDescription>
-        </DialogHeader>
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading version…</p>
-        ) : result && !result.ok ? (
-          <div className="space-y-3">
-            <p role="alert" className="text-sm text-destructive">
-              {result.message}
-            </p>
-            <Button variant="outline" onClick={() => void load()}>
-              Retry
-            </Button>
-          </div>
-        ) : result?.ok ? (
-          <div className="space-y-4">
-            <div className="space-y-2 text-sm">
-              <p className="text-muted-foreground">
+            {contextLabel && <>{contextLabel}. </>}Read-only snapshot.
+            {result?.ok && !loading && (
+              <>
+                {' '}
                 Created{' '}
                 <time dateTime={result.version.createdAt}>
                   {new Date(result.version.createdAt).toISOString().replace('T', ' ').slice(0, 19)}{' '}
                   UTC
                 </time>
+                .
+              </>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="version-inspector-body">
+          {loading ? (
+            <p role="status" className="version-inspector-state text-sm text-muted-foreground">
+              Loading version…
+            </p>
+          ) : result && !result.ok ? (
+            <div className="version-inspector-state space-y-3">
+              <p role="alert" className="text-sm text-destructive">
+                {result.message}
               </p>
-              <Disclosure>
-                <DisclosureTrigger className="cursor-pointer font-medium">
-                  Version details
-                </DisclosureTrigger>
-                <DisclosureContent>
-                  <dl className="mt-2 space-y-2 break-all">
-                    <div>
-                      <dt className="text-muted-foreground">Version ID</dt>
-                      <dd>{result.version.id}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Digest</dt>
-                      <dd>{result.version.digest}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Parent version</dt>
-                      <dd>{result.version.parentVersionId ?? 'None'}</dd>
-                    </div>
-                  </dl>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <CopyButton value={result.version.id} label="Copy version ID" />
-                    <CopyButton value={result.version.digest} label="Copy digest" />
-                  </div>
-                </DisclosureContent>
-              </Disclosure>
+              <Button variant="outline" onClick={() => void load()}>
+                Retry
+              </Button>
             </div>
-            <div className="grid overflow-hidden rounded-lg border md:grid-cols-[250px_minmax(0,1fr)]">
-              <div className="flex min-w-0 flex-col border-b md:border-b-0 md:border-r">
-                <div className="space-y-2 border-b p-3">
-                  <Input
-                    type="search"
-                    aria-label="Find a version entry"
-                    placeholder="Search paths or content…"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                  />
+          ) : result?.ok ? (
+            <>
+              <Disclosure>
+                <div className="version-inspector-metadata">
+                  <DisclosureTrigger className="cursor-pointer font-medium">
+                    Version details
+                  </DisclosureTrigger>
+                  <DisclosureContent>
+                    <dl className="mt-2 space-y-2 break-all">
+                      <div>
+                        <dt>Version ID</dt>
+                        <dd>{result.version.id}</dd>
+                      </div>
+                      <div>
+                        <dt>Digest</dt>
+                        <dd>{result.version.digest}</dd>
+                      </div>
+                      <div>
+                        <dt>Parent version</dt>
+                        <dd>{result.version.parentVersionId ?? 'None'}</dd>
+                      </div>
+                    </dl>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <CopyButton value={result.version.id} label="Copy version ID" />
+                      <CopyButton value={result.version.digest} label="Copy digest" />
+                      {result.version.parentVersionId && (
+                        <CopyButton
+                          value={result.version.parentVersionId}
+                          label="Copy parent version"
+                        />
+                      )}
+                    </div>
+                  </DisclosureContent>
                 </div>
-                <div className="max-h-52 overflow-auto p-2 md:max-h-[50vh]">
-                  {matchingFiles.map((file) => (
-                    <Button
-                      key={file.path}
-                      variant="ghost"
-                      className={`h-auto min-h-12 w-full justify-start gap-3 whitespace-normal px-2 py-3 text-left ${selected?.path === file.path ? 'bg-accent' : ''}`}
-                      onClick={() => setSelectedPath(file.path)}
-                      aria-pressed={selected?.path === file.path}
-                    >
-                      <FileGlyph kind={file.kind} />
-                      <span className="min-w-0">
-                        <span className="block break-words text-sm font-medium">
-                          {fileTitle(file)}
-                        </span>
-                        <span className="block break-all text-xs text-muted-foreground">
-                          {file.path}
-                        </span>
-                      </span>
-                    </Button>
-                  ))}
-                  {!matchingFiles.length && (
-                    <p className="p-3 text-sm text-muted-foreground">
-                      {query ? 'No matching entries.' : 'No entries in this version.'}
+              </Disclosure>
+              <div className="content-workspace version-inspector-workspace">
+                <FileNavigator
+                  count={matchingFiles.length}
+                  totalCount={result.payload.files.length}
+                  filtered={!!query.trim()}
+                  selectedPath={selected?.path}
+                >
+                  <div className="file-navigator-controls">
+                    <Input
+                      ref={searchRef}
+                      type="search"
+                      aria-label="Find a version entry"
+                      placeholder="Search paths or content…"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                    />
+                    {query && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          setQuery('');
+                          searchRef.current?.focus();
+                        }}
+                      >
+                        Clear search
+                      </Button>
+                    )}
+                  </div>
+                  <FileTree
+                    items={matchingFiles.map((file) => ({
+                      id: file.path,
+                      path: file.path,
+                      kind: file.kind,
+                    }))}
+                    selectedId={selected?.path}
+                    scopeKey={scopeKey}
+                    filtered={!!query.trim()}
+                    filterKey={query}
+                    onSelectItem={(item) => setSelectedPath(item.id)}
+                  />
+                </FileNavigator>
+                <div className="version-inspector-reader">
+                  {selected ? (
+                    <>
+                      <header className="version-inspector-file-header">
+                        <div>
+                          <h3>{fileTitle(selected)}</h3>
+                          <KindBadge kind={selected.kind} />
+                          <p className="break-all">{selected.path}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <CopyButton value={selected.text} label="Copy content" iconOnly />
+                          <Button variant="outline" size="sm" onClick={download}>
+                            Download
+                          </Button>
+                        </div>
+                      </header>
+                      <SyntaxCode
+                        aria-label={`Content of ${selected.path}`}
+                        className="version-inspector-source"
+                        code={selected.text}
+                        path={selected.path}
+                      />
+                    </>
+                  ) : (
+                    <p className="version-inspector-state text-sm text-muted-foreground">
+                      {query.trim()
+                        ? 'No entries match your search. Try another word or clear the search.'
+                        : 'This version has no entries.'}
                     </p>
                   )}
                 </div>
-                <p
-                  className="mt-auto border-t px-3 py-2 text-sm text-muted-foreground"
-                  role="status"
-                >
-                  {matchingFiles.length} {matchingFiles.length === 1 ? 'entry' : 'entries'}
-                  {query && ` of ${result.payload.files.length}`}
-                </p>
               </div>
-              <div className="min-w-0 p-4">
-                {selected ? (
-                  <>
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0 space-y-2">
-                        <h3 className="break-all text-sm font-medium">{selected.path}</h3>
-                        <KindBadge kind={selected.kind} />
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <CopyButton value={selected.text} label="Copy content" />
-                        <Button variant="outline" size="sm" onClick={download}>
-                          Download
-                        </Button>
-                      </div>
-                    </div>
-                    <SyntaxCode
-                      tabIndex={0}
-                      aria-label={`Content of ${selected.path}`}
-                      className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-4 text-sm leading-7"
-                      code={selected.text}
-                      path={selected.path}
-                    />
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    {query
-                      ? 'No entries match your search. Try another word or clear the search.'
-                      : 'This version has no entries.'}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : null}
+            </>
+          ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );

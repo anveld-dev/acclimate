@@ -93,7 +93,9 @@ export function FileNavigator({
         hidden={!visible}
         onClickCapture={(event) => {
           const entry = (event.target as HTMLElement).closest<HTMLElement>('[data-file-path]');
-          chosenPath.current = entry?.dataset.filePath ?? null;
+          const path = entry?.dataset.filePath;
+          // An unchanged choice has already committed; it must not close a later search.
+          chosenPath.current = path && path !== selectedPath ? path : null;
         }}
       >
         {children}

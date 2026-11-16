@@ -1,10 +1,13 @@
 """Keycloak deployment contracts; no daemon startup, identity provisioning or secrets."""
+import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import runpy
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import unittest
@@ -15,6 +18,37 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class KeycloakDeployment(unittest.TestCase):
+    def test_fetch_authenticates_only_release_metadata_and_still_verifies_archive(self):
+        with patch.object(sys, 'version_info', (3, 12)):
+            fetch = runpy.run_path(str(ROOT/'scripts/testing/fetch_keycloak.py'))['fetch']
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode='w:gz') as tar:
+            entry = tarfile.TarInfo('keycloak-26.8.2/version.txt')
+            entry.size = len(b'26.8.2')
+            tar.addfile(entry, io.BytesIO(b'26.8.2'))
+        content = archive.getvalue()
+        url = 'https://github.com/keycloak/keycloak/releases/download/26.8.2/keycloak-26.8.2.tar.gz'
+        digest = 'sha256:'+hashlib.sha256(content).hexdigest()
+        release = json.dumps({'assets': [{'name': 'keycloak-26.8.2.tar.gz',
+            'digest': digest, 'browser_download_url': url}]}).encode()
+        for token in ('fixture-token', ''):
+            with self.subTest(authenticated=bool(token)), tempfile.TemporaryDirectory() as directory:
+                def open_url(request, *, timeout):
+                    if isinstance(request, str):
+                        self.assertEqual(request, url)
+                        return io.BytesIO(content)
+                    self.assertEqual(request.full_url,
+                        'https://api.github.com/repos/keycloak/keycloak/releases/tags/26.8.2')
+                    self.assertEqual(request.get_header('Authorization'),
+                        f'Bearer {token}' if token else None)
+                    return io.BytesIO(release)
+                output = Path(directory)/'download'
+                with patch.dict(os.environ, {'GITHUB_TOKEN': token}), \
+                     patch.dict(fetch.__globals__, {'urlopen': open_url}):
+                    home = fetch(output)
+                self.assertEqual((home/'version.txt').read_text(), '26.8.2')
+                self.assertEqual(json.loads((output/'verified-release.json').read_text())['sha256'], digest)
+
     def test_fetch_rejects_an_old_virtualenv_without_reexecuting_itself(self):
         # A Python 3.11 .venv-bdd must fail once, rather than exec itself forever.
         with patch.object(sys, 'version_info', (3, 11)), \

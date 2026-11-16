@@ -61,6 +61,17 @@ def main():
             world.call('POST', world.integration_path+'/receipts', dict(world.delivery_event(), stage=stage), actor='receipt-writer')
         draft=world.call('POST',world.channel+'/drafts',dict(baseVersionId=world.original['version']['id'],baseRevision=world.original['revision'],payload=dict(schemaVersion=1,files=[dict(path='AGENTS.md',kind='instruction',text='Check the original receipt before retrying.')])))
         candidate=draft['snapshotVersion']['id']
+        world.sign_in('evaluator','video-evaluator')
+        world.call('PUT',world.root+'/memberships/'+world.sessions['evaluator']['userId'],dict(role='editor'),actor='admin')
+        settings=dict(parentVersionId=world.original['version']['id'],parentDigest=world.original['version']['digest'],candidateVersionId=candidate,candidateDigest=draft['snapshotVersion']['digest'],datasetRevision='video-receipts-v1',graderRevision='video-grader-v1',runtime=dict(source='simulated-example',model='none'),expectedCases=[dict(caseId='receipt-'+str(i),repetition=0) for i in range(3)])
+        request=world.call('POST',world.bundle+'/evaluation-requests',dict(settings,requireBoundEvidence=True))
+        attempt='video-fixture-attempt'
+        request_path=world.bundle+'/evaluation-requests/'+request['id']
+        world.call('POST',request_path+'/start',dict(attemptId=attempt),actor='evaluator')
+        def scored(reward):return dict(executionStatus='completed',gradingStatus='scored',reward=reward,usage=dict(costUsd=0))
+        comparison=world.call('POST',world.bundle+'/comparisons',dict(settings,evaluation=dict(requestId=request['id'],attemptId=attempt),results=[dict(case,parent=scored(a),candidate=scored(c)) for case,a,c in zip(settings['expectedCases'],[0,1,1],[1,0,1])]),actor='evaluator')
+        world.call('POST',request_path+'/finish',dict(attemptId=attempt,comparisonId=comparison['id']),actor='evaluator')
+        world.call('POST',world.bundle+'/evaluation-requests',dict(settings,datasetRevision='video-receipts-v2',requireBoundEvidence=True))
         world.call('POST', world.root + '/integrations', dict(displayName='Support production', bundleId=world.setup['bundle']['id'], channel='stable'))
         world.sensitive_fixture=True
         browser = world.browser()
@@ -86,16 +97,19 @@ def main():
         view(routes['changes']); run('wait', '1500')
         run('snapshot','-i');run('find','first','[aria-label="Saved drafts"] [data-slot="disclosure-trigger"]','click');run('wait','1000')
         view(routes['changes']+'&candidate='+candidate)
+        click('Create another evaluation request')
         run('wait','--text','Create evaluation request');run('wait','1500')
         run('screenshot',str(out/'evaluation-setup.png'))
         run('record', 'stop'); recording = False
         mp4 = out / 'round13.mp4'
-        subprocess.run(['ffmpeg', '-v', 'error', '-i', str(video), '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(mp4)], check=True)
+        raw_probe=json.loads(subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','json',str(video)],capture_output=True,text=True,check=True).stdout)
+        stretch=max(1,min(6,36/float(raw_probe['format']['duration'])))
+        subprocess.run(['ffmpeg', '-v', 'error', '-i', str(video), '-vf', f'setpts={stretch}*PTS', '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(mp4)], check=True)
         probes = {}
         for path in (video, mp4):
             probes[path.name] = json.loads(subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration:stream=width,height,codec_name', '-of', 'json', str(path)], capture_output=True, text=True, check=True).stdout)
         assert before == build_fingerprint(), 'Frozen build changed during capture'
-        (out / 'metadata.json').write_text(json.dumps(dict(tool='agent-browser', fixtureOnly=True, modelCalls=0, secretVisible=False,fixtureCredentialProvisioning=True, buildSha256=before, probes=probes, limitations=['Disposable data; no real workspace changes.', 'Reports and draft are explicit fixture data; no evaluation executed.']), indent=2) + '\n')
+        (out / 'metadata.json').write_text(json.dumps(dict(tool='agent-browser', fixtureOnly=True, modelCalls=0, secretVisible=False,fixtureCredentialProvisioning=True, buildSha256=before, probes=probes,playbackStretch=stretch, limitations=['Disposable data; no real workspace changes.', 'Reports, draft and comparison are explicit simulated fixture data; no agent or model executed.']), indent=2) + '\n')
         (out / 'snapshots.txt').write_text('\n\n'.join(snapshots))
     finally:
         if recording:

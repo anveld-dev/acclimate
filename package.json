@@ -74,6 +74,12 @@
   "dependencies": {
     "@openai/codex-sdk": "0.169.0"
   },
+  "overrides": {
+    "micromatch": {
+      "picomatch": "file:packages/vendor/picomatch/picomatch-2.3.2-acclimate.1.tgz"
+    },
+    "picomatch@^3 || ^4": "file:packages/vendor/picomatch/picomatch-4.0.7-acclimate.1.tgz"
+  },
   "exports": {
     "./sdk": {
       "types": "./dist/packages/sdk/src/index.d.ts",

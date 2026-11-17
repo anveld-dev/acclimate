@@ -21,6 +21,12 @@
 !examples/evaluation/adapter.ts
 !scripts/
 !scripts/build-packages.mjs
+!scripts/packaging/
+!scripts/packaging/release-metadata.mjs
+!scripts/packaging/release-metadata.json
+!scripts/packaging/build-receipt.mjs
+!python/
+!python/pyproject.toml
 !deploy/
 !deploy/Dockerfile
 !deploy/console.Dockerfile

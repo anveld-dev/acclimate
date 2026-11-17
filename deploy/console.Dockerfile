@@ -7,6 +7,9 @@ COPY packages ./packages
 RUN npm ci --ignore-scripts
 COPY tsconfig*.json ./
 COPY scripts/build-packages.mjs ./scripts/build-packages.mjs
+COPY scripts/packaging/release-metadata.mjs scripts/packaging/release-metadata.json scripts/packaging/build-receipt.mjs ./scripts/packaging/
+# Release metadata checks the wheel version against the JavaScript packages.
+COPY python/pyproject.toml ./python/pyproject.toml
 COPY apps/console ./apps/console
 # Public evaluator descriptor/config matching is imported by the console.
 COPY examples/evaluation/descriptor.ts examples/evaluation/adapter.ts ./examples/evaluation/

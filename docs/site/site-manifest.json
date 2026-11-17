@@ -294,6 +294,56 @@
     "title": "Earlier proposal"
   },
   {
+    "source": "docs/architecture/continuous-learning/README.md",
+    "route": "source/architecture/continuous-learning/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/continuous-learning/alternatives/artifact-protocol.md",
+    "route": "source/architecture/continuous-learning/alternatives/artifact-protocol.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/continuous-learning/alternatives/shared-campaign.md",
+    "route": "source/architecture/continuous-learning/alternatives/shared-campaign.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/continuous-learning/alternatives/small-learner.md",
+    "route": "source/architecture/continuous-learning/alternatives/small-learner.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/continuous-learning/evidence.md",
+    "route": "source/architecture/continuous-learning/evidence.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/continuous-learning/implementation.md",
+    "route": "source/architecture/continuous-learning/implementation.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/continuous-learning/migration.md",
+    "route": "source/architecture/continuous-learning/migration.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/continuous-learning/mutations.md",
+    "route": "source/architecture/continuous-learning/mutations.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/continuous-learning/product-flow.md",
+    "route": "source/architecture/continuous-learning/product-flow.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/continuous-learning/recovery.md",
+    "route": "source/architecture/continuous-learning/recovery.md",
+    "kind": "source"
+  },
+  {
     "source": "docs/architecture/deepening-review.md",
     "route": "source/architecture/deepening-review.md",
     "kind": "source"
@@ -976,6 +1026,71 @@
   {
     "source": "docs/implementation/dx-gap-closure-20261117/retest.md",
     "route": "source/implementation/dx-gap-closure-20261117/retest.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/README.md",
+    "route": "source/research/continuous-harness-review/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/agentrun.md",
+    "route": "source/research/continuous-harness-review/agentrun.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/evaluation.md",
+    "route": "source/research/continuous-harness-review/evaluation.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/harness-model.md",
+    "route": "source/research/continuous-harness-review/harness-model.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/lifecycle.md",
+    "route": "source/research/continuous-harness-review/lifecycle.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/rrsi.md",
+    "route": "source/research/continuous-harness-review/rrsi.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/second-pass/README.md",
+    "route": "source/research/continuous-harness-review/second-pass/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/second-pass/experiments.md",
+    "route": "source/research/continuous-harness-review/second-pass/experiments.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/second-pass/memory.md",
+    "route": "source/research/continuous-harness-review/second-pass/memory.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/second-pass/mutation.md",
+    "route": "source/research/continuous-harness-review/second-pass/mutation.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/second-pass/recovery.md",
+    "route": "source/research/continuous-harness-review/second-pass/recovery.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/second-pass/skeptic.md",
+    "route": "source/research/continuous-harness-review/second-pass/skeptic.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/continuous-harness-review/usage-evidence.md",
+    "route": "source/research/continuous-harness-review/usage-evidence.md",
     "kind": "source"
   },
   {

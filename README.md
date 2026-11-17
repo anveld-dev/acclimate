@@ -12,6 +12,7 @@ Start with the task you want to complete:
 - **Web console:** TanStack Start in `apps/console`; content editing, evaluation handoff and releases. Uses Keycloak sign-in and explicit production configuration.
 - **Service:** immutable versions, scoped access, proposals, comparison reports, channel promotion and rollback in PostgreSQL.
 - **TypeScript and Python SDKs:** verified delivery and installed application-owned paired evaluators, with explicit lifecycle recovery, CI quality policies, and deliberate review exports.
+- **Continuous learning:** an app-owned durable learner (`@acclimate/sdk/learning`) connects scoped task feedback, candidate comparisons, audit history and reviewer releases. Try the [recurring model-free qualification](examples/continuous-learning/README.md).
 - **Plugins:** Codex, Claude, Pi and Cursor file mappings. Codex has live Luna session checks; Claude options and Pi resource loading have offline checks.
 
 [Behavior tests](features/README.md) · [Console setup](apps/console/README.md) · [Keycloak setup](deploy/keycloak/README.md) · [Setup](docs/development.md) · [Architecture](docs/architecture/README.md) · [Open the HTML docs](docs/site/index.html) · [Wire contract](contracts/IMPLEMENTATION.md)

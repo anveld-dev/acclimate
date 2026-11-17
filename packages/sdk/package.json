@@ -42,6 +42,10 @@
     "./evaluation/progress": {
       "types": "./dist/evaluation/progress.d.ts",
       "import": "./dist/evaluation/progress.js"
+    },
+    "./learning": {
+      "types": "./dist/learning/index.d.ts",
+      "import": "./dist/learning/index.js"
     }
   },
   "files": [

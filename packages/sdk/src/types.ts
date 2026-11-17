@@ -338,7 +338,7 @@ export type Operation =
       operationId: string;
       path: string;
       requestFingerprint?: string;
-      result: Draft | BundleSetup | Proposal | Evaluation | Promotion | Comparison;
+      result: Draft | BundleSetup | Proposal | Evaluation | Promotion | Comparison | VersionMetadata;
     }
   | { status: 'not_observed'; operationId: string }
   | { status: 'closed'; operationId: string; path?: string };

@@ -25,7 +25,8 @@ export function EvaluationScorecard({ comparison }: { comparison: Comparison }) 
         <div>
           <h3>Parent vs. candidate</h3>
           <p>
-            Observed per-pair mean · {summary.pairedCount} / {summary.expectedCount} expected pairs
+            Observed equal-case mean · {summary.comparableCaseCount} / {summary.expectedCaseCount}{' '}
+            expected cases
             {evidence.partial ? ' · partial' : ''}
           </p>
         </div>
@@ -93,12 +94,16 @@ export function EvaluationScorecard({ comparison }: { comparison: Comparison }) 
         </DisclosureTrigger>
         <DisclosureContent>
           <p className="evaluation-score-note">
-            Means use {summary.pairedCount} of {summary.expectedCount} expected pairs with two
-            scored, gradeable outcomes. Graded task failures stay included; missing grades and
-            infrastructure failures are excluded and remain visible below.{' '}
+            Repetitions are averaged within each case, then cases receive equal weight. Means use{' '}
+            {summary.pairedCount} of {summary.expectedCount} expected pairs with two scored,
+            gradeable outcomes, across {summary.comparableCaseCount} of {summary.expectedCaseCount}{' '}
+            expected cases. Graded task failures stay included; missing grades and infrastructure
+            failures are excluded and remain visible below.{' '}
             {evidence.partial
               ? 'This partial view is not an overall result.'
-              : 'Complete evidence alone is not a win or release approval.'}
+              : 'Complete evidence alone is not a win or release approval.'}{' '}
+            Metric direction and application policy are not available here; a higher reward does not
+            establish better quality or a passing policy.
           </p>
         </DisclosureContent>
       </Disclosure>

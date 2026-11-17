@@ -108,6 +108,18 @@
     "./cursor-plugin": {
       "types": "./dist/packages/cursor-plugin/src/index.d.ts",
       "import": "./dist/packages/cursor-plugin/src/index.js"
+    },
+    "./sdk/evaluation/analysis": {
+      "types": "./dist/packages/sdk/src/evaluation/analysis.d.ts",
+      "import": "./dist/packages/sdk/src/evaluation/analysis.js"
+    },
+    "./sdk/evaluation/manifest": {
+      "types": "./dist/packages/sdk/src/evaluation/manifest.d.ts",
+      "import": "./dist/packages/sdk/src/evaluation/manifest.js"
+    },
+    "./sdk/evaluation/progress": {
+      "types": "./dist/packages/sdk/src/evaluation/progress.d.ts",
+      "import": "./dist/packages/sdk/src/evaluation/progress.js"
     }
   },
   "engines": {

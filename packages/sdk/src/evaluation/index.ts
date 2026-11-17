@@ -25,3 +25,8 @@ export type {
   RunEvaluationOptions,
   PreflightOptions,
 } from './types.js';
+
+export * from './analysis.js';
+export * from './manifest.js';
+export { createEvaluationProgressReporter } from './progress.js';
+export type { EvaluationProgressScope, EvaluationProgressUpdate } from './progress.js';

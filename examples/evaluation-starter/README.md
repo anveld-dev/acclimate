@@ -83,6 +83,25 @@ node acclimate-eval.mjs verify-export --manifest /downloaded/review/manifest.jso
 
 Local hash consistency is not provenance; online verification matches authoritative scalars, not proof that redacted outputs are true execution traces.
 
+## Analyze named metrics and repeated executions
+
+The archive includes `analyze.mjs`, `analyze.py` and the complete
+[analysis guide](ANALYSIS.md). After installing the matching SDK, analyze saved
+comparison evidence with a separately retained trusted binding:
+
+```sh
+node analyze.mjs comparison.json descriptor.json trusted-binding.json analysis-config.json
+python3.11 analyze.py comparison.json descriptor.json trusted-binding.json analysis-config.json
+```
+
+Omit `analysis-config.json` for descriptive scalar reward. The optional config
+supplies named component metrics, explicit units/direction and app-retained
+observations bound to the exact case/version/grader. Each case receives equal
+weight regardless of repetition count. The guide explains missingness and the
+opt-in paired bootstrap for independently collected stochastic repetitions on
+fixed tasks. This starter's deterministic simulator uses descriptive mode; its
+repeats do not support stochastic confidence or automatic release.
+
 ## CI and recovery meanings
 
 `run` returns 0 for completed evidence (including a losing candidate), 2 for failed/incomplete evidence and 3 for interruption/uncertain recovery. `check` returns 0 for policy pass, 2 for a complete quality violation and 3 for incomplete/unknown evidence; invalid input/policy/access returns 1. A policy pass is descriptive and never release authorization. The policy labels its direction and equal weighting across distinct cases; it makes no statistical-confidence claim.

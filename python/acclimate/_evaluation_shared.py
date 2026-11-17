@@ -70,9 +70,10 @@ def safe_error(error: BaseException, *, phase="preflight", execution_state="not_
     if isinstance(error, ApiError):
         code = ("auth.denied" if error.status in (401, 403) else
                 "transport.response_too_large" if error.code == "response_too_large" else
-                "capabilities.unsupported" if error.status == 404 and phase == "preflight" else
+                "evidence.malformed" if error.status == 404 and phase == "preflight" else
                 "service.unavailable")
-        action = "ask_operator" if error.status in (401, 403) else "retry_same_command"
+        action = ("ask_operator" if error.status in (401, 403) else
+                  "fix_config" if error.status == 404 and phase == "preflight" else "retry_same_command")
     elif isinstance(error, TransportError):
         code, action = "service.unavailable", "retry_same_command"
     if execution_state == "may_have_started":

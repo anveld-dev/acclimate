@@ -1,0 +1,408 @@
+{
+  "schemaVersion": 1,
+  "persona": "first-time-adopter",
+  "modelCalls": 0,
+  "scenario": "application-owned deterministic support-routing loop",
+  "assertions": [
+    {
+      "name": "offline trial explicit simulation",
+      "expected": true,
+      "observed": true,
+      "passed": true
+    },
+    {
+      "name": "offline trial no service mutation",
+      "expected": false,
+      "observed": false,
+      "passed": true
+    },
+    {
+      "name": "offline trial no release evidence",
+      "expected": false,
+      "observed": false,
+      "passed": true
+    },
+    {
+      "name": "shipped trial parent mean",
+      "expected": 0.5,
+      "observed": 0.5,
+      "passed": true
+    },
+    {
+      "name": "shipped trial candidate mean",
+      "expected": 1,
+      "observed": 1,
+      "passed": true
+    },
+    {
+      "name": "application descriptor owns case inventory",
+      "expected": [
+        "compromised-account",
+        "ordinary-issue"
+      ],
+      "observed": [
+        "compromised-account",
+        "ordinary-issue"
+      ],
+      "passed": true
+    },
+    {
+      "name": "descriptor excludes private expected answers",
+      "expected": false,
+      "observed": false,
+      "passed": true
+    },
+    {
+      "name": "read-only identity rejected by evaluator preflight",
+      "expected": "denied",
+      "observed": "denied",
+      "passed": true
+    },
+    {
+      "name": "read-only preflight supplies operator next action",
+      "expected": "ask_operator",
+      "observed": "ask_operator",
+      "passed": true
+    },
+    {
+      "name": "paired callbacks actually ran",
+      "expected": 4,
+      "observed": 4,
+      "passed": true
+    },
+    {
+      "name": "awaitedRead",
+      "expected": true,
+      "observed": true,
+      "passed": true
+    },
+    {
+      "name": "resultRetained",
+      "expected": true,
+      "observed": true,
+      "passed": true
+    },
+    {
+      "name": "inputsRemoved",
+      "expected": true,
+      "observed": true,
+      "passed": true
+    },
+    {
+      "name": "private answers absent from agent inputs",
+      "expected": false,
+      "observed": false,
+      "passed": true
+    },
+    {
+      "name": "callbacks consumed one immutable instruction",
+      "expected": [
+        1
+      ],
+      "observed": [
+        1
+      ],
+      "passed": true
+    },
+    {
+      "name": "two immutable version IDs consumed",
+      "expected": 2,
+      "observed": 2,
+      "passed": true
+    },
+    {
+      "name": "two immutable digests consumed",
+      "expected": 2,
+      "observed": 2,
+      "passed": true
+    },
+    {
+      "name": "service request completed",
+      "expected": "completed",
+      "observed": "completed",
+      "passed": true
+    },
+    {
+      "name": "candidate mean",
+      "expected": 1,
+      "observed": 1,
+      "passed": true
+    },
+    {
+      "name": "parent mean",
+      "expected": 0.5,
+      "observed": 0.5,
+      "passed": true
+    },
+    {
+      "name": "mean improvement",
+      "expected": 0.5,
+      "observed": 0.5,
+      "passed": true
+    },
+    {
+      "name": "policy decision",
+      "expected": "pass",
+      "observed": "pass",
+      "passed": true
+    },
+    {
+      "name": "independent reader verified scalar binding",
+      "expected": "online_scalar_binding",
+      "observed": "online_scalar_binding",
+      "passed": true
+    },
+    {
+      "name": "verification does not attest raw execution",
+      "expected": false,
+      "observed": false,
+      "passed": true
+    }
+  ],
+  "bundleId": "2b70429e-f38d-41fb-8a53-2b1419e35570",
+  "requestId": "0ff34f69-fb53-4246-9465-dd78032c436a",
+  "comparisonId": "7cd203cf-e4b4-459c-90c3-574e9a181673",
+  "consumedVersionIds": [
+    "2ce664be-e3d7-4ad6-b0f8-b1c4cf5e6f97",
+    "9a67b99d-e994-4b65-9087-e42db38c8111"
+  ],
+  "consumedDigests": [
+    "sha256:494afcb5eb4c7303f2bd84409aae674c36bc55bc08171baf7b325a9aee9a6d57",
+    "sha256:bca95bd1ea8bad421653c1649df302506769969d751765d345e3c1ae4fc1aff4"
+  ],
+  "trial": {
+    "simulated": true,
+    "claim": "deterministic application wiring only",
+    "tasks": 2,
+    "parentMean": 0.5,
+    "candidateMean": 1,
+    "serviceMutation": false,
+    "releaseEvidence": false
+  },
+  "policy": {
+    "schemaVersion": 1,
+    "verdict": "pass",
+    "code": "policy.pass",
+    "policy": {
+      "id": "support-routing-quality",
+      "revision": "1",
+      "sha256": "sha256:5bc7609295638d495e7d8a2e532273b5e68d5c879164b8c7d928b49b14bf6176"
+    },
+    "comparisonId": "7cd203cf-e4b4-459c-90c3-574e9a181673",
+    "expectedBinding": {
+      "parentVersionId": "2ce664be-e3d7-4ad6-b0f8-b1c4cf5e6f97",
+      "candidateVersionId": "9a67b99d-e994-4b65-9087-e42db38c8111",
+      "parentDigest": "sha256:bca95bd1ea8bad421653c1649df302506769969d751765d345e3c1ae4fc1aff4",
+      "candidateDigest": "sha256:494afcb5eb4c7303f2bd84409aae674c36bc55bc08171baf7b325a9aee9a6d57",
+      "requestId": "0ff34f69-fb53-4246-9465-dd78032c436a",
+      "attemptId": "5a4962a4-3a39-483b-bb30-24029c7148ae",
+      "comparisonId": "7cd203cf-e4b4-459c-90c3-574e9a181673",
+      "submitter": "evaluator"
+    },
+    "checks": [
+      {
+        "code": "policy.minimum_mean_improvement",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_case_regression",
+        "result": "pass"
+      },
+      {
+        "code": "policy.candidate_threshold",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_candidate_task_failures",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_candidate_cost",
+        "result": "pass"
+      }
+    ],
+    "counts": {
+      "distinctCases": 2,
+      "expectedPairs": 2,
+      "comparablePairs": 2
+    },
+    "summary": {
+      "parentMean": 0.5,
+      "candidateMean": 1,
+      "orientedMeanImprovement": 0.5,
+      "worstCaseRegression": 0,
+      "candidateTaskFailures": 0,
+      "parentCostUsd": 0,
+      "candidateCostUsd": 0,
+      "costIncreaseUsd": 0,
+      "parentUnknownCosts": 0,
+      "candidateUnknownCosts": 0
+    },
+    "interpretation": "descriptive-policy-check"
+  },
+  "verification": {
+    "schemaVersion": 1,
+    "status": "verified",
+    "provenance": "online_scalar_binding",
+    "comparisonId": "7cd203cf-e4b4-459c-90c3-574e9a181673",
+    "executionAttested": false
+  },
+  "commands": [
+    {
+      "step": "install --offline --ignore-scripts",
+      "executable": "npm",
+      "argumentCount": 6,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "trial",
+      "executable": "node",
+      "argumentCount": 1,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "describe",
+      "executable": "node",
+      "argumentCount": 2,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "doctor",
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "doctor",
+      "executable": "node",
+      "argumentCount": 6,
+      "exitCode": 2,
+      "expectedExitCode": 2
+    },
+    {
+      "step": "request",
+      "executable": "node",
+      "argumentCount": 14,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "doctor",
+      "executable": "node",
+      "argumentCount": 6,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "run",
+      "executable": "node",
+      "argumentCount": 6,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "check",
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "export",
+      "executable": "node",
+      "argumentCount": 10,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "verify-export",
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    }
+  ],
+  "runtime": {
+    "node": "v26.13.1",
+    "python": "3.11.7",
+    "postgres": "postgres (PostgreSQL) 16.15 (Homebrew)"
+  },
+  "releaseSourceInventorySha256": "15feab4b46cd8c4d52592fc318cd171a267daa1ec562d4447ae261a16db03f6b",
+  "binarySourceBuildAttested": false,
+  "releaseManifestSha256": "559c1dfe4e47158af21178742d0715500e6616b182ee89be1caf5ca844675153",
+  "serviceBinarySha256": "ed09e68c2c93497df582c57b5366b312f915dd2625bd5e053d0a7ebad2a8de8a",
+  "limits": [
+    "Original headless request and separately owned continuous browser request are distinct fixtures; browser acceptance is documented by the continuous console report.",
+    "No model/native-provider quality claim; deterministic custom loop only.",
+    "Operator supplies release and evaluator credentials; no public registry or hosted onboarding exercised."
+  ],
+  "disposition": "accepted",
+  "criteria": [
+    {
+      "id": 1,
+      "name": "find first value",
+      "disposition": "accepted"
+    },
+    {
+      "id": 2,
+      "name": "consume versioned content in supported custom loop",
+      "disposition": "accepted"
+    },
+    {
+      "id": 3,
+      "name": "own installed evaluator",
+      "disposition": "accepted",
+      "acceptedScope": "Actual continuous custom-descriptor console download and installed-app execution",
+      "evidence": "Owned continuous console report, distinct from the original headless request"
+    },
+    {
+      "id": 4,
+      "name": "know authority before request creation",
+      "disposition": "accepted"
+    },
+    {
+      "id": 5,
+      "name": "relevant console evaluation choice",
+      "disposition": "accepted",
+      "evidence": "Owned continuous Chromium journey verifies empty evaluator choice and disabled creation before custom selection; shared root evidence also retained."
+    },
+    {
+      "id": 6,
+      "name": "obtain coherent operator release",
+      "disposition": "accepted"
+    }
+  ],
+  "sharedBrowserEvidence": {
+    "owner": "root",
+    "personallyExecutedByThisPersona": false,
+    "sameContinuousFixture": false,
+    "results": "artifacts/dx-personas-20261117/console/bdd/results.json",
+    "coverage": "artifacts/dx-personas-20261117/console/bdd/coverage.md",
+    "resultsSha256": "0ec95a066b14abd79e64a35872a197f06df2ad6d37c334d4f70428bfae3a43ee",
+    "coverageSha256": "c5f3326a22e1e3c5717f9b97a64093249a01757a3accf66b18631809e494b7fe",
+    "scenariosPassed": 6,
+    "stepsPassed": 25,
+    "tags": [
+      "NATIVE-WALK-01",
+      "UI-EVAL-01",
+      "UI-SETUP-01",
+      "UI-SETUP-02"
+    ],
+    "scope": "Explicit example selection, public clipboard/download handoff, copied checkout helper and installed native delivery; no custom installed-app descriptor pasted."
+  },
+  "continuousConsoleEvidence": {
+    "owner": "first-time-adopter",
+    "report": "docs/acceptance/developer-personas-20261117/first-time-adopter-console.json",
+    "reportSha256": "257ad14de9039741986df43d02921d64fef20103fd240a015c604961b74bea2a",
+    "sameContinuousFixture": true,
+    "assertionsPassed": 29,
+    "requestId": "5e00bbf5-bed8-4519-8d66-153eaa778ccc",
+    "comparisonId": "e67cc21e-12d6-4f96-8eca-256e89fa0b7d",
+    "descriptorPastedSha256": "6ec4e68f7c6bf53d038b6f7617d108f6b0baec466c27c17d1c49501cdc096d64",
+    "downloadSha256": "ee6adb827d756459a34bba702312f3ea7d3638243663c3b3f48b5e38058f0035"
+  }
+}

@@ -1,0 +1,382 @@
+{
+  "schemaVersion": 1,
+  "persona": "coding-agent-plugin-author",
+  "evidence": "actual-service-all-four-deterministic-children-plus-real-Codex-native-session",
+  "credentialKind": "service-issued-content-read",
+  "pinned": {
+    "versionId": "f4461914-31b5-4717-8edf-9848c10c36bc",
+    "digest": "sha256:411da9cb1af81b219403575636c36a374c3eacdaaeec01bbd0f54e3074cc01c1"
+  },
+  "sourceUnchanged": true,
+  "conflicts": [
+    {
+      "path": "AGENTS.md",
+      "code": "native.control_path"
+    },
+    {
+      "path": "nested/claude.MD",
+      "code": "native.control_path"
+    },
+    {
+      "path": ".cursor/skills/retry-review/SKILL.md",
+      "code": "native.control_path"
+    }
+  ],
+  "results": [
+    {
+      "harness": "codex",
+      "versionId": "f4461914-31b5-4717-8edf-9848c10c36bc",
+      "digest": "sha256:411da9cb1af81b219403575636c36a374c3eacdaaeec01bbd0f54e3074cc01c1",
+      "sourceManifestSha256": "3b8ba85fc011ae2bef147eea29bbdc9cd95fe4bca99fe6b4a84a1efe9997ea28",
+      "selectedMemorySha256": "d955feaad6129ea681d5b5de5174d5a7bce99ce2b82445e3bdbb3a90cd06ca21",
+      "patchSha256": "bd79f3de2e9162b06298c17d72649ad3c52595b4cff97bf727b298533be65b39",
+      "patchBytes": 231,
+      "baselineExit": 1,
+      "testsExit": 0,
+      "childExit": 0,
+      "resourceFilesChecked": 7,
+      "withheldMemoryAbsent": true,
+      "resultsRetainedBeforeCleanup": true,
+      "cleaned": true
+    },
+    {
+      "harness": "claude",
+      "versionId": "f4461914-31b5-4717-8edf-9848c10c36bc",
+      "digest": "sha256:411da9cb1af81b219403575636c36a374c3eacdaaeec01bbd0f54e3074cc01c1",
+      "sourceManifestSha256": "3b8ba85fc011ae2bef147eea29bbdc9cd95fe4bca99fe6b4a84a1efe9997ea28",
+      "selectedMemorySha256": "d955feaad6129ea681d5b5de5174d5a7bce99ce2b82445e3bdbb3a90cd06ca21",
+      "patchSha256": "bd79f3de2e9162b06298c17d72649ad3c52595b4cff97bf727b298533be65b39",
+      "patchBytes": 231,
+      "baselineExit": 1,
+      "testsExit": 0,
+      "childExit": 0,
+      "resourceFilesChecked": 7,
+      "withheldMemoryAbsent": true,
+      "resultsRetainedBeforeCleanup": true,
+      "cleaned": true
+    },
+    {
+      "harness": "pi",
+      "versionId": "f4461914-31b5-4717-8edf-9848c10c36bc",
+      "digest": "sha256:411da9cb1af81b219403575636c36a374c3eacdaaeec01bbd0f54e3074cc01c1",
+      "sourceManifestSha256": "3b8ba85fc011ae2bef147eea29bbdc9cd95fe4bca99fe6b4a84a1efe9997ea28",
+      "selectedMemorySha256": "d955feaad6129ea681d5b5de5174d5a7bce99ce2b82445e3bdbb3a90cd06ca21",
+      "patchSha256": "bd79f3de2e9162b06298c17d72649ad3c52595b4cff97bf727b298533be65b39",
+      "patchBytes": 231,
+      "baselineExit": 1,
+      "testsExit": 0,
+      "childExit": 0,
+      "resourceFilesChecked": 7,
+      "withheldMemoryAbsent": true,
+      "resultsRetainedBeforeCleanup": true,
+      "cleaned": true
+    },
+    {
+      "harness": "cursor",
+      "versionId": "f4461914-31b5-4717-8edf-9848c10c36bc",
+      "digest": "sha256:411da9cb1af81b219403575636c36a374c3eacdaaeec01bbd0f54e3074cc01c1",
+      "sourceManifestSha256": "3b8ba85fc011ae2bef147eea29bbdc9cd95fe4bca99fe6b4a84a1efe9997ea28",
+      "selectedMemorySha256": "d955feaad6129ea681d5b5de5174d5a7bce99ce2b82445e3bdbb3a90cd06ca21",
+      "patchSha256": "bd79f3de2e9162b06298c17d72649ad3c52595b4cff97bf727b298533be65b39",
+      "patchBytes": 231,
+      "baselineExit": 1,
+      "testsExit": 0,
+      "childExit": 0,
+      "resourceFilesChecked": 7,
+      "withheldMemoryAbsent": true,
+      "resultsRetainedBeforeCleanup": true,
+      "cleaned": true
+    }
+  ],
+  "uncertain": {
+    "quarantinedWhileChildAlive": true,
+    "unconfirmedCleanupRejected": true,
+    "termination": "owned-child-SIGKILL-and-reap",
+    "recoveryCleaned": true
+  },
+  "remainingWorkspaces": 0,
+  "installation": {
+    "allResolvedWithinConsumer": true,
+    "packages": [
+      {
+        "package": "@acclimate/sdk",
+        "version": "0.1.0",
+        "entrypointSha256": "73fc394abcf3136c5f15361155300d20fe4b58d8264ca8ff04d505084731fb83",
+        "resolvedWithinConsumer": true
+      },
+      {
+        "package": "@acclimate/codex-plugin",
+        "version": "0.1.0",
+        "entrypointSha256": "34ab98fd2d5eb469e655cc8e21c479460e41c6f2429cc2a8f2c9e434f595833f",
+        "resolvedWithinConsumer": true
+      },
+      {
+        "package": "@acclimate/claude-plugin",
+        "version": "0.1.0",
+        "entrypointSha256": "6c850332ca5d49f599b40a69a1c7c5612ec8dca4a419eaa9210f2cbc22a32717",
+        "resolvedWithinConsumer": true
+      },
+      {
+        "package": "@acclimate/pi-plugin",
+        "version": "0.1.0",
+        "entrypointSha256": "ce64e15c65d7b3dd76a62f7b98b807131e01115907150fe5de3dff3bd2259cc7",
+        "resolvedWithinConsumer": true
+      },
+      {
+        "package": "@acclimate/cursor-plugin",
+        "version": "0.1.0",
+        "entrypointSha256": "9204205de495549d0dadf96c4535c50b945f3bb83d69c1af78895f4fe07cf2eb",
+        "resolvedWithinConsumer": true
+      }
+    ],
+    "releaseArchiveByteVerification": [
+      {
+        "package": "@acclimate/sdk",
+        "releaseArchiveSha256": "08ba82796b8de09e046b36c2f3f5a34285359f45800595af36ecc6daf72348c5",
+        "verifiedFiles": 85,
+        "contentSha256": "442d5d0037fe591faf491f76d2e7979354ab1643ad21937ea0f546237d5d86b8"
+      },
+      {
+        "package": "@acclimate/codex-plugin",
+        "releaseArchiveSha256": "e72825d6568b2945ceb76cc6f795c446f461904f5c71a22bd6eb93fc0a8e6f6d",
+        "verifiedFiles": 4,
+        "contentSha256": "dc8cf93d795475e67e6a1c7d4d0a3828a8f0de417818cd572da95117aa898da2"
+      },
+      {
+        "package": "@acclimate/claude-plugin",
+        "releaseArchiveSha256": "19845f9c5ceabb707ee37d485821b64b998dc37850913506a14bda8566ea1821",
+        "verifiedFiles": 7,
+        "contentSha256": "0406cddb3778939864e6b6d0b7be69278dc41bb2d5f86a1c63027b7ebdfa3943"
+      },
+      {
+        "package": "@acclimate/pi-plugin",
+        "releaseArchiveSha256": "ac9ce9fe6f530570f14aaa58b583025b232b44c1d9601c9799c05a9c697b1772",
+        "verifiedFiles": 7,
+        "contentSha256": "92f720e0d571b4d7011475cf6d070a133a79721a8a7b1aa7143604dc2b7f66b5"
+      },
+      {
+        "package": "@acclimate/cursor-plugin",
+        "releaseArchiveSha256": "c2dfffd9dc9785cfac476ece6ac46b1945da39e90db90df49550df2ae6457559",
+        "verifiedFiles": 8,
+        "contentSha256": "4c2d775044fcbf418b8aa056ecb5f341b9d688a3ff056e06e349930b49cd7a03"
+      }
+    ]
+  },
+  "liveInstallation": {
+    "allResolvedWithinConsumer": true,
+    "packages": [
+      {
+        "package": "@acclimate/sdk",
+        "version": "0.1.0",
+        "entrypointSha256": "73fc394abcf3136c5f15361155300d20fe4b58d8264ca8ff04d505084731fb83",
+        "resolvedWithinConsumer": true
+      },
+      {
+        "package": "@acclimate/codex-plugin",
+        "version": "0.1.0",
+        "entrypointSha256": "34ab98fd2d5eb469e655cc8e21c479460e41c6f2429cc2a8f2c9e434f595833f",
+        "resolvedWithinConsumer": true
+      },
+      {
+        "package": "@acclimate/claude-plugin",
+        "version": "0.1.0",
+        "entrypointSha256": "6c850332ca5d49f599b40a69a1c7c5612ec8dca4a419eaa9210f2cbc22a32717",
+        "resolvedWithinConsumer": true
+      },
+      {
+        "package": "@acclimate/pi-plugin",
+        "version": "0.1.0",
+        "entrypointSha256": "ce64e15c65d7b3dd76a62f7b98b807131e01115907150fe5de3dff3bd2259cc7",
+        "resolvedWithinConsumer": true
+      },
+      {
+        "package": "@acclimate/cursor-plugin",
+        "version": "0.1.0",
+        "entrypointSha256": "9204205de495549d0dadf96c4535c50b945f3bb83d69c1af78895f4fe07cf2eb",
+        "resolvedWithinConsumer": true
+      },
+      {
+        "package": "@openai/codex-sdk",
+        "version": "0.169.0",
+        "entrypointSha256": "340f42940ffd5c7b31e6e11a159517339c048d30577d88cafeac976cd620f6a4",
+        "resolvedWithinConsumer": true
+      }
+    ],
+    "releaseArchiveByteVerification": [
+      {
+        "package": "@acclimate/sdk",
+        "releaseArchiveSha256": "08ba82796b8de09e046b36c2f3f5a34285359f45800595af36ecc6daf72348c5",
+        "verifiedFiles": 85,
+        "contentSha256": "442d5d0037fe591faf491f76d2e7979354ab1643ad21937ea0f546237d5d86b8"
+      },
+      {
+        "package": "@acclimate/codex-plugin",
+        "releaseArchiveSha256": "e72825d6568b2945ceb76cc6f795c446f461904f5c71a22bd6eb93fc0a8e6f6d",
+        "verifiedFiles": 4,
+        "contentSha256": "dc8cf93d795475e67e6a1c7d4d0a3828a8f0de417818cd572da95117aa898da2"
+      },
+      {
+        "package": "@acclimate/claude-plugin",
+        "releaseArchiveSha256": "19845f9c5ceabb707ee37d485821b64b998dc37850913506a14bda8566ea1821",
+        "verifiedFiles": 7,
+        "contentSha256": "0406cddb3778939864e6b6d0b7be69278dc41bb2d5f86a1c63027b7ebdfa3943"
+      },
+      {
+        "package": "@acclimate/pi-plugin",
+        "releaseArchiveSha256": "ac9ce9fe6f530570f14aaa58b583025b232b44c1d9601c9799c05a9c697b1772",
+        "verifiedFiles": 7,
+        "contentSha256": "92f720e0d571b4d7011475cf6d070a133a79721a8a7b1aa7143604dc2b7f66b5"
+      },
+      {
+        "package": "@acclimate/cursor-plugin",
+        "releaseArchiveSha256": "c2dfffd9dc9785cfac476ece6ac46b1945da39e90db90df49550df2ae6457559",
+        "verifiedFiles": 8,
+        "contentSha256": "4c2d775044fcbf418b8aa056ecb5f341b9d688a3ff056e06e349930b49cd7a03"
+      }
+    ]
+  },
+  "liveCodex": {
+    "schemaVersion": 1,
+    "harness": "codex",
+    "sdkVersion": "0.169.0",
+    "model": "gpt-6-luna",
+    "evidence": "actual-service-installed-sdk-native-provider-session",
+    "passed": true,
+    "blocker": null,
+    "versionId": "f4461914-31b5-4717-8edf-9848c10c36bc",
+    "digest": "sha256:411da9cb1af81b219403575636c36a374c3eacdaaeec01bbd0f54e3074cc01c1",
+    "threadId": "01a1e9da-fbdb-7551-9ca5-d90ffe0f43e1",
+    "turnCompleted": true,
+    "usage": {
+      "input_tokens": 107854,
+      "cached_input_tokens": 84992,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 663,
+      "reasoning_output_tokens": 0
+    },
+    "baselineExit": 1,
+    "hostFinalTestsExit": 0,
+    "unchangedTests": true,
+    "markerMatches": {
+      "instruction": true,
+      "skill": true,
+      "memory": true
+    },
+    "observedSuccessfulCommandsMentioning": {
+      "instruction": true,
+      "skill": true,
+      "memory": true,
+      "source": true,
+      "tests": true
+    },
+    "testCommands": [
+      {
+        "itemId": "item_8",
+        "exitCode": 1,
+        "status": "failed"
+      },
+      {
+        "itemId": "item_11",
+        "exitCode": 0,
+        "status": "completed"
+      }
+    ],
+    "fileChangeItems": 0,
+    "itemTypes": [
+      "error",
+      "agent_message",
+      "command_execution"
+    ],
+    "patch": {
+      "sha256": "5361282f51c440db403e50daed42a7d2239f73db95689168dd73d9ce7d3d447e",
+      "bytes": 219,
+      "sourceManifestSha256": "3b8ba85fc011ae2bef147eea29bbdc9cd95fe4bca99fe6b4a84a1efe9997ea28"
+    },
+    "sourceUnchanged": true,
+    "facts": {
+      "prepared": true,
+      "launchIntent": true,
+      "confirmedStopped": true,
+      "resultsRetained": true,
+      "cleaned": true
+    },
+    "cleanupAfter": "normal-sdk-stream-exhaustion-awaits-codex-exec-exit",
+    "providerBehaviorLimits": [
+      "One fresh session on a tiny repository; no general behavioral improvement estimate.",
+      "No resumed-session reload or forced provider cancellation qualified.",
+      "Resource command matching is observable retrieval evidence; it is not a skill-discovery event."
+    ],
+    "toolEvidence": [
+      {
+        "itemId": "item_6",
+        "operation": "read-resources-and-source",
+        "relativeReadPaths": [
+          "AGENTS.md",
+          ".agents/skills/retry-review/SKILL.md",
+          ".acclimate/memory/memory/selected.md",
+          "src/retry.js",
+          "tests/retry.test.mjs"
+        ],
+        "exitCode": 0
+      },
+      {
+        "itemId": "item_8",
+        "operation": "repository-test",
+        "relativeReadPaths": [],
+        "exitCode": 1
+      },
+      {
+        "itemId": "item_9",
+        "operation": "write-source",
+        "relativeReadPaths": [],
+        "exitCode": 0
+      },
+      {
+        "itemId": "item_11",
+        "operation": "repository-test",
+        "relativeReadPaths": [],
+        "exitCode": 0
+      }
+    ],
+    "nonfatalAmbientConfigurationWarnings": {
+      "deprecatedMultiAgentSettings": 2,
+      "ignoredRemoteConnectionsSetting": 2,
+      "marketplaceRootOutsideCodexHome": 1,
+      "total": 5
+    },
+    "consumerScriptSha256": "1adc7b19c2c5b1d35ae120087320bba727428d7bcc43bb25d5ebae6fbad4717d",
+    "installedSdkImplementationSha256": "340f42940ffd5c7b31e6e11a159517339c048d30577d88cafeac976cd620f6a4",
+    "installedSdkRelativePath": "app/native-repository-starter/node_modules/@openai/codex-sdk/dist/index.js",
+    "nativeCliBinarySha256": "739cda86e15d30a6e2b40cf8dcbbfb988aaf48b305b27065573bb8e9fd41d002",
+    "nativeCliWithinConsumer": true
+  },
+  "serviceBinarySha256": "ed09e68c2c93497df582c57b5366b312f915dd2625bd5e053d0a7ebad2a8de8a",
+  "releaseSourceInventorySha256": "15feab4b46cd8c4d52592fc318cd171a267daa1ec562d4447ae261a16db03f6b",
+  "binarySourceBuildAttested": false,
+  "consumerSource": "checksummed-native-repository-archive-and-release-tarballs",
+  "consumerScriptSha256": "6bbacd4e2b5dfa17de61320fbecc43a560a069f4655f4c5caab2376a244dc615",
+  "childScriptSha256": "bebad96e331331b29031f3f9b2524c8788f4bc09565d46db6c9af58b179a2e40",
+  "consumerExit": 0,
+  "liveProviderBehavior": "qualified-only-as-recorded-in-liveCodex",
+  "deterministicProviderCalls": 0,
+  "nativeSessionAttempts": 1,
+  "consumerOutsideCheckout": true,
+  "sourceCheckoutRevision": "63eb588458732fbba53c0969c9b892cf08a572fe",
+  "commands": [
+    "python3.11 -m scripts.acceptance.dx_personas.plugin_author --output <private-output> --live-codex",
+    "npm install --offline --ignore-scripts --no-audit --no-fund <release-sdk-and-plugin-tarballs>",
+    "node persona-launch.mjs <private-config> <persistent-workspace-parent>",
+    "npm install --offline --ignore-scripts --no-audit --no-fund @openai/codex-sdk@0.169.0",
+    "node persona-live-launch.mjs <private-config> <persistent-workspace-parent>"
+  ],
+  "cleanup": {
+    "schemaVersion": 1,
+    "databaseDirectoryRemoved": true,
+    "serviceStopped": true,
+    "consumerOutputsRetained": true
+  },
+  "priorInvalidFixture": {
+    "attempts": 1,
+    "reason": "Initial native starter install had no private package manifest and npm resolved from enclosing workspace. Excluded from accepted installed-release evidence; repeated externally after boundary verification."
+  }
+}

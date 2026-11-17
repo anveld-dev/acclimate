@@ -30,6 +30,18 @@
     "./evaluation/artifacts": {
       "types": "./dist/evaluation/artifacts.d.ts",
       "import": "./dist/evaluation/artifacts.js"
+    },
+    "./evaluation/analysis": {
+      "types": "./dist/evaluation/analysis.d.ts",
+      "import": "./dist/evaluation/analysis.js"
+    },
+    "./evaluation/manifest": {
+      "types": "./dist/evaluation/manifest.d.ts",
+      "import": "./dist/evaluation/manifest.js"
+    },
+    "./evaluation/progress": {
+      "types": "./dist/evaluation/progress.d.ts",
+      "import": "./dist/evaluation/progress.js"
     }
   },
   "files": [

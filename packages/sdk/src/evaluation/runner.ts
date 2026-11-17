@@ -226,6 +226,34 @@ async function verified(
     throw new EvaluationError('version.binding_mismatch');
   return [deepFreeze(parent), deepFreeze(candidate)];
 }
+/** An empty request/channel listing does not establish bundle existence. */
+async function assertBundleExists(api: AcclimateClient, projectId: string, bundleId: string) {
+  let cursor: string | undefined;
+  const seen = new Set<string>();
+  for (let pages = 0; pages < 100; pages++) {
+    const page = await api.listBundles(projectId, { limit: 100, ...(cursor ? { cursor } : {}) });
+    if (
+      !page ||
+      !Array.isArray(page.items) ||
+      page.items.length > 100 ||
+      page.items.some((item) => !item || typeof item.id !== 'string') ||
+      (page.nextCursor !== null &&
+        (typeof page.nextCursor !== 'string' || !page.nextCursor || page.nextCursor.length > 4096))
+    )
+      throw new EvaluationError('evidence.malformed', { phase: 'preflight' });
+    if (page.items.some((item) => item.id === bundleId)) return;
+    if (page.nextCursor === null)
+      throw new EvaluationError('bundle.missing', { phase: 'preflight' });
+    if (seen.has(page.nextCursor))
+      throw new EvaluationError('evidence.malformed', { phase: 'preflight' });
+    seen.add(page.nextCursor);
+    cursor = page.nextCursor;
+  }
+  throw new EvaluationError('evidence.incomplete', {
+    phase: 'preflight',
+    nextAction: 'ask_operator',
+  });
+}
 export async function preflightEvaluation<I, E, O>(
   options: PreflightOptions<I, E, O>,
 ): Promise<PreflightResult> {
@@ -259,29 +287,40 @@ export async function preflightEvaluation<I, E, O>(
   const pass = (check: PreflightResult['checks'][number]['check']) =>
     result.checks.push({ check, status: 'passed' });
   let probe: string | undefined;
+  let currentCheck: PreflightResult['checks'][number]['check'] = 'runtime';
   try {
     const [major, minor] = process.versions.node.split('.').map(Number);
     if (process.platform === 'win32' || major < 22 || (major === 22 && minor < 22))
       throw new EvaluationError('runtime.unsupported');
     pass('runtime');
     pass('privateConfig');
+    currentCheck = 'journalStorage';
     await privateDirectory(config.journalRoot);
     probe = await mkdtemp(path.join(config.journalRoot, '.preflight-'));
     pass('journalStorage');
+    currentCheck = 'lock';
     const lock = await acquireFileLock(path.join(probe, 'ownership.lock'));
     await lock.close();
     pass('lock');
     const api = createEvaluationTransport(config).client;
+    currentCheck = 'evaluatorAccess';
     await authority(api, config);
     result.authorization = 'verified';
     pass('serviceIdentity');
     pass('evaluatorAccess');
+    currentCheck = 'targetBundle';
+    await assertBundleExists(api, config.projectId, bundleId);
+    pass('targetBundle');
     if (requestId) {
+      currentCheck = 'targetRequest';
       const request = await api.getEvaluation(config.projectId, bundleId, requestId);
       if (request.id !== requestId || !request.requireBoundEvidence)
         throw new EvaluationError('evidence.identity_mismatch');
+      pass('targetRequest');
+      currentCheck = 'descriptor';
       assertDescriptor(request, captured.descriptor);
       pass('descriptor');
+      currentCheck = 'versions';
       await verified(api, config, bundleId, request, path.join(probe, 'cache'));
       pass('versions');
     } else {
@@ -289,12 +328,23 @@ export async function preflightEvaluation<I, E, O>(
       result.checks.push({ check: 'versions', status: 'not_applicable' });
     }
   } catch (error) {
-    const diagnostic = toSafeDiagnostic(error, 'preflight');
+    const missing =
+      currentCheck === 'targetRequest'
+        ? 'request.missing'
+        : currentCheck === 'versions'
+          ? 'version.missing'
+          : undefined;
+    const diagnostic = toSafeDiagnostic(
+      error instanceof ApiError && error.status === 404 && missing
+        ? new EvaluationError(missing, { phase: 'preflight', httpStatus: 404 })
+        : error,
+      'preflight',
+    );
     result.status = 'blocked';
     result.nextAction = diagnostic.nextAction;
     if (diagnostic.code.startsWith('auth.')) result.authorization = 'denied';
     result.checks.push({
-      check: result.checks.length < 4 ? 'runtime' : 'evaluatorAccess',
+      check: currentCheck,
       status: diagnostic.code === 'capabilities.unsupported' ? 'unverified' : 'failed',
       code: diagnostic.code,
     });

@@ -1,0 +1,141 @@
+{
+  "schema": "evaluation-manifest-conformance-v1",
+  "canonicalVectors": [
+    {
+      "name": "integer-normalization",
+      "value": [-0.0, 1.0, -1, 9007199254740991],
+      "canonical": "[0,1,-1,9007199254740991]",
+      "sha256": "sha256:b90b0f6c8ea0477a2d948348c8c138e4a654fc2b686d2929aebd647cc4f97f33"
+    },
+    {
+      "name": "fractional-binary64",
+      "value": [0.1, -0.1, 1.5, 5e-324, 2.2250738585072014e-308],
+      "canonical": "[0.1000000000000000055511151231257827021181583404541015625,-0.1000000000000000055511151231257827021181583404541015625,1.5,0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004940656458412465441765687928682213723650598026143247644255856825006755072702087518652998363616359923797965646954457177309266567103559397963987747960107818781263007131903114045278458171678489821036887186360569987307230500063874091535649843873124733972731696151400317153853980741262385655911710266585566867681870395603106249319452715914924553293054565444011274801297099995419319894090804165633245247571478690147267801593552386115501348035264934720193790268107107491703332226844753335720832431936092382893458368060106011506169809753078342277318329247904982524730776375927247874656084778203734469699533647017972677717585125660551199131504891101451037862738167250955837389733598993664809941164205702637090279242767544565229087538682506419718265533447265625,0.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002225073858507201383090232717332404064219215980462331830553327416887204434813918195854283159012511020564067339731035811005152434161553460108856012385377718821130777993532002330479610147442583636071921565046942503734208375250806650616658158948720491179968591639648500635908770118304874799780887753749949451580451605050915399856582470818645113537935804992115981085766051992433352114352390148795699609591288891602992641511063466313393663477586513029371762047325631781485664350872122828637642044846811407613911477062801689853244110024161447421618567166150540154285084716752901903161322778896729707373123334086988983175067838846926092773977972858659654941091369095406136467568702398678315290680984617210924625396728515625]",
+      "sha256": "sha256:0507ae1c5d8a9678b118e04480c2111651c6d2443518c3415d4e845b02394423"
+    },
+    {
+      "name": "utf8-keys-and-string-escapes",
+      "value": {
+        "𐀀": "astral",
+        "": "bmp",
+        "é": "\b\t\n\f\r\"\\/\u0000  ",
+        "é": "no normalization",
+        "10": "ten",
+        "2": "two"
+      },
+      "canonical": "{\"10\":\"ten\",\"2\":\"two\",\"é\":\"no normalization\",\"é\":\"\\b\\t\\n\\f\\r\\\"\\\\/\\u0000  \",\"\":\"bmp\",\"𐀀\":\"astral\"}",
+      "sha256": "sha256:b6abd23f0dec4d705f9b458555fe65234056dacda19f960ec8b453d073f1f569"
+    },
+    {
+      "name": "arrays-keep-order",
+      "value": {
+        "z": [3, 2, 1],
+        "a": {
+          "y": true,
+          "x": null
+        }
+      },
+      "canonical": "{\"a\":{\"x\":null,\"y\":true},\"z\":[3,2,1]}",
+      "sha256": "sha256:ac47b872b8fce6af8630603275aeec6362f52f9feeafd9ea4de2c83b0599cbbe"
+    }
+  ],
+  "input": {
+    "configId": "portable-demo",
+    "execution": "model-free",
+    "cases": [
+      {
+        "caseId": "𐀀",
+        "input": {
+          "temperature": 0.1,
+          "query": "private-input-canary"
+        },
+        "expected": {
+          "answer": "private-expected-canary"
+        },
+        "repetitions": 2
+      },
+      {
+        "caseId": "",
+        "input": [-0.0, 1.0],
+        "expected": null
+      }
+    ],
+    "grader": {
+      "sourceUtf8": "# private-grader-canary\nreturn 1\n"
+    },
+    "runtime": {
+      "settings": {
+        "temperature": 0.1,
+        "credential": "private-config-canary"
+      },
+      "artifacts": {
+        "executor": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "lockfile": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "privateManifestJson": "{\"cases\":[{\"caseId\":\"\",\"expected\":null,\"input\":[0,1],\"repetitions\":1},{\"caseId\":\"𐀀\",\"expected\":{\"answer\":\"private-expected-canary\"},\"input\":{\"query\":\"private-input-canary\",\"temperature\":0.1000000000000000055511151231257827021181583404541015625},\"repetitions\":2}],\"configId\":\"portable-demo\",\"execution\":\"model-free\",\"grader\":{\"sourceUtf8\":\"# private-grader-canary\\nreturn 1\\n\"},\"runtime\":{\"artifacts\":{\"executor\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"lockfile\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"settings\":{\"credential\":\"private-config-canary\",\"temperature\":0.1000000000000000055511151231257827021181583404541015625}},\"schema\":\"acclimate-evaluation-manifest-v1\"}",
+  "descriptor": {
+    "datasetRevision": "sha256:8be4a2f81f2dcc930c0c206f9b4d305e2914a62f88856fa396e459b95fe19d8d",
+    "graderRevision": "sha256:d35e9d2310087c9c2a1fde29f664b14fe3b8b5a5da540f407459c557f20786bd",
+    "runtime": {
+      "manifestSchema": "acclimate-evaluation-manifest-v1",
+      "runtimeRevision": "sha256:cd7fd4635983cb38f32960340efd7a074c15d37eb79984cc3a4652dc3da05971",
+      "configId": "portable-demo",
+      "configRevision": "sha256:c20c05deb5b786e956fc01eb2bc98777f098321656f68e8bc05ee470c588ddfe",
+      "execution": "model-free",
+      "concurrency": "1",
+      "gradeRetries": "0"
+    },
+    "expectedCases": [
+      {
+        "caseId": "",
+        "repetition": 0
+      },
+      {
+        "caseId": "𐀀",
+        "repetition": 0
+      },
+      {
+        "caseId": "𐀀",
+        "repetition": 1
+      }
+    ]
+  },
+  "restoration": {
+    "privateManifestJson": "{\"cases\":[{\"caseId\":\"\",\"expected\":null,\"input\":[0,1],\"repetitions\":1},{\"caseId\":\"𐀀\",\"expected\":{\"answer\":\"private-expected-canary\",\"nested\":[1,0]},\"input\":{\"nested\":[1,0],\"query\":\"private-input-canary\",\"temperature\":0.1000000000000000055511151231257827021181583404541015625},\"repetitions\":2}],\"configId\":\"portable-demo\",\"execution\":\"model-free\",\"grader\":{\"sourceUtf8\":\"# private-grader-canary\\nreturn 1\\n\"},\"runtime\":{\"artifacts\":{\"executor\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"lockfile\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"settings\":{\"credential\":\"private-config-canary\",\"temperature\":0.1000000000000000055511151231257827021181583404541015625}},\"schema\":\"acclimate-evaluation-manifest-v1\"}",
+    "descriptor": {
+      "datasetRevision": "sha256:7452f5a893e6e2963547602c88fd8e59a78106fed31e9a7b2181b9f521ef95e0",
+      "graderRevision": "sha256:d35e9d2310087c9c2a1fde29f664b14fe3b8b5a5da540f407459c557f20786bd",
+      "runtime": {
+        "manifestSchema": "acclimate-evaluation-manifest-v1",
+        "runtimeRevision": "sha256:cd7fd4635983cb38f32960340efd7a074c15d37eb79984cc3a4652dc3da05971",
+        "configId": "portable-demo",
+        "configRevision": "sha256:9fdee8dde22934ad79fefb49d956612c507aa1d74abeb3e10e4e02151227bf45",
+        "execution": "model-free",
+        "concurrency": "1",
+        "gradeRetries": "0"
+      },
+      "expectedCases": [
+        {
+          "caseId": "",
+          "repetition": 0
+        },
+        {
+          "caseId": "𐀀",
+          "repetition": 0
+        },
+        {
+          "caseId": "𐀀",
+          "repetition": 1
+        }
+      ]
+    },
+    "integralSpellings": ["1.0", "1e0"],
+    "invalidRepetitionSpellings": ["1.5", "true", "0", "-0", "1001"],
+    "blankIdentityCodepoints": [
+      9, 10, 11, 12, 13, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200,
+      8201, 8202, 8232, 8233, 8239, 8287, 12288, 65279
+    ]
+  }
+}

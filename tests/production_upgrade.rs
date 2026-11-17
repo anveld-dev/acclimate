@@ -111,6 +111,19 @@ async fn migration_0012_to_current_preserves_business_rows_and_revokes_sessions_
         user["email_verified"] = Value::Bool(false);
     }
     expected.insert("workspace_invitations".into(), serde_json::json!([]));
+    // Progress adds only empty observations and initial ordering watermarks.
+    // Keep comparing every pre-existing lifecycle/business field exactly.
+    for request in expected
+        .get_mut("evaluation_requests")
+        .unwrap()
+        .as_array_mut()
+        .unwrap()
+    {
+        request["progress_sequence"] = serde_json::json!(0);
+        request["progress_completed"] = serde_json::json!(0);
+        request["progress_fingerprint"] = Value::Null;
+    }
+    expected.insert("evaluation_progress".into(), serde_json::json!([]));
     assert_eq!(
         expected,
         snapshot(&mut connection, &schema).await,

@@ -12,6 +12,7 @@ import {
   Radio,
 } from 'lucide-react';
 import { EvaluationScorecard } from './evaluation-scorecard';
+import { EvaluationActivity } from './evaluation-activity';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
 import { NativeSelect } from './ui/native-select';
 import {
@@ -30,6 +31,7 @@ import type {
   VersionMetadata,
   Comparison,
   Evaluation,
+  EvaluationProgressView,
   Proposal,
 } from '@acclimate/sdk';
 import { Button } from './ui/button';
@@ -98,6 +100,7 @@ export function ImprovementWorkspace({
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [requests, setRequests] = useState<Evaluation[]>([]);
   const [directRequest, setDirectRequest] = useState<Evaluation | null>(null);
+  const [selectedProgress, setSelectedProgress] = useState<EvaluationProgressView | null>(null);
   const [requestError, setRequestError] = useState('');
   const [requestLoading, setRequestLoading] = useState(false);
   const [showAllRequests, setShowAllRequests] = useState(false);
@@ -313,6 +316,7 @@ export function ImprovementWorkspace({
         if (selection.candidate && refreshedDirect.candidateVersionId !== selection.candidate)
           return;
         directRequestRef.current = refreshedDirect;
+        setSelectedProgress(result.progress ?? null);
         expectedDirect = refreshedDirect;
         setDirectRequest((previous) =>
           JSON.stringify(previous) === JSON.stringify(refreshedDirect) ? previous : refreshedDirect,
@@ -347,6 +351,7 @@ export function ImprovementWorkspace({
         setRequestError('');
       } catch (error) {
         if (currentSelection() && directRequestRef.current === expectedDirect) {
+          setSelectedProgress(null);
           setComparison(null);
           setRequestError(
             error instanceof Error ? error.message : 'The requested evaluation is unavailable.',
@@ -477,6 +482,7 @@ export function ImprovementWorkspace({
   useEffect(() => {
     let stale = false;
     setDirectRequest(null);
+    setSelectedProgress(null);
     directRequestRef.current = null;
     setRequestError('');
     if (!initial.request) {
@@ -500,6 +506,7 @@ export function ImprovementWorkspace({
           );
         directRequestRef.current = request;
         setDirectRequest(request);
+        setSelectedProgress(result.progress ?? null);
         if (candidate !== request.candidateVersionId) {
           setCandidate(request.candidateVersionId);
           return;
@@ -521,10 +528,12 @@ export function ImprovementWorkspace({
         setComparison(value);
         setComparisonId(value.id);
       } catch (error) {
-        if (!stale)
+        if (!stale) {
+          setSelectedProgress(null);
           setRequestError(
             error instanceof Error ? error.message : 'The requested evaluation is unavailable.',
           );
+        }
       } finally {
         if (!stale) setRequestLoading(false);
       }
@@ -1334,10 +1343,13 @@ export function ImprovementWorkspace({
                             )}
                             {request.status === 'running' && (
                               <p>
-                                App reported execution started. Remote progress is unknown; check
-                                the original worker. Request interruption does not stop an external
-                                job or its charges.
+                                App reported execution started. Check the original worker before
+                                retrying. Request interruption does not stop an external job or its
+                                charges.
                               </p>
+                            )}
+                            {initial.request === request.id && (
+                              <EvaluationActivity request={request} progress={selectedProgress} />
                             )}
                             {!request.comparisonId && request.status === 'requested' && (
                               <div className="space-y-2">

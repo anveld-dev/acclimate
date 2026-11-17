@@ -81,6 +81,8 @@ export interface PreflightResult {
       | 'lock'
       | 'serviceIdentity'
       | 'evaluatorAccess'
+      | 'targetBundle'
+      | 'targetRequest'
       | 'descriptor'
       | 'versions';
     status: 'passed' | 'failed' | 'not_applicable' | 'unverified';

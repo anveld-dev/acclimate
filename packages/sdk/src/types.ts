@@ -98,6 +98,29 @@ export interface EvaluationCapabilities {
   writeEvaluation: boolean;
   retainedEvaluationOperations: true;
 }
+/** Optional reported activity. Never a lease or evidence of external quiescence. */
+export interface EvaluationProgressRequest {
+  attemptId: string;
+  sequence: number;
+  phase: 'preparing' | 'executing' | 'grading' | 'submitting';
+  completed: number;
+  total: number;
+  case?: CaseKey;
+}
+export interface EvaluationProgressObservation extends EvaluationProgressRequest {
+  receivedAt: string;
+  evaluatorPrincipal: string;
+}
+export interface EvaluationProgressView {
+  schemaVersion: 1;
+  requestId: string;
+  status: Evaluation['status'];
+  attemptId: string | null;
+  observation: EvaluationProgressObservation | null;
+  activity: 'fresh' | 'stale' | 'absent';
+  checkedAt: string;
+  staleAfterSeconds: 60;
+}
 export interface Usage {
   inputTokens?: number;
   outputTokens?: number;

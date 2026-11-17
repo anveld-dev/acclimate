@@ -364,6 +364,13 @@ class AcclimateClient:
     def get_evaluation_capabilities(self, project_id: str) -> EvaluationCapabilities:
         return self._request("GET", "/v1/projects/" + self._part(project_id) + "/evaluation-capabilities")
 
+    def get_evaluation_progress(self, project_id: str, bundle_id: str, evaluation_id: str) -> EvaluationProgressView:
+        return self._request("GET", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/progress")
+
+    def report_evaluation_progress(self, project_id: str, bundle_id: str, evaluation_id: str, report: EvaluationProgressRequest) -> EvaluationProgressView:
+        # Attempt + sequence provide server idempotency; no retained key rows.
+        return self._request("POST", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/progress", report, "progress:" + str(report["sequence"]))
+
     def list_integration_observations(self, project_id: str, *, cursor: str | None = None, limit: int = 50) -> IntegrationObservationPage:
         return self._request("GET", "/v1/projects/" + self._part(project_id) + "/integration-observations" + self._listing(cursor, limit))
 

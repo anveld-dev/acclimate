@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Comparison, Evaluation } from '@acclimate/sdk';
+import type { Comparison, Evaluation, EvaluationProgressView } from '@acclimate/sdk';
 import type {
   EvaluationHistoryModel,
   EvaluationHistoryOptions,
@@ -13,6 +13,7 @@ const initial = {
   requests: [] as Evaluation[],
   evidence: {} as Record<string, RequestEvidence>,
   selectedRequest: null as Evaluation | null,
+  selectedProgress: null as EvaluationProgressView | null,
   selectedId: undefined as string | undefined,
   selectedState: 'none' as EvaluationHistoryModel['selectedState'],
   selectedError: null as string | null,
@@ -107,6 +108,7 @@ export function useEvaluationHistory(options: EvaluationHistoryOptions): Evaluat
           setState((old) => ({
             ...old,
             selectedRequest: null,
+            selectedProgress: null,
             selectedId: undefined,
             selectedState: 'none',
             selectedError: null,
@@ -117,6 +119,7 @@ export function useEvaluationHistory(options: EvaluationHistoryOptions): Evaluat
         setState((old) => ({
           ...old,
           selectedRequest: old.selectedRequest?.id === id ? old.selectedRequest : null,
+          selectedProgress: null,
           selectedId: id,
           selectedState: old.selectedRequest?.id === id ? old.selectedState : 'loading',
           selectedError: old.selectedRequest?.id === id ? old.selectedError : null,
@@ -131,6 +134,7 @@ export function useEvaluationHistory(options: EvaluationHistoryOptions): Evaluat
         setState((old) => ({
           ...old,
           selectedRequest: selected,
+          selectedProgress: result.progress ?? null,
           selectedState: mismatch ? 'mismatch' : 'ready',
           selectedError: mismatch ? 'The selected request belongs to a different candidate.' : null,
         }));
@@ -140,6 +144,7 @@ export function useEvaluationHistory(options: EvaluationHistoryOptions): Evaluat
         setState((old) => ({
           ...old,
           selectedRequest: selected,
+          selectedProgress: null,
           selectedState: 'unavailable',
           selectedError: `${error instanceof Error ? error.message : 'Request unavailable.'} Retrying automatically.`,
         }));
@@ -255,9 +260,19 @@ export function useEvaluationHistory(options: EvaluationHistoryOptions): Evaluat
   const current = state.scopeKey === scopeKey ? state : initial;
   const requested = options.selectedRequestId;
   const currentSelection = !requested
-    ? { selectedRequest: null, selectedState: 'none' as const, selectedError: null }
+    ? {
+        selectedRequest: null,
+        selectedProgress: null,
+        selectedState: 'none' as const,
+        selectedError: null,
+      }
     : current.selectedId !== requested
-      ? { selectedRequest: null, selectedState: 'loading' as const, selectedError: null }
+      ? {
+          selectedRequest: null,
+          selectedProgress: null,
+          selectedState: 'loading' as const,
+          selectedError: null,
+        }
       : current.selectedRequest?.id === requested &&
           options.selectedCandidateId &&
           current.selectedRequest.candidateVersionId !== options.selectedCandidateId

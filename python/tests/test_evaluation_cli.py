@@ -59,6 +59,8 @@ class CommandTests(unittest.TestCase):
                 state = owner.state
                 if route.endswith("/evaluation-capabilities"):
                     return self.reply({"schemaVersion": 1, "projectId": "project", "principalId": "evaluator", "checkedAt": NOW, "readUnpublished": True, "writeEvaluation": True, "retainedEvaluationOperations": True})
+                if route=="/v1/projects/project/bundles":
+                    return self.reply({"items":[{"id":BUNDLE}],"nextCursor":None})
                 if "/operations/" in route:
                     key = route.rsplit("/", 1)[1]
                     return self.reply(state["receipts"].get(key, {"status": "not_observed", "operationId": key}))
@@ -334,6 +336,28 @@ class CommandTests(unittest.TestCase):
             self.assertEqual(self.invoke(self.request_args)[0], 1)
         self.assertEqual(self.state["drafts"], 0)
         self.assertEqual(self.state["requests"], 0)
+
+    def test_doctor_verifies_bundle_and_reports_missing_request_without_execution(self):
+        status,result,_=self.invoke(["doctor","--config",str(self.config),"--bundle",BUNDLE])
+        self.assertEqual(status,0)
+        self.assertEqual(result["status"],"ready")
+        status,result,_=self.invoke(["doctor","--config",str(self.config),"--bundle",COMPARISON])
+        self.assertEqual(status,2)
+        self.assertEqual(result["checks"][-1]["code"],"bundle.missing")
+        self.assertEqual(result["nextAction"],"fix_config")
+        self.handoff.write_bytes(encoded({"schemaVersion":1,"serviceUrl":self.service,
+            "projectId":"project","bundleId":BUNDLE,"requestId":REQUEST,"configuration":self.app.descriptor}))
+        status,result,error=self.invoke(["doctor","--config",str(self.config),"--handoff",str(self.handoff)])
+        self.assertEqual(status,2)
+        self.assertEqual(result["checks"][-1]["code"],"request.missing")
+        self.assertEqual(result["nextAction"],"fix_config")
+        self.assertIsNone(error)
+        self.assertNotIn("PRIVATE_CANARY",json.dumps(result))
+        self.assertNotIn(str(self.root),json.dumps(result))
+        self.assertEqual(self.state["executions"],0)
+        self.assertEqual(self.state["drafts"],0)
+        self.assertEqual(self.state["requests"],0)
+        self.assertIsNone(self.state["request"])
 
     def test_interrupt_rejects_mismatched_descriptor_before_mutation(self):
         self.assertEqual(self.invoke(self.request_args)[0], 0)

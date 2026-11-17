@@ -12,6 +12,7 @@ import type {
   Page,
   VersionMetadata,
   BundlePayload,
+  EvaluationProgressView,
 } from '@acclimate/sdk';
 import { exactOperation, lookupOperation, closeOperation } from './exact-operation';
 import { readChannel } from './channel';
@@ -30,6 +31,7 @@ export type ImprovementResult =
       requests?: Page<Evaluation>;
       proposal?: Proposal;
       request?: Evaluation;
+      progress?: EvaluationProgressView;
       candidate?: { version: VersionMetadata; payload: BundlePayload };
       parent?: VersionMetadata;
       parentPayload?: BundlePayload;
@@ -168,8 +170,14 @@ export async function improvement(
             }
           : {}),
       };
-    if (input.action === 'request')
-      return { ok: true as const, request: await api.getEvaluation(p, b, String(input.id)) };
+    if (input.action === 'request') {
+      const [request, progress] = await Promise.all([
+        api.getEvaluation(p, b, String(input.id)),
+        api.getEvaluationProgress(p, b, String(input.id)).catch(() => undefined),
+      ]);
+      // Activity is optional observational data; its failure cannot hide durable request state.
+      return { ok: true as const, request, ...(progress ? { progress } : {}) };
+    }
     if (input.action === 'proposal')
       return { ok: true as const, proposal: await api.getProposal(p, b, String(input.id)) };
     if (input.action === 'candidate') {

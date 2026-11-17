@@ -15,6 +15,7 @@ from typing import Any, Callable, Generic, TypeVar
 import uuid
 
 from .delivery import resolve_and_cache
+from .client import ApiError
 from .types import VerifiedBundle
 from ._evaluation_shared import (
     MIB, DIGEST_RE, EvaluationError, ExecutionUncertainError, CallbackCancelled,
@@ -198,6 +199,8 @@ def _authority(client,config: dict):
     try:
         caps=client.get_evaluation_capabilities(config["projectId"])
     except Exception as error:
+        if isinstance(error,ApiError) and error.status==404:
+            raise EvaluationError("capabilities.unsupported",phase="preflight",next_action="upgrade_service",http_status=404) from None
         raise safe_error(error,phase="preflight") from None
     if type(caps.get("schemaVersion")) is not int or caps.get("schemaVersion")!=1 or caps.get("retainedEvaluationOperations") is not True:
         raise EvaluationError("capabilities.unsupported",phase="preflight",next_action="upgrade_service")
@@ -206,6 +209,28 @@ def _authority(client,config: dict):
     if caps.get("readUnpublished") is not True or caps.get("writeEvaluation") is not True:
         raise EvaluationError("auth.denied",phase="preflight",next_action="ask_operator")
     return caps
+
+
+def _assert_bundle_exists(client,project_id: str,bundle_id: str):
+    # Empty request/channel listings also succeed for a nonexistent bundle.
+    cursor=None
+    seen=set()
+    for _ in range(100):
+        page=client._request("GET",client._base(project_id)+client._listing(cursor,100))
+        if (type(page) is not dict or type(page.get("items")) is not list or len(page["items"])>100 or
+            any(type(item) is not dict or type(item.get("id")) is not str for item in page["items"]) or
+            "nextCursor" not in page or (page["nextCursor"] is not None and
+                (type(page["nextCursor"]) is not str or not page["nextCursor"] or len(page["nextCursor"])>4096))):
+            raise EvaluationError("evidence.malformed",phase="preflight")
+        if any(item["id"]==bundle_id for item in page["items"]):
+            return
+        cursor=page["nextCursor"]
+        if cursor is None:
+            raise EvaluationError("bundle.missing",phase="preflight")
+        if cursor in seen:
+            raise EvaluationError("evidence.malformed",phase="preflight")
+        seen.add(cursor)
+    raise EvaluationError("evidence.incomplete",phase="preflight",next_action="ask_operator")
 
 
 def preflight_evaluation(*, app: EvaluationApp, config_path: str,
@@ -249,13 +274,18 @@ def preflight_evaluation(*, app: EvaluationApp, config_path: str,
         caps=_authority(client,config)
         authorization="verified"
         checks.extend([{"check":"serviceIdentity","status":"passed"},{"check":"evaluatorAccess","status":"passed"}])
-        current_check="descriptor"
+        current_check="targetBundle"
+        _assert_bundle_exists(client,config["projectId"],selected["bundleId"] if selected else target["bundleId"])
+        checks.append({"check":"targetBundle","status":"passed"})
         if selected is None and target.get("requestId"):
             selected={"schemaVersion":1,"serviceUrl":config["serviceUrl"],"projectId":config["projectId"],
                 "bundleId":target["bundleId"],"requestId":target["requestId"],"configuration":app.descriptor}
             selected=validate_handoff(selected)
         if selected:
+            current_check="targetRequest"
             request=client.get_evaluation(config["projectId"],selected["bundleId"],selected["requestId"])
+            checks.append({"check":"targetRequest","status":"passed"})
+            current_check="descriptor"
             _assert_request(request,selected,app)
             checks.append({"check":"descriptor","status":"passed"})
             current_check="versions"
@@ -266,7 +296,9 @@ def preflight_evaluation(*, app: EvaluationApp, config_path: str,
         return {"schemaVersion":1,"status":"ready","authorization":authorization,
             "checkedAt":caps["checkedAt"],"checks":checks,"nextAction":"review_terminal_evidence"}
     except Exception as error:
-        safe=safe_error(error)
+        missing={"targetRequest":"request.missing","versions":"version.missing"}.get(current_check)
+        safe=(EvaluationError(missing,phase="preflight",http_status=404)
+            if isinstance(error,ApiError) and error.status==404 and missing else safe_error(error))
         if safe.code in ("auth.denied","auth.principal_mismatch"):
             authorization="denied"
         checks.append({"check":current_check,"status":"unverified" if safe.code=="capabilities.unsupported" else "failed","code":safe.code})

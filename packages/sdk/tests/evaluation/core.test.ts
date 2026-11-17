@@ -291,7 +291,10 @@ test('output references reject lone surrogates as failed evidence and preserve U
     const valid = reference === 'app:\ud83d\ude80';
     const definition = defaultDefinition();
     let grades = 0;
-    definition.execute = async () => ({ output: { answer: 'private-answer' }, outputRef: reference });
+    definition.execute = async () => ({
+      output: { answer: 'private-answer' },
+      outputRef: reference,
+    });
     definition.grade = async () => {
       grades++;
       return { reward: 1 };
@@ -750,12 +753,16 @@ test('duplicate decoded journal identity refuses recovery before callbacks or mu
     };
     const s = await setup(definition);
     const mutate = s.options.transport.mutate;
-    s.options.transport.mutate = async () => { throw new TypeError('private-start-outage'); };
+    s.options.transport.mutate = async () => {
+      throw new TypeError('private-start-outage');
+    };
     try {
       await assert.rejects(runCapturedEvaluation(s.options));
       const filename = path.join(s.directory, 'attempt.json');
       const text = await readFile(filename, 'utf8');
-      await writeFile(filename, `{"${key}":"private-duplicate-canary",${text.slice(1)}`, { mode: 0o600 });
+      await writeFile(filename, `{"${key}":"private-duplicate-canary",${text.slice(1)}`, {
+        mode: 0o600,
+      });
       const sent: string[] = [];
       s.options.transport.mutate = async <T>(...args: Parameters<typeof mutate>) => {
         sent.push(args[0]);
@@ -763,7 +770,9 @@ test('duplicate decoded journal identity refuses recovery before callbacks or mu
       };
       await assert.rejects(
         runCapturedEvaluation(s.options),
-        (error) => error instanceof EvaluationError && error.code === 'config.schema' &&
+        (error) =>
+          error instanceof EvaluationError &&
+          error.code === 'config.schema' &&
           !JSON.stringify(error).includes('private-duplicate-canary'),
       );
       assert.deepEqual(sent, []);
@@ -880,11 +889,24 @@ test('foreign Python journal refuses ownership and scope serialization is explic
 });
 
 test('public config/handoff preflight and run work through bounded authenticated HTTP with retained headers', async () => {
-  const app = defineEvaluation(defaultDefinition()),
+  let callbacks = 0;
+  const definition = defaultDefinition();
+  definition.execute = async () => {
+    callbacks++;
+    return { output: { answer: 'private-answer' } };
+  };
+  definition.grade = async () => {
+    callbacks++;
+    return { reward: 1 };
+  };
+  const app = defineEvaluation(definition),
     f = fixture(app.descriptor);
   const root = await mkdtemp(path.join(await realpath(tmpdir()), 'acclimate-public-runner-'));
   let comparison: Comparison | undefined,
     capabilityAvailable = true,
+    missingResource = '',
+    inventoryMode = '',
+    denyAccess = false,
     reads = 0;
   const headers: string[] = [];
   const server = createServer(async (req, res) => {
@@ -900,6 +922,15 @@ test('public config/handoff preflight and run work through bounded authenticated
         return;
       }
       const pathname = new URL(req.url!, 'http://localhost').pathname;
+      if (
+        denyAccess ||
+        (missingResource === 'request' && pathname.includes('/evaluation-requests/')) ||
+        (missingResource === 'version' && pathname.includes('/versions/'))
+      ) {
+        res.writeHead(denyAccess ? 403 : 404);
+        res.end(JSON.stringify({ error: { code: 'not_found', message: 'PRIVATE_HTTP_CANARY' } }));
+        return;
+      }
       let value: unknown;
       if (pathname.endsWith('/evaluation-capabilities')) {
         if (!capabilityAvailable) {
@@ -916,6 +947,21 @@ test('public config/handoff preflight and run work through bounded authenticated
           writeEvaluation: true,
           retainedEvaluationOperations: true,
         };
+      } else if (req.method === 'GET' && pathname === `/v1/projects/${projectId}/bundles`) {
+        const cursor = new URL(req.url!, 'http://localhost').searchParams.get('cursor');
+        value =
+          inventoryMode === 'loop'
+            ? { items: [], nextCursor: 'same' }
+            : inventoryMode === 'limit'
+              ? { items: [], nextCursor: String(Number(cursor ?? 0) + 1) }
+              : inventoryMode === 'malformed'
+                ? { items: null, nextCursor: null }
+                : inventoryMode === 'secondPage' && !cursor
+                  ? { items: [], nextCursor: 'page-two' }
+                  : {
+                      items: missingResource === 'bundle' ? [] : [{ id: bundleId }],
+                      nextCursor: null,
+                    };
       } else if (req.method === 'GET' && pathname.endsWith('/evaluation-requests/' + requestId))
         value = f.request;
       else if (req.method === 'GET' && pathname.includes('/comparisons/')) value = comparison;
@@ -989,8 +1035,58 @@ test('public config/handoff preflight and run work through bounded authenticated
     const unsupported = await preflightEvaluation({ app, configPath, target: { handoff } });
     assert.equal(unsupported.status, 'blocked');
     assert.equal(unsupported.authorization, 'unverified');
+    assert.equal(unsupported.nextAction, 'upgrade_service');
     assert.equal(f.events.length, 0);
     capabilityAvailable = true;
+    for (const [resource, checkName] of [
+      ['bundle', 'targetBundle'],
+      ['request', 'targetRequest'],
+      ['version', 'versions'],
+    ]) {
+      missingResource = resource;
+      const blocked = await preflightEvaluation({ app, configPath, target: { handoff } });
+      assert.equal(blocked.status, 'blocked');
+      assert.equal(blocked.authorization, 'verified');
+      assert.equal(blocked.nextAction, 'fix_config');
+      assert.deepEqual(blocked.checks.at(-1), {
+        check: checkName,
+        status: 'failed',
+        code: `${resource}.missing`,
+      });
+      assert.ok(!JSON.stringify(blocked).includes('PRIVATE_HTTP_CANARY'));
+      assert.ok(!JSON.stringify(blocked).includes(root));
+    }
+    missingResource = 'bundle';
+    assert.equal(
+      (await preflightEvaluation({ app, configPath, target: { bundleId } })).status,
+      'blocked',
+    );
+    missingResource = '';
+    inventoryMode = 'secondPage';
+    assert.equal(
+      (await preflightEvaluation({ app, configPath, target: { bundleId } })).status,
+      'ready',
+    );
+    for (const mode of ['loop', 'malformed', 'limit']) {
+      inventoryMode = mode;
+      const blocked = await preflightEvaluation({ app, configPath, target: { bundleId } });
+      assert.equal(blocked.status, 'blocked');
+      assert.equal(
+        blocked.checks.at(-1)?.code,
+        mode === 'limit' ? 'evidence.incomplete' : 'evidence.malformed',
+      );
+    }
+    inventoryMode = '';
+    denyAccess = true;
+    const denied = await preflightEvaluation({ app, configPath, target: { handoff } });
+    assert.equal(denied.authorization, 'denied');
+    assert.equal(denied.checks.at(-1)?.code, 'auth.denied');
+    assert.equal(denied.nextAction, 'ask_operator');
+    assert.equal(headers.length, 0);
+    assert.equal(f.events.length, 0);
+    assert.equal(callbacks, 0);
+    assert.equal(f.request.status, 'requested');
+    denyAccess = false;
     const result = await runEvaluation({ app, configPath, handoff });
     assert.equal(result.evaluation.status, 'completed');
     assert.deepEqual(headers, ['true', 'true', 'true']);

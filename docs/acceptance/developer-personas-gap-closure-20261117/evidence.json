@@ -1,0 +1,325 @@
+{
+  "schemaVersion": 1,
+  "kind": "fresh-developer-gap-closure-acceptance",
+  "date": "2026-11-17",
+  "baseCommit": "63eb588458732fbba53c0969c9b892cf08a572fe",
+  "implementationChangesCommitted": false,
+  "developerPersonasRetested": 7,
+  "simulatedDeveloperRolesNotHumanStudy": true,
+  "confirmedProductGapsRepaired": true,
+  "freshCoreJourneysPassed": true,
+  "allOriginalAspirationsAndEnvironmentsQualified": false,
+  "releaseSourceInventorySha256": "63b0bc9a1751a7b5bf9e230e7bde81f0801ea7d4946171d628449c575cc6cfbd",
+  "releaseManifestSha256": "d58ba710bf5a2d0829d7a61e3520c69bd607be87dfe258f41fccfec4ebbf660f",
+  "serviceBinarySha256": "c84d1961249e635c024346fb23328dccf738f0aa7eef0e5e50fa4b00111d2a50",
+  "binarySourceBuildAttested": false,
+  "checks": {
+    "packageTests": 252,
+    "consoleTests": 252,
+    "pythonTests": 99,
+    "rustTests": 71,
+    "rustSuites": 24,
+    "compatibilityTests": 31,
+    "behaviors": 155,
+    "behaviorScenarios": 198,
+    "behaviorSteps": 941,
+    "behaviorFailures": 0,
+    "behaviorSkips": 0,
+    "newBrowserWidths": [
+      1440,
+      390,
+      320
+    ],
+    "installedReleaseQualification": "passed"
+  },
+  "liveCodex": {
+    "sdk": "@openai/codex-sdk",
+    "version": "0.169.0",
+    "model": "gpt-6-luna",
+    "threadId": "01a1ea08-90f3-7da1-aef5-37a218adbd19",
+    "actualResourceRead": true,
+    "failingBaselineThenPassingUnchangedTests": true,
+    "patchSha256": "64579463e5608e0232319f673dc50398faf1b9cf05c0c52b0b6f5c7318a3fb46",
+    "normalCompletionAndRetainedArtifacts": true,
+    "oneUseAuthenticationCopyRemoved": true,
+    "forcedTerminationQualified": false
+  },
+  "remainingVerificationLimits": [
+    "physical second-host transfer",
+    "arbitrary unknown external-work recovery",
+    "host configuration hermeticity",
+    "population/general model inference",
+    "production hosting/real external identity provider"
+  ],
+  "files": [
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/README.md",
+      "bytes": 9213,
+      "sha256": "cc654a9d1e81e6bc5a60edad2bd44ac98a241d140e0499541ad5a08241e9cedb"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/ci-release-engineer.json",
+      "bytes": 14264,
+      "sha256": "45f146d9e63b4d3087b5688a0239626488bdd6bc221e3b3097d15d47d2ea7c01"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/ci-release-engineer.md",
+      "bytes": 6848,
+      "sha256": "4318e3e44da7aeb2dc0cb51e5489ff9bfe60ae427cbf13e2006928b4e9ce584f"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/console-weighting.json",
+      "bytes": 1461,
+      "sha256": "7af1913d9fda5478dd7399b9792d8326125807eed162b683686baab19cfcab28"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/evaluation-researcher.json",
+      "bytes": 40092,
+      "sha256": "e081b5d986c4b686d87f5d269b8d1f28ae96478c2d8f79a5d41fe10c18ab03ed"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/evaluation-researcher.md",
+      "bytes": 10971,
+      "sha256": "949878ba10c7cd1eb4e6105308d4e79c0b645a61d15f8e354698e8f46e258703"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/first-time-adopter-console.json",
+      "bytes": 15818,
+      "sha256": "acef09889f22ad279154c3417615930fbf05c80178fb8fdeadc36844a0a1fe76"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/first-time-adopter.json",
+      "bytes": 12982,
+      "sha256": "19b0e7eac3690bfbded05897c5f6d00ba0c14cbba21586f5039f01afc6e6f758"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/first-time-adopter.md",
+      "bytes": 9522,
+      "sha256": "c8f06bf4bb426029c1f1c1f087c2b78c5015792e749258a5d0f939d865bced2d"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/platform-engineer.json",
+      "bytes": 14484,
+      "sha256": "b6c6467810167e8af089d679938ed675c3648c9f83257d65520f7b865a45a10a"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/platform-engineer.md",
+      "bytes": 9685,
+      "sha256": "aeb94396df2f7f7201f67553e5dd0f0f1035d37b325b6572f775e885de1b405c"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/plugin-author.json",
+      "bytes": 21807,
+      "sha256": "b2bd98e68be113289b7e18cc9172ac70bb6c2ec049f311bf42d874082bf6691e"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/plugin-author.md",
+      "bytes": 9235,
+      "sha256": "db2c16b1292e66149d0819cafe44dd475ebd00c98bc1d0a405f0f13af8aa7004"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/python-integrator.json",
+      "bytes": 5569,
+      "sha256": "4ae2ee4da8e48a90c83f7c07347b463fa7989b86f4a1435120b516c58a018dc0"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/python-integrator.md",
+      "bytes": 6817,
+      "sha256": "da2c9f4f96431ab95defef17b4a40da1385403fd79b11e276f18a2c693e3258c"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/typescript-integrator.json",
+      "bytes": 24890,
+      "sha256": "15dc4d1eec93b6f87d6d322a6d30c21aa22f9d4009b4f4a659bb182daf935670"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-gap-closure-20261117/typescript-integrator.md",
+      "bytes": 8022,
+      "sha256": "d8775c4ab9472d9cae32351076d27df1940b06fbc8c61e2b3c6a7ddbc6edf2fd"
+    },
+    {
+      "path": "docs/implementation/dx-gap-closure-20261117/README.md",
+      "bytes": 6516,
+      "sha256": "2918c331318aa5b823ba955f16a73f413bb3b8b78cf502a2473e50dc8a16aec9"
+    },
+    {
+      "path": "docs/implementation/dx-gap-closure-20261117/console.md",
+      "bytes": 5439,
+      "sha256": "f9d77d9f5165e596429ba1abe6b68df4099df20e95fc9e8de81dd77de6f73dfe"
+    },
+    {
+      "path": "docs/implementation/dx-gap-closure-20261117/doctor.md",
+      "bytes": 4817,
+      "sha256": "5da7e3048f7fa5ca5c49f349301320288a2ec98d9f71c47950f22b61a74977c1"
+    },
+    {
+      "path": "docs/implementation/dx-gap-closure-20261117/manifest.md",
+      "bytes": 12608,
+      "sha256": "0367fe75ad2541b3cedfd9564c4fa01a2edc0f2656a436e8fcfe944bb8c6565d"
+    },
+    {
+      "path": "docs/implementation/dx-gap-closure-20261117/native.md",
+      "bytes": 5785,
+      "sha256": "9d4d40367404ccce0a1d419f3685f8d2ad0648184db109af24ac34bc081074ce"
+    },
+    {
+      "path": "docs/implementation/dx-gap-closure-20261117/progress.md",
+      "bytes": 8763,
+      "sha256": "7e46872fd658fc3270ef1a9b764bb2678a11b439c5c6cfff6c9f30d6016ae2ee"
+    },
+    {
+      "path": "docs/implementation/dx-gap-closure-20261117/python.md",
+      "bytes": 5039,
+      "sha256": "1b9ce776bc1123e3009cb16c7342f430a259f3e5c3f441aaab806de69e4cfb09"
+    },
+    {
+      "path": "docs/implementation/dx-gap-closure-20261117/research.md",
+      "bytes": 8805,
+      "sha256": "a0c1fc936959cf2d33f14b687b2202e22fc921f53bc61649af462409e26d18f7"
+    },
+    {
+      "path": "docs/implementation/dx-gap-closure-20261117/retest.md",
+      "bytes": 6589,
+      "sha256": "625f07ffd252ed8ed2c05bedac576cd380539c624a45dd302b7d9dca0cbf456f"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/README.md",
+      "bytes": 4412,
+      "sha256": "b72c0bdfc1e503bc1ab936c5abd5c579d869dbc9837b198ae23bc25303661ca0"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/__init__.py",
+      "bytes": 84,
+      "sha256": "4c9dfc77b26d3b4229eb8e4f9c507030a0c3202f72c36bc3644fa1b90b99bec2"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/ci_release_engineer.py",
+      "bytes": 18002,
+      "sha256": "3b92df2b67a3da9ee7e0717b4d2075ad1ae4bcf935903a621bf47ebf56abdc31"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/console_custom_app.py",
+      "bytes": 17900,
+      "sha256": "730c536224288aead4e9dd23ad849387ae90554f0869d7cd3e901ba856040389"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/evaluation_researcher.py",
+      "bytes": 36410,
+      "sha256": "e2fadacfed811364b9db0c82b7600bc9ba79a437d3d5e1c720161a9344980232"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/first_adopter.py",
+      "bytes": 20291,
+      "sha256": "39328d596975a20aa488b9fcaf3c859b795daec38d3f9f53e0e500615ddf4d1a"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/platform_engineer.py",
+      "bytes": 37663,
+      "sha256": "c4a0cc3c230ca48ffe1d98cab7f278c23ba2af4f1e83b3d69911e3d328e6835e"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/plugin_author.py",
+      "bytes": 36056,
+      "sha256": "0bac6d649865c1dcca8dc298537ebc5ff3b4e60dbc3d0b91e74632f6b0ee4610"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/python_integrator.py",
+      "bytes": 21582,
+      "sha256": "e3e945db043d1aaffeb8ae1f4cf1fcfa6393f63ca89996efc02957334227e1c8"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/support.py",
+      "bytes": 22087,
+      "sha256": "092da54339e219aab786ada256f90eee4348f380d217df4e300d8be229526c12"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/typescript_integrator.py",
+      "bytes": 28842,
+      "sha256": "f55f98103aef83fd85cecca2802dc621ad83c320493541ce5782795a5e73d7b0"
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/npm-tests-final.log",
+      "bytes": 47122,
+      "sha256": "95a0f32b5ad7a42c1755db70de48f2d11237a0764d096b4560957768519589d6",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/python-tests-final.log",
+      "bytes": 16093,
+      "sha256": "d49afabb38de06f54d1c66abb0f8b89d8632c67d5b4c6656367c19c73f630674",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/rust-tests.log",
+      "bytes": 10478,
+      "sha256": "45d43f8846cebb5c12c34f6cf8282c5704d0cbfb27aa69b6eb65e8db6c8cc031",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/typecheck.log",
+      "bytes": 435,
+      "sha256": "8f22e12e2ebae95196c8515029123266c5394804bcb90f32ebd088d10f6af4e0",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/clippy.log",
+      "bytes": 190,
+      "sha256": "be78ce4c51e774f64cb59d105256f731c7da7492dde3b9b8cad8c7e9d2f21fb8",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/package-build.log",
+      "bytes": 93,
+      "sha256": "04a7ad7be1e7822cc2828475ed8d7e42c937abe248a2dc45ec88798dc840a247",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/pack-verify.log",
+      "bytes": 13275,
+      "sha256": "4fce3b123d40b585480a39e96f24ee81954944329516e3658776ec4589d7eeaf",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/installed-qualification.json",
+      "bytes": 2137,
+      "sha256": "6bdae13efb46e6d17e515f02006441a4a5f51eed98de0bdc013330cd907471c8",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/release-manifest.json",
+      "bytes": 4955,
+      "sha256": "d58ba710bf5a2d0829d7a61e3520c69bd607be87dfe258f41fccfec4ebbf660f",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/release-source.json",
+      "bytes": 28946,
+      "sha256": "3d23bad97800596995e22237dffb920ebb40e428773a9f34c1b46ba88945fd96",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/evaluator-compatibility.log",
+      "bytes": 3353,
+      "sha256": "40e9b88f734dc1c6aca89240f6b9bb2780df96d21a8ed46cf7222357a67d21e0",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/console-weighting-final.log",
+      "bytes": 1461,
+      "sha256": "7af1913d9fda5478dd7399b9792d8326125807eed162b683686baab19cfcab28",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/bdd/coverage.md",
+      "bytes": 21877,
+      "sha256": "7cf8765932a799c611adf57d4e059346fb0511714fb1bd4c280298c3d71df809",
+      "private": true
+    },
+    {
+      "path": "artifacts/dx-gap-closure-20261117/bdd/coverage.json",
+      "bytes": 35833,
+      "sha256": "f1f760ee7b161ab204eba8bca095c9d93b25db1bcb99ac4fc1d988679317df20",
+      "private": true
+    }
+  ]
+}

@@ -50,3 +50,22 @@ export async function freshSessionInputs(name, effectiveContext) {
       throw new Error('native.unsupported_harness');
   }
 }
+
+/** Explicit application policy for the optional official Codex SDK 0.169.0. No session starts here. */
+export function codexRuntimeInputs(effectiveContext, { env, model, config = {}, configOverrides = [] } = {}) {
+  if (!env || typeof env !== 'object' || Array.isArray(env) ||
+      Object.values(env).some(value => typeof value !== 'string'))
+    throw new Error('codex.explicit_environment_required');
+  if (typeof model !== 'string' || !model.trim()) throw new Error('codex.explicit_model_required');
+  if (!Array.isArray(configOverrides) || configOverrides.some(value => typeof value !== 'string'))
+    throw new Error('codex.invalid_config_overrides');
+  return {
+    constructorOptions: { env: { ...env }, config: structuredClone(config), configOverrides: [...configOverrides] },
+    threadOptions: {
+      workingDirectory: effectiveContext.cwd, skipGitRepoCheck: true, model,
+      sandboxMode: 'workspace-write', approvalPolicy: 'never',
+      networkAccessEnabled: false, webSearchMode: 'disabled',
+    },
+    memoryFiles: effectiveContext.memoryFiles,
+  };
+}

@@ -127,6 +127,29 @@ function historyFixture() {
   return { env, fetcher, calls };
 }
 
+test('selected request reads optional progress without allowing activity failure to hide durable state', async () => {
+  const { env, fetcher } = historyFixture();
+  const reads: string[] = [];
+  const request = { id: 'request', attemptId: 'attempt', status: 'running' };
+  const progress = { requestId: 'request', attemptId: 'attempt', activity: 'absent', observation: null };
+  for (const unavailable of [false, true]) {
+    const result = await improvement(env, { action: 'request', id: 'request' }, async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path.endsWith('/evaluation-requests/request/progress')) {
+        reads.push(init?.method ?? 'GET');
+        return unavailable ? Response.json({ error: 'unavailable' }, { status: 503 }) : Response.json(progress);
+      }
+      if (path.endsWith('/evaluation-requests/request')) return Response.json(request);
+      return fetcher(input, init);
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) continue;
+    assert.deepEqual(result.request, request);
+    assert.deepEqual(result.progress, unavailable ? undefined : progress);
+  }
+  assert.deepEqual(reads, ['GET', 'GET']);
+});
+
 test('new requests freeze the selected app configuration and immutable content identities', async () => {
   const { env, fetcher } = historyFixture();
   const withCurrentParent: typeof fetch = async (input, init) => {

@@ -1,6 +1,11 @@
 import type { Operation } from './types.js';
 import { registerEvaluationMutation } from './internal/http-bridge.js';
-import type { EvaluationCapabilities, IntegrationObservation } from './types.js';
+import type {
+  EvaluationCapabilities,
+  IntegrationObservation,
+  EvaluationProgressRequest,
+  EvaluationProgressView,
+} from './types.js';
 import type {
   Channel,
   Integration,
@@ -584,6 +589,37 @@ export class AcclimateClient {
       ),
       JSON.stringify(request),
       key,
+    );
+  }
+  getEvaluationProgress(
+    projectId: string,
+    bundleId: string,
+    id: string,
+  ): Promise<EvaluationProgressView> {
+    return this.request(
+      'GET',
+      this.path(
+        projectId,
+        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/progress`,
+      ),
+    );
+  }
+  reportEvaluationProgress(
+    projectId: string,
+    bundleId: string,
+    id: string,
+    report: EvaluationProgressRequest,
+  ): Promise<EvaluationProgressView> {
+    // The server uses attempt + sequence, not retained operation records. This
+    // transport key enables safe same-body network retries without key growth.
+    return this.request(
+      'POST',
+      this.path(
+        projectId,
+        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/progress`,
+      ),
+      JSON.stringify(report),
+      `progress:${report.sequence}`,
     );
   }
   finishEvaluation(

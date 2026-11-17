@@ -210,6 +210,31 @@ class EvaluationCapabilities(TypedDict):
     retainedEvaluationOperations: Literal[True]
 
 
+class EvaluationProgressRequest(TypedDict):
+    attemptId: str
+    sequence: int
+    phase: Literal["preparing", "executing", "grading", "submitting"]
+    completed: int
+    total: int
+    case: NotRequired[CaseKey]
+
+
+class EvaluationProgressObservation(EvaluationProgressRequest):
+    receivedAt: str
+    evaluatorPrincipal: str
+
+
+class EvaluationProgressView(TypedDict):
+    schemaVersion: Literal[1]
+    requestId: str
+    status: Literal["requested", "running", "completed", "failed", "interrupted"]
+    attemptId: str | None
+    observation: EvaluationProgressObservation | None
+    activity: Literal["fresh", "stale", "absent"]
+    checkedAt: str
+    staleAfterSeconds: Literal[60]
+
+
 class IntegrationLatestObservation(TypedDict):
     eventId: str
     stage: str

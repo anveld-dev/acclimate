@@ -1,11 +1,14 @@
 {
   "evaluation": [
+    "ANALYSIS.md",
     "README.md",
     "acclimate-eval.mjs",
     "acclimate_eval.py",
     "agent.d.mts",
     "agent.mjs",
     "agent.py",
+    "analyze.mjs",
+    "analyze.py",
     "async_eval.py",
     "baseline.json",
     "candidate.json",
@@ -20,10 +23,7 @@
     "typescript/agent.ts.template",
     "typescript/tsconfig.json"
   ],
-  "ci": [
-    "README.md",
-    "ci.sh"
-  ],
+  "ci": ["README.md", "ci.sh"],
   "native-repository": [
     "QUALIFICATION.md",
     "README.md",
@@ -32,13 +32,16 @@
     "fixture/src/retry.js",
     "fixture/tests/retry.test.mjs",
     "harnesses.mjs",
+    "package.json",
     "repository-job.mjs",
+    "test/codex-policy.test.mjs",
     "test/crash.test.mjs",
     "test/fault-worker.mjs",
     "test/installed.test.mjs",
     "test/native-helpers.test.mjs",
     "test/repository.test.mjs",
     "test/support.mjs",
+    "verify-install.mjs",
     "worker.mjs"
   ]
 }

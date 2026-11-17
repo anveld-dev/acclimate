@@ -126,6 +126,8 @@ async function fixture() {
         return reply(state.receipts.get(key) ?? { status: 'not_observed', operationId: key });
       }
       if (req.method === 'GET') {
+        if (route === '/v1/projects/project/bundles')
+          return reply({ items: [{ id: bundleId }], nextCursor: null });
         if (route.endsWith('/channels/stable'))
           return reply({ channel: 'stable', revision: state.revision, version: parent });
         if (
@@ -767,6 +769,56 @@ test('request denial uses input/access exit 1 while doctor uses failed-check exi
     assert.equal((await invoke(f.app, f.requestArgs)).status, 1);
     assert.equal(f.state.drafts, 0);
     assert.equal(f.state.requests, 0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('doctor verifies bundle existence and reports missing request with exit 2 before execution', async () => {
+  const f = await fixture();
+  try {
+    const ready = await invoke(f.app, ['doctor', '--config', f.config, '--bundle', bundleId]);
+    assert.equal(ready.status, 0);
+    assert.equal(ready.result.status, 'ready');
+    const missingBundle = await invoke(f.app, [
+      'doctor',
+      '--config',
+      f.config,
+      '--bundle',
+      comparisonId,
+    ]);
+    assert.equal(missingBundle.status, 2);
+    assert.equal(missingBundle.result.checks.at(-1).code, 'bundle.missing');
+    assert.equal(missingBundle.result.nextAction, 'fix_config');
+    const config = JSON.parse(await readFile(f.config, 'utf8'));
+    await writeFile(
+      f.handoff,
+      JSON.stringify({
+        schemaVersion: 1,
+        serviceUrl: config.serviceUrl,
+        projectId: 'project',
+        bundleId,
+        requestId,
+        configuration: f.app.descriptor,
+      }),
+    );
+    const missingRequest = await invoke(f.app, [
+      'doctor',
+      '--config',
+      f.config,
+      '--handoff',
+      f.handoff,
+    ]);
+    assert.equal(missingRequest.status, 2);
+    assert.equal(missingRequest.result.checks.at(-1).code, 'request.missing');
+    assert.equal(missingRequest.result.nextAction, 'fix_config');
+    assert.ok(!missingRequest.out.includes('PRIVATE_CANARY'));
+    assert.ok(!missingRequest.out.includes(f.directory));
+    assert.equal(f.state.executions, 0);
+    assert.equal(f.state.drafts, 0);
+    assert.equal(f.state.requests, 0);
+    assert.equal(f.state.comparisons, 0);
+    assert.equal(f.state.request, null);
   } finally {
     await f.cleanup();
   }

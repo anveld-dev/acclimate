@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { execFileSync, spawn } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -125,14 +126,20 @@ import { defineEvaluation, preflightEvaluation, runEvaluation } from '@acclimate
 import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
 import { checkComparison } from '@acclimate/sdk/evaluation/policy';
 import { exportReviewEvidence, verifyReviewExport } from '@acclimate/sdk/evaluation/artifacts';
+import { analyzeComparison } from '@acclimate/sdk/evaluation/analysis';
+import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
+import { createEvaluationProgressReporter } from '@acclimate/sdk/evaluation/progress';
 import { prepare as codex } from '@acclimate/codex-plugin';
 import { prepare as claude } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';
 import { prepare as cursor } from '@acclimate/cursor-plugin';
 for (const value of [AcclimateClient, ApiError, resolveAndCache, prepareFiles, codex, claude, pi, cursor]) assert.equal(typeof value, 'function');
-for (const value of [defineEvaluation, preflightEvaluation, runEvaluation, evaluationMain, checkComparison, exportReviewEvidence, verifyReviewExport]) assert.equal(typeof value, 'function');
+for (const value of [defineEvaluation, preflightEvaluation, runEvaluation, evaluationMain, checkComparison, exportReviewEvidence, verifyReviewExport, analyzeComparison, createEvaluationManifest, restoreEvaluationManifest, createEvaluationProgressReporter]) assert.equal(typeof value, 'function');
 const application = defineEvaluation({configId:'installed-check',configRevision:'1',datasetRevision:'cases-1',graderRevision:'grade-1',runtime:{app:'fixture'},execution:'model-free',cases:[{caseId:'task',input:{value:1},expected:1}],execute:async()=>({output:1}),grade:async()=>({reward:1})});
 assert.equal(application.descriptor.runtime.configId, 'installed-check');
+const manifest = createEvaluationManifest({configId:'installed-manifest',execution:'model-free',cases:[{caseId:'task',input:{value:1},expected:1}],grader:{sourceUtf8:'return expected === output;'},runtime:{settings:{temperature:0.1},artifacts:{app:'sha256:'+'a'.repeat(64)}}});
+assert.deepEqual(restoreEvaluationManifest(manifest.privateManifestJson).descriptor, manifest.descriptor);
+assert.deepEqual(defineEvaluation({...manifest.definition,execute:async()=>({output:1}),grade:async()=>({reward:1})}).descriptor, manifest.descriptor);
 assert.deepEqual(application.descriptor.expectedCases,[{caseId:'task',repetition:0}]);
 assert.equal(JSON.stringify(application.descriptor).includes('expected"'),false);
 const bundle = {version:{id:'v1',bundleId:'b',parentVersionId:null,digest:'sha256:test',createdAt:'now'},payload:{schemaVersion:1,files:[{path:'instructions.md',kind:'instruction',text:'Hello'}]},resolvedAt:0,stale:false};
@@ -150,6 +157,9 @@ import { defineEvaluation, preflightEvaluation, runEvaluation } from '@acclimate
 import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
 import { checkComparison } from '@acclimate/sdk/evaluation/policy';
 import { exportReviewEvidence, verifyReviewExport } from '@acclimate/sdk/evaluation/artifacts';
+import { analyzeComparison } from '@acclimate/sdk/evaluation/analysis';
+import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
+import { createEvaluationProgressReporter } from '@acclimate/sdk/evaluation/progress';
 import { prepare as codex } from '@acclimate/codex-plugin';
 import { prepare as claude } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';
@@ -158,7 +168,7 @@ declare const bundle: VerifiedBundle;
 validatePayload(bundle.payload);
 void compatibilityIssues(bundle.payload, 'codex');
 void [AcclimateClient, codex(bundle), claude(bundle), pi(bundle), cursor(bundle)];
-void [defineEvaluation, preflightEvaluation, runEvaluation, evaluationMain, checkComparison, exportReviewEvidence, verifyReviewExport];
+void [defineEvaluation, preflightEvaluation, runEvaluation, evaluationMain, checkComparison, exportReviewEvidence, verifyReviewExport, analyzeComparison, createEvaluationManifest, restoreEvaluationManifest, createEvaluationProgressReporter];
 `,
   );
   run(process.execPath, ['consumer.mjs'], temp);
@@ -269,6 +279,7 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
     run(pythonExecutable, [
       'scripts/packaging/verify-wheel.py', '--wheel', join(stage, wheelName),
       '--starter', join(root, 'examples/evaluation-starter'),
+      '--analysis-fixtures', join(root, 'contracts/fixtures/evaluation-analysis/vectors.json'),
     ]);
     const starters = await archiveStarters(root, stage, publicMetadata);
     const extractedStarters = join(temp, 'distributed-starters');
@@ -277,6 +288,22 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
       run('tar', ['-xzf', join(stage, starter.file), '-C', extractedStarters]);
     run(process.execPath, ['trial.mjs'], join(extractedStarters, 'evaluation-starter'));
     run(process.execPath, ['acclimate-eval.mjs', 'describe'], join(extractedStarters, 'evaluation-starter'));
+    const analysisFixture = JSON.parse(await readFile(join(root, 'contracts/fixtures/evaluation-analysis/vectors.json'), 'utf8'));
+    const analysisInput = join(temp, 'analysis-input');
+    await mkdir(analysisInput, { mode: 0o700 });
+    const analysisArgs = [];
+    for (const key of ['comparison', 'expectedDescriptor', 'expectedBinding']) {
+      const filename = join(analysisInput, key + '.json');
+      await writeFile(filename, JSON.stringify(analysisFixture.input[key]));
+      analysisArgs.push(filename);
+    }
+    const analysisConfig = join(analysisInput, 'config.json');
+    await writeFile(analysisConfig, JSON.stringify({metrics:analysisFixture.input.metrics,observations:analysisFixture.input.observations,uncertainty:analysisFixture.input.uncertainty}));
+    analysisArgs.push(analysisConfig);
+    const analysisOutput = JSON.parse(execFileSync(process.execPath, [join(extractedStarters, 'evaluation-starter/analyze.mjs'), ...analysisArgs], {cwd:temp,encoding:'utf8'}));
+    if (!isDeepStrictEqual(analysisOutput, analysisFixture.vectors[0].expected.result))
+      throw new Error('Installed distributed analysis recipe differs from its algorithm vector');
+
     run('sh', ['-n', 'ci.sh'], join(extractedStarters, 'ci-starter'));
     run(process.execPath, ['evaluation/acclimate-eval.mjs', 'describe'], join(extractedStarters, 'ci-starter'));
     for (const harness of ['codex', 'claude', 'pi', 'cursor'])

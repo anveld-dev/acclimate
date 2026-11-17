@@ -1,0 +1,50 @@
+{
+  "passed": true,
+  "checks": [
+    "complete: equal-case values, per-pair coverage, unknown cost, explicit weighting and policy limits at 1440/390/320px",
+    "partial: equal-case values, per-pair coverage, unknown cost, explicit weighting and policy limits at 1440/390/320px",
+    "Selected active/stale/absent observations are separate from durable running/completed/failed state; no retry-safety inference"
+  ],
+  "browserErrors": [],
+  "sourceBuildSha256": "86ce1fcba5f1073c2737c52cdb81683606e57de69f30fd221c3989048136d430",
+  "modelCalls": 0,
+  "observedRewards": [
+    {
+      "candidate": 0.8,
+      "caseId": "routine",
+      "parent": 0.4,
+      "repetition": 0
+    },
+    {
+      "candidate": 0.8,
+      "caseId": "routine",
+      "parent": 0.4,
+      "repetition": 1
+    },
+    {
+      "candidate": 0.8,
+      "caseId": "routine",
+      "parent": 0.4,
+      "repetition": 2
+    },
+    {
+      "candidate": 0.0,
+      "caseId": "critical",
+      "parent": 1.0,
+      "repetition": 0
+    }
+  ],
+  "equalCaseMeans": {
+    "parent": 0.7,
+    "candidate": 0.4
+  },
+  "pooledMeansForContrast": {
+    "parent": 0.55,
+    "candidate": 0.6
+  },
+  "limits": [
+    "Recorded researcher rewards submitted as fixture results; executor/grader not rerun.",
+    "Disposable real service, PostgreSQL and fixture OIDC; no external identity or model qualification.",
+    "No selected application policy verdict or metric direction is inferred by the console."
+  ]
+}

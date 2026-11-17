@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import type { CasePair, Comparison, Outcome } from '@acclimate/sdk';
 import { evaluationScoreSummary } from '../src/lib/evaluation-score-summary';
+import { unequalRepetitionsComparison } from './fixtures/unequal-repetitions';
 
 function outcome(reward: number | null, overrides: Partial<Outcome> = {}): Outcome {
   return {
@@ -181,4 +183,59 @@ test('unknown usage remains unknown when rewards are fully observed', () => {
   );
   assert.equal(result.pairedCount, 1);
   assert.equal(result.costUsd, null);
+});
+
+test('unequal repetitions weight cases equally and reverse the pooled-row conclusion', () => {
+  const report = unequalRepetitionsComparison();
+  const acceptance = JSON.parse(
+    readFileSync(
+      new URL(
+        '../../../docs/acceptance/developer-personas-20261117/evaluation-researcher.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  );
+  assert.deepEqual(
+    report.results.map(({ caseId, repetition, parent, candidate }) => ({
+      caseId,
+      repetition,
+      parent: parent.reward,
+      candidate: candidate.reward,
+    })),
+    acceptance.observedRewards,
+  );
+  const result = evaluationScoreSummary(report);
+  const pooled = (side: 'parent' | 'candidate') =>
+    report.results.reduce((sum, item) => sum + item[side].reward!, 0) / report.results.length;
+  assert.ok(Math.abs(pooled('parent') - 0.55) < 1e-12);
+  assert.ok(Math.abs(pooled('candidate') - 0.6) < 1e-12);
+  assert.ok(Math.abs(result.parentMean! - 0.7) < 1e-12);
+  assert.ok(Math.abs(result.candidateMean! - 0.4) < 1e-12);
+  assert.ok(Math.abs(result.parentMean! - acceptance.policies.higher.summary.parentMean) < 1e-12);
+  assert.ok(
+    Math.abs(result.candidateMean! - acceptance.policies.higher.summary.candidateMean) < 1e-12,
+  );
+  assert.equal(result.comparableCaseCount, 2);
+  assert.equal(result.expectedCaseCount, 2);
+  assert.equal(result.pairedCount, 4);
+  assert.equal(result.expectedCount, 4);
+  assert.equal(result.costUsd, null);
+});
+
+test('partial unequal repetitions preserve paired exclusion and absent case coverage', () => {
+  const report = unequalRepetitionsComparison();
+  report.complete = false;
+  report.results[0].candidate = outcome(null);
+  report.results.pop();
+  const result = evaluationScoreSummary(report);
+  assert.equal(result.pairedCount, 2);
+  assert.equal(result.expectedCount, 4);
+  assert.equal(result.comparableCaseCount, 1);
+  assert.equal(result.expectedCaseCount, 2);
+  assert.ok(Math.abs(result.parentMean! - 0.4) < 1e-12);
+  assert.ok(Math.abs(result.candidateMean! - 0.8) < 1e-12);
+  assert.equal(result.missingGrades, 3);
+  assert.equal(result.costUsd, null);
+  assert.equal(result.complete, false);
 });

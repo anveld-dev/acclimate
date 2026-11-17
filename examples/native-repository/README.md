@@ -2,7 +2,21 @@
 
 This complete application-owned starter combines a frozen source inventory with a pinned bundle in the private workspace created by an installed native plugin. It retains a text patch before cleanup. The runnable task uses a deterministic fake harness; it verifies wiring and resource/lifetime rules, not model quality or real SDK termination.
 
-Install the matching `@acclimate/sdk` and selected plugin tarballs from one release. Node 22.22+ and POSIX are required. No TypeScript runner, provider credentials or paid calls are needed for the fixture. Run from the extracted starter directory, choosing a new absolute directory beneath an existing canonical parent:
+Node 22.22+, npm 10+ and Linux/macOS (POSIX) are required. Obtain the native starter, matching SDK/plugin tarballs, release manifest and checksums from your release operator; no registry publication or download URL is implied. Verify `SHA256SUMS` in that release directory before extraction. Keep the included private `package.json`: it establishes the application boundary even when extracted beneath another npm workspace. Its empty dependency list deliberately performs no implicit registry resolution.
+
+Use absolute paths for both directories and the already verified artifacts. For release 0.1.0, install the SDK and whichever plugin you use together (substitute the same release version throughout):
+
+```sh
+release=/absolute/path/to/verified-release
+app=/absolute/path/to/native-repository-starter
+npm install --prefix "$app" --workspaces=false --offline --ignore-scripts --no-audit --no-fund --save-exact \
+  "$release/acclimate-sdk-0.1.0.tgz" "$release/acclimate-codex-plugin-0.1.0.tgz"
+node "$app/verify-install.mjs" codex
+```
+
+The explicit prefix and `--workspaces=false` keep npm writes inside the starter. Run the import check before any job: it imports public entrypoints only after confirming their real paths are beneath this application's own `node_modules`; enclosing-workspace or symlinked checkout imports fail. Local tarball paths are recorded in this application's manifest/lockfile. Preserve them with your installation evidence; do not replace them with unpinned package names. For the all-four-plugin fixture/tests, supply the Claude, Pi and Cursor plugin tarballs in the same install command, then run `node "$app/verify-install.mjs" --all`. Optional provider peers are unnecessary for the deterministic fixture.
+
+No TypeScript runner, provider credentials or paid calls are needed for the fixture. Run from the extracted starter directory, choosing a new absolute directory beneath an existing canonical parent:
 
 ```sh
 node demo.mjs --state-root /absolute/private/new-native-run --harness codex
@@ -43,6 +57,40 @@ The last callback is the marked application seam; `startMyExistingAgent` is your
 
 `runHarness` must return `stopped:true` only after its external work is quiescent. Returning false or rejecting conservatively throws the SDK's `ExecutionUncertainError`, leaves the native workspace quarantined, and lets the evaluator retain its ambiguous execution marker. An abort signal, timeout, missing handle or rejected SDK await is never treated as proof a job stopped. Do not race a timeout against a run and unconditionally clean up.
 
+## Declared Codex runtime policy
+
+The optional real Codex adapter is pinned to `@openai/codex-sdk@0.169.0`; it is not installed by this manifest. Obtain that exact SDK and its platform-native optional package through your application's approved artifact process. If that process has already populated npm's cache, the explicit offline installation is:
+
+```sh
+npm install --prefix "$app" --workspaces=false --offline --ignore-scripts --no-audit --no-fund --save-exact @openai/codex-sdk@0.169.0
+node "$app/verify-install.mjs" codex --codex-sdk
+```
+
+A cache miss fails instead of downloading. Installing a version string is not evidence of artifact provenance: record your approved SDK/native package hashes and lockfile alongside the release hashes. An SDK constructor can fail if its platform-native executable was not obtained. The deterministic fixture never constructs the SDK or requests a provider.
+
+For a real adapter, `codexRuntimeInputs` requires an explicit child environment and model. It returns official SDK constructor/thread options without starting work:
+
+```js
+import { Codex } from '@openai/codex-sdk';
+import { codexRuntimeInputs } from './harnesses.mjs';
+
+const inputs = codexRuntimeInputs(effective, {
+  env: declaredChildEnvironment, // reviewed string map; never log credential values
+  model: declaredModel,
+  config: reviewedConfigOverrides,
+  configOverrides: reviewedRawTomlOverrides,
+});
+const thread = new Codex(inputs.constructorOptions).startThread(inputs.threadOptions);
+```
+
+This recipe selects a fresh workspace-write thread, approval `never`, disabled network access and disabled web search. Authentication, model access, time/usage limits, completion/termination observation and result retention remain application responsibilities. Keep the existing `runRepositoryJob` stop/quarantine contract around the complete SDK stream. There is no paid execution in the snippet above until the app calls a run method.
+
+The installed official SDK 0.169.0 README sections “Controlling the Codex CLI environment” and “Passing `--config` overrides”, its `dist/index.d.ts` `CodexOptions`, and `dist/index.js` establish these controls: supplying `env` replaces inherited Node process environment; the SDK still injects required originator/authentication/binary-path values. Structured config is followed by raw TOML overrides, then SDK-managed/thread settings. These are environment and override controls, not a promise to ignore all host configuration.
+
+Declare one policy in the evaluation's runtime revision before describing a request. For an inherited-configuration policy, explicitly select the authentication/home/config locations and environment names and record nonsecret configuration file hashes, CLI/SDK hashes, effective permission/model/tool choices, warnings and reported usage. For a dedicated-configuration policy, provision a private application-owned Codex home and supply `CODEX_HOME` and only approved environment strings through `env`; deliberately provision approved authentication there instead of copying an entire user profile. Review any CLI/system/project configuration sources that still apply. The source inventory excludes project guidance/settings from the copied repository, but this helper does not demonstrate complete host-configuration isolation. Do not label a run hermetic without separate evidence.
+
+The 2026-11-17 accepted external-consumer run used existing SDK authentication/configuration. It emitted five nonfatal setting/marketplace warnings and reported 107,854 input tokens, 84,992 cached input tokens and 663 output tokens on a tiny task. Those historical observations motivate declaring configuration provenance; they do not establish a token-cost estimate, provider-request count or performance bound. See the repository acceptance record `docs/acceptance/developer-personas-20261117/plugin-author.md` for that run's evidence and limits.
+
 ## Frozen source and context policy
 
 Call `freezeSourceInventory` once before defining/requesting an evaluation, then reuse that same captured snapshot for parent and candidate. Its source manifest hashes actual bytes, sizes and source mode bits. Include its digest, context policy revision and selected-memory digest in your declared dataset/runtime revision convention before `describe`. Revision strings are app assertions; the helper does not create a new server hashing protocol.
@@ -66,7 +114,7 @@ Artifacts remain owner-only. `runRepositoryJob` returns a gradeable result, rela
 ## Checks and evidence
 
 ```sh
-node --test test/repository.test.mjs test/crash.test.mjs test/installed.test.mjs
+node --test test/repository.test.mjs test/crash.test.mjs test/installed.test.mjs test/codex-policy.test.mjs
 ```
 
 These tests require the installed SDK/plugin artifacts. `test/native-helpers.test.mjs` additionally exercises installed native option/Pi loader interfaces with their declared optional peer dependencies. No test starts a model or native provider session. See [qualification ledger](QUALIFICATION.md) for precise evidence and unrun live gates.

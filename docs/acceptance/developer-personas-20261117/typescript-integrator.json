@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "persona": "typescript-integrator",
+  "date": "2026-11-17",
+  "criteriaDefinedBeforeExecution": {
+    "installed_typescript": "Compile a strict external TS app importing only installed public SDK entry points.",
+    "meaningful_pair": "Saved support-ticket cases, versioned instructions, and independent grading produce measurable candidate improvement.",
+    "bound_request": "Describe the installed app, freeze that descriptor in a real immutable request, and finish its paired evaluation.",
+    "callback_lifetime": "Task/expected/output/bundle copies stay isolated; prepared content remains readable across await and is cleaned after execution.",
+    "durable_retry": "Lose a real committed comparison response; retain request/attempt/comparison identity and add no callbacks on replay.",
+    "diagnostics": "A changed dataset revision identifies that field before callbacks run.",
+    "review_handoff": "Export explicitly redacted output and grading context and verify with a separate read-only principal."
+  },
+  "criteria": {
+    "installed_typescript": "accepted",
+    "meaningful_pair": "accepted",
+    "bound_request": "accepted",
+    "callback_lifetime": "accepted",
+    "durable_retry": "accepted",
+    "diagnostics": "accepted",
+    "review_handoff": "partial"
+  },
+  "releaseSourceInventorySha256": "15feab4b46cd8c4d52592fc318cd171a267daa1ec562d4447ae261a16db03f6b",
+  "serviceBinarySha256": "ed09e68c2c93497df582c57b5366b312f915dd2625bd5e053d0a7ebad2a8de8a",
+  "binarySourceBuildAttested": false,
+  "typescriptVersion": "5.9.3",
+  "appSourceSha256": "1a7e12a4a72249a61d5d4d106f2b206f719157e9a1f2a109a8aede342c939191",
+  "compiledAppSha256": "12fc827a1f76fdfc5aa645220714ba3396c447a9e59b0746eecc60ceac687a2a",
+  "savedCasesSha256": "d281f567a1dca68cdcaae3599d4f5a8ca9e2a44c24f3080e4869400995a23f54",
+  "descriptor": {
+    "datasetRevision": "tickets-20261117-v1",
+    "graderRevision": "exact-priority-independent-v1",
+    "runtime": {
+      "app": "ticket-router-ts-1",
+      "model": "none",
+      "tools": "private-files-only",
+      "configId": "ticket-priority-typescript",
+      "configRevision": "1",
+      "execution": "model-free",
+      "concurrency": "1",
+      "gradeRetries": "0"
+    },
+    "expectedCases": [
+      {
+        "caseId": "outage",
+        "repetition": 0
+      },
+      {
+        "caseId": "outage",
+        "repetition": 1
+      },
+      {
+        "caseId": "negated",
+        "repetition": 0
+      },
+      {
+        "caseId": "negated",
+        "repetition": 1
+      },
+      {
+        "caseId": "routine",
+        "repetition": 0
+      },
+      {
+        "caseId": "routine",
+        "repetition": 1
+      }
+    ]
+  },
+  "requestId": "bf715750-76ae-44f9-bb8d-0ac8bc34e168",
+  "attemptId": "95579266-fae3-4f59-befa-01eba889023b",
+  "comparisonId": "fc656d60-79b5-40cd-9fb9-cbf734d60492",
+  "status": "completed",
+  "callbackCounts": {
+    "execute": 12,
+    "grade": 12,
+    "newOnReplay": 0
+  },
+  "lostCommittedResponsePhases": [
+    "draft",
+    "finish",
+    "request",
+    "start",
+    "submit"
+  ],
+  "committedComparisonId": "fc656d60-79b5-40cd-9fb9-cbf734d60492",
+  "replayBeyondTransientDedupHours": 25,
+  "policy": {
+    "schemaVersion": 1,
+    "verdict": "pass",
+    "code": "policy.pass",
+    "policy": {
+      "id": "ticket-routing-quality",
+      "revision": "1",
+      "sha256": "sha256:406149f302194005b0c09df7e70c63160b00c5e1af3cf6e9f96755fd37e430a6"
+    },
+    "comparisonId": "fc656d60-79b5-40cd-9fb9-cbf734d60492",
+    "expectedBinding": {
+      "parentVersionId": "9157fd58-aa0c-4566-9b33-442b9a34973c",
+      "candidateVersionId": "cde35d52-ba4b-4a33-9b45-5f200b858ec7",
+      "parentDigest": "sha256:ab0a066c7402a5c63d1cc08415e289f225008945160fd6f5c94c1495e1692f80",
+      "candidateDigest": "sha256:fe9fe5585ab89810d6f8bf30e9627b24a36698284ce84d88e20d7e69dbddf2ee",
+      "requestId": "bf715750-76ae-44f9-bb8d-0ac8bc34e168",
+      "attemptId": "95579266-fae3-4f59-befa-01eba889023b",
+      "comparisonId": "fc656d60-79b5-40cd-9fb9-cbf734d60492",
+      "submitter": "evaluator"
+    },
+    "checks": [
+      {
+        "code": "policy.minimum_mean_improvement",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_case_regression",
+        "result": "pass"
+      },
+      {
+        "code": "policy.candidate_threshold",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_candidate_task_failures",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_candidate_cost",
+        "result": "pass"
+      }
+    ],
+    "counts": {
+      "distinctCases": 3,
+      "expectedPairs": 6,
+      "comparablePairs": 6
+    },
+    "summary": {
+      "parentMean": 0.6666666666666666,
+      "candidateMean": 1,
+      "orientedMeanImprovement": 0.3333333333333333,
+      "worstCaseRegression": 0,
+      "candidateTaskFailures": 0,
+      "parentCostUsd": 0,
+      "candidateCostUsd": 0,
+      "costIncreaseUsd": 0,
+      "parentUnknownCosts": 0,
+      "candidateUnknownCosts": 0
+    },
+    "interpretation": "descriptive-policy-check"
+  },
+  "descriptorMismatch": {
+    "code": "descriptor.mismatch",
+    "phase": "configure",
+    "executionState": "not_started",
+    "nextAction": "fix_config",
+    "mismatchFields": [
+      "datasetRevision"
+    ]
+  },
+  "reviewVerification": {
+    "schemaVersion": 1,
+    "status": "verified",
+    "provenance": "online_scalar_binding",
+    "comparisonId": "fc656d60-79b5-40cd-9fb9-cbf734d60492",
+    "executionAttested": false
+  },
+  "faultFixture": "ResponseLossProxy forwarding actual HTTP and dropping successful committed responses once per lifecycle phase",
+  "commands": [
+    {
+      "executable": "npm",
+      "argumentCount": 6,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 3,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 2,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 14,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 7,
+      "exitCode": 1,
+      "expectedExitCode": 1
+    },
+    {
+      "executable": "node",
+      "argumentCount": 6,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 6,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 10,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    }
+  ],
+  "remainingFriction": [
+    "Durable JS runtime requires POSIX and python3 fcntl in addition to Node.",
+    "Release distribution remains operator-managed.",
+    "Cross-machine transfer through approved authenticated storage was not executed; local separate-principal verification was executed.",
+    "This deterministic content-consuming app makes no model or native harness quality claim."
+  ],
+  "observations": {
+    "installed_typescript": "Strict TypeScript 5.9.3 compilation exited 0; own app used only installed @acclimate/sdk, /evaluation and /evaluation/cli imports.",
+    "meaningful_pair": {
+      "parentMean": 0.6666666666666666,
+      "candidateMean": 1,
+      "orientedMeanImprovement": 0.3333333333333333,
+      "worstCaseRegression": 0,
+      "candidateTaskFailures": 0,
+      "parentCostUsd": 0,
+      "candidateCostUsd": 0,
+      "costIncreaseUsd": 0,
+      "parentUnknownCosts": 0,
+      "candidateUnknownCosts": 0
+    },
+    "bound_request": {
+      "status": "completed",
+      "pairs": 6
+    },
+    "callback_lifetime": {
+      "execute": 12,
+      "grade": 12,
+      "inputAndExpectedCopiesClean": true,
+      "graderOutputMutationAbsentFromRetainedArtifacts": true,
+      "awaitThenReadThenCleanup": true
+    },
+    "durable_retry": {
+      "committedSubmitIdEqualsComparisonId": true,
+      "requestAttemptComparisonIdsUnchanged": true,
+      "newCallbacksOnReplay": 0
+    },
+    "diagnostics": {
+      "code": "descriptor.mismatch",
+      "phase": "configure",
+      "executionState": "not_started",
+      "nextAction": "fix_config",
+      "mismatchFields": [
+        "datasetRevision"
+      ]
+    },
+    "review_handoff": {
+      "localReadOnlyVerification": "verified",
+      "crossMachineAuthenticatedTransfer": "not exercised"
+    }
+  },
+  "scope": "Real isolated PostgreSQL 16/Rust HTTP service; own deterministic installed-package application; model-free.",
+  "limits": [
+    "No provider or native harness call; no production mutation.",
+    "No minimum Node-version qualification or service binary/source-build attestation.",
+    "Only dataset mismatch diagnostics exercised; unauthorized/not-found/transport diagnostic distinctions were not evaluated.",
+    "Response-loss fixture retries committed writes within a run; terminal replay is a separate process. No worker kill or cancellation trial."
+  ],
+  "cleanup": {
+    "schemaVersion": 1,
+    "databaseDirectoryRemoved": true,
+    "serviceStopped": true,
+    "consumerOutputsRetained": true
+  }
+}

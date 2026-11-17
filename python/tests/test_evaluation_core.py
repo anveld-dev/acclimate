@@ -34,6 +34,9 @@ COMPARISON="55555555-5555-4555-8555-555555555555"
 class FakeService:
     base_url="https://fixture.example"
     scope="evaluator"
+    _base=AcclimateClient._base
+    _part=staticmethod(AcclimateClient._part)
+    _listing=AcclimateClient._listing
 
     def __init__(self,app):
         self.payloads={}
@@ -71,6 +74,8 @@ class FakeService:
         return copy.deepcopy(self.comparison)
 
     def _request(self,method,path,body=None,key=None,**kwargs):
+        if method=="GET" and path.startswith("/v1/projects/project/bundles?"):
+            return {"items":[{"id":BUNDLE}],"nextCursor":None}
         assert method=="POST" and kwargs["_retained"] is True
         data=kwargs["_body_bytes"]
         receipt=(path,key)
@@ -200,6 +205,13 @@ class EvaluationCoreTests(unittest.TestCase):
         class Handler(BaseHTTPRequestHandler):
             def log_message(self,*_):
                 pass
+            def do_GET(self):
+                response=json_bytes(retained_mutation("GET",self.path))
+                self.send_response(200)
+                self.send_header("Content-Type","application/json")
+                self.send_header("Content-Length",str(len(response)))
+                self.end_headers()
+                self.wfile.write(response)
             def do_POST(self):
                 nonlocal oversize_next_submit
                 raw=self.rfile.read(int(self.headers["Content-Length"]))
@@ -542,6 +554,63 @@ class EvaluationCoreTests(unittest.TestCase):
         self.assertEqual(calls,[])
         self.assertEqual(service.mutations,[])
         self.assertEqual(list(self.journal_root.iterdir()),[])
+
+    def test_doctor_missing_targets_are_specific_and_private(self):
+        calls=[]
+        app=self.app(lambda run:(calls.append(1) or ExecutionResult(True)),lambda run:(calls.append(1) or GradeResult(1)))
+        for resource,check_name,method in (("bundle","targetBundle","_request"),
+            ("request","targetRequest","get_evaluation"),("version","versions","get_version"),
+            ("capabilities","evaluatorAccess","get_evaluation_capabilities")):
+            with self.subTest(resource=resource):
+                service=FakeService(app)
+                if resource=="bundle":
+                    service._request=lambda *_args,**_kwargs:{"items":[],"nextCursor":None}
+                else:
+                    def missing(*_args,**_kwargs):
+                        raise ApiError(404,"not_found","PRIVATE_HTTP_CANARY " + str(self.root))
+                    setattr(service,method,missing)
+                with patch("acclimate.evaluation.make_client",return_value=service):
+                    result=preflight_evaluation(app=app,config_path=str(self.config),target={"handoff":self.handoff(app)})
+                self.assertEqual(result["status"],"blocked")
+                self.assertEqual(result["checks"][-1],{"check":check_name,
+                    "status":"unverified" if resource=="capabilities" else "failed",
+                    "code":"capabilities.unsupported" if resource=="capabilities" else resource+".missing"})
+                self.assertEqual(result["nextAction"],"upgrade_service" if resource=="capabilities" else "fix_config")
+                self.assertNotIn("PRIVATE_HTTP_CANARY",json.dumps(result))
+                self.assertNotIn(str(self.root),json.dumps(result))
+                self.assertEqual(service.mutations,[])
+                self.assertIsNone(service.request["attemptId"])
+        self.assertEqual(calls,[])
+
+    def test_doctor_bundle_inventory_is_paginated_bounded_and_fails_closed(self):
+        app=self.app()
+        for mode in ("second_page","missing","loop","malformed","limit"):
+            with self.subTest(mode=mode):
+                service=FakeService(app)
+                reads=[]
+                def inventory(_method,route):
+                    self.assertEqual(_method,"GET")
+                    reads.append(route)
+                    if mode=="second_page":
+                        return {"items":[] if len(reads)==1 else [{"id":BUNDLE}],"nextCursor":"two" if len(reads)==1 else None}
+                    if mode=="missing":
+                        return {"items":[],"nextCursor":None}
+                    if mode=="loop":
+                        return {"items":[],"nextCursor":"same"}
+                    if mode=="limit":
+                        return {"items":[],"nextCursor":str(len(reads))}
+                    return {"items":None,"nextCursor":None}
+                service._request=inventory
+                with patch("acclimate.evaluation.make_client",return_value=service):
+                    result=preflight_evaluation(app=app,config_path=str(self.config),target={"bundleId":BUNDLE})
+                self.assertEqual(result["status"],"ready" if mode=="second_page" else "blocked")
+                if mode=="second_page":
+                    self.assertIn("cursor=two",reads[1])
+                else:
+                    self.assertEqual(result["checks"][-1]["code"],"bundle.missing" if mode=="missing" else
+                        "evidence.incomplete" if mode=="limit" else "evidence.malformed")
+                self.assertLessEqual(len(reads),100)
+                self.assertEqual(service.mutations,[])
 
     def test_definition_bounds_and_private_config_do_not_echo_secrets(self):
         with self.assertRaises(EvaluationError):

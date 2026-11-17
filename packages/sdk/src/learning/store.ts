@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { lstat, realpath } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, open, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { acquireFileLock, EvaluationBusyError } from '../evaluation/journal.js';
 import {
@@ -12,6 +13,11 @@ import type { Ref, Sha256 } from './evidence-types.js';
 
 const MAXIMUM_BYTES = 16 * 1024 * 1024;
 const MAXIMUM_COMMANDS = 10_000;
+const CONTROL_COMMANDS = 64;
+const CONTROL_BYTES = 1024 * 1024;
+// A legacy inbox may have used its entire byte budget for control commands.
+const INBOX_BYTES = 2 * MAXIMUM_BYTES + 3 * CONTROL_BYTES + 1024;
+const controlKinds = ['request-stop', 'resolve-uncertainty', 'resume'] as const;
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
 
@@ -34,9 +40,10 @@ export interface InboxEntry<T = unknown> extends CommandReceipt {
   command: T;
 }
 interface Inbox {
-  schemaVersion: 1;
+  schemaVersion: 2;
   directory: string;
   admissionClosed: boolean;
+  compactedThrough: number;
   entries: InboxEntry[];
 }
 interface CheckpointEnvelope {
@@ -54,7 +61,11 @@ export interface LearningStore {
   ): Promise<void>;
   putArtifact<T>(value: T): Promise<Ref<T>>;
   readArtifact<T>(reference: Ref<T>): Promise<T>;
-  submit<T>(commandId: string, command: T): Promise<CommandReceipt>;
+  submit<T>(
+    commandId: string,
+    command: T,
+    beforeEnqueue?: () => Promise<void>,
+  ): Promise<CommandReceipt>;
   readInbox<T = unknown>(afterSequence: number): Promise<InboxEntry<T>[]>;
   withWorkerLock<T>(action: (lock: LearningLock) => Promise<T>): Promise<T>;
   withInboxLock<T>(action: (lock: LearningLock) => Promise<T>): Promise<T>;
@@ -88,8 +99,8 @@ async function exists(filename: string): Promise<boolean> {
     throw error;
   }
 }
-async function readCanonical(filename: string): Promise<unknown> {
-  const bytes = await readPrivateText(filename, MAXIMUM_BYTES);
+async function readCanonical(filename: string, maximum = MAXIMUM_BYTES): Promise<unknown> {
+  const bytes = await readPrivateText(filename, maximum);
   try {
     const value: unknown = JSON.parse(bytes);
     if (canonicalJson(value) !== bytes) throw new Error();
@@ -102,6 +113,38 @@ function bounded(value: unknown): string {
   const bytes = canonicalJson(value);
   if (Buffer.byteLength(bytes) > MAXIMUM_BYTES) throw new LearningStoreError('size-limit');
   return bytes;
+}
+
+function encodeInbox(inbox: Inbox): string {
+  // Canonicalize each command separately so the manifest's artifact-wide
+  // node and byte limits do not consume the inbox's control reserves.
+  const directory = canonicalJson(inbox.directory).trimEnd();
+  const entries = inbox.entries.map((entry) => canonicalJson(entry).trimEnd()).join(',');
+  return (
+    `{"admissionClosed":${inbox.admissionClosed},"compactedThrough":${inbox.compactedThrough},` +
+    `"directory":${directory},"entries":[${entries}],"schemaVersion":2}\n`
+  );
+}
+
+function commandKind(command: unknown): unknown {
+  return command && typeof command === 'object' ? (command as { kind?: unknown }).kind : undefined;
+}
+
+function capacityGroup(command: unknown): (typeof controlKinds)[number] | undefined {
+  return controlKinds.find((kind) => kind === commandKind(command));
+}
+
+function hasCapacity(inbox: Inbox, next: InboxEntry): boolean {
+  const group = capacityGroup(next.command);
+  const entries = inbox.entries.filter((entry) => capacityGroup(entry.command) === group);
+  if (entries.length >= (group ? CONTROL_COMMANDS : MAXIMUM_COMMANDS)) return false;
+  // Include entry separators. Each control kind has its own reserve so
+  // observations or other operator commands cannot exhaust its capacity.
+  const bytes = entries.reduce(
+    (sum, entry) => sum + Buffer.byteLength(canonicalJson(entry)),
+    Buffer.byteLength(canonicalJson(next)),
+  );
+  return bytes <= (group ? CONTROL_BYTES : MAXIMUM_BYTES);
 }
 
 /** A single-host private store; no process lock remains held after a callback returns. */
@@ -165,15 +208,34 @@ export async function openLearningStore(directory: string): Promise<LearningStor
   }
   async function loadInbox(): Promise<Inbox> {
     if (!(await exists(inboxFile)))
-      return { schemaVersion: 1, directory, admissionClosed: false, entries: [] };
-    const value = record(await readCanonical(inboxFile));
-    exactKeys(value, ['schemaVersion', 'directory', 'admissionClosed', 'entries']);
+      return {
+        schemaVersion: 2,
+        directory,
+        admissionClosed: false,
+        compactedThrough: 0,
+        entries: [],
+      };
+    const bytes = await readPrivateText(inboxFile, INBOX_BYTES);
+    let value: Record<string, unknown>;
+    try {
+      value = record(JSON.parse(bytes));
+    } catch {
+      throw new LearningStoreError('corrupt');
+    }
+    const keys = ['schemaVersion', 'directory', 'admissionClosed', 'entries'];
+    const compactedThrough = value.schemaVersion === 1 ? 0 : value.compactedThrough;
+    exactKeys(value, value.schemaVersion === 1 ? keys : [...keys, 'compactedThrough']);
     if (
-      value.schemaVersion !== 1 ||
+      (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
       value.directory !== directory ||
       typeof value.admissionClosed !== 'boolean' ||
+      !revision(compactedThrough) ||
       !Array.isArray(value.entries) ||
-      value.entries.length > MAXIMUM_COMMANDS
+      value.entries.length >
+        (value.schemaVersion === 1
+          ? MAXIMUM_COMMANDS
+          : 2 * MAXIMUM_COMMANDS + 3 * CONTROL_COMMANDS) ||
+      !revision(compactedThrough + value.entries.length)
     )
       throw new LearningStoreError('corrupt');
     const commandIds = new Set<string>();
@@ -184,16 +246,81 @@ export async function openLearningStore(directory: string): Promise<LearningStor
         typeof entry.commandId !== 'string' ||
         !ID.test(entry.commandId) ||
         commandIds.has(entry.commandId) ||
-        entry.sequence !== index + 1 ||
+        entry.sequence !== compactedThrough + index + 1 ||
         entry.sha256 !== sha256Bytes(canonicalJson(entry.command))
       )
         throw new LearningStoreError('corrupt');
       commandIds.add(entry.commandId);
     }
-    return value as unknown as Inbox;
+    const inbox: Inbox = {
+      schemaVersion: 2,
+      directory,
+      admissionClosed: value.admissionClosed,
+      compactedThrough,
+      entries: value.entries as InboxEntry[],
+    };
+    if ((value.schemaVersion === 1 ? canonicalJson(value) : encodeInbox(inbox)) !== bytes)
+      throw new LearningStoreError('corrupt');
+    return inbox;
   }
   async function saveInbox(inbox: Inbox): Promise<void> {
-    await atomicPrivateWrite(inboxFile, bounded(inbox));
+    const bytes = encodeInbox(inbox);
+    if (Buffer.byteLength(bytes) > INBOX_BYTES) throw new LearningStoreError('inbox-full');
+    await atomicPrivateWrite(inboxFile, bytes);
+  }
+
+  const receiptDirectory = path.join(directory, 'command-receipts');
+  const receiptFile = (id: string) =>
+    path.join(receiptDirectory, sha256Bytes(id).slice(7) + '.json');
+  async function readReceipt(commandId: string): Promise<CommandReceipt | undefined> {
+    const filename = receiptFile(commandId);
+    if (!(await exists(filename))) return;
+    const value = record(await readCanonical(filename, 1024));
+    exactKeys(value, ['commandId', 'sha256', 'sequence']);
+    if (
+      value.commandId !== commandId ||
+      typeof value.sha256 !== 'string' ||
+      !DIGEST.test(value.sha256) ||
+      !revision(value.sequence) ||
+      value.sequence === 0
+    )
+      throw new LearningStoreError('corrupt');
+    return { commandId, sha256: value.sha256 as Sha256, sequence: value.sequence };
+  }
+
+  async function archiveAppliedCommands(inbox: Inbox): Promise<number> {
+    const checkpoint = await loadCheckpoint<{ revision: number; appliedSequence?: number }>();
+    const applied = checkpoint?.appliedSequence;
+    if (applied === undefined) return inbox.compactedThrough;
+    if (!revision(applied) || applied < inbox.compactedThrough)
+      throw new LearningStoreError('sequence');
+    const through = Math.min(applied, inbox.compactedThrough + inbox.entries.length);
+    if (through === inbox.compactedThrough) return through;
+    await privateDirectory(receiptDirectory);
+    const count = through - inbox.compactedThrough;
+    // Persist receipts before publishing the floor. A retry can reuse receipts
+    // written before a crash while the original entries are still authoritative.
+    for (const { commandId, sha256, sequence } of inbox.entries.slice(0, count)) {
+      const existing = await readReceipt(commandId);
+      if (existing) {
+        if (existing.sha256 !== sha256 || existing.sequence !== sequence)
+          throw new LearningStoreError('corrupt');
+      } else {
+        await atomicPrivateWrite(
+          receiptFile(commandId),
+          canonicalJson({ commandId, sha256, sequence }),
+        );
+      }
+    }
+    // A previous process may have exited after renaming a receipt but
+    // before syncing its directory. Flush existing and new receipts together.
+    const receiptHandle = await open(receiptDirectory, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      await receiptHandle.sync();
+    } finally {
+      await receiptHandle.close();
+    }
+    return through;
   }
 
   return {
@@ -252,39 +379,59 @@ export async function openLearningStore(directory: string): Promise<LearningStor
         await readPrivateText(path.join(artifacts, reference.id + '.json'), MAXIMUM_BYTES),
       );
     },
-    async submit(commandId, command) {
-      if (!ID.test(commandId)) throw new LearningStoreError('command-id');
+    async submit(commandId, command, beforeEnqueue) {
+      if (typeof commandId !== 'string' || !ID.test(commandId))
+        throw new LearningStoreError('command-id');
       // Snapshot before awaiting ownership so caller mutation cannot change the accepted body.
       const commandBytes = bounded(command);
       const sha256 = sha256Bytes(commandBytes);
       const snapshot = JSON.parse(commandBytes) as unknown;
-      return locked('inbox', true, async (lock) => {
-        const inbox = await loadInbox();
-        const existing = inbox.entries.find((entry) => entry.commandId === commandId);
-        if (existing) {
-          if (existing.sha256 !== sha256) throw new LearningStoreError('command-conflict');
-          return { commandId, sha256, sequence: existing.sequence };
-        }
-        if (inbox.entries.length >= MAXIMUM_COMMANDS) throw new LearningStoreError('inbox-full');
-        const entry = { commandId, sha256, sequence: inbox.entries.length + 1, command: snapshot };
-        inbox.entries.push(entry);
-        if (
-          snapshot &&
-          typeof snapshot === 'object' &&
-          (snapshot as { kind?: string }).kind === 'request-stop'
-        )
-          inbox.admissionClosed = true;
-        lock.assertOwned();
-        // Command acceptance and a stop's barrier are persisted in one atomic replacement.
-        await saveInbox(inbox);
-        return { commandId, sha256, sequence: entry.sequence };
-      });
+      async function enqueue(compactedThrough?: number): Promise<CommandReceipt | Inbox> {
+        return locked('inbox', true, async (lock) => {
+          const inbox = await loadInbox();
+          const existing =
+            inbox.entries.find((entry) => entry.commandId === commandId) ??
+            (inbox.compactedThrough > 0 ? await readReceipt(commandId) : undefined);
+          if (existing) {
+            if (!('command' in existing) && existing.sequence > inbox.compactedThrough)
+              throw new LearningStoreError('corrupt');
+            if (existing.sha256 !== sha256) throw new LearningStoreError('command-conflict');
+            return { commandId, sha256, sequence: existing.sequence };
+          }
+          await beforeEnqueue?.();
+          const sequence = inbox.compactedThrough + inbox.entries.length + 1;
+          if (!revision(sequence)) throw new LearningStoreError('sequence');
+          const entry = { commandId, sha256, sequence, command: snapshot };
+          if (compactedThrough !== undefined && compactedThrough > inbox.compactedThrough) {
+            inbox.entries = inbox.entries.slice(compactedThrough - inbox.compactedThrough);
+            inbox.compactedThrough = compactedThrough;
+          }
+          if (!hasCapacity(inbox, entry)) return inbox;
+          inbox.entries.push(entry);
+          if (commandKind(snapshot) === 'request-stop') inbox.admissionClosed = true;
+          lock.assertOwned();
+          // Command acceptance and a stop's barrier are persisted in one atomic replacement.
+          await saveInbox(inbox);
+          return { commandId, sha256, sequence };
+        });
+      }
+
+      const initial = await enqueue();
+      if ('sequence' in initial) return initial;
+      // Receipt archival may require many writes. Keep it outside the admission
+      // lock so a saturated observation queue cannot delay a stop.
+      const through = await archiveAppliedCommands(initial);
+      if (through === initial.compactedThrough) throw new LearningStoreError('inbox-full');
+      const result = await enqueue(through);
+      if (!('sequence' in result)) throw new LearningStoreError('inbox-full');
+      return result;
     },
     async readInbox<T>(afterSequence: number): Promise<InboxEntry<T>[]> {
       if (!revision(afterSequence)) throw new LearningStoreError('sequence');
       const inbox = await loadInbox();
-      if (afterSequence > inbox.entries.length) throw new LearningStoreError('sequence');
-      return inbox.entries.slice(afterSequence) as InboxEntry<T>[];
+      const offset = afterSequence - inbox.compactedThrough;
+      if (offset < 0 || offset > inbox.entries.length) throw new LearningStoreError('sequence');
+      return inbox.entries.slice(offset) as InboxEntry<T>[];
     },
     withWorkerLock: (action) => locked('worker', false, action),
     withInboxLock: (action) => locked('inbox', true, action),
@@ -303,7 +450,9 @@ export async function openLearningStore(directory: string): Promise<LearningStor
         const inbox = await loadInbox();
         if (
           throughSequence !== undefined &&
-          (!revision(throughSequence) || throughSequence > inbox.entries.length)
+          (!revision(throughSequence) ||
+            throughSequence < inbox.compactedThrough ||
+            throughSequence > inbox.compactedThrough + inbox.entries.length)
         )
           throw new LearningStoreError('sequence');
         inbox.admissionClosed =
@@ -311,10 +460,7 @@ export async function openLearningStore(directory: string): Promise<LearningStor
           (throughSequence !== undefined &&
             inbox.entries.some(
               (entry) =>
-                entry.sequence > throughSequence &&
-                entry.command !== null &&
-                typeof entry.command === 'object' &&
-                (entry.command as { kind?: string }).kind === 'request-stop',
+                entry.sequence > throughSequence && commandKind(entry.command) === 'request-stop',
             ));
         lock.assertOwned();
         await saveInbox(inbox);

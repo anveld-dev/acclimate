@@ -48,6 +48,9 @@
       "import": "./dist/learning/index.js"
     }
   },
+  "bin": {
+    "acclimate-learning": "./dist/learning/serve-cli.js"
+  },
   "files": [
     "dist"
   ],

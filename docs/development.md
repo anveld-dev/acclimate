@@ -68,7 +68,7 @@ Existing cache/preparation roots must already be private and owned by the curren
 
 `npm run example:compare` runs deterministic app callbacks and prints a paired comparison report. It is a wiring example, not evidence of better model performance. The real app supplies execution, isolation, fixture services, and grading.
 
-The service proposer is disabled by default. An authorized request is recorded and then fails clearly if no provider is configured. To enable it, set `ACCLIMATE_MODEL_ENDPOINT` to a full OpenAI-compatible chat-completions URL, `ACCLIMATE_MODEL_TOKEN`, and `ACCLIMATE_MODEL` to an allowed Luna model. It returns bounded JSON containing `schemaVersion:1`, `edits:[{path,oldText,newText}]` and `rationale`. Exact original-text anchors must be unique and nonoverlapping; only text at existing allowed paths can change. The proposer permits three attempts, a 60-second call deadline, 32KiB edit content and a 256KiB transport envelope, with an 8192 completion-token request cap. Large unchanged bundle files do not need to be echoed. Model attempts are bounded, may still incur cost after a timeout, and never run tools.
+The service proposer is disabled by default. An authorized request is recorded and then fails clearly if no provider is configured. To enable it, set `ACCLIMATE_MODEL_ENDPOINT` to a full OpenAI-compatible chat-completions URL, `ACCLIMATE_MODEL_TOKEN`, and `ACCLIMATE_MODEL=gpt-6.2-sol` to have Sol draft candidates. Existing configurations using `gpt-6-luna` or `gpt-5.6-luna` also work. This setting only selects the service proposer. The app selects the runtime model used to evaluate each candidate. The proposer returns bounded JSON containing `schemaVersion:1`, `edits:[{path,oldText,newText}]` and `rationale`. Exact original-text anchors must be unique and nonoverlapping; only text at existing allowed paths can change. The proposer permits three attempts, a 60-second call deadline, 32KiB edit content and a 256KiB transport envelope, with an 8192 completion-token request cap. Large unchanged bundle files do not need to be echoed. Model attempts are bounded, may still incur cost after a timeout, and never run tools.
 
 A reviewer promotes a candidate using its comparison ID and expected current channel revision. Evidence must bind the exact candidate, its parent, and the current channel version. Scores are app-reported; a person decides whether they justify promotion. Seed, manual edit, and rollback use an explicit unevaluated reason.
 
@@ -86,11 +86,11 @@ Set the service URL, token, scope, project, bundle and channel as above, plus `A
 npm run example:improve -- run --live
 ```
 
-This explicitly authorizes up to five Luna turns: one drafts the skill, then two saved cases run through each version. It uses app-owned Codex execution and publishes through `createVersion`; it is not a live test of the Rust proposer provider. The grader is separate from version identity. The private output directory contains both payloads, a before/after skill artifact, per-case responses and `summary.json`. Review those files; no candidate is promoted automatically.
+This authorizes one `gpt-6.2-sol` draft and up to four `gpt-6-luna` reviews across two saved cases and both bundle versions. The app uses the Codex SDK and publishes through `createVersion`. Set `ACCLIMATE_CODEX_MODEL` to override the review model with `gpt-5.6-luna`. The grader is separate from version identity. The private output directory contains both payloads, a before/after skill artifact, per-case responses and `summary.json`. Review those files; no candidate is promoted automatically.
 
 To inspect the proposed promotion, use `npm run example:improve -- promote --summary /private/path/summary.json`. Applying it also requires `--apply --expected-revision REV`. The service still rejects incomplete evidence, stale revisions and mismatched parents.
 
-For a disposable end-to-end qualification, `EVALUATION_TEST_DATABASE_URL=... python scripts/qualify-improvement.py --live` starts the service, verifies Python delivery, runs the Luna example and stops the service. Use a disposable database, not an existing user channel. Evidence is retained privately for review.
+For a disposable end-to-end qualification, `EVALUATION_TEST_DATABASE_URL=... python scripts/qualify-improvement.py --live` starts the service against the disposable database, verifies Python delivery, runs the Sol draft and Luna reviews, and stops the service. Evidence is retained privately for review.
 
 ## Qualify the whole roadmap
 
@@ -120,6 +120,8 @@ npm run test:e2e -- --pg-bin /path/to/postgresql/bin
 ```
 
 The process-level test uses a local fixture model server. It checks publish/cache/prepare, bounded proposal edits, comparison recording, promotion, denial, rollback, and restart persistence without paid calls. `npm run test:codex` is the separate live Luna-only check: it asks for random values stored only in prepared resources. It does not claim a direct SDK discovery event or cover resumed sessions.
+
+Run `python3 scripts/productization/connected_learning.py` to qualify service-managed learning against disposable PostgreSQL and a deterministic proposer. It exercises enrollment, app-owned evaluations, release, and connection-scoped delivery. The rollback fixture submits independently graded outcomes from jobs served by a managed rollout and verifies that fresh resolves restore the predecessor while pinned jobs retain their content. Use `--pg-bin` to point at the installed PostgreSQL binaries.
 
 Back up the database before production use, use dump/restore tools matching the server major version, test restoring it, choose retention for private evidence, and keep provider access with its operator. Production configuration is mandatory. Isolated acceptance evidence still does not prove that a particular public deployment or identity provider is ready.
 

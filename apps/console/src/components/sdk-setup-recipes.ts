@@ -61,7 +61,8 @@ for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE',
 }
 const selection = ${JSON.stringify(selection, null, 2)};
 const client = new AcclimateClient({ baseUrl: process.env.ACCLIMATE_URL,
-  token: process.env.ACCLIMATE_TOKEN, scope: process.env.ACCLIMATE_SCOPE });
+  token: process.env.ACCLIMATE_TOKEN, scope: process.env.ACCLIMATE_SCOPE,
+  integrationId: process.env.ACCLIMATE_INTEGRATION });
 let reporter;
 try {
   if (process.env.ACCLIMATE_RECEIPT_TOKEN && process.env.ACCLIMATE_INTEGRATION) {
@@ -177,7 +178,8 @@ for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE',
   if (!process.env[key]) throw new Error('Set ' + key);
 }
 const client = new AcclimateClient({ baseUrl: process.env.ACCLIMATE_URL,
-  token: process.env.ACCLIMATE_TOKEN, scope: process.env.ACCLIMATE_SCOPE });
+  token: process.env.ACCLIMATE_TOKEN, scope: process.env.ACCLIMATE_SCOPE,
+  integrationId: process.env.ACCLIMATE_INTEGRATION });
 const bundle = await resolveAndCache(client, ${JSON.stringify(selection, null, 2)},
   { cacheDir: process.env.ACCLIMATE_CACHE });
 const prepared = await prepareFiles(bundle, process.env.ACCLIMATE_JOB_DIR);

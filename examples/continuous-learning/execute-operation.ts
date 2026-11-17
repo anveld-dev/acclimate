@@ -20,7 +20,7 @@ const config = JSON.parse(await readFile(filename, 'utf8')) as {
 const store = await openLearningStore(config.directory);
 const receipt = await applicationAdapter(config.application).dispatch(config.operation, {
   artifacts: store,
-  signal: AbortSignal.timeout(45_000),
+  signal: AbortSignal.timeout(90_000),
 });
 assert.equal(receipt.status, 'succeeded');
 assert.equal(receipt.output?.kind, 'evaluation');

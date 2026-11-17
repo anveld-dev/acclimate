@@ -9,8 +9,10 @@ import type { Ref, ExperimentManifestV1, DatasetSpec } from '../../src/learning/
 import { operationRuntime } from '../../src/learning/operations.js';
 import type { AcclimateLearningAdapterOptions } from '../../src/learning/adapters/acclimate.js';
 import type { LearningOperation, ReleaseReview, WorkContext } from '../../src/learning/types.js';
-import type { BundlePayload, Comparison, Evaluation, EvaluationDescriptor, Operation, Promotion, VersionMetadata } from '../../src/types.js';
+import type { BundlePayload, Comparison, CompatibilityTarget, Evaluation, EvaluationDescriptor, Operation, Promotion, VersionMetadata } from '../../src/types.js';
 import type { EvaluationPolicyV1 } from '../../src/evaluation/policy.js';
+import { packageDigest, REFERENCE_PREFLIGHT_ID } from '../../src/learning/mutations.js';
+import type { MutationOperation, MutationPolicyV1 } from '../../src/learning/mutations.js';
 
 const sha = (value: string) => 'sha256:' + createHash('sha256').update(value).digest('hex');
 const now = '2026-11-17T00:00:00Z';
@@ -30,7 +32,8 @@ function operation(kind: LearningOperation['kind'] = 'propose'): LearningOperati
     definitionDigest: sha('definition'), scope: { projectId: 'project', bundleId: 'bundle',
       taskFamilyId: 'task', partitionId: 'partition', policyEpoch: 'epoch' }, channel: 'stable',
     baseline, candidate: kind === 'propose' ? null : candidate, teaching: ['approved correction'],
-    auditCohort: kind === 'audit' ? { id: 'audit', digest: fixtureDatasetReference().sha256 } : null,
+    auditCohort: kind === 'audit' ? { id: 'audit', digest: fixtureDatasetReference().sha256,
+      cases: [{ caseFingerprint: reference(null).sha256, familyFingerprint: sha('fixture family') }] } : null,
     state: 'dispatching', maximumLiabilityMicroUsd: null };
 }
 function reference<T>(value: T): Ref<T> {
@@ -77,6 +80,12 @@ function fixture() {
   const retained = new Map<string, Operation>();
   let proposalState: 'queued' | 'running' | 'succeeded' | 'failed' = 'queued';
   let promotions: Promotion[] = [];
+  let versionPayload = candidatePayload;
+  let versionResult = candidate;
+  let draftPayload = baselinePayload;
+  let draftVersion = parent;
+  let loseVersionResponse = false;
+  let bundleTarget: CompatibilityTarget = 'codex';
   const proposal = () => ({ id: 'proposal', parentVersionId: parent.id, status: proposalState,
     attempts: 1, candidate: proposalState === 'succeeded' ? candidate : null, rationale: null, error: null, createdAt: now });
   const respond = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
@@ -87,17 +96,19 @@ function fixture() {
     const key = new Headers(init?.headers).get('Idempotency-Key');
     const route = url.pathname;
     calls.push({ method, path: route, key, body });
+    if (method === 'GET' && route === '/v1/projects/project/bundles')
+      return respond({ items: [{ id: 'bundle', projectId: 'project', compatibilityTarget: bundleTarget }], nextCursor: null });
     if (method === 'GET' && route.includes('/operations/'))
       return respond(retained.get(route.split('/').at(-1)!) ?? { status: 'not_observed', operationId: key ?? 'operation-key' });
     if (method === 'GET' && route.endsWith('/channels/stable')) return respond(baseline);
     if (method === 'GET' && route.endsWith('/channels/stable/promotions')) return respond({ items: promotions, nextBeforeRevision: null });
     if (method === 'GET' && route.endsWith('/proposals/proposal')) return respond(proposal());
-    if (method === 'GET' && route.endsWith('/versions/parent')) return respond(parent);
-    if (method === 'GET' && route.endsWith('/versions/candidate')) return respond(candidate);
-    if (method === 'GET' && route.endsWith('/versions/parent/payload')) return respond(baselinePayload);
-    if (method === 'GET' && route.endsWith('/versions/candidate/payload')) return respond(candidatePayload);
+    if (method === 'GET' && route.endsWith('/versions/parent')) return respond(draftVersion);
+    if (method === 'GET' && route.endsWith('/versions/candidate')) return respond(versionResult);
+    if (method === 'GET' && route.endsWith('/versions/parent/payload')) return respond(draftPayload);
+    if (method === 'GET' && route.endsWith('/versions/candidate/payload')) return respond(versionPayload);
     let result: any;
-    if (method === 'POST' && route.endsWith('/versions')) result = candidate;
+    if (method === 'POST' && route.endsWith('/versions')) result = versionResult;
     else if (method === 'POST' && route.endsWith('/proposals')) result = proposal();
     else if (method === 'POST' && route.endsWith('/evaluation-requests'))
       result = { ...body, id: 'request', proposalId: null, status: 'requested', evaluatorPrincipal: null,
@@ -105,6 +116,7 @@ function fixture() {
     else throw new Error('Unexpected adapter request: ' + method + ' ' + route);
     if (key) retained.set(key, { status: 'committed', operationId: key, path: route,
       requestFingerprint: sha('POST\0' + route + '\0' + JSON.stringify(body)), result });
+    if (loseVersionResponse && route.endsWith('/versions')) throw new Error('lost creation response');
     return respond(result);
   };
   const client = new AcclimateClient({ baseUrl: 'http://localhost:3000', token: 'fixture-token', scope: 'learner', fetch: fetcher, retries: 0 });
@@ -119,7 +131,18 @@ function fixture() {
     policies: { development: policy, audit: policy },
   };
   return { options, calls, retained, setProposalState: (state: typeof proposalState) => { proposalState = state; },
-    setPromotions: (value: Promotion[]) => { promotions = value; } };
+    setPromotions: (value: Promotion[]) => { promotions = value; },
+    setVersionPayload: (value: BundlePayload) => {
+      versionPayload = value;
+      versionResult = { ...candidate, digest: sha(JSON.stringify(value)) };
+    },
+    setParentPayload: (value: BundlePayload) => {
+      draftPayload = value;
+      draftVersion = { ...parent, digest: sha(JSON.stringify(value)) };
+      return draftVersion;
+    },
+    setBundleTarget: (value: CompatibilityTarget) => { bundleTarget = value; },
+    loseVersionResponse: () => { loseVersionResponse = true; } };
 }
 function report(op: LearningOperation, descriptor: Readonly<EvaluationDescriptor>): Comparison {
   const arm = (reward: number) => ({ executionStatus: 'completed' as const, gradingStatus: 'scored' as const,
@@ -170,6 +193,36 @@ test('service proposal is polled under its original creation identity and leaves
   assert.equal(adapter.maximumLiabilityMicroUsd.propose, null);
 });
 
+test('service proposal receives verified attempted edits and refuses history that exceeds request capacity', async () => {
+  const f = fixture(); delete f.options.propose;
+  f.options.developmentControlsDigest = sha('frozen controls');
+  const adapter = createAcclimateLearningAdapter(f.options);
+  const op = operation();
+  op.proposalHistory = [{ verdict: 'rejected', candidateId: candidate.id, candidateDigest: candidate.digest,
+    totalPairs: 2, scoredPairs: 2, improvedPairs: 0, regressedPairs: 1 }];
+  assert.equal((await adapter.dispatch(op, context)).status, 'pending');
+  const post = f.calls.find(call => call.method === 'POST')!;
+  assert.equal(post.body.evidence[0], op.teaching[0]);
+  const feedback = JSON.parse(post.body.evidence[1].split('\n')[1]);
+  assert.deepEqual(feedback, [{ ...op.proposalHistory[0], attemptedEdits: [{ path: 'AGENTS.md', before: 'unsafe', after: 'safe' }] }]);
+  f.setProposalState('succeeded');
+  assert.equal((await adapter.reconcile(op, context)).status, 'succeeded');
+  const noCapacity = createAcclimateLearningAdapter({ ...f.options, hypothesis: 'x'.repeat(4096) });
+  const failed = await noCapacity.dispatch({ ...op, teaching: Array(20).fill('x'.repeat(4096)) }, context);
+  assert.deepEqual(failed, { operationId: op.id, status: 'failed', executionSettled: true, costMicroUsd: 0,
+    reason: 'learning.adapter.proposal_evidence_capacity' });
+  assert.equal(f.calls.filter(call => call.method === 'POST').length, 1);
+  await assert.rejects(adapter.dispatch({ ...operation('audit'), proposalHistory: op.proposalHistory }, context),
+    /learning.adapter.development_history_binding/);
+});
+
+test('development history binds to the installed experiment control bytes before paid evaluation', async () => {
+  const f = fixture();
+  const adapter = createAcclimateLearningAdapter({ ...f.options, developmentControlsDigest: sha('different controls') });
+  await assert.rejects(adapter.dispatch(operation('development'), context), /learning.adapter.development_controls_binding/);
+  assert.equal(f.calls.filter(call => call.method === 'POST').length, 0);
+});
+
 test('fixed-file policy rejects structural or unauthorized changes before publishing', async () => {
   const f = fixture(); f.options.propose = () => ({ schemaVersion: 1, files: [...candidatePayload.files,
     { path: 'memory/new.md', kind: 'memory', text: 'extra' }] });
@@ -190,11 +243,16 @@ test('frozen runtime commitments and exact evaluation identities survive report 
     return { schemaVersion: 1, evaluation: evaluatedRequest(comparison), comparison, executionState: 'finished' };
   };
   const adapter = createAcclimateLearningAdapter(f.options);
+  const policyDigest = hashArtifact(policy).sha256;
+  f.options.policies.audit = { ...policy, minimumMeanImprovement: 100 };
+  adapter.selectionPolicies!.audit.minimumMeanImprovement = 100;
   const first = await adapter.dispatch(op, context);
   assert.equal(first.status, 'succeeded'); assert.equal(first.costMicroUsd, 0);
   assert.equal(first.output?.kind, 'evaluation');
   if (first.output?.kind !== 'evaluation') throw new Error('missing report');
-  assert.equal(adapter.decide(first.output.comparison, 'audit').verdict, 'accepted');
+  const verdict = adapter.decide(first.output.comparison, 'audit');
+  assert.equal(verdict.verdict, 'accepted');
+  assert.equal(verdict.policyDigest, policyDigest);
   assert.deepEqual(await adapter.reconcile(op, context), first);
   assert.equal(f.calls.filter(c => c.method === 'POST').length, 1);
   assert.equal(callbacks, 2); // the installed runner owns same-attempt report replay, not this adapter
@@ -279,9 +337,130 @@ test('audit roster commitment must identify the actual resolved private dataset'
   assert.equal(f.calls.filter(c => c.method === 'POST').length, 0);
 });
 
+test('audit case registration must match the actual installed task inputs', async () => {
+  const f = fixture(), op = operation('audit');
+  op.auditCohort!.cases = [{ caseFingerprint: sha('different task'), familyFingerprint: sha('fixture family') }];
+  await assert.rejects(createAcclimateLearningAdapter(f.options).dispatch(op, context), (error: unknown) =>
+    error instanceof AcclimateLearningAdapterError && error.code === 'learning.adapter.audit_case_binding');
+  assert.equal(f.calls.some(call => call.method === 'POST'), false);
+});
+
 test('opaque server proposer may not advertise an invented hard monetary liability', () => {
   const f = fixture(); delete f.options.propose;
   f.options.maximumLiabilityMicroUsd = { propose: 0, development: 0, audit: 0 };
   assert.throws(() => createAcclimateLearningAdapter(f.options), (e: unknown) =>
     e instanceof AcclimateLearningAdapterError && e.code === 'learning.adapter.opaque_proposer_liability');
+});
+
+const skillFiles = [
+  { relativePath: 'SKILL.md', text: '---\nname: discovery\ndescription: Discover the appropriate action\n---\nRead rules.md.\n' },
+  { relativePath: 'rules.md', text: 'Discover the action.\n' },
+];
+const discoveredFiles = skillFiles.map(({ relativePath, text }) => ({
+  path: 'skills/discovery/' + relativePath, kind: 'skill' as const, text,
+}));
+const completePackage: BundlePayload = { ...baselinePayload, files: [...baselinePayload.files, ...discoveredFiles] };
+async function mutationFixture(operations: MutationOperation[], preflight = true, retire = false) {
+  const f = fixture(), op = operation();
+  delete f.options.propose;
+  f.options.allowedPaths = [];
+  if (retire) op.baseline = { ...baseline, version: f.setParentPayload(completePackage) };
+  f.setVersionPayload(retire ? baselinePayload : completePackage);
+  const mutationPolicy: MutationPolicyV1 = {
+    schemaVersion: 1, mode: 'skill-packages', compatibilityTarget: 'codex',
+    editablePaths: [], createSkillNames: ['discovery'], retireSkillNames: ['discovery'],
+    maxChangedArtifacts: 1, maxChangedFiles: 2, maxAddedTextBytes: 256,
+    maxFinalFiles: 3, maxFinalBytes: 512, requiredPreflightIds: [],
+  };
+  const artifacts = context.artifacts;
+  const experience = await artifacts.putArtifact(null) as unknown as NonNullable<LearningOperation['admission']>['experience'];
+  const policy = await artifacts.putArtifact({ schemaVersion: 1 as const, kind: 'test-policy' });
+  const admitted = {
+    targetScope: op.scope,
+    teachingView: await artifacts.putArtifact(op.teaching),
+    use: 'hypothesis_only' as const,
+    mutationPolicy: await artifacts.putArtifact({ schemaVersion: 1 as const, kind: 'learning-mutation-policy', policy: mutationPolicy }),
+    compatibilityObligations: await artifacts.putArtifact({ target: 'codex' }),
+    replaces: [],
+  };
+  const decision = await artifacts.putArtifact({
+    schemaVersion: 1 as const, kind: 'learning-admission' as const, experience, policy,
+    decidedBy: 'test-owner', decision: 'admitted' as const, reasonCode: 'retained-test-admission', admitted,
+  });
+  op.admission = { ...admitted, experience, decision };
+  f.options.mutation = {
+    policy: mutationPolicy,
+    propose: ({ parent, policyDigest, admissionDigest }) => ({
+      schemaVersion: 1, parent, policyDigest, admissionDigests: [admissionDigest],
+      operations, rationale: 'Apply admitted teaching to the discovery skill.',
+    }),
+    preflights: preflight ? { [REFERENCE_PREFLIGHT_ID]: (plan) => plan.referenceReview.paths[0] === 'skills/discovery' } : {},
+  };
+  return { ...f, op };
+}
+
+test('structural adapter publishes a complete skill and reconciles a lost response without another write', async () => {
+  const f = await mutationFixture([{ op: 'createSkill', name: 'discovery', files: skillFiles }]);
+  f.loseVersionResponse();
+  assert.equal((await createAcclimateLearningAdapter(f.options).dispatch(f.op, context)).status, 'unknown');
+  const recovered = await createAcclimateLearningAdapter(f.options).reconcile({ ...f.op, state: 'unknown' }, context);
+  assert.equal(recovered.status, 'succeeded');
+  assert.equal(recovered.costMicroUsd, 0);
+  assert.ok(recovered.output?.kind === 'proposal' && recovered.output.mutationPreparation);
+  const retained = await context.artifacts.readArtifact(recovered.output.mutationPreparation);
+  assert.deepEqual(retained.plan.createdSkills, ['discovery']);
+  assert.deepEqual(retained.plan.payload, completePackage);
+  assert.deepEqual(retained.passedPreflightIds, [REFERENCE_PREFLIGHT_ID]);
+  const writes = f.calls.filter(call => call.method === 'POST');
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].body, { parentVersionId: parent.id, payload: completePackage });
+});
+
+test('structural adapter retires a whole referenced package after its preflight passes', async () => {
+  const f = await mutationFixture([{ op: 'retireSkill', name: 'discovery',
+    expectedPackageDigest: packageDigest(completePackage, 'discovery') }], true, true);
+  const result = await createAcclimateLearningAdapter(f.options).dispatch(f.op, context);
+  assert.equal(result.status, 'succeeded');
+  assert.ok(result.output?.kind === 'proposal' && result.output.mutationPreparation);
+  const retained = await context.artifacts.readArtifact(result.output.mutationPreparation);
+  assert.deepEqual(retained.plan.retiredSkills, ['discovery']);
+  assert.deepEqual(f.calls.find(call => call.method === 'POST')?.body.payload, baselinePayload);
+});
+
+test('structural adapter requires admission, policy binding and the reference preflight before writing', async () => {
+  const f = await mutationFixture([{ op: 'createSkill', name: 'discovery', files: skillFiles }], false);
+  const adapter = createAcclimateLearningAdapter(f.options);
+  const noAdmission = await adapter.dispatch({ ...f.op, admission: undefined }, context);
+  assert.equal(noAdmission.reason, 'learning.adapter.mutation_admission');
+  const replacedTeaching = await adapter.dispatch({ ...f.op, teaching: ['unadmitted teaching'] }, context);
+  assert.equal(replacedTeaching.reason, 'learning.adapter.mutation_admission');
+  const noReview = await adapter.dispatch(f.op, context);
+  assert.equal(noReview.status, 'failed');
+  assert.equal(noReview.reason, 'learning.adapter.mutation_preflight');
+  f.options.mutation!.policy.maxChangedFiles += 1;
+  const wrongPolicy = await createAcclimateLearningAdapter(f.options).dispatch(f.op, context);
+  assert.equal(wrongPolicy.reason, 'learning.adapter.mutation_policy');
+  assert.equal(f.calls.filter(call => call.method === 'POST').length, 0);
+});
+
+test('structural recovery rejects a reconstructed payload that differs from the retained write', async () => {
+  const operations: MutationOperation[] = [{ op: 'createSkill', name: 'discovery', files: structuredClone(skillFiles) }];
+  const f = await mutationFixture(operations);
+  assert.equal((await createAcclimateLearningAdapter(f.options).dispatch(f.op, context)).status, 'succeeded');
+  const operation = operations[0];
+  assert.equal(operation.op, 'createSkill');
+  operation.files[1].text = 'Changed after the original dispatch.';
+  await assert.rejects(createAcclimateLearningAdapter(f.options).reconcile({ ...f.op, state: 'unknown' }, context),
+    (error: unknown) => error instanceof AcclimateLearningAdapterError &&
+      error.code === 'learning.adapter.operation_binding');
+  assert.equal(f.calls.filter(call => call.method === 'POST').length, 1);
+});
+
+test('structural adapter checks the installed compatibility target against the service bundle', async () => {
+  const f = await mutationFixture([{ op: 'createSkill', name: 'discovery', files: skillFiles }]);
+  f.setBundleTarget('claude');
+  const result = await createAcclimateLearningAdapter(f.options).dispatch(f.op, context);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.reason, 'learning.adapter.mutation_target');
+  assert.ok(!f.calls.some(call => call.method === 'POST'));
 });

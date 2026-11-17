@@ -63,3 +63,115 @@ Use the installed `status` and explicit `interrupt --reason ...` commands for he
 Default command diagnostics contain fixed safe codes, phase, execution certainty, next action and validated correlation IDs. Configuration contents, arbitrary server/provider messages, raw runtime keys, private paths, expected answers and outputs stay out of logs. Read-only delivery observations remain separate from admin credential management and do not prove consumption. Remote evaluator heartbeat/progress is not stored in this release; running with no observed local progress means unknown, not stopped.
 
 Export deliberately selected/redacted review artifacts through the app's mapper. Do not recursively upload a journal or its private parent. Retain completed exports under authorized artifact storage with an explicit expiry/ACL; protect original recovery journals independently. Local hashes establish consistency and online scalar checks establish binding, not execution attestation or quality confidence.
+
+## Serve connected learning
+
+Use the service connection UUID as `integrationId` when constructing the application's delivery
+`AcclimateClient`. Keep that UUID stable across process restarts and credential rotation.
+`resolveAndCache` then resolves the configured channel for this connection and keeps its offline
+cache separate from other connections. Resolve once for each fresh job and keep that verified
+bundle for the lifetime of the job.
+
+Install the terminal-outcome hook once in the application. Use a dedicated outcome client
+with the write principal named in the enrollment. Supply the persisted UUID of the logical task
+outcome so retries retain the same identity. Provide only application-approved teaching summaries
+that the proposer may receive. The application retains task inputs, private grader evidence,
+and traces.
+
+```ts
+import { createLearningOutcomeReporter } from '@acclimate/sdk/learning';
+
+const reportOutcome = createLearningOutcomeReporter({ client: outcomeClient, projectId, integrationId });
+
+// In the application's terminal outcome hook, after its own grade is durable.
+await reportOutcome(job.bundle, {
+  outcomeId: job.outcomeId,
+  status: 'failed',
+  feedback: {
+    expected: 'Require signed evidence before publishing an assertion.',
+    observed: 'Published an assertion based on a draft receipt.',
+  },
+});
+```
+
+Submit outcomes asynchronously through the application's own durable outbox if retries must survive
+process loss. Persist the terminal report or its exact request fields with the task result.
+The lower-level `reportLearningOutcome` method accepts those fields and defaults its retry key to
+the outcome UUID.
+
+Build an application module whose default export is
+`{ development: developmentApp, audit: [auditApp] }`. Each app is produced by
+`defineEvaluation`. Register the corresponding descriptors during enrollment. Keep development
+and held-out cases and revisions disjoint. The service assigns each evaluation to the configured
+evaluator principal and installation, and the driver runs the installed app whose descriptor
+matches the exact request.
+
+```sh
+acclimate-learning --config /private/evaluator.json --integration "$INTEGRATION_ID" \
+  --installation "$INSTALLATION_ID" --apps ./dist/learning-evaluators.mjs
+```
+
+Keep this process running with the same private evaluator config and durable `journalRoot` used
+by the evaluation runner. It polls for assignments, passes cancellation into active evaluation
+callbacks, and reconciles saved reports after a restart. If execution began without a saved report,
+the journal preserves uncertainty and the driver reports a diagnostic for operator reconciliation.
+Use `--live` only to permit execution by an installed live evaluator. Applications that manage
+their own process lifecycle can call `serveConnectedLearning` with an `AbortSignal`.
+
+### Audit fresh jobs after rollout
+
+To measure a managed release in production, attach a fresh SDK delivery receipt to the same job's
+terminal outcome. Use `receiptReporter.reportStartedReceipt(bundle)` when the job starts. This
+replaces `reportStarted` for that job and returns the exact queued receipt or `null` if the local queue
+is full. Retain the returned receipt body alongside the durable job UUID. Ensure delivery of the
+receipt before submitting the terminal outcome. A durable outbox can send the exact receipt again
+using its original UUID and the receipt credential.
+
+Pass that receipt as `startedReceipt` to the terminal outcome hook. When the service recognizes an
+eligible job on the current managed release, its accepted outcome includes `fieldAudit` with the
+predecessor's pinned version and digest. A fresh resolution and exact channel revision are
+required. Receipt-only observations provide no field verdict.
+
+Install the independent evaluator with the separate evaluator principal. The SDK selects eligible
+jobs by a stable hash of workspace, connection, and outcome UUID. The default is 10 percent.
+Configure `samplePercent: 100` for deterministic qualification or an explicitly chosen
+low-volume rollout. The evaluator independently grades the recorded served result and performs
+a read-only predecessor replay on the same private input and objective. Its output should be
+`correct`, `incorrect`, or `indeterminate` for each arm. A correct predecessor and incorrect
+served result count as a regression. A correct served result with a known predecessor grade
+counts as a pass. Two incorrect results or an indeterminate comparison contribute neither.
+
+```ts
+import { createLearningFieldAuditor } from '@acclimate/sdk/learning';
+
+const prepareFieldAudit = createLearningFieldAuditor({
+  client: evaluatorClient,
+  projectId,
+  integrationId,
+  cacheDir: evaluatorCache,
+  evaluate: async ({ job, served, predecessor, signal }) => {
+    return gradeRecordedJobAndReplayReadOnly(job, { served, predecessor, signal });
+  },
+});
+
+// The app's durable evaluator task owns this work item and retains its private job data.
+const fieldAudit = await prepareFieldAudit(job.bundle, {
+  job: job.privateFieldEvaluationData,
+  startedReceipt: job.startedReceipt,
+  outcome: job.acceptedOutcome,
+  signal,
+});
+if (fieldAudit) await fieldAuditOutbox.save(fieldAudit.outcomeId, fieldAudit);
+```
+
+The outbox sends the saved verdict through `evaluatorClient.reportLearningFieldAudit(projectId,
+integrationId, fieldAudit)`. Retry the saved request with the same outcome UUID without replaying
+the app job. If native predecessor execution became uncertain, settle the original attempt through
+the app's own journal before issuing any replacement work. Keep customer input, served output, and
+the replay's evidence private.
+
+The service counts up to ten recent eligible verdicts for the exact current promotion. When
+automatic rollback is enabled, three regressions in that window restore the verified predecessor
+for later jobs. A stale verdict cannot roll back a newer delivery revision. Automatic rollback
+defaults on for new enrollments and for existing enrollments when the migration runs. Workspace
+administrators can opt out in the connection settings.

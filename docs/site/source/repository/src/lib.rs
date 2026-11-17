@@ -14,6 +14,9 @@ pub use runtime::RuntimeStatus;
 mod bundles;
 mod channels;
 mod commands;
+mod connected_learning;
+mod connected_learning_worker;
+pub use connected_learning_worker::connected_learning_worker;
 pub mod compatibility;
 mod drafts;
 mod evaluation_progress;
@@ -135,6 +138,8 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(commands::routes())
         .merge(integrations::routes())
+        .merge(connected_learning::routes())
+        .merge(connected_learning_worker::routes())
         .merge(drafts::routes())
         .merge(evaluations::routes())
         .merge(evaluation_progress::routes())
@@ -216,8 +221,11 @@ impl OpenAiModel {
             .map_err(|_| "ACCLIMATE_MODEL_TOKEN required".to_string())?;
         let model =
             std::env::var("ACCLIMATE_MODEL").map_err(|_| "ACCLIMATE_MODEL required".to_string())?;
-        if !matches!(model.as_str(), "gpt-6-luna" | "gpt-5.6-luna") {
-            return Err("Only Luna model identifiers are permitted".into());
+        if !matches!(
+            model.as_str(),
+            "gpt-6.2-sol" | "gpt-6-luna" | "gpt-5.6-luna"
+        ) {
+            return Err("ACCLIMATE_MODEL must be gpt-6.2-sol, gpt-6-luna, or gpt-5.6-luna".into());
         }
         Ok(Some(Self {
             client: reqwest::Client::builder()

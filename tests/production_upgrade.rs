@@ -124,6 +124,16 @@ async fn migration_0012_to_current_preserves_business_rows_and_revokes_sessions_
         request["progress_fingerprint"] = Value::Null;
     }
     expected.insert("evaluation_progress".into(), serde_json::json!([]));
+    for table in [
+        "connected_learning_cohorts",
+        "connected_learning_enrollments",
+        "connected_learning_field_verdicts",
+        "connected_learning_outcomes",
+        "connected_learning_renewals",
+        "connected_learning_rounds",
+    ] {
+        expected.insert(table.into(), serde_json::json!([]));
+    }
     assert_eq!(
         expected,
         snapshot(&mut connection, &schema).await,
@@ -167,6 +177,91 @@ async fn migration_0012_to_current_preserves_business_rows_and_revokes_sessions_
             .unwrap();
     assert!(valid, "migration session revocation runs exactly once");
     assert_eq!(expected, snapshot(&mut connection, &schema).await);
+    sqlx::raw_sql(&format!(
+        "SET search_path TO public; DROP SCHEMA {schema} CASCADE"
+    ))
+    .execute(&mut connection)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn upgrade_reserves_legacy_audits_and_quarantines_overlapping_slots() {
+    let Ok(url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
+        return;
+    };
+    let schema = format!("legacy_cohort_{}", Uuid::new_v4().simple());
+    let mut connection = sqlx::PgConnection::connect(&url).await.unwrap();
+    sqlx::raw_sql(&format!(
+        "CREATE SCHEMA {schema}; SET search_path TO {schema}"
+    ))
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let full = sqlx::migrate!("./migrations");
+    let legacy = sqlx::migrate::Migrator {
+        migrations: Cow::Owned(full.iter().filter(|m| m.version <= 17).cloned().collect()),
+        ..sqlx::migrate::Migrator::DEFAULT
+    };
+    legacy.run(&mut connection).await.unwrap();
+    let bundle = Uuid::new_v4();
+    let version = Uuid::new_v4();
+    sqlx::raw_sql(&format!(
+        "INSERT INTO projects(id,name) VALUES('upgrade-cohorts','Upgrade fixtures');
+         INSERT INTO bundles(project_id,id,name) VALUES('upgrade-cohorts','{bundle}','Fixture');
+         INSERT INTO versions(project_id,bundle_id,id,digest,payload)
+           VALUES('upgrade-cohorts','{bundle}','{version}','fixture-digest',decode('7b7d','hex'));
+         INSERT INTO channels(project_id,bundle_id,name,revision,version_id)
+           VALUES('upgrade-cohorts','{bundle}','stable',1,'{version}');"
+    ))
+    .execute(&mut connection)
+    .await
+    .unwrap();
+
+    let enrollments = [Uuid::new_v4(), Uuid::new_v4()];
+    for integration in enrollments {
+        let delivery = format!("learn-{integration}");
+        sqlx::raw_sql(&format!(
+            "INSERT INTO integrations(project_id,bundle_id,id,channel,display_name)
+               VALUES('upgrade-cohorts','{bundle}','{integration}','stable','Fixture');
+             INSERT INTO channels(project_id,bundle_id,name,revision,version_id)
+               VALUES('upgrade-cohorts','{bundle}','{delivery}',1,'{version}');"
+        ))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        let development = serde_json::json!({
+            "datasetRevision":"development","expectedCases":[{"caseId":"dev","repetition":0}]
+        });
+        let audits = serde_json::json!([
+            {"datasetRevision":format!("first-{integration}"),"expectedCases":[{"caseId":"overlap","repetition":0}]},
+            {"datasetRevision":format!("second-{integration}"),"expectedCases":[{"caseId":format!("fresh-{integration}"),"repetition":0}]}
+        ]);
+        sqlx::query(
+            "INSERT INTO connected_learning_enrollments(project_id,bundle_id,integration_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,proposal_admissions,development,audits,automatic_rollout,outcome_principal,evaluator_principal,authorized_by)
+             VALUES('upgrade-cohorts',$1,$2,'stable',1,$3,'test',ARRAY['guide.md'],2,2,$4,$5,true,'outcome','evaluator','admin')",
+        )
+        .bind(bundle)
+        .bind(integration)
+        .bind(delivery)
+        .bind(development)
+        .bind(audits)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+
+    full.run(&mut connection).await.unwrap();
+    let registrations: Vec<(i32, i64, bool, bool, bool)> = sqlx::query_as(
+        "SELECT proposal_admissions,renewal_revision,automatic_rollback,
+                connected_learning_audit_registered(project_id,bundle_id,integration_id,0,audits->0),
+                connected_learning_audit_registered(project_id,bundle_id,integration_id,1,audits->1)
+         FROM connected_learning_enrollments",
+    )
+    .fetch_all(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(registrations, vec![(2, 0, true, false, true); 2]);
     sqlx::raw_sql(&format!(
         "SET search_path TO public; DROP SCHEMA {schema} CASCADE"
     ))

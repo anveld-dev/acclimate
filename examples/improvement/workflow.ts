@@ -24,6 +24,7 @@ export interface Config {
   skillPath: string;
   outputDir: string;
   model: string;
+  authorModel: string;
   sdkVersion: string;
 }
 export async function improve(client: AcclimateClient, config: Config, model: Model) {
@@ -161,6 +162,7 @@ export async function improve(client: AcclimateClient, config: Config, model: Mo
     datasetRevision,
     graderRevision,
     model: config.model,
+    authorModel: config.authorModel,
     sdkVersion: config.sdkVersion,
     sampleCount: report.expectedCases.length,
     costUsd: null,

@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { openLearningStore, LearningStoreError, type LearningStore } from './store.js';
-import { canonicalJson, hashArtifact, sameScope, validateExperience, validateAdmissionDecision, LearningEvidenceError, validateHarness, validateFeedback, validateEffectiveContext, validateScope, validateRef } from './identity.js';
+import { canonicalJson, hashArtifact, sameRef, sameScope, validateExperience, validateAdmissionDecision, LearningEvidenceError, validateHarness, validateFeedback, validateEffectiveContext, validateScope, validateRef } from './identity.js';
 import type { AdmissionDecisionV1, ExperienceV1, FeedbackV1, Ref } from './evidence-types.js';
-import { validateAdmission } from './admission.js';
+import { teachingText, validateAdmission } from './admission.js';
 import { LearningError, validateWorkReceipt } from './operations.js';
+import { developmentHistoryScope, recordDevelopment, validDevelopmentHistory, validHistoryCandidateId, type DevelopmentHistory } from './history.js';
+import { validateEvaluationPolicy, type EvaluationPolicyV1 } from '../evaluation/policy.js';
+import { openAuditLineage, validateAuditRoster } from './audit-lineage.js';
 import type {
   OpenLearnerOptions, Learner, LearnerCommand, LearnerDefinition, LearnerView,
-  LearningOperation, LearningDecision, WorkReceipt, ReleaseReview, AdmissionResult,
+  LearningOperation, LearningDecision, WorkReceipt, ReleaseReview, AdmissionResult, TeachingAdmission, SelectionStage,
 } from './types.js';
 import type { ChannelResolution, VersionMetadata } from '../types.js';
 
@@ -16,15 +19,24 @@ interface Checkpoint {
   revision: number;
   campaignId: string;
   definitionDigest: string;
+  auditLineageDirectory?: string;
+  policyEpoch?: string;
+  epochStartRound?: number;
+  priorEpochs?: { policyEpoch: string; definitionDigest: string; lastRound: number }[];
+  selectionPolicies?: Record<SelectionStage, Ref<EvaluationPolicyV1>>;
   appliedSequence: number;
   desiredMode: 'running' | 'stopped';
   stage: 'waiting' | 'propose' | 'development' | 'audit' | 'review';
   nextAction: string;
   round: number;
+  developmentAttempts?: number;
+  developmentHistory?: DevelopmentHistory;
   baseline: ChannelResolution | null;
   candidate: VersionMetadata | null;
   queue: QueuedTeaching[];
   active: QueuedTeaching | null;
+  activeSupersededBy?: Ref<AdmissionDecisionV1>;
+  supersessionInitialized?: true;
   seen: Record<string, string>;
   decisions: LearningDecision[];
   operation: LearningOperation | null;
@@ -46,10 +58,13 @@ function validateDefinition(definition: LearnerDefinition, options: OpenLearnerO
       !['admission-count', 'soft-usd', 'hard-usd'].includes(definition.limits.budget.mode) ||
       !Array.isArray(definition.auditCohorts)) throw new LearningError('definition-invalid');
   validateScope(definition.scope); validateRef(definition.policy); validateRef(definition.mutationPolicy);
-  const cohorts = definition.auditCohorts;
-  if (cohorts.some((c) => !c.id || !digest(c.digest)) ||
-      new Set(cohorts.map((c) => c.id)).size !== cohorts.length ||
-      new Set(cohorts.map((c) => c.digest)).size !== cohorts.length) throw new LearningError('audit-roster-invalid');
+  const { maximumDevelopmentAttempts } = definition.limits;
+  const controls = options.adapter.developmentControlsDigest;
+  if ((controls !== undefined && !digest(controls)) || (maximumDevelopmentAttempts !== undefined &&
+      (!integer(maximumDevelopmentAttempts) || maximumDevelopmentAttempts < 1 || maximumDevelopmentAttempts > 10 ||
+       (maximumDevelopmentAttempts > 1 && controls === undefined))))
+    throw new LearningError('development-history-config');
+  validateAuditRoster(definition.auditCohorts, options.auditLineageDirectory !== undefined);
   const money = definition.limits.budget;
   if (money.mode !== 'admission-count' && !integer(money.maximumMicroUsd)) throw new LearningError('budget-invalid');
   for (const kind of ['propose', 'development', 'audit'] as const) {
@@ -62,6 +77,9 @@ function validateCheckpoint(value: Checkpoint, definition: LearnerDefinition, de
   if (value.schemaVersion !== 1 || value.campaignId !== definition.campaignId || value.definitionDigest !== definitionDigest)
     throw new LearningError('definition-conflict');
   if (!integer(value.revision) || !integer(value.appliedSequence) || !integer(value.round) ||
+      (value.developmentAttempts !== undefined && (!integer(value.developmentAttempts) ||
+        value.developmentAttempts > (definition.limits.maximumDevelopmentAttempts ?? 1))) ||
+      (value.developmentHistory !== undefined && !validDevelopmentHistory(value.developmentHistory)) ||
       !Array.isArray(value.queue) || !Array.isArray(value.decisions) || !Array.isArray(value.auditExposures) ||
       !Array.isArray(value.operations) || !value.seen || !value.budget ||
       Object.values(value.budget).some((x) => !integer(x)) ||
@@ -84,12 +102,6 @@ function view(state: Checkpoint, barrier: boolean): LearnerView {
     releaseReview: state.releaseReview, decisions: structuredClone(state.decisions),
     budget: { ...state.budget }, auditExposures: [...state.auditExposures], observations: Object.keys(state.seen).length,
   };
-}
-function teachingText(value: unknown): string[] {
-  if (typeof value === 'string') return [value];
-  if (Array.isArray(value) && value.every((v) => typeof v === 'string')) return value;
-  if (value && typeof value === 'object' && 'claims' in value) return teachingText((value as { claims: unknown }).claims);
-  return [canonicalJson(value).trimEnd()];
 }
 async function preflightExperience(store: LearningStore, experience: ExperienceV1): Promise<void> {
   const harness = await store.readArtifact(experience.harness);
@@ -131,16 +143,95 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
   const definition = JSON.parse(canonicalJson(options.definition)) as LearnerDefinition;
   validateDefinition(definition, options);
   const liabilities = structuredClone(options.adapter.maximumLiabilityMicroUsd);
-  const definitionDigest = hashArtifact({ definition, liabilities }).sha256;
+  const policies = structuredClone(options.adapter.selectionPolicies);
+  if (policies !== undefined) {
+    validateEvaluationPolicy(policies?.development);
+    validateEvaluationPolicy(policies?.audit);
+  }
+  const policyDigests = policies && {
+    development: hashArtifact(policies.development).sha256,
+    audit: hashArtifact(policies.audit).sha256,
+  };
+  const developmentControlsDigest = options.adapter.developmentControlsDigest;
+  const definitionDigest = hashArtifact({ definition, liabilities,
+    ...(policyDigests ? { selectionPolicies: policyDigests } : {}),
+    ...(developmentControlsDigest === undefined ? {} : { developmentControlsDigest }),
+  }).sha256;
   const store = await openLearningStore(options.directory);
+  const auditLineage = options.auditLineageDirectory !== undefined || definition.auditCohorts.some(cohort => cohort.cases)
+    ? await openAuditLineage(options.auditLineageDirectory ?? options.directory, definition.scope)
+    : undefined;
+  const auditLineageDirectory = options.auditLineageDirectory === undefined ? undefined : auditLineage?.directory;
+  const startEpoch = options.startEpoch && structuredClone(options.startEpoch);
+  if (startEpoch && (!auditLineageDirectory || !digest(startEpoch.previousDefinitionDigest)))
+    throw new LearningError('epoch-migration-binding');
+  const validateLineage = (state: Checkpoint) => {
+    if (state.auditLineageDirectory !== auditLineageDirectory)
+      throw new LearningError('audit-lineage-conflict');
+  };
+  const validateCampaign = (state: Checkpoint) => {
+    validateCheckpoint(state, definition, definitionDigest);
+    validateLineage(state);
+    if (auditLineageDirectory && (state.policyEpoch !== definition.scope.policyEpoch ||
+        (state.epochStartRound !== undefined && (!integer(state.epochStartRound) || state.epochStartRound > state.round))))
+      throw new LearningError('epoch-migration-binding');
+    if (state.selectionPolicies?.development?.sha256 !== policyDigests?.development ||
+        state.selectionPolicies?.audit?.sha256 !== policyDigests?.audit)
+      throw new LearningError('selection-policy-binding');
+  };
   await Promise.all([store.readArtifact(definition.policy), store.readArtifact(definition.mutationPolicy)]);
   await store.withWorkerLock(async () => {
     const existing = await store.readCheckpoint<Checkpoint>();
-    if (existing) { validateCheckpoint(existing, definition, definitionDigest); return; }
+    if (existing?.definitionDigest === definitionDigest) {
+      validateCampaign(existing);
+      if (startEpoch && existing.priorEpochs?.at(-1)?.definitionDigest !== startEpoch.previousDefinitionDigest)
+        throw new LearningError('epoch-migration-binding');
+      if (existing.selectionPolicies)
+        await Promise.all([store.readArtifact(existing.selectionPolicies.development), store.readArtifact(existing.selectionPolicies.audit)]);
+      return;
+    }
+    if (existing && !startEpoch) throw new LearningError('definition-conflict');
+    if (!existing && startEpoch) throw new LearningError('epoch-migration-binding');
+    const selectionPolicies = policies && {
+      development: await store.putArtifact(policies.development),
+      audit: await store.putArtifact(policies.audit),
+    };
+    if (existing && startEpoch) {
+      validateLineage(existing);
+      const previousEpoch = existing.policyEpoch;
+      const history = existing.priorEpochs ?? [];
+      if (existing.campaignId !== definition.campaignId || existing.definitionDigest !== startEpoch.previousDefinitionDigest ||
+          !previousEpoch || previousEpoch === definition.scope.policyEpoch ||
+          history.some(epoch => epoch.policyEpoch === definition.scope.policyEpoch) || history.length >= 256)
+        throw new LearningError('epoch-migration-binding');
+      await store.withInboxLock(async lock => {
+        if (existing.operation || existing.releaseReview ||
+            (existing.stage !== 'waiting' && existing.nextAction !== 'audit-refresh-required') ||
+            (await store.readInbox(existing.appliedSequence)).length)
+          throw new LearningError('epoch-migration-active');
+        const next: Checkpoint = {
+          ...existing, revision: existing.revision + 1, definitionDigest, policyEpoch: definition.scope.policyEpoch,
+          priorEpochs: [...history, { policyEpoch: previousEpoch, definitionDigest: existing.definitionDigest,
+            lastRound: existing.round }],
+          epochStartRound: existing.round, stage: 'waiting', nextAction: 'waiting-for-outcomes',
+          baseline: null, candidate: null, active: null, queue: [],
+        };
+        delete next.activeSupersededBy;
+        delete next.developmentAttempts;
+        delete next.developmentHistory;
+        if (selectionPolicies) next.selectionPolicies = selectionPolicies;
+        else delete next.selectionPolicies;
+        lock.assertOwned();
+        await store.writeCheckpoint(existing.revision, next);
+      });
+      return;
+    }
     const state: Checkpoint = {
       schemaVersion: 1, revision: 0, campaignId: definition.campaignId, definitionDigest,
+      ...(selectionPolicies ? { selectionPolicies } : {}),
+      ...(auditLineageDirectory ? { auditLineageDirectory, policyEpoch: definition.scope.policyEpoch } : {}),
       appliedSequence: 0, desiredMode: 'running', stage: 'waiting', nextAction: 'waiting-for-outcomes',
-      round: 0, baseline: null, candidate: null, queue: [], active: null, seen: {}, decisions: [],
+      round: 0, baseline: null, candidate: null, queue: [], active: null, seen: {}, decisions: [], supersessionInitialized: true,
       operation: null, operations: [], releaseReview: null, auditExposures: [],
       budget: { admissions: 0, knownSpentMicroUsd: 0, reservedMicroUsd: 0, unknownCosts: 0 },
     };
@@ -149,7 +240,7 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
   const read = async () => {
     const state = await store.readCheckpoint<Checkpoint>();
     if (!state) throw new LearningError('checkpoint-missing');
-    validateCheckpoint(state, definition, definitionDigest);
+    validateCampaign(state);
     return state;
   };
   const save = async (state: Checkpoint) => {
@@ -160,15 +251,67 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
   const closeRound = (state: Checkpoint, nextAction = 'waiting-for-outcomes') => {
     state.stage = 'waiting'; state.candidate = null; state.active = null; state.baseline = null;
     state.releaseReview = null; state.nextAction = nextAction;
+    delete state.activeSupersededBy;
+    delete state.developmentAttempts;
+  };
+  const historyScope = (baseline: ChannelResolution, teaching: readonly string[]) => developmentControlsDigest &&
+    developmentHistoryScope(definitionDigest, baseline, developmentControlsDigest, teaching);
+  const validateReceipt = (receipt: WorkReceipt, operation: LearningOperation) => {
+    validateWorkReceipt(receipt, operation);
+    if (developmentControlsDigest && receipt.output?.kind === 'proposal' && !validHistoryCandidateId(receipt.output.candidate.id))
+      throw new LearningError('development-history-candidate-binding');
   };
   const decision = async (state: Checkpoint, stage: LearningDecision['stage'], verdict: string,
-                          reason: string, value: unknown) => {
+                          reason: string, value: unknown, policyDigest?: string) => {
     const reference = await store.putArtifact(value);
-    state.decisions.push({ round: state.round, stage, verdict, reason, reference });
+    state.decisions.push({ round: state.round, stage, verdict, reason, reference,
+      ...(policyDigest === undefined ? {} : { policyDigest }) });
   };
+  const teachingAdmission = async (lesson: QueuedTeaching): Promise<TeachingAdmission> => {
+    const record = await store.readArtifact(lesson.decision);
+    validateAdmissionDecision(record);
+    if (!record.admitted || !sameRef(record.experience, lesson.experience) ||
+        !sameRef(record.policy, definition.policy) || record.decidedBy !== definition.trustedDecider ||
+        !sameScope(record.admitted.targetScope, definition.scope) ||
+        !sameRef(record.admitted.mutationPolicy, definition.mutationPolicy))
+      throw new LearningError('teaching-binding');
+    const { teachingView, use, mutationPolicy, compatibilityObligations, replaces } = record.admitted;
+    if (!equal(lesson.teaching, teachingText(await store.readArtifact(teachingView))))
+      throw new LearningError('teaching-binding');
+    return { experience: lesson.experience, decision: lesson.decision, teachingView, use,
+      mutationPolicy, compatibilityObligations, replaces };
+  };
+  const supersede = async (state: Checkpoint, replacement: Ref<AdmissionDecisionV1>, lesson: NonNullable<AdmissionDecisionV1['admitted']>) => {
+    if (lesson.replaces.length) {
+      delete state.developmentHistory;
+      if (state.operation?.state === 'prepared') delete state.operation.proposalHistory;
+    }
+    const matches = (queued: QueuedTeaching) => lesson.replaces.some((ref) => sameRef(ref, queued.decision));
+    const removed = state.queue.filter(matches);
+    const active = state.active && !state.activeSupersededBy && matches(state.active) ? state.active : null;
+    if (!removed.length && !active) return;
+    await decision(state, 'admission', 'superseded', 'lesson-replaced', {
+      replacement, queued: removed.map((entry) => entry.decision),
+      active: active?.decision ?? null, releaseReview: active ? state.releaseReview : null,
+    });
+    state.queue = state.queue.filter((entry) => !matches(entry));
+    if (!active) return;
+    if (state.operation && state.operation.state !== 'prepared') {
+      state.activeSupersededBy = replacement;
+      return;
+    }
+    if (state.operation) {
+      state.budget.admissions--;
+      state.budget.reservedMicroUsd -= state.operation.maximumLiabilityMicroUsd ?? 0;
+      state.operation = null;
+    }
+    closeRound(state, 'lesson-superseded');
+  };
+  const pendingObservation = async (state: Checkpoint) =>
+    (await store.readInbox<LearnerCommand>(state.appliedSequence)).some((entry) => entry.command.kind === 'observe');
   const settle = async (state: Checkpoint, receipt: WorkReceipt): Promise<void> => {
     const operation = state.operation!;
-    validateWorkReceipt(receipt, operation);
+    validateReceipt(receipt, operation);
     operation.receipt = await store.putArtifact(receipt);
     operation.state = receipt.status === 'pending' ? 'pending' : receipt.status === 'unknown' || !receipt.executionSettled
       ? 'unknown' : 'result-saved';
@@ -187,6 +330,10 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
       Object.assign(originalState, state);
       return;
     }
+    // A command accepted during the audit may replace this lesson. Keep the
+    // receipt recoverable until that command is applied before exposing review.
+    if (operation.kind === 'audit' && !state.activeSupersededBy && await pendingObservation(state))
+      return;
     if (receipt.costMicroUsd === null) state.budget.unknownCosts++;
     else {
       if (!Number.isSafeInteger(state.budget.knownSpentMicroUsd + receipt.costMicroUsd)) throw new LearningError('budget-overflow');
@@ -197,25 +344,43 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
       }
     }
     operation.state = 'settled'; state.operations.push(structuredClone(operation)); state.operation = null;
-    if (receipt.status !== 'succeeded') {
+    if (state.activeSupersededBy) {
+      closeRound(state, 'lesson-superseded');
+    } else if (receipt.status !== 'succeeded') {
       await decision(state, operation.kind === 'audit' ? 'audit' : 'development', 'failed', receipt.reason ?? 'work-failed', receipt);
+      const scope = operation.kind === 'development' && historyScope(operation.baseline, operation.teaching);
+      if (scope) state.developmentHistory = recordDevelopment(state.developmentHistory, scope, 'failed', operation.candidate!);
       closeRound(state, operation.kind === 'audit' ? 'audit-failed' : 'waiting-for-outcomes');
     } else if (operation.kind === 'propose') {
       state.candidate = (receipt.output as { kind: 'proposal'; candidate: VersionMetadata }).candidate;
       state.stage = 'development'; state.nextAction = 'evaluate-development';
     } else {
       const comparison = (receipt.output as { kind: 'evaluation'; comparison: import('../types.js').Comparison }).comparison;
+      const policyDigest = policyDigests?.[operation.kind];
       const verdict = comparison.complete ? options.adapter.decide(comparison, operation.kind) :
-        { verdict: 'indeterminate' as const, reason: 'incomplete-evidence' };
-      if (!['accepted', 'rejected', 'indeterminate'].includes(verdict.verdict) || typeof verdict.reason !== 'string')
+        { verdict: 'indeterminate' as const, reason: 'incomplete-evidence', ...(policyDigest ? { policyDigest } : {}) };
+      if (!['accepted', 'rejected', 'indeterminate'].includes(verdict.verdict) || typeof verdict.reason !== 'string' ||
+          (policyDigest !== undefined && verdict.policyDigest !== policyDigest))
         throw new LearningError('selection-invalid');
-      await decision(state, operation.kind, verdict.verdict, verdict.reason, { operation, comparison, verdict });
-      if (verdict.verdict !== 'accepted') closeRound(state, operation.kind === 'audit' ? 'audit-failed' : 'waiting-for-outcomes');
+      const policy = state.selectionPolicies?.[operation.kind];
+      await decision(state, operation.kind, verdict.verdict, verdict.reason, {
+        operation, comparison, verdict, ...(policy ? { policy } : {}),
+      }, policyDigest);
+      if (verdict.verdict !== 'accepted') {
+        const scope = operation.kind === 'development' && historyScope(operation.baseline, operation.teaching);
+        if (scope) state.developmentHistory = recordDevelopment(state.developmentHistory, scope, verdict.verdict,
+          operation.candidate!, comparison, policies?.development.metric.direction);
+        if (scope && verdict.verdict === 'rejected' && state.desiredMode === 'running' &&
+            (state.developmentAttempts ?? 1) < (definition.limits.maximumDevelopmentAttempts ?? 1)) {
+          state.candidate = null; state.stage = 'propose'; state.nextAction = 'retry-development';
+        } else closeRound(state, operation.kind === 'audit' ? 'audit-failed' : 'waiting-for-outcomes');
+      }
       else if (operation.kind === 'development') { state.stage = 'audit'; state.nextAction = 'evaluate-audit'; }
       else {
         const review: ReleaseReview = { schemaVersion: 1, kind: 'learning-release-review', campaignId: definition.campaignId,
           round: state.round, definitionDigest, baseline: operation.baseline, candidate: operation.candidate!,
-          comparison, auditCohort: operation.auditCohort! };
+          comparison, auditCohort: operation.auditCohort!,
+          admission: await teachingAdmission(state.active!) };
         state.releaseReview = await store.putArtifact(review); state.stage = 'review'; state.nextAction = 'review-release';
       }
     }
@@ -224,14 +389,15 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
     });
   };
   const commandValid = (command: LearnerCommand) => {
-    if (!command || !['observe', 'request-stop', 'resume', 'resolve-uncertainty'].includes(command.kind))
+    if (!command || !['observe', 'request-stop', 'resume', 'resolve-uncertainty', 'decline-release'].includes(command.kind))
       throw new LearningError('command-invalid');
     if (command.kind === 'observe') {
       validateExperience(command.observation);
       if (!sameScope(command.observation.scope, definition.scope)) throw new LearningError('observation-scope');
-    } else if (command.kind === 'request-stop' || command.kind === 'resume') {
+    } else if (command.kind === 'request-stop' || command.kind === 'resume' || command.kind === 'decline-release') {
       if (typeof command.reason !== 'string' || !command.reason.trim() || command.reason.length > 4096)
         throw new LearningError('reason-invalid');
+      if (command.kind === 'decline-release') validateRef(command.review);
     } else if (!command.resolution || !integer(command.resolution.expectedRevision) || !command.resolution.operationId)
       throw new LearningError('resolution-invalid');
     canonicalJson(command);
@@ -244,7 +410,7 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
         // invoked exactly once, while consuming the durable command.
         await preflightExperience(store, command.observation);
       }
-      return store.submit(commandId, command);
+      return store.submit(commandId, command, auditLineageDirectory ? async () => { await read(); } : undefined);
     },
     async inspect() { return view(await read(), await store.admissionBarrier()); },
     async advance({ signal, deadline }) {
@@ -253,6 +419,20 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
         const combined = AbortSignal.any([lock.signal, signal ?? new AbortController().signal,
           AbortSignal.timeout(Math.max(0, Math.min(deadline - Date.now(), 2_147_483_647)))]);
         const state = await read();
+        const migrateSupersession = !state.supersessionInitialized;
+        const initialRevision = state.revision;
+        if (migrateSupersession) {
+          // Older checkpoints retained replacement decisions without applying
+          // them to lessons still queued or active.
+          for (const entry of state.decisions.slice()) {
+            if (entry.stage !== 'admission' || entry.verdict !== 'admitted' || !entry.reference) continue;
+            const ref = entry.reference as Ref<AdmissionDecisionV1>;
+            const record = await store.readArtifact(ref);
+            validateAdmissionDecision(record);
+            if (record.admitted) await supersede(state, ref, record.admitted);
+          }
+          state.supersessionInitialized = true;
+        }
         for (const entry of await store.readInbox<LearnerCommand>(state.appliedSequence)) {
           const command = entry.command;
           let settlingResolution = false;
@@ -265,6 +445,7 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
             if (!state.seen[key]) {
               const result = await admission(store, options, definition, command.observation, observationRef);
               const admissionRef = await store.putArtifact(result.decision);
+              if (result.decision.admitted) await supersede(state, admissionRef, result.decision.admitted);
               state.seen[key] = observationRef.sha256;
               state.decisions.push({ round: state.round, stage: 'admission', verdict: result.decision.decision,
                 reason: result.decision.reasonCode, reference: admissionRef });
@@ -275,8 +456,15 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
           else if (command.kind === 'resume') {
             if (!state.operation || ['prepared', 'result-saved'].includes(state.operation.state)) {
               state.desiredMode = 'running';
-              await store.withInboxLock(async () => store.setAdmissionBarrier(false, entry.sequence));
+              await store.setAdmissionBarrier(false, entry.sequence);
             }
+          } else if (command.kind === 'decline-release') {
+            if (state.stage !== 'review' || !state.releaseReview || !sameRef(state.releaseReview, command.review))
+              throw new LearningError('review-binding');
+            await decision(state, 'release', 'declined', command.reason, {
+              review: command.review, reason: command.reason, commandId: entry.commandId,
+            });
+            closeRound(state);
           } else {
             const resolution = command.resolution;
             if (!state.operation || state.operation.id !== resolution.operationId || resolution.expectedRevision !== state.revision || !options.resolve)
@@ -285,19 +473,20 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
             const receipt = await options.resolve({ operation: structuredClone(state.operation), evidence, artifacts: store });
             // Invalid resolver evidence is a rejected command. Once a valid
             // result enters settlement, local failures must remain recoverable.
-            validateWorkReceipt(receipt, state.operation);
+            validateReceipt(receipt, state.operation);
             settlingResolution = true;
             await settle(state, receipt);
           }
           } catch (error) {
             if (settlingResolution || (!(error instanceof LearningError) && !(error instanceof LearningEvidenceError))) throw error;
-            await decision(state, 'admission', 'rejected', 'command-invalid', {
+            await decision(state, command.kind === 'decline-release' ? 'release' : 'admission', 'rejected', 'command-invalid', {
               commandId: entry.commandId, commandDigest: entry.sha256, code: error.code,
             });
           }
           state.appliedSequence = entry.sequence;
           await save(state);
         }
+        if (migrateSupersession && state.revision === initialRevision) await save(state);
         lock.assertOwned();
         if (state.operation) {
           if (state.operation.state === 'result-saved' && state.operation.receipt) {
@@ -316,26 +505,32 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
           return view(state, await store.admissionBarrier());
         if (state.stage === 'review') {
           const review = await store.readArtifact(state.releaseReview!);
-          const promotion = await options.adapter.observeRelease(review);
-          if (promotion) {
-            if (promotion.version.id !== review.candidate.id || promotion.version.digest !== review.candidate.digest ||
-                promotion.previousVersionId !== review.baseline.version.id || promotion.comparisonId !== review.comparison.id ||
-                promotion.channel !== definition.channel || promotion.revision === review.baseline.revision)
-              throw new LearningError('release-binding');
-            await decision(state, 'release', 'released', 'reviewer-promotion-observed', promotion);
-            closeRound(state); await save(state);
-          } else {
-            const current = await options.adapter.readBaseline();
-            if (current.version.id !== review.baseline.version.id || current.revision !== review.baseline.revision) {
+          const admission = await teachingAdmission(state.active!);
+          if (review.admission && !equal(review.admission, admission)) throw new LearningError('review-binding');
+          let promotion = await options.adapter.observeRelease(review);
+          const current = promotion ? null : await options.adapter.readBaseline();
+          const baselineChanged = current &&
+            (current.version.id !== review.baseline.version.id || current.revision !== review.baseline.revision);
+          if (baselineChanged) promotion = await options.adapter.observeRelease(review);
+          await store.withInboxLock(async () => {
+            if (await store.admissionBarrier() || (await store.readInbox(state.appliedSequence)).length) return;
+            if (promotion) {
+              if (promotion.version.id !== review.candidate.id || promotion.version.digest !== review.candidate.digest ||
+                  promotion.previousVersionId !== review.baseline.version.id || promotion.comparisonId !== review.comparison.id ||
+                  promotion.channel !== definition.channel || promotion.revision === review.baseline.revision)
+                throw new LearningError('release-binding');
+              await decision(state, 'release', 'released', 'reviewer-promotion-observed', promotion);
+              closeRound(state); await save(state);
+            } else if (baselineChanged) {
               await decision(state, 'release', 'conflict', 'published-baseline-changed', current);
               closeRound(state); await save(state);
             }
-          }
+          });
           return view(state, await store.admissionBarrier());
         }
         if (state.stage === 'waiting') {
           if (!state.queue.length) { state.nextAction = 'waiting-for-outcomes'; return view(state, false); }
-          if (state.round >= definition.limits.maximumRounds) { state.nextAction = 'round-limit'; await save(state); return view(state, false); }
+          if (state.round - (state.epochStartRound ?? 0) >= definition.limits.maximumRounds) { state.nextAction = 'round-limit'; await save(state); return view(state, false); }
           state.baseline = await options.adapter.readBaseline();
           if (state.baseline.version.bundleId !== definition.scope.bundleId || !digest(state.baseline.version.digest))
             throw new LearningError('baseline-binding');
@@ -344,9 +539,11 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
         }
         if (!state.operation) {
           const kind = state.stage === 'propose' ? 'propose' : state.stage === 'development' ? 'development' : 'audit';
-          const cohort = kind === 'audit' ? definition.auditCohorts.find((c) => !state.auditExposures.includes(c.digest)) : null;
+          const cohorts = kind === 'audit' ? definition.auditCohorts.filter(c => !state.auditExposures.includes(c.digest)) : [];
+          const cohort = auditLineage ? await auditLineage.select(cohorts) : cohorts[0];
           if (kind === 'audit' && !cohort) { state.nextAction = 'audit-refresh-required'; await save(state); return view(state, false); }
           if (options.adapter.revision !== definition.adapterRevision) throw new LearningError('adapter-drift');
+          if (options.adapter.developmentControlsDigest !== developmentControlsDigest) throw new LearningError('adapter-drift');
           const maximum = liabilities[kind];
           const budget = definition.limits.budget;
           if (state.budget.admissions >= definition.limits.maximumPaidAdmissions ||
@@ -354,26 +551,48 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
                state.budget.knownSpentMicroUsd + state.budget.reservedMicroUsd + (maximum ?? 0) > budget.maximumMicroUsd!))) {
             state.nextAction = 'budget-exhausted'; await save(state); return view(state, false);
           }
+          const scope = kind === 'propose' && historyScope(state.baseline!, state.active!.teaching);
+          const history = scope && state.developmentHistory?.scopeDigest === scope ? state.developmentHistory.entries : undefined;
           state.operation = { id: randomUUID(), attemptId: randomUUID(), key: randomUUID(), kind, round: state.round,
             definitionDigest, scope: definition.scope, channel: definition.channel, baseline: state.baseline!,
-            candidate: state.candidate, teaching: state.active!.teaching, auditCohort: cohort ?? null,
+            candidate: state.candidate, teaching: state.active!.teaching,
+            ...(history?.length ? { proposalHistory: structuredClone(history) } : {}),
+            admission: await teachingAdmission(state.active!), auditCohort: cohort ?? null,
             state: 'prepared', maximumLiabilityMicroUsd: maximum };
+          if (kind === 'development') state.developmentAttempts = (state.developmentAttempts ?? 0) + 1;
           state.budget.admissions++; state.budget.reservedMicroUsd += maximum ?? 0;
+          await save(state);
+        }
+        if (state.operation.state === 'prepared' && !state.operation.admission) {
+          state.operation.admission = await teachingAdmission(state.active!);
           await save(state);
         }
         try {
           await store.withAdmission(async (admissionLock) => {
             if (combined.aborted || Date.now() >= deadline) return;
+            if (await pendingObservation(state)) return;
+            if (combined.aborted || Date.now() >= deadline) return;
             lock.assertOwned(); admissionLock.assertOwned();
-            state.operation!.state = 'dispatching';
-            if (state.operation!.auditCohort) state.auditExposures.push(state.operation!.auditCohort.digest);
+            const operation = state.operation!;
+            if (operation.auditCohort) {
+              if (auditLineage && !await auditLineage.claim(operation.auditCohort, operation.id)) {
+                state.budget.admissions--;
+                state.budget.reservedMicroUsd -= operation.maximumLiabilityMicroUsd ?? 0;
+                state.operation = null;
+                await save(state);
+                return;
+              }
+              state.auditExposures.push(operation.auditCohort.digest);
+            }
+            lock.assertOwned(); admissionLock.assertOwned();
+            operation.state = 'dispatching';
             await save(state);
           });
         } catch (error) {
           if (!(error instanceof LearningStoreError) || error.code !== 'admission-closed') throw error;
           return view(state, true);
         }
-        if (state.operation.state === 'dispatching') {
+        if (state.operation?.state === 'dispatching') {
           let receipt: WorkReceipt;
           try { receipt = await options.adapter.dispatch(structuredClone(state.operation), { signal: combined, artifacts: store }); }
           catch { state.operation!.state = 'unknown'; state.nextAction = 'reconcile-existing-work'; await save(state); return view(state, await store.admissionBarrier()); }

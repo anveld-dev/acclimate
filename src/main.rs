@@ -1,7 +1,7 @@
 use acclimate_service::{
     AccessConfig, AppState, Grant, OpenAiModel, ProposalModel, RuntimeStatus, backfill_projects,
-    invitation_worker, proposal_worker, recover_invitation_mail, router, runtime::SHUTDOWN_GRACE,
-    validate_grants,
+    connected_learning_worker, invitation_worker, proposal_worker, recover_invitation_mail, router,
+    runtime::SHUTDOWN_GRACE, validate_grants,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use std::{env, io::Read, net::SocketAddr, process::ExitCode, sync::Arc, time::Duration};
@@ -179,6 +179,7 @@ async fn run() -> RunResult {
     recover_invitation_mail(&state).await?;
     let app = router(state.clone());
     let mut mail_worker = tokio::spawn(invitation_worker(state.clone()));
+    let mut learning_worker = tokio::spawn(connected_learning_worker(state.clone()));
     let mut worker = tokio::spawn(proposal_worker(state));
     // No socket is opened until the worker has actually entered its task.
     tokio::select! {
@@ -192,8 +193,10 @@ async fn run() -> RunResult {
             runtime.begin_draining();
             worker.abort();
             mail_worker.abort();
+            learning_worker.abort();
             let _ = worker.await;
             let _ = mail_worker.await;
+            let _ = learning_worker.await;
             return Err(error.into());
         }
     };
@@ -209,6 +212,7 @@ async fn run() -> RunResult {
     let mut worker_finished = false;
     let mut ownership_lost = false;
     let mut mail_finished = false;
+    let mut learning_finished = false;
     // This is the only shutdown coordinator, including signals and fatal exits.
     let result: RunResult = tokio::select! {
         _ = shutdown_signal() => Ok(()),
@@ -224,6 +228,10 @@ async fn run() -> RunResult {
             mail_finished = true;
             Err(std::io::Error::other(format!("invitation mail worker exited unexpectedly: {result:?}")).into())
         },
+        result = &mut learning_worker => {
+            learning_finished = true;
+            Err(std::io::Error::other(format!("connected learning worker exited unexpectedly: {result:?}")).into())
+        },
         reason = monitor_lock(&mut leader_guard) => {
             ownership_lost = true;
             Err(QueueOwnershipLost(reason).into())
@@ -235,6 +243,7 @@ async fn run() -> RunResult {
         // Once ownership is gone, an in-flight provider result must not commit.
         worker.abort();
         mail_worker.abort();
+        learning_worker.abort();
     }
     let _ = stop_http.send(());
     let drained = tokio::time::timeout(SHUTDOWN_GRACE, async {
@@ -242,6 +251,10 @@ async fn run() -> RunResult {
         if !worker_finished {
             let _ = (&mut worker).await;
             worker_finished = true;
+        }
+        if !learning_finished {
+            let _ = (&mut learning_worker).await;
+            learning_finished = true;
         }
         if !server_finished {
             let _ = (&mut server).await;
@@ -253,6 +266,10 @@ async fn run() -> RunResult {
     if !worker_finished {
         worker.abort();
         let _ = worker.await;
+    }
+    if !learning_finished {
+        learning_worker.abort();
+        let _ = learning_worker.await;
     }
     if !mail_finished {
         mail_worker.abort();

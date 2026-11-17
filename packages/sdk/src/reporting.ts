@@ -34,20 +34,30 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
     VerifiedBundle,
     Omit<DeliveryReceiptRequest, 'eventId' | 'stage' | 'occurredAt'>
   >();
-  function reportStage(bundle: VerifiedBundle, stage: DeliveryReceiptRequest['stage']): boolean {
+  function reportStage(
+    bundle: VerifiedBundle,
+    stage: DeliveryReceiptRequest['stage'],
+  ): Readonly<DeliveryReceiptRequest> | null {
     const binding = bindings.get(bundle);
     if (!binding) throw new TypeError('Bundle has not been observed by this reporter');
-    const accepted = enqueue({
+    const receipt = Object.freeze({
       ...binding,
       eventId: randomUUID(),
       stage,
       occurredAt: new Date(now()).toISOString(),
     });
+    const accepted = enqueue(receipt);
     void flush();
-    return accepted;
+    return accepted ? receipt : null;
   }
   function observeDelivery({ selection, bundle, source, downloaded }: DeliveryObservation): void {
-    if (selection.projectId !== options.projectId || bundle.version.bundleId !== selection.bundleId)
+    if (
+      selection.projectId !== options.projectId ||
+      bundle.version.bundleId !== selection.bundleId ||
+      (bundle.connection &&
+        (bundle.connection.projectId !== options.projectId ||
+          bundle.connection.integrationId.toLowerCase() !== options.integrationId.toLowerCase()))
+    )
       throw new TypeError('Delivery scope must match reporter scope');
     const binding: Omit<DeliveryReceiptRequest, 'eventId' | 'stage' | 'occurredAt'> = {
       integrationId: options.integrationId,
@@ -122,8 +132,10 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
     enqueue,
     flush,
     observeDelivery,
-    reportPrepared: (bundle: VerifiedBundle) => reportStage(bundle, 'prepared'),
-    reportStarted: (bundle: VerifiedBundle) => reportStage(bundle, 'started'),
+    reportPrepared: (bundle: VerifiedBundle) => reportStage(bundle, 'prepared') !== null,
+    reportStarted: (bundle: VerifiedBundle) => reportStage(bundle, 'started') !== null,
+    /** Queue a started receipt and return its exact body for a durable job handoff. */
+    reportStartedReceipt: (bundle: VerifiedBundle) => reportStage(bundle, 'started'),
     /** Stop claiming events. An already in-flight request may still finish. */
     close() {
       closed = true;

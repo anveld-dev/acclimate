@@ -6,7 +6,7 @@ This describes the first Rust implementation. One Rust crate and one PostgreSQL 
 
 ## Composition and shared code
 
-- `src/main.rs` loads configuration, connects the PostgreSQL pool, starts the HTTP server and bounded proposer, and shuts them down cleanly. `src/lib.rs` composes the router, pool, auth configuration, and proposer client. Neither owns feature rules.
+- `src/main.rs` loads configuration, connects the PostgreSQL pool, starts the HTTP server and background workers, and shuts them down cleanly. `src/lib.rs` composes the router, pool, auth configuration, and proposer client.
 - `src/types.rs` defines shared IDs, request/response DTOs, revision strings, and stable errors from [R0](contracts.md). HTTP adapters translate errors to the agreed status and request ID; do not let database errors leak as API contracts.
 - `src/auth.rs` authenticates a principal and checks project grants. Commands require the appropriate read, proposal/evidence, or promotion right on every call; content cannot grant access.
 - `src/commands.rs` provides the mutation-key transaction helper. It scopes a key to principal, project, operation and target resource. It fingerprints the method, normalized scoped route and exact request-body bytes, then stores the response with the mutation. A retry with identical bytes returns that response; different bytes conflict. Concurrent requests using the same key must serialize through the database. Define expiry in the contract; protection is bounded by that window.
@@ -30,6 +30,10 @@ Promotion takes a retained target, expected revision, and exactly one comparison
 `src/improvement.rs` exposes request/read proposal and record/read comparison commands. It maps the R0 routes and persists proposal status, attempts, candidates, and immutable comparisons. Comparison validation checks project and bundle membership, version IDs and digests, dataset and grader identities, runtime/model settings, and the declared case/repetition inventory. Validate paired outcomes, references, finite scores, and explicit missing grades, failure classes, and unknown costs. Preserve incomplete reports without treating them as successful evidence or inventing zeroes.
 
 `src/improvement.rs` runs a bounded in-process loop with one active proposer. Persist the accepted request and status before responding; polling reads subsequent status. Limit concurrency, attempts, output, and allowed edits. The model receives only selected authorized content and evidence; validate returned paths, kinds, sizes, and the complete bundle before publishing an immutable candidate. Persist attempts. Use shared bundle validation/encoding inside I1’s transaction so candidate creation, its unique proposal association, authorship, and job success commit together. On restart, recover interrupted jobs under the bounded retry policy or mark them for explicit retry; reuse completed candidates. The model-client interface has a configured real implementation and a deterministic fake for tests. A timeout may still incur provider cost: this is not exactly-once billing or distributed job execution.
+
+## Connected learning
+
+`src/connected_learning.rs` owns connection enrollment, outcome admission, and evaluator assignment access. `src/connected_learning_worker.rs` advances durable rounds through the existing proposal, evaluation and promotion operations. It checks current authorization and the exact delivery baseline before release. The connection and scoped content handlers route fresh reads to the enrolled delivery target. The evaluator runs outside the service and recovers execution using its private journal. Post-rollout verdicts bind a started delivery receipt and terminal job to the current managed promotion. The service records the verdict, updates the rolling window, and commits any matching connection rollback in one transaction. See the [operator workflow](../../deploy/README.md#operate-connected-learning).
 
 ## Build and verify in order
 

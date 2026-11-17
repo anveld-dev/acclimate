@@ -1,6 +1,14 @@
 # Candidate mutations and effective delivery
 
-V1 mutation design, 2026-11-17. The pure application-side planner is implemented as [planCandidate](../../../packages/sdk/src/learning/mutations.ts); its exported types define the exact supported API. The sketches below retain the design rationale and are not new HTTP endpoints. The default service adapter supports fixed-file proposals; structural planning is an explicit independent capability. See the [implementation record](implementation.md). Execution stays with the application. Existing server validation and release authorization remain authoritative for their documented invariants.
+The default service proposer edits existing files. Applications can opt into structural planning with [planCandidate](../../../packages/sdk/src/learning/mutations.ts) and the [Acclimate learning adapter](../../../packages/sdk/src/learning/adapters/acclimate.ts). See the [implementation record](implementation.md).
+
+## Enable skill package mutations
+
+1. Store the campaign's `mutationPolicy` artifact as `{ schemaVersion: 1, kind: 'learning-mutation-policy', policy }`. Use `mode: 'skill-packages'` and explicitly name the packages the campaign may create or retire.
+2. Configure the adapter's `mutation` option with the same policy, a deterministic `propose` callback and a map of pure preflight functions. The callback receives the verified immutable parent, the policy digest and the retained admission decision digest. Include those bindings in the returned `MutationV1`.
+3. Install a campaign-specific `learning.reference-review` preflight for package creation or retirement. Its scope is static review of the complete planned payload, including references owned by the application. Configure behavioral and delivery checks in the development and audit evaluations when they require execution.
+
+The adapter verifies admission and policy bindings and confirms that the bundle's stored compatibility target matches the installed policy before planning. It checks every required preflight and retains the mutation, plan and passed preflight IDs before storing a candidate. After a lost response, reconciliation reconstructs the request from the same deterministic inputs, checks the service's retained operation fingerprint and verifies the stored candidate. The proposal receipt links to the preparation artifact.
 
 ## Decision
 
@@ -121,7 +129,7 @@ A new parent is a new plan and experiment. Do not automatically rebase a learned
 
 V1 has no automatic rename operation. A rename can be represented by one atomic create/retire envelope plus explicit text edits to known references, but requires package-mode authority and reference review. Do not assume textual replacement proves all command names, paths or task-routing references remain valid.
 
-Creation and retirement make `referenceReview.state` required. The planner reports changed package names and paths and may perform deterministic checks for declared local path references. It cannot certify absence of semantic references in arbitrary prose/code. A campaign that permits unattended package retirement must supply a domain-specific reference preflight and behavioral regression suite; otherwise the learner queues that candidate for review. An alias package is an explicit candidate artifact, not a silently retained side effect.
+Creation and retirement make `referenceReview.state` required. The planner reports changed package names and paths for the application's preflight to check against its declared references. The adapter declines publication if the preflight is absent or fails. Semantic references in arbitrary prose and code require application-specific review and regression evaluation. An application may explicitly create an alias package as part of its candidate.
 
 Human drafts may remain incomplete while edited. Automated candidates intended for evaluation must pass final native validation. Atomic full-snapshot publication already supplies the needed transaction unit; do not add a distributed multi-file transaction protocol.
 
@@ -200,4 +208,4 @@ Meaningful tests for the future implementation cross the planning/publishing/del
 - Lost version-creation response reuses retained body/key and settles one stored child; a changed proposal waits until that operation is resolved.
 - Existing incomplete human drafts remain saveable; automated native candidates require compatibility before execution/release.
 
-These are proposed acceptance tests. No implementation or test/model run was performed for this design.
+Adapter tests cover whole-package creation and retirement, admission and policy binding, mandatory preflight, and recovery after a lost version-creation response.

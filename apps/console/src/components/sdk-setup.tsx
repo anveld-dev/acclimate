@@ -425,9 +425,9 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
           <DisclosureTrigger>Optional delivery reports</DisclosureTrigger>
           <DisclosureContent className="sdk-detail-content">
             <p>
-              Reporting is off by default. Set both <code>ACCLIMATE_INTEGRATION</code> (the
-              connection ID) and <code>ACCLIMATE_RECEIPT_TOKEN</code> (a separate private
-              receipt-write credential) to enable the recipe&apos;s reports.
+              Set <code>ACCLIMATE_INTEGRATION</code> to your connection ID to scope the TypeScript
+              recipe&apos;s delivery to that connection. The recipe sends reports only when you also
+              set <code>ACCLIMATE_RECEIPT_TOKEN</code> to a separate receipt-write credential.
             </p>
             <p>
               {canManage ? (

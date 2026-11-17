@@ -279,3 +279,514 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
         StatusCode::FORBIDDEN
     );
 }
+
+#[tokio::test]
+async fn learning_admission_and_delivery_are_connection_scoped() {
+    let Ok(url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
+        return;
+    };
+    let db = sqlx::PgPool::connect(&url).await.unwrap();
+    sqlx::migrate!("./migrations").run(&db).await.unwrap();
+    let p = format!("connected-{}", Uuid::new_v4());
+    let bundle = Uuid::new_v4();
+    let baseline = Uuid::new_v4();
+    let replacement = Uuid::new_v4();
+    let enrollment_id = Uuid::new_v4();
+    let sibling_id = Uuid::new_v4();
+    let digest = format!("sha256:{}", "b".repeat(64));
+    sqlx::query("INSERT INTO projects(id,name) VALUES($1,$1)")
+        .bind(&p)
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO bundles(id,project_id,name) VALUES($1,$2,'fixture')")
+        .bind(bundle)
+        .bind(&p)
+        .execute(&db)
+        .await
+        .unwrap();
+    for version in [baseline, replacement] {
+        sqlx::query("INSERT INTO versions(id,project_id,bundle_id,digest,payload) VALUES($1,$2,$3,$4,$5)")
+            .bind(version).bind(&p).bind(bundle).bind(&digest)
+            .bind(serde_json::to_vec(&json!({"schemaVersion":1,"files":[{"path":"guide.md","kind":"instruction","text":"guide"}]})).unwrap())
+            .execute(&db).await.unwrap();
+    }
+    sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'stable',1,$3)")
+        .bind(&p).bind(bundle).bind(baseline).execute(&db).await.unwrap();
+    for id in [enrollment_id, sibling_id] {
+        sqlx::query("INSERT INTO integrations(id,project_id,bundle_id,channel,display_name) VALUES($1,$2,$3,'stable','fixture')")
+            .bind(id).bind(&p).bind(bundle).execute(&db).await.unwrap();
+    }
+    let grant = |principal: &str, rights: &[&str]| Grant {
+        token: principal.into(),
+        principal_id: principal.into(),
+        project_id: p.clone(),
+        rights: rights.iter().map(|right| (*right).into()).collect(),
+    };
+    let app = router(AppState {
+        access: common::access(),
+        runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+        db: db.clone(),
+        grants: Arc::new(vec![
+            grant("owner", &["read", "write", "promote"]),
+            grant("other-operator", &["read", "write", "promote"]),
+            grant("outcome", &["read", "write", "promote"]),
+            grant("observer", &["read"]),
+            grant("evaluator", &["read", "write"]),
+        ]),
+        provider: None,
+    });
+    let connection = format!("/v1/projects/{p}/integrations/{enrollment_id}");
+    let sibling = format!("/v1/projects/{p}/integrations/{sibling_id}");
+    let enrollment = format!("{connection}/learning");
+    let descriptor = |cohort: &str| {
+        json!({
+            "datasetRevision":cohort,"runtime":{"fixture":"local"},"graderRevision":"grader",
+            "expectedCases":[{"caseId":cohort,"repetition":0}],
+        })
+    };
+    let settings = json!({
+      "installationId":"fixture","permittedPaths":["guide.md"],"maxProposalAdmissions":2,
+      "development":descriptor("dev"),"audits":[descriptor("audit")],"automaticRollout":true,
+      "outcomePrincipal":"outcome","evaluatorPrincipal":"evaluator",
+    });
+    let actual = call(&app, "PUT", &enrollment, "owner", settings.clone()).await;
+    assert_eq!(actual.0, StatusCode::OK, "{}", actual.1);
+    assert_eq!(
+        call(&app, "PUT", &enrollment, "owner", settings.clone()).await,
+        actual
+    );
+    assert_eq!(actual.1["automaticRollback"], true);
+    let mut stale_rollback = settings.clone();
+    stale_rollback["automaticRollback"] = json!(false);
+    stale_rollback["expectedAutomaticRollout"] = actual.1["automaticRollout"].clone();
+    let mut stopped_rollout = settings.clone();
+    stopped_rollout["automaticRollout"] = json!(false);
+    stopped_rollout["expectedAutomaticRollout"] = json!(true);
+    let updated = call(&app, "PUT", &enrollment, "other-operator", stopped_rollout).await;
+    assert_eq!(updated.0, StatusCode::OK);
+    assert_eq!(updated.1["automaticRollout"], false);
+    assert!(updated.1.get("expectedAutomaticRollout").is_none());
+    let stale = call(&app, "PUT", &enrollment, "owner", stale_rollback.clone()).await;
+    assert_eq!(stale.0, StatusCode::CONFLICT);
+    let current = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;
+    assert_eq!(current["automaticRollout"], false);
+    assert_eq!(current["automaticRollback"], true);
+    assert_eq!(current["authorizedBy"], "other-operator");
+    stale_rollback["automaticRollout"] = json!(false);
+    stale_rollback["expectedAutomaticRollout"] = json!(false);
+    let applied = call(&app, "PUT", &enrollment, "owner", stale_rollback).await;
+    assert_eq!(applied.0, StatusCode::OK);
+    assert_eq!(applied.1["automaticRollout"], false);
+    assert_eq!(applied.1["automaticRollback"], false);
+    let edited = call(&app, "PUT", &enrollment, "owner", settings.clone()).await;
+    assert_eq!(edited.0, StatusCode::OK);
+    assert_eq!(edited.1["automaticRollout"], true);
+    assert_eq!(edited.1["automaticRollback"], false);
+    let mut settings = settings;
+    settings["automaticRollback"] = json!(true);
+    assert_eq!(
+        call(&app, "PUT", &enrollment, "owner", settings.clone()).await,
+        actual
+    );
+    let limited = call(&app, "GET", &enrollment, "outcome", Value::Null)
+        .await
+        .1;
+    assert_eq!(limited["auditCount"], 1);
+    assert_eq!(limited["remainingAudits"], 1);
+    assert_eq!(limited["renewalRevision"], 0);
+    assert!(limited.get("audits").is_none());
+
+    let renew = format!("{enrollment}/renew");
+    let mut audit = descriptor("more-audit");
+    audit["datasetDigest"] = json!("a".repeat(64));
+    audit["caseFingerprints"] = json!(["b".repeat(64)]);
+    audit["familyFingerprints"] = json!(["c".repeat(64)]);
+    let append = json!({"renewalId":Uuid::new_v4(),"expectedRevision":0,
+                        "proposalAdmissions":100,"audits":[audit]});
+    assert_eq!(
+        call(&app, "POST", &renew, "outcome", append.clone())
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let competing = json!({"renewalId":Uuid::new_v4(),"expectedRevision":0,
+                           "proposalAdmissions":1,"audits":[]});
+    // A scheduler admission and renewal lock the same row. Commit an
+    // admission while two requests contend for the same renewal revision.
+    let mut reservation = db.begin().await.unwrap();
+    sqlx::query("UPDATE connected_learning_enrollments SET proposal_admissions=1 WHERE project_id=$1 AND integration_id=$2")
+        .bind(&p).bind(enrollment_id).execute(&mut *reservation).await.unwrap();
+    let (first, second, ()) = tokio::join!(
+        call(&app, "POST", &renew, "owner", append.clone()),
+        call(&app, "POST", &renew, "owner", competing.clone()),
+        async { reservation.commit().await.unwrap() }
+    );
+    let (applied, applied_body, stale_body) = if first.0 == StatusCode::OK {
+        assert_eq!(second.0, StatusCode::CONFLICT, "{}", second.1);
+        (first, append.clone(), competing)
+    } else {
+        assert_eq!(first.0, StatusCode::CONFLICT, "{}", first.1);
+        assert_eq!(second.0, StatusCode::OK, "{}", second.1);
+        (second, competing, append.clone())
+    };
+    assert_eq!(applied.1["proposalAdmissions"], 1);
+    assert_eq!(applied.1["appliedRenewalRevision"], 1);
+    assert_eq!(
+        call(&app, "POST", &renew, "owner", applied_body.clone()).await,
+        applied
+    );
+    let mut changed_retry = applied_body;
+    changed_retry["proposalAdmissions"] = json!(0);
+    changed_retry["audits"] = json!([descriptor("changed-retry")]);
+    assert_eq!(
+        call(&app, "POST", &renew, "owner", changed_retry).await.0,
+        StatusCode::CONFLICT
+    );
+    let mut next = stale_body;
+    next["expectedRevision"] = json!(1);
+    let second_window = call(&app, "POST", &renew, "owner", next).await;
+    assert_eq!(second_window.0, StatusCode::OK, "{}", second_window.1);
+    assert_eq!(second_window.1["maxProposalAdmissions"], 103);
+    assert_eq!(second_window.1["proposalAdmissions"], 1);
+    let same_dataset = json!({"renewalId":Uuid::new_v4(),"expectedRevision":2,
+                              "proposalAdmissions":0,"audits":[descriptor("audit")]});
+    assert_eq!(
+        call(&app, "POST", &renew, "owner", same_dataset).await.0,
+        StatusCode::CONFLICT
+    );
+    for (field, fingerprint) in [
+        ("datasetDigest", 'a'),
+        ("caseFingerprints", 'b'),
+        ("familyFingerprints", 'c'),
+    ] {
+        let mut sibling_settings = settings.clone();
+        sibling_settings["audits"] = json!([descriptor("relabeled")]);
+        let digest = fingerprint.to_string().repeat(64);
+        sibling_settings["audits"][0][field] = if field == "datasetDigest" {
+            json!(digest)
+        } else {
+            json!([digest])
+        };
+        assert_eq!(
+            call(
+                &app,
+                "PUT",
+                &format!("{sibling}/learning"),
+                "owner",
+                sibling_settings
+            )
+            .await
+            .0,
+            StatusCode::CONFLICT
+        );
+    }
+    let inspected = call(&app, "GET", &enrollment, "outcome", Value::Null)
+        .await
+        .1;
+    assert_eq!(inspected["remainingAudits"], 2);
+    assert_eq!(inspected["renewalRevision"], 2);
+    let concurrent_audit = descriptor("bundle-wide-race");
+    let concurrent_renewal = json!({"renewalId":Uuid::new_v4(),"expectedRevision":2,
+        "proposalAdmissions":0,"audits":[concurrent_audit.clone()]});
+    let mut concurrent_enrollment = settings;
+    concurrent_enrollment["audits"] = json!([concurrent_audit]);
+    let sibling_learning = format!("{sibling}/learning");
+    let (left, right) = tokio::join!(
+        call(&app, "POST", &renew, "owner", concurrent_renewal),
+        call(
+            &app,
+            "PUT",
+            &sibling_learning,
+            "owner",
+            concurrent_enrollment
+        ),
+    );
+    assert!(
+        (left.0 == StatusCode::OK && right.0 == StatusCode::CONFLICT)
+            || (left.0 == StatusCode::CONFLICT && right.0 == StatusCode::OK),
+        "Cohort race must have exactly one winner: {left:?}, {right:?}"
+    );
+    let owner_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM connected_learning_cohorts
+         WHERE project_id=$1 AND bundle_id=$2 AND kind='dataset' AND identity='bundle-wide-race'",
+    )
+    .bind(&p)
+    .bind(bundle)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(owner_count, 1);
+    let mut read_tokens = vec![];
+    for path in [&connection, &sibling] {
+        let (status, token) = call(
+            &app,
+            "POST",
+            &format!("{path}/credentials"),
+            "owner",
+            json!({"kind":"content-read"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        read_tokens.push(token["secret"].as_str().unwrap().to_owned());
+    }
+    let (_, receipt_token) = call(
+        &app,
+        "POST",
+        &format!("{connection}/credentials"),
+        "owner",
+        json!({"kind":"receipt-write"}),
+    )
+    .await;
+    let receipt_token = receipt_token["secret"].as_str().unwrap();
+
+    let outcome = json!({"outcomeId":Uuid::new_v4(),"versionId":baseline,"digest":digest,
+        "status":"completed","lesson":{"path":"guide.md","instruction":"Owner-approved correction"}});
+    let outcomes = format!("{enrollment}/outcomes");
+    for principal in [receipt_token, "evaluator"] {
+        assert!(
+            call(&app, "POST", &outcomes, principal, outcome.clone())
+                .await
+                .0
+                .is_client_error()
+        );
+    }
+    let accepted = call(&app, "POST", &outcomes, "outcome", outcome.clone()).await;
+    assert_eq!(accepted.0, StatusCode::OK, "{}", accepted.1);
+    assert_eq!(
+        call(&app, "POST", &outcomes, "outcome", outcome.clone()).await,
+        accepted
+    );
+    let mut changed = outcome.clone();
+    changed["lesson"]["instruction"] = json!("changed");
+    assert_eq!(
+        call(&app, "POST", &outcomes, "outcome", changed).await.0,
+        StatusCode::CONFLICT
+    );
+    let graded = json!({"outcomeId":Uuid::new_v4(),"versionId":baseline,"digest":digest,
+        "status":"failed","feedback":{"expected":"Reconcile item","observed":"Repeated payment"}});
+    let graded = call(&app, "POST", &outcomes, "outcome", graded).await;
+    assert_eq!(graded.0, StatusCode::OK);
+    assert_eq!(graded.1["eligible"], true);
+    let development_id = Uuid::new_v4();
+    let audit_id = Uuid::new_v4();
+    let development_comparison = Uuid::new_v4();
+    let audit_comparison = Uuid::new_v4();
+    for (request, comparison, cohort) in [
+        (
+            development_id,
+            development_comparison,
+            "ordinary-development-case",
+        ),
+        (audit_id, audit_comparison, "private-audit-case"),
+    ] {
+        let mut controls = descriptor(cohort);
+        controls["parentVersionId"] = json!(baseline);
+        controls["parentDigest"] = json!(digest);
+        controls["candidateVersionId"] = json!(replacement);
+        controls["candidateDigest"] = json!(digest);
+        sqlx::query("INSERT INTO evaluation_requests(id,project_id,bundle_id,body,requested_by,status) VALUES($1,$2,$3,$4,'owner','requested')")
+            .bind(request).bind(&p).bind(bundle).bind(&controls).execute(&db).await.unwrap();
+        controls["evaluation"] = json!({"requestId":request,"attemptId":Uuid::new_v4()});
+        controls["results"] = json!([]);
+        sqlx::query("INSERT INTO comparisons(id,project_id,bundle_id,body,complete,submitter) VALUES($1,$2,$3,$4,true,'evaluator')")
+            .bind(comparison).bind(&p).bind(bundle).bind(controls).execute(&db).await.unwrap();
+    }
+    let proposal = Uuid::new_v4();
+    sqlx::query("INSERT INTO proposals(id,project_id,bundle_id,parent_version_id,request,status) VALUES($1,$2,$3,$4,'{}','succeeded')")
+        .bind(proposal).bind(&p).bind(bundle).bind(baseline).execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO connected_learning_rounds(project_id,bundle_id,integration_id,id,outcome_id,parent_version_id,parent_revision,proposal_id,candidate_version_id,development_request_id,development_comparison_id,audit_index,audit_request_id,state) VALUES($1,$2,$3,$4,$5,$6,1,$7,$8,$9,$10,0,$11,'audit')")
+        .bind(&p).bind(bundle).bind(enrollment_id).bind(Uuid::new_v4())
+        .bind(Uuid::parse_str(outcome["outcomeId"].as_str().unwrap()).unwrap()).bind(baseline)
+        .bind(proposal).bind(replacement).bind(development_id).bind(development_comparison).bind(audit_id)
+        .execute(&db).await.unwrap();
+
+    let bundle_path = format!("/v1/projects/{p}/bundles/{bundle}");
+    for (path, visible_id, audit_id) in [
+        ("evaluation-requests", development_id, audit_id),
+        ("comparisons", development_comparison, audit_comparison),
+    ] {
+        let collection = format!("{bundle_path}/{path}");
+        let private = format!("{collection}/{audit_id}");
+        assert_eq!(
+            call(&app, "GET", &private, "outcome", Value::Null).await.0,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            call(&app, "GET", &private, "observer", Value::Null).await.0,
+            StatusCode::NOT_FOUND
+        );
+        for authorized in ["evaluator", "owner"] {
+            assert_eq!(
+                call(&app, "GET", &private, authorized, Value::Null).await.0,
+                StatusCode::OK
+            );
+        }
+        let page = call(
+            &app,
+            "GET",
+            &format!("{collection}?limit=1"),
+            "outcome",
+            Value::Null,
+        )
+        .await;
+        assert_eq!(page.0, StatusCode::OK, "{}", page.1);
+        assert_eq!(page.1["items"][0]["id"], visible_id.to_string());
+        assert!(page.1["nextCursor"].is_null());
+    }
+    let progress = format!("{bundle_path}/evaluation-requests/{audit_id}/progress");
+    assert_eq!(
+        call(&app, "GET", &progress, "outcome", Value::Null).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(&app, "GET", &progress, "evaluator", Value::Null)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let work = format!("{enrollment}/work");
+    assert_eq!(
+        call(&app, "GET", &work, "outcome", Value::Null).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(&app, "GET", &work, "evaluator", Value::Null).await.1["active"],
+        true
+    );
+
+    let private_channel = format!("learn-{enrollment_id}");
+    sqlx::query(
+        "UPDATE channels SET revision=2,version_id=$4 WHERE (project_id,bundle_id,name)=($1,$2,$3)",
+    )
+    .bind(&p)
+    .bind(bundle)
+    .bind(&private_channel)
+    .bind(replacement)
+    .execute(&db)
+    .await
+    .unwrap();
+    let promotion = Uuid::new_v4();
+    sqlx::query("INSERT INTO promotions(id,project_id,bundle_id,channel,revision,version_id,previous_version_id,comparison_id,reviewer) VALUES($1,$2,$3,$4,2,$5,$6,$7,'fixture')")
+        .bind(promotion).bind(&p).bind(bundle).bind(&private_channel).bind(replacement)
+        .bind(baseline).bind(audit_comparison).execute(&db).await.unwrap();
+    sqlx::query("UPDATE connected_learning_rounds SET state='promoted',promotion_id=$1,audit_comparison_id=$2 WHERE project_id=$3 AND integration_id=$4")
+        .bind(promotion).bind(audit_comparison).bind(&p).bind(enrollment_id).execute(&db).await.unwrap();
+
+    let receipt_route = format!("{connection}/receipts");
+    let stale_id = Uuid::new_v4();
+    let started = Uuid::new_v4();
+    let timestamp = chrono::Utc::now();
+    for (id, stale) in [(stale_id, true), (started, false)] {
+        let accepted = call(&app, "POST", &receipt_route, receipt_token, json!({
+            "eventId":id,"integrationId":enrollment_id,"projectId":p,"bundleId":bundle,
+            "channel":"stable","revision":"2","versionId":replacement,"digest":digest,
+            "stage":"started","occurredAt":timestamp,"resolvedAt":timestamp,"stale":stale,"source":"network",
+        })).await;
+        assert_eq!(accepted.0, StatusCode::OK, "{}", accepted.1);
+    }
+    let mut field_outcome = json!({
+        "outcomeId":Uuid::new_v4(),"versionId":replacement,"digest":digest,"status":"completed",
+        "startedReceiptId":stale_id,"deliveryRevision":"2",
+    });
+    assert_eq!(
+        call(&app, "POST", &outcomes, "outcome", field_outcome.clone())
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    field_outcome["startedReceiptId"] = json!(started);
+    field_outcome["deliveryRevision"] = json!("1");
+    assert_eq!(
+        call(&app, "POST", &outcomes, "outcome", field_outcome.clone())
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    field_outcome["deliveryRevision"] = json!("2");
+    let accepted = call(&app, "POST", &outcomes, "outcome", field_outcome.clone()).await;
+    assert_eq!(accepted.0, StatusCode::OK, "{}", accepted.1);
+    assert_eq!(accepted.1["eligible"], false);
+    assert_eq!(
+        accepted.1["fieldAudit"]["parentVersionId"],
+        baseline.to_string()
+    );
+    assert_eq!(accepted.1["fieldAudit"]["parentDigest"], digest);
+    let mut duplicate = field_outcome.clone();
+    duplicate["outcomeId"] = json!(Uuid::new_v4());
+    assert_eq!(
+        call(&app, "POST", &outcomes, "outcome", duplicate).await.0,
+        StatusCode::CONFLICT
+    );
+    sqlx::query("DELETE FROM integration_receipts WHERE integration_id=$1 AND event_id=$2")
+        .bind(enrollment_id)
+        .bind(started)
+        .execute(&db)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(&app, "POST", &outcomes, "outcome", field_outcome).await,
+        accepted
+    );
+    let channels = format!("/v1/projects/{p}/bundles/{bundle}/channels");
+    let resolve = format!("{channels}/stable");
+    assert_eq!(
+        call(&app, "GET", &resolve, &read_tokens[0], Value::Null)
+            .await
+            .1["version"]["id"],
+        replacement.to_string()
+    );
+    assert_eq!(
+        call(&app, "GET", &resolve, &read_tokens[1], Value::Null)
+            .await
+            .1["version"]["id"],
+        baseline.to_string()
+    );
+    assert_eq!(
+        call(
+            &app,
+            "GET",
+            &format!("{channels}/{private_channel}"),
+            "owner",
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let content = format!("/v1/projects/{p}/bundles/{bundle}/versions/{replacement}/payload");
+    assert_eq!(
+        call(&app, "GET", &content, &read_tokens[0], Value::Null)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&app, "GET", &content, &read_tokens[1], Value::Null)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &format!("{enrollment}/stop"),
+            "owner",
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&app, "GET", &work, "evaluator", Value::Null).await.1["active"],
+        false
+    );
+    let mut fresh = outcome;
+    fresh["outcomeId"] = json!(Uuid::new_v4());
+    assert_eq!(
+        call(&app, "POST", &outcomes, "outcome", fresh).await.0,
+        StatusCode::CONFLICT
+    );
+}

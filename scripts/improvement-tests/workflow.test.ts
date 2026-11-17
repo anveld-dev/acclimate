@@ -77,6 +77,7 @@ const config = (outputDir: string) => ({
   skillPath: 'skills/review/SKILL.md',
   outputDir,
   model: 'fake',
+  authorModel: 'fake-author',
   sdkVersion: 'fixture',
 });
 test('pins, edits one file, compares both versions, and persists honest evidence', async () => {
@@ -98,6 +99,9 @@ test('pins, edits one file, compares both versions, and persists honest evidence
     assert.equal(calls, 4);
     assert.equal(summary.complete, true);
     assert.equal(summary.sampleCount, 2);
+    assert.equal(summary.authorModel, 'fake-author');
+    assert.equal(summary.model, 'fake');
+    assert.equal(summary.report.runtime.model, 'fake');
     assert.equal(summary.costUsd, null);
     assert.equal(summary.candidate.parentVersionId, 'parent');
     assert.equal(fake.uploaded().results.length, 2);

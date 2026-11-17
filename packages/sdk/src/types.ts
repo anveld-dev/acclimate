@@ -169,6 +169,8 @@ export interface VerifiedBundle {
   resolution?: ChannelResolution;
   resolvedAt: number;
   stale: boolean;
+  /** Present when the SDK resolved the bundle for an explicitly scoped connection. */
+  connection?: Readonly<{ projectId: string; integrationId: string }>;
 }
 
 /** Bounded service listing. Cursors are opaque and must be sent back unchanged. */
@@ -296,6 +298,131 @@ export interface IntegrationCredential {
   id: string;
   kind: IntegrationCredentialKind;
   secret: string;
+}
+export interface LearningEvaluationDescriptor extends EvaluationDescriptor {
+  datasetDigest?: string;
+  caseFingerprints?: string[];
+  familyFingerprints?: string[];
+}
+export interface LearningEnrollmentRequest {
+  installationId: string;
+  permittedPaths: string[];
+  maxProposalAdmissions: number;
+  development: LearningEvaluationDescriptor;
+  audits: LearningEvaluationDescriptor[];
+  automaticRollout: boolean;
+  /** Require the stored rollout mode to match before applying an enrollment update. */
+  expectedAutomaticRollout?: boolean;
+  /** Defaults to enabled on enrollment. Omitting it on an update preserves the stored setting. */
+  automaticRollback?: boolean;
+  outcomePrincipal: string;
+  evaluatorPrincipal: string;
+}
+export interface LearningEnrollment
+  extends Omit<LearningEnrollmentRequest, 'audits' | 'expectedAutomaticRollout'> {
+  automaticRollback: boolean;
+  audits?: LearningEvaluationDescriptor[];
+  auditCount: number;
+  projectId: string;
+  integrationId: string;
+  bundleId: string;
+  channel: string;
+  authorizedBy: string;
+  proposalAdmissions: number;
+  renewalRevision: number;
+  stoppedAt: string | null;
+  enabled: boolean;
+}
+export interface LearningRound {
+  id: string;
+  outcomeId: string;
+  state: 'proposing' | 'development' | 'audit' | 'awaiting_review' | 'promoted' | 'rejected';
+  reason: string | null;
+  parentVersionId: string;
+  candidateVersionId: string | null;
+  proposalId: string | null;
+  developmentRequestId: string | null;
+  developmentComparisonId: string | null;
+  auditRequestId: string | null;
+  auditComparisonId: string | null;
+  promotionId: string | null;
+  fieldAudits?: {
+    windowSize: number;
+    regressions: number;
+    rollbackPromotionId?: string | null;
+  };
+}
+export interface LearningEnrollmentStatus extends LearningEnrollment {
+  rounds: LearningRound[];
+  remainingAudits: number;
+  deliveredVersionId: string;
+  deliveredRevision: string;
+}
+export interface LearningReviewReceipt {
+  roundId: string;
+  state: 'promoted' | 'rejected';
+  promotionId?: string;
+}
+export interface LearningRenewalRequest {
+  renewalId: string;
+  expectedRevision: number;
+  proposalAdmissions: number;
+  audits: LearningEvaluationDescriptor[];
+}
+export interface LearningRenewalReceipt extends LearningEnrollment {
+  appliedRenewalRevision: number;
+}
+export interface LearningLesson {
+  path: string;
+  /** Application-approved teaching instruction. Keep transcripts, task data and secrets private. */
+  instruction: string;
+}
+export interface LearningOutcomeRequest {
+  outcomeId: string;
+  versionId: string;
+  digest: string;
+  status: 'completed' | 'failed';
+  /** Together these link a terminal outcome to the exact fresh delivery receipt for its job. */
+  startedReceiptId?: string;
+  deliveryRevision?: string;
+  lesson?: LearningLesson;
+  /** Bounded application-grade summaries suitable for sharing with the proposer. */
+  feedback?: { expected: string; observed: string };
+}
+export interface LearningOutcomeReceipt {
+  outcomeId: string;
+  accepted: true;
+  eligible: boolean;
+  fieldAudit?: { parentVersionId: string; parentDigest: string };
+}
+export interface LearningFieldAuditRequest {
+  outcomeId: string;
+  startedReceiptId: string;
+  versionId: string;
+  digest: string;
+  revision: string;
+  parentVersionId: string;
+  parentDigest: string;
+  verdict: 'pass' | 'regression';
+}
+export interface LearningFieldAuditReceipt {
+  outcomeId: string;
+  accepted: true;
+  regressions: number;
+  windowSize: number;
+  rollbackPromotionId?: string;
+}
+export interface LearningWorkItem {
+  roundId: string;
+  evaluationRequestId: string;
+  phase: 'development' | 'audit';
+  status: 'requested' | 'running';
+}
+export interface LearningWork {
+  installationId: string;
+  bundleId: string;
+  active: boolean;
+  items: LearningWorkItem[];
 }
 export interface DeliveryReceiptRequest {
   eventId: string;

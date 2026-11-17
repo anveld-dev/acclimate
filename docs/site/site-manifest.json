@@ -228,6 +228,12 @@
     "title": "Deploy and restore"
   },
   {
+    "source": "docs/evaluator-operations.md",
+    "route": "operate/evaluators.html",
+    "group": "Operate",
+    "title": "Evaluator operations"
+  },
+  {
     "source": "deploy/sign-in.md",
     "route": "operate/sign-in.html",
     "group": "Operate",

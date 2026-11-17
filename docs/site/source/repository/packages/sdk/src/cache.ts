@@ -80,6 +80,11 @@ async function ensurePrivateDir(path: string): Promise<void> {
     );
 }
 function keyFor(client: AcclimateClient, parts: string[]): string {
+  if (client.integrationId) {
+    return createHash('sha256')
+      .update(JSON.stringify([client.baseUrl, client.scope, client.integrationId, ...parts]))
+      .digest('hex');
+  }
   return createHash('sha256')
     .update([client.baseUrl, client.scope, ...parts].join('\0'))
     .digest('hex');
@@ -298,6 +303,14 @@ export async function resolveAndCache(
     resolution,
     resolvedAt: pinnedOffline ? pinnedAt : resolvedAt,
     stale: stale || pinnedOffline,
+    ...(client.integrationId
+      ? {
+          connection: Object.freeze({
+            projectId: selection.projectId,
+            integrationId: client.integrationId,
+          }),
+        }
+      : {}),
   });
   if (policy.reporter) {
     const observation: DeliveryObservation = {

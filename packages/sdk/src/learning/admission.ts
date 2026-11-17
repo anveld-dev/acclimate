@@ -9,6 +9,13 @@ import {
 } from './identity.js';
 
 const refuse = (code: string): never => { throw new LearningEvidenceError(code); };
+
+export function teachingText(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) return value;
+  if (value && typeof value === 'object' && 'claims' in value) return teachingText(value.claims);
+  return [canonicalJson(value).trimEnd()];
+}
 async function readVerified<T>(resolve: AdmissionValidationInput['resolve'], ref: Ref<T>): Promise<T> {
   validateRef(ref);
   const value = await resolve(ref);

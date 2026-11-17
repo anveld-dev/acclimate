@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { canonicalJson, sha256Bytes } from '../../src/learning/identity.js';
 import { openLearningStore, LearningStoreError } from '../../src/learning/store.js';
 
 async function fixture() {
@@ -302,6 +303,103 @@ test('a continuation from released worker ownership cannot write later checkpoin
       (await f.store.readCheckpoint<{ revision: number; dispatched: boolean }>())!.dispatched,
       false,
     );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a full legacy observation inbox reserves admission for stop and resolution', async () => {
+  const f = await fixture();
+  try {
+    const command = { kind: 'observe' };
+    const sha256 = sha256Bytes(canonicalJson(command));
+    const entries = Array.from({ length: 10_000 }, (_, index) => ({
+      commandId: 'observation-' + index,
+      command,
+      sha256,
+      sequence: index + 1,
+    }));
+    await writeFile(
+      path.join(f.directory, 'inbox.json'),
+      canonicalJson({
+        schemaVersion: 1,
+        directory: f.directory,
+        admissionClosed: false,
+        entries,
+      }),
+      { mode: 0o600 },
+    );
+    await assert.rejects(f.store.submit('overflow', command), code('inbox-full'));
+    const resolution = await f.store.submit('resolve', { kind: 'resolve-uncertainty' });
+    const stop = await f.store.submit('stop', { kind: 'request-stop' });
+    assert.equal(resolution.sequence, 10_001);
+    assert.equal(stop.sequence, 10_002);
+    const reopened = await openLearningStore(f.directory);
+    assert.equal(await reopened.admissionBarrier(), true);
+    assert.deepEqual(
+      (await reopened.readInbox(10_000)).map((entry) => entry.commandId),
+      ['resolve', 'stop'],
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('byte saturation reserves stop capacity and compaction keeps pending stops and replay receipts', async () => {
+  const f = await fixture();
+  try {
+    const command = {
+      kind: 'observe',
+      payload: Array.from({ length: 16 }, () => 'a'.repeat(1024 * 1024 - 32)),
+    };
+    const first = await f.store.submit('first', command);
+    const next = { kind: 'observe', payload: 'b'.repeat(1024) };
+    await assert.rejects(f.store.submit('second', next), code('inbox-full'));
+    const stop = await f.store.submit('stop', { kind: 'request-stop', reason: 's'.repeat(1024) });
+    assert.equal(stop.sequence, 2);
+    await f.store.writeCheckpoint(null, { revision: 0, appliedSequence: first.sequence });
+    const second = await f.store.submit('second', next);
+    assert.equal(second.sequence, 3);
+    const reopened = await openLearningStore(f.directory);
+    assert.deepEqual(await reopened.submit('first', command), first);
+    await assert.rejects(reopened.submit('first', { kind: 'resume' }), code('command-conflict'));
+    assert.deepEqual(
+      (await reopened.readInbox(first.sequence)).map((entry) => entry.sequence),
+      [2, 3],
+    );
+    await assert.rejects(reopened.readInbox(0), code('sequence'));
+    await reopened.setAdmissionBarrier(false, first.sequence);
+    assert.equal(await reopened.admissionBarrier(), true);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('queued resolutions cannot exhaust the stop reserve', async () => {
+  const f = await fixture();
+  try {
+    const command = { kind: 'resolve-uncertainty' };
+    const sha256 = sha256Bytes(canonicalJson(command));
+    const entries = Array.from({ length: 64 }, (_, index) => ({
+      commandId: 'resolution-' + index,
+      command,
+      sha256,
+      sequence: index + 1,
+    }));
+    await writeFile(
+      path.join(f.directory, 'inbox.json'),
+      canonicalJson({
+        schemaVersion: 1,
+        directory: f.directory,
+        admissionClosed: false,
+        entries,
+      }),
+      { mode: 0o600 },
+    );
+    await assert.rejects(f.store.submit('overflow', command), code('inbox-full'));
+    const stop = await f.store.submit('stop', { kind: 'request-stop' });
+    assert.equal(stop.sequence, 65);
+    assert.equal(await f.store.admissionBarrier(), true);
   } finally {
     await f.cleanup();
   }

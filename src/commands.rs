@@ -77,6 +77,9 @@ fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
     let uuid = |s: &str| uuid::Uuid::parse_str(s).is_ok() && s.len() == 36;
     match p.as_slice() {
         ["bundle-setups"] => Some(&["write", "promote"]),
+        // Version creation uses the same legacy UUID syntax as ordinary authoring.
+        // A marked write retains its receipt; lookup/close require current write authority.
+        ["bundles", b, "versions"] if uuid(b) => Some(&["write"]),
         ["bundles", b, "proposals"] if uuid(b) => Some(&["propose"]),
         ["bundles", b, "evaluation-requests"] if uuid(b) => Some(&["write"]),
         ["bundles", b, "comparisons"] if guided_uuid(b) => Some(&["write"]),
@@ -527,6 +530,28 @@ mod tests {
                 &route.replace(bundle, &bundle.to_uppercase())
             ));
         }
+    }
+    #[test]
+    fn version_receipts_keep_authoring_uuid_syntax_and_route_namespace() {
+        for bundle in [
+            "abcdefab-1111-4111-8111-111111111111",
+            "ABCDEFAB-1111-4111-8111-111111111111",
+        ] {
+            let route = format!("/v1/projects/p/bundles/{bundle}/versions");
+            assert_eq!(rights("p", &route), Some(["write"].as_slice()));
+            assert_eq!(namespace(&route), route);
+            // This authoring extension does not broaden the evaluator promise.
+            assert!(!guided_evaluator_route("p", &route));
+            assert!(rights("other", &route).is_none());
+        }
+        assert!(rights("p", "/v1/projects/p/bundles/not-a-uuid/versions").is_none());
+        assert!(
+            rights(
+                "p",
+                "/v1/projects/p/bundles/abcdefab111141118111111111111111/versions"
+            )
+            .is_none()
+        );
     }
     #[test]
     fn namespaces_and_action_rights_remain_compatible() {

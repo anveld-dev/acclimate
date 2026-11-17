@@ -514,6 +514,12 @@ export async function runCapturedEvaluation(options: {
         path.join(journal.directory, 'cache'),
       );
       request = await check();
+      if (captured.collection) {
+        await atomicPrivateWrite(
+          path.join(journal.directory, 'collection.json'),
+          JSON.stringify({ schemaVersion: 1, ...captured.collection }) + '\n',
+        );
+      }
       // A legacy journal that has not executed has no historical submission to
       // confuse with the report this invocation is about to create.
       state.retainedOperations = true;
@@ -534,15 +540,22 @@ export async function runCapturedEvaluation(options: {
         evaluation: { requestId: scope.requestId, attemptId: state.attemptId },
         results: [],
       };
+      let pairIndex = -1;
       for (const item of captured.cases)
         for (let repetition = 0; repetition < (item.repetitions ?? 1); repetition++) {
+          pairIndex++;
           const pair = {
             caseId: item.caseId,
             repetition,
             parent: unavailable(),
             candidate: unavailable(),
           };
-          for (const side of ['parent', 'candidate'] as const) {
+          const firstSide = captured.collection?.pairs[pairIndex].firstSide ?? 'parent';
+          const order =
+            firstSide === 'parent'
+              ? (['parent', 'candidate'] as const)
+              : (['candidate', 'parent'] as const);
+          for (const [armIndex, side] of order.entries()) {
             if (signal.aborted || cancelled) {
               pair[side] = unavailable();
               continue;
@@ -569,18 +582,43 @@ export async function runCapturedEvaluation(options: {
               side,
               jobId,
               privateJobDirectory,
+              ...(captured.collection
+                ? {
+                    collection: Object.freeze({
+                      protocol: captured.collection.protocol,
+                      scheduleDigest: captured.collection.digest,
+                      pairIndex,
+                      armIndex,
+                      firstSide,
+                    }),
+                  }
+                : {}),
             };
             await atomicPrivateWrite(
               path.join(privateJobDirectory, 'binding.json'),
               JSON.stringify({
                 ...context,
                 privateJobDirectory: undefined,
+                collection: undefined,
                 caseId: item.caseId,
                 repetition,
                 versionId: bundle.version.id,
                 digest: bundle.version.digest,
               }) + '\n',
             );
+            if (context.collection) {
+              await atomicPrivateWrite(
+                path.join(privateJobDirectory, 'collection-binding.json'),
+                JSON.stringify({
+                  schemaVersion: 1,
+                  jobId,
+                  caseId: item.caseId,
+                  repetition,
+                  side,
+                  ...context.collection,
+                }) + '\n',
+              );
+            }
             journal.assertOwned();
             if (signal.aborted || cancelled) {
               pair[side] = unavailable();

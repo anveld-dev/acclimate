@@ -4,6 +4,8 @@ The current product is a small content-improvement service with application-side
 
 ## Current questions
 
+- [Continuous harness concept review](continuous-harness-review/README.md): parallel AgentRun/RRSI and implementation review, including a [second-pass counter-review](continuous-harness-review/second-pass/README.md); distinguishes content delivery from durable harness learning and prioritizes the missing concepts.
+
 - [Larger self-improvement tests](self-improvement-stress-test.md): twenty rounds, distributed evidence, failed audits and a qualified reusable helper.
 - [Live self-improvement qualification](self-improvement-qualification.md): real Luna runs, failed candidates, file changes and later-job delivery checks.
 - [Authentication setups](auth-setups.md): direct social login, Rust account libraries, Better Auth and self-hosted identity services, with PostgreSQL and migration tradeoffs.

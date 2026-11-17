@@ -15,12 +15,24 @@ export interface EvaluationCase<I = Json, E = Json> {
   expected: E;
   repetitions?: number;
 }
+/** Opt-in arm ordering; applications still own fixture reset and isolation. */
+export interface EvaluationCollection {
+  protocol: 'seeded-balanced-v1';
+  seed: string;
+}
 export interface ExecutionContext {
   readonly requestId: string;
   readonly attemptId: string;
   readonly side: 'parent' | 'candidate';
   readonly jobId: string;
   readonly privateJobDirectory: string;
+  readonly collection?: Readonly<{
+    protocol: 'seeded-balanced-v1';
+    scheduleDigest: string;
+    pairIndex: number;
+    armIndex: number;
+    firstSide: 'parent' | 'candidate';
+  }>;
 }
 export interface EvaluationGradeResult extends GradeResult {
   explanation?: Json;
@@ -33,6 +45,7 @@ export interface EvaluationDefinition<I = Json, E = Json, O = Json> {
   runtime: Readonly<Record<string, string>>;
   execution: 'model-free' | 'live';
   cases: readonly EvaluationCase<I, E>[];
+  collection?: EvaluationCollection;
   execute(input: {
     bundle: VerifiedBundle;
     caseId: string;

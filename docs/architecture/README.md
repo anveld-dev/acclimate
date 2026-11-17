@@ -1,5 +1,7 @@
 # Implementation architecture
 
+The application-owned [continuous learner](continuous-learning/README.md) now implements the selected first profile. Its [implementation record](continuous-learning/implementation.md) covers evidence, recovery, controlled evaluation, qualification and deferred profiles.
+
 The [deepening review](deepening-review.md) records the latest committee decisions, preserved behavior, and test surfaces.
 
 Current work: [production-only plan](production-only/plan.md), [review](production-only/review.md), [parallel ownership](production-only/parallel-work.md) and [evidence](production-only/evidence.md). PostgreSQL and verified OIDC are the only app path.

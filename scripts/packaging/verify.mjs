@@ -129,12 +129,13 @@ import { exportReviewEvidence, verifyReviewExport } from '@acclimate/sdk/evaluat
 import { analyzeComparison } from '@acclimate/sdk/evaluation/analysis';
 import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
 import { createEvaluationProgressReporter } from '@acclimate/sdk/evaluation/progress';
+import { openLearner } from '@acclimate/sdk/learning';
 import { prepare as codex } from '@acclimate/codex-plugin';
 import { prepare as claude } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';
 import { prepare as cursor } from '@acclimate/cursor-plugin';
 for (const value of [AcclimateClient, ApiError, resolveAndCache, prepareFiles, codex, claude, pi, cursor]) assert.equal(typeof value, 'function');
-for (const value of [defineEvaluation, preflightEvaluation, runEvaluation, evaluationMain, checkComparison, exportReviewEvidence, verifyReviewExport, analyzeComparison, createEvaluationManifest, restoreEvaluationManifest, createEvaluationProgressReporter]) assert.equal(typeof value, 'function');
+for (const value of [defineEvaluation, preflightEvaluation, runEvaluation, evaluationMain, checkComparison, exportReviewEvidence, verifyReviewExport, analyzeComparison, createEvaluationManifest, restoreEvaluationManifest, createEvaluationProgressReporter, openLearner]) assert.equal(typeof value, 'function');
 const application = defineEvaluation({configId:'installed-check',configRevision:'1',datasetRevision:'cases-1',graderRevision:'grade-1',runtime:{app:'fixture'},execution:'model-free',cases:[{caseId:'task',input:{value:1},expected:1}],execute:async()=>({output:1}),grade:async()=>({reward:1})});
 assert.equal(application.descriptor.runtime.configId, 'installed-check');
 const manifest = createEvaluationManifest({configId:'installed-manifest',execution:'model-free',cases:[{caseId:'task',input:{value:1},expected:1}],grader:{sourceUtf8:'return expected === output;'},runtime:{settings:{temperature:0.1},artifacts:{app:'sha256:'+'a'.repeat(64)}}});
@@ -160,6 +161,7 @@ import { exportReviewEvidence, verifyReviewExport } from '@acclimate/sdk/evaluat
 import { analyzeComparison } from '@acclimate/sdk/evaluation/analysis';
 import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
 import { createEvaluationProgressReporter } from '@acclimate/sdk/evaluation/progress';
+import { openLearner } from '@acclimate/sdk/learning';
 import { prepare as codex } from '@acclimate/codex-plugin';
 import { prepare as claude } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';

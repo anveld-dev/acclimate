@@ -101,6 +101,7 @@ def main():
     expected |= {str(p.resolve()) for p in (ROOT / 'docs/architecture').rglob('*.md')}
     expected |= {str(p.resolve()) for p in (ROOT / 'docs/implementation').rglob('*.md')}
     expected |= {str(p.resolve()) for p in (ROOT / 'docs/research').glob('*.md')}
+    expected |= {str(p.resolve()) for p in (ROOT / 'docs/research/continuous-harness-review').rglob('*.md')}
     expected.add(str((ROOT / 'docs/research/archive/README.md').resolve()))
     expected.add(str((ROOT / 'docs/development.md').resolve()))
     expected |= {str((ROOT / name).resolve()) for name in ('apps/console/README.md', 'tools/operator/README.md','deploy/README.md','deploy/sign-in.md','deploy/keycloak/README.md','scripts/full-roadmap/README.md')}

@@ -17,6 +17,7 @@ export type {
   Json,
   EvaluationCase,
   EvaluationDefinition,
+  EvaluationCollection,
   EvaluationApp,
   EvaluationGradeResult,
   ExecutionContext,

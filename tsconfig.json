@@ -12,7 +12,8 @@
       "@acclimate/sdk": ["./packages/sdk/src/index.ts"],
       "@acclimate/sdk/validation": ["./packages/sdk/src/validation.ts"],
       "@acclimate/sdk/evaluation": ["./packages/sdk/src/evaluation/index.ts"],
-      "@acclimate/sdk/evaluation/*": ["./packages/sdk/src/evaluation/*"]
+      "@acclimate/sdk/evaluation/*": ["./packages/sdk/src/evaluation/*.ts"],
+      "@acclimate/sdk/learning": ["./packages/sdk/src/learning/index.ts"]
     },
     "types": ["node"]
   },

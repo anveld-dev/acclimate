@@ -3,6 +3,8 @@ import { types as nodeTypes } from 'node:util';
 import { validateEvaluationDescriptor } from '../validation.js';
 import { EvaluationError } from './errors.js';
 import type { EvaluationApp, EvaluationCase, EvaluationDefinition, Json } from './types.js';
+import { COLLECTION_RUNTIME_KEYS, collectionRuntime, collectionSchedule } from './collection.js';
+import type { CollectionSchedule } from './collection.js';
 export const MAX_ARTIFACT = 1024 * 1024,
   MAX_REQUEST = 2 * 1024 * 1024,
   MAX_PRIVATE = 128 * 1024 * 1024;
@@ -12,6 +14,7 @@ export interface CapturedDefinition<I = unknown, E = unknown, O = unknown> {
   cases: readonly EvaluationCase<I, E>[];
   execute: EvaluationDefinition<I, E, O>['execute'];
   grade: EvaluationDefinition<I, E, O>['grade'];
+  collection?: CollectionSchedule;
 }
 const definitions = new WeakMap<object, CapturedDefinition<any, any, any>>();
 export function assertJson(value: unknown, maximum = MAX_ARTIFACT): asserts value is Json {
@@ -34,9 +37,7 @@ export function assertJson(value: unknown, maximum = MAX_ARTIFACT): asserts valu
       Object.getPrototypeOf(x) !== null
     )
       throw new Error();
-    if (
-      Reflect.ownKeys(x).some((k) => typeof k !== 'string' || /[\ud800-\udfff]/u.test(k))
-    )
+    if (Reflect.ownKeys(x).some((k) => typeof k !== 'string' || /[\ud800-\udfff]/u.test(k)))
       throw new Error();
     active.add(x);
     if (Array.isArray(x)) {
@@ -98,7 +99,14 @@ export function defineEvaluation<I, E, O>(
     !Array.isArray(definition.cases)
   )
     throw new EvaluationError('config.schema');
-  const reserved = ['configId', 'configRevision', 'execution', 'concurrency', 'gradeRetries'];
+  const reserved: readonly string[] = [
+    'configId',
+    'configRevision',
+    'execution',
+    'concurrency',
+    'gradeRetries',
+    ...COLLECTION_RUNTIME_KEYS,
+  ];
   assertJson(definition.runtime, 512 * 1024);
   if (
     !definition.runtime ||
@@ -134,6 +142,11 @@ export function defineEvaluation<I, E, O>(
       repetition,
     }));
   });
+  if (definition.collection !== undefined) assertJson(definition.collection);
+  const collection =
+    definition.collection === undefined
+      ? undefined
+      : deepFreeze(collectionSchedule(definition.collection, expectedCases));
   const descriptor: EvaluationDescriptor = {
     datasetRevision: definition.datasetRevision,
     graderRevision: definition.graderRevision,
@@ -144,6 +157,7 @@ export function defineEvaluation<I, E, O>(
       execution: definition.execution,
       concurrency: '1',
       gradeRetries: '0',
+      ...(collection ? collectionRuntime(collection) : {}),
     },
     expectedCases,
   };
@@ -162,6 +176,7 @@ export function defineEvaluation<I, E, O>(
     cases: deepFreeze(cases),
     execute: definition.execute,
     grade: definition.grade,
+    ...(collection ? { collection } : {}),
   });
   return app;
 }

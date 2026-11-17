@@ -12,26 +12,30 @@ import {
   Radio,
 } from 'lucide-react';
 import { EvaluationScorecard } from './evaluation-scorecard';
+import { EvaluationActivity } from './evaluation-activity';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
-import { assertInstalledConfiguration } from '../../../../examples/evaluation/adapter';
 import { EvaluationSetup } from './evaluation-setup';
 import {
   evaluationConfiguration,
-  evaluationPresets,
   evaluationHandoff,
   includedEvaluatorSetupCommand,
-  type EvaluationPreset,
+  selectedEvaluationConfiguration,
+  paymentSimulatorIssue,
+  applicationEvaluatorRunCommand,
+  type EvaluationChoice,
 } from '../lib/evaluation-config';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { compatibilityIssues } from '@acclimate/sdk/validation';
+import { compatibilityIssues, evaluationDescriptorDifferences } from '@acclimate/sdk/validation';
 import type {
   BundlePayload,
   VersionMetadata,
   Comparison,
   Evaluation,
+  EvaluationProgressView,
   Proposal,
 } from '@acclimate/sdk';
 import { Button } from './ui/button';
+import { EvaluationHandoffDownload } from './evaluation-handoff-download';
 import { CopyButton } from './copy-button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
@@ -96,6 +100,7 @@ export function ImprovementWorkspace({
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [requests, setRequests] = useState<Evaluation[]>([]);
   const [directRequest, setDirectRequest] = useState<Evaluation | null>(null);
+  const [selectedProgress, setSelectedProgress] = useState<EvaluationProgressView | null>(null);
   const [requestError, setRequestError] = useState('');
   const [requestLoading, setRequestLoading] = useState(false);
   const [showAllRequests, setShowAllRequests] = useState(false);
@@ -168,12 +173,10 @@ export function ImprovementWorkspace({
   };
   const [pending, setPending] = useState<PendingOperation | null>(null);
   const related = useRelatedPending(pendingScope, pending);
-  const [evaluationProfile, setEvaluationProfile] = useState<EvaluationPreset | 'custom'>(
-    'payment-retry',
-  );
+  const [evaluationProfile, setEvaluationProfile] = useState<EvaluationChoice>('');
   const [customConfiguration, setCustomConfiguration] = useState('');
   const [savedEvaluationForm, setSavedEvaluationForm] = useState({
-    profile: 'payment-retry' as EvaluationPreset | 'custom',
+    profile: '' as EvaluationChoice,
     customConfiguration: '',
   });
   const evaluationForm = useRef({ profile: evaluationProfile, customConfiguration });
@@ -181,18 +184,14 @@ export function ImprovementWorkspace({
   function acceptEvaluationForm(request: Evaluation) {
     const form = evaluationForm.current;
     try {
-      const configured = evaluationConfiguration(
-        form.profile === 'custom'
-          ? JSON.parse(form.customConfiguration)
-          : evaluationPresets[form.profile],
-      );
+      const configured = selectedEvaluationConfiguration(form.profile, form.customConfiguration);
       const recorded = evaluationConfiguration({
         datasetRevision: request.datasetRevision,
         graderRevision: request.graderRevision,
         runtime: request.runtime,
         expectedCases: request.expectedCases,
       });
-      assertInstalledConfiguration(recorded, configured);
+      if (evaluationDescriptorDifferences(recorded, configured).length) return;
       setSavedEvaluationForm(form);
     } catch {
       // A different or invalid current form remains unsaved after recovery.
@@ -201,11 +200,7 @@ export function ImprovementWorkspace({
   let configurationError = '';
   let evaluationConfig: ReturnType<typeof evaluationConfiguration> | undefined;
   try {
-    evaluationConfig = evaluationConfiguration(
-      evaluationProfile === 'custom'
-        ? JSON.parse(customConfiguration)
-        : evaluationPresets[evaluationProfile],
-    );
+    evaluationConfig = selectedEvaluationConfiguration(evaluationProfile, customConfiguration);
   } catch (error) {
     configurationError =
       error instanceof Error ? error.message : 'Invalid evaluation configuration.';
@@ -321,6 +316,7 @@ export function ImprovementWorkspace({
         if (selection.candidate && refreshedDirect.candidateVersionId !== selection.candidate)
           return;
         directRequestRef.current = refreshedDirect;
+        setSelectedProgress(result.progress ?? null);
         expectedDirect = refreshedDirect;
         setDirectRequest((previous) =>
           JSON.stringify(previous) === JSON.stringify(refreshedDirect) ? previous : refreshedDirect,
@@ -355,6 +351,7 @@ export function ImprovementWorkspace({
         setRequestError('');
       } catch (error) {
         if (currentSelection() && directRequestRef.current === expectedDirect) {
+          setSelectedProgress(null);
           setComparison(null);
           setRequestError(
             error instanceof Error ? error.message : 'The requested evaluation is unavailable.',
@@ -411,9 +408,9 @@ export function ImprovementWorkspace({
     setReason('');
     setInterruptionReasons({});
     setReleaseReview(null);
-    setEvaluationProfile('payment-retry');
+    setEvaluationProfile('');
     setCustomConfiguration('');
-    setSavedEvaluationForm({ profile: 'payment-retry', customConfiguration: '' });
+    setSavedEvaluationForm({ profile: '', customConfiguration: '' });
   }, [discardVersion]);
   useEffect(() => {
     let stopped = false,
@@ -485,6 +482,7 @@ export function ImprovementWorkspace({
   useEffect(() => {
     let stale = false;
     setDirectRequest(null);
+    setSelectedProgress(null);
     directRequestRef.current = null;
     setRequestError('');
     if (!initial.request) {
@@ -508,6 +506,7 @@ export function ImprovementWorkspace({
           );
         directRequestRef.current = request;
         setDirectRequest(request);
+        setSelectedProgress(result.progress ?? null);
         if (candidate !== request.candidateVersionId) {
           setCandidate(request.candidateVersionId);
           return;
@@ -529,10 +528,12 @@ export function ImprovementWorkspace({
         setComparison(value);
         setComparisonId(value.id);
       } catch (error) {
-        if (!stale)
+        if (!stale) {
+          setSelectedProgress(null);
           setRequestError(
             error instanceof Error ? error.message : 'The requested evaluation is unavailable.',
           );
+        }
       } finally {
         if (!stale) setRequestLoading(false);
       }
@@ -825,6 +826,10 @@ export function ImprovementWorkspace({
       </Disclosure>
     </>
   );
+  const exampleIssue =
+    evaluationProfile === 'payment-retry' && detail
+      ? paymentSimulatorIssue(detail.candidate.payload)
+      : undefined;
   const evaluationSetup = detail?.candidate && !isCurrentRelease && (
     <EvaluationSetup
       key={candidateRequests.length === 0 ? 'first-request' : 'another-request'}
@@ -832,10 +837,18 @@ export function ImprovementWorkspace({
       customConfiguration={customConfiguration}
       configuration={evaluationConfig}
       configurationError={configurationError}
+      exampleIssue={exampleIssue}
+      savedGeneration={initial.draft && initial.generation > 0 ? initial.generation : undefined}
       hasRequests={candidateRequests.length > 0}
       fieldsDisabled={busy || !!pending || related.blocked}
       submitDisabled={
-        busy || !!pending || related.blocked || !state.canEdit || !currentBase || !evaluationConfig
+        busy ||
+        !!pending ||
+        related.blocked ||
+        !state.canEdit ||
+        !currentBase ||
+        !evaluationConfig ||
+        !!exampleIssue
       }
       blockedReason={[
         !state.canEdit &&
@@ -1187,12 +1200,7 @@ export function ImprovementWorkspace({
                                 </span>
                                 <span className="evaluation-run-meta">
                                   <span className={`evaluation-run-status is-${request.status}`}>
-                                    {request.status === 'requested'
-                                      ? 'Ready'
-                                      : request.status === 'interrupted'
-                                        ? 'Interrupted'
-                                        : request.status.charAt(0).toUpperCase() +
-                                          request.status.slice(1)}
+                                    {labels.status}
                                   </span>{' '}
                                   · {request.expectedCases.length} pairs
                                 </span>
@@ -1226,7 +1234,7 @@ export function ImprovementWorkspace({
                             {request.error && <p role="alert">{request.error}</p>}
                             <p className="text-muted-foreground">
                               {request.status === 'requested'
-                                ? 'Ready to run in your app'
+                                ? 'Request created · run in your app'
                                 : request.status === 'interrupted'
                                   ? 'Recorded interruption'
                                   : `App reported ${request.status}`}
@@ -1234,11 +1242,40 @@ export function ImprovementWorkspace({
                             {!request.comparisonId && (
                               <div className="flex flex-wrap gap-2">
                                 <CopyButton value={request.id} label="Copy request ID" />
-                                <CopyButton value={handoff} label="Copy configuration" />
+                                <CopyButton value={handoff} label="Copy request JSON" />
+                                <EvaluationHandoffDownload handoff={handoff} />
                               </div>
                             )}
                             {request.status === 'running' && (
-                              <p>Check your app for current execution status.</p>
+                              <p>
+                                App reported execution started. Check the original worker before
+                                retrying. Request interruption does not stop an external job or its
+                                charges.
+                              </p>
+                            )}
+                            {initial.request === request.id && (
+                              <EvaluationActivity request={request} progress={selectedProgress} />
+                            )}
+                            {!request.comparisonId && request.status === 'requested' && (
+                              <div className="space-y-2">
+                                <p>
+                                  Save the public JSON as <code>evaluation-request.json</code>, then
+                                  run your app-owned entry point. Add <code>--live</code> only when
+                                  its installed definition requires model execution.
+                                </p>
+                                <SyntaxCode
+                                  code={applicationEvaluatorRunCommand(request)}
+                                  language="bash"
+                                />
+                              </div>
+                            )}
+                            {request.comparisonId && (
+                              <p>
+                                Paired evidence recorded. Completion is separate from your quality
+                                policy and release approval. Outputs remain private/local unless
+                                deliberately exported; use your app’s export and verify-export
+                                commands to share reviewed evidence.
+                              </p>
                             )}
                             {!request.comparisonId && request.status !== 'running' && (
                               <p className="text-muted-foreground">
@@ -1255,7 +1292,8 @@ export function ImprovementWorkspace({
                                 {request.comparisonId && (
                                   <div className="mt-3 flex flex-wrap gap-2">
                                     <CopyButton value={request.id} label="Copy request ID" />
-                                    <CopyButton value={handoff} label="Copy configuration" />
+                                    <CopyButton value={handoff} label="Copy request JSON" />
+                                    <EvaluationHandoffDownload handoff={handoff} />
                                   </div>
                                 )}
                                 <p className="mt-2 break-all">Dataset: {request.datasetRevision}</p>

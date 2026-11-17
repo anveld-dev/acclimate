@@ -21,6 +21,8 @@ import { BundleChanges } from '../components/bundle-changes';
 import { SdkSetup } from '../components/sdk-setup';
 import { BundleReleases } from '../components/bundle-releases';
 import { WorkspaceConnections } from '../components/workspace-connections';
+import { WorkspaceDelivery } from '../components/workspace-delivery';
+import { readDeliveryObservations } from '../server/delivery-observations-actions';
 import { WorkspaceMembers } from '../components/workspace-members';
 import { ConsoleLink, consoleDestination } from '../components/console-link';
 import { ConnectionNotice } from '../components/shared';
@@ -80,6 +82,12 @@ export const Route = createFileRoute('/w/$')({
           },
         }),
       };
+    if (location.view === 'delivery')
+      return {
+        kind: 'delivery' as const,
+        location,
+        result: await readDeliveryObservations({ data: { projectId: location.projectId } }),
+      };
     if (location.view === 'members')
       return {
         kind: 'members' as const,
@@ -122,6 +130,14 @@ function ScopedPage() {
         key={workspaceKey}
         projectId={data.location.projectId}
         search={search}
+        initial={data.result}
+      />
+    );
+  if (data.kind === 'delivery')
+    return (
+      <WorkspaceDelivery
+        key={workspaceKey}
+        projectId={data.location.projectId}
         initial={data.result}
       />
     );

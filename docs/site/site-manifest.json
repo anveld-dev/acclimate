@@ -744,6 +744,161 @@
     "kind": "source"
   },
   {
+    "source": "docs/design/developer-experience-council/CONSENSUS.md",
+    "route": "source/design/developer-experience-council/CONSENSUS.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/IMPLEMENTATION-RESULTS.md",
+    "route": "source/design/developer-experience-council/IMPLEMENTATION-RESULTS.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/IMPLEMENTATION.md",
+    "route": "source/design/developer-experience-council/IMPLEMENTATION.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/PLAN.md",
+    "route": "source/design/developer-experience-council/PLAN.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/README.md",
+    "route": "source/design/developer-experience-council/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/RESOLUTIONS.md",
+    "route": "source/design/developer-experience-council/RESOLUTIONS.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/audit-evidence-native.md",
+    "route": "source/design/developer-experience-council/audit-evidence-native.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/audit-recovery.md",
+    "route": "source/design/developer-experience-council/audit-recovery.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/brief.md",
+    "route": "source/design/developer-experience-council/brief.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/proposals/ci-evidence.md",
+    "route": "source/design/developer-experience-council/proposals/ci-evidence.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/proposals/evaluator-common-caller.md",
+    "route": "source/design/developer-experience-council/proposals/evaluator-common-caller.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/proposals/evaluator-flexible.md",
+    "route": "source/design/developer-experience-council/proposals/evaluator-flexible.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/proposals/evaluator-minimal.md",
+    "route": "source/design/developer-experience-council/proposals/evaluator-minimal.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/proposals/native-repository.md",
+    "route": "source/design/developer-experience-council/proposals/native-repository.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/proposals/onboarding.md",
+    "route": "source/design/developer-experience-council/proposals/onboarding.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/proposals/platform.md",
+    "route": "source/design/developer-experience-council/proposals/platform.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/proposals/python.md",
+    "route": "source/design/developer-experience-council/proposals/python.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/evals-ci-r1.md",
+    "route": "source/design/developer-experience-council/reviews/evals-ci-r1.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/evals-ci-r2.md",
+    "route": "source/design/developer-experience-council/reviews/evals-ci-r2.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/evidence-r1.md",
+    "route": "source/design/developer-experience-council/reviews/evidence-r1.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/evidence-r2.md",
+    "route": "source/design/developer-experience-council/reviews/evidence-r2.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/journey-r1.md",
+    "route": "source/design/developer-experience-council/reviews/journey-r1.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/journey-r2.md",
+    "route": "source/design/developer-experience-council/reviews/journey-r2.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/native-ops-r1.md",
+    "route": "source/design/developer-experience-council/reviews/native-ops-r1.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/native-ops-r2.md",
+    "route": "source/design/developer-experience-council/reviews/native-ops-r2.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/protocol-r1.md",
+    "route": "source/design/developer-experience-council/reviews/protocol-r1.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/protocol-r2.md",
+    "route": "source/design/developer-experience-council/reviews/protocol-r2.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/python-r1.md",
+    "route": "source/design/developer-experience-council/reviews/python-r1.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/python-r2.md",
+    "route": "source/design/developer-experience-council/reviews/python-r2.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/typescript-r1.md",
+    "route": "source/design/developer-experience-council/reviews/typescript-r1.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/design/developer-experience-council/reviews/typescript-r2.md",
+    "route": "source/design/developer-experience-council/reviews/typescript-r2.md",
+    "kind": "source"
+  },
+  {
     "source": "docs/design/file-tree/README.md",
     "route": "source/design/file-tree/README.md",
     "kind": "source"
@@ -776,6 +931,51 @@
   {
     "source": "docs/design/file-tree/reviews/visual.md",
     "route": "source/design/file-tree/reviews/visual.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/implementation/dx-gap-closure-20261117/README.md",
+    "route": "source/implementation/dx-gap-closure-20261117/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/implementation/dx-gap-closure-20261117/console.md",
+    "route": "source/implementation/dx-gap-closure-20261117/console.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/implementation/dx-gap-closure-20261117/doctor.md",
+    "route": "source/implementation/dx-gap-closure-20261117/doctor.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/implementation/dx-gap-closure-20261117/manifest.md",
+    "route": "source/implementation/dx-gap-closure-20261117/manifest.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/implementation/dx-gap-closure-20261117/native.md",
+    "route": "source/implementation/dx-gap-closure-20261117/native.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/implementation/dx-gap-closure-20261117/progress.md",
+    "route": "source/implementation/dx-gap-closure-20261117/progress.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/implementation/dx-gap-closure-20261117/python.md",
+    "route": "source/implementation/dx-gap-closure-20261117/python.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/implementation/dx-gap-closure-20261117/research.md",
+    "route": "source/implementation/dx-gap-closure-20261117/research.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/implementation/dx-gap-closure-20261117/retest.md",
+    "route": "source/implementation/dx-gap-closure-20261117/retest.md",
     "kind": "source"
   },
   {

@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "runtime": "Python-only",
+  "nodeAvailable": false,
+  "sdkDependencies": [],
+  "installedTypeContract": {
+    "startRequired": [
+      "attemptId"
+    ],
+    "finishRequired": [
+      "attemptId",
+      "comparisonId"
+    ],
+    "statusValues": [
+      "requested",
+      "running",
+      "completed",
+      "failed",
+      "interrupted"
+    ]
+  },
+  "main": {
+    "requestId": "f313213f-ef89-4b43-931b-77e188a8c794",
+    "comparisonId": "96953c5f-30d4-4b29-9ee6-bb60debccf70",
+    "status": "completed",
+    "parentMeanReward": 0.5,
+    "candidateMeanReward": 1,
+    "callbacksAfterLostResponse": 8,
+    "callbacksAfterTerminalRetry": 8,
+    "lostResponseCode": "submission.unconfirmed",
+    "sameSubmitKey": true,
+    "sameSubmitBodyBytes": true,
+    "submitKeySha256": "840b53cdd4bcb382f9cf5032ed37ff1303afd7491a7d795033fdbd8db91c6431",
+    "submitBodySha256": "2b973d4285b422c520a388dee04e0884134b9e9937d3d3f1ff9ea3cb8c568a03"
+  },
+  "asyncCooperative": {
+    "requestId": "a9022f9e-f48a-4279-a5e3-f3c96ece6c40",
+    "comparisonId": "1785d6db-d3c5-40ed-9c63-bc6b84495e2f",
+    "status": "failed",
+    "callerCancellations": 2,
+    "heartbeatTicks": 27,
+    "callbackKinds": [
+      "execute"
+    ],
+    "inputsHeldUntilQuiescent": true,
+    "lockHeldUntilQuiescent": true,
+    "cleanupAfterQuiescence": true
+  },
+  "asyncIgnoredUntilReturn": {
+    "requestId": "77163714-1286-4169-bae8-1166f4ef52b2",
+    "comparisonId": "841e07eb-4682-449b-bb0f-4ca74dd1ed36",
+    "status": "failed",
+    "callerCancellations": 2,
+    "heartbeatTicks": 25,
+    "callbackKinds": [
+      "execute"
+    ],
+    "gradingSkipped": true,
+    "futureExecutorsSkipped": true,
+    "inputsHeldUntilQuiescent": true,
+    "lockHeldUntilQuiescent": true,
+    "cleanupAfterQuiescence": true
+  },
+  "failures": {
+    "requestId": "eea09db6-8df4-490f-a812-cfe7604bda9d",
+    "comparisonId": "1951fbe2-279a-493f-958f-94cccc370a52",
+    "status": "failed",
+    "parentExecutionStatus": "infrastructure_failed",
+    "candidateGradingStatus": "failed"
+  },
+  "bundleId": "bc18df59-4662-4a3e-8ec9-0ffa3bc32c67",
+  "sourceInventorySha256": "63b0bc9a1751a7b5bf9e230e7bde81f0801ea7d4946171d628449c575cc6cfbd",
+  "serviceBinarySha256": "c84d1961249e635c024346fb23328dccf738f0aa7eef0e5e50fa4b00111d2a50",
+  "binarySourceBuildAttested": false,
+  "descriptorCaseCount": 2,
+  "execution": "deterministic-app-simulation-no-model",
+  "consumerSourceSha256": "8af6129db8126471b86b47d20162ff1f4bc4a09e578712eb48a2a26058c59318",
+  "asyncRecipeSourceSha256": "5b3cb8fcec1dd83bfa1e5a8b743936593d333facd257d1bd0a67a5e9d46910e0",
+  "strictTypeCheckerExecuted": true,
+  "consumerCommandExitCode": 0,
+  "executionCommand": "python3.11 scripts/acceptance/dx_personas/python_integrator.py --output /private/tmp/acclimate-python-gap-retest-20261117",
+  "staticTyping": {
+    "checker": "mypy",
+    "version": "1.18.2",
+    "strict": true,
+    "isolatedDevToolEnvironment": true,
+    "target": "fresh-release-installed-wheel",
+    "checkerCommandExitCode": 0,
+    "positiveExitCode": 0,
+    "negativeExitCode": 1,
+    "negativeCaseCount": 7,
+    "annotatedErrorStatements": 6,
+    "diagnostics": [
+      {
+        "line": 8,
+        "code": "typeddict-item"
+      },
+      {
+        "line": 14,
+        "code": "typeddict-item"
+      },
+      {
+        "line": 14,
+        "code": "typeddict-unknown-key"
+      },
+      {
+        "line": 15,
+        "code": "typeddict-item"
+      },
+      {
+        "line": 19,
+        "code": "typeddict-item"
+      },
+      {
+        "line": 42,
+        "code": "arg-type"
+      },
+      {
+        "line": 49,
+        "code": "arg-type"
+      }
+    ],
+    "documentedRootImports": {
+      "exitCode": 0,
+      "allPublicDomainExports": true
+    },
+    "nativeDtoExportIdentity": true,
+    "pep561MarkerPresent": true,
+    "consumerOutsideCheckout": true,
+    "runtimeDependencies": [],
+    "rejectedCases": [
+      "missing-analysis-comparisonId",
+      "unknown-start-attempt_id",
+      "missing-start-attemptId",
+      "missing-finish-comparisonId",
+      "invalid-status",
+      "invalid-grader-return-type",
+      "invalid-executor-return-type"
+    ],
+    "fixtureSha256": {
+      "positive.py": "4fa61f9f3f50b2e1044fc3513c1458a62f9909d44429f45dbc485ced5db0517e",
+      "negative.py": "2c9a3780032f45c833d70dd34b1b7bdb75c8ce2301d3c4d4f4250b9ff4c31277",
+      "check_installed.py": "66784649ebb9037256be523d3f2d9991ec2938b8bbb0b3e6f5053e2d4df68f18"
+    }
+  },
+  "distributionGuidance": {
+    "readmeSha256": "8082ea4747c2b8ede2fb2724130dba9de9d7e197c6540c99aa25a69567e8fafb",
+    "operatorManagedObtainingGuide": true,
+    "sourceBuildCommand": true,
+    "gettingStartedLink": true,
+    "buildAndVerificationLinks": true
+  },
+  "release": {
+    "manifestSha256": "d58ba710bf5a2d0829d7a61e3520c69bd607be87dfe258f41fccfec4ebbf660f",
+    "checksumsSha256": "d08fbad420d2a16f9f23e11f53440d21c239ffd9029c26c463e573f9a0a11994",
+    "sourceSha256": "63b0bc9a1751a7b5bf9e230e7bde81f0801ea7d4946171d628449c575cc6cfbd",
+    "installationProof": {
+      "package": "acclimate-sdk",
+      "resolvedWithinConsumer": true,
+      "releaseArchiveSha256": "f25f6380080a0ceba369c9f6ac7b49733f11c04f5a828f218bca2addbe26b577",
+      "verifiedFiles": 19,
+      "installerRewrittenFiles": [
+        "RECORD"
+      ],
+      "contentSha256": "a9bb74a6f39dd8993ba842de1b94d52ee654b6dde8e7fe2fedd488f4f89a4bd8"
+    }
+  },
+  "consumerOutsideCheckout": true,
+  "fixtureCleanup": {
+    "databaseDirectoryRemoved": true,
+    "serviceStopped": true,
+    "consumerOutputsRetained": true
+  }
+}

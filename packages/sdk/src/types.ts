@@ -73,6 +73,54 @@ export interface CaseKey {
   caseId: string;
   repetition: number;
 }
+/** Public evaluator intent. Task contents, expected answers and callbacks stay in the app. */
+export interface EvaluationDescriptor {
+  datasetRevision: string;
+  graderRevision: string;
+  runtime: Record<string, string>;
+  expectedCases: CaseKey[];
+}
+export interface EvaluationHandoff {
+  schemaVersion: 1;
+  serviceUrl: string;
+  projectId: string;
+  bundleId: string;
+  requestId: string;
+  configuration: EvaluationDescriptor;
+}
+/** Point-in-time machine authorization, never an execution reservation or provider probe. */
+export interface EvaluationCapabilities {
+  schemaVersion: 1;
+  projectId: string;
+  principalId: string;
+  checkedAt: string;
+  readUnpublished: true;
+  writeEvaluation: boolean;
+  retainedEvaluationOperations: true;
+}
+/** Optional reported activity. Never a lease or evidence of external quiescence. */
+export interface EvaluationProgressRequest {
+  attemptId: string;
+  sequence: number;
+  phase: 'preparing' | 'executing' | 'grading' | 'submitting';
+  completed: number;
+  total: number;
+  case?: CaseKey;
+}
+export interface EvaluationProgressObservation extends EvaluationProgressRequest {
+  receivedAt: string;
+  evaluatorPrincipal: string;
+}
+export interface EvaluationProgressView {
+  schemaVersion: 1;
+  requestId: string;
+  status: Evaluation['status'];
+  attemptId: string | null;
+  observation: EvaluationProgressObservation | null;
+  activity: 'fresh' | 'stale' | 'absent';
+  checkedAt: string;
+  staleAfterSeconds: 60;
+}
 export interface Usage {
   inputTokens?: number;
   outputTokens?: number;
@@ -268,7 +316,29 @@ export interface DeliveryReceipt extends DeliveryReceiptRequest {
   receivedAt: string;
   delayed: boolean;
 }
+/** Safe project-readable discovery; all latest fields describe one received observation. */
+export interface IntegrationObservation {
+  id: string;
+  displayName: string;
+  bundleId: string;
+  channel: string;
+  enabled: boolean;
+  latestObservation: {
+    eventId: string;
+    stage: DeliveryReceiptRequest['stage'];
+    versionId: string;
+    digest: string;
+    occurredAt: string;
+    receivedAt: string;
+  } | null;
+}
 export type Operation =
-  | { status: 'committed'; operationId: string; path: string; requestFingerprint?: string; result: Draft | BundleSetup | Proposal | Evaluation | Promotion }
+  | {
+      status: 'committed';
+      operationId: string;
+      path: string;
+      requestFingerprint?: string;
+      result: Draft | BundleSetup | Proposal | Evaluation | Promotion | Comparison;
+    }
   | { status: 'not_observed'; operationId: string }
   | { status: 'closed'; operationId: string; path?: string };

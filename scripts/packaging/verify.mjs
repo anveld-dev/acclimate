@@ -1,13 +1,20 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { execFileSync, spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { join, resolve } from 'node:path';
+import { writeReleaseMetadata } from './release-metadata.mjs';
+import { archiveStarters } from './starter-artifacts.mjs';
+import { releaseSourceFingerprint } from './source-fingerprint.mjs';
+import { verifyPackageBuildReceipt } from './build-receipt.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const version = JSON.parse(await readFile(join(root, 'packages/sdk/package.json'), 'utf8')).version;
+const publicMetadata = await writeReleaseMetadata(root);
+const sourceFingerprint = await releaseSourceFingerprint(root);
 const outputIndex = process.argv.indexOf('--output');
 const output = resolve(
   outputIndex >= 0 ? process.argv[outputIndex + 1] : join(root, 'artifacts/releases', version),
@@ -40,8 +47,8 @@ const pythonExecutable =
   });
 if (!pythonExecutable)
   throw new Error('Python 3.11+ required; set ACCLIMATE_PACKAGE_PYTHON to its executable.');
-const temp = await mkdtemp(join(tmpdir(), 'acclimate-package-check-'));
-const run = (command, args, cwd = root) => execFileSync(command, args, { cwd, stdio: 'inherit' });
+const temp = await realpath(await mkdtemp(join(tmpdir(), 'acclimate-package-check-')));
+const run = (command, args, cwd = root, env = process.env) => execFileSync(command, args, { cwd, env, stdio: 'inherit' });
 async function reservePort() {
   const server=createServer();
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve)});
@@ -90,6 +97,7 @@ async function verifyConsoleRuntime() {
 try {
   if (process.argv.includes('--console-runtime')) await verifyConsoleRuntime();
   if (!process.argv.includes('--skip-build')) run('npm', ['run', 'build:packages']);
+  await verifyPackageBuildReceipt(root);
   const names = ['sdk', 'codex-plugin', 'claude-plugin', 'pi-plugin', 'cursor-plugin'];
   for (const name of names)
     run('npm', [
@@ -114,11 +122,26 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { AcclimateClient, ApiError, resolveAndCache, prepareFiles } from '@acclimate/sdk';
 import { validatePayload, compatibilityIssues } from '@acclimate/sdk/validation';
+import { defineEvaluation, preflightEvaluation, runEvaluation } from '@acclimate/sdk/evaluation';
+import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
+import { checkComparison } from '@acclimate/sdk/evaluation/policy';
+import { exportReviewEvidence, verifyReviewExport } from '@acclimate/sdk/evaluation/artifacts';
+import { analyzeComparison } from '@acclimate/sdk/evaluation/analysis';
+import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
+import { createEvaluationProgressReporter } from '@acclimate/sdk/evaluation/progress';
 import { prepare as codex } from '@acclimate/codex-plugin';
 import { prepare as claude } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';
 import { prepare as cursor } from '@acclimate/cursor-plugin';
 for (const value of [AcclimateClient, ApiError, resolveAndCache, prepareFiles, codex, claude, pi, cursor]) assert.equal(typeof value, 'function');
+for (const value of [defineEvaluation, preflightEvaluation, runEvaluation, evaluationMain, checkComparison, exportReviewEvidence, verifyReviewExport, analyzeComparison, createEvaluationManifest, restoreEvaluationManifest, createEvaluationProgressReporter]) assert.equal(typeof value, 'function');
+const application = defineEvaluation({configId:'installed-check',configRevision:'1',datasetRevision:'cases-1',graderRevision:'grade-1',runtime:{app:'fixture'},execution:'model-free',cases:[{caseId:'task',input:{value:1},expected:1}],execute:async()=>({output:1}),grade:async()=>({reward:1})});
+assert.equal(application.descriptor.runtime.configId, 'installed-check');
+const manifest = createEvaluationManifest({configId:'installed-manifest',execution:'model-free',cases:[{caseId:'task',input:{value:1},expected:1}],grader:{sourceUtf8:'return expected === output;'},runtime:{settings:{temperature:0.1},artifacts:{app:'sha256:'+'a'.repeat(64)}}});
+assert.deepEqual(restoreEvaluationManifest(manifest.privateManifestJson).descriptor, manifest.descriptor);
+assert.deepEqual(defineEvaluation({...manifest.definition,execute:async()=>({output:1}),grade:async()=>({reward:1})}).descriptor, manifest.descriptor);
+assert.deepEqual(application.descriptor.expectedCases,[{caseId:'task',repetition:0}]);
+assert.equal(JSON.stringify(application.descriptor).includes('expected"'),false);
 const bundle = {version:{id:'v1',bundleId:'b',parentVersionId:null,digest:'sha256:test',createdAt:'now'},payload:{schemaVersion:1,files:[{path:'instructions.md',kind:'instruction',text:'Hello'}]},resolvedAt:0,stale:false};
 validatePayload(bundle.payload);
 assert.deepEqual(compatibilityIssues(bundle.payload, 'codex'), []);
@@ -130,6 +153,13 @@ for (const prepare of [codex, claude, pi, cursor]) { const staged = await prepar
     `
 import { AcclimateClient, type VerifiedBundle } from '@acclimate/sdk';
 import { validatePayload, compatibilityIssues } from '@acclimate/sdk/validation';
+import { defineEvaluation, preflightEvaluation, runEvaluation } from '@acclimate/sdk/evaluation';
+import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
+import { checkComparison } from '@acclimate/sdk/evaluation/policy';
+import { exportReviewEvidence, verifyReviewExport } from '@acclimate/sdk/evaluation/artifacts';
+import { analyzeComparison } from '@acclimate/sdk/evaluation/analysis';
+import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
+import { createEvaluationProgressReporter } from '@acclimate/sdk/evaluation/progress';
 import { prepare as codex } from '@acclimate/codex-plugin';
 import { prepare as claude } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';
@@ -138,9 +168,20 @@ declare const bundle: VerifiedBundle;
 validatePayload(bundle.payload);
 void compatibilityIssues(bundle.payload, 'codex');
 void [AcclimateClient, codex(bundle), claude(bundle), pi(bundle), cursor(bundle)];
+void [defineEvaluation, preflightEvaluation, runEvaluation, evaluationMain, checkComparison, exportReviewEvidence, verifyReviewExport, analyzeComparison, createEvaluationManifest, restoreEvaluationManifest, createEvaluationProgressReporter];
 `,
   );
   run(process.execPath, ['consumer.mjs'], temp);
+  await cp(join(root, 'examples/evaluation-starter'), join(temp, 'evaluation-starter'), {
+    recursive: true, filter: source => !source.includes('/node_modules') && !source.includes('/__pycache__'),
+  });
+  run(process.execPath, ['trial.mjs'], join(temp, 'evaluation-starter'));
+  run(process.execPath, ['acclimate-eval.mjs', 'describe'], join(temp, 'evaluation-starter'));
+  await cp(join(root, 'examples/native-repository'), join(temp, 'native-repository'), {
+    recursive: true, filter: source => !source.includes('/node_modules') && !source.includes('/__pycache__'),
+  });
+  for (const harness of ['codex', 'claude', 'pi', 'cursor'])
+    run(process.execPath, ['demo.mjs', '--state-root', join(temp, `native-job-${harness}`), '--harness', harness], join(temp, 'native-repository'));
   run(
     process.execPath,
     [
@@ -167,6 +208,10 @@ void [AcclimateClient, codex(bundle), claude(bundle), pi(bundle), cursor(bundle)
     filter: (source) =>
       !source.startsWith(join(root, 'node_modules/@acclimate')) && !source.includes('/.bin'),
   });
+  await cp(join(temp, 'evaluation-starter/typescript/acclimate-eval.ts.template'), join(temp, 'evaluation-starter/typescript/acclimate-eval.ts'));
+  await cp(join(temp, 'evaluation-starter/typescript/agent.ts.template'), join(temp, 'evaluation-starter/typescript/agent.ts'));
+  run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'), '-p', 'typescript/tsconfig.json'], join(temp, 'evaluation-starter'));
+  run(process.execPath, ['typescript/dist/acclimate-eval.js', 'describe'], join(temp, 'evaluation-starter'));
   await writeFile(
     join(temp, 'native.mjs'),
     `
@@ -228,7 +273,43 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
       version,
       '--output',
       stage,
+    ], root, { ...process.env, SOURCE_DATE_EPOCH: '315532800' });
+    const wheelName = (await readdir(stage)).find(name => name.endsWith('.whl'));
+    if (!wheelName) throw new Error('Verified wheel artifact missing');
+    run(pythonExecutable, [
+      'scripts/packaging/verify-wheel.py', '--wheel', join(stage, wheelName),
+      '--starter', join(root, 'examples/evaluation-starter'),
+      '--analysis-fixtures', join(root, 'contracts/fixtures/evaluation-analysis/vectors.json'),
     ]);
+    const starters = await archiveStarters(root, stage, publicMetadata);
+    const extractedStarters = join(temp, 'distributed-starters');
+    await mkdir(extractedStarters, { mode: 0o700 });
+    for (const starter of starters)
+      run('tar', ['-xzf', join(stage, starter.file), '-C', extractedStarters]);
+    run(process.execPath, ['trial.mjs'], join(extractedStarters, 'evaluation-starter'));
+    run(process.execPath, ['acclimate-eval.mjs', 'describe'], join(extractedStarters, 'evaluation-starter'));
+    const analysisFixture = JSON.parse(await readFile(join(root, 'contracts/fixtures/evaluation-analysis/vectors.json'), 'utf8'));
+    const analysisInput = join(temp, 'analysis-input');
+    await mkdir(analysisInput, { mode: 0o700 });
+    const analysisArgs = [];
+    for (const key of ['comparison', 'expectedDescriptor', 'expectedBinding']) {
+      const filename = join(analysisInput, key + '.json');
+      await writeFile(filename, JSON.stringify(analysisFixture.input[key]));
+      analysisArgs.push(filename);
+    }
+    const analysisConfig = join(analysisInput, 'config.json');
+    await writeFile(analysisConfig, JSON.stringify({metrics:analysisFixture.input.metrics,observations:analysisFixture.input.observations,uncertainty:analysisFixture.input.uncertainty}));
+    analysisArgs.push(analysisConfig);
+    const analysisOutput = JSON.parse(execFileSync(process.execPath, [join(extractedStarters, 'evaluation-starter/analyze.mjs'), ...analysisArgs], {cwd:temp,encoding:'utf8'}));
+    if (!isDeepStrictEqual(analysisOutput, analysisFixture.vectors[0].expected.result))
+      throw new Error('Installed distributed analysis recipe differs from its algorithm vector');
+
+    run('sh', ['-n', 'ci.sh'], join(extractedStarters, 'ci-starter'));
+    run(process.execPath, ['evaluation/acclimate-eval.mjs', 'describe'], join(extractedStarters, 'ci-starter'));
+    for (const harness of ['codex', 'claude', 'pi', 'cursor'])
+      run(process.execPath, ['demo.mjs', '--state-root', join(temp, `archived-native-${harness}`), '--harness', harness], join(extractedStarters, 'native-repository-starter'));
+    await writeFile(join(stage, 'release-metadata.json'), JSON.stringify(publicMetadata, null, 2) + '\n');
+    await writeFile(join(stage, 'SOURCE.json'), JSON.stringify(sourceFingerprint, null, 2) + '\n');
     const artifacts = [];
     for (const name of (await readdir(stage)).sort()) {
       const bytes = await readFile(join(stage, name));
@@ -250,12 +331,31 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
           version,
           createdAt: new Date().toISOString(),
           artifacts,
+          packages: publicMetadata.artifacts,
+          starters,
+          prerequisites: publicMetadata.prerequisites,
+          capabilities: publicMetadata.capabilities,
+          nativePeers: publicMetadata.nativePeers,
+          runtime: {
+            node: process.version,
+            python: execFileSync(pythonExecutable, ['-c', 'import platform; print(platform.python_version())'], { encoding: 'utf8' }).trim(),
+          },
+          source: { file: 'SOURCE.json', sha256: sourceFingerprint.sha256, scope: sourceFingerprint.scope },
           checks: {
             npmOfflineInstall: 'passed',
             runtimeImports: 'passed',
             typescriptConsumer: 'passed',
             nativeOptionalPeers: 'passed',
             pythonIsolatedWheel: 'passed',
+            installedEvaluatorImports: 'passed',
+            installedEvaluatorTrial: 'passed',
+            installedEvaluatorDescriptor: 'passed',
+            typescriptStarterBuild: 'passed',
+            pythonEvaluatorImports: 'passed',
+            pythonEvaluatorTrialAndDescriptor: 'passed',
+            installedNativeRepositoryFakeTasks: 'passed: codex, claude, pi, cursor',
+            distributedStarterArchives: 'passed: extracted evaluation/ci/native consumers',
+            headlessServiceEvaluation: 'not run; use qualify:dx',
             standaloneConsoleRuntime: process.argv.includes('--console-runtime') ? 'passed' : 'not run',
           },
           publication: 'not run',
@@ -265,6 +365,9 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
         2,
       ) + '\n',
     );
+    await verifyPackageBuildReceipt(root);
+    if ((await releaseSourceFingerprint(root)).sha256 !== sourceFingerprint.sha256)
+      throw new Error('Release input changed during packaging; rebuild from a stable source snapshot.');
     await rename(stage, output);
   } catch (error) {
     await rm(stage, { recursive: true, force: true });

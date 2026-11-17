@@ -1,0 +1,729 @@
+{
+  "schemaVersion": 1,
+  "persona": "typescript-integrator",
+  "date": "2026-11-17",
+  "criteriaDefinedBeforeExecution": {
+    "installed_typescript": "Compile a strict external TS app importing only installed public SDK entry points.",
+    "meaningful_pair": "Saved support-ticket cases, versioned instructions, and independent grading produce measurable candidate improvement.",
+    "bound_request": "Describe the installed app, freeze that descriptor in a real immutable request, and finish its paired evaluation.",
+    "callback_lifetime": "Task/expected/output/bundle copies stay isolated; prepared content remains readable across await and is cleaned after execution.",
+    "durable_retry": "Lose a real committed comparison response; retain request/attempt/comparison identity and add no callbacks on replay.",
+    "diagnostics": "A changed dataset revision identifies that field before callbacks run.",
+    "review_handoff": "Explicitly redact selected roles, copy a portable export with independently retained trusted handoff, delete journals, and verify in an independent read-only process; identify physical-host limits.",
+    "derived_manifest": "Derive one captured case inventory from actual private cases, grader source, compiled artifacts and used settings; roundtrip and mutate each identity input.",
+    "public_helpers": "Strictly compile and run installed manifest/progress/analysis public subpaths, with import boundaries and type contracts."
+  },
+  "criteria": {
+    "installed_typescript": "accepted",
+    "meaningful_pair": "accepted",
+    "bound_request": "accepted",
+    "callback_lifetime": "accepted",
+    "durable_retry": "accepted",
+    "diagnostics": "accepted",
+    "review_handoff": "partial",
+    "derived_manifest": "accepted",
+    "public_helpers": "accepted",
+    "portable_local_handoff": "accepted",
+    "physical_second_machine": "partial"
+  },
+  "releaseSourceInventorySha256": "63b0bc9a1751a7b5bf9e230e7bde81f0801ea7d4946171d628449c575cc6cfbd",
+  "releaseManifestSha256": "d58ba710bf5a2d0829d7a61e3520c69bd607be87dfe258f41fccfec4ebbf660f",
+  "releaseChecksumsSha256": "d08fbad420d2a16f9f23e11f53440d21c239ffd9029c26c463e573f9a0a11994",
+  "installationProofs": {
+    "own-typescript-app": {
+      "resolvedWithinConsumer": true,
+      "packages": [
+        {
+          "package": "@acclimate/sdk",
+          "releaseArchiveSha256": "d12176e8e3979e64cbeaf297f80cedb9b248d173e7734f280c003fb07572b23a",
+          "verifiedFiles": 94,
+          "contentSha256": "014e9711226e92d62dac9fe39ef7ed4d8b45c73e5a2da4886b2850ff44aad9f7"
+        }
+      ]
+    }
+  },
+  "physicallyExternalConsumer": true,
+  "manifestCheck": {
+    "descriptor": {
+      "datasetRevision": "sha256:5a91a93e19529b7b2e59393ad57e7131b473d3fad17e47a0af709c57edd4c42b",
+      "graderRevision": "sha256:420ce8f9c00e006b1ecbd42ac4df295c7172e692d560532834c5e5f6ddc6a009",
+      "runtime": {
+        "manifestSchema": "acclimate-evaluation-manifest-v1",
+        "runtimeRevision": "sha256:7437282a9e5a78f70f9e1d36343a698625fc191d6fb4588813ae37590bada481",
+        "configId": "ticket-priority-typescript",
+        "configRevision": "sha256:df7eec2177567a8cabd42e399771a8587a435cc90cefa64c8c4d35dd410022e0",
+        "execution": "model-free",
+        "concurrency": "1",
+        "gradeRetries": "0"
+      },
+      "expectedCases": [
+        {
+          "caseId": "negated",
+          "repetition": 0
+        },
+        {
+          "caseId": "negated",
+          "repetition": 1
+        },
+        {
+          "caseId": "outage",
+          "repetition": 0
+        },
+        {
+          "caseId": "outage",
+          "repetition": 1
+        },
+        {
+          "caseId": "routine",
+          "repetition": 0
+        },
+        {
+          "caseId": "routine",
+          "repetition": 1
+        }
+      ]
+    },
+    "roundtrip": true,
+    "definitionMatches": true,
+    "mutations": {
+      "input": {
+        "datasetRevision": "sha256:d87d9941f1cc8b3e87843fc67811bf57c840ebc2f7a2f4b097cd85d58db63fd3",
+        "graderRevision": "sha256:420ce8f9c00e006b1ecbd42ac4df295c7172e692d560532834c5e5f6ddc6a009",
+        "runtime": {
+          "manifestSchema": "acclimate-evaluation-manifest-v1",
+          "runtimeRevision": "sha256:7437282a9e5a78f70f9e1d36343a698625fc191d6fb4588813ae37590bada481",
+          "configId": "ticket-priority-typescript",
+          "configRevision": "sha256:c567109baf45c3726b1d376b72dcc59a5b9ecfc4b3f7823a543d29b7f0ee9596",
+          "execution": "model-free",
+          "concurrency": "1",
+          "gradeRetries": "0"
+        },
+        "expectedCases": [
+          {
+            "caseId": "negated",
+            "repetition": 0
+          },
+          {
+            "caseId": "negated",
+            "repetition": 1
+          },
+          {
+            "caseId": "outage",
+            "repetition": 0
+          },
+          {
+            "caseId": "outage",
+            "repetition": 1
+          },
+          {
+            "caseId": "routine",
+            "repetition": 0
+          },
+          {
+            "caseId": "routine",
+            "repetition": 1
+          }
+        ]
+      },
+      "expected": {
+        "datasetRevision": "sha256:e36b383ee1a37495c3ee602905257364ff5185a698e572854e59fad5de90bbbb",
+        "graderRevision": "sha256:420ce8f9c00e006b1ecbd42ac4df295c7172e692d560532834c5e5f6ddc6a009",
+        "runtime": {
+          "manifestSchema": "acclimate-evaluation-manifest-v1",
+          "runtimeRevision": "sha256:7437282a9e5a78f70f9e1d36343a698625fc191d6fb4588813ae37590bada481",
+          "configId": "ticket-priority-typescript",
+          "configRevision": "sha256:f8df2cf432b3488b4a446ff571a6ed6cb5b2da2087c59d00da6d1cf319cfb388",
+          "execution": "model-free",
+          "concurrency": "1",
+          "gradeRetries": "0"
+        },
+        "expectedCases": [
+          {
+            "caseId": "negated",
+            "repetition": 0
+          },
+          {
+            "caseId": "negated",
+            "repetition": 1
+          },
+          {
+            "caseId": "outage",
+            "repetition": 0
+          },
+          {
+            "caseId": "outage",
+            "repetition": 1
+          },
+          {
+            "caseId": "routine",
+            "repetition": 0
+          },
+          {
+            "caseId": "routine",
+            "repetition": 1
+          }
+        ]
+      },
+      "grader": {
+        "datasetRevision": "sha256:5a91a93e19529b7b2e59393ad57e7131b473d3fad17e47a0af709c57edd4c42b",
+        "graderRevision": "sha256:15b3e39502890193c7f1af452bab4be55586370abb2d1bbd10c412e139b1359e",
+        "runtime": {
+          "manifestSchema": "acclimate-evaluation-manifest-v1",
+          "runtimeRevision": "sha256:7437282a9e5a78f70f9e1d36343a698625fc191d6fb4588813ae37590bada481",
+          "configId": "ticket-priority-typescript",
+          "configRevision": "sha256:ebde734f111d68d1a3915fe413f0c60268bdf690f5bcda50ce71507bb536941b",
+          "execution": "model-free",
+          "concurrency": "1",
+          "gradeRetries": "0"
+        },
+        "expectedCases": [
+          {
+            "caseId": "negated",
+            "repetition": 0
+          },
+          {
+            "caseId": "negated",
+            "repetition": 1
+          },
+          {
+            "caseId": "outage",
+            "repetition": 0
+          },
+          {
+            "caseId": "outage",
+            "repetition": 1
+          },
+          {
+            "caseId": "routine",
+            "repetition": 0
+          },
+          {
+            "caseId": "routine",
+            "repetition": 1
+          }
+        ]
+      },
+      "build": {
+        "datasetRevision": "sha256:5a91a93e19529b7b2e59393ad57e7131b473d3fad17e47a0af709c57edd4c42b",
+        "graderRevision": "sha256:420ce8f9c00e006b1ecbd42ac4df295c7172e692d560532834c5e5f6ddc6a009",
+        "runtime": {
+          "manifestSchema": "acclimate-evaluation-manifest-v1",
+          "runtimeRevision": "sha256:7d6da279c0fd82f55070d403f6875d6dae918a908bfb3f3d43a059561f0ce4f0",
+          "configId": "ticket-priority-typescript",
+          "configRevision": "sha256:5fd5783c6ff5b0ed5242bd2c65e1b1ba5c3f0f00b7aff47d350efb3ab6dd8d74",
+          "execution": "model-free",
+          "concurrency": "1",
+          "gradeRetries": "0"
+        },
+        "expectedCases": [
+          {
+            "caseId": "negated",
+            "repetition": 0
+          },
+          {
+            "caseId": "negated",
+            "repetition": 1
+          },
+          {
+            "caseId": "outage",
+            "repetition": 0
+          },
+          {
+            "caseId": "outage",
+            "repetition": 1
+          },
+          {
+            "caseId": "routine",
+            "repetition": 0
+          },
+          {
+            "caseId": "routine",
+            "repetition": 1
+          }
+        ]
+      },
+      "settings": {
+        "datasetRevision": "sha256:5a91a93e19529b7b2e59393ad57e7131b473d3fad17e47a0af709c57edd4c42b",
+        "graderRevision": "sha256:420ce8f9c00e006b1ecbd42ac4df295c7172e692d560532834c5e5f6ddc6a009",
+        "runtime": {
+          "manifestSchema": "acclimate-evaluation-manifest-v1",
+          "runtimeRevision": "sha256:a8eecaef517f88f744c6a67d1f6092d984ab9296a533a792ec3a8cf1a0e195df",
+          "configId": "ticket-priority-typescript",
+          "configRevision": "sha256:3fccd3c103f9a19a6cd8aebbe35ab37111f84c24a852c506717c794f1f141443",
+          "execution": "model-free",
+          "concurrency": "1",
+          "gradeRetries": "0"
+        },
+        "expectedCases": [
+          {
+            "caseId": "negated",
+            "repetition": 0
+          },
+          {
+            "caseId": "negated",
+            "repetition": 1
+          },
+          {
+            "caseId": "outage",
+            "repetition": 0
+          },
+          {
+            "caseId": "outage",
+            "repetition": 1
+          },
+          {
+            "caseId": "routine",
+            "repetition": 0
+          },
+          {
+            "caseId": "routine",
+            "repetition": 1
+          }
+        ]
+      }
+    },
+    "deniedInternalImports": [
+      "@acclimate/sdk/dist/evaluation/manifest.js",
+      "@acclimate/sdk/src/evaluation/progress.ts"
+    ],
+    "privateManifestSha256": "sha256:5ed105e73a8c9fc31037002fb6db270c7dd416b615c17d02869c4a4cc3eb72f8",
+    "publicDescriptorHasPrivatePlaintext": false
+  },
+  "analysis": {
+    "schemaVersion": 1,
+    "interpretation": "app-asserted-fixed-case-analysis",
+    "executionAttested": false,
+    "aggregation": "equal-case-means",
+    "expectedBinding": {
+      "parentVersionId": "485d04ab-123a-415c-ba7f-f8dbb281ba29",
+      "candidateVersionId": "8304c199-681b-4afb-b4f8-3f1982c6c79c",
+      "parentDigest": "sha256:ab0a066c7402a5c63d1cc08415e289f225008945160fd6f5c94c1495e1692f80",
+      "candidateDigest": "sha256:fe9fe5585ab89810d6f8bf30e9627b24a36698284ce84d88e20d7e69dbddf2ee",
+      "requestId": "b68bc386-4f4e-400b-aafb-cbb2ab3d6eea",
+      "attemptId": "7dd9ff24-6706-4359-9823-2eeea3534fb5",
+      "comparisonId": "cbb54519-8ea6-4a72-b912-d2a9d8c25689",
+      "submitter": "evaluator"
+    },
+    "graderRevision": "sha256:420ce8f9c00e006b1ecbd42ac4df295c7172e692d560532834c5e5f6ddc6a009",
+    "uncertaintyProtocol": null,
+    "metrics": [
+      {
+        "metric": {
+          "id": "reward",
+          "name": "Scalar reward",
+          "unit": "reward",
+          "direction": "higher",
+          "source": "reward"
+        },
+        "status": "descriptive",
+        "code": "analysis.descriptive",
+        "counts": {
+          "distinctCases": 3,
+          "expectedPairs": 6,
+          "comparablePairs": 6,
+          "missingPairs": 0
+        },
+        "summary": {
+          "parentMean": 0.6666666666666666,
+          "candidateMean": 1,
+          "orientedMeanImprovement": 0.3333333333333333
+        },
+        "cases": [
+          {
+            "caseId": "negated",
+            "pairs": 2,
+            "parentMean": 0,
+            "candidateMean": 1,
+            "orientedMeanImprovement": 1
+          },
+          {
+            "caseId": "outage",
+            "pairs": 2,
+            "parentMean": 1,
+            "candidateMean": 1,
+            "orientedMeanImprovement": 0
+          },
+          {
+            "caseId": "routine",
+            "pairs": 2,
+            "parentMean": 1,
+            "candidateMean": 1,
+            "orientedMeanImprovement": 0
+          }
+        ],
+        "uncertainty": {
+          "status": "not_requested",
+          "code": "uncertainty.not_requested",
+          "interval": null
+        }
+      }
+    ]
+  },
+  "progress": {
+    "activity": "stale",
+    "attemptId": "7dd9ff24-6706-4359-9823-2eeea3534fb5",
+    "checkedAt": "2026-11-17T15:02:08.330717+00:00",
+    "observation": {
+      "attemptId": "7dd9ff24-6706-4359-9823-2eeea3534fb5",
+      "case": {
+        "caseId": "routine",
+        "repetition": 1
+      },
+      "completed": 12,
+      "evaluatorPrincipal": "evaluator",
+      "phase": "executing",
+      "receivedAt": "2026-11-17T15:02:07.705157+00:00",
+      "sequence": 12,
+      "total": 12
+    },
+    "requestId": "b68bc386-4f4e-400b-aafb-cbb2ab3d6eea",
+    "schemaVersion": 1,
+    "staleAfterSeconds": 60,
+    "status": "completed"
+  },
+  "portableReview": {
+    "separateNodeProcess": true,
+    "independentWorkingDirectory": true,
+    "sourceJournalRemoved": true,
+    "separateReadOnlyPrincipal": true,
+    "trustedHandoffSha256": "7031ac66737026960c5dfb8a0a3ec348bd880b562ea47228d7a70fe9bc16ff4d",
+    "copiedFileHashes": {
+      "artifact-f098f23b6c1bcbe5bb8cd7671aa1bf44013025e1c5eb118e7afb2d673128f21c.json": "220f12d6df8ec4979a17652604e8217c23c98f91753ddd4fe084a6a06554cea1",
+      "comparison-review.json": "9c1028cf20f5677487a3c164d99d88e53d70e4b800938a1bbbe0cffe21f623dd",
+      "artifact-412fe020078dc040d423445a0c9b686f18014eb3078d92abed4e10822cafea5a.json": "a67403375eb39274a6691da353cb5409e0436b87f12a3841acaa1aa23e0e218c",
+      "manifest.json": "2cf2d2b1212040cbb1c6d484772860615ac96802be3867c9392c9a1af807f447"
+    },
+    "physicalSecondMachine": false,
+    "trustScope": "same-host independently retained trusted handoff; read-only online scalar binding; artifact self-consistency"
+  },
+  "serviceBinarySha256": "c84d1961249e635c024346fb23328dccf738f0aa7eef0e5e50fa4b00111d2a50",
+  "binarySourceBuildAttested": false,
+  "typescriptVersion": "5.9.3",
+  "appSourceSha256": "829f9107aafcad0b6c2cda5d6f6b0ba8a58fcb9a4486c1560a7d03715a0c5a76",
+  "compiledAppSha256": "9377492f11b014d19b65d93a49cdb6ad8d6cd1208fa3444bf33c9cfb84366803",
+  "savedCasesSha256": "d281f567a1dca68cdcaae3599d4f5a8ca9e2a44c24f3080e4869400995a23f54",
+  "descriptor": {
+    "datasetRevision": "sha256:5a91a93e19529b7b2e59393ad57e7131b473d3fad17e47a0af709c57edd4c42b",
+    "graderRevision": "sha256:420ce8f9c00e006b1ecbd42ac4df295c7172e692d560532834c5e5f6ddc6a009",
+    "runtime": {
+      "manifestSchema": "acclimate-evaluation-manifest-v1",
+      "runtimeRevision": "sha256:7437282a9e5a78f70f9e1d36343a698625fc191d6fb4588813ae37590bada481",
+      "configId": "ticket-priority-typescript",
+      "configRevision": "sha256:df7eec2177567a8cabd42e399771a8587a435cc90cefa64c8c4d35dd410022e0",
+      "execution": "model-free",
+      "concurrency": "1",
+      "gradeRetries": "0"
+    },
+    "expectedCases": [
+      {
+        "caseId": "negated",
+        "repetition": 0
+      },
+      {
+        "caseId": "negated",
+        "repetition": 1
+      },
+      {
+        "caseId": "outage",
+        "repetition": 0
+      },
+      {
+        "caseId": "outage",
+        "repetition": 1
+      },
+      {
+        "caseId": "routine",
+        "repetition": 0
+      },
+      {
+        "caseId": "routine",
+        "repetition": 1
+      }
+    ]
+  },
+  "requestId": "b68bc386-4f4e-400b-aafb-cbb2ab3d6eea",
+  "attemptId": "7dd9ff24-6706-4359-9823-2eeea3534fb5",
+  "comparisonId": "cbb54519-8ea6-4a72-b912-d2a9d8c25689",
+  "status": "completed",
+  "callbackCounts": {
+    "execute": 12,
+    "grade": 12,
+    "newOnReplay": 0
+  },
+  "lostCommittedResponsePhases": [
+    "draft",
+    "finish",
+    "request",
+    "start",
+    "submit"
+  ],
+  "committedComparisonId": "cbb54519-8ea6-4a72-b912-d2a9d8c25689",
+  "replayBeyondTransientDedupHours": 25,
+  "policy": {
+    "schemaVersion": 1,
+    "verdict": "pass",
+    "code": "policy.pass",
+    "policy": {
+      "id": "ticket-routing-quality",
+      "revision": "1",
+      "sha256": "sha256:406149f302194005b0c09df7e70c63160b00c5e1af3cf6e9f96755fd37e430a6"
+    },
+    "comparisonId": "cbb54519-8ea6-4a72-b912-d2a9d8c25689",
+    "expectedBinding": {
+      "parentVersionId": "485d04ab-123a-415c-ba7f-f8dbb281ba29",
+      "candidateVersionId": "8304c199-681b-4afb-b4f8-3f1982c6c79c",
+      "parentDigest": "sha256:ab0a066c7402a5c63d1cc08415e289f225008945160fd6f5c94c1495e1692f80",
+      "candidateDigest": "sha256:fe9fe5585ab89810d6f8bf30e9627b24a36698284ce84d88e20d7e69dbddf2ee",
+      "requestId": "b68bc386-4f4e-400b-aafb-cbb2ab3d6eea",
+      "attemptId": "7dd9ff24-6706-4359-9823-2eeea3534fb5",
+      "comparisonId": "cbb54519-8ea6-4a72-b912-d2a9d8c25689",
+      "submitter": "evaluator"
+    },
+    "checks": [
+      {
+        "code": "policy.minimum_mean_improvement",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_case_regression",
+        "result": "pass"
+      },
+      {
+        "code": "policy.candidate_threshold",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_candidate_task_failures",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_candidate_cost",
+        "result": "pass"
+      }
+    ],
+    "counts": {
+      "distinctCases": 3,
+      "expectedPairs": 6,
+      "comparablePairs": 6
+    },
+    "summary": {
+      "parentMean": 0.6666666666666666,
+      "candidateMean": 1,
+      "orientedMeanImprovement": 0.3333333333333333,
+      "worstCaseRegression": 0,
+      "candidateTaskFailures": 0,
+      "parentCostUsd": 0,
+      "candidateCostUsd": 0,
+      "costIncreaseUsd": 0,
+      "parentUnknownCosts": 0,
+      "candidateUnknownCosts": 0
+    },
+    "interpretation": "descriptive-policy-check"
+  },
+  "descriptorMismatch": {
+    "code": "descriptor.mismatch",
+    "phase": "configure",
+    "executionState": "not_started",
+    "nextAction": "fix_config",
+    "mismatchFields": [
+      "datasetRevision"
+    ]
+  },
+  "reviewVerification": {
+    "schemaVersion": 1,
+    "status": "verified",
+    "provenance": "online_scalar_binding",
+    "comparisonId": "cbb54519-8ea6-4a72-b912-d2a9d8c25689",
+    "executionAttested": false
+  },
+  "faultFixture": "ResponseLossProxy forwarding actual HTTP and dropping successful committed responses once per lifecycle phase",
+  "commands": [
+    {
+      "executable": "npm",
+      "argumentCount": 9,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 3,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 3,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 2,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 2,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 14,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 7,
+      "exitCode": 1,
+      "expectedExitCode": 1
+    },
+    {
+      "executable": "node",
+      "argumentCount": 6,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 2,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 6,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 10,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "executable": "node",
+      "argumentCount": 4,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    }
+  ],
+  "remainingFriction": [
+    "Durable JS runtime requires POSIX and python3 fcntl in addition to Node.",
+    "Release distribution remains operator-managed.",
+    "Physical second-machine execution remains unqualified: no independently established other-host identity/transport was available to this persona; same-host independent-process portable-copy review passed.",
+    "This deterministic content-consuming app makes no model or native harness quality claim."
+  ],
+  "observations": {
+    "installed_typescript": "Strict TypeScript 5.9.3 compiled own app and grader; six installed public SDK subpaths plus root only; internal source/dist imports rejected.",
+    "meaningful_pair": {
+      "parentMean": 0.6666666666666666,
+      "candidateMean": 1,
+      "orientedMeanImprovement": 0.3333333333333333,
+      "worstCaseRegression": 0,
+      "candidateTaskFailures": 0,
+      "parentCostUsd": 0,
+      "candidateCostUsd": 0,
+      "costIncreaseUsd": 0,
+      "parentUnknownCosts": 0,
+      "candidateUnknownCosts": 0
+    },
+    "bound_request": {
+      "status": "completed",
+      "pairs": 6
+    },
+    "callback_lifetime": {
+      "execute": 12,
+      "grade": 12,
+      "inputAndExpectedCopiesClean": true,
+      "graderOutputMutationAbsentFromRetainedArtifacts": true,
+      "awaitThenReadThenCleanup": true
+    },
+    "durable_retry": {
+      "committedSubmitIdEqualsComparisonId": true,
+      "requestAttemptComparisonIdsUnchanged": true,
+      "newCallbacksOnReplay": 0
+    },
+    "diagnostics": {
+      "code": "descriptor.mismatch",
+      "phase": "configure",
+      "executionState": "not_started",
+      "nextAction": "fix_config",
+      "mismatchFields": [
+        "datasetRevision"
+      ]
+    },
+    "review_handoff": {
+      "localReadOnlyVerification": "verified",
+      "crossMachineAuthenticatedTransfer": "not exercised",
+      "portableCopyAfterJournalRemoval": {
+        "separateNodeProcess": true,
+        "independentWorkingDirectory": true,
+        "sourceJournalRemoved": true,
+        "separateReadOnlyPrincipal": true,
+        "trustedHandoffSha256": "7031ac66737026960c5dfb8a0a3ec348bd880b562ea47228d7a70fe9bc16ff4d",
+        "copiedFileHashes": {
+          "artifact-f098f23b6c1bcbe5bb8cd7671aa1bf44013025e1c5eb118e7afb2d673128f21c.json": "220f12d6df8ec4979a17652604e8217c23c98f91753ddd4fe084a6a06554cea1",
+          "comparison-review.json": "9c1028cf20f5677487a3c164d99d88e53d70e4b800938a1bbbe0cffe21f623dd",
+          "artifact-412fe020078dc040d423445a0c9b686f18014eb3078d92abed4e10822cafea5a.json": "a67403375eb39274a6691da353cb5409e0436b87f12a3841acaa1aa23e0e218c",
+          "manifest.json": "2cf2d2b1212040cbb1c6d484772860615ac96802be3867c9392c9a1af807f447"
+        },
+        "physicalSecondMachine": false,
+        "trustScope": "same-host independently retained trusted handoff; read-only online scalar binding; artifact self-consistency"
+      }
+    },
+    "derived_manifest": {
+      "roundtrip": true,
+      "singleCapturedInventory": true,
+      "mutationIdentityComponents": [
+        "build",
+        "expected",
+        "grader",
+        "input",
+        "settings"
+      ]
+    },
+    "public_helpers": {
+      "strictConsumerTypeContracts": true,
+      "deniedInternalImports": [
+        "@acclimate/sdk/dist/evaluation/manifest.js",
+        "@acclimate/sdk/src/evaluation/progress.ts"
+      ],
+      "actualComparisonAnalysis": "descriptive",
+      "progressAcceptedReports": 12
+    }
+  },
+  "scope": "Real isolated PostgreSQL 16/Rust HTTP service; own deterministic installed-package application; model-free.",
+  "limits": [
+    "No provider or native harness call; no production mutation.",
+    "No minimum Node-version qualification or service binary/source-build attestation.",
+    "Only dataset mismatch diagnostics exercised; unauthorized/not-found/transport diagnostic distinctions were not evaluated.",
+    "Response-loss fixture retries committed writes within a run; terminal replay is a separate process. No worker kill or cancellation trial."
+  ],
+  "cleanup": {
+    "schemaVersion": 1,
+    "databaseDirectoryRemoved": true,
+    "serviceStopped": true,
+    "consumerOutputsRetained": true
+  },
+  "graderSourceSha256": "8ea9f6a9400be801df7693a185fa46f5931eaf59633ce7763130b35e82625847",
+  "compiledGraderSha256": "78081d44c769360a0963a9262a281324e7c4708558299df6c9581e7b9d2b22f9",
+  "callbackAuditSha256BeforeAndAfterReplay": "188d52a94192cdc3dd1db92fbd9a4cc12353bd8d413c533f6016e6df1468b58f",
+  "transientExpiryMethod": "Fixture sets expires_at=now()-interval '25 hours'; no wall-clock 25-hour wait.",
+  "blockingGapsWithinExecutedScope": []
+}

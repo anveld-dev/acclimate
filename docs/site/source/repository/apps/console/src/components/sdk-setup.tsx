@@ -6,11 +6,15 @@ import { ConsoleLink } from './console-link';
 import { CopyButton } from './copy-button';
 import { SyntaxCode } from './syntax-code';
 import { connectionHref } from '../lib/connection-navigation';
-import { basicDeliveryRecipes, deliveryRecipes } from './sdk-setup-recipes';
+import { bundleHref, workspaceHref } from '../navigation';
+import { basicDeliveryRecipes, deliveryRecipes, agentConnectionRecipes } from './sdk-setup-recipes';
+import { NativeSelect } from './ui/native-select';
+import releaseMetadata from '../../../../scripts/packaging/release-metadata.json';
 
 type Ready = Extract<ConsoleState, { status: 'ready' }>;
 export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
   const [language, setLanguage] = useState<'typescript' | 'python'>('typescript');
+  const [runtime, setRuntime] = useState<'custom' | 'codex' | 'claude' | 'pi' | 'cursor'>('custom');
   const [reportingOpen, setReportingOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
   useEffect(() => {
@@ -29,13 +33,27 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
   };
   const recipe = basicDeliveryRecipes(selection)[language];
   const reportingRecipe = deliveryRecipes(selection)[language];
+  const agentRecipe = agentConnectionRecipes(selection)[language];
   const isTypeScript = language === 'typescript';
   const languageLabel = isTypeScript ? 'TypeScript' : 'Python';
-  const filename = isTypeScript ? 'delivery-check.mts' : 'delivery_check.py';
-  const runCommand = isTypeScript ? 'npx tsx delivery-check.mts' : 'python3 delivery_check.py';
+  const filename = isTypeScript ? 'delivery-check.mjs' : 'delivery_check.py';
+  const runCommand = isTypeScript ? 'node delivery-check.mjs' : 'python3 delivery_check.py';
+  const artifact = releaseMetadata.artifacts.find(
+    (item) => item.package === (isTypeScript ? '@acclimate/sdk' : 'acclimate-sdk'),
+  )!;
+  const plugin =
+    runtime === 'custom'
+      ? undefined
+      : releaseMetadata.artifacts.find((item) => item.package === `@acclimate/${runtime}-plugin`);
+  const nativePeer = {
+    codex: '@openai/codex-sdk',
+    claude: '@anthropic-ai/claude-agent-sdk',
+    pi: '@earendil-works/pi-coding-agent',
+    cursor: '@cursor/sdk',
+  } as const;
   const installCommand = isTypeScript
-    ? 'npm install /absolute/path/to/acclimate-sdk.tgz'
-    : 'python3 -m pip install /absolute/path/to/acclimate-sdk.whl';
+    ? `npm install /absolute/path/to/release/${artifact.file}${plugin ? ' /absolute/path/to/release/' + plugin.file : ''}`
+    : `python3 -m pip install /absolute/path/to/release/${artifact.file}`;
   const buildCommands = isTypeScript
     ? 'npm run build:packages\nnpm pack --workspace @acclimate/sdk'
     : 'python3 -m pip wheel --no-deps --wheel-dir artifacts ./python';
@@ -57,7 +75,10 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
           value={language}
           aria-label="Recipe language"
           onValueChange={(value) => {
-            if (value) setLanguage(value as typeof language);
+            if (value) {
+              setLanguage(value as typeof language);
+              if (value === 'python') setRuntime('custom');
+            }
           }}
         >
           <ToggleGroupItem value="typescript">TypeScript</ToggleGroupItem>
@@ -79,6 +100,11 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
                 </>
               )}{' '}
               Get the package from your admin or build it from this checkout.
+            </p>
+            <p>
+              Release {releaseMetadata.version}. Verify package checksums against its SHA256SUMS and
+              release manifest. Paths below require your obtained release directory; no registry or
+              download is assumed.
             </p>
             <div className="sdk-install-command">
               <SyntaxCode
@@ -140,6 +166,61 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
               Set these five required variables in your app’s private environment. Keep credentials
               out of browser code and source control.
             </p>
+            <div
+              className="space-y-2 rounded-md border p-3"
+              aria-label="Access needed for delivery and evaluation"
+            >
+              <p>
+                <strong>Delivery:</strong> a workspace admin issues content-read access in
+                Connections; optional observations use a separate receipt-write credential.
+              </p>
+              <p>
+                <strong>Evaluation:</strong> ask the service operator for a dedicated project
+                read/write principal. Delivery credentials cannot read unpublished candidates or
+                execute evaluation requests. The operator currently validates static grants and
+                restarts the service.
+              </p>
+              <p>
+                <strong>Release:</strong> requires separate release authority and a deliberate
+                decision. Evaluation completion or a policy pass does not release a version.
+              </p>
+              <p>
+                Evaluator execution needs a private configuration file, a stable principal, and
+                durable owner-only local journals. TypeScript durable execution also needs python3
+                with fcntl; Python needs 3.11+. Run the installed starter’s doctor command before a
+                first comparison.
+              </p>
+              <Disclosure>
+                <DisclosureTrigger>
+                  Public evaluator access request for your operator
+                </DisclosureTrigger>
+                <DisclosureContent>
+                  <SyntaxCode
+                    language="json"
+                    code={JSON.stringify(
+                      {
+                        serviceUrl: state.publicApiUrl,
+                        projectId: state.projectId,
+                        bundleId: state.bundleId,
+                        rights: ['read', 'write'],
+                        purpose:
+                          'Evaluate unpublished candidates; no propose or promote authority requested',
+                      },
+                      null,
+                      2,
+                    )}
+                  />
+                  <p>
+                    This is a public request template, not a credential. Receive the private
+                    evaluator configuration through your team’s secret channel; never paste it into
+                    the console.
+                  </p>
+                </DisclosureContent>
+              </Disclosure>
+              <ConsoleLink href={workspaceHref(state.projectId, 'delivery')} className="underline">
+                View reported delivery observations
+              </ConsoleLink>
+            </div>
             <dl aria-label="Required environment variables" className="sdk-required-environment">
               <div>
                 <dt>ACCLIMATE_URL</dt>
@@ -222,12 +303,118 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
             </div>
           </div>
           <p className="sdk-expected-output">
-            Expected: the resolved version stays pinned for this job. The check reads every prepared
-            file, prints the version, digest and checked file count, then cleans up its prepared
-            files.
+            Verified content delivered: the resolved version stays pinned for this job. The check
+            reads every prepared file, prints the version, digest and checked file count, then
+            cleans up its prepared files. This checks bytes and preparation. Connect your app below
+            to use them in an agent run.
           </p>
         </section>
       </div>
+      <section
+        className="sdk-step space-y-3 rounded-md border p-4"
+        aria-labelledby="sdk-agent-heading"
+      >
+        <h3 id="sdk-agent-heading">4. Connect your agent, then compare a change</h3>
+        <label className="block space-y-1">
+          Application runtime
+          <NativeSelect
+            value={runtime}
+            onChange={(event) => setRuntime(event.target.value as typeof runtime)}
+            aria-label="Application runtime"
+          >
+            <option value="custom">Custom application</option>
+            {isTypeScript && (
+              <>
+                <option value="codex">Codex</option>
+                <option value="claude">Claude</option>
+                <option value="pi">Pi</option>
+                <option value="cursor">Cursor</option>
+              </>
+            )}
+          </NativeSelect>
+        </label>
+        {runtime === 'custom' ? (
+          <>
+            <p>
+              This runnable model-free fixture shows the context seam. Save it as{' '}
+              <code>{isTypeScript ? 'agent-connection.mjs' : 'agent_connection.py'}</code> and run
+              it using the same private delivery settings. Replace only the fixture function with
+              your existing agent loop, expose skill files through your app’s tools, and select
+              memory explicitly. Each run retains its output privately in{' '}
+              <code>ACCLIMATE_JOB_DIR/acclimate-agent-result.json</code> with its version and
+              digest; use a new empty job directory for another run. Return stopped only after
+              actual termination; a rejected call retains the private job directory for inspection
+              instead of cleaning possibly active inputs.
+            </p>
+            <CopyButton value={agentRecipe} label="Copy agent connection recipe" />
+            <SyntaxCode
+              code={agentRecipe}
+              language={isTypeScript ? 'javascript' : 'python'}
+              wrap={false}
+              aria-label={`${languageLabel} agent connection recipe`}
+            />
+          </>
+        ) : (
+          <>
+            <p>
+              Install the matching <code>@acclimate/{runtime}-plugin</code> package shown in step 1.
+              Extract{' '}
+              <code>
+                {releaseMetadata.starters.find((item) => item.name === 'native-repository')!.file}
+              </code>{' '}
+              from your release and run its complete repository fixture:
+            </p>
+            <p>
+              Your actual agent integration also needs the compatible native peer{' '}
+              <code>
+                {nativePeer[runtime]}@{releaseMetadata.nativePeers[nativePeer[runtime]]}
+              </code>
+              . The deterministic repository fixture uses a fake harness and needs no native peer,
+              provider credentials or model calls.
+            </p>
+            <SyntaxCode
+              code={`node demo.mjs --state-root /absolute/private/new-native-demo --harness ${runtime}`}
+              language="bash"
+            />
+            <p>
+              The included README shows the actual-agent seam <code>runRepositoryJob</code> /{' '}
+              <code>runHarness</code>. Your app retains SDK authentication, tools, budgets,
+              confirmed termination and output retention. Use the explicit source inventory and
+              memory/context policy; do not overlay a live repository or clean a possibly running
+              job.
+            </p>
+            <p>
+              The fixture establishes wiring only. Native consumption and quality require separately
+              authorized live qualification; an SDK import or file-read result does not establish
+              either.
+            </p>
+          </>
+        )}
+        <p>
+          For evaluation, extract{' '}
+          <code>{releaseMetadata.starters.find((item) => item.name === 'evaluation')!.file}</code>.
+          Implement one saved task and independent grader, run{' '}
+          <code>
+            {isTypeScript
+              ? 'node acclimate-eval.mjs describe'
+              : 'python3 acclimate_eval.py describe'}
+          </code>
+          , then create a request using that public configuration.
+        </p>
+        <p>
+          From the extracted evaluation starter, run{' '}
+          <code>{isTypeScript ? 'node trial.mjs' : 'python3.11 trial.py'}</code> for a model-free
+          trial needing no service or provider. It is simulated wiring evidence and cannot authorize
+          a release. Your actual-agent evaluator uses a separate definition and explicit live
+          authorization.
+        </p>
+        <ConsoleLink
+          href={bundleHref(selection, 'changes')}
+          className="underline underline-offset-4"
+        >
+          Compare a change using this app
+        </ConsoleLink>
+      </section>
       <footer className="sdk-setup-support">
         <Disclosure
           id="reporting"

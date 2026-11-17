@@ -36,7 +36,9 @@ def run(args):
             expect(profile).to_be_visible();assert p.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
             capture_layout(p,out,f'first-setup-{width}')
             if args.verify:
-                expect(preview.locator('dd').first).to_have_text('6')
+                expect(profile).to_have_value('')
+                expect(create).to_be_disabled()
+                expect(preview.locator('dl')).to_have_count(0)
                 assert section.evaluate('e=>e.getBoundingClientRect().width>document.querySelector(".evaluation-workspace").getBoundingClientRect().width-4')
             record(f'First setup fits {width}px')
         p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,route_path)
@@ -54,8 +56,8 @@ def run(args):
             expect(preview.locator('dl')).to_have_count(0)
         capture_layout(p,out,'custom-invalid')
         duplicate=configuration();duplicate['expectedCases']=[dict(caseId='same',repetition=0)]*2
-        editor.fill(json.dumps(duplicate));expect(create).to_be_disabled();expect(section.get_by_role('alert')).to_contain_text('unique')
-        too_many=configuration(1001);editor.fill(json.dumps(too_many));expect(create).to_be_disabled();expect(section.get_by_role('alert')).to_contain_text('1000')
+        editor.fill(json.dumps(duplicate));expect(create).to_be_disabled();expect(section.get_by_role('alert')).to_contain_text('Invalid public evaluation configuration')
+        too_many=configuration(1001);editor.fill(json.dumps(too_many));expect(create).to_be_disabled();expect(section.get_by_role('alert')).to_contain_text('Invalid public evaluation configuration')
         editor.focus();p.keyboard.press('ControlOrMeta+A');p.keyboard.press('Backspace');p.keyboard.press('Enter');p.keyboard.insert_text(' ');expect_editor_value(editor,'\n ')
         valid=configuration();text=' \n'+json.dumps(valid,indent=2)+'\n\n';editor.fill(text)
         expect(create).to_be_enabled();expect_editor_value(editor,text)
@@ -105,9 +107,9 @@ def run(args):
             expect(trigger).to_have_attribute('aria-expanded','false')
             capture_layout(p,out,'another-request-collapsed')
             article.get_by_role('button',name='Copy request ID',exact=True).click();assert p.evaluate('navigator.clipboard.readText()')==request['id']
-            article.get_by_role('button',name='Copy configuration',exact=True).click();handoff=json.loads(p.evaluate('navigator.clipboard.readText()'));assert handoff['requestId']==request['id'] and handoff['configuration']==valid
+            article.get_by_role('button',name='Copy request JSON',exact=True).click();handoff=json.loads(p.evaluate('navigator.clipboard.readText()'));assert handoff['requestId']==request['id'] and handoff['configuration']==valid
             trigger.click();editor.fill(json.dumps(configuration(7)))
-            article.get_by_role('button',name='Copy configuration',exact=True).click();assert json.loads(p.evaluate('navigator.clipboard.readText()'))['configuration']==valid
+            article.get_by_role('button',name='Copy request JSON',exact=True).click();assert json.loads(p.evaluate('navigator.clipboard.readText()'))['configuration']==valid
             capture_layout(p,out,'created-frozen-custom-handoff')
             assert w.call('GET',w.bundle+'/comparisons')['items']==[]
             assert w.call('GET',w.bundle+'/evaluation-requests/'+request['id'])==request

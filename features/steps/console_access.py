@@ -11,7 +11,8 @@ def open_member(context):
 
 @then('browser content editing is {editing}')
 def rights(context,editing):
-    p=context.world.browser_fixture.page
+    w=context.world
+    p=w.browser_fixture.page
     edit=p.get_by_role('link',name='Edit entry',exact=True)
     if editing=='available':
         edit.click()
@@ -19,6 +20,21 @@ def rights(context,editing):
     else:
         expect(edit).to_have_count(0)
         expect(p.get_by_role('textbox', name='Content', exact=True)).to_have_count(0)
+    # Observe delivery as an ordinary workspace member without granting credential administration.
+    connection=w.call('POST',w.root+'/integrations',dict(bundleId=w.setup['bundle']['id'],
+        channel='stable',displayName='Reader delivery fixture'),actor='admin')
+    p.get_by_role('link',name='Delivery',exact=True).click()
+    expect(p).to_have_url(w.browser_fixture.base+w.browser_fixture.workspace_path('delivery'))
+    expect(p.get_by_role('heading',name='Delivery',exact=True)).to_be_visible()
+    row=p.get_by_role('article').filter(has=p.get_by_role('heading',name='Reader delivery fixture',exact=True))
+    expect(row).to_be_visible()
+    expect(row).to_contain_text(w.setup['bundle']['id'])
+    expect(row).to_contain_text('Nothing reported within retention · delivery unknown.')
+    assert w.call('GET',w.root+'/integration-observations',actor='member')['items'][0]['id']==connection['id']
+    expect(p.get_by_role('link',name='Connections',exact=True)).to_have_count(0)
+    for name in ['Create read credential','Create reporting credential','Create replacement credential',
+                 'Create connection','Revoke connection','Revoke credential']:
+        expect(p.get_by_role('button',name=name,exact=True)).to_have_count(0)
 
 @when('the administrator invites that person by email in the console')
 def lookup(context):

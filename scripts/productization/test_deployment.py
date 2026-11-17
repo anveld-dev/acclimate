@@ -18,7 +18,7 @@ spec.loader.exec_module(container)
 
 
 class DeploymentTests(unittest.TestCase):
-    def resolve(self, directory):
+    def resolve(self, directory, missing=None):
         for filename in ('service.env','console.env','password','empty.env'):
             container.private_write(directory/filename, '')
         environment = dict(PATH=os.environ['PATH'],
@@ -26,6 +26,8 @@ class DeploymentTests(unittest.TestCase):
             ACCLIMATE_CONSOLE_ENV=str(directory/'console.env'),
             ACCLIMATE_POSTGRES_PASSWORD_FILE=str(directory/'password'),
             CONSOLE_HOST='console.fixture.invalid', API_HOST='api.fixture.invalid', ACME_EMAIL='fixture@example.invalid')
+        if missing:
+            environment.pop(missing)
         result = subprocess.run(['docker','compose','--env-file',str(directory/'empty.env'),
             '-p','acclimate-manifest-test','-f',str(ROOT/'compose.yaml'),'config','--format','json'],
             env=environment, check=True, capture_output=True, timeout=15)
@@ -51,13 +53,14 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn('/ready', ' '.join(services['service']['healthcheck']['test']))
 
     def test_manifest_missing_config_is_error_without_reading_dotenv(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            empty = Path(temporary)/'empty.env'
-            container.private_write(empty,'')
-            result = subprocess.run(['docker','compose','--env-file',str(empty),'-f',str(ROOT/'compose.yaml'),'config','--quiet'],
-                env={'PATH':os.environ['PATH']}, capture_output=True, timeout=15)
-            self.assertNotEqual(result.returncode,0)
-            self.assertIn(b'ACCLIMATE_',result.stderr)
+        # Compose may validate services in any order. Remove one required input
+        # at a time so a public-hostname error cannot mask the config-file gate.
+        for missing in ('ACCLIMATE_SERVICE_ENV', 'ACCLIMATE_CONSOLE_ENV',
+                        'ACCLIMATE_POSTGRES_PASSWORD_FILE'):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temporary:
+                with self.assertRaises(subprocess.CalledProcessError) as failure:
+                    self.resolve(Path(temporary), missing=missing)
+                self.assertIn(missing.encode(), failure.exception.stderr)
 
     def test_qualification_retains_canonical_artifacts_and_private_ports(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -93,7 +96,7 @@ class DeploymentTests(unittest.TestCase):
                     sources.extend(ROOT.glob(pattern))
         def copied(path):
             return any(path==source or source.is_dir() and source in path.parents for source in sources)
-        pending=list((ROOT/'packages').glob('*/src/**/*.ts'))+list((ROOT/'apps/console/src').rglob('*.ts'))+list((ROOT/'apps/console/src').rglob('*.tsx'))+[ROOT/'apps/console/vite.config.ts']
+        pending=list((ROOT/'packages').glob('*/src/**/*.ts'))+list((ROOT/'apps/console/src').rglob('*.ts'))+list((ROOT/'apps/console/src').rglob('*.tsx'))+[ROOT/'apps/console/vite.config.ts', ROOT/'scripts/build-packages.mjs', ROOT/'python/pyproject.toml']
         visited=set()
         while pending:
             source=pending.pop().resolve()
@@ -120,7 +123,10 @@ class DeploymentTests(unittest.TestCase):
         # The context's positive allowlist must admit the new cross-root files;
         # its final secret exclusions still apply independently.
         ignore=(ROOT/'.dockerignore').read_text().splitlines()
-        for name in ('examples/','examples/evaluation/','examples/evaluation/descriptor.ts','examples/evaluation/adapter.ts'):
+        for name in ('examples/','examples/evaluation/','examples/evaluation/descriptor.ts','examples/evaluation/adapter.ts',
+                     'scripts/', 'scripts/build-packages.mjs', 'scripts/packaging/',
+                     'scripts/packaging/release-metadata.mjs', 'scripts/packaging/release-metadata.json',
+                     'scripts/packaging/build-receipt.mjs', 'python/', 'python/pyproject.toml'):
             self.assertIn('!'+name,ignore)
 
     def test_context_excludes_credentials_and_images_do_not_embed_runtime_config(self):

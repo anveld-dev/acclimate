@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    { "caseId": "lost-response", "repetition": 0, "side": "candidate", "role": "output", "required": true },
+    { "caseId": "lost-response", "repetition": 0, "side": "candidate", "role": "grader-explanation", "required": true }
+  ]
+}

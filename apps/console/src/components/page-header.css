@@ -60,7 +60,8 @@
 .workspace-page-header .page-header-utility {
   display: none;
 }
-.workspace-main > :is(.bundle-library, .workspace-connections, .workspace-members) {
+.workspace-main
+  > :is(.bundle-library, .workspace-connections, .workspace-delivery, .workspace-members) {
   max-width: none;
   margin-inline: 0;
 }

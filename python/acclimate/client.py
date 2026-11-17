@@ -35,6 +35,7 @@ class AcclimateClient:
         retries: int = 2,
         timeout: float = 30,
         max_payload_bytes: int = 1048576,
+        max_json_response_bytes: int = 4194304,
     ):
         u = urllib.parse.urlsplit(base_url)
         if (
@@ -55,6 +56,8 @@ class AcclimateClient:
             or not 0 <= retries <= 3
             or not 0 < timeout <= 120
             or not 1 <= max_payload_bytes <= 2097152
+            or type(max_json_response_bytes) is not int
+            or not 1 <= max_json_response_bytes <= 8388608
         ):
             raise ValueError("invalid retries, timeout or payload limit")
         self.base_url, self.scope, self._token = base_url.rstrip("/"), scope, token
@@ -64,6 +67,7 @@ class AcclimateClient:
             max_payload_bytes,
         )
         self._opener = urllib.request.build_opener(_NoRedirect())
+        self.max_json_response_bytes = max_json_response_bytes
 
     def _request(
         self,
@@ -76,6 +80,8 @@ class AcclimateClient:
         etag: str | None = None,
         auth: bool = True,
         channel_resolution: bool = False,
+        _body_bytes: bytes | None = None,
+        _retained: bool = False,
     ):
         mutation = method != "GET"
         if mutation and (
@@ -84,7 +90,7 @@ class AcclimateClient:
             raise ValueError(
                 "mutations require a printable ASCII idempotency key (1..128 characters)"
             )
-        data = (
+        data = _body_bytes if _body_bytes is not None else (
             json.dumps(
                 body, ensure_ascii=False, separators=(",", ":"), allow_nan=False
             ).encode("utf-8")
@@ -98,6 +104,8 @@ class AcclimateClient:
             headers["Idempotency-Key"] = key
         if etag:
             headers["If-None-Match"] = etag
+        if _retained:
+            headers["X-Acclimate-Durable-Operation"] = "true"
         for attempt in range(self.retries + 1 if mutation else 1):
             req = urllib.request.Request(
                 self.base_url + path, data=data, headers=headers, method=method
@@ -109,12 +117,12 @@ class AcclimateClient:
                     response = e
                 with response:
                     status = response.status
-                    limit = self.max_payload_bytes if raw and status < 300 else 2097152
+                    limit = self.max_payload_bytes if raw and status < 300 else self.max_json_response_bytes
                     content = response.read(limit + 1)
                     if len(content) > limit:
                         raise ApiError(
                             413,
-                            "payload_too_large",
+                            "payload_too_large" if raw else "response_too_large",
                             "Response exceeds configured limit",
                         )
                     if status == 304:
@@ -314,41 +322,61 @@ class AcclimateClient:
         path = self._base(project_id, bundle_id) + "/channels/" + self._part(channel) + "/drafts"
         return path if draft_id is None else path + "/" + self._part(draft_id)
 
-    def create_draft(self, project_id, bundle_id, channel, request, key):
+    def create_draft(self, project_id: str, bundle_id: str, channel: str, request: CreateDraftRequest, key: str) -> Draft:
         return self._request("POST", self._draft(project_id, bundle_id, channel), request, key)
 
-    def list_drafts(self, project_id, bundle_id, channel, *, cursor=None, limit=50):
+    def list_drafts(self, project_id: str, bundle_id: str, channel: str, *, cursor: str | None = None, limit: int = 50) -> DraftPage:
         return self._request("GET", self._draft(project_id, bundle_id, channel) + self._listing(cursor, limit))
 
-    def get_draft(self, project_id, bundle_id, channel, draft_id):
+    def get_draft(self, project_id: str, bundle_id: str, channel: str, draft_id: str) -> Draft:
         return self._request("GET", self._draft(project_id, bundle_id, channel, draft_id))
 
-    def get_draft_history(self, project_id, bundle_id, channel, draft_id, *, cursor=None, limit=50):
+    def get_draft_history(self, project_id: str, bundle_id: str, channel: str, draft_id: str, *, cursor: str | None = None, limit: int = 50) -> DraftSnapshotPage:
         return self._request("GET", self._draft(project_id, bundle_id, channel, draft_id) + "/history" + self._listing(cursor, limit))
 
-    def save_draft(self, project_id, bundle_id, channel, draft_id, request, key):
+    def save_draft(self, project_id: str, bundle_id: str, channel: str, draft_id: str, request: SaveDraftRequest, key: str) -> Draft:
         return self._request("POST", self._draft(project_id, bundle_id, channel, draft_id) + "/save", request, key)
 
-    def discard_draft(self, project_id, bundle_id, channel, draft_id, request, key):
+    def discard_draft(self, project_id: str, bundle_id: str, channel: str, draft_id: str, request: DiscardDraftRequest, key: str) -> Draft:
         return self._request("POST", self._draft(project_id, bundle_id, channel, draft_id) + "/discard", request, key)
 
-    def publish_draft(self, project_id, bundle_id, channel, draft_id, request, key):
+    def publish_draft(self, project_id: str, bundle_id: str, channel: str, draft_id: str, request: PublishDraftRequest, key: str) -> Draft:
         return self._request("POST", self._draft(project_id, bundle_id, channel, draft_id) + "/publish", request, key)
 
-    def create_evaluation(self, project_id, bundle_id, request, key):
+    def create_evaluation(self, project_id: str, bundle_id: str, request: EvaluationRequest, key: str) -> Evaluation:
         return self._request("POST", self._base(project_id, bundle_id) + "/evaluation-requests", request, key)
 
-    def get_evaluation(self, project_id, bundle_id, evaluation_id):
+    def get_evaluation(self, project_id: str, bundle_id: str, evaluation_id: str) -> Evaluation:
         return self._request("GET", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id))
 
-    def list_evaluations(self, project_id, bundle_id, *, cursor=None, limit=50):
+    def list_evaluations(self, project_id: str, bundle_id: str, *, cursor: str | None = None, limit: int = 50) -> EvaluationPage:
         return self._request("GET", self._base(project_id, bundle_id) + "/evaluation-requests" + self._listing(cursor, limit))
 
-    def start_evaluation(self, project_id, bundle_id, evaluation_id, request, key):
+    def start_evaluation(self, project_id: str, bundle_id: str, evaluation_id: str, request: StartEvaluationRequest, key: str) -> Evaluation:
         return self._request("POST", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/start", request, key)
 
-    def finish_evaluation(self, project_id, bundle_id, evaluation_id, request, key):
+    def finish_evaluation(self, project_id: str, bundle_id: str, evaluation_id: str, request: FinishEvaluationRequest, key: str) -> Evaluation:
         return self._request("POST", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/finish", request, key)
 
-    def interrupt_evaluation(self, project_id, bundle_id, evaluation_id, request, key):
+    def interrupt_evaluation(self, project_id: str, bundle_id: str, evaluation_id: str, request: InterruptEvaluationRequest, key: str) -> Evaluation:
         return self._request("POST", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/interrupt", request, key)
+
+    def get_evaluation_capabilities(self, project_id: str) -> EvaluationCapabilities:
+        return self._request("GET", "/v1/projects/" + self._part(project_id) + "/evaluation-capabilities")
+
+    def get_evaluation_progress(self, project_id: str, bundle_id: str, evaluation_id: str) -> EvaluationProgressView:
+        return self._request("GET", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/progress")
+
+    def report_evaluation_progress(self, project_id: str, bundle_id: str, evaluation_id: str, report: EvaluationProgressRequest) -> EvaluationProgressView:
+        # Attempt + sequence provide server idempotency; no retained key rows.
+        return self._request("POST", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/progress", report, "progress:" + str(report["sequence"]))
+
+    def list_integration_observations(self, project_id: str, *, cursor: str | None = None, limit: int = 50) -> IntegrationObservationPage:
+        return self._request("GET", "/v1/projects/" + self._part(project_id) + "/integration-observations" + self._listing(cursor, limit))
+
+    def get_operation(self, project_id: str, operation_id: str, *, operation_path: str | None = None) -> Operation:
+        query = "?" + urllib.parse.urlencode({"operationPath": operation_path}) if operation_path is not None else ""
+        return self._request("GET", "/v1/projects/" + self._part(project_id) + "/operations/" + self._part(operation_id) + query)
+
+    def close_operation(self, project_id: str, operation_id: str, *, operation_path: str) -> Operation:
+        return self._request("POST", "/v1/projects/" + self._part(project_id) + "/operations/" + self._part(operation_id) + "/close", {"operationPath": operation_path}, operation_id)

@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "persona": "ci-release-engineer",
+  "decision": "accept",
+  "criteria": [
+    "C1 distributed archive, installed SDK, headless candidate/request/run/check/export",
+    "C2 concrete pass/loss/incomplete and required-export failure exit codes",
+    "C3 no automatic promotion; inspected bound release, stale rejection, old pin, rollback",
+    "C4 downloaded evidence verified by independent reader after journal removal",
+    "C5 same CI intent after committed response loss and synthetic expiry beyond 24h"
+  ],
+  "evidence": [
+    {
+      "id": "CI-PASS-REPLAY",
+      "exitCodes": [
+        0,
+        0
+      ],
+      "requestId": "715ec4ae-d19b-4e23-8887-e5b87e691992",
+      "comparisonId": "3c4f9bb4-8a25-4926-84cc-e0faf6840ea2",
+      "lostCommittedPhases": [
+        "draft",
+        "finish",
+        "request",
+        "start",
+        "submit"
+      ],
+      "transientDedupAgeHours": 25,
+      "executionCallsBefore": 4,
+      "executionCallsAfter": 4,
+      "verdict": {
+        "schemaVersion": 1,
+        "verdict": "pass",
+        "code": "policy.pass",
+        "policy": {
+          "id": "payment-starter-quality",
+          "revision": "1",
+          "sha256": "sha256:f74dc42a7800aac408445b078b783c4a08df7715c67097450f1715732b3f95f0"
+        },
+        "comparisonId": "3c4f9bb4-8a25-4926-84cc-e0faf6840ea2",
+        "expectedBinding": {
+          "parentVersionId": "084ee200-c635-4694-b4de-5c6c760764aa",
+          "candidateVersionId": "7f72c1e7-7970-45f9-a22a-e2e9e7409bfe",
+          "parentDigest": "sha256:3a2f931eb1accf9f7b910161e8ba27099dc34415152085952ebd1d134fed3920",
+          "candidateDigest": "sha256:7ac84df534704bb7b3f4bfa18caa72ea5b20e0fa53f0a6f5645337d339b6cd8e",
+          "requestId": "715ec4ae-d19b-4e23-8887-e5b87e691992",
+          "attemptId": "6a1548db-b185-4914-b33d-662e4b3dd356",
+          "comparisonId": "3c4f9bb4-8a25-4926-84cc-e0faf6840ea2",
+          "submitter": "evaluator"
+        },
+        "checks": [
+          {
+            "code": "policy.minimum_mean_improvement",
+            "result": "pass"
+          },
+          {
+            "code": "policy.maximum_case_regression",
+            "result": "pass"
+          },
+          {
+            "code": "policy.candidate_threshold",
+            "result": "pass"
+          },
+          {
+            "code": "policy.maximum_candidate_task_failures",
+            "result": "pass"
+          },
+          {
+            "code": "policy.maximum_candidate_cost",
+            "result": "pass"
+          }
+        ],
+        "counts": {
+          "distinctCases": 2,
+          "expectedPairs": 2,
+          "comparablePairs": 2
+        },
+        "summary": {
+          "parentMean": 0.5,
+          "candidateMean": 1,
+          "orientedMeanImprovement": 0.5,
+          "worstCaseRegression": 0,
+          "candidateTaskFailures": 0,
+          "parentCostUsd": 0,
+          "candidateCostUsd": 0,
+          "costIncreaseUsd": 0,
+          "parentUnknownCosts": 0,
+          "candidateUnknownCosts": 0
+        },
+        "interpretation": "descriptive-policy-check"
+      }
+    },
+    {
+      "id": "CI-LOSING",
+      "exitCode": 2,
+      "requestId": "754ae9a2-b070-4088-af3b-6d0140f6a4b2",
+      "comparisonId": "dfeeed3d-907e-4a2c-b4ae-874021a887fa",
+      "status": "completed",
+      "verdict": {
+        "schemaVersion": 1,
+        "verdict": "fail",
+        "code": "policy.fail",
+        "policy": {
+          "id": "payment-starter-quality",
+          "revision": "1",
+          "sha256": "sha256:f74dc42a7800aac408445b078b783c4a08df7715c67097450f1715732b3f95f0"
+        },
+        "comparisonId": "dfeeed3d-907e-4a2c-b4ae-874021a887fa",
+        "expectedBinding": {
+          "parentVersionId": "47a6fb46-4227-4018-a2f6-9268c77f2b0c",
+          "candidateVersionId": "fb02b34d-8cf3-4343-859b-f5cfd30cfa81",
+          "parentDigest": "sha256:7ac84df534704bb7b3f4bfa18caa72ea5b20e0fa53f0a6f5645337d339b6cd8e",
+          "candidateDigest": "sha256:3a2f931eb1accf9f7b910161e8ba27099dc34415152085952ebd1d134fed3920",
+          "requestId": "754ae9a2-b070-4088-af3b-6d0140f6a4b2",
+          "attemptId": "b371be26-5ab3-42b5-99b8-cc6abb8d4e6e",
+          "comparisonId": "dfeeed3d-907e-4a2c-b4ae-874021a887fa",
+          "submitter": "evaluator"
+        },
+        "checks": [
+          {
+            "code": "policy.minimum_mean_improvement",
+            "result": "fail"
+          },
+          {
+            "code": "policy.maximum_case_regression",
+            "result": "fail"
+          },
+          {
+            "code": "policy.candidate_threshold",
+            "result": "fail"
+          },
+          {
+            "code": "policy.maximum_candidate_task_failures",
+            "result": "pass"
+          },
+          {
+            "code": "policy.maximum_candidate_cost",
+            "result": "pass"
+          }
+        ],
+        "counts": {
+          "distinctCases": 2,
+          "expectedPairs": 2,
+          "comparablePairs": 2
+        },
+        "summary": {
+          "parentMean": 1,
+          "candidateMean": 0.5,
+          "orientedMeanImprovement": -0.5,
+          "worstCaseRegression": 1,
+          "candidateTaskFailures": 0,
+          "parentCostUsd": 0,
+          "candidateCostUsd": 0,
+          "costIncreaseUsd": 0,
+          "parentUnknownCosts": 0,
+          "candidateUnknownCosts": 0
+        },
+        "interpretation": "descriptive-policy-check"
+      }
+    },
+    {
+      "id": "CI-INCOMPLETE",
+      "exitCode": 2,
+      "checkExitCode": 3,
+      "requestId": "da6af93a-9dfa-427d-b6ee-1303d6512982",
+      "comparisonId": "28e19c54-b6f8-4ab6-8a1f-7a06f1ea3a26",
+      "status": "failed",
+      "verdict": {
+        "schemaVersion": 1,
+        "verdict": "indeterminate",
+        "code": "evidence.incomplete",
+        "policy": {
+          "id": "payment-starter-quality",
+          "revision": "1",
+          "sha256": "sha256:f74dc42a7800aac408445b078b783c4a08df7715c67097450f1715732b3f95f0"
+        },
+        "comparisonId": "28e19c54-b6f8-4ab6-8a1f-7a06f1ea3a26",
+        "expectedBinding": {
+          "parentVersionId": "084ee200-c635-4694-b4de-5c6c760764aa",
+          "candidateVersionId": "a94ad5bd-ffb8-4860-acb4-a0f948ff8d1a",
+          "parentDigest": "sha256:3a2f931eb1accf9f7b910161e8ba27099dc34415152085952ebd1d134fed3920",
+          "candidateDigest": "sha256:97bb11ffb042f3b980b42a5e92ce30463856d057c0fb951a0485b2c8e84493f4",
+          "requestId": "da6af93a-9dfa-427d-b6ee-1303d6512982",
+          "attemptId": "48147364-3658-4361-b4bc-63dac32924b5",
+          "comparisonId": "28e19c54-b6f8-4ab6-8a1f-7a06f1ea3a26",
+          "submitter": "evaluator"
+        },
+        "checks": [
+          {
+            "code": "evidence.incomplete",
+            "result": "unknown"
+          }
+        ],
+        "counts": {
+          "distinctCases": 2,
+          "expectedPairs": 2,
+          "comparablePairs": 0
+        },
+        "summary": {
+          "parentMean": null,
+          "candidateMean": null,
+          "orientedMeanImprovement": null,
+          "worstCaseRegression": null,
+          "candidateTaskFailures": 0,
+          "parentCostUsd": null,
+          "candidateCostUsd": null,
+          "costIncreaseUsd": null,
+          "parentUnknownCosts": 0,
+          "candidateUnknownCosts": 2
+        },
+        "interpretation": "descriptive-policy-check"
+      }
+    },
+    {
+      "id": "CI-EXPORT-FAILURE",
+      "exitCode": 3,
+      "status": "completed",
+      "committedManifestCount": 0
+    },
+    {
+      "id": "NO-AUTOPROMOTION",
+      "channelRevision": "1",
+      "versionId": "084ee200-c635-4694-b4de-5c6c760764aa"
+    },
+    {
+      "id": "RELEASE-ROLLBACK",
+      "operatorPrincipal": "operator",
+      "evaluatorDeniedCode": "denied",
+      "staleErrorCode": "revision_conflict",
+      "revisions": [
+        "1",
+        "2",
+        "3"
+      ],
+      "pinnedVersion": {
+        "versionId": "084ee200-c635-4694-b4de-5c6c760764aa",
+        "digest": "sha256:3a2f931eb1accf9f7b910161e8ba27099dc34415152085952ebd1d134fed3920"
+      },
+      "promotedVersionId": "7f72c1e7-7970-45f9-a22a-e2e9e7409bfe",
+      "rollbackVersionId": "084ee200-c635-4694-b4de-5c6c760764aa"
+    },
+    {
+      "id": "DOWNLOADED-REVIEW",
+      "verification": {
+        "schemaVersion": 1,
+        "status": "verified",
+        "provenance": "online_scalar_binding",
+        "comparisonId": "3c4f9bb4-8a25-4926-84cc-e0faf6840ea2",
+        "executionAttested": false
+      },
+      "journalsRemoved": true,
+      "journalsRecreated": false,
+      "manifestSha256": "f5c7a756af832682eeb4bc259a6dd1d14a4be6ed747ea0e243a921b44e3d3dc0",
+      "readerPrincipalId": "viewer",
+      "readerRights": [
+        "read"
+      ],
+      "credentialCanariesAbsent": true
+    }
+  ],
+  "releaseSourceInventorySha256": "15feab4b46cd8c4d52592fc318cd171a267daa1ec562d4447ae261a16db03f6b",
+  "serviceBinarySha256": "ed09e68c2c93497df582c57b5366b312f915dd2625bd5e053d0a7ebad2a8de8a",
+  "limits": [
+    "Model-free private real Rust/PostgreSQL service; no hosted CI or paid provider exercised.",
+    "25-hour expiry simulated in fixture SQL, not a wall-clock wait.",
+    "Old session pin uses installed SDK immutable version selection and cache; native harness session not exercised.",
+    "Service binary is hashed, without binary-to-source build attestation."
+  ],
+  "releaseVersion": "0.1.0",
+  "ciArchiveSha256": "5ccfc296f38aeee9b209da4f9d469a63aedd3a4ee5c1b01678bfee2b1ca57181"
+}

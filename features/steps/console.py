@@ -413,6 +413,8 @@ def browser_evaluation(context):
     w.browser_saved=saved_draft(w)
     p.get_by_role('link',name='Continue to evaluation',exact=True).click()
     open_details(p,'Set up evaluation request')
+    expect(p.get_by_role('button',name='Create evaluation request',exact=True)).to_be_disabled()
+    p.get_by_label('Evaluation configuration',exact=True).select_option('presence-contract')
     p.get_by_role('button',name='Create evaluation request',exact=True).click()
     expect(p.get_by_role('status').filter(has_text='Evaluation request created. Run it in your app, then return here for the results.')).to_be_visible()
     w.browser_request=w.call('GET',w.bundle+'/evaluation-requests')['items'][0]
@@ -433,11 +435,32 @@ def external_app(context):
     p=w.browser_fixture.page
     p.get_by_role('button',name='Copy request ID',exact=True).click()
     assert p.evaluate('navigator.clipboard.readText()') == w.browser_request['id']
-    p.get_by_role('button',name='Copy configuration',exact=True).click()
+    p.get_by_role('button',name='Copy request JSON',exact=True).click()
     handoff=json.loads(p.evaluate('navigator.clipboard.readText()'))
     assert handoff['projectId']==w.h.project and handoff['bundleId']==w.setup['bundle']['id']
     assert handoff['requestId']==w.browser_request['id']
     assert not any(key in handoff for key in ('evaluatorToken','journalRoot','consoleToken','loginToken'))
+    with p.expect_download() as pending_download:
+        p.get_by_role('button',name='Download request JSON',exact=True).click()
+    download=pending_download.value
+    assert download.suggested_filename=='evaluation-request.json'
+    downloaded_path=config_root/'downloaded-evaluation-request.json'
+    download.save_as(downloaded_path)
+    downloaded_text=downloaded_path.read_text()
+    downloaded=json.loads(downloaded_text)
+    assert downloaded==handoff, 'Downloaded public request must equal the clipboard handoff'
+    forbidden={'evaluatorToken','journalRoot','consoleToken','loginToken','readToken',
+               'configPath','privateJobDirectory','stateRoot','journalPath'}
+    def assert_public_fields(value):
+        if isinstance(value,dict):
+            assert not forbidden.intersection(value), 'Download contains private configuration fields'
+            for nested in value.values(): assert_public_fields(nested)
+        elif isinstance(value,list):
+            for nested in value: assert_public_fields(nested)
+    assert_public_fields(downloaded)
+    for private_value in [*w.h.tokens.values(),w.console_token,w.login_token,
+                          str(config_path),config['journalRoot']]:
+        assert private_value not in downloaded_text, 'Download contains private fixture material'
     p.get_by_text('Included checkout setup (required)',exact=True).click()
     p.get_by_role('button',name='Copy setup-required command',exact=True).click()
     expect(p.get_by_role('status').filter(has_text='Copied.').last).to_be_visible()

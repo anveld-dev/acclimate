@@ -1,0 +1,530 @@
+{
+  "schemaVersion": 1,
+  "persona": "first-time-adopter",
+  "criterion": 3,
+  "disposition": "accepted",
+  "sameContinuousFixture": true,
+  "journey": "installed custom app describe -> actual console custom descriptor -> saved candidate request -> actual public download -> installed CLI doctor/run/check/export -> independent read-only verify -> browser evidence review",
+  "modelCalls": 0,
+  "promotions": 0,
+  "assertions": [
+    {
+      "name": "app staged outside repository",
+      "expected": false,
+      "observed": false,
+      "passed": true
+    },
+    {
+      "name": "SDK resolves inside external consumer",
+      "expected": true,
+      "observed": true,
+      "passed": true
+    },
+    {
+      "name": "same support-routing app descriptor",
+      "expected": "first-adopter-support-routing",
+      "observed": "first-adopter-support-routing",
+      "passed": true
+    },
+    {
+      "name": "same application cases",
+      "expected": [
+        "compromised-account",
+        "ordinary-issue"
+      ],
+      "observed": [
+        "compromised-account",
+        "ordinary-issue"
+      ],
+      "passed": true
+    },
+    {
+      "name": "untouched console requires an evaluator choice",
+      "expected": "",
+      "observed": "",
+      "passed": true
+    },
+    {
+      "name": "browser request freezes custom descriptor runtime",
+      "expected": {
+        "app": "support-routing-1",
+        "model": "none",
+        "writes": "in-memory-only",
+        "configId": "first-adopter-support-routing",
+        "configRevision": "1",
+        "execution": "model-free",
+        "concurrency": "1",
+        "gradeRetries": "0"
+      },
+      "observed": {
+        "concurrency": "1",
+        "app": "support-routing-1",
+        "configRevision": "1",
+        "execution": "model-free",
+        "writes": "in-memory-only",
+        "gradeRetries": "0",
+        "model": "none",
+        "configId": "first-adopter-support-routing"
+      },
+      "passed": true
+    },
+    {
+      "name": "browser request freezes saved candidate",
+      "expected": "88c94212-25c4-4bee-b460-e06b6210523d",
+      "observed": "88c94212-25c4-4bee-b460-e06b6210523d",
+      "passed": true
+    },
+    {
+      "name": "browser request freezes custom dataset",
+      "expected": "support-routing-tasks-1",
+      "observed": "support-routing-tasks-1",
+      "passed": true
+    },
+    {
+      "name": "browser request freezes custom grader",
+      "expected": "independent-queue-label-1",
+      "observed": "independent-queue-label-1",
+      "passed": true
+    },
+    {
+      "name": "browser request freezes declared case inventory",
+      "expected": [
+        {
+          "caseId": "compromised-account",
+          "repetition": 0
+        },
+        {
+          "caseId": "ordinary-issue",
+          "repetition": 0
+        }
+      ],
+      "observed": [
+        {
+          "caseId": "compromised-account",
+          "repetition": 0
+        },
+        {
+          "caseId": "ordinary-issue",
+          "repetition": 0
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "browser request requires bound evidence",
+      "expected": true,
+      "observed": true,
+      "passed": true
+    },
+    {
+      "name": "actual public download filename",
+      "expected": "evaluation-request.json",
+      "observed": "evaluation-request.json",
+      "passed": true
+    },
+    {
+      "name": "download equals actual clipboard handoff",
+      "expected": {
+        "schemaVersion": 1,
+        "serviceUrl": "https://localhost:51316",
+        "projectId": "product-gate",
+        "bundleId": "0163134a-d8f8-4a49-bd51-217b22c0259d",
+        "requestId": "ce52aae7-55c6-4d5b-984f-4d7d74a297f6",
+        "configuration": {
+          "datasetRevision": "support-routing-tasks-1",
+          "graderRevision": "independent-queue-label-1",
+          "runtime": {
+            "configId": "first-adopter-support-routing",
+            "app": "support-routing-1",
+            "model": "none",
+            "writes": "in-memory-only",
+            "configRevision": "1",
+            "concurrency": "1",
+            "execution": "model-free",
+            "gradeRetries": "0"
+          },
+          "expectedCases": [
+            {
+              "caseId": "compromised-account",
+              "repetition": 0
+            },
+            {
+              "caseId": "ordinary-issue",
+              "repetition": 0
+            }
+          ]
+        }
+      },
+      "observed": {
+        "schemaVersion": 1,
+        "serviceUrl": "https://localhost:51316",
+        "projectId": "product-gate",
+        "bundleId": "0163134a-d8f8-4a49-bd51-217b22c0259d",
+        "requestId": "ce52aae7-55c6-4d5b-984f-4d7d74a297f6",
+        "configuration": {
+          "datasetRevision": "support-routing-tasks-1",
+          "graderRevision": "independent-queue-label-1",
+          "runtime": {
+            "configId": "first-adopter-support-routing",
+            "app": "support-routing-1",
+            "model": "none",
+            "writes": "in-memory-only",
+            "configRevision": "1",
+            "concurrency": "1",
+            "execution": "model-free",
+            "gradeRetries": "0"
+          },
+          "expectedCases": [
+            {
+              "caseId": "compromised-account",
+              "repetition": 0
+            },
+            {
+              "caseId": "ordinary-issue",
+              "repetition": 0
+            }
+          ]
+        }
+      },
+      "passed": true
+    },
+    {
+      "name": "download identifies exact console-created request",
+      "expected": "ce52aae7-55c6-4d5b-984f-4d7d74a297f6",
+      "observed": "ce52aae7-55c6-4d5b-984f-4d7d74a297f6",
+      "passed": true
+    },
+    {
+      "name": "download service identity matches private evaluator selection",
+      "expected": "https://localhost:51316",
+      "observed": "https://localhost:51316",
+      "passed": true
+    },
+    {
+      "name": "no callbacks before explicit app CLI run",
+      "expected": false,
+      "observed": false,
+      "passed": true
+    },
+    {
+      "name": "download remained byte-identical through CLI use",
+      "expected": "7ac173419418777c770cb069bb67192a79258ea1cd429a5d81f2909cab32a651",
+      "observed": "7ac173419418777c770cb069bb67192a79258ea1cd429a5d81f2909cab32a651",
+      "passed": true
+    },
+    {
+      "name": "same browser request completed by installed app",
+      "expected": "completed",
+      "observed": "completed",
+      "passed": true
+    },
+    {
+      "name": "comparison bound to browser request",
+      "expected": "ce52aae7-55c6-4d5b-984f-4d7d74a297f6",
+      "observed": "ce52aae7-55c6-4d5b-984f-4d7d74a297f6",
+      "passed": true
+    },
+    {
+      "name": "parent mean",
+      "expected": 0.5,
+      "observed": 0.5,
+      "passed": true
+    },
+    {
+      "name": "candidate mean",
+      "expected": 1,
+      "observed": 1,
+      "passed": true
+    },
+    {
+      "name": "improvement",
+      "expected": 0.5,
+      "observed": 0.5,
+      "passed": true
+    },
+    {
+      "name": "quality policy pass",
+      "expected": "pass",
+      "observed": "pass",
+      "passed": true
+    },
+    {
+      "name": "independent read-only verification",
+      "expected": "online_scalar_binding",
+      "observed": "online_scalar_binding",
+      "passed": true
+    },
+    {
+      "name": "four actual custom application callbacks",
+      "expected": 4,
+      "observed": 4,
+      "passed": true
+    },
+    {
+      "name": "all callbacks awaited reads and safely retained outputs",
+      "expected": true,
+      "observed": true,
+      "passed": true
+    },
+    {
+      "name": "callbacks consumed exact frozen parent/candidate IDs",
+      "expected": [
+        "88c94212-25c4-4bee-b460-e06b6210523d",
+        "ec3f45f5-c717-461f-9ed3-e587c7858c84"
+      ],
+      "observed": [
+        "88c94212-25c4-4bee-b460-e06b6210523d",
+        "ec3f45f5-c717-461f-9ed3-e587c7858c84"
+      ],
+      "passed": true
+    },
+    {
+      "name": "browser reviewed complete two-pair app evidence",
+      "expected": true,
+      "observed": true,
+      "passed": true
+    },
+    {
+      "name": "console explains equal-case weighting",
+      "expected": true,
+      "observed": true,
+      "passed": true
+    },
+    {
+      "name": "production console build remained unchanged",
+      "expected": "86ce1fcba5f1073c2737c52cdb81683606e57de69f30fd221c3989048136d430",
+      "observed": "86ce1fcba5f1073c2737c52cdb81683606e57de69f30fd221c3989048136d430",
+      "passed": true
+    },
+    {
+      "name": "no browser JavaScript errors",
+      "expected": 0,
+      "observed": 0,
+      "passed": true
+    },
+    {
+      "name": "evaluation did not promote channel",
+      "expected": "1",
+      "observed": "1",
+      "passed": true
+    }
+  ],
+  "descriptor": {
+    "datasetRevision": "support-routing-tasks-1",
+    "graderRevision": "independent-queue-label-1",
+    "runtime": {
+      "app": "support-routing-1",
+      "model": "none",
+      "writes": "in-memory-only",
+      "configId": "first-adopter-support-routing",
+      "configRevision": "1",
+      "execution": "model-free",
+      "concurrency": "1",
+      "gradeRetries": "0"
+    },
+    "expectedCases": [
+      {
+        "caseId": "compromised-account",
+        "repetition": 0
+      },
+      {
+        "caseId": "ordinary-issue",
+        "repetition": 0
+      }
+    ]
+  },
+  "descriptorPastedSha256": "6ec4e68f7c6bf53d038b6f7617d108f6b0baec466c27c17d1c49501cdc096d64",
+  "downloadSha256": "7ac173419418777c770cb069bb67192a79258ea1cd429a5d81f2909cab32a651",
+  "requestId": "ce52aae7-55c6-4d5b-984f-4d7d74a297f6",
+  "bundleId": "0163134a-d8f8-4a49-bd51-217b22c0259d",
+  "comparisonId": "135d607a-1d8a-4a98-bdcd-2cf8ea890758",
+  "parentVersionId": "ec3f45f5-c717-461f-9ed3-e587c7858c84",
+  "candidateVersionId": "88c94212-25c4-4bee-b460-e06b6210523d",
+  "parentDigest": "sha256:bca95bd1ea8bad421653c1649df302506769969d751765d345e3c1ae4fc1aff4",
+  "candidateDigest": "sha256:494afcb5eb4c7303f2bd84409aae674c36bc55bc08171baf7b325a9aee9a6d57",
+  "scalarResults": [
+    {
+      "caseId": "compromised-account",
+      "repetition": 0,
+      "parentReward": 0.0,
+      "candidateReward": 1.0
+    },
+    {
+      "caseId": "ordinary-issue",
+      "repetition": 0,
+      "parentReward": 1.0,
+      "candidateReward": 1.0
+    }
+  ],
+  "policy": {
+    "schemaVersion": 1,
+    "verdict": "pass",
+    "code": "policy.pass",
+    "policy": {
+      "id": "support-routing-quality",
+      "revision": "1",
+      "sha256": "sha256:5bc7609295638d495e7d8a2e532273b5e68d5c879164b8c7d928b49b14bf6176"
+    },
+    "comparisonId": "135d607a-1d8a-4a98-bdcd-2cf8ea890758",
+    "expectedBinding": {
+      "parentVersionId": "ec3f45f5-c717-461f-9ed3-e587c7858c84",
+      "candidateVersionId": "88c94212-25c4-4bee-b460-e06b6210523d",
+      "parentDigest": "sha256:bca95bd1ea8bad421653c1649df302506769969d751765d345e3c1ae4fc1aff4",
+      "candidateDigest": "sha256:494afcb5eb4c7303f2bd84409aae674c36bc55bc08171baf7b325a9aee9a6d57",
+      "requestId": "ce52aae7-55c6-4d5b-984f-4d7d74a297f6",
+      "attemptId": "90eeb033-c9c4-4b3f-a787-0f840add318b",
+      "comparisonId": "135d607a-1d8a-4a98-bdcd-2cf8ea890758",
+      "submitter": "evaluator"
+    },
+    "checks": [
+      {
+        "code": "policy.minimum_mean_improvement",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_case_regression",
+        "result": "pass"
+      },
+      {
+        "code": "policy.candidate_threshold",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_candidate_task_failures",
+        "result": "pass"
+      },
+      {
+        "code": "policy.maximum_candidate_cost",
+        "result": "pass"
+      }
+    ],
+    "counts": {
+      "distinctCases": 2,
+      "expectedPairs": 2,
+      "comparablePairs": 2
+    },
+    "summary": {
+      "parentMean": 0.5,
+      "candidateMean": 1,
+      "orientedMeanImprovement": 0.5,
+      "worstCaseRegression": 0,
+      "candidateTaskFailures": 0,
+      "parentCostUsd": 0,
+      "candidateCostUsd": 0,
+      "costIncreaseUsd": 0,
+      "parentUnknownCosts": 0,
+      "candidateUnknownCosts": 0
+    },
+    "interpretation": "descriptive-policy-check"
+  },
+  "readerVerification": {
+    "schemaVersion": 1,
+    "status": "verified",
+    "provenance": "online_scalar_binding",
+    "comparisonId": "135d607a-1d8a-4a98-bdcd-2cf8ea890758",
+    "executionAttested": false
+  },
+  "commands": [
+    {
+      "step": "describe",
+      "executable": "node",
+      "argumentCount": 2,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "doctor",
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "doctor",
+      "executable": "node",
+      "argumentCount": 6,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "run",
+      "executable": "node",
+      "argumentCount": 6,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "check",
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "export",
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    },
+    {
+      "step": "verify-export",
+      "executable": "node",
+      "argumentCount": 8,
+      "exitCode": 0,
+      "expectedExitCode": 0
+    }
+  ],
+  "installedReleaseProvenance": {
+    "resolvedWithinConsumer": true,
+    "packages": [
+      {
+        "package": "@acclimate/sdk",
+        "releaseArchiveSha256": "d12176e8e3979e64cbeaf297f80cedb9b248d173e7734f280c003fb07572b23a",
+        "verifiedFiles": 94,
+        "contentSha256": "014e9711226e92d62dac9fe39ef7ed4d8b45c73e5a2da4886b2850ff44aad9f7"
+      }
+    ]
+  },
+  "releaseName": "acclimate-dx-release-20261117-gaps-1",
+  "releaseChecksumsSha256": "d08fbad420d2a16f9f23e11f53440d21c239ffd9029c26c463e573f9a0a11994",
+  "releaseManifestSha256": "d58ba710bf5a2d0829d7a61e3520c69bd607be87dfe258f41fccfec4ebbf660f",
+  "releaseSourceInventorySha256": "63b0bc9a1751a7b5bf9e230e7bde81f0801ea7d4946171d628449c575cc6cfbd",
+  "serviceBinarySha256": "c84d1961249e635c024346fb23328dccf738f0aa7eef0e5e50fa4b00111d2a50",
+  "binarySourceBuildAttested": false,
+  "consoleMode": "existing production .output/server/index.mjs",
+  "consoleOutputSha256": "86ce1fcba5f1073c2737c52cdb81683606e57de69f30fd221c3989048136d430",
+  "browserVersion": "141.0.7390.37",
+  "runtime": {
+    "node": "v26.13.1",
+    "python": "3.11.7",
+    "postgres": "postgres (PostgreSQL) 16.15 (Homebrew)"
+  },
+  "limits": [
+    "TLS/OIDC fixture identity through real browser discovery/code/JWKS and secure session; no production identity provider.",
+    "Actual custom callbacks are model-free deterministic support routing; no native/model quality claim.",
+    "Fixtures provision the workspace, operator authority, release and evaluator access.",
+    "Existing service/console output is exercised without rebuilding or attesting source-to-binary provenance."
+  ],
+  "cleanup": {
+    "schemaVersion": 1,
+    "databaseDirectoryRemoved": true,
+    "serviceStopped": true,
+    "consumerOutputsRetained": true
+  },
+  "visibleEvidenceScreenshotSha256": "10e49d69d164fca34bba1a50e2ca970fdeb31754a86ecc61ce6076850255bde6",
+  "harnessCorrection": {
+    "stage": "public-report cross-link",
+    "firstDriverExitCode": 1,
+    "priorRequestId": "76571c8f-4282-4dbd-892b-52072cd2633f",
+    "priorComparisonId": "d555dc02-de82-4ccc-bcac-393d162d97b8",
+    "cause": "New relative --report-dir was passed to Path.relative_to with an absolute repository root.",
+    "fix": "Resolve --report-dir before public cross-linking; no product changes.",
+    "finalDriverExitCode": 0,
+    "completeJourneyRerun": true,
+    "priorFixtureCleanup": {
+      "serviceStopped": true,
+      "databaseDirectoryRemoved": true
+    }
+  }
+}

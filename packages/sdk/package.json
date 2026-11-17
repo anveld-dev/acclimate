@@ -14,12 +14,40 @@
     "./native-files": {
       "types": "./dist/internal/native-files.d.ts",
       "import": "./dist/internal/native-files.js"
+    },
+    "./evaluation": {
+      "types": "./dist/evaluation/index.d.ts",
+      "import": "./dist/evaluation/index.js"
+    },
+    "./evaluation/cli": {
+      "types": "./dist/evaluation/cli.d.ts",
+      "import": "./dist/evaluation/cli.js"
+    },
+    "./evaluation/policy": {
+      "types": "./dist/evaluation/policy.d.ts",
+      "import": "./dist/evaluation/policy.js"
+    },
+    "./evaluation/artifacts": {
+      "types": "./dist/evaluation/artifacts.d.ts",
+      "import": "./dist/evaluation/artifacts.js"
+    },
+    "./evaluation/analysis": {
+      "types": "./dist/evaluation/analysis.d.ts",
+      "import": "./dist/evaluation/analysis.js"
+    },
+    "./evaluation/manifest": {
+      "types": "./dist/evaluation/manifest.d.ts",
+      "import": "./dist/evaluation/manifest.js"
+    },
+    "./evaluation/progress": {
+      "types": "./dist/evaluation/progress.d.ts",
+      "import": "./dist/evaluation/progress.js"
     }
   },
   "files": [
     "dist"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.22.0"
   }
 }

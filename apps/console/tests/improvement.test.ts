@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { comparisonSummary, fixtureIdentity, improvement } from '../src/server/improvement';
 import type { Comparison, Outcome } from '@acclimate/sdk';
+import { evaluationPresets } from '../src/lib/evaluation-config';
 const scored: Outcome = {
   executionStatus: 'completed',
   gradingStatus: 'scored',
@@ -57,7 +58,8 @@ test('unconfigured scope cannot create proposals or requests', async () => {
 });
 
 function historyFixture() {
-  const env = { ...consoleEnvironment,
+  const env = {
+    ...consoleEnvironment,
     CONSOLE_SERVICE_TOKEN: 'fixture-only',
     CONSOLE_PROJECT: 'workspace',
     CONSOLE_BUNDLE: 'bundle',
@@ -81,7 +83,11 @@ function historyFixture() {
   const calls: string[] = [];
   const fetcher: typeof fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.pathname === '/v1/projects') return Response.json({ items: [{ id: 'workspace', name: 'Workspace', role: 'admin' }], nextCursor: null });
+    if (url.pathname === '/v1/projects')
+      return Response.json({
+        items: [{ id: 'workspace', name: 'Workspace', role: 'admin' }],
+        nextCursor: null,
+      });
     calls.push(url.pathname + url.search);
     const version = url.pathname.split('/versions/')[1]?.split('/')[0] as keyof typeof payloads;
     if (url.pathname.endsWith('/payload')) return new Response(JSON.stringify(payloads[version]));
@@ -121,19 +127,55 @@ function historyFixture() {
   return { env, fetcher, calls };
 }
 
+test('selected request reads optional progress without allowing activity failure to hide durable state', async () => {
+  const { env, fetcher } = historyFixture();
+  const reads: string[] = [];
+  const request = { id: 'request', attemptId: 'attempt', status: 'running' };
+  const progress = { requestId: 'request', attemptId: 'attempt', activity: 'absent', observation: null };
+  for (const unavailable of [false, true]) {
+    const result = await improvement(env, { action: 'request', id: 'request' }, async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path.endsWith('/evaluation-requests/request/progress')) {
+        reads.push(init?.method ?? 'GET');
+        return unavailable ? Response.json({ error: 'unavailable' }, { status: 503 }) : Response.json(progress);
+      }
+      if (path.endsWith('/evaluation-requests/request')) return Response.json(request);
+      return fetcher(input, init);
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) continue;
+    assert.deepEqual(result.request, request);
+    assert.deepEqual(result.progress, unavailable ? undefined : progress);
+  }
+  assert.deepEqual(reads, ['GET', 'GET']);
+});
+
 test('new requests freeze the selected app configuration and immutable content identities', async () => {
   const { env, fetcher } = historyFixture();
   const withCurrentParent: typeof fetch = async (input, init) => {
     const response = await fetcher(input, init);
     if (new URL(String(input)).pathname.endsWith('/versions/candidate')) {
-      return Response.json({ ...await response.json(), parentVersionId: 'current' });
+      return Response.json({ ...(await response.json()), parentVersionId: 'current' });
     }
     return response;
   };
-  const configuration = { datasetRevision: 'own-data-v3', graderRevision: 'own-grader-v2',
-    runtime: { configId: 'my-runner', configRevision: '7' }, expectedCases: [{ caseId: 'real-work', repetition: 0 }] };
-  const result = await improvement(env, { action: 'evaluate', versionId: 'candidate',
-    expectedRevision: '3', key: '11111111-1111-4111-8111-111111111111', configuration }, withCurrentParent);
+  const configuration = {
+    datasetRevision: 'own-data-v3',
+    graderRevision: 'own-grader-v2',
+    runtime: { configId: 'my-runner', configRevision: '7' },
+    expectedCases: [{ caseId: 'real-work', repetition: 0 }],
+  };
+  const result = await improvement(
+    env,
+    {
+      action: 'evaluate',
+      versionId: 'candidate',
+      expectedRevision: '3',
+      key: '11111111-1111-4111-8111-111111111111',
+      configuration,
+    },
+    withCurrentParent,
+  );
   assert.equal(result.ok, true);
   if (!result.ok || !result.command) throw Error('missing prepared command');
   const body = JSON.parse(result.command.body);
@@ -187,7 +229,24 @@ test('suggestion and request pagination use independent cursors and do not masqu
   );
 });
 
-test('reviewing a current candidate prepares the installed public strict descriptor before any write', async () => {
+test('a new request requires explicit configuration and never supplies an example default', async () => {
+  const { env, fetcher, calls } = historyFixture();
+  const result = await improvement(
+    env,
+    {
+      action: 'evaluate',
+      versionId: 'candidate',
+      expectedRevision: '3',
+      key: '11111111-1111-4111-8111-111111111111',
+    },
+    fetcher,
+  );
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /Choose an evaluator/);
+  assert.equal(calls.length, 0);
+});
+
+test('reviewing a current candidate freezes the explicitly selected public descriptor before any write', async () => {
   const { env, fetcher } = historyFixture();
   let writes = 0;
   const prepared = await improvement(
@@ -197,6 +256,7 @@ test('reviewing a current candidate prepares the installed public strict descrip
       versionId: 'candidate',
       expectedRevision: '3',
       key: '11111111-1111-4111-8111-111111111111',
+      configuration: evaluationPresets['presence-contract'],
     },
     async (input, init) => {
       if (init?.method === 'POST') writes++;
@@ -213,9 +273,31 @@ test('reviewing a current candidate prepares the installed public strict descrip
   if (!prepared.ok || !prepared.command) return;
   const body = JSON.parse(prepared.command.body);
   assert.equal(body.requireBoundEvidence, true);
-  assert.equal(body.runtime.configId, 'payment-retry');
+  assert.equal(body.runtime.configId, 'presence-contract');
   assert.equal(body.runtime.configRevision, '1');
-  assert.equal(body.expectedCases.length, 6);
+  assert.equal(body.expectedCases.length, 4);
   assert.equal(body.parentVersionId, 'current');
   assert.equal(body.candidateVersionId, 'candidate');
+});
+
+test('the payment example cannot evaluate unrelated instructions without its policy data', async () => {
+  const { env, fetcher } = historyFixture();
+  const result = await improvement(
+    env,
+    {
+      action: 'evaluate',
+      versionId: 'candidate',
+      expectedRevision: '3',
+      key: '11111111-1111-4111-8111-111111111111',
+      configuration: evaluationPresets['payment-retry'],
+    },
+    async (input, init) => {
+      const response = await fetcher(input, init);
+      if (new URL(String(input)).pathname.endsWith('/versions/candidate'))
+        return Response.json({ ...(await response.json()), parentVersionId: 'current' });
+      return response;
+    },
+  );
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /payment-policy\.json/);
 });

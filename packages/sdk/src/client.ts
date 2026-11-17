@@ -1,4 +1,11 @@
 import type { Operation } from './types.js';
+import { registerEvaluationMutation } from './internal/http-bridge.js';
+import type {
+  EvaluationCapabilities,
+  IntegrationObservation,
+  EvaluationProgressRequest,
+  EvaluationProgressView,
+} from './types.js';
 import type {
   Channel,
   Integration,
@@ -48,7 +55,13 @@ export class ApiError extends Error {
   readonly code: string;
   readonly requestId: string;
   readonly details?: Record<string, unknown>;
-  constructor(status: number, code: string, message: string, requestId: string, details?: Record<string, unknown>) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    requestId: string,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
@@ -68,6 +81,8 @@ export interface ClientOptions {
   retries?: number;
   timeoutMs?: number;
   maxPayloadBytes?: number;
+  /** Bounded decoded JSON responses, including retained-operation envelopes. Default 4 MiB. */
+  maxJsonResponseBytes?: number;
 }
 export interface ChannelOptions {
   etag?: string;
@@ -87,6 +102,7 @@ export class AcclimateClient {
   private readonly retries: number;
   private readonly timeoutMs: number;
   private readonly maxPayloadBytes: number;
+  private readonly maxJsonResponseBytes: number;
   constructor(options: ClientOptions) {
     if (!options.baseUrl || !options.token || !options.scope)
       throw new TypeError('baseUrl, token, and scope are required');
@@ -109,6 +125,7 @@ export class AcclimateClient {
     this.retries = options.retries ?? 2;
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxPayloadBytes = options.maxPayloadBytes ?? 1024 * 1024;
+    this.maxJsonResponseBytes = options.maxJsonResponseBytes ?? 4 * 1024 * 1024;
     if (!Number.isInteger(this.retries) || this.retries < 0 || this.retries > 3)
       throw new RangeError('retries must be an integer between 0 and 3');
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs < 1 || this.timeoutMs > 120_000)
@@ -119,6 +136,15 @@ export class AcclimateClient {
       this.maxPayloadBytes > 2 * 1024 * 1024
     )
       throw new RangeError('maxPayloadBytes must be between 1 and 2097152');
+    if (
+      !Number.isSafeInteger(this.maxJsonResponseBytes) ||
+      this.maxJsonResponseBytes < 1 ||
+      this.maxJsonResponseBytes > 8 * 1024 * 1024
+    )
+      throw new RangeError('maxJsonResponseBytes must be an integer between 1 and 8388608');
+    registerEvaluationMutation(this, (route, body, key) =>
+      this.request('POST', route, body, key, { 'X-Acclimate-Durable-Operation': 'true' }),
+    );
   }
   private part(value: string): string {
     if (!value || value === '.' || value === '..')
@@ -128,6 +154,50 @@ export class AcclimateClient {
   private path(projectId: string, suffix: string): string {
     return `/v1/projects/${this.part(projectId)}${suffix}`;
   }
+  private async readBytes(response: Response, limit: number, payload = false): Promise<Uint8Array> {
+    const fail = () =>
+      new ApiError(
+        413,
+        payload ? 'payload_too_large' : 'response_too_large',
+        payload
+          ? 'Downloaded payload exceeds configured limit'
+          : 'JSON response exceeds configured limit',
+        '',
+      );
+    if (!response.body) {
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength > limit) throw fail();
+      return bytes;
+    }
+    const reader = response.body.getReader(),
+      chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      for (;;) {
+        const item = await reader.read();
+        if (item.done) break;
+        size += item.value.byteLength;
+        if (size > limit) {
+          await reader.cancel().catch(() => {});
+          throw fail();
+        }
+        chunks.push(item.value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return bytes;
+  }
+  private async readJson<T>(response: Response): Promise<T> {
+    const bytes = await this.readBytes(response, this.maxJsonResponseBytes);
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as T;
+  }
   async health(): Promise<string> {
     const response = await this.fetcher(this.baseUrl + '/health', {
       method: 'GET',
@@ -135,16 +205,21 @@ export class AcclimateClient {
       redirect: 'manual',
     });
     if (!response.ok) {
-      const err = (await response.json().catch(() => null)) as ApiErrorBody | null;
+      const err = await this.readJson<ApiErrorBody>(response).catch((error) => {
+        if (error instanceof ApiError) throw error;
+        return null;
+      });
       throw new ApiError(
         response.status,
         err?.error?.code ?? 'http_error',
         err?.error?.message ?? `HTTP ${response.status}`,
         err?.error?.requestId ?? response.headers.get('x-request-id') ?? '',
-            err?.error?.details,
+        err?.error?.details,
       );
     }
-    return response.text();
+    return new TextDecoder('utf-8', { fatal: true }).decode(
+      await this.readBytes(response, this.maxJsonResponseBytes),
+    );
   }
   private async request<T>(
     method: string,
@@ -179,7 +254,10 @@ export class AcclimateClient {
         if (response.status === 304)
           return { notModified: true, etag: response.headers.get('etag') } as T;
         if (!response.ok) {
-          const err = (await response.json().catch(() => null)) as ApiErrorBody | null;
+          const err = await this.readJson<ApiErrorBody>(response).catch((error) => {
+            if (error instanceof ApiError) throw error;
+            return null;
+          });
           if (mutation && response.status >= 500 && attempt < this.retries) continue;
           throw new ApiError(
             response.status,
@@ -190,45 +268,10 @@ export class AcclimateClient {
           );
         }
         if (raw) {
-          if (response.body) {
-            const reader = response.body.getReader(),
-              chunks: Uint8Array[] = [];
-            let size = 0;
-            for (;;) {
-              const item = await reader.read();
-              if (item.done) break;
-              size += item.value.byteLength;
-              if (size > this.maxPayloadBytes) {
-                await reader.cancel();
-                throw new ApiError(
-                  413,
-                  'payload_too_large',
-                  'Downloaded payload exceeds configured limit',
-                  '',
-                );
-              }
-              chunks.push(item.value);
-            }
-            const bytes = new Uint8Array(size);
-            let offset = 0;
-            for (const chunk of chunks) {
-              bytes.set(chunk, offset);
-              offset += chunk.byteLength;
-            }
-            return bytes as T;
-          }
-          const bytes = new Uint8Array(await response.arrayBuffer());
-          if (bytes.byteLength > this.maxPayloadBytes)
-            throw new ApiError(
-              413,
-              'payload_too_large',
-              'Downloaded payload exceeds configured limit',
-              '',
-            );
-          return bytes as T;
+          return (await this.readBytes(response, this.maxPayloadBytes, true)) as T;
         }
         if (response.status === 204) return undefined as T;
-        const value = (await response.json()) as T;
+        const value = await this.readJson<T>(response);
         if (channelResolution)
           return { resolution: value, etag: response.headers.get('etag'), notModified: false } as T;
         return value;
@@ -240,7 +283,11 @@ export class AcclimateClient {
     }
     throw last;
   }
-  createBundle(projectId: string, request: { name: string; compatibilityTarget?: import('./types.js').CompatibilityTarget }, key: string): Promise<Bundle> {
+  createBundle(
+    projectId: string,
+    request: { name: string; compatibilityTarget?: import('./types.js').CompatibilityTarget },
+    key: string,
+  ): Promise<Bundle> {
     return this.request('POST', this.path(projectId, '/bundles'), JSON.stringify(request), key);
   }
   createVersion(
@@ -544,6 +591,37 @@ export class AcclimateClient {
       key,
     );
   }
+  getEvaluationProgress(
+    projectId: string,
+    bundleId: string,
+    id: string,
+  ): Promise<EvaluationProgressView> {
+    return this.request(
+      'GET',
+      this.path(
+        projectId,
+        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/progress`,
+      ),
+    );
+  }
+  reportEvaluationProgress(
+    projectId: string,
+    bundleId: string,
+    id: string,
+    report: EvaluationProgressRequest,
+  ): Promise<EvaluationProgressView> {
+    // The server uses attempt + sequence, not retained operation records. This
+    // transport key enables safe same-body network retries without key growth.
+    return this.request(
+      'POST',
+      this.path(
+        projectId,
+        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/progress`,
+      ),
+      JSON.stringify(report),
+      `progress:${report.sequence}`,
+    );
+  }
   finishEvaluation(
     projectId: string,
     bundleId: string,
@@ -595,6 +673,18 @@ export class AcclimateClient {
     return this.request(
       'GET',
       this.path(projectId, `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}`),
+    );
+  }
+  getEvaluationCapabilities(projectId: string): Promise<EvaluationCapabilities> {
+    return this.request('GET', this.path(projectId, '/evaluation-capabilities'));
+  }
+  listIntegrationObservations(
+    projectId: string,
+    options: ListOptions = {},
+  ): Promise<Page<IntegrationObservation>> {
+    return this.request(
+      'GET',
+      this.path(projectId, '/integration-observations' + this.listing(options)),
     );
   }
 
@@ -675,9 +765,21 @@ export class AcclimateClient {
   }
   getOperation(projectId: string, operationId: string, operationPath?: string): Promise<Operation> {
     const query = operationPath ? `?operationPath=${encodeURIComponent(operationPath)}` : '';
-    return this.request('GET', this.path(projectId, `/operations/${this.part(operationId)}${query}`));
+    return this.request(
+      'GET',
+      this.path(projectId, `/operations/${this.part(operationId)}${query}`),
+    );
   }
-  closeOperation(projectId: string, operationId: string, operationPath?: string): Promise<Operation> {
-    return this.request('POST', this.path(projectId, `/operations/${this.part(operationId)}/close`), JSON.stringify({ operationPath }), operationId);
+  closeOperation(
+    projectId: string,
+    operationId: string,
+    operationPath?: string,
+  ): Promise<Operation> {
+    return this.request(
+      'POST',
+      this.path(projectId, `/operations/${this.part(operationId)}/close`),
+      JSON.stringify({ operationPath }),
+      operationId,
+    );
   }
 }

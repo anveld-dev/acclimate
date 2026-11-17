@@ -1,0 +1,2932 @@
+{
+  "schemaVersion": 1,
+  "vectors": [
+    {
+      "name": "inclusive-unchanged",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0.5,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0.5,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "verdict": "pass",
+        "code": "policy.pass"
+      }
+    },
+    {
+      "name": "complete-loss",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "verdict": "fail",
+        "code": "policy.fail",
+        "improvement": -1
+      }
+    },
+    {
+      "name": "unequal-repetitions",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "improves",
+            "repetition": 0
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 0
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 1
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 2
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 3
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 4
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 5
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 6
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 7
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 8
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "improves",
+            "repetition": 0
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 0
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 1
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 2
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 3
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 4
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 5
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 6
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 7
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 8
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "improves",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 1,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 2,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 3,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 4,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 5,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 6,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 7,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "regresses",
+            "repetition": 8,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 1,
+        "requiredCases": []
+      },
+      "expected": {
+        "verdict": "pass",
+        "code": "policy.pass",
+        "improvement": 0
+      }
+    },
+    {
+      "name": "lower-is-better",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "latency",
+            "repetition": 0
+          },
+          {
+            "caseId": "latency",
+            "repetition": 1
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "latency",
+            "repetition": 0
+          },
+          {
+            "caseId": "latency",
+            "repetition": 1
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "latency",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 10,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 8,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "latency",
+            "repetition": 1,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 12,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 10,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "latency",
+          "unit": "ms",
+          "direction": "lower"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 2,
+        "maximumCaseRegression": 0,
+        "requiredCases": [],
+        "candidateThreshold": 9
+      },
+      "expected": {
+        "verdict": "pass",
+        "code": "policy.pass",
+        "improvement": 2
+      }
+    },
+    {
+      "name": "known-failure-and-unknown-cost",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [],
+        "cost": {
+          "maximumCandidateUsd": 0
+        }
+      },
+      "expected": {
+        "verdict": "indeterminate",
+        "code": "cost.unknown"
+      }
+    },
+    {
+      "name": "missing-cost-informational",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "verdict": "pass",
+        "code": "policy.pass"
+      }
+    },
+    {
+      "name": "candidate-cost-known-parent-unknown",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": {
+                "costUsd": 0.25
+              }
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [],
+        "cost": {
+          "maximumCandidateUsd": 0.25
+        }
+      },
+      "expected": {
+        "verdict": "pass",
+        "code": "policy.pass"
+      }
+    },
+    {
+      "name": "cost-increase-needs-parent",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": {
+                "costUsd": 0.25
+              }
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [],
+        "cost": {
+          "maximumIncreaseUsd": 1
+        }
+      },
+      "expected": {
+        "verdict": "indeterminate",
+        "code": "cost.unknown"
+      }
+    },
+    {
+      "name": "scored-task-failure",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "task_failed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [],
+        "maximumCandidateTaskFailures": 0
+      },
+      "expected": {
+        "verdict": "fail",
+        "code": "policy.fail"
+      }
+    },
+    {
+      "name": "partial-even-when-complete-flag-true",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 1
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 1
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "verdict": "indeterminate",
+        "code": "evidence.incomplete"
+      }
+    },
+    {
+      "name": "ungraded-not-zero",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "missing",
+              "reward": null,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "verdict": "indeterminate",
+        "code": "evidence.incomplete"
+      }
+    },
+    {
+      "name": "sum-overflow",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 1
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 1
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1e308,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 1,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1e308,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "verdict": "indeterminate",
+        "code": "analysis.nonfinite"
+      }
+    },
+    {
+      "name": "mixed-magnitude-order",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 1
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 2
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 1
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 2
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1e16,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 1,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 2,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": -1e16,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "verdict": "pass",
+        "code": "policy.pass",
+        "improvement": 0
+      }
+    },
+    {
+      "name": "rounding-sensitive",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 1
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 2
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 1
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 2
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0.1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 1,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0.2,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 2,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0.3,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0.20000000000000004,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "verdict": "pass",
+        "code": "policy.pass",
+        "improvement": 0.20000000000000004
+      }
+    },
+    {
+      "name": "utf8-case-sort",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "𐀀",
+            "repetition": 0
+          },
+          {
+            "caseId": "",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "𐀀",
+            "repetition": 0
+          },
+          {
+            "caseId": "",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "𐀀",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": -1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 1,
+        "requiredCases": []
+      },
+      "expected": {
+        "verdict": "pass",
+        "code": "policy.pass",
+        "improvement": 0
+      }
+    },
+    {
+      "name": "required-case-not-in-trusted-inventory",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": ["critical"]
+      },
+      "expected": {
+        "error": "policy.inventory_incompatible"
+      }
+    },
+    {
+      "name": "wrong-attempt",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "different"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "error": "evidence.identity_mismatch"
+      }
+    },
+    {
+      "name": "duplicate-results",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "error": "evidence.malformed"
+      }
+    },
+    {
+      "name": "duplicate-comparison-inventory",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "error": "evidence.malformed"
+      }
+    },
+    {
+      "name": "duplicate-trusted-inventory",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          },
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": []
+      },
+      "expected": {
+        "error": "policy.invalid"
+      }
+    },
+    {
+      "name": "fractional-count-limit",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [],
+        "maximumCandidateTaskFailures": 0.5
+      },
+      "expected": {
+        "error": "policy.invalid"
+      }
+    },
+    {
+      "name": "boolean-count-limit",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [],
+        "maximumCandidateTaskFailures": false
+      },
+      "expected": {
+        "error": "policy.invalid"
+      }
+    },
+    {
+      "name": "empty-cost-policy",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 1,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [],
+        "cost": {}
+      },
+      "expected": {
+        "error": "policy.invalid"
+      }
+    },
+    {
+      "name": "lower-threshold-failure",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "latency",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "latency",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "latency",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 11,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 9,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "latency",
+          "unit": "ms",
+          "direction": "lower"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [],
+        "candidateThreshold": 8
+      },
+      "expected": {
+        "verdict": "fail",
+        "code": "policy.fail"
+      }
+    },
+    {
+      "name": "public-descriptor-escaped-control",
+      "descriptor": {
+        "datasetRevision": "tasks\nrevision",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "line\ncase",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks\nrevision",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "line\ncase",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "line\ncase",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0.5,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0.5,
+              "outputRef": null,
+              "error": null,
+              "usage": null
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": ["line\ncase"]
+      },
+      "expected": {
+        "verdict": "pass",
+        "code": "policy.pass"
+      }
+    },
+    {
+      "name": "known-cost-increase-inclusive",
+      "descriptor": {
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ]
+      },
+      "binding": {
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "attemptId": "44444444-4444-4444-8444-444444444444",
+        "comparisonId": "55555555-5555-4555-8555-555555555555",
+        "submitter": "evaluator"
+      },
+      "comparison": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "complete": true,
+        "submitter": "evaluator",
+        "createdAt": "2026-11-16T00:00:00Z",
+        "parentVersionId": "11111111-1111-4111-8111-111111111111",
+        "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+        "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "datasetRevision": "tasks-1",
+        "graderRevision": "grader-1",
+        "runtime": {
+          "configId": "fixture",
+          "configRevision": "1"
+        },
+        "expectedCases": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0
+          }
+        ],
+        "evaluation": {
+          "requestId": "33333333-3333-4333-8333-333333333333",
+          "attemptId": "44444444-4444-4444-8444-444444444444"
+        },
+        "results": [
+          {
+            "caseId": "ordinary",
+            "repetition": 0,
+            "parent": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0.5,
+              "outputRef": null,
+              "error": null,
+              "usage": {
+                "costUsd": 0.1
+              }
+            },
+            "candidate": {
+              "executionStatus": "completed",
+              "gradingStatus": "scored",
+              "reward": 0.5,
+              "outputRef": null,
+              "error": null,
+              "usage": {
+                "costUsd": 0.3
+              }
+            }
+          }
+        ]
+      },
+      "policy": {
+        "schemaVersion": 1,
+        "id": "release-quality",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "points",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [],
+        "cost": {
+          "maximumCandidateUsd": 0.3,
+          "maximumIncreaseUsd": 0.2
+        }
+      },
+      "expected": {
+        "verdict": "pass",
+        "code": "policy.pass"
+      }
+    }
+  ]
+}

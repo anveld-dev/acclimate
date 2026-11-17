@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "kind": "developer-persona-actual-use-acceptance",
+  "date": "2026-11-17",
+  "developerPersonas": 7,
+  "simulatedDeveloperRolesNotHumanStudy": true,
+  "productCommit": "63eb588458732fbba53c0969c9b892cf08a572fe",
+  "releaseSourceInventorySha256": "15feab4b46cd8c4d52592fc318cd171a267daa1ec562d4447ae261a16db03f6b",
+  "serviceBinarySha256": "ed09e68c2c93497df582c57b5366b312f915dd2625bd5e053d0a7ebad2a8de8a",
+  "binarySourceBuildAttested": false,
+  "coreRealServiceJourneysPassed": true,
+  "allOriginalRequirementsSatisfied": false,
+  "scopedDispositions": {
+    "first-time-adopter": "accepted",
+    "typescript-integrator": "core-accepted; cross-machine review transfer unproven",
+    "python-integrator": "core-accepted; strict root-import typing and obtaining docs partial",
+    "evaluation-researcher": "partial; console weighting/components/confidence and provenance needs remain",
+    "ci-release-engineer": "accepted-local-archived-workflow",
+    "platform-engineer": "partial; missing-resource doctor diagnostics and remote liveness",
+    "plugin-author": "accepted-Codex-selected-scope; starter install workaround required"
+  },
+  "acceptedLiveProof": {
+    "sdk": "@openai/codex-sdk",
+    "version": "0.169.0",
+    "model": "gpt-6-luna",
+    "threadId": "01a1e9da-fbdb-7551-9ca5-d90ffe0f43e1",
+    "externalInstalledConsumer": true,
+    "resourceReadEvidence": true,
+    "baselineTestExit": 1,
+    "finalTestExit": 0,
+    "unchangedTests": true,
+    "retainedPatchSha256": "5361282f51c440db403e50daed42a7d2239f73db95689168dd73d9ce7d3d447e",
+    "normalCompletionCleanup": true,
+    "forcedProviderTerminationProven": false
+  },
+  "sharedBrowserEvidence": {
+    "scenariosPassed": 6,
+    "stepsPassed": 25,
+    "fullInventoryRun": false
+  },
+  "files": [
+    {
+      "path": "docs/acceptance/developer-personas-20261117/README.md",
+      "bytes": 10633,
+      "sha256": "24398f711e67e264a22b595d85f133cdb44bf23364709b7a56582088706ac047"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/ci-release-engineer.json",
+      "bytes": 9440,
+      "sha256": "d1a658543c860fe2cf8799380754319841581ffa48d04649775b540cdeacfed5"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/ci-release-engineer.md",
+      "bytes": 5909,
+      "sha256": "b99b6adf337e341554cb9f5e2c69050fe59624827b6a1513a7816b6f723beadb"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/evaluation-researcher.json",
+      "bytes": 19514,
+      "sha256": "d1f62ef9b475c32d208322851f75eb354ec1940a9bc89f738573a96712ec22a6"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/evaluation-researcher.md",
+      "bytes": 9451,
+      "sha256": "bfb8f205894edd30f386529a2467dad748380e90989e173e085514b521eb4b7b"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/first-time-adopter-console.json",
+      "bytes": 14058,
+      "sha256": "257ad14de9039741986df43d02921d64fef20103fd240a015c604961b74bea2a"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/first-time-adopter.json",
+      "bytes": 11184,
+      "sha256": "c27fa6f2dd998732ae88ad92e49166ec3aa6e893b178a2c44d1c228039cfec91"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/first-time-adopter.md",
+      "bytes": 10995,
+      "sha256": "0eb82164c52a852a00bf99a30894990854f9a9fa72a2886cdef9c6fee1e30f04"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/other-native-live.json",
+      "bytes": 4676,
+      "sha256": "4c6a330b1af2eec819a41e21b0f4bb4eb716fb215faa670bb90b4a8c724a340b"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/other-native-live.md",
+      "bytes": 2731,
+      "sha256": "e5bc84787cfb51cfbadb6dca7375515bd54d3882a815276f005c576b187b318e"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/platform-engineer.json",
+      "bytes": 5448,
+      "sha256": "a69c6f34a3de0dfbd5328b65efa59523fa78ef5423ae38ed76da42c25ee3be89"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/platform-engineer.md",
+      "bytes": 8708,
+      "sha256": "36163e799ca598aeb2da87e75e938f6efe13660e864e36a3a5ea6d1cb82986e9"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/plugin-author.json",
+      "bytes": 14502,
+      "sha256": "5ae2a1c259a24972f0c71ae7a865867f7854a5bc5437f76c11001f8003062cc6"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/plugin-author.md",
+      "bytes": 9973,
+      "sha256": "58c9237e5bf6d6b4d406d6a2b2c09f2ad46d9bdca6d77d89c2496e5b528df67d"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/python-integrator.json",
+      "bytes": 4015,
+      "sha256": "cc0dc58a3b485d0c1771f114c84d90c74824fe7482d69f5a48afe7236f3b7a59"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/python-integrator.md",
+      "bytes": 6985,
+      "sha256": "b8c8d53ea42de2d3f0ea8297613b0e2e68009cacf5696c5272d121a3aa4ab1c2"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/typescript-integrator.json",
+      "bytes": 9423,
+      "sha256": "319191857d5263a085cbc5cfc4973a2dc314d57129d06b08582eb9be9a0038dc"
+    },
+    {
+      "path": "docs/acceptance/developer-personas-20261117/typescript-integrator.md",
+      "bytes": 8121,
+      "sha256": "af77d6698bfbf641f4c27b0c4992c2355207d6dfa3ffc1975a17dde0a534bd91"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/README.md",
+      "bytes": 2885,
+      "sha256": "8cd385a3ed6de58beae97c6dcdf85e4f5492e4d416826e13bfeb78c44cb010e7"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/__init__.py",
+      "bytes": 84,
+      "sha256": "4c9dfc77b26d3b4229eb8e4f9c507030a0c3202f72c36bc3644fa1b90b99bec2"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/ci_release_engineer.py",
+      "bytes": 14256,
+      "sha256": "c233041cf9b7756a03dabbb1b380c7a7535f5443957175de175e3a8342acd69c"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/console_custom_app.py",
+      "bytes": 15874,
+      "sha256": "7462f93df4cf9678a74cdf80703941db48546ecd0eef400987afbf6857c6a0dc"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/evaluation_researcher.py",
+      "bytes": 19239,
+      "sha256": "fb8ac0efd86035117ef12603fccc257efc2251d1015023f1a834e7e2652d4dcb"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/first_adopter.py",
+      "bytes": 18007,
+      "sha256": "7f2ec184ed8dbef6035713061b68d811187cc482812d5476bb324dccdab5eae4"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/platform_engineer.py",
+      "bytes": 24057,
+      "sha256": "c2f9546c08da4a3561181bf45d406a923b2254a0ad26c0ba00ea6cf8e52c10fd"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/plugin_author.py",
+      "bytes": 28685,
+      "sha256": "95d8689cc165165d9f6f074389378574ca753e827b16b914e95dfa1497d61abb"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/python_integrator.py",
+      "bytes": 21353,
+      "sha256": "d1f022e8f79fedf680e74df0846a5dafb6c91d56286f42a360c6a78b6b5c8e20"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/support.py",
+      "bytes": 15286,
+      "sha256": "c833811c25bc5fb673d454c881ee033c4c1a48d13f1116b9819738a21bf4224b"
+    },
+    {
+      "path": "scripts/acceptance/dx_personas/typescript_integrator.py",
+      "bytes": 18399,
+      "sha256": "928b7345df07f1e532c12cd805e1ea688d777539f3b78eee0dc79cd106474198"
+    },
+    {
+      "path": "artifacts/dx-personas-20261117/console/bdd/coverage.md",
+      "private": true,
+      "bytes": 22328,
+      "sha256": "c5f3326a22e1e3c5717f9b97a64093249a01757a3accf66b18631809e494b7fe"
+    },
+    {
+      "path": "artifacts/dx-personas-20261117/console/bdd/coverage.json",
+      "private": true,
+      "bytes": 35984,
+      "sha256": "59f4f82aaf68ddd77addd5f64801452f1c1d458ec18b3dc618cd6c6faea8f0b9"
+    },
+    {
+      "path": "artifacts/dx-personas-20261117/console/bdd/results.json",
+      "private": true,
+      "bytes": 193595,
+      "sha256": "0ec95a066b14abd79e64a35872a197f06df2ad6d37c334d4f70428bfae3a43ee"
+    }
+  ]
+}

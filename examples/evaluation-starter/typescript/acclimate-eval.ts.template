@@ -1,0 +1,34 @@
+import { defineEvaluation, type Json } from '@acclimate/sdk/evaluation';
+import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
+import { runExistingAgent } from './agent.js';
+
+const app = defineEvaluation({
+  configId: 'installed-payment-starter', configRevision: '1',
+  datasetRevision: 'payment-response-fixtures-1', graderRevision: 'single-charge-result-1',
+  runtime: { app: 'payment-starter-1', model: 'none', writes: 'in-memory-only' },
+  execution: 'model-free',
+  cases: [
+    { caseId: 'lost-response', input: { scenario: 'lost-response' }, expected: { charges: 1, succeeded: true } },
+    { caseId: 'clean', input: { scenario: 'clean' }, expected: { charges: 1, succeeded: true } },
+  ],
+  execute: async ({ bundle, input, signal }) => ({
+    output: await runExistingAgent({ bundle, task: input, signal }),
+    usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+  }),
+  grade: async ({ output, expected }) => ({
+    reward: Number(output.charges === expected.charges && output.succeeded === expected.succeeded),
+    explanation: { singleCharge: output.charges === 1, succeeded: output.succeeded === true },
+  }),
+});
+
+process.exitCode = await evaluationMain(app, process.argv.slice(2), {
+  review: {
+    toReviewArtifact: async ({ identity, value }) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      const released: Record<string, Json> = { succeeded: value.succeeded };
+      if (identity.role === 'output') released.charges = value.charges;
+      else released.singleCharge = value.singleCharge;
+      return { mediaType: 'application/json', value: released };
+    },
+  },
+});

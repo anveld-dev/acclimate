@@ -16,6 +16,7 @@
     "example:publish": "tsx examples/publish.ts",
     "example:codex": "tsx examples/codex-agent.ts",
     "pack:verify": "node scripts/packaging/verify.mjs",
+    "qualify:dx": "node scripts/packaging/qualify-dx.mjs",
     "test:codex-session": "tsx examples/codex-session-check.ts",
     "example:improve": "tsx examples/improve-review.ts",
     "test:improvement": "tsx --test scripts/improvement-tests/*.test.ts",
@@ -24,7 +25,7 @@
     "test:full-roadmap": "tsx --test scripts/full-roadmap/fixture.test.ts",
     "qualify:full-roadmap": "python3 scripts/productization/full_roadmap.py",
     "qualify:full-roadmap:live": "python3 scripts/productization/full_roadmap.py --live",
-    "build:packages": "tsc -p tsconfig.build.json && node scripts/build-packages.mjs",
+    "build:packages": "node scripts/build-packages.mjs",
     "typecheck:packages": "tsc --noEmit",
     "test:packages": "tsx --test packages/*/tests/**/*.test.ts scripts/*.test.ts",
     "dev": "tsx scripts/start-production.ts dev",
@@ -76,6 +77,22 @@
       "types": "./dist/packages/sdk/src/index.d.ts",
       "import": "./dist/packages/sdk/src/index.js"
     },
+    "./sdk/evaluation": {
+      "types": "./dist/packages/sdk/src/evaluation/index.d.ts",
+      "import": "./dist/packages/sdk/src/evaluation/index.js"
+    },
+    "./sdk/evaluation/cli": {
+      "types": "./dist/packages/sdk/src/evaluation/cli.d.ts",
+      "import": "./dist/packages/sdk/src/evaluation/cli.js"
+    },
+    "./sdk/evaluation/policy": {
+      "types": "./dist/packages/sdk/src/evaluation/policy.d.ts",
+      "import": "./dist/packages/sdk/src/evaluation/policy.js"
+    },
+    "./sdk/evaluation/artifacts": {
+      "types": "./dist/packages/sdk/src/evaluation/artifacts.d.ts",
+      "import": "./dist/packages/sdk/src/evaluation/artifacts.js"
+    },
     "./codex-plugin": {
       "types": "./dist/packages/codex-plugin/src/index.d.ts",
       "import": "./dist/packages/codex-plugin/src/index.js"
@@ -91,6 +108,18 @@
     "./cursor-plugin": {
       "types": "./dist/packages/cursor-plugin/src/index.d.ts",
       "import": "./dist/packages/cursor-plugin/src/index.js"
+    },
+    "./sdk/evaluation/analysis": {
+      "types": "./dist/packages/sdk/src/evaluation/analysis.d.ts",
+      "import": "./dist/packages/sdk/src/evaluation/analysis.js"
+    },
+    "./sdk/evaluation/manifest": {
+      "types": "./dist/packages/sdk/src/evaluation/manifest.d.ts",
+      "import": "./dist/packages/sdk/src/evaluation/manifest.js"
+    },
+    "./sdk/evaluation/progress": {
+      "types": "./dist/packages/sdk/src/evaluation/progress.d.ts",
+      "import": "./dist/packages/sdk/src/evaluation/progress.js"
     }
   },
   "engines": {

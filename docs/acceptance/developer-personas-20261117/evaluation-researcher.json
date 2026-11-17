@@ -1,0 +1,539 @@
+{
+  "assertions": {
+    "binding_matches_service": true,
+    "dataset_revision_independently_hashed": true,
+    "descriptor_reconstructed_exactly": true,
+    "direction_changes_oriented_improvement": true,
+    "equal_case_policy_matches_independent_calculation": true,
+    "grader_changes_identity": true,
+    "installed_wheel_not_checkout_import": true,
+    "loser_completed_but_quality_failed": true,
+    "selected_evidence_online_binding": true,
+    "selected_responses_and_explanations_inspectable": true,
+    "service_retained_exact_descriptor": true,
+    "settings_changes_identity": true,
+    "snapshot_changes_identity": true,
+    "unequal_repetitions_expose_pooled_reversal": true,
+    "ungraded_is_null_incomplete_and_indeterminate": true,
+    "unknown_cost_does_not_false_pass": true
+  },
+  "binarySourceBuildAttested": false,
+  "cleanup": {
+    "consumerOutputsRetained": true,
+    "databaseDirectoryRemoved": true,
+    "schemaVersion": 1,
+    "serviceStopped": true
+  },
+  "criteria": {
+    "completion_is_not_quality": "A fully graded losing candidate completes its request but fails higher-is-better quality policy.",
+    "equal_case_weight": "Unequal repetitions; independent per-case mean calculation must match installed policy.",
+    "installed_bound_execution": "Own installed app/executor/grader; exact parent/candidate binding on real service.",
+    "metric_direction": "Same observed finite values must orient improvement according to explicit higher/lower metadata.",
+    "missingness": "An actual failed grade leaves null reward, incomplete comparison and indeterminate policy; never zero imputation.",
+    "reproducibility": "Retained private manifest reconstructs exact descriptor; case/settings/grader changes alter app-derived identity.",
+    "research_limits": "Scalar descriptive checks do not establish component safety/correctness or stochastic confidence; no real model improvement claimed.",
+    "selected_evidence": "Only selected output/explanation roles are shared; independent reader verifies online scalar binding.",
+    "unknown_cost": "Absent costs cannot pass a policy requiring known cost, even when its scalar quality checks pass."
+  },
+  "criterionResults": {
+    "completion_is_not_quality": "accepted",
+    "console_equal_case_aggregation": "unmet-source-still-row-weighted",
+    "equal_case_weight": "accepted-for-installed-policy",
+    "installed_bound_execution": "accepted",
+    "metric_direction": "accepted",
+    "missingness": "accepted",
+    "original_mid_run_recovery": "not-exercised",
+    "reproducibility": "partial-application-derived-hashes",
+    "research_limits": "partial-components-and-confidence-unimplemented",
+    "selected_evidence": "partial-isolated-directory-same-machine",
+    "unknown_cost": "accepted"
+  },
+  "descriptor": {
+    "datasetRevision": "sha256:3d874ea1217c581a2033a440b6c2a6c4ed9ad34f1a21b50588c3e56189b09f0e",
+    "expectedCases": [
+      {
+        "caseId": "routine",
+        "repetition": 0
+      },
+      {
+        "caseId": "routine",
+        "repetition": 1
+      },
+      {
+        "caseId": "routine",
+        "repetition": 2
+      },
+      {
+        "caseId": "critical",
+        "repetition": 0
+      }
+    ],
+    "graderRevision": "sha256:f0fceb1f5e35aa793d99ed961eadb9005fd4f87c895ac08f622dbfaa1b3c0236",
+    "runtime": {
+      "concurrency": "1",
+      "configId": "researcher-label-router",
+      "configRevision": "sha256:5d63893941ac8d3cfd2c46b9528b506f5cb170b02363c7a600dcf5fe489a8be7",
+      "execution": "model-free",
+      "executor": "saved-label-router-v1",
+      "gradeRetries": "0",
+      "graderCodeHash": "sha256:ab57b7cc0d62202b3ae950b0d4f2c78f8c48fb762ec798c964bbd9b4986f756c",
+      "manifestHash": "sha256:8a5f690574de9858de04b7be76fe89edba184719b491ca858e62555a022b58ae"
+    }
+  },
+  "exitCodes": {
+    "beforeExecution": 3,
+    "checkUngraded": 3,
+    "costUnknown": 3,
+    "describe": 0,
+    "export": 0,
+    "higherQualityFail": 2,
+    "lowerAlternatePass": 0,
+    "request": 0,
+    "runCompletedLoser": 0,
+    "runUngraded": 2,
+    "verifyOnline": 0
+  },
+  "export": {
+    "offline": {
+      "comparisonId": "6094eb8b-037a-4327-8337-4c2ddf964838",
+      "executionAttested": false,
+      "provenance": "self_consistent",
+      "schemaVersion": 1,
+      "status": "verified"
+    },
+    "online": {
+      "comparisonId": "6094eb8b-037a-4327-8337-4c2ddf964838",
+      "executionAttested": false,
+      "provenance": "online_scalar_binding",
+      "schemaVersion": 1,
+      "status": "verified"
+    },
+    "result": {
+      "localInspection": "validated",
+      "schemaVersion": 1,
+      "selection": {
+        "exportedRequired": 4,
+        "optionalMissing": 0,
+        "required": 4
+      },
+      "status": "exported"
+    },
+    "reviewerHasPrivateJournal": false,
+    "rolesExported": 4,
+    "rolesNotShared": 12,
+    "selectedValues": {
+      "candidate": {
+        "grader-explanation": {
+          "matches": 0,
+          "reward": 0.0,
+          "rubric": "exact positional label match",
+          "total": 1
+        },
+        "output": {
+          "gradeUnavailable": false,
+          "labels": [
+            "unsafe"
+          ]
+        }
+      },
+      "parent": {
+        "grader-explanation": {
+          "matches": 1,
+          "reward": 1.0,
+          "rubric": "exact positional label match",
+          "total": 1
+        },
+        "output": {
+          "gradeUnavailable": false,
+          "labels": [
+            "safe"
+          ]
+        }
+      }
+    }
+  },
+  "ids": {
+    "complete": {
+      "attemptId": "6e4fdae0-b83b-4d5f-bfbf-04946f7b7b73",
+      "comparisonId": "6094eb8b-037a-4327-8337-4c2ddf964838",
+      "executionState": "finished",
+      "requestId": "b6865064-7bfb-4215-8864-5b5df4ed38e8",
+      "schemaVersion": 1,
+      "status": "completed"
+    },
+    "incomplete": {
+      "attemptId": "db86bf0e-2325-457a-8d23-1424a7f7a9e7",
+      "comparisonId": "4cb1b374-666a-4184-9738-2a3cadf3741c",
+      "executionState": "finished",
+      "requestId": "9bf4c5ab-09a0-44a2-abf6-2040f4ea5a49",
+      "schemaVersion": 1,
+      "status": "failed"
+    },
+    "versions": {
+      "candidateDigest": "sha256:595e301c41a91ffcfa1a69480b18eeb2b25ba0feb0dd1b544fa630d4d0a22d5f",
+      "candidateVersionId": "57722e36-a4b4-473c-a720-5175c64a6218",
+      "parentDigest": "sha256:f3d4693f936cfc5ed91ec19cfbdd170e4e378127cde296a42a51a69bff4abdce",
+      "parentVersionId": "874a55bb-1b4c-4aa7-a385-676df4afbe7c"
+    }
+  },
+  "independentCaseMeans": {
+    "critical": {
+      "candidate": 0.0,
+      "parent": 1.0
+    },
+    "routine": {
+      "candidate": 0.8000000000000002,
+      "parent": 0.4000000000000001
+    }
+  },
+  "independentEqualCaseMeans": {
+    "candidate": 0.4000000000000001,
+    "parent": 0.7000000000000001
+  },
+  "modelCalls": 0,
+  "observedRewards": [
+    {
+      "candidate": 0.8,
+      "caseId": "routine",
+      "parent": 0.4,
+      "repetition": 0
+    },
+    {
+      "candidate": 0.8,
+      "caseId": "routine",
+      "parent": 0.4,
+      "repetition": 1
+    },
+    {
+      "candidate": 0.8,
+      "caseId": "routine",
+      "parent": 0.4,
+      "repetition": 2
+    },
+    {
+      "candidate": 0.0,
+      "caseId": "critical",
+      "parent": 1.0,
+      "repetition": 0
+    }
+  ],
+  "persona": "evaluation-researcher",
+  "policies": {
+    "higher": {
+      "checks": [
+        {
+          "code": "policy.minimum_mean_improvement",
+          "result": "fail"
+        },
+        {
+          "code": "policy.maximum_case_regression",
+          "result": "pass"
+        }
+      ],
+      "code": "policy.fail",
+      "comparisonId": "6094eb8b-037a-4327-8337-4c2ddf964838",
+      "counts": {
+        "comparablePairs": 4,
+        "distinctCases": 2,
+        "expectedPairs": 4
+      },
+      "expectedBinding": {
+        "attemptId": "6e4fdae0-b83b-4d5f-bfbf-04946f7b7b73",
+        "candidateDigest": "sha256:595e301c41a91ffcfa1a69480b18eeb2b25ba0feb0dd1b544fa630d4d0a22d5f",
+        "candidateVersionId": "57722e36-a4b4-473c-a720-5175c64a6218",
+        "comparisonId": "6094eb8b-037a-4327-8337-4c2ddf964838",
+        "parentDigest": "sha256:f3d4693f936cfc5ed91ec19cfbdd170e4e378127cde296a42a51a69bff4abdce",
+        "parentVersionId": "874a55bb-1b4c-4aa7-a385-676df4afbe7c",
+        "requestId": "b6865064-7bfb-4215-8864-5b5df4ed38e8",
+        "submitter": "evaluator"
+      },
+      "interpretation": "descriptive-policy-check",
+      "policy": {
+        "id": "researcher-label-quality",
+        "revision": "1-higher",
+        "sha256": "sha256:673b2a3f6240287e56b1d402151d9eee142ae4e240dd371f1b4b6b5c0aa73875"
+      },
+      "schemaVersion": 1,
+      "summary": {
+        "candidateCostUsd": null,
+        "candidateMean": 0.4000000000000001,
+        "candidateTaskFailures": 0,
+        "candidateUnknownCosts": 4,
+        "costIncreaseUsd": null,
+        "orientedMeanImprovement": -0.29999999999999993,
+        "parentCostUsd": null,
+        "parentMean": 0.7000000000000001,
+        "parentUnknownCosts": 4,
+        "worstCaseRegression": 1.0
+      },
+      "verdict": "fail"
+    },
+    "lowerAlternateInterpretation": {
+      "checks": [
+        {
+          "code": "policy.minimum_mean_improvement",
+          "result": "pass"
+        },
+        {
+          "code": "policy.maximum_case_regression",
+          "result": "pass"
+        }
+      ],
+      "code": "policy.pass",
+      "comparisonId": "6094eb8b-037a-4327-8337-4c2ddf964838",
+      "counts": {
+        "comparablePairs": 4,
+        "distinctCases": 2,
+        "expectedPairs": 4
+      },
+      "expectedBinding": {
+        "attemptId": "6e4fdae0-b83b-4d5f-bfbf-04946f7b7b73",
+        "candidateDigest": "sha256:595e301c41a91ffcfa1a69480b18eeb2b25ba0feb0dd1b544fa630d4d0a22d5f",
+        "candidateVersionId": "57722e36-a4b4-473c-a720-5175c64a6218",
+        "comparisonId": "6094eb8b-037a-4327-8337-4c2ddf964838",
+        "parentDigest": "sha256:f3d4693f936cfc5ed91ec19cfbdd170e4e378127cde296a42a51a69bff4abdce",
+        "parentVersionId": "874a55bb-1b4c-4aa7-a385-676df4afbe7c",
+        "requestId": "b6865064-7bfb-4215-8864-5b5df4ed38e8",
+        "submitter": "evaluator"
+      },
+      "interpretation": "descriptive-policy-check",
+      "policy": {
+        "id": "researcher-label-quality",
+        "revision": "1-lower",
+        "sha256": "sha256:4d5912e14fcb29bc3414cec95114e019f987bd35d75c1cf5f9395ddc68539078"
+      },
+      "schemaVersion": 1,
+      "summary": {
+        "candidateCostUsd": null,
+        "candidateMean": 0.4000000000000001,
+        "candidateTaskFailures": 0,
+        "candidateUnknownCosts": 4,
+        "costIncreaseUsd": null,
+        "orientedMeanImprovement": 0.29999999999999993,
+        "parentCostUsd": null,
+        "parentMean": 0.7000000000000001,
+        "parentUnknownCosts": 4,
+        "worstCaseRegression": 0.4000000000000001
+      },
+      "verdict": "pass"
+    },
+    "ungraded": {
+      "checks": [
+        {
+          "code": "evidence.incomplete",
+          "result": "unknown"
+        }
+      ],
+      "code": "evidence.incomplete",
+      "comparisonId": "4cb1b374-666a-4184-9738-2a3cadf3741c",
+      "counts": {
+        "comparablePairs": 3,
+        "distinctCases": 2,
+        "expectedPairs": 4
+      },
+      "expectedBinding": {
+        "attemptId": "db86bf0e-2325-457a-8d23-1424a7f7a9e7",
+        "candidateDigest": "sha256:595e301c41a91ffcfa1a69480b18eeb2b25ba0feb0dd1b544fa630d4d0a22d5f",
+        "candidateVersionId": "0ee84717-6c53-46d2-a4b1-ad62997decf5",
+        "comparisonId": "4cb1b374-666a-4184-9738-2a3cadf3741c",
+        "parentDigest": "sha256:f3d4693f936cfc5ed91ec19cfbdd170e4e378127cde296a42a51a69bff4abdce",
+        "parentVersionId": "874a55bb-1b4c-4aa7-a385-676df4afbe7c",
+        "requestId": "9bf4c5ab-09a0-44a2-abf6-2040f4ea5a49",
+        "submitter": "evaluator"
+      },
+      "interpretation": "descriptive-policy-check",
+      "policy": {
+        "id": "researcher-label-quality",
+        "revision": "1-lower",
+        "sha256": "sha256:4d5912e14fcb29bc3414cec95114e019f987bd35d75c1cf5f9395ddc68539078"
+      },
+      "schemaVersion": 1,
+      "summary": {
+        "candidateCostUsd": null,
+        "candidateMean": null,
+        "candidateTaskFailures": 0,
+        "candidateUnknownCosts": 4,
+        "costIncreaseUsd": null,
+        "orientedMeanImprovement": null,
+        "parentCostUsd": null,
+        "parentMean": null,
+        "parentUnknownCosts": 4,
+        "worstCaseRegression": null
+      },
+      "verdict": "indeterminate"
+    },
+    "unknownCost": {
+      "checks": [
+        {
+          "code": "policy.minimum_mean_improvement",
+          "result": "pass"
+        },
+        {
+          "code": "policy.maximum_case_regression",
+          "result": "pass"
+        },
+        {
+          "code": "cost.unknown",
+          "result": "unknown"
+        }
+      ],
+      "code": "cost.unknown",
+      "comparisonId": "6094eb8b-037a-4327-8337-4c2ddf964838",
+      "counts": {
+        "comparablePairs": 4,
+        "distinctCases": 2,
+        "expectedPairs": 4
+      },
+      "expectedBinding": {
+        "attemptId": "6e4fdae0-b83b-4d5f-bfbf-04946f7b7b73",
+        "candidateDigest": "sha256:595e301c41a91ffcfa1a69480b18eeb2b25ba0feb0dd1b544fa630d4d0a22d5f",
+        "candidateVersionId": "57722e36-a4b4-473c-a720-5175c64a6218",
+        "comparisonId": "6094eb8b-037a-4327-8337-4c2ddf964838",
+        "parentDigest": "sha256:f3d4693f936cfc5ed91ec19cfbdd170e4e378127cde296a42a51a69bff4abdce",
+        "parentVersionId": "874a55bb-1b4c-4aa7-a385-676df4afbe7c",
+        "requestId": "b6865064-7bfb-4215-8864-5b5df4ed38e8",
+        "submitter": "evaluator"
+      },
+      "interpretation": "descriptive-policy-check",
+      "policy": {
+        "id": "researcher-label-quality",
+        "revision": "1-lower",
+        "sha256": "sha256:a1fff21a114e6b790028013c5b8ea2de10254033c81e7a8b33afe16ab4446211"
+      },
+      "schemaVersion": 1,
+      "summary": {
+        "candidateCostUsd": null,
+        "candidateMean": 0.4000000000000001,
+        "candidateTaskFailures": 0,
+        "candidateUnknownCosts": 4,
+        "costIncreaseUsd": null,
+        "orientedMeanImprovement": 0.29999999999999993,
+        "parentCostUsd": null,
+        "parentMean": 0.7000000000000001,
+        "parentUnknownCosts": 4,
+        "worstCaseRegression": 0.4000000000000001
+      },
+      "verdict": "indeterminate"
+    }
+  },
+  "pooledRowMeans": {
+    "candidate": 0.6000000000000001,
+    "parent": 0.55
+  },
+  "releaseSourceInventorySha256": "15feab4b46cd8c4d52592fc318cd171a267daa1ec562d4447ae261a16db03f6b",
+  "remainingNeeds": [
+    "Application content hashes reconstruct this experiment; the SDK still accepts application-supplied revision identities rather than deriving private-input hashes.",
+    "No named component metric vector or task-aware confidence interval is provided; these deterministic repetitions are not independent stochastic samples.",
+    "The lower policy only demonstrates orientation on the same numbers; positional correctness remains higher-is-better and this candidate is rejected.",
+    "Console evaluation-score-summary.ts still averages comparable repetition rows: its source computes .55 to .60 on this evidence, while installed equal-case policy computes .70 to .40; browser rendering was not exercised.",
+    "Portable export verifies selected artifact consistency and authoritative scalar binding, not executor truth or a real second-machine authorized distribution channel.",
+    "Arbitrary mid-process termination/resume and paid work preservation were not exercised by this persona."
+  ],
+  "reproduction": {
+    "appCodeSha256": "sha256:d05a3b1c0e1bbf9ebe953aa4e73c1731d5980518af430f3e7f866563150e8d8b",
+    "changedDescriptors": {
+      "grader": {
+        "datasetRevision": "sha256:3d874ea1217c581a2033a440b6c2a6c4ed9ad34f1a21b50588c3e56189b09f0e",
+        "expectedCases": [
+          {
+            "caseId": "routine",
+            "repetition": 0
+          },
+          {
+            "caseId": "routine",
+            "repetition": 1
+          },
+          {
+            "caseId": "routine",
+            "repetition": 2
+          },
+          {
+            "caseId": "critical",
+            "repetition": 0
+          }
+        ],
+        "graderRevision": "sha256:c92dac7ba9852235174d3cddd073a9055b62c7430afa5fcd802be5f3a85f74fb",
+        "runtime": {
+          "concurrency": "1",
+          "configId": "researcher-label-router",
+          "configRevision": "sha256:992325291ee4f5e9fea6343429f42a1c4f8b3195cf7deba687ac62ac8afcb1ec",
+          "execution": "model-free",
+          "executor": "saved-label-router-v1",
+          "gradeRetries": "0",
+          "graderCodeHash": "sha256:ab57b7cc0d62202b3ae950b0d4f2c78f8c48fb762ec798c964bbd9b4986f756c",
+          "manifestHash": "sha256:64fc8db7d6e256e98cedad8e7f86f5415333197c901f85aec30b8c0884ac04d7"
+        }
+      },
+      "settings": {
+        "datasetRevision": "sha256:3d874ea1217c581a2033a440b6c2a6c4ed9ad34f1a21b50588c3e56189b09f0e",
+        "expectedCases": [
+          {
+            "caseId": "routine",
+            "repetition": 0
+          },
+          {
+            "caseId": "routine",
+            "repetition": 1
+          },
+          {
+            "caseId": "routine",
+            "repetition": 2
+          },
+          {
+            "caseId": "critical",
+            "repetition": 0
+          }
+        ],
+        "graderRevision": "sha256:f0fceb1f5e35aa793d99ed961eadb9005fd4f87c895ac08f622dbfaa1b3c0236",
+        "runtime": {
+          "concurrency": "1",
+          "configId": "researcher-label-router",
+          "configRevision": "sha256:22a03822747f3a1fb44d7a68ac24ebbb045f0079c17adc5b36ec22bd47d23c42",
+          "execution": "model-free",
+          "executor": "saved-label-router-v1",
+          "gradeRetries": "0",
+          "graderCodeHash": "sha256:ab57b7cc0d62202b3ae950b0d4f2c78f8c48fb762ec798c964bbd9b4986f756c",
+          "manifestHash": "sha256:3477b551cdc110db8d5fd4307e7d63098c27276db15717187ea9da32ee103fff"
+        }
+      },
+      "snapshot": {
+        "datasetRevision": "sha256:60dd6fdffa9f639455811a701e36b8c4aa997677bca1b388d2c011cd064a9e38",
+        "expectedCases": [
+          {
+            "caseId": "routine",
+            "repetition": 0
+          },
+          {
+            "caseId": "routine",
+            "repetition": 1
+          },
+          {
+            "caseId": "routine",
+            "repetition": 2
+          },
+          {
+            "caseId": "critical",
+            "repetition": 0
+          }
+        ],
+        "graderRevision": "sha256:f0fceb1f5e35aa793d99ed961eadb9005fd4f87c895ac08f622dbfaa1b3c0236",
+        "runtime": {
+          "concurrency": "1",
+          "configId": "researcher-label-router",
+          "configRevision": "sha256:44c58645fbbb5a2777287bbaa68dbc8384a91a5bc37a5442aaea86738573a694",
+          "execution": "model-free",
+          "executor": "saved-label-router-v1",
+          "gradeRetries": "0",
+          "graderCodeHash": "sha256:ab57b7cc0d62202b3ae950b0d4f2c78f8c48fb762ec798c964bbd9b4986f756c",
+          "manifestHash": "sha256:d568c4ac7a2db93a1552d40d428d5974f763532169ad871e04a35367ce009e4d"
+        }
+      }
+    },
+    "graderCodeSha256": "sha256:ab57b7cc0d62202b3ae950b0d4f2c78f8c48fb762ec798c964bbd9b4986f756c",
+    "privateManifestSha256": "sha256:8a5f690574de9858de04b7be76fe89edba184719b491ca858e62555a022b58ae"
+  },
+  "schemaVersion": 1,
+  "serviceBinarySha256": "ed09e68c2c93497df582c57b5366b312f915dd2625bd5e053d0a7ebad2a8de8a",
+  "sourceCommit": "63eb588458732fbba53c0969c9b892cf08a572fe",
+  "status": "partial"
+}

@@ -1,5 +1,5 @@
 import { Fragment, useId, useLayoutEffect, useRef } from 'react';
-import type { Comparison, Evaluation, Outcome } from '@acclimate/sdk';
+import type { Comparison, Evaluation, EvaluationProgressView, Outcome } from '@acclimate/sdk';
 import type { EvaluationHistoryViewProps, RequestEvidence } from '../lib/changes-workspace';
 import { evaluationEvidenceSummary, notComparableReasons } from '../lib/evaluation-history';
 import { evaluationPairs, formatReward, pairCounts, pairLabels } from '../lib/evaluation-pairs';
@@ -7,6 +7,7 @@ import { Button } from './ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from './ui/disclosure';
 import { CopyButton } from './copy-button';
+import { EvaluationActivity } from './evaluation-activity';
 
 const value = (text: string | null | undefined) => text || 'Unavailable';
 const reward = (number: number | null | undefined) =>
@@ -194,12 +195,14 @@ function BoundEvidence({ comparison }: { comparison: Comparison }) {
 function Detail({
   request,
   evidence,
+  progress,
   href,
   detailRef,
   onClose,
 }: {
   request: Evaluation;
   evidence: RequestEvidence;
+  progress?: EvaluationProgressView | null;
   href: string;
   detailRef: (node: HTMLDivElement | null) => void;
   onClose: () => void;
@@ -212,6 +215,7 @@ function Detail({
   return (
     <div ref={detailRef} className="evaluation-ledger-detail">
       {request.error && <p>Request error: {request.error}</p>}
+      <EvaluationActivity request={request} progress={progress} />
       {evidence.status === 'bound' ? (
         <BoundEvidence comparison={evidence.comparison} />
       ) : (
@@ -351,7 +355,7 @@ export function EvaluationHistoryView({
                 <TableHead scope="col" id={`${id}-coverage`}>
                   Gradeable paired / expected
                 </TableHead>
-                <TableHead scope="col">Observed paired mean</TableHead>
+                <TableHead scope="col">Observed equal-case mean</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -431,6 +435,7 @@ export function EvaluationHistoryView({
                           <Detail
                             request={request}
                             evidence={evidence}
+                            progress={model.selectedProgress}
                             href={reviewHref(request)}
                             detailRef={(node) => {
                               detail.current = node;

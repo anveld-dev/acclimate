@@ -1,5 +1,7 @@
 # Run Acclimate locally
 
+If you already have a workspace, start with [Connect an existing agent](getting-started.md) and the [installed evaluator starter](../examples/evaluation-starter/README.md). This document covers developing/operating the repository; a model-free [starter trial](../examples/evaluation-starter/README.md#install-and-try-without-a-service) can show paired behavior before PostgreSQL/OIDC setup. Operators provision evaluator access using the [evaluator runbook](evaluator-operations.md).
+
 The first implementation is a Rust HTTP service, a TypeScript delivery SDK, and native preparation plugins. The app runs the agent. Start with PostgreSQL and the delivery example; model calls are optional.
 
 ## Configure the app
@@ -46,7 +48,7 @@ export ACCLIMATE_BUNDLE='the-printed-bundle-id'
 npm run example:codex -- --live 'Use the retry-review skill to review: retry a payment after a timeout.'
 ```
 
-The explicit --live flag authorizes a paid Luna turn using the official Codex SDK and existing app authentication. The app fetches a fresh channel mapping, verifies/caches immutable bytes, prepares native files, then starts a fresh read-only session. Only `gpt-6-luna` and `gpt-5.6-luna` are accepted; the default is `gpt-6-luna`. The service never receives Codex credentials. The example stops after 110 seconds and removes its private prepared workspace.
+The explicit --live flag authorizes a paid Luna turn using the official Codex SDK and existing app authentication. The app fetches a fresh channel mapping, verifies/caches immutable bytes, prepares native files, then starts a fresh read-only session. Only `gpt-6-luna` and `gpt-5.6-luna` are accepted; the default is `gpt-6-luna`. The service never receives Codex credentials. The example requests cancellation after 110 seconds; an SDK error does not prove external termination. Successful completion cleans the prepared inputs, while unconfirmed execution retains them and reports uncertainty. Use the [native repository starter](../examples/native-repository/README.md) for persistent private job locators and explicit quarantine recovery. No new live-provider termination guarantee is claimed.
 
 The cache uses `ACCLIMATE_CACHE` or `~/.cache/acclimate`. Its root must be private and have no symlink ancestors; choose a canonical path if your machine uses symlinked home or temp directories. `ACCLIMATE_SCOPE` must identify the authenticated app principal consistently; never reuse it across unrelated principals. Refresh does not modify active sessions.
 

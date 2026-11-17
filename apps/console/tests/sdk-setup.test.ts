@@ -88,7 +88,10 @@ test('package installation is available before the checkout build disclosure', (
     html.indexOf('1. Install the SDK'),
     html.indexOf('id="sdk-local-install"'),
   );
-  assert.match(installSection, /npm install \/absolute\/path\/to\/acclimate-sdk\.tgz/);
+  assert.match(
+    installSection,
+    /npm install \/absolute\/path\/to\/release\/acclimate-sdk-[\d.]+\.tgz/,
+  );
   assert.match(installSection, /aria-label="Copy install command"/);
   assert.match(installSection, /replace the absolute path with your actual package file/);
   assert.doesNotMatch(installSection, /npm install @acclimate\/sdk/);
@@ -134,10 +137,21 @@ test('required settings and expected check output precede their independent disc
     html.indexOf('3. Run the delivery check'),
     html.indexOf('View the TypeScript recipe'),
   );
-  assert.match(runInstructions, /npx tsx delivery-check\.mts/);
+  assert.match(runInstructions, /node delivery-check\.mjs/);
+  assert.doesNotMatch(runInstructions, /npx tsx/);
   assert.match(runInstructions, /resolved version stays pinned for this job/);
-  assert.match(
-    runInstructions,
-    /digest and checked file count, then cleans up its prepared files/,
-  );
+  assert.match(runInstructions, /digest and checked file count, then cleans up its prepared files/);
+});
+
+test('delivery leads into explicit agent context and evaluator access before a comparison', () => {
+  const html = setup('viewer');
+  assert.match(html, /4\. Connect your agent, then compare a change/);
+  assert.match(html, /aria-label="Application runtime"/);
+  assert.match(html, /aria-label="TypeScript agent connection recipe"/);
+  assert.match(html, /Replace only the fixture function with your existing agent loop/);
+  assert.match(html, /Delivery credentials cannot read unpublished candidates/);
+  assert.match(html, /policy pass does not release a version/);
+  assert.match(html, /\/w\/project-one\/delivery/);
+  assert.match(html, /\/w\/project-one\/bundles\/bundle-two\/changes\?channel=preview/);
+  assert.match(html, /SHA256SUMS/);
 });

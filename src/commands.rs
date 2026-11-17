@@ -11,6 +11,59 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 
+/// The installed evaluator promises retained operations only for this route grammar.
+pub(crate) fn guided_project(project: &str) -> bool {
+    !project.is_empty()
+        && project.len() <= 128
+        && project != "."
+        && project != ".."
+        && project
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+}
+pub(crate) fn guided_uuid(value: &str) -> bool {
+    uuid::Uuid::parse_str(value).is_ok_and(|id| id.to_string() == value)
+}
+fn guided_evaluator_route(project: &str, path: &str) -> bool {
+    let Some(suffix) = path.strip_prefix(&format!("/v1/projects/{project}/")) else {
+        return false;
+    };
+    match suffix.split('/').collect::<Vec<_>>().as_slice() {
+        ["bundles", bundle, "comparisons" | "evaluation-requests"] => guided_uuid(bundle),
+        [
+            "bundles",
+            bundle,
+            "evaluation-requests",
+            request,
+            "start" | "finish" | "interrupt",
+        ] => guided_uuid(bundle) && guided_uuid(request),
+        _ => false,
+    }
+}
+
+// Body identities are part of the guided target too. Legacy raw writes retain
+// their historical ID syntax; a retained-ready write must use canonical UUIDs.
+fn guided_evaluator_body(path: &str, body: &[u8]) -> bool {
+    let Ok(body) = serde_json::from_slice::<Value>(body) else {
+        return false;
+    };
+    let canonical = |value: &Value| value.as_str().is_some_and(guided_uuid);
+    if path.ends_with("/start") {
+        canonical(&body["attemptId"])
+    } else if path.ends_with("/finish") {
+        canonical(&body["attemptId"]) && canonical(&body["comparisonId"])
+    } else if path.ends_with("/interrupt") {
+        true
+    } else {
+        canonical(&body["parentVersionId"])
+            && canonical(&body["candidateVersionId"])
+            && (body["proposalId"].is_null() || canonical(&body["proposalId"]))
+            && (body["evaluation"].is_null()
+                || (canonical(&body["evaluation"]["requestId"])
+                    && canonical(&body["evaluation"]["attemptId"])))
+    }
+}
+
 // This is the sole action/namespace definition for execution, replay, lookup and close.
 fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
     let suffix = path.strip_prefix(&format!("/v1/projects/{project}/"))?;
@@ -18,14 +71,7 @@ fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
     if p.iter().any(|s| s.is_empty() || *s == "." || *s == "..") {
         return None;
     }
-    if project.is_empty()
-        || project.len() > 128
-        || project == "."
-        || project == ".."
-        || !project
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
-    {
+    if !guided_project(project) {
         return None;
     }
     let uuid = |s: &str| uuid::Uuid::parse_str(s).is_ok() && s.len() == 36;
@@ -33,6 +79,14 @@ fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
         ["bundle-setups"] => Some(&["write", "promote"]),
         ["bundles", b, "proposals"] if uuid(b) => Some(&["propose"]),
         ["bundles", b, "evaluation-requests"] if uuid(b) => Some(&["write"]),
+        ["bundles", b, "comparisons"] if guided_uuid(b) => Some(&["write"]),
+        [
+            "bundles",
+            b,
+            "evaluation-requests",
+            e,
+            "start" | "finish" | "interrupt",
+        ] if guided_uuid(b) && guided_uuid(e) => Some(&["write"]),
         ["bundles", b, "channels", c, "promotions"]
             if uuid(b) && crate::channels::valid_channel(c) =>
         {
@@ -160,9 +214,26 @@ async fn begin_mutation_inner<'a>(
     validate_key(key)?;
     let audited = rights(project, path).is_some();
     let durable = global(path);
-    let retained = audited
-        && h.get("x-acclimate-durable-operation")
-            .is_some_and(|v| v == "true");
+    let marked = h
+        .get("x-acclimate-durable-operation")
+        .is_some_and(|v| v == "true");
+    // Never silently give a guided evaluator a transient 24-hour operation.
+    // Other historical routes retain their existing marker handling.
+    let evaluator_route = path.ends_with("/comparisons") || path.contains("/evaluation-requests");
+    if marked
+        && evaluator_route
+        && (!audited
+            || !guided_evaluator_route(project, path)
+            || !guided_evaluator_body(path, body)
+            || a.principal.len() > 1024)
+    {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "guided_target_unsupported",
+            "Target does not support retained evaluator operations",
+        ));
+    }
+    let retained = audited && marked;
     let mut hash = Sha256::new();
     hash.update(b"POST\0");
     hash.update(path.as_bytes());
@@ -422,6 +493,41 @@ async fn outcome(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn guided_targets_and_retained_evaluator_routes_have_one_closed_grammar() {
+        for project in [
+            "",
+            ".",
+            "..",
+            "has/slash",
+            "has%2Fslash",
+            "δ",
+            &"p".repeat(129),
+        ] {
+            assert!(!guided_project(project));
+        }
+        assert!(guided_project("existing_project-1.2"));
+        let bundle = "abcdefab-cdef-4abc-8def-abcdefabcdef";
+        let request = "12345678-1234-4234-8234-123456789abc";
+        assert!(guided_uuid(bundle));
+        assert!(!guided_uuid(&bundle.to_uppercase()));
+        for suffix in [
+            format!("bundles/{bundle}/comparisons"),
+            format!("bundles/{bundle}/evaluation-requests"),
+            format!("bundles/{bundle}/evaluation-requests/{request}/start"),
+            format!("bundles/{bundle}/evaluation-requests/{request}/finish"),
+            format!("bundles/{bundle}/evaluation-requests/{request}/interrupt"),
+        ] {
+            let route = format!("/v1/projects/p/{suffix}");
+            assert!(guided_evaluator_route("p", &route));
+            assert_eq!(rights("p", &route), Some(["write"].as_slice()));
+            assert_eq!(namespace(&route), route);
+            assert!(!guided_evaluator_route(
+                "p",
+                &route.replace(bundle, &bundle.to_uppercase())
+            ));
+        }
+    }
     #[test]
     fn namespaces_and_action_rights_remain_compatible() {
         assert_eq!(

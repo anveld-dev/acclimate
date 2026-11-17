@@ -1,6 +1,6 @@
 import type { BundleScope } from './server/selection';
 
-export type WorkspaceView = 'bundles' | 'connections' | 'members';
+export type WorkspaceView = 'bundles' | 'connections' | 'delivery' | 'members';
 export type BundleView = 'content' | 'changes' | 'releases' | 'connect';
 export type ConsoleLocation = {
   projectId: string;
@@ -32,7 +32,7 @@ export function parseConsoleLocation(path: string): ConsoleLocation | null {
     if (parts[0] !== 'w' || !parts[1] || parts.some((p) => !/^[^\x00-\x20\x7f/]{1,200}$/.test(p)))
       return null;
     const projectId = parts[1];
-    if (parts.length === 3 && ['bundles', 'connections'].includes(parts[2]))
+    if (parts.length === 3 && ['bundles', 'connections', 'delivery'].includes(parts[2]))
       return { projectId, view: parts[2] as WorkspaceView };
     if (parts.length === 4 && parts[2] === 'settings' && parts[3] === 'members')
       return { projectId, view: 'members' };

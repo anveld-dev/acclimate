@@ -1,5 +1,7 @@
 # Core implementation contract
 
+The additive [installed evaluator and review contract](dx-evaluation.md) covers the DX release's public handoff, retained evaluator operations, capability checks, response budgets and read-authorized observations.
+
 The [remediation freeze](remediation.md) adds immutable bundle targets, opt-in durable console receipts/fences, explicit strict/legacy evidence binding and current effective replay authorization. Its reviewed ownership and rollout rules supersede the original R0 ownership/24-hour details below for those named paths.
 
 `packages/sdk/src/types.ts` is the frozen wire contract. Rust DTOs use camelCase and match it. No types are silently forked. Root owns shared changes.

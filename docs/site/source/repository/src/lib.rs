@@ -16,6 +16,7 @@ mod channels;
 mod commands;
 pub mod compatibility;
 mod drafts;
+mod evaluation_progress;
 mod evaluations;
 mod improvement;
 mod integrations;
@@ -136,6 +137,7 @@ pub fn router(state: AppState) -> Router {
         .merge(integrations::routes())
         .merge(drafts::routes())
         .merge(evaluations::routes())
+        .merge(evaluation_progress::routes())
         .merge(workspaces::routes())
         .merge(invitations::routes())
         .route("/health", get(|| async { "ok" }))

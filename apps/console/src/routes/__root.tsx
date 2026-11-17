@@ -32,6 +32,7 @@ import bundleLibraryStyles from '../components/bundle-library.css?url';
 import changesReleasesStyles from '../components/changes-releases.css?url';
 import changesOverviewStyles from '../components/changes-overview.css?url';
 import evaluationHistoryStyles from '../components/evaluation-history-view.css?url';
+import versionInspectorStyles from '../components/version-inspector.css?url';
 
 export const Route = createRootRoute({
   loader: async ({ location, cause }) => {
@@ -72,6 +73,7 @@ export const Route = createRootRoute({
       { rel: 'stylesheet', href: changesReleasesStyles },
       { rel: 'stylesheet', href: changesOverviewStyles },
       { rel: 'stylesheet', href: evaluationHistoryStyles },
+      { rel: 'stylesheet', href: versionInspectorStyles },
       { rel: 'stylesheet', href: pageHeaderStyles },
       { rel: 'stylesheet', href: workspacePageStyles },
       { rel: 'stylesheet', href: workspaceMemberStyles },

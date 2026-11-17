@@ -236,6 +236,15 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [nav?.projectId, nav?.projectName, nav?.bundleName, detailLabel, viewLabel]);
   const projects = nav?.access.ok ? nav.access.projects : [];
   const canCreate = nav?.access.ok && nav.access.canCreateWorkspace;
+  function workspaceRole(role: string) {
+    if (role === 'admin') return 'Administrator';
+    if (role === 'editor') return 'Editor';
+    if (role === 'viewer') return 'Viewer';
+    return role || 'Unknown role';
+  }
+  function hasDuplicateName(project: (typeof projects)[number]) {
+    return projects.some((other) => other.id !== project.id && other.name === project.name);
+  }
   function startCreating(returnToElement?: HTMLElement | null) {
     creationReturnRef.current =
       returnToElement ??
@@ -259,14 +268,17 @@ export function Shell({ children }: { children: ReactNode }) {
             disabled={!hydrated}
             value={nav?.projectId || ''}
             onChange={(event) => {
-              if (event.target.value && event.target.value !== nav?.projectId)
-                void router.navigate(consoleDestination(workspaceHref(event.target.value)));
+              const id = event.currentTarget.value;
+              event.currentTarget.value = nav?.projectId ?? '';
+              if (id && id !== nav?.projectId)
+                void router.navigate(consoleDestination(workspaceHref(id)));
             }}
           >
             {!nav?.projectId && <option value="">Choose workspace</option>}
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
-                {project.name}
+                {project.name} · {workspaceRole(project.role)}
+                {hasDuplicateName(project) ? ` · ${project.id}` : ''}
               </option>
             ))}
           </NativeSelect>
@@ -373,6 +385,7 @@ export function Shell({ children }: { children: ReactNode }) {
                     <DropdownMenuRadioGroup
                       value={nav?.projectId ?? ''}
                       aria-label="Workspaces"
+                      className="workspace-rail-workspace-list"
                       onValueChange={(id) => {
                         if (id && id !== nav?.projectId)
                           void router.navigate(consoleDestination(workspaceHref(id)));
@@ -387,9 +400,12 @@ export function Shell({ children }: { children: ReactNode }) {
                         >
                           <span>
                             <span>{project.name}</span>
-                            {projects.some(
-                              (other) => other.id !== project.id && other.name === project.name,
-                            ) && <span className="workspace-rail-workspace-id">{project.id}</span>}
+                            <span className="workspace-rail-workspace-role">
+                              {workspaceRole(project.role)}
+                            </span>
+                            {hasDuplicateName(project) && (
+                              <span className="workspace-rail-workspace-id">{project.id}</span>
+                            )}
                           </span>
                         </DropdownMenuRadioItem>
                       ))}
@@ -411,7 +427,15 @@ export function Shell({ children }: { children: ReactNode }) {
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              {nav && <AccountMenu access={nav.access} returnTo={returnTo} compact iconOnly />}
+              {nav && (
+                <AccountMenu
+                  access={nav.access}
+                  returnTo={returnTo}
+                  compact
+                  iconOnly
+                  suppressTooltip={workspaceMenuOpen}
+                />
+              )}
             </div>
           </header>
           <div className="workspace-column">

@@ -6,7 +6,7 @@ Feature: Navigate by workspace and bundle ownership
   Scenario: Workspace navigation and bundle tabs have different jobs
     Given a published bundle containing "Review code."
     When I open its scoped Content URL
-    Then the workspace navigation contains Bundles and Connections
+    Then the workspace navigation contains Bundles, Delivery and Connections
     And the bundle tabs contain Content, Changes, Releases and App setup
     And the old seven-peer navigation and inert footer are absent
     And desktop navigation uses labelled icons with hover and keyboard tooltips

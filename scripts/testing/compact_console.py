@@ -13,6 +13,7 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT))
 from playwright.sync_api import expect
 from scripts.bdd.editor import editor_value, expect_editor_value
+from scripts.bdd.editor import editor_value, expect_editor_value
 from scripts.bdd.run import pg_bin
 from scripts.bdd.world import World
 from scripts.bdd.interactions import open_files, draft_action, open_details
@@ -109,10 +110,12 @@ def keyboard_workflow(w, b):
     profile=p.get_by_label('Evaluation configuration',exact=True)
     original_profile=profile.input_value()
     profile.select_option('custom')
-    config=p.get_by_label('Public evaluator configuration (JSON)',exact=True)
-    original_config=config.input_value()
+    config=p.get_by_label('Public evaluator configuration (JSON)',exact=True).filter(visible=True)
+    original_config=editor_value(config)
     edited_config=original_config+'\n '
-    config.fill(edited_config)
+    config.focus(); p.keyboard.press('ControlOrMeta+A'); p.keyboard.press('Backspace')
+    if original_config: p.keyboard.insert_text(original_config)
+    p.keyboard.press('Enter'); p.keyboard.insert_text(' ')
     # Return to the preceding trigger with Shift+Tab. Traversing forward past
     # the last page control enters Sonner, which restores the prior control
     # when leaving its notification; that isn't a page-wide wraparound path.
@@ -120,10 +123,10 @@ def keyboard_workflow(w, b):
     expect(setup).to_have_attribute('aria-expanded','false')
     expect(config).not_to_be_visible()
     p.keyboard.press('Tab')
-    assert not config.evaluate('el => el === document.activeElement'), 'Collapsed form remains in the tab order'
+    assert not p.locator('.evaluation-setup [data-slot=disclosure-content]').evaluate('e=>e.contains(document.activeElement)'), 'Collapsed form remains in the tab order'
     tab_to(p,setup,reverse=True);p.keyboard.press('Enter')
     expect(setup).to_have_attribute('aria-expanded','true')
-    expect(config).to_have_value(edited_config)
+    expect_editor_value(config, edited_config)
     config.fill(original_config)
     profile.select_option(original_profile)
     assert w.call('GET',w.channel)['version']==w.original['version']
@@ -380,7 +383,7 @@ def evaluation_acceptance(w, b, failures, output):
                     for fragment in fragments:expect(help).to_contain_text(fragment)
                     expect(create).to_have_attribute('aria-describedby','evaluation-prerequisites')
                     assert w.call('GET',w.bundle+'/evaluation-requests')['items']==before, 'Selecting a profile created an evaluation request'
-                config=page.get_by_label('Public evaluator configuration (JSON)',exact=True)
+                config=page.get_by_label('Public evaluator configuration (JSON)',exact=True).filter(visible=True)
                 expect(config).to_be_visible()
                 expect(page.get_by_text('Paste the configuration your installed app describes:',exact=False)).to_be_visible()
                 edited_config=json.dumps(dict(datasetRevision='layout-public-v1',graderRevision='layout-grader-v1',runtime=dict(configId='layout-app',configRevision='1'),expectedCases=[dict(caseId='review',repetition=0)]),indent=2)
@@ -389,7 +392,7 @@ def evaluation_acceptance(w, b, failures, output):
                 setup.scroll_into_view_if_needed()
                 checked_capture(failures,page,output,prefix+'-saved-review-custom-setup',coarse=coarse)
                 setup.click();expect(config).not_to_be_visible()
-                setup.click();expect(config).to_have_value(edited_config)
+                setup.click();expect_editor_value(config, edited_config)
                 profile.select_option('presence-contract')
                 assert not writes, 'Selecting or collapsing setup sent a mutation: '+str(writes)
                 assert w.call('GET',w.bundle+'/evaluation-requests')['items']==before

@@ -47,7 +47,7 @@
   width: 31%;
 }
 .evaluation-ledger-table th:nth-child(2) {
-  width: 13%;
+  width: 120px;
 }
 .evaluation-ledger-table th:nth-child(3) {
   width: 23%;
@@ -60,6 +60,10 @@
   white-space: normal;
   overflow-wrap: anywhere;
   vertical-align: top;
+}
+.evaluation-ledger-table td:nth-child(2) {
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 .evaluation-ledger-trigger {
   width: 100%;

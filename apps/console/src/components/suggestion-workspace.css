@@ -132,31 +132,6 @@
 .suggestion-result[data-status='failed'] {
   border-left-color: var(--destructive);
 }
-/* Let record identity and lifecycle wrap independently within the collection rail. */
-.changes-overview .changes-collection .change-record-row {
-  grid-template-columns: minmax(0, 1fr);
-}
-.changes-overview .changes-collection .change-record-actions {
-  grid-column: 1;
-  justify-content: space-between;
-}
-.changes-overview .changes-collection .change-record-copy {
-  grid-column: 1;
-}
-.changes-overview .changes-collection .change-record-actions [data-slot='badge'] {
-  height: auto;
-  min-height: 24px;
-  max-width: none;
-  line-height: 20px;
-  padding-block: 2px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.changes-overview .changes-collection .change-proposal-title {
-  -webkit-line-clamp: unset;
-  display: block;
-  overflow: visible;
-}
 @container suggestion-page (min-width: 800px) {
   .suggestion-composer-grid {
     grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);

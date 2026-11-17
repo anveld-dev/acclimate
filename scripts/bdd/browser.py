@@ -54,7 +54,9 @@ class BrowserFixture:
             self.playwright = sync_playwright().start()
             self.browser = self.playwright.chromium.launch(headless=True)
             self.context = self.browser.new_context(ignore_https_errors=True,viewport={'width':1440,'height':1000},accept_downloads=True,permissions=['clipboard-read','clipboard-write'])
-            self.context.tracing.start(screenshots=True, snapshots=True, sources=True)
+            self.trace_enabled = not getattr(world, 'sensitive_fixture', False)
+            if self.trace_enabled:
+                self.context.tracing.start(screenshots=True, snapshots=True, sources=True)
             self.sign_in(self.context, subject)
             self.new_page()
             if dev:
@@ -130,7 +132,8 @@ class BrowserFixture:
         self.browser.close()
         self.browser=self.playwright.chromium.launch(headless=True)
         self.context=self.browser.new_context(ignore_https_errors=True,storage_state=state,viewport={'width':1440,'height':1000},accept_downloads=True,permissions=['clipboard-read','clipboard-write'])
-        self.context.tracing.start(screenshots=True, snapshots=True, sources=True)
+        if self.trace_enabled:
+            self.context.tracing.start(screenshots=True, snapshots=True, sources=True)
         self.new_page()
 
     def close(self):

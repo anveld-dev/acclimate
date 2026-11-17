@@ -565,7 +565,7 @@
   min-width: 34rem;
 }
 @container evaluation-workspace (min-width: 900px) {
-  .evaluation-workspace .evaluation-board {
+  .evaluation-workspace .evaluation-board.has-runs {
     grid-template-columns: clamp(240px, 26%, 280px) minmax(0, 1fr);
   }
 }
@@ -626,4 +626,160 @@
   overflow-wrap: anywhere;
   margin-top: 3px;
   line-height: 20px;
+}
+
+/* Evaluation authoring gets the workspace width; request navigation stays slim. */
+.evaluation-workspace > .evaluation-setup {
+  container: evaluation-setup / inline-size;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  min-width: 0;
+}
+.evaluation-workspace .evaluation-setup > [data-slot='disclosure'] > h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.evaluation-workspace .evaluation-setup-title {
+  font-weight: 600;
+}
+.evaluation-workspace .evaluation-configuration-form {
+  padding-top: 12px;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.evaluation-workspace .evaluation-setup-profile {
+  display: grid;
+  gap: 6px;
+  font-weight: 550;
+  max-width: 640px;
+}
+.evaluation-workspace .evaluation-setup-profile [data-slot='native-select-wrapper'] {
+  width: 100%;
+  font-weight: 400;
+}
+.evaluation-workspace .evaluation-setup-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.evaluation-workspace .evaluation-setup-author,
+.evaluation-workspace .evaluation-setup-preview {
+  min-width: 0;
+}
+.evaluation-workspace .evaluation-setup-author {
+  display: grid;
+  gap: 12px;
+}
+.evaluation-workspace .evaluation-setup-author p,
+.evaluation-workspace .evaluation-setup-footer p,
+.evaluation-workspace .evaluation-setup-blocked-reason {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  max-width: 100ch;
+}
+.evaluation-workspace .evaluation-setup-editor {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.evaluation-workspace .evaluation-setup-editor > div:first-child {
+  font-weight: 550;
+}
+.evaluation-workspace .evaluation-setup-editor .code-editor {
+  height: 280px;
+  max-height: 320px;
+  border-radius: 6px;
+}
+.evaluation-workspace .evaluation-setup-preview {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.evaluation-workspace .evaluation-setup-preview h3 {
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+.evaluation-workspace .evaluation-setup-preview dl {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1fr);
+  gap: 7px 16px;
+  line-height: 1.5;
+}
+.evaluation-workspace .evaluation-setup-preview dt {
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.evaluation-workspace .evaluation-setup-preview dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.evaluation-workspace .evaluation-setup-footer {
+  display: flex;
+  gap: 12px 24px;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.evaluation-workspace .evaluation-setup-footer p {
+  flex: 1 1 440px;
+  color: var(--muted-foreground);
+}
+.evaluation-workspace .evaluation-setup-footer button {
+  flex: 0 0 auto;
+}
+.evaluation-workspace .evaluation-setup-blocked-reason {
+  margin-top: 8px;
+  color: var(--muted-foreground);
+}
+.evaluation-workspace .evaluation-board:not(.has-runs) > .evaluation-run-sidebar:empty {
+  display: none;
+}
+@container evaluation-setup (min-width: 900px) {
+  .evaluation-workspace .evaluation-setup-grid {
+    grid-template-columns: minmax(600px, 1.8fr) minmax(260px, 1fr);
+    gap: 24px;
+  }
+  .evaluation-workspace .evaluation-setup-preview {
+    border-top: 0;
+    border-left: 1px solid var(--border);
+    padding: 0 0 0 20px;
+  }
+}
+@container evaluation-setup (max-width: 360px) {
+  .evaluation-workspace .evaluation-setup-preview dl {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .evaluation-workspace .evaluation-setup-preview dd {
+    margin-bottom: 9px;
+  }
+  .evaluation-workspace .evaluation-setup-footer button {
+    max-width: 100%;
+    white-space: normal;
+    height: auto;
+    min-height: 32px;
+  }
+}
+@media (pointer: coarse) {
+  .evaluation-workspace .evaluation-setup button,
+  .evaluation-workspace .evaluation-setup select {
+    min-height: 44px;
+  }
+}
+
+.evaluation-workspace .evaluation-setup-preview {
+  max-height: 320px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.evaluation-workspace .evaluation-setup-preview:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }

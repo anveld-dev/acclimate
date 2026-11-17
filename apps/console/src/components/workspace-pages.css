@@ -145,9 +145,6 @@
   overflow-wrap: anywhere;
 }
 @container connection-page (min-width: 860px) {
-  .workspace-connections .connection-workspace[data-selected='true'] {
-    grid-template-columns: 248px minmax(0, 1fr);
-  }
   .connection-detail-jump {
     display: none;
   }
@@ -173,4 +170,160 @@
   .connection-detail-jump {
     min-height: 44px;
   }
+}
+
+/* Selected connections use the workspace canvas; the index owns the directory. */
+.workspace-main > .workspace-connections[data-selected='true'] {
+  max-width: 1280px;
+}
+.workspace-connections .connection-workspace[data-selected='true'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.connection-selected-navigation {
+  min-width: 0;
+}
+.connection-selected-navigation > .connection-directory-header {
+  gap: 12px;
+}
+.connection-selected-navigation > div:has(> label) {
+  display: grid;
+  gap: 6px;
+  max-width: 640px;
+}
+.connection-selected-navigation [data-slot='native-select-wrapper'] {
+  width: 100%;
+}
+.connection-selected-header {
+  min-width: 0;
+  padding-block: 2px 4px;
+}
+.connection-selected-header .connection-identity {
+  margin-top: 12px;
+}
+.connection-selected-header .connection-identity code {
+  overflow-wrap: anywhere;
+}
+.connection-detail {
+  container: connection-detail / inline-size;
+}
+.connection-detail-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  min-width: 0;
+}
+.connection-detail-panels > section {
+  min-width: 0;
+}
+.connection-credentials-panel h3,
+.connection-reports-panel h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.connection-credentials-panel .connection-credential-row {
+  align-items: start;
+  gap: 8px;
+}
+.connection-credentials-panel .connection-credential-row code {
+  overflow-wrap: anywhere;
+}
+.connection-reports-panel {
+  container: connection-reports / inline-size;
+}
+.connection-report-columns {
+  display: none;
+}
+.connection-report-trigger .connection-report-summary {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.connection-report-stage > span {
+  overflow-wrap: anywhere;
+}
+.connection-report-version {
+  min-width: 0;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+.connection-report-details dl > div {
+  min-width: 0;
+}
+.connection-report-details dl {
+  grid-template-columns: minmax(0, 1fr);
+}
+@container connection-detail (min-width: 1000px) {
+  .connection-detail-panels {
+    grid-template-columns: 360px minmax(620px, 1fr);
+  }
+}
+@container connection-reports (min-width: 580px) {
+  .connection-report-columns,
+  .connection-report-trigger .connection-report-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(125px, 0.85fr) minmax(90px, 0.6fr);
+    column-gap: 14px;
+  }
+  .connection-report-columns {
+    padding: 9px 0 9px 22px;
+    color: var(--muted-foreground);
+    font-size: 14px;
+    font-weight: 550;
+    background: var(--muted);
+  }
+  .connection-report-trigger .connection-report-summary {
+    align-items: start;
+  }
+  .connection-report-details dl > div {
+    grid-template-columns: 160px minmax(0, 1fr);
+  }
+}
+@container connection-reports (max-width: 579px) {
+  .connection-report-details dl > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (pointer: coarse) {
+  .connection-selected-navigation select,
+  .connection-selected-navigation a {
+    min-height: 44px;
+  }
+}
+
+.connection-switcher-trigger {
+  width: 100%;
+  min-height: 36px;
+  height: auto;
+  text-align: left;
+  font-size: 14px;
+}
+.connection-switcher-options {
+  width: min(640px, calc(100vw - 24px));
+  max-height: min(440px, var(--radix-select-content-available-height));
+}
+.connection-switcher-option {
+  padding: 10px 30px 10px 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.connection-switcher-option > [data-radix-collection-item] {
+  min-width: 0;
+}
+@media (pointer: coarse) {
+  .connection-switcher-trigger,
+  .connection-switcher-option {
+    min-height: 44px;
+  }
+}
+
+.connection-switcher-choice {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
+}
+.connection-switcher-option > span:last-child {
+  min-width: 0;
+  width: 100%;
 }

@@ -22,6 +22,10 @@ def before_all(context):
 
 def before_scenario(context, scenario):
     context.world.fresh_scenario(scenario)
+    # One-time credential values must never enter trace snapshots or responses.
+    context.world.sensitive_fixture = bool(set(scenario.effective_tags) & {
+        'UI-INTEGRATION-01', 'UI-ACCESS-05', 'UI-ACCESS-06',
+    })
 
 
 def after_scenario(context, scenario):
@@ -33,8 +37,9 @@ def after_scenario(context, scenario):
             directory.mkdir(parents=True,exist_ok=True,mode=0o700)
             name=re.sub(r'[^a-zA-Z0-9_-]+','-',scenario.name)[:150]
             try:
-                browser.page.screenshot(path=str(directory/(name+'.png')),full_page=True)
-                browser.context.tracing.stop(path=str(directory/(name+'.zip')))
+                browser.page.screenshot(path=str(directory/(name+'.png')),full_page=True,mask=[browser.page.locator('[data-sensitive=true]')])
+                if getattr(browser,'trace_enabled',True):
+                    browser.context.tracing.stop(path=str(directory/(name+'.zip')))
             except Exception:
                 # Preserve the original assertion if the browser itself has crashed.
                 pass

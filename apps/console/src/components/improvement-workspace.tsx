@@ -14,7 +14,7 @@ import {
 import { EvaluationScorecard } from './evaluation-scorecard';
 import { EvaluationActivity } from './evaluation-activity';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
-import { NativeSelect } from './ui/native-select';
+import { EvaluationSetup } from './evaluation-setup';
 import {
   evaluationConfiguration,
   evaluationHandoff,
@@ -831,140 +831,45 @@ export function ImprovementWorkspace({
       ? paymentSimulatorIssue(detail.candidate.payload)
       : undefined;
   const evaluationSetup = detail?.candidate && !isCurrentRelease && (
-    <section
-      className="review-section evaluation-setup space-y-3 px-4 py-3"
-      aria-label="Create evaluation request"
-    >
-      <Disclosure
-        key={candidateRequests.length === 0 ? 'first-request' : 'another-request'}
-        defaultOpen={candidateRequests.length === 0}
-      >
-        <DisclosureTrigger className="cursor-pointer font-medium">
-          <span className="evaluation-setup-title">
-            <FlaskConical aria-hidden="true" />
-            {candidateRequests.length
-              ? 'Create another evaluation request'
-              : 'Set up evaluation request'}
-          </span>
-        </DisclosureTrigger>
-        <DisclosureContent>
-          <div className="evaluation-configuration-form mt-3 space-y-3">
-            <p className="evaluation-step-label">
-              1. Configure · 2. Run in your app · 3. Review evidence
-            </p>
-            <div className="rounded-md border p-3 space-y-2" aria-label="Evaluator prerequisites">
-              <p>
-                Before creating a request, install your app’s evaluator starter and run its{' '}
-                <code>describe</code> command.
-              </p>
-              <p>
-                Evaluation needs a dedicated project read/write machine principal from your service
-                operator. Connections delivery credentials cannot read unpublished candidates or run
-                evaluations; propose and promote access are not needed.
-              </p>
-              <p>
-                Keep its private configuration and durable journal on the evaluator machine. Run{' '}
-                <code>doctor</code> there to check access without executing a task. A valid public
-                configuration does not prove the evaluator or provider is installed.
-              </p>
-              {initial.draft && initial.generation > 0 && (
-                <p>
-                  Evaluating saved generation {initial.generation}. Later edits do not change this
-                  request.
-                </p>
-              )}
-            </div>
-            <Label className="block space-y-1">
-              Evaluation configuration
-              <NativeSelect
-                className="w-full"
-                aria-label="Evaluation configuration"
-                value={evaluationProfile}
-                disabled={busy || !!pending || related.blocked}
-                onChange={(event) => setEvaluationProfile(event.target.value as EvaluationChoice)}
-              >
-                <option value="">Choose an evaluator…</option>
-                <option value="custom">My app's installed evaluator</option>
-                <optgroup label="Examples from this checkout">
-                  <option value="payment-retry">
-                    Example: Payment retry simulator · model-free
-                  </option>
-                  <option value="presence-contract">
-                    Example: File presence contract · model-free
-                  </option>
-                  <option value="codex-luna-review">Example: Native Codex review · Luna</option>
-                </optgroup>
-              </NativeSelect>
-            </Label>
-            {evaluationProfile === 'custom' && (
-              <Label className="block space-y-1">
-                Public evaluator configuration (JSON)
-                <Textarea
-                  aria-label="Public evaluator configuration (JSON)"
-                  className="min-h-40 font-mono"
-                  value={customConfiguration}
-                  disabled={busy || !!pending || related.blocked}
-                  onChange={(event) => setCustomConfiguration(event.target.value)}
-                />
-                <span className="text-muted-foreground">
-                  Run <code>node acclimate-eval.mjs describe</code> (or{' '}
-                  <code>python3 acclimate_eval.py describe</code>), then paste its public
-                  configuration: datasetRevision, graderRevision, runtime (including
-                  configId/configRevision), and expectedCases. Keep credentials and case contents in
-                  the app.
-                </span>
-              </Label>
-            )}
-            <p id="evaluation-prerequisites" className="text-muted-foreground">
-              {evaluationProfile === 'payment-retry'
-                ? 'The simulator needs payment-policy.json data. Three scenarios × two repetitions, no model calls. This checks orchestration, not native agent quality.'
-                : evaluationProfile === 'presence-contract'
-                  ? 'Checks nonempty instruction and skill files. This is a delivery contract check, not a behavioral score.'
-                  : evaluationProfile === 'codex-luna-review'
-                    ? 'The included checkout review and grader use Codex. After separate setup, that adapter requires --live and allows up to four bounded Luna turns. Creating a request makes no model call.'
-                    : 'Your app runs its installed adapter and grader. The service freezes these settings and records evidence; it never executes configuration as code.'}
-            </p>
-            {evaluationConfig && (
-              <p className="text-muted-foreground" aria-label="Selected evaluator summary">
-                {evaluationConfig.runtime.configId} · revision{' '}
-                {evaluationConfig.runtime.configRevision} ·{' '}
-                {new Set(evaluationConfig.expectedCases.map((item) => item.caseId)).size} tasks ·{' '}
-                {evaluationConfig.expectedCases.length} repetition pairs
-              </p>
-            )}
-            {exampleIssue && (
-              <p role="alert" className="text-destructive">
-                {exampleIssue}
-              </p>
-            )}
-            {configurationError && evaluationProfile && (
-              <p role="alert" className="text-destructive">
-                {configurationError}
-              </p>
-            )}
-            <Button
-              disabled={
-                busy ||
-                !!pending ||
-                related.blocked ||
-                !state.canEdit ||
-                !currentBase ||
-                !evaluationConfig ||
-                !!exampleIssue
-              }
-              ref={createRequestAction}
-              aria-describedby="evaluation-prerequisites"
-              onClick={(event) => {
-                requestOwnsFocus.current = document.activeElement === event.currentTarget;
-                void act({ action: 'evaluate', ...base, configuration: evaluationConfig });
-              }}
-            >
-              Create evaluation request
-            </Button>
-          </div>
-        </DisclosureContent>
-      </Disclosure>
-    </section>
+    <EvaluationSetup
+      key={candidateRequests.length === 0 ? 'first-request' : 'another-request'}
+      profile={evaluationProfile}
+      customConfiguration={customConfiguration}
+      configuration={evaluationConfig}
+      configurationError={configurationError}
+      exampleIssue={exampleIssue}
+      savedGeneration={initial.draft && initial.generation > 0 ? initial.generation : undefined}
+      hasRequests={candidateRequests.length > 0}
+      fieldsDisabled={busy || !!pending || related.blocked}
+      submitDisabled={
+        busy ||
+        !!pending ||
+        related.blocked ||
+        !state.canEdit ||
+        !currentBase ||
+        !evaluationConfig ||
+        !!exampleIssue
+      }
+      blockedReason={[
+        !state.canEdit &&
+          'You have read-only access. You can inspect configurations, but cannot create a request.',
+        !currentBase &&
+          'This candidate does not start from the selected channel’s current release. Create a new draft from the current release before requesting evaluation.',
+        busy && 'An operation is in progress.',
+        pending &&
+          'Resolve the pending operation before creating another request. Its outcome has not been confirmed here.',
+        related.blocked && 'Resolve the related pending operation before creating another request.',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      createActionRef={createRequestAction}
+      onProfileChange={setEvaluationProfile}
+      onCustomConfigurationChange={setCustomConfiguration}
+      onCreate={(event) => {
+        requestOwnsFocus.current = document.activeElement === event.currentTarget;
+        void act({ action: 'evaluate', ...base, configuration: evaluationConfig });
+      }}
+    />
   );
   return (
     <div className={`min-w-0 space-y-4 text-sm${mode === 'proposal' ? ' proposal-page' : ''}`}>
@@ -1185,12 +1090,12 @@ export function ImprovementWorkspace({
               </>
             )}
           </section>
+          {evaluationSetup}
           {candidate && (
             <div
               className={`evaluation-board${candidateRequests.length || requestCursor ? ' has-runs' : ''}${comparison ? ' has-evidence' : ''}`}
             >
               <div className="evaluation-run-sidebar">
-                {evaluationSetup}
                 {(candidateRequests.length > 0 || requestCursor) && (
                   <section
                     className="review-section evaluation-runs space-y-3 px-4 py-3"

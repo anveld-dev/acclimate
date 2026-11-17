@@ -115,6 +115,10 @@ function fixture(
       status = { ...enrollment, ...status, stoppedAt: '2026-11-17T15:00:00Z' };
       return Response.json(status);
     }
+    if (url.endsWith('/restore') && method === 'POST' && status) {
+      status = { ...status, deliveredVersionId: body.target.versionId, deliveredRevision: (BigInt(status.deliveredRevision) + 1n).toString() };
+      return Response.json({ id: 'restore-promotion' });
+    }
     if (url.endsWith('/renew') || url.endsWith(`/rounds/${roundId}/review`))
       return Response.json({ ok: true });
     throw Error(`Unexpected request ${method} ${url}`);
@@ -417,4 +421,164 @@ test('an overlapping or invalid descriptor is blocked before enrollment', async 
   assert(!result.ok);
   assert.match(result.message, /disjoint/);
   assert(f.requests.every((request) => request.method === 'GET'));
+});
+
+const committedDevelopment = {
+  ...development,
+  fixtureProtocol: 'installed-v1' as const,
+  datasetDigest: '1'.repeat(64),
+  caseFingerprints: ['2'.repeat(64)],
+};
+const committedAudit = { ...audit, fixtureProtocol: 'installed-v1' as const };
+const quality = {
+  schemaVersion: 1 as const,
+  id: 'quality',
+  revision: '2',
+  metric: { direction: 'higher' as const, name: 'correctness', unit: 'score' },
+  aggregation: 'equal-case-means' as const,
+  minimumMeanImprovement: 0.1,
+  maximumCaseRegression: 0.01,
+  requiredCases: [],
+  minimumRepetitionsPerCase: 1,
+};
+const stages = {
+  development: quality,
+  audit: { ...quality, minimumMeanImprovement: 0, protectedCaseThresholds: { 'audit-case-1': 1 } },
+};
+
+test('automatic enrollment binds installed fixtures, scoped skills and separate stage objectives', () => {
+  assert.throws(() => learningPolicy({ ...setup, automaticRollout: true }), /commitments/);
+  const policy = learningPolicy({
+    ...setup,
+    automaticRollout: true,
+    descriptors: JSON.stringify({ development: committedDevelopment, audits: [committedAudit] }),
+    createSkillNames: 'refunds',
+    retireSkillNames: 'old-refunds',
+    selectionPolicies: JSON.stringify(stages),
+  });
+  assert.deepEqual(policy.development, committedDevelopment);
+  assert.deepEqual(policy.audits, [committedAudit]);
+  assert.deepEqual(policy.skillPackages, {
+    createSkillNames: ['refunds'],
+    retireSkillNames: ['old-refunds'],
+  });
+  assert.deepEqual(policy.selectionPolicies, stages);
+  assert.throws(
+    () => learningPolicy({ ...setup, createSkillNames: 'skills/../../test' }),
+    /skill names/,
+  );
+  assert.throws(
+    () =>
+      learningPolicy({
+        ...setup,
+        selectionPolicies: JSON.stringify({ development: {}, audit: quality }),
+      }),
+    /selection policies/,
+  );
+});
+
+test('policy rotation can update the development evaluator and stage policies without spending or adding audits', async () => {
+  const f = fixture();
+  const result = await connectionLearning(
+    env,
+    {
+      ...target,
+      action: 'renew',
+      expectedRevision: 1,
+      renewalId: roundId,
+      proposalAdmissions: '',
+      descriptors: '',
+      development: JSON.stringify(committedDevelopment),
+      selectionPolicies: JSON.stringify(stages),
+    },
+    f.fetcher,
+  );
+  assert(result.ok);
+  assert.deepEqual(f.requests.find((entry) => entry.url.endsWith('/renew'))?.body, {
+    renewalId: roundId,
+    expectedRevision: 1,
+    proposalAdmissions: 0,
+    audits: [],
+    development: committedDevelopment,
+    selectionPolicies: stages,
+  });
+});
+
+test('operators can remove structural permissions while retaining enrolled selection policies', async () => {
+  const f = fixture({
+    status: {
+      ...enrollment,
+      selectionPolicies: stages,
+      skillPackages: { createSkillNames: ['refunds'], retireSkillNames: [] },
+    },
+  });
+  const result = await connectionLearning(
+    env,
+    {
+      ...target,
+      action: 'skills',
+      createSkillNames: '',
+      retireSkillNames: '',
+    },
+    f.fetcher,
+  );
+  assert(result.ok && result.status);
+  assert.deepEqual(result.status.skillPackages, { createSkillNames: [], retireSkillNames: [] });
+  assert.deepEqual(result.status.policySummary, {
+    development: 'quality · 2',
+    audit: 'quality · 2',
+  });
+  assert(!JSON.stringify(result).includes('audit-case-1'));
+  assert.deepEqual(f.requests.find((entry) => entry.method === 'PUT')?.body, {
+    ...learningPolicy(setup),
+    expectedAutomaticRollout: false,
+    skillPackages: { createSkillNames: [], retireSkillNames: [] },
+    selectionPolicies: stages,
+  });
+});
+
+test('a skill permission update submits explicitly reviewed future paths', async () => {
+  const f = fixture();
+  const result = await connectionLearning(env, {
+    ...target, action: 'skills', createSkillNames: 'refunds', retireSkillNames: '',
+    permittedPaths: 'instructions.md\nskills/refunds/SKILL.md',
+  }, f.fetcher);
+  assert(result.ok && result.status);
+  assert.deepEqual(result.status.permittedPaths, ['instructions.md', 'skills/refunds/SKILL.md']);
+  assert.deepEqual(result.status.skillPackages, {createSkillNames: ['refunds'], retireSkillNames: []});
+});
+
+test('reviewed restores bind the exact connection, current revision, selected target and reason even after stop', async () => {
+  const restoreTarget = { kind: 'source' as const, versionId: roundId, revision: '12' };
+  const f = fixture({
+    status: { ...enrollment, stoppedAt: '2026-11-17T15:00:00Z', restoreTargets: [restoreTarget] },
+  });
+  const read = await connectionLearning(env, { ...target, action: 'read' }, f.fetcher);
+  assert(read.ok && read.status);
+  assert.deepEqual(read.status.restoreTargets, [restoreTarget]);
+  const request = {
+    ...target,
+    action: 'restore' as const,
+    restoreId: id,
+    expectedRevision: '9',
+    target: restoreTarget,
+    reason: 'Apply reviewed refund policy.',
+  };
+  const result = await connectionLearning(env, request, f.fetcher);
+  assert(result.ok && result.status);
+  assert.equal(result.status.deliveredRevision, '10');
+  assert.equal(result.status.deliveredVersionId, roundId);
+  const write = f.requests.find((entry) => entry.method === 'POST');
+  assert(write);
+  assert(write.url.endsWith(`/integrations/${id}/learning/restore`));
+  assert.equal(write.headers.get('idempotency-key'), id);
+  assert.deepEqual(write.body, {
+    restoreId: id,
+    expectedRevision: '9',
+    target: restoreTarget,
+    reason: request.reason,
+  });
+  const invalid = await connectionLearning(env, { ...request, expectedRevision: '9.0' }, f.fetcher);
+  assert(!invalid.ok);
+  assert.equal(f.requests.filter((entry) => entry.method === 'POST').length, 1);
 });

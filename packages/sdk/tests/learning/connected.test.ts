@@ -65,6 +65,7 @@ test('terminal reporter binds outcomes to fresh delivery and sends only bounded 
     versionId: version.id,
     digest: version.digest,
     status: 'failed',
+    deliveryRevision: '2',
     feedback: { expected: 'validated', observed: 'skipped' },
   });
   await assert.rejects(report({ ...bundle, stale: true }, outcome), /fresh bundle/);
@@ -249,4 +250,42 @@ test('enrollment PUT preserves an explicit false rollout precondition', async ()
   );
   assert.equal(requests[0]?.method, 'PUT');
   assert.equal((await requests[0]?.json()).expectedAutomaticRollout, false);
+});
+
+test('corrections and rechecks use independent stable ids against their original connection', async () => {
+  const requests: Request[] = [];
+  const client = new AcclimateClient({
+    baseUrl: 'http://localhost:8090',
+    scope: 'evaluator',
+    token: 'fixture-token',
+    fetch: async (input, init) => {
+      requests.push(new Request(input, init));
+      return Response.json({ accepted: true });
+    },
+  });
+  const correctionId = 'a7100000-0000-0000-0000-000000000008';
+  const correction = {
+    correctionId,
+    outcomeId,
+    feedback: { expected: 'closed', observed: 'open' },
+  };
+  const recheck = {
+    correctionId,
+    revision: '3',
+    versionId: version.id,
+    digest: version.digest,
+    verdict: 'reproduced' as const,
+  };
+  await client.reportLearningCorrection(projectId, integrationId, correction);
+  await client.reportLearningRecheck(projectId, integrationId, recheck);
+  const prefix = '/v1/projects/' + projectId + '/integrations/' + integrationId + '/learning/';
+  assert.deepEqual(
+    requests.map((r) => new URL(r.url).pathname),
+    [prefix + 'corrections', prefix + 'rechecks'],
+  );
+  assert.deepEqual(
+    requests.map((r) => r.headers.get('idempotency-key')),
+    [correctionId, correctionId + ':3'],
+  );
+  assert.deepEqual(await Promise.all(requests.map((r) => r.json())), [correction, recheck]);
 });

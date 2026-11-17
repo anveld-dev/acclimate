@@ -20,4 +20,4 @@ SDK baseline exports: `AcclimateClient`, `ApiError`, `resolveAndCache`, `prepare
 
 File ownership for shared checkout: root contracts/types/manifests/docs/scripts/CI; Rust agent Cargo.toml,Cargo.lock,src/,migrations/,tests/; SDK agent packages/sdk/src/{client,cache,prepare,index}.ts + tests/delivery/; comparison agent compare.ts + tests/compare/ + examples/compare-review.ts; native agent packages/{codex,claude,pi}-plugin/src + own tests + examples/codex-smoke.ts + native-integration README. No worktrees required for these nonoverlapping directories. No implementation commits until tests pass unless root coordinates it.
 
-The additive [application-owned learning contract](learning.md) specifies the Node-only learner, private evidence/decision state, retained candidate-publication recovery, and existing reviewer release semantics.
+The [learning contract](learning.md) covers the Node-only private learner and service-managed connections, including fixture commitments, stage policies, correction rechecks, field verdicts and reviewed restores.

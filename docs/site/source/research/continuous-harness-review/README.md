@@ -2,6 +2,8 @@
 
 Review date: 2026-11-17. Acclimate baseline: `3de5ac433a5a6b3d1406efaa51e50283ec66d402`. This review assesses the user's broader goal of a continuous self-improving harness. It does not silently replace the current content-service product contract.
 
+The [connected-service review](connected-service.md) examines the subsequently implemented learner at `2951785`, including automatic rollout, field rollback and feedback across releases.
+
 See the [second-pass counter-review](second-pass/README.md) for corrections and a smaller implementation recommendation. It supersedes broad interpretations of the fixed-file and harness-identity findings below.
 
 ## Verdict

@@ -1,6 +1,6 @@
 # Candidate mutations and effective delivery
 
-The default service proposer edits existing files. Applications can opt into structural planning with [planCandidate](../../../packages/sdk/src/learning/mutations.ts) and the [Acclimate learning adapter](../../../packages/sdk/src/learning/adapters/acclimate.ts). See the [implementation record](implementation.md).
+The default service proposer edits existing files. Managed connections can authorize named skill package creation and retirement during [enrollment](../../../deploy/README.md#operate-connected-learning). Applications running a private campaign can opt into structural planning with [planCandidate](../../../packages/sdk/src/learning/mutations.ts) and the [Acclimate learning adapter](../../../packages/sdk/src/learning/adapters/acclimate.ts). See the [implementation record](implementation.md).
 
 ## Enable skill package mutations
 

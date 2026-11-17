@@ -68,13 +68,14 @@ fn public_proposal_failure(reason: &str) -> &'static str {
             "provider edit anchor is ambiguous in original text"
         }
         "Original edit ranges overlap" => "provider edit ranges overlap in original text",
+        "Proposal did not change any file" => "proposal did not change any file",
         _ => "provider request failed",
     }
 }
 
 use crate::{
-    ApiResult, AppState, BundleFile, BundlePayload, Comparison, Proposal, ProposalRequest,
-    VersionMetadata, db, err, path,
+    ApiResult, AppState, BundlePayload, Comparison, Proposal, ProposalRequest, VersionMetadata, db,
+    err, path,
 };
 use axum::{
     Json,
@@ -85,7 +86,6 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use sqlx::Row;
-use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use uuid::Uuid;
 pub async fn create_comparison(
@@ -246,7 +246,53 @@ pub(crate) async fn enqueue_proposal(
     principal: &str,
     q: &ProposalRequest,
 ) -> ApiResult<(Uuid, DateTime<Utc>)> {
-    if q.allowed_paths.is_empty()
+    enqueue(tx, project, bid, principal, q.clone(), None, false)
+        .await?
+        .ok_or_else(|| {
+            err(
+                StatusCode::BAD_REQUEST,
+                "invalid_content",
+                "Allowed paths must include an existing file",
+            )
+        })
+}
+
+pub(crate) async fn enqueue_managed_proposal(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    project: &str,
+    bid: Uuid,
+    integration: Uuid,
+    request: &ProposalRequest,
+    allow_structure: bool,
+) -> ApiResult<Option<(Uuid, DateTime<Utc>)>> {
+    let policy: Option<serde_json::Value> = if allow_structure {
+        sqlx::query_scalar("SELECT skill_packages FROM connected_learning_enrollments WHERE (project_id,bundle_id,integration_id)=($1,$2,$3)")
+            .bind(project).bind(bid).bind(integration).fetch_one(&mut **tx).await.map_err(db)?
+    } else {
+        None
+    };
+    enqueue(
+        tx,
+        project,
+        bid,
+        "service:connected-learning",
+        request.clone(),
+        policy,
+        true,
+    )
+    .await
+}
+
+async fn enqueue(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    project: &str,
+    bid: Uuid,
+    principal: &str,
+    mut q: ProposalRequest,
+    skill_packages: Option<serde_json::Value>,
+    filter_missing: bool,
+) -> ApiResult<Option<(Uuid, DateTime<Utc>)>> {
+    if (!filter_missing && q.allowed_paths.is_empty())
         || q.allowed_paths.len() > 128
         || q.hypothesis.trim().is_empty()
         || q.hypothesis.len() > 4096
@@ -277,6 +323,13 @@ pub(crate) async fn enqueue_proposal(
             })?;
     let parent_payload: BundlePayload =
         serde_json::from_slice(&parent_row.get::<Vec<u8>, _>("payload")).map_err(db)?;
+    if filter_missing {
+        q.allowed_paths
+            .retain(|path| parent_payload.files.iter().any(|f| f.path == *path));
+    }
+    if q.allowed_paths.is_empty() && skill_packages.is_none() {
+        return Ok(None);
+    }
     let allowed: HashSet<_> = q.allowed_paths.iter().collect();
     if allowed.len() != q.allowed_paths.len()
         || q.allowed_paths
@@ -290,8 +343,8 @@ pub(crate) async fn enqueue_proposal(
         ));
     }
     let id = Uuid::new_v4();
-    let row=sqlx::query("INSERT INTO proposals(id,project_id,bundle_id,parent_version_id,request,status,requested_by) SELECT $1,$2,$3,$4,$5,'queued',$6 WHERE EXISTS(SELECT 1 FROM versions WHERE project_id=$2 AND bundle_id=$3 AND id=$4) RETURNING created_at").bind(id).bind(project).bind(bid).bind(parent).bind(serde_json::to_value(q).map_err(db)?).bind(principal).fetch_optional(&mut **tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Parent version not found"))?;
-    Ok((id, row.get("created_at")))
+    let row=sqlx::query("INSERT INTO proposals(id,project_id,bundle_id,parent_version_id,request,status,requested_by,skill_packages) SELECT $1,$2,$3,$4,$5,'queued',$6,$7 WHERE EXISTS(SELECT 1 FROM versions WHERE project_id=$2 AND bundle_id=$3 AND id=$4) RETURNING created_at").bind(id).bind(project).bind(bid).bind(parent).bind(serde_json::to_value(q).map_err(db)?).bind(principal).bind(skill_packages).fetch_optional(&mut **tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Parent version not found"))?;
+    Ok(Some((id, row.get("created_at"))))
 }
 pub async fn get_proposal(
     State(s): State<AppState>,
@@ -358,7 +411,7 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
         }
         Err(_) => return,
     }
-    let Ok(claimed) = sqlx::query("UPDATE proposals SET status='running',attempts=attempts+1 WHERE id=$1 AND status='queued' AND attempts<3 RETURNING request,parent_version_id,requested_by,attempts").bind(id).fetch_optional(&mut *tx).await else { return };
+    let Ok(claimed) = sqlx::query("UPDATE proposals SET status='running',attempts=attempts+1 WHERE id=$1 AND status='queued' AND attempts<3 RETURNING request,parent_version_id,requested_by,attempts,skill_packages").bind(id).fetch_optional(&mut *tx).await else { return };
     if tx.commit().await.is_err() {
         return;
     }
@@ -371,6 +424,14 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
     };
     let q: ProposalRequest = match serde_json::from_value(r.get("request")) {
         Ok(x) => x,
+        Err(_) => return,
+    };
+    let policy = match r
+        .get::<Option<serde_json::Value>, _>("skill_packages")
+        .map(serde_json::from_value::<crate::proposal_edits::SkillPackages>)
+        .transpose()
+    {
+        Ok(policy) => policy,
         Err(_) => return,
     };
     let parent = r.get::<Uuid, _>("parent_version_id");
@@ -389,7 +450,7 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
         };
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(60),
-        provider.propose(parent_payload.clone(), q.clone()),
+        provider.propose_scoped(parent_payload.clone(), q.clone(), policy.clone()),
     )
     .await;
     let output = match result {
@@ -416,7 +477,8 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
     };
     let (candidate, rationale) = output;
     if crate::bundles::validate_payload(&candidate).is_err()
-        || validate_edits(&parent_payload, &candidate, &q.allowed_paths).is_err()
+        || crate::proposal_edits::validate_changes(&parent_payload, &candidate, &q, policy.as_ref())
+            .is_err()
     {
         let _=sqlx::query("UPDATE proposals SET status='failed',error='provider returned invalid edits' WHERE id=$1 AND status='running' AND attempts=$2").bind(id).bind(attempt).execute(&s.db).await;
         return;
@@ -468,25 +530,6 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
         return;
     }
     let _ = tx.commit().await;
-}
-
-fn validate_edits(
-    base: &BundlePayload,
-    out: &BundlePayload,
-    allowed: &[String],
-) -> Result<(), String> {
-    let a: HashMap<String, &BundleFile> = base.files.iter().map(|f| (f.path.clone(), f)).collect();
-    let b: HashMap<String, &BundleFile> = out.files.iter().map(|f| (f.path.clone(), f)).collect();
-    if a.len() != b.len() || a.keys().any(|k| !b.contains_key(k)) {
-        return Err("File set changed".into());
-    }
-    for (path, x) in a {
-        let y = b[&path];
-        if x.kind != y.kind || (x.text != y.text && !allowed.iter().any(|z| z == &path)) {
-            return Err("Edit outside allowed paths".into());
-        }
-    }
-    Ok(())
 }
 
 pub async fn list_comparisons(

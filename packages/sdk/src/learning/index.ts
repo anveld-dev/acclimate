@@ -9,3 +9,4 @@ export type { LearningStore, LearningLock, InboxEntry } from './store.js';
 export * from './mutations.js';
 export * from './adapters/acclimate.js';
 export * from './connected.js';
+export { connectedEvaluationDescriptor } from './connected-fixtures.js';

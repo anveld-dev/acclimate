@@ -1,3 +1,4 @@
+import type { EvaluationPolicyV1 } from './evaluation/policy.js';
 export type CompatibilityTarget = 'generic' | 'codex' | 'claude' | 'pi' | 'cursor';
 export type FileKind = 'instruction' | 'skill' | 'memory';
 export interface BundleFile {
@@ -300,13 +301,29 @@ export interface IntegrationCredential {
   secret: string;
 }
 export interface LearningEvaluationDescriptor extends EvaluationDescriptor {
+  fixtureProtocol?: 'installed-v1';
   datasetDigest?: string;
   caseFingerprints?: string[];
   familyFingerprints?: string[];
 }
+export interface LearningSelectionPolicy extends EvaluationPolicyV1 {
+  /** Each matching candidate repetition must complete and meet its oriented reward threshold. */
+  protectedCaseThresholds?: Record<string, number>;
+  /** Require observed savings across the complete paired case inventory. */
+  minimumCostSavingsUsd?: number;
+  /** Minimum paired repetitions required for every case in the stage inventory. */
+  minimumRepetitionsPerCase?: number;
+}
+export interface LearningSelectionPolicies {
+  development: LearningSelectionPolicy;
+  audit: LearningSelectionPolicy;
+}
 export interface LearningEnrollmentRequest {
+  selectionPolicies?: LearningSelectionPolicies;
   installationId: string;
   permittedPaths: string[];
+  /** Names authorized for whole-package operations on discrepancy-driven proposals. */
+  skillPackages?: { createSkillNames: string[]; retireSkillNames: string[] };
   maxProposalAdmissions: number;
   development: LearningEvaluationDescriptor;
   audits: LearningEvaluationDescriptor[];
@@ -330,10 +347,14 @@ export interface LearningEnrollment
   authorizedBy: string;
   proposalAdmissions: number;
   renewalRevision: number;
+  policyEpoch?: number;
   stoppedAt: string | null;
   enabled: boolean;
 }
 export interface LearningRound {
+  correctionId?: string;
+  attempt?: number;
+  policyEpoch?: number;
   id: string;
   outcomeId: string;
   state: 'proposing' | 'development' | 'audit' | 'awaiting_review' | 'promoted' | 'rejected';
@@ -353,10 +374,27 @@ export interface LearningRound {
   };
 }
 export interface LearningEnrollmentStatus extends LearningEnrollment {
+  policyHistory?: Array<{
+    policyEpoch: number;
+    development: LearningEvaluationDescriptor;
+    selectionPolicies: LearningSelectionPolicies | null;
+  }>;
   rounds: LearningRound[];
   remainingAudits: number;
   deliveredVersionId: string;
   deliveredRevision: string;
+  restoreTargets?: LearningRestoreTarget[];
+}
+export interface LearningRestoreTarget {
+  kind: 'delivery' | 'source';
+  revision: string;
+  versionId: string;
+}
+export interface LearningRestoreRequest {
+  restoreId: string;
+  expectedRevision: string;
+  target: LearningRestoreTarget;
+  reason: string;
 }
 export interface LearningReviewReceipt {
   roundId: string;
@@ -364,6 +402,9 @@ export interface LearningReviewReceipt {
   promotionId?: string;
 }
 export interface LearningRenewalRequest {
+  /** Rotate only between rounds; each historical decision retains its original epoch. */
+  development?: LearningEvaluationDescriptor;
+  selectionPolicies?: LearningSelectionPolicies;
   renewalId: string;
   expectedRevision: number;
   proposalAdmissions: number;
@@ -382,12 +423,31 @@ export interface LearningOutcomeRequest {
   versionId: string;
   digest: string;
   status: 'completed' | 'failed';
-  /** Together these link a terminal outcome to the exact fresh delivery receipt for its job. */
+  /** Optional evidence for field auditing. New reporters send the delivery revision even without a receipt. */
   startedReceiptId?: string;
   deliveryRevision?: string;
   lesson?: LearningLesson;
   /** Bounded application-grade summaries suitable for sharing with the proposer. */
   feedback?: { expected: string; observed: string };
+}
+export interface LearningCorrectionRequest {
+  correctionId: string;
+  outcomeId: string;
+  lesson?: LearningLesson;
+  feedback?: LearningOutcomeRequest['feedback'];
+}
+export interface LearningRecheck extends LearningCorrectionRequest {
+  versionId: string;
+  digest: string;
+  revision: string;
+}
+export type LearningRecheckVerdict = 'reproduced' | 'resolved' | 'unavailable';
+export interface LearningRecheckRequest {
+  correctionId: string;
+  versionId: string;
+  digest: string;
+  revision: string;
+  verdict: LearningRecheckVerdict;
 }
 export interface LearningOutcomeReceipt {
   outcomeId: string;
@@ -405,6 +465,20 @@ export interface LearningFieldAuditRequest {
   parentDigest: string;
   verdict: 'pass' | 'regression';
 }
+export interface LearningFieldRequalification {
+  versionId: string;
+  digest: string;
+  baselineRevision: string;
+  pendingOutcomeIds: string[];
+  failedOutcomeIds: string[];
+}
+export interface LearningFieldReplay {
+  versionId: string;
+  digest: string;
+  baselineRevision: string;
+  outcomeId: string;
+  verdict: 'pass' | 'regression';
+}
 export interface LearningFieldAuditReceipt {
   outcomeId: string;
   accepted: true;
@@ -419,10 +493,12 @@ export interface LearningWorkItem {
   status: 'requested' | 'running';
 }
 export interface LearningWork {
+  fieldReplays?: Omit<LearningFieldReplay, 'verdict'>[];
   installationId: string;
   bundleId: string;
   active: boolean;
   items: LearningWorkItem[];
+  rechecks?: LearningRecheck[];
 }
 export interface DeliveryReceiptRequest {
   eventId: string;
@@ -465,7 +541,14 @@ export type Operation =
       operationId: string;
       path: string;
       requestFingerprint?: string;
-      result: Draft | BundleSetup | Proposal | Evaluation | Promotion | Comparison | VersionMetadata;
+      result:
+        | Draft
+        | BundleSetup
+        | Proposal
+        | Evaluation
+        | Promotion
+        | Comparison
+        | VersionMetadata;
     }
   | { status: 'not_observed'; operationId: string }
   | { status: 'closed'; operationId: string; path?: string };

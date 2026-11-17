@@ -1,6 +1,6 @@
 use super::{
     Descriptor, absent, app_principal, config, conflict, denied, enrollment_view, invalid,
-    learning_admin, validate,
+    learning_admin, selection::Policies, validate_descriptors,
 };
 use crate::{ApiErr, ApiResult, AppState, db};
 use axum::{
@@ -20,6 +20,10 @@ pub(super) struct Renewal {
     expected_revision: i64,
     proposal_admissions: i32,
     audits: Vec<Descriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    development: Option<Descriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    selection_policies: Option<Policies>,
 }
 
 pub(super) fn valid_fingerprints(descriptor: &Descriptor) -> bool {
@@ -61,14 +65,15 @@ pub(super) async fn renew(
     Json(request): Json<Renewal>,
 ) -> ApiResult<Json<Value>> {
     let actor = learning_admin(&s, &h, &project)?;
+    let rotate = request.development.is_some() || request.selection_policies.is_some();
     if request.renewal_id.is_nil()
         || request.expected_revision < 0
         || !(0..=100).contains(&request.proposal_admissions)
         || request.audits.len() > 32
-        || (request.proposal_admissions == 0 && request.audits.is_empty())
+        || (request.proposal_admissions == 0 && request.audits.is_empty() && !rotate)
     {
         return Err(invalid(
-            "A renewal must add up to 100 proposals or 32 audits",
+            "Renew up to 100 proposals, 32 audits, or rotate the evaluation policy",
         ));
     }
 
@@ -136,15 +141,63 @@ pub(super) async fn renew(
         .ok_or_else(|| conflict("Proposal admission limit reached"))?;
 
     let audits = serde_json::to_value(&request.audits).map_err(db)?;
-    if !request.audits.is_empty() {
-        let mut window = config(&row)?;
-        window.max_proposal_admissions = request.proposal_admissions.max(1);
-        window.audits = request.audits;
-        validate(&window)?;
+    let settings = config(&row)?;
+    let development = request
+        .development
+        .as_ref()
+        .unwrap_or(&settings.development);
+    let policies = request
+        .selection_policies
+        .as_ref()
+        .or(settings.selection_policies.as_ref());
+    let previous_epoch = row.get::<i64, _>("policy_epoch");
+    let epoch = if rotate {
+        if settings.automatic_rollout {
+            crate::auth::authorize_transaction(&mut tx, &actor, &project, "promote").await?;
+        }
+        let active: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2
+             AND state NOT IN ('promoted','rejected'))"
+        ).bind(&project).bind(integration).fetch_one(&mut *tx).await.map_err(db)?;
+        if active {
+            return Err(conflict(
+                "Selection and development may rotate only between rounds",
+            ));
+        }
+        previous_epoch
+            .checked_add(1)
+            .ok_or_else(|| conflict("Policy epoch limit reached"))?
+    } else {
+        previous_epoch
+    };
+    if rotate || !request.audits.is_empty() {
+        validate_descriptors(development, &request.audits, settings.automatic_rollout)?;
+        if let Some(policies) = policies {
+            policies.development.validate(&[development], None)?;
+            let spent = sqlx::query_scalar::<_, i32>(
+                "SELECT audit_index FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 AND audit_index IS NOT NULL"
+            ).bind(&project).bind(integration).fetch_all(&mut *tx).await.map_err(db)?
+            .into_iter().collect::<std::collections::HashSet<_>>();
+            let future_audits = settings
+                .audits
+                .iter()
+                .enumerate()
+                .filter(|(i, d)| {
+                    !spent.contains(&(*i as i32)) && (!settings.automatic_rollout || d.committed())
+                })
+                .map(|(_, d)| d)
+                .chain(&request.audits)
+                .collect::<Vec<_>>();
+            policies.audit.validate(
+                &future_audits,
+                settings.selection_policies.as_ref().map(|p| &p.audit),
+            )?;
+        }
     }
     let updated = sqlx::query(
         "UPDATE connected_learning_enrollments
-         SET max_proposal_admissions=$3,audits=audits || $4,renewal_revision=$5
+         SET max_proposal_admissions=$3,audits=audits || $4,renewal_revision=$5,
+             development=$6,selection_policies=$7,policy_epoch=$8
          WHERE project_id=$1 AND integration_id=$2 RETURNING *",
     )
     .bind(&project)
@@ -152,6 +205,9 @@ pub(super) async fn renew(
     .bind(limit)
     .bind(audits)
     .bind(revision)
+    .bind(serde_json::to_value(development).map_err(db)?)
+    .bind(policies.map(serde_json::to_value).transpose().map_err(db)?)
+    .bind(epoch)
     .fetch_one(&mut *tx)
     .await
     .map_err(registry_error)?;
@@ -203,6 +259,7 @@ pub(super) async fn remaining_audits(
         "SELECT count(*) FROM connected_learning_enrollments e
          CROSS JOIN LATERAL jsonb_array_elements(e.audits) WITH ORDINALITY AS a(descriptor,n)
          WHERE (e.project_id,e.integration_id)=($1,$2)
+           AND (NOT e.automatic_rollout OR descriptor->>'fixtureProtocol'='installed-v1')
            AND NOT EXISTS (
               SELECT 1 FROM connected_learning_rounds r
               WHERE (r.project_id,r.integration_id,r.audit_index)=(e.project_id,e.integration_id,(n-1)::integer)

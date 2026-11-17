@@ -1045,6 +1045,11 @@
     "kind": "source"
   },
   {
+    "source": "docs/research/continuous-harness-review/connected-service.md",
+    "route": "source/research/continuous-harness-review/connected-service.md",
+    "kind": "source"
+  },
+  {
     "source": "docs/research/continuous-harness-review/evaluation.md",
     "route": "source/research/continuous-harness-review/evaluation.md",
     "kind": "source"

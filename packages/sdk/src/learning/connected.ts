@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import { AcclimateClient, ApiError } from '../client.js';
 import { resolveAndCache } from '../cache.js';
 import { readEvaluatorConfig } from '../evaluation/config.js';
@@ -14,14 +15,19 @@ import {
 import type {
   DeliveryReceiptRequest,
   LearningFieldAuditRequest,
+  LearningFieldReplay,
   LearningFieldAuditReceipt,
   LearningOutcomeRequest,
   LearningOutcomeReceipt,
+  LearningRecheck,
+  LearningRecheckVerdict,
   LearningWork,
   LearningWorkItem,
   VerifiedBundle,
 } from '../types.js';
 import { evaluationDescriptorDifferences, validateEvaluationHandoff } from '../validation.js';
+import { replayVerdict, type ReplayExecution } from './connected-replay.js';
+import { connectedFixtureBindings } from './connected-fixtures.js';
 
 interface LearningConnectionScope {
   projectId: string;
@@ -100,7 +106,7 @@ export function createLearningOutcomeReporter(options: LearningOutcomeReporterOp
     bundle: VerifiedBundle,
     outcome: TerminalOutcome,
   ): Promise<LearningOutcomeReceipt> => {
-    freshResolution(bundle, projectId, integrationId);
+    const resolution = freshResolution(bundle, projectId, integrationId);
     if (!uuid.test(outcome.outcomeId) || !['completed', 'failed'].includes(outcome.status))
       throw new TypeError('Learning outcomes require a stable UUID and terminal status');
 
@@ -109,6 +115,7 @@ export function createLearningOutcomeReporter(options: LearningOutcomeReporterOp
       versionId: bundle.version.id,
       digest: bundle.version.digest,
       status: outcome.status,
+      deliveryRevision: resolution.revision,
     };
     if (outcome.startedReceipt)
       Object.assign(body, startedBinding(bundle, projectId, integrationId, outcome.startedReceipt));
@@ -227,7 +234,7 @@ export function createLearningFieldAuditor<Job>(options: LearningFieldAuditorOpt
     if (!binding) return null;
     const bucket =
       createHash('sha256')
-      .update(JSON.stringify([projectId, integrationId, binding.outcomeId.toLowerCase()]))
+        .update(JSON.stringify([projectId, integrationId, binding.outcomeId.toLowerCase()]))
         .digest()
         .readUInt32BE(0) /
       2 ** 32;
@@ -267,6 +274,21 @@ export interface ConnectedLearningDriverOptions {
   configPath: string;
   apps: {
     development: EvaluationApp<any, any, any>;
+    /** Replay private evidence for the original outcome against this exact delivery. */
+    recheckExecution?: ReplayExecution;
+    recheck?(input: {
+      assignment: Readonly<LearningRecheck>;
+      baseline: VerifiedBundle;
+      signal?: AbortSignal;
+    }): Promise<LearningRecheckVerdict>;
+    /** Opaque replay callbacks default to live. Mark deterministic callbacks model-free. */
+    requalifyFieldCaseExecution?: ReplayExecution;
+    /** Grade the original private field job using the supplied candidate. */
+    requalifyFieldCase?(input: {
+      assignment: Readonly<Omit<LearningFieldReplay, 'verdict'>>;
+      candidate: VerifiedBundle;
+      signal?: AbortSignal;
+    }): Promise<LearningFieldReplay['verdict']>;
     audit: readonly EvaluationApp<any, any, any>[];
   };
   allowLive?: boolean;
@@ -298,6 +320,10 @@ export async function serveConnectedLearning(
   const integrationId = options.integrationId.toLowerCase();
   const apps = { development: [options.apps.development], audit: [...options.apps.audit] };
   for (const app of [...apps.development, ...apps.audit]) captureDefinition(app);
+  const installed = {
+    development: connectedFixtureBindings(apps.development),
+    audit: connectedFixtureBindings(apps.audit),
+  };
   const config = await readEvaluatorConfig(configPath);
   const client = new AcclimateClient({
     baseUrl: config.serviceUrl,
@@ -312,7 +338,11 @@ export async function serveConnectedLearning(
       result.installationId !== installationId ||
       !uuid.test(result.bundleId) ||
       typeof result.active !== 'boolean' ||
-      !Array.isArray(result.items)
+      !Array.isArray(result.items) ||
+      (result.rechecks !== undefined &&
+        (!Array.isArray(result.rechecks) || result.rechecks.length > 100)) ||
+      (result.fieldReplays !== undefined &&
+        (!Array.isArray(result.fieldReplays) || result.fieldReplays.length > 50))
     ) {
       throw new EvaluationError('evidence.identity_mismatch');
     }
@@ -337,6 +367,44 @@ export async function serveConnectedLearning(
       if (!until?.aborted) throw error;
     }
   }
+  async function whileAssigned(
+    bundleId: string,
+    contains: (current: LearningWork) => boolean,
+    run: (running: AbortSignal, assigned: () => Promise<boolean>) => Promise<void>,
+  ): Promise<void> {
+    const assignment = new AbortController();
+    const running = signal ? AbortSignal.any([signal, assignment.signal]) : assignment.signal;
+    if (running.aborted) return;
+    // A stop/revoke or withdrawn assignment should cancel an in-flight callback,
+    // while transient network failures leave the durable runner in control.
+    const monitor = (async () => {
+      while (!running.aborted) {
+        await wait(running);
+        if (running.aborted) break;
+        try {
+          const current = await work();
+          if (!current.active || current.bundleId !== bundleId || !contains(current)) {
+            assignment.abort();
+          }
+        } catch (error) {
+          if (!running.aborted) report(error);
+          if (terminalError(error)) assignment.abort();
+        }
+      }
+    })();
+    try {
+      await run(running, async () => {
+        if (running.aborted) return false;
+        const latest = await work();
+        return (
+          !running.aborted && latest.active && latest.bundleId === bundleId && contains(latest)
+        );
+      });
+    } finally {
+      assignment.abort();
+      await monitor;
+    }
+  }
   async function evaluate(bundleId: string, item: LearningWorkItem): Promise<void> {
     if (!uuid.test(item.evaluationRequestId) || !Object.hasOwn(apps, item.phase))
       throw new EvaluationError('evidence.identity_mismatch');
@@ -349,7 +417,7 @@ export async function serveConnectedLearning(
       throw new EvaluationError('evidence.identity_mismatch');
     if (request.status !== 'requested' && request.status !== 'running') return;
 
-    const matches = apps[item.phase].filter(
+    const matches = installed[item.phase](request).filter(
       (app) => evaluationDescriptorDifferences(request, app.descriptor).length === 0,
     );
     if (matches.length !== 1) throw new EvaluationError('descriptor.mismatch');
@@ -367,39 +435,108 @@ export async function serveConnectedLearning(
       },
     });
 
-    const assignment = new AbortController();
-    const running = signal ? AbortSignal.any([signal, assignment.signal]) : assignment.signal;
-    if (running.aborted) return;
-    // A stop/revoke or withdrawn assignment should cancel an in-flight callback,
-    // while transient network failures leave the durable runner in control.
-    const monitor = (async () => {
-      while (!running.aborted) {
-        await wait(running);
-        if (running.aborted) break;
-        try {
-          const current = await work();
-          if (
-            !current.active ||
-            current.bundleId !== bundleId ||
-            !current.items.some((next) => next.evaluationRequestId === request.id)
-          ) {
-            assignment.abort();
-          }
-        } catch (error) {
-          if (!running.aborted) report(error);
-          if (terminalError(error)) assignment.abort();
-        }
-      }
-    })();
-    try {
-      const app = matches[0]!;
-      const live = captureDefinition(app).execution === 'live';
-      if (live && !allowLive) throw new EvaluationError('config.schema');
-      await runEvaluation({ app, configPath, handoff, allowLive: live, signal: running });
-    } finally {
-      assignment.abort();
-      await monitor;
+    await whileAssigned(
+      bundleId,
+      (current) => current.items.some((next) => next.evaluationRequestId === request.id),
+      async (running) => {
+        const app = matches[0]!;
+        const live = captureDefinition(app).execution === 'live';
+        if (live && !allowLive) throw new EvaluationError('config.schema');
+        await runEvaluation({ app, configPath, handoff, allowLive: live, signal: running });
+      },
+    );
+  }
+
+  type FieldReplay = Omit<LearningFieldReplay, 'verdict'>;
+  async function replay(
+    bundleId: string,
+    assignment: LearningRecheck | FieldReplay,
+  ): Promise<void> {
+    const field = 'baselineRevision' in assignment;
+    const revision = field ? assignment.baselineRevision : assignment.revision;
+    if (
+      !uuid.test(assignment.outcomeId) ||
+      !uuid.test(assignment.versionId) ||
+      !digest.test(assignment.digest) ||
+      !/^[1-9][0-9]*$/.test(revision) ||
+      (!field && !uuid.test(assignment.correctionId))
+    )
+      throw new EvaluationError('evidence.identity_mismatch');
+    const { versionId, digest: contentDigest, outcomeId } = assignment;
+    const scope = [client.baseUrl, projectId, integrationId, bundleId, installationId];
+    const identity = [
+      ...scope,
+      ...(!field ? [assignment.correctionId] : []),
+      outcomeId,
+      versionId,
+      contentDigest,
+      revision,
+    ];
+    function contains(current: LearningWork) {
+      const same = (item: FieldReplay | LearningRecheck) =>
+        item.outcomeId === outcomeId &&
+        item.versionId === versionId &&
+        item.digest === contentDigest;
+      return field
+        ? current.fieldReplays?.some((item) => same(item) && item.baselineRevision === revision) ===
+            true
+        : current.rechecks?.some(
+            (item) =>
+              same(item) &&
+              item.correctionId === assignment.correctionId &&
+              item.revision === revision,
+          ) === true;
     }
+    await whileAssigned(bundleId, contains, async (running, assigned) => {
+      const bundle = await resolveAndCache(
+        client,
+        { projectId, bundleId, versionId },
+        {
+          cacheDir: join(config.journalRoot, field ? 'field-replay-cache' : 'recheck-cache'),
+        },
+      );
+      if (
+        bundle.version.id !== versionId ||
+        bundle.version.digest !== contentDigest ||
+        bundle.version.bundleId !== bundleId
+      )
+        throw new EvaluationError('evidence.identity_mismatch');
+      const common = { root: config.journalRoot, identity, allowLive, signal: running, assigned };
+      if (field && options.apps.requalifyFieldCase) {
+        const callback = options.apps.requalifyFieldCase;
+        const verdict = await replayVerdict({
+          ...common,
+          kind: 'learning-field-replays',
+          verdicts: ['pass', 'regression'] as const,
+          execution: options.apps.requalifyFieldCaseExecution,
+          execute: (signal) =>
+            callback({ assignment: Object.freeze({ ...assignment }), candidate: bundle, signal }),
+        });
+        if (verdict !== undefined && (await assigned()))
+          await client.reportLearningFieldReplay(projectId, integrationId, {
+            ...assignment,
+            verdict,
+          });
+      } else if (!field && options.apps.recheck) {
+        const callback = options.apps.recheck;
+        const verdict = await replayVerdict({
+          ...common,
+          kind: 'learning-rechecks',
+          verdicts: ['reproduced', 'resolved', 'unavailable'] as const,
+          execution: options.apps.recheckExecution,
+          execute: (signal) =>
+            callback({ assignment: structuredClone(assignment), baseline: bundle, signal }),
+        });
+        if (verdict !== undefined && (await assigned()))
+          await client.reportLearningRecheck(projectId, integrationId, {
+            correctionId: assignment.correctionId,
+            versionId,
+            digest: contentDigest,
+            revision,
+            verdict,
+          });
+      }
+    });
   }
 
   while (!signal?.aborted) {
@@ -420,6 +557,18 @@ export async function serveConnectedLearning(
         // The durable runner recovers saved reports on the original attempt and
         // refuses to start native work again after uncertain execution.
         await evaluate(assigned.bundleId, item);
+      } catch (error) {
+        if (!signal?.aborted) report(error);
+      }
+    }
+    const replays = [
+      ...(options.apps.requalifyFieldCase ? (assigned.fieldReplays ?? []) : []),
+      ...(options.apps.recheck ? (assigned.rechecks ?? []) : []),
+    ];
+    for (const assignment of replays) {
+      if (signal?.aborted) return;
+      try {
+        await replay(assigned.bundleId, assignment);
       } catch (error) {
         if (!signal?.aborted) report(error);
       }

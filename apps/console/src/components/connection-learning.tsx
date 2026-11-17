@@ -21,6 +21,11 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from './ui/disclosur
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
+import {
+  RestoreDelivery,
+  SelectionPoliciesField,
+  SkillPermissionFields,
+} from './connection-learning-controls';
 
 type Target = Pick<LearningRequest, 'projectId' | 'integrationId'>;
 type Mutation = Exclude<LearningRequest, { action: 'read' }>;
@@ -173,14 +178,27 @@ export function ConnectionLearning({
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            Post-rollout audits track independently graded jobs served by the current rollout.
-            Automatic rollback restores the previous version after three regressions in the latest
-            ten eligible verdicts.
+            Field audits grade served jobs against the connection’s comparison version. Three
+            regressions in the latest ten eligible verdicts can restore that version on the current
+            rollout.
           </p>
           <p className="text-sm">
             {status.proposalAdmissions} of {status.maxProposalAdmissions} proposal admissions used ·{' '}
             {status.remainingAudits} of {status.auditCount} audit cohorts available
           </p>
+          {!status.developmentCommitted && (
+            <p className="text-sm">
+              Automatic rollout requires a committed development descriptor and a fresh committed
+              audit cohort. Update these in the renewal form.
+            </p>
+          )}
+          {status.policySummary && (
+            <p className="text-sm">
+              Development policy · {status.policySummary.development}
+              <br />
+              Audit policy · {status.policySummary.audit}
+            </p>
+          )}
           {active && proposalLimitReached && (
             <p className="text-sm">Proposal admission limit reached.</p>
           )}
@@ -234,7 +252,7 @@ export function ConnectionLearning({
           )}
           {editable && active && (
             <Disclosure>
-              <DisclosureTrigger>Add proposal admissions or audit cohorts</DisclosureTrigger>
+              <DisclosureTrigger>Renew admissions, cohorts or selection policies</DisclosureTrigger>
               <DisclosureContent>
                 <RenewalForm
                   key={status.renewalRevision}
@@ -244,6 +262,61 @@ export function ConnectionLearning({
                 />
               </DisclosureContent>
             </Disclosure>
+          )}
+          {editable && active && (
+            <Disclosure>
+              <DisclosureTrigger>Manage skill package permissions</DisclosureTrigger>
+              <DisclosureContent>
+                <form
+                  className="space-y-3 pt-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const data = new FormData(event.currentTarget);
+                    void mutate({
+                      ...target,
+                      action: 'skills',
+                      permittedPaths: String(data.get('permittedPaths') ?? ''),
+                      createSkillNames: String(data.get('createSkillNames') ?? ''),
+                      retireSkillNames: String(data.get('retireSkillNames') ?? ''),
+                    });
+                  }}
+                >
+                  <Label htmlFor={`${titleId}-skill-paths`}>Permitted bundle paths</Label>
+                  <Textarea
+                    key={status.permittedPaths.join('\n')}
+                    id={`${titleId}-skill-paths`}
+                    name="permittedPaths"
+                    required
+                    rows={3}
+                    maxLength={8192}
+                    disabled={busy}
+                    defaultValue={status.permittedPaths.join('\n')}
+                    aria-describedby={`${titleId}-skill-path-help`}
+                  />
+                  <p id={`${titleId}-skill-path-help`} className="text-sm text-muted-foreground">
+                    Add or remove paths within authorized skill packages, one path per line. Keep
+                    the existing paths outside those packages.
+                  </p>
+                  <SkillPermissionFields
+                    key={JSON.stringify(status.skillPackages)}
+                    busy={busy}
+                    current={status.skillPackages}
+                  />
+                  <Button type="submit" disabled={busy}>
+                    Save skill permissions
+                  </Button>
+                </form>
+              </DisclosureContent>
+            </Disclosure>
+          )}
+          {editable && status.enabled && (
+            <RestoreDelivery
+              key={status.deliveredRevision}
+              busy={busy}
+              revision={status.deliveredRevision}
+              targets={status.restoreTargets}
+              onSubmit={(settings) => mutate({ ...target, action: 'restore', ...settings })}
+            />
           )}
           <div className="space-y-2">
             <h4 className="text-sm font-semibold">Learning rounds</h4>
@@ -363,6 +436,9 @@ function EnrollmentForm({
       permittedPaths: String(form.get('permittedPaths') ?? ''),
       maxProposalAdmissions: String(form.get('maxProposalAdmissions') ?? ''),
       descriptors: String(form.get('descriptors') ?? ''),
+      selectionPolicies: String(form.get('selectionPolicies') ?? ''),
+      createSkillNames: String(form.get('createSkillNames') ?? ''),
+      retireSkillNames: String(form.get('retireSkillNames') ?? ''),
       automaticRollout,
       automaticRollback,
     });
@@ -421,7 +497,8 @@ function EnrollmentForm({
           aria-describedby={`${prefix}-path-help`}
         />
         <p id={`${prefix}-path-help`} className="text-sm text-muted-foreground">
-          Enter one existing bundle path per line.
+          Enter one bundle path per line. A future path may belong to a skill package this learner
+          can create.
         </p>
       </div>
       <div className="space-y-1.5">
@@ -439,10 +516,17 @@ function EnrollmentForm({
         />
         <p id={`${prefix}-descriptor-help`} className="text-sm text-muted-foreground">
           Paste evaluator JSON with a <code>development</code> descriptor and an <code>audits</code>{' '}
-          array. Each descriptor declares <code>datasetRevision</code>, <code>graderRevision</code>,{' '}
-          <code>runtime</code> and <code>expectedCases</code>.
+          array. Generate descriptors with <code>connectedEvaluationDescriptor(app)</code> to bind
+          the installed inputs, expected answers and repetitions.
         </p>
       </div>
+      <Disclosure>
+        <DisclosureTrigger>Configure selection policies and skill packages</DisclosureTrigger>
+        <DisclosureContent className="space-y-3 pt-2">
+          <SelectionPoliciesField busy={busy} />
+          <SkillPermissionFields busy={busy} />
+        </DisclosureContent>
+      </Disclosure>
       <div className="flex items-center gap-2">
         <Checkbox
           id={`${prefix}-rollout`}
@@ -462,7 +546,7 @@ function EnrollmentForm({
           disabled={busy}
         />
         <Label htmlFor={`${prefix}-rollback`}>
-          Automatically restore the previous version after three regressions in the latest ten
+          Automatically restore the comparison version after three regressions in the latest ten
           eligible post-rollout verdicts
         </Label>
       </div>
@@ -475,7 +559,12 @@ function EnrollmentForm({
 
 type RenewalSubmission = Pick<
   Extract<Mutation, { action: 'renew' }>,
-  'renewalId' | 'expectedRevision' | 'proposalAdmissions' | 'descriptors'
+  | 'renewalId'
+  | 'expectedRevision'
+  | 'proposalAdmissions'
+  | 'descriptors'
+  | 'development'
+  | 'selectionPolicies'
 >;
 
 function RenewalForm({
@@ -495,15 +584,21 @@ function RenewalForm({
     const fields = new FormData(form);
     const proposalAdmissions = String(fields.get('proposalAdmissions') ?? '');
     const descriptors = String(fields.get('descriptors') ?? '');
+    const development = String(fields.get('development') ?? '');
+    const selectionPolicies = String(fields.get('selectionPolicies') ?? '');
     if (
       pending.current?.proposalAdmissions !== proposalAdmissions ||
-      pending.current.descriptors !== descriptors
+      pending.current.descriptors !== descriptors ||
+      pending.current.development !== development ||
+      pending.current.selectionPolicies !== selectionPolicies
     ) {
       pending.current = {
         renewalId: crypto.randomUUID(),
         expectedRevision: revision,
         proposalAdmissions,
         descriptors,
+        development,
+        selectionPolicies,
       };
     }
     if (await onSubmit(pending.current)) {
@@ -538,12 +633,31 @@ function RenewalForm({
           className="font-mono text-sm"
         />
         <p id={`${prefix}-audits-help`} className="text-sm text-muted-foreground">
-          Paste a JSON array of fresh audit descriptors from your evaluator. Add new audit cohorts,
-          proposal admissions, or both.
+          Paste a JSON array of fresh descriptors generated by{' '}
+          <code>connectedEvaluationDescriptor(app)</code>.
         </p>
       </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`${prefix}-development`}>
+          Replacement development descriptor (optional)
+        </Label>
+        <Textarea
+          id={`${prefix}-development`}
+          name="development"
+          rows={3}
+          maxLength={1_000_000}
+          disabled={busy}
+          spellCheck={false}
+          className="font-mono text-sm"
+        />
+      </div>
+      <SelectionPoliciesField busy={busy} />
+      <p className="text-sm text-muted-foreground">
+        Install replacement evaluators before saving. Development and policy changes take effect
+        between rounds.
+      </p>
       <Button type="submit" disabled={busy}>
-        Save additions
+        Save renewal
       </Button>
     </form>
   );
@@ -572,6 +686,13 @@ function LearningRound({
       </DisclosureTrigger>
       <DisclosureContent className="space-y-2 pt-1 text-sm">
         {round.reason && <p>{round.reason}</p>}
+        {round.correctionId && (
+          <p className="break-all">
+            Correction <code>{round.correctionId}</code>
+            {round.attempt !== undefined && <> · attempt {round.attempt}</>}
+          </p>
+        )}
+        {round.policyEpoch !== undefined && <p>Policy epoch {round.policyEpoch}</p>}
         <dl className="space-y-1 break-all">
           <div>
             <dt className="inline font-medium">Outcome </dt>
@@ -596,9 +717,6 @@ function LearningRound({
             </p>
             {fieldAudits.rollbackPromotionId && (
               <>
-                <p className="break-all">
-                  Rollback restored version <code>{round.parentVersionId}</code>.
-                </p>
                 <p className="break-all">
                   Rollback promotion <code>{fieldAudits.rollbackPromotionId}</code>
                 </p>

@@ -99,12 +99,47 @@ process loss. Persist the terminal report or its exact request fields with the t
 The lower-level `reportLearningOutcome` method accepts those fields and defaults its retry key to
 the outcome UUID.
 
-Build an application module whose default export is
-`{ development: developmentApp, audit: [auditApp] }`. Each app is produced by
-`defineEvaluation`. Register the corresponding descriptors during enrollment. Keep development
-and held-out cases and revisions disjoint. The service assigns each evaluation to the configured
-evaluator principal and installation, and the driver runs the installed app whose descriptor
-matches the exact request.
+If the application receives a reviewed correction later, keep the terminal outcome immutable and append a correction with its own durable UUID. Use the same outcome principal.
+
+```ts
+await outcomeClient.reportLearningCorrection(projectId, integrationId, {
+  correctionId: review.id,
+  outcomeId: job.outcomeId,
+  feedback: { expected: review.expectedSummary, observed: review.observedSummary },
+});
+```
+
+Define development and held-out audit apps with `defineEvaluation`. Install them in the evaluator process and export the registration descriptors from the same private build. The export contains commitments to the inputs, answers and repetition counts. Send only this public registration to the administrator.
+
+```ts
+import { connectedEvaluationDescriptor, type ConnectedLearningDriverOptions } from '@acclimate/sdk/learning';
+
+export const registration = {
+  development: connectedEvaluationDescriptor(developmentApp),
+  audits: auditApps.map(app => connectedEvaluationDescriptor(app)),
+};
+
+export default {
+  development: developmentApp,
+  audit: auditApps,
+  // Both callbacks in this installation use the app's model-free private grader.
+  recheckExecution: 'model-free',
+  requalifyFieldCaseExecution: 'model-free',
+  async recheck({ assignment, baseline, signal }) {
+    // The private store resolves the original job by its immutable outcome UUID.
+    return replayReviewedCorrection({ assignment, baseline, signal });
+  },
+  async requalifyFieldCase({ assignment, candidate, signal }) {
+    return gradePriorFieldRegression({ assignment, candidate, signal });
+  },
+} satisfies ConnectedLearningDriverOptions['apps'];
+```
+
+Keep development and audit case IDs, dataset revisions and private inputs disjoint. Keep expected answers in the private app definition. The worker checks the registered commitment before executing a bound evaluation.
+
+The application supplies `replayReviewedCorrection`. Read the original private evidence using `assignment.outcomeId` and rerun its check on the provided, verified `baseline` with read-only effects. Return `'reproduced'` when the same discrepancy persists, `'resolved'` when the new revision already fixes it, or `'unavailable'` when the app lacks sufficient evidence.
+
+The driver retains a private intent and result under the evaluator journal. A retry after a lost response resubmits the saved verdict. If a callback started but has no recorded result, reconcile its original effects and send the verified result through `reportLearningRecheck`. Preserve the journal while reconciling. An unavailable check lets other corrections proceed. Start the evaluator with the compiled application module.
 
 ```sh
 acclimate-learning --config /private/evaluator.json --integration "$INTEGRATION_ID" \
@@ -115,7 +150,7 @@ Keep this process running with the same private evaluator config and durable `jo
 by the evaluation runner. It polls for assignments, passes cancellation into active evaluation
 callbacks, and reconciles saved reports after a restart. If execution began without a saved report,
 the journal preserves uncertainty and the driver reports a diagnostic for operator reconciliation.
-Use `--live` only to permit execution by an installed live evaluator. Applications that manage
+Use `--live` or `allowLive: true` to authorize live execution. Declare `apps.recheckExecution` and `apps.requalifyFieldCaseExecution` independently. An omitted replay mode defaults to `'live'`. Specify `'model-free'` only for a callback that runs without a model. Applications that manage
 their own process lifecycle can call `serveConnectedLearning` with an `AbortSignal`.
 
 ### Audit fresh jobs after rollout
@@ -128,15 +163,16 @@ receipt before submitting the terminal outcome. A durable outbox can send the ex
 using its original UUID and the receipt credential.
 
 Pass that receipt as `startedReceipt` to the terminal outcome hook. When the service recognizes an
-eligible job on the current managed release, its accepted outcome includes `fieldAudit` with the
-predecessor's pinned version and digest. A fresh resolution and exact channel revision are
+eligible job on a managed release, its accepted outcome includes `fieldAudit` with the
+assigned control's pinned version and digest. A fresh resolution and exact channel revision are
 required. Receipt-only observations provide no field verdict.
 
 Install the independent evaluator with the separate evaluator principal. The SDK selects eligible
 jobs by a stable hash of workspace, connection, and outcome UUID. The default is 10 percent.
 Configure `samplePercent: 100` for deterministic qualification or an explicitly chosen
 low-volume rollout. The evaluator independently grades the recorded served result and performs
-a read-only predecessor replay on the same private input and objective. Its output should be
+a read-only replay of the assigned control on the same private input and objective. The SDK
+passes this control as `predecessor`. It can precede several successive releases. Its output should be
 `correct`, `incorrect`, or `indeterminate` for each arm. A correct predecessor and incorrect
 served result count as a regression. A correct served result with a known predecessor grade
 counts as a pass. Two incorrect results or an indeterminate comparison contribute neither.
@@ -170,8 +206,8 @@ the app job. If native predecessor execution became uncertain, settle the origin
 the app's own journal before issuing any replacement work. Keep customer input, served output, and
 the replay's evidence private.
 
-The service counts up to ten recent eligible verdicts for the exact current promotion. When
-automatic rollback is enabled, three regressions in that window restore the verified predecessor
-for later jobs. A stale verdict cannot roll back a newer delivery revision. Automatic rollback
-defaults on for new enrollments and for existing enrollments when the migration runs. Workspace
-administrators can opt out in the connection settings.
+Keep sending a completed grade if another release has shipped. The service records the verdict against the served revision and returns its field window. Only the current revision can trigger automatic rollback. Three regressions among its latest ten accepted verdicts can restore the assigned control. Ten passing accepted verdicts while the release is still current can establish it as a field control for later releases.
+
+The optional `requalifyFieldCase` callback above handles a previous field failure when a candidate reproduces withdrawn content. Implement `gradePriorFieldRegression` using the original private input from `assignment.outcomeId` and the supplied candidate. Return `'pass'` if the candidate now satisfies the original objective, otherwise `'regression'`. The worker saves intent before calling the grader, stores its verdict before posting it, and reuses the saved verdict after an interrupted delivery. Preserve the private grader's own evidence. An `execution.uncertain` diagnostic means the prior callback started without a saved verdict. Reconcile that private execution and submit its verified result with `reportLearningFieldReplay`. A failed required replay blocks release.
+
+An app that owns replay scheduling directly can call `evaluatorClient.getLearningFieldRequalification(projectId, integrationId, versionId)` to obtain the pinned version, digest, baseline revision and pending outcome IDs. Use `evaluatorClient.reportLearningFieldReplay(projectId, integrationId, body)` to submit the saved verdict. If the baseline changes, read the outstanding obligations for the new revision. [Wire fields and restore semantics](../contracts/learning.md#service-managed-connected-learning).

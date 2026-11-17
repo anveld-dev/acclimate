@@ -21,7 +21,7 @@ pub struct CompatibilityIssue {
     pub package: Option<String>,
     pub message: String,
 }
-fn name_valid(name: &str) -> bool {
+pub(crate) fn name_valid(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
         && name

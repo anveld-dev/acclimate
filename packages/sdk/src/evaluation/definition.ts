@@ -87,6 +87,25 @@ export function captureDefinition(
   if (!value) throw new EvaluationError('config.schema');
   return value;
 }
+/** Preserve the installed callbacks, fixtures and schedule while binding runtime evidence. */
+export function bindEvaluationRuntime<I, E, O>(
+  app: EvaluationApp<I, E, O>,
+  commitments: Record<string, string>,
+): EvaluationApp<I, E, O> {
+  const captured = captureDefinition(app);
+  if (Object.keys(commitments).some((key) => Object.hasOwn(captured.descriptor.runtime, key)))
+    throw new EvaluationError('config.schema');
+  const descriptor = deepFreeze(
+    validateEvaluationDescriptor({
+      ...captured.descriptor,
+      runtime: { ...captured.descriptor.runtime, ...commitments },
+    }),
+  );
+  assertReportBudget(descriptor);
+  const bound = Object.freeze({ descriptor }) as EvaluationApp<I, E, O>;
+  definitions.set(bound, { ...captured, descriptor });
+  return bound;
+}
 export function defineEvaluation<I, E, O>(
   definition: EvaluationDefinition<I, E, O>,
 ): EvaluationApp<I, E, O> {

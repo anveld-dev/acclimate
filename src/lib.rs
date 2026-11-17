@@ -54,6 +54,15 @@ pub type ProposalFuture<'a> = std::pin::Pin<
 pub trait ProposalModel: Send + Sync {
     fn propose<'a>(&'a self, parent: BundlePayload, request: ProposalRequest)
     -> ProposalFuture<'a>;
+
+    fn propose_scoped<'a>(
+        &'a self,
+        parent: BundlePayload,
+        request: ProposalRequest,
+        _policy: Option<proposal_edits::SkillPackages>,
+    ) -> ProposalFuture<'a> {
+        self.propose(parent, request)
+    }
 }
 
 #[derive(Debug)]
@@ -246,8 +255,20 @@ impl ProposalModel for OpenAiModel {
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<(BundlePayload, String), String>> + Send + 'a>,
     > {
+        self.propose_scoped(parent, request, None)
+    }
+
+    fn propose_scoped<'a>(
+        &'a self,
+        parent: BundlePayload,
+        request: ProposalRequest,
+        policy: Option<proposal_edits::SkillPackages>,
+    ) -> ProposalFuture<'a> {
         Box::pin(async move {
-            let prompt=serde_json::json!({"parent":parent,"request":request,"instruction":crate::proposal_edits::INSTRUCTION}).to_string();
+            let prompt = match policy.as_ref() {
+                Some(policy) => serde_json::json!({"parent": parent, "request": request, "instruction": proposal_edits::SKILL_INSTRUCTION, "skillPackages": policy, "packageDigests": proposal_edits::package_digests(&parent, policy)}),
+                None => serde_json::json!({"parent": parent, "request": request, "instruction": proposal_edits::INSTRUCTION}),
+            }.to_string();
             let resp=self.client.post(&self.endpoint).bearer_auth(&self.token).json(&serde_json::json!({"model":self.model,"messages":[{"role":"user","content":prompt}],"response_format":{"type":"json_object"},"max_completion_tokens":8192})).send().await.map_err(|e|e.to_string())?;
             if !resp.status().is_success() {
                 return Err(format!("provider returned {}", resp.status()));
@@ -273,7 +294,7 @@ impl ProposalModel for OpenAiModel {
             if content.len() > 32768 {
                 return Err("model output too large".into());
             }
-            crate::proposal_edits::reconstruct(&parent, &request, content)
+            crate::proposal_edits::reconstruct_scoped(&parent, &request, policy.as_ref(), content)
         })
     }
 }

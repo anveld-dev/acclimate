@@ -24,7 +24,10 @@ export function EvaluationScorecard({ comparison }: { comparison: Comparison }) 
       <div className="evaluation-score-heading">
         <div>
           <h3>Parent vs. candidate</h3>
-          <p>Observed paired mean · {summary.pairedCount} / {summary.expectedCount} expected pairs{evidence.partial ? ' · partial' : ''}</p>
+          <p>
+            Observed per-pair mean · {summary.pairedCount} / {summary.expectedCount} expected pairs
+            {evidence.partial ? ' · partial' : ''}
+          </p>
         </div>
         <Badge
           variant={evidence.partial ? 'outline' : 'secondary'}
@@ -79,7 +82,9 @@ export function EvaluationScorecard({ comparison }: { comparison: Comparison }) 
         </div>
         <div>
           <dt>Reported cost · expected outcomes</dt>
-          <dd>{evidence.expectedCostUsd === null ? 'Unknown' : `$${reward(evidence.expectedCostUsd)}`}</dd>
+          <dd>
+            {evidence.expectedCostUsd === null ? 'Unknown' : `$${reward(evidence.expectedCostUsd)}`}
+          </dd>
         </div>
       </dl>
       <Disclosure>

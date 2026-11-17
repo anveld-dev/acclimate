@@ -13,17 +13,18 @@ import {
 } from 'lucide-react';
 import { EvaluationScorecard } from './evaluation-scorecard';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
-import { assertInstalledConfiguration } from '../../../../examples/evaluation/adapter';
 import { NativeSelect } from './ui/native-select';
 import {
   evaluationConfiguration,
-  evaluationPresets,
   evaluationHandoff,
   includedEvaluatorSetupCommand,
-  type EvaluationPreset,
+  selectedEvaluationConfiguration,
+  paymentSimulatorIssue,
+  applicationEvaluatorRunCommand,
+  type EvaluationChoice,
 } from '../lib/evaluation-config';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { compatibilityIssues } from '@acclimate/sdk/validation';
+import { compatibilityIssues, evaluationDescriptorDifferences } from '@acclimate/sdk/validation';
 import type {
   BundlePayload,
   VersionMetadata,
@@ -32,6 +33,7 @@ import type {
   Proposal,
 } from '@acclimate/sdk';
 import { Button } from './ui/button';
+import { EvaluationHandoffDownload } from './evaluation-handoff-download';
 import { CopyButton } from './copy-button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
@@ -168,12 +170,10 @@ export function ImprovementWorkspace({
   };
   const [pending, setPending] = useState<PendingOperation | null>(null);
   const related = useRelatedPending(pendingScope, pending);
-  const [evaluationProfile, setEvaluationProfile] = useState<EvaluationPreset | 'custom'>(
-    'payment-retry',
-  );
+  const [evaluationProfile, setEvaluationProfile] = useState<EvaluationChoice>('');
   const [customConfiguration, setCustomConfiguration] = useState('');
   const [savedEvaluationForm, setSavedEvaluationForm] = useState({
-    profile: 'payment-retry' as EvaluationPreset | 'custom',
+    profile: '' as EvaluationChoice,
     customConfiguration: '',
   });
   const evaluationForm = useRef({ profile: evaluationProfile, customConfiguration });
@@ -181,18 +181,14 @@ export function ImprovementWorkspace({
   function acceptEvaluationForm(request: Evaluation) {
     const form = evaluationForm.current;
     try {
-      const configured = evaluationConfiguration(
-        form.profile === 'custom'
-          ? JSON.parse(form.customConfiguration)
-          : evaluationPresets[form.profile],
-      );
+      const configured = selectedEvaluationConfiguration(form.profile, form.customConfiguration);
       const recorded = evaluationConfiguration({
         datasetRevision: request.datasetRevision,
         graderRevision: request.graderRevision,
         runtime: request.runtime,
         expectedCases: request.expectedCases,
       });
-      assertInstalledConfiguration(recorded, configured);
+      if (evaluationDescriptorDifferences(recorded, configured).length) return;
       setSavedEvaluationForm(form);
     } catch {
       // A different or invalid current form remains unsaved after recovery.
@@ -201,11 +197,7 @@ export function ImprovementWorkspace({
   let configurationError = '';
   let evaluationConfig: ReturnType<typeof evaluationConfiguration> | undefined;
   try {
-    evaluationConfig = evaluationConfiguration(
-      evaluationProfile === 'custom'
-        ? JSON.parse(customConfiguration)
-        : evaluationPresets[evaluationProfile],
-    );
+    evaluationConfig = selectedEvaluationConfiguration(evaluationProfile, customConfiguration);
   } catch (error) {
     configurationError =
       error instanceof Error ? error.message : 'Invalid evaluation configuration.';
@@ -411,9 +403,9 @@ export function ImprovementWorkspace({
     setReason('');
     setInterruptionReasons({});
     setReleaseReview(null);
-    setEvaluationProfile('payment-retry');
+    setEvaluationProfile('');
     setCustomConfiguration('');
-    setSavedEvaluationForm({ profile: 'payment-retry', customConfiguration: '' });
+    setSavedEvaluationForm({ profile: '', customConfiguration: '' });
   }, [discardVersion]);
   useEffect(() => {
     let stopped = false,
@@ -825,6 +817,10 @@ export function ImprovementWorkspace({
       </Disclosure>
     </>
   );
+  const exampleIssue =
+    evaluationProfile === 'payment-retry' && detail
+      ? paymentSimulatorIssue(detail.candidate.payload)
+      : undefined;
   const evaluationSetup = detail?.candidate && !isCurrentRelease && (
     <section
       className="review-section evaluation-setup space-y-3 px-4 py-3"
@@ -847,6 +843,28 @@ export function ImprovementWorkspace({
             <p className="evaluation-step-label">
               1. Configure · 2. Run in your app · 3. Review evidence
             </p>
+            <div className="rounded-md border p-3 space-y-2" aria-label="Evaluator prerequisites">
+              <p>
+                Before creating a request, install your app’s evaluator starter and run its{' '}
+                <code>describe</code> command.
+              </p>
+              <p>
+                Evaluation needs a dedicated project read/write machine principal from your service
+                operator. Connections delivery credentials cannot read unpublished candidates or run
+                evaluations; propose and promote access are not needed.
+              </p>
+              <p>
+                Keep its private configuration and durable journal on the evaluator machine. Run{' '}
+                <code>doctor</code> there to check access without executing a task. A valid public
+                configuration does not prove the evaluator or provider is installed.
+              </p>
+              {initial.draft && initial.generation > 0 && (
+                <p>
+                  Evaluating saved generation {initial.generation}. Later edits do not change this
+                  request.
+                </p>
+              )}
+            </div>
             <Label className="block space-y-1">
               Evaluation configuration
               <NativeSelect
@@ -854,10 +872,9 @@ export function ImprovementWorkspace({
                 aria-label="Evaluation configuration"
                 value={evaluationProfile}
                 disabled={busy || !!pending || related.blocked}
-                onChange={(event) =>
-                  setEvaluationProfile(event.target.value as EvaluationPreset | 'custom')
-                }
+                onChange={(event) => setEvaluationProfile(event.target.value as EvaluationChoice)}
               >
+                <option value="">Choose an evaluator…</option>
                 <option value="custom">My app's installed evaluator</option>
                 <optgroup label="Examples from this checkout">
                   <option value="payment-retry">
@@ -881,9 +898,11 @@ export function ImprovementWorkspace({
                   onChange={(event) => setCustomConfiguration(event.target.value)}
                 />
                 <span className="text-muted-foreground">
-                  Paste the configuration your installed app describes: datasetRevision,
-                  graderRevision, runtime (including configId/configRevision), and expectedCases.
-                  Keep credentials and case contents in the app.
+                  Run <code>node acclimate-eval.mjs describe</code> (or{' '}
+                  <code>python3 acclimate_eval.py describe</code>), then paste its public
+                  configuration: datasetRevision, graderRevision, runtime (including
+                  configId/configRevision), and expectedCases. Keep credentials and case contents in
+                  the app.
                 </span>
               </Label>
             )}
@@ -896,7 +915,20 @@ export function ImprovementWorkspace({
                     ? 'The included checkout review and grader use Codex. After separate setup, that adapter requires --live and allows up to four bounded Luna turns. Creating a request makes no model call.'
                     : 'Your app runs its installed adapter and grader. The service freezes these settings and records evidence; it never executes configuration as code.'}
             </p>
-            {configurationError && (
+            {evaluationConfig && (
+              <p className="text-muted-foreground" aria-label="Selected evaluator summary">
+                {evaluationConfig.runtime.configId} · revision{' '}
+                {evaluationConfig.runtime.configRevision} ·{' '}
+                {new Set(evaluationConfig.expectedCases.map((item) => item.caseId)).size} tasks ·{' '}
+                {evaluationConfig.expectedCases.length} repetition pairs
+              </p>
+            )}
+            {exampleIssue && (
+              <p role="alert" className="text-destructive">
+                {exampleIssue}
+              </p>
+            )}
+            {configurationError && evaluationProfile && (
               <p role="alert" className="text-destructive">
                 {configurationError}
               </p>
@@ -908,7 +940,8 @@ export function ImprovementWorkspace({
                 related.blocked ||
                 !state.canEdit ||
                 !currentBase ||
-                !evaluationConfig
+                !evaluationConfig ||
+                !!exampleIssue
               }
               ref={createRequestAction}
               aria-describedby="evaluation-prerequisites"
@@ -1253,12 +1286,7 @@ export function ImprovementWorkspace({
                                 </span>
                                 <span className="evaluation-run-meta">
                                   <span className={`evaluation-run-status is-${request.status}`}>
-                                    {request.status === 'requested'
-                                      ? 'Ready'
-                                      : request.status === 'interrupted'
-                                        ? 'Interrupted'
-                                        : request.status.charAt(0).toUpperCase() +
-                                          request.status.slice(1)}
+                                    {labels.status}
                                   </span>{' '}
                                   · {request.expectedCases.length} pairs
                                 </span>
@@ -1292,7 +1320,7 @@ export function ImprovementWorkspace({
                             {request.error && <p role="alert">{request.error}</p>}
                             <p className="text-muted-foreground">
                               {request.status === 'requested'
-                                ? 'Ready to run in your app'
+                                ? 'Request created · run in your app'
                                 : request.status === 'interrupted'
                                   ? 'Recorded interruption'
                                   : `App reported ${request.status}`}
@@ -1300,11 +1328,37 @@ export function ImprovementWorkspace({
                             {!request.comparisonId && (
                               <div className="flex flex-wrap gap-2">
                                 <CopyButton value={request.id} label="Copy request ID" />
-                                <CopyButton value={handoff} label="Copy configuration" />
+                                <CopyButton value={handoff} label="Copy request JSON" />
+                                <EvaluationHandoffDownload handoff={handoff} />
                               </div>
                             )}
                             {request.status === 'running' && (
-                              <p>Check your app for current execution status.</p>
+                              <p>
+                                App reported execution started. Remote progress is unknown; check
+                                the original worker. Request interruption does not stop an external
+                                job or its charges.
+                              </p>
+                            )}
+                            {!request.comparisonId && request.status === 'requested' && (
+                              <div className="space-y-2">
+                                <p>
+                                  Save the public JSON as <code>evaluation-request.json</code>, then
+                                  run your app-owned entry point. Add <code>--live</code> only when
+                                  its installed definition requires model execution.
+                                </p>
+                                <SyntaxCode
+                                  code={applicationEvaluatorRunCommand(request)}
+                                  language="bash"
+                                />
+                              </div>
+                            )}
+                            {request.comparisonId && (
+                              <p>
+                                Paired evidence recorded. Completion is separate from your quality
+                                policy and release approval. Outputs remain private/local unless
+                                deliberately exported; use your app’s export and verify-export
+                                commands to share reviewed evidence.
+                              </p>
                             )}
                             {!request.comparisonId && request.status !== 'running' && (
                               <p className="text-muted-foreground">
@@ -1321,7 +1375,8 @@ export function ImprovementWorkspace({
                                 {request.comparisonId && (
                                   <div className="mt-3 flex flex-wrap gap-2">
                                     <CopyButton value={request.id} label="Copy request ID" />
-                                    <CopyButton value={handoff} label="Copy configuration" />
+                                    <CopyButton value={handoff} label="Copy request JSON" />
+                                    <EvaluationHandoffDownload handoff={handoff} />
                                   </div>
                                 )}
                                 <p className="mt-2 break-all">Dataset: {request.datasetRevision}</p>

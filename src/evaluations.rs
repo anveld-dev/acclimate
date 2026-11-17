@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
     body::Bytes,
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::Response,
     routing::{get, post},
 };
@@ -72,6 +72,10 @@ fn decode(r: PgRow) -> ApiResult<Evaluation> {
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/v1/projects/{p}/evaluation-capabilities",
+            get(capabilities),
+        )
+        .route(
             "/v1/projects/{p}/bundles/{b}/evaluation-requests",
             get(list).post(create),
         )
@@ -91,6 +95,51 @@ pub(crate) fn routes() -> Router<AppState> {
             "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/interrupt",
             post(interrupt),
         )
+}
+
+/// Point-in-time authority, not evaluator/provider readiness or a lease.
+async fn capabilities(
+    State(s): State<AppState>,
+    Path(p): Path<String>,
+    h: HeaderMap,
+) -> ApiResult<impl axum::response::IntoResponse> {
+    let actor = crate::auth::actor(&h, &s, &p, "read")?;
+    if actor.user_id.is_some() {
+        return Err(err(
+            StatusCode::FORBIDDEN,
+            "machine_principal_required",
+            "Evaluator capabilities require a machine principal",
+        ));
+    }
+    if !crate::commands::guided_project(&p) || actor.principal.len() > 1024 {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "guided_target_unsupported",
+            "Target does not support retained evaluator operations",
+        ));
+    }
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM projects WHERE id=$1)")
+        .bind(&p)
+        .fetch_one(&s.db)
+        .await
+        .map_err(db)?;
+    if !exists {
+        return Err(err(StatusCode::NOT_FOUND, "not_found", "Project not found"));
+    }
+    let write = crate::auth::actor(&h, &s, &p, "write")
+        .is_ok_and(|writer| writer.principal == actor.principal);
+    Ok((
+        [(header::CACHE_CONTROL, "private, no-store")],
+        Json(serde_json::json!({
+            "schemaVersion": 1,
+            "projectId": p,
+            "principalId": actor.principal,
+            "checkedAt": Utc::now(),
+            "readUnpublished": true,
+            "writeEvaluation": write,
+            "retainedEvaluationOperations": true,
+        })),
+    ))
 }
 fn bounded(q: &CreateEvaluationRequest) -> bool {
     let strings = [

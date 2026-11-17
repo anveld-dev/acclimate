@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import ts from 'typescript';
-import { basicDeliveryRecipes } from '../src/components/sdk-setup-recipes';
+import {
+  basicDeliveryRecipes,
+  agentConnectionRecipes,
+  deliveryRecipes,
+} from '../src/components/sdk-setup-recipes';
 
 test('minimal delivery recipes parse and preserve exact selected scope without code interpolation', () => {
   const selection = {
@@ -75,4 +79,29 @@ test('the basic path reports checked files without enabling reporters or claimin
     ])
       assert.match(code, new RegExp(key));
   }
+});
+
+test('all generated JavaScript recipes run with Node syntax and context recipes retain private result handling', () => {
+  const selection = { projectId: 'p', bundleId: 'b', channel: 'stable' };
+  for (const recipe of [
+    basicDeliveryRecipes(selection),
+    deliveryRecipes(selection),
+    agentConnectionRecipes(selection),
+  ]) {
+    const check = spawnSync(process.execPath, ['--input-type=module', '--check'], {
+      input: recipe.typescript,
+      encoding: 'utf8',
+    });
+    assert.equal(check.status, 0, check.stderr);
+    assert.ifError(check.error);
+  }
+  const context = agentConnectionRecipes(selection);
+  assert.match(context.typescript, /instruction, skillFiles, approvedMemory/);
+  assert.match(context.typescript, /const approvedMemory = \[\]/);
+  assert.doesNotMatch(context.typescript, /fixtureResult: result/);
+  const python = spawnSync('python3', ['-c', 'import ast,sys; ast.parse(sys.stdin.read())'], {
+    input: context.python,
+    encoding: 'utf8',
+  });
+  assert.equal(python.status, 0, python.stderr);
 });

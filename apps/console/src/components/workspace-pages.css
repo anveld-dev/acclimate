@@ -1,5 +1,6 @@
 /* A shared page measure; existing shell and detail-page headers keep their own layout. */
-.workspace-main > :is(.bundle-library, .workspace-connections, .workspace-members) {
+.workspace-main
+  > :is(.bundle-library, .workspace-connections, .workspace-delivery, .workspace-members) {
   width: 100%;
   max-width: 1280px;
   margin-inline: 0;

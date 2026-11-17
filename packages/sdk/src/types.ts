@@ -73,6 +73,31 @@ export interface CaseKey {
   caseId: string;
   repetition: number;
 }
+/** Public evaluator intent. Task contents, expected answers and callbacks stay in the app. */
+export interface EvaluationDescriptor {
+  datasetRevision: string;
+  graderRevision: string;
+  runtime: Record<string, string>;
+  expectedCases: CaseKey[];
+}
+export interface EvaluationHandoff {
+  schemaVersion: 1;
+  serviceUrl: string;
+  projectId: string;
+  bundleId: string;
+  requestId: string;
+  configuration: EvaluationDescriptor;
+}
+/** Point-in-time machine authorization, never an execution reservation or provider probe. */
+export interface EvaluationCapabilities {
+  schemaVersion: 1;
+  projectId: string;
+  principalId: string;
+  checkedAt: string;
+  readUnpublished: true;
+  writeEvaluation: boolean;
+  retainedEvaluationOperations: true;
+}
 export interface Usage {
   inputTokens?: number;
   outputTokens?: number;
@@ -268,7 +293,29 @@ export interface DeliveryReceipt extends DeliveryReceiptRequest {
   receivedAt: string;
   delayed: boolean;
 }
+/** Safe project-readable discovery; all latest fields describe one received observation. */
+export interface IntegrationObservation {
+  id: string;
+  displayName: string;
+  bundleId: string;
+  channel: string;
+  enabled: boolean;
+  latestObservation: {
+    eventId: string;
+    stage: DeliveryReceiptRequest['stage'];
+    versionId: string;
+    digest: string;
+    occurredAt: string;
+    receivedAt: string;
+  } | null;
+}
 export type Operation =
-  | { status: 'committed'; operationId: string; path: string; requestFingerprint?: string; result: Draft | BundleSetup | Proposal | Evaluation | Promotion }
+  | {
+      status: 'committed';
+      operationId: string;
+      path: string;
+      requestFingerprint?: string;
+      result: Draft | BundleSetup | Proposal | Evaluation | Promotion | Comparison;
+    }
   | { status: 'not_observed'; operationId: string }
   | { status: 'closed'; operationId: string; path?: string };

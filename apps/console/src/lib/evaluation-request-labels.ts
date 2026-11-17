@@ -7,6 +7,8 @@ export function evaluationRequestLabels(
 ) {
   const identity = `${request.datasetRevision}, request ${request.id}`;
   return {
+    // The service records intent; this state says nothing about app preflight/readiness.
+    status: request.status.charAt(0).toUpperCase() + request.status.slice(1),
     details: `Details for ${identity} · ${request.status}`,
     inspect: `Inspect evidence for ${identity}${selected ? ' · Selected evidence' : ''}`,
   };

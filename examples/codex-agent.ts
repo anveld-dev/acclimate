@@ -4,6 +4,7 @@ import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { AcclimateClient, resolveAndCache } from '../packages/sdk/src/index.js';
 import { prepare } from '../packages/codex-plugin/src/index.js';
+import { withNativeSessionInputs } from './native-session-lifetime.js';
 import {
   optionalReceipts,
   observeOptional,
@@ -43,52 +44,53 @@ const verified = await resolveAndCache(
 const prepared = await prepare(verified);
 observeOptional(() => reporter?.reportPrepared(verified));
 try {
-  const thread = new Codex().startThread({
-    model,
-    workingDirectory: prepared.cwd,
-    skipGitRepoCheck: true,
-    sandboxMode: 'read-only',
-    approvalPolicy: 'never',
-    networkAccessEnabled: false,
-    webSearchMode: 'disabled',
+  await withNativeSessionInputs(prepared, async () => {
+    const thread = new Codex().startThread({
+      model,
+      workingDirectory: prepared.cwd,
+      skipGitRepoCheck: true,
+      sandboxMode: 'read-only',
+      approvalPolicy: 'never',
+      networkAccessEnabled: false,
+      webSearchMode: 'disabled',
+    });
+    const prompt =
+      process.argv
+        .slice(2)
+        .filter((argument) => argument !== '--live')
+        .join(' ') || 'Use the retry-review skill to explain what makes retrying a write safe.';
+    const memory = prepared.memoryFiles
+      .map((f) => `Approved memory file: ${f.absolutePath}`)
+      .join('\n');
+    const turn = await thread.runStreamed(`${prompt}\n${memory}`, {
+      signal: AbortSignal.timeout(110_000),
+    });
+    const observeStart = observeStartOnce(
+      (event) => event.type === 'turn.started',
+      () => reporter?.reportStarted(verified),
+    );
+    let response = '';
+    for await (const event of turn.events) {
+      // startThread and runStreamed construct lazy objects; only this event observes start.
+      observeStart(event);
+      if (event.type === 'item.completed' && event.item.type === 'agent_message')
+        response = event.item.text;
+      if (event.type === 'turn.failed') throw new Error(event.error.message);
+      if (event.type === 'error') throw new Error(event.message);
+    }
+    console.log(
+      JSON.stringify(
+        {
+          model,
+          versionId: verified.version.id,
+          digest: verified.version.digest,
+          response,
+        },
+        null,
+        2,
+      ),
+    );
   });
-  const prompt =
-    process.argv
-      .slice(2)
-      .filter((argument) => argument !== '--live')
-      .join(' ') || 'Use the retry-review skill to explain what makes retrying a write safe.';
-  const memory = prepared.memoryFiles
-    .map((f) => `Approved memory file: ${f.absolutePath}`)
-    .join('\n');
-  const turn = await thread.runStreamed(`${prompt}\n${memory}`, {
-    signal: AbortSignal.timeout(110_000),
-  });
-  const observeStart = observeStartOnce(
-    (event) => event.type === 'turn.started',
-    () => reporter?.reportStarted(verified),
-  );
-  let response = '';
-  for await (const event of turn.events) {
-    // startThread and runStreamed construct lazy objects; only this event observes start.
-    observeStart(event);
-    if (event.type === 'item.completed' && event.item.type === 'agent_message')
-      response = event.item.text;
-    if (event.type === 'turn.failed') throw new Error(event.error.message);
-    if (event.type === 'error') throw new Error(event.message);
-  }
-  console.log(
-    JSON.stringify(
-      {
-        model,
-        versionId: verified.version.id,
-        digest: verified.version.digest,
-        response,
-      },
-      null,
-      2,
-    ),
-  );
 } finally {
-  await prepared.cleanup();
   await settleOptional(reporter);
 }

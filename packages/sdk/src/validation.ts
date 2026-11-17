@@ -2,6 +2,15 @@ import type { BundlePayload } from './types.js';
 export type { CompatibilityTarget } from './types.js';
 export { compatibilityIssues, assertCompatible } from './compatibility.js';
 export type { CompatibilityIssue } from './compatibility.js';
+export {
+  validateEvaluationDescriptor,
+  validateEvaluationHandoff,
+  validateEvaluationServiceUrl,
+  assertGuidedTarget,
+  evaluationDescriptorDifferences,
+  EvaluationConfigurationError,
+} from './evaluation-validation.js';
+export type { GuidedTarget, EvaluationMismatchField } from './evaluation-validation.js';
 
 export class DeliveryError extends Error {
   constructor(

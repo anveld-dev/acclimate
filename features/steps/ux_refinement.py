@@ -181,6 +181,8 @@ def custom_evaluator_navigation(context):
     w.ux_evaluation_draft = saved_draft(w)
     p.get_by_role('link', name='Continue to evaluation', exact=True).click()
     open_details(p, 'Set up evaluation request')
+    expect(p.get_by_label('Evaluation configuration', exact=True)).to_have_value('')
+    expect(p.get_by_role('button', name='Create evaluation request', exact=True)).to_be_disabled()
     p.get_by_label('Evaluation configuration', exact=True).select_option('custom')
     configuration = dict(datasetRevision='ux-fixture-data-v1', graderRevision='ux-fixture-grader-v1',
         runtime=dict(configId='ux-installed-fixture', configRevision='1', app='ux-app', model='none'),

@@ -1,0 +1,30 @@
+# Policy and portable evidence review — 2026-11-17
+
+Scope: all current policy/artifact implementation and associated tests relative to `52c1ce1`, reviewed independently against frozen D2 sections 8–9, G11–G13/G22, and `contracts/dx-evaluation.md`. Owned implementation files were `packages/sdk/src/evaluation/{policy,artifacts}.ts` and `python/acclimate/{evaluation_policy,evaluation_artifacts}.py`. No policy arithmetic change was needed.
+
+## Confirmed findings and repairs
+
+| Severity | Finding and reproduction | Disposition |
+| --- | --- | --- |
+| P2 | Select a valid output and a corrupt later grader explanation. Both exporters invoked the output mapper before detecting the later file's hash mismatch. An export that fails integrity had already released private data to application code. | Repaired both exporters: preflight every selected original's size/hash/envelope/role/value before any mapper invocation. Read and revalidate each role again immediately before mapping. The preflight discards payloads, retaining bounded per-file memory instead of caching up to 4000 private MiB-sized values. Regression asserts zero mapper calls on corruption in the later role. |
+| P2 | Supply TypeScript output directory `alias/../export`, where `alias` is a symlink. Lexical normalization erased the symlink before ancestry inspection, and export succeeded. Python already rejected this path. | Repaired TypeScript: inspect supplied ancestry without collapsing its segments, then normalize and check root overlap. Added the matching TypeScript regression. |
+| P2 | Map enough selected roles to exceed 64 MiB. Both exporters accumulated all mapped bytes before checking the aggregate limit; the 4000-role inventory could retain approximately 4 GiB before rejection. | Enforce the existing aggregate limit immediately after each mapped result. TypeScript regression uses 68 selected roles and 1 MiB outputs: failure occurs after call 65, before later mapper calls or directory creation. Python regression reduces the constant during the test to exercise the same boundary cheaply. Final manifest/projection overhead remains included in the final size check. |
+| P2 | Change a scalar manifest's `localInspection` to `validated`/`unavailable`, or a content-exported manifest's state to `not_requested`/`unavailable`. Both verifiers accepted exporter states inconsistent with role selection/availability. | Repaired both verifiers: unselected-only exports require `not_requested`; selected roles require inspection; unavailable inspection permits only unavailable selected roles; validated inspection cannot contain unavailable selected roles. Tampered-manifest regressions cover both directions. |
+| P2 | Prefix a valid TypeScript artifact index with duplicate `comparisonId`, including an escaped decoded equivalent, followed by the original field. `JSON.parse` retained the final value and allowed mapper invocation. Python already rejected it. | Repaired centrally by the TypeScript recovery reviewer in `private-state.ts`, rejecting root/nested/escaped decoded duplicate keys before private state is consumed. Added artifact integration regressions in both languages; both reject before mapper invocation. |
+
+The first two regressions were run before repair and failed as expected: the corrupt-later-role case observed one mapper call, and the supplied symlink ancestry export succeeded. The TypeScript duplicate-index regression also failed before the central repair because rejection was missing.
+
+## Verification
+
+- `node_modules/.bin/tsx --test packages/sdk/tests/evaluation/policy.test.ts packages/sdk/tests/evaluation/artifacts.test.ts` — 50/50 passed after owned repairs and the central duplicate-key reader repair.
+- `PYTHONPATH=python:python/tests /Users/benjaminarmstrong/.pyenv/versions/3.11.7/bin/python3.11 -m unittest test_evaluation_policy test_evaluation_artifacts` — 27 tests passed, including both ordinary and escaped duplicate-index fields.
+- `node_modules/.bin/tsc --noEmit --pretty false` — passed after owned changes.
+- Additional deterministic source-level parity experiment: seed `20261117`, 500 comparisons, one to three UTF-8 case identities, one to four repetitions, mixed reward magnitudes from `-1e308` through `1e308`, both directions, optional thresholds and known/unknown/overflowing costs. Every complete Python verdict object matched TypeScript, including summary values/check ordering/nonfinite dispositions. This was an ephemeral diagnostic experiment, not an added permanent fixture suite.
+
+Inspected policy binding, unique/set inventory matching, declaration-independent UTF-8 order, exact sum-then-divide recurrence, threshold equality, lower direction, nonfinite intermediates, task failures, required missing costs and informational unknown costs. Existing shared fixtures remain unchanged. Inspected scalar privacy, role payload isolation, report/index/envelope binding, absent versus corrupt local state, required omission, generated filenames, hash/path checks, and independently selected read-only online verification. Existing artifact report comparison already sorts keyed inventory/results and compares every current wire field while ignoring object-key order.
+
+## Limits and unresolved issues
+
+No confirmed unresolved issue remains in owned policy/artifact files. The central duplicate-index integration dependency is repaired and its artifact regression passes.
+
+These checks use deterministic callbacks and local fake service responses. They do not qualify provider execution, a deployed service's authorization, installed release archives, or execution authenticity. Offline review is self-consistency; online review confirms scalar binding only. Private journals assume the documented cooperating local process and private-filesystem model. Preflight plus per-role revalidation does not sandbox a malicious same-user writer that deliberately races after validation or a mapper that deliberately performs external side effects. No model calls, deployment, publication, commits or package/dist builds were performed.

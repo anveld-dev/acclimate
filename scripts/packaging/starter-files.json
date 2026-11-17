@@ -1,0 +1,44 @@
+{
+  "evaluation": [
+    "README.md",
+    "acclimate-eval.mjs",
+    "acclimate_eval.py",
+    "agent.d.mts",
+    "agent.mjs",
+    "agent.py",
+    "async_eval.py",
+    "baseline.json",
+    "candidate.json",
+    "cases.mjs",
+    "package.json",
+    "quality-policy.json",
+    "share-selection.json",
+    "test/test_async_lifetime.py",
+    "trial.mjs",
+    "trial.py",
+    "typescript/acclimate-eval.ts.template",
+    "typescript/agent.ts.template",
+    "typescript/tsconfig.json"
+  ],
+  "ci": [
+    "README.md",
+    "ci.sh"
+  ],
+  "native-repository": [
+    "QUALIFICATION.md",
+    "README.md",
+    "demo.mjs",
+    "fixture/package.json",
+    "fixture/src/retry.js",
+    "fixture/tests/retry.test.mjs",
+    "harnesses.mjs",
+    "repository-job.mjs",
+    "test/crash.test.mjs",
+    "test/fault-worker.mjs",
+    "test/installed.test.mjs",
+    "test/native-helpers.test.mjs",
+    "test/repository.test.mjs",
+    "test/support.mjs",
+    "worker.mjs"
+  ]
+}

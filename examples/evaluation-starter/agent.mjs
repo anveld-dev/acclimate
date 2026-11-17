@@ -1,0 +1,28 @@
+/**
+ * Deterministic application fixture, not a model or native-harness quality test.
+ * Replace this function with your existing agent; keep execution/grading separate.
+ */
+export async function runExistingAgent({ bundle, task, signal }) {
+  signal?.throwIfAborted();
+  const instruction = bundle.payload.files
+    .filter(file => file.kind === 'instruction')
+    .map(file => file.text).join('\n');
+  const reuseKey = instruction.includes('Reuse the same idempotency key');
+  const charged = new Set();
+  const events = [];
+  let charges = 0;
+  let succeeded = false;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    signal?.throwIfAborted();
+    const key = reuseKey ? 'request-1' : `attempt-${attempt}`;
+    if (!charged.has(key)) { charged.add(key); charges++; }
+    events.push({ attempt, event: 'charge-processed' });
+    if (task.scenario === 'lost-response' && attempt === 0) {
+      events.push({ attempt, event: 'response-lost' });
+      continue;
+    }
+    succeeded = true;
+    break;
+  }
+  return { charges, succeeded, events };
+}

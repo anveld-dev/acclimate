@@ -1,0 +1,27 @@
+export { defineEvaluation } from './definition.js';
+export { preflightEvaluation, runEvaluation } from './runner.js';
+export {
+  EvaluationError,
+  ExecutionUncertainError,
+  CallbackCancelled,
+  toSafeDiagnostic,
+} from './errors.js';
+export type {
+  SafeCode,
+  SafeDiagnostic,
+  SafeNextAction,
+  EvaluationPhase,
+  ExecutionState,
+} from './errors.js';
+export type {
+  Json,
+  EvaluationCase,
+  EvaluationDefinition,
+  EvaluationApp,
+  EvaluationGradeResult,
+  ExecutionContext,
+  EvaluationRunResult,
+  PreflightResult,
+  RunEvaluationOptions,
+  PreflightOptions,
+} from './types.js';

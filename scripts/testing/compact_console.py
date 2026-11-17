@@ -350,6 +350,8 @@ def evaluation_acceptance(w, b, failures, output):
             assert help.evaluate('(el) => el.compareDocumentPosition(document.querySelector("button[aria-describedby=evaluation-prerequisites]")) & Node.DOCUMENT_POSITION_FOLLOWING'), 'Prerequisites must precede Create'
             checked_capture(failures,page,output,prefix+'-saved-review-first-request',coarse=coarse)
             profile=page.get_by_label('Evaluation configuration',exact=True)
+            expect(profile).to_have_value('')
+            expect(create).to_be_disabled()
             # Profile changes and disclosure controls may update local form state,
             # but must never submit a request or alter the published release.
             writes=[]
@@ -412,7 +414,7 @@ def evaluation_acceptance(w, b, failures, output):
             expect(page.get_by_label('Saved change review',exact=True)).to_contain_text('A request is ready. Run the evaluator in your app with its request ID and frozen configuration.')
             handoff=page.get_by_label('Evaluation request '+request['id'],exact=True)
             expect(handoff.get_by_role('button',name='Copy request ID',exact=True)).to_be_visible()
-            expect(handoff.get_by_role('button',name='Copy configuration',exact=True)).to_be_visible()
+            expect(handoff.get_by_role('button',name='Copy request JSON',exact=True)).to_be_visible()
             expect(handoff).to_contain_text('Run in your app with the request ID and frozen public configuration.')
             handoff.scroll_into_view_if_needed()
             checked_capture(failures,page,output,prefix+'-evaluation-requested-handoff',coarse=coarse)
@@ -424,7 +426,7 @@ def evaluation_acceptance(w, b, failures, output):
             expect(handoff).to_contain_text('App reported running')
             expect(handoff).to_contain_text('Check your app for current execution status.')
             expect(handoff).not_to_contain_text('Run in your app with the request ID and frozen public configuration.')
-            expect(handoff.get_by_role('button',name='Copy configuration',exact=True)).to_be_visible()
+            expect(handoff.get_by_role('button',name='Copy request JSON',exact=True)).to_be_visible()
             expect(page.get_by_role('button',name='Create another evaluation request',exact=True)).to_have_attribute('aria-expanded','false')
             handoff.scroll_into_view_if_needed()
             checked_capture(failures,page,output,prefix+'-evaluation-running-handoff',coarse=coarse)

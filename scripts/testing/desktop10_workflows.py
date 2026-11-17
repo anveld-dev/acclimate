@@ -211,7 +211,7 @@ def evaluations(w,b,e,f):
     expect(p.locator('#evaluation-request-'+request['id'])).to_be_focused()
     for width in (1440,1024):
         p.set_viewport_size(dict(width=width,height=1000));visit(p,b,route);handoff=p.locator('.evaluation-request').filter(has=p.locator('#evaluation-request-'+request['id']))
-        expect(handoff).to_contain_text('Ready to run in your app');expect(handoff.get_by_role('button',name='Copy request ID',exact=True)).to_be_visible();expect(handoff.get_by_role('button',name='Copy configuration',exact=True)).to_be_visible()
+        expect(handoff).to_contain_text('Request created · run in your app');expect(handoff.get_by_role('button',name='Copy request ID',exact=True)).to_be_visible();expect(handoff.get_by_role('button',name='Copy request JSON',exact=True)).to_be_visible()
         open_details(p,'Request details');expect(handoff).to_contain_text(request['id']);expect(p.get_by_role('button',name='Create another evaluation request',exact=True)).to_have_attribute('aria-expanded','false')
         handoff.scroll_into_view_if_needed();capture(e,p,str(width)+'-evaluation-requested-handoff')
     f['report']=complete_request(w,request)

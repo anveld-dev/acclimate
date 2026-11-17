@@ -23,11 +23,11 @@ def scoped(context):
     browser(context).select_bundle()
 
 
-@then('the workspace navigation contains Bundles and Connections')
+@then('the workspace navigation contains Bundles, Delivery and Connections')
 def workspace_links(context):
     nav=browser(context).page.get_by_role('navigation',name='Main navigation',exact=True).filter(visible=True)
-    assert nav.get_by_role('link').count()==3
-    for name in ('Bundles','Connections','Members'):
+    assert nav.get_by_role('link').count()==4
+    for name in ('Bundles','Delivery','Connections','Members'):
         expect(nav.get_by_role('link',name=name,exact=True)).to_have_count(1)
 
 
@@ -73,7 +73,7 @@ def desktop_icon_navigation(context):
     bounds=rail.bounding_box()
     assert abs(bounds['x'])<=1 and abs(bounds['width']-64)<=1,bounds
     navigation=rail.get_by_role('navigation',name='Main navigation',exact=True)
-    for name in ('Bundles','Connections','Members'):
+    for name in ('Bundles','Delivery','Connections','Members'):
         control=navigation.get_by_role('link',name=name,exact=True)
         label=control.locator('span.sr-only')
         expect(label).to_have_text(name)

@@ -1,7 +1,7 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { Label } from './ui/label';
 import { useRouter, useRouterState } from '@tanstack/react-router';
-import { BookOpen, Building2, Files, Users, Plug, Plus } from 'lucide-react';
+import { BookOpen, Building2, Files, Users, Plug, Plus, Radio } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -43,6 +43,7 @@ function Navigation({
   if (!nav?.projectId) return null;
   const links = [
     { view: 'bundles' as const, label: 'Bundles', icon: Files },
+    { view: 'delivery' as const, label: 'Delivery', icon: Radio },
     ...(nav.role === 'admin'
       ? [
           { view: 'connections' as const, label: 'Connections', icon: Plug },
@@ -219,11 +220,13 @@ export function Shell({ children }: { children: ReactNode }) {
   const detailLabel = bundleView ? bundleDetailLabel(bundleView, search) : undefined;
   const viewLabel = bundleView
     ? bundleViewLabels[bundleView]
-    : view === 'connections'
-      ? 'Connections'
-      : view === 'members'
-        ? 'Members'
-        : 'Bundles';
+    : view === 'delivery'
+      ? 'Delivery'
+      : view === 'connections'
+        ? 'Connections'
+        : view === 'members'
+          ? 'Members'
+          : 'Bundles';
   useEffect(() => {
     document.title = nav?.projectId
       ? [detailLabel, viewLabel, nav.bundleName, nav.projectName, 'Acclimate']

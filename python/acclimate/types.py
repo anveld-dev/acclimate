@@ -145,3 +145,161 @@ class VerifiedBundle(TypedDict):
     resolution: NotRequired[ChannelResolution]
     resolvedAt: float
     stale: bool
+
+
+class EvaluationDescriptor(TypedDict):
+    datasetRevision: str
+    graderRevision: str
+    runtime: dict[str, str]
+    expectedCases: list[CaseKey]
+
+
+class EvaluationHandoff(TypedDict):
+    schemaVersion: Literal[1]
+    serviceUrl: str
+    projectId: str
+    bundleId: str
+    requestId: str
+    configuration: EvaluationDescriptor
+
+
+class EvaluationRequest(EvaluationDescriptor):
+    parentVersionId: str
+    parentDigest: str
+    candidateVersionId: str
+    candidateDigest: str
+    proposalId: NotRequired[str | None]
+    requireBoundEvidence: NotRequired[bool]
+
+
+class Evaluation(EvaluationRequest):
+    id: str
+    status: Literal["requested", "running", "completed", "failed", "interrupted"]
+    evaluatorPrincipal: str | None
+    attemptId: str | None
+    comparisonId: str | None
+    error: str | None
+    createdAt: str
+    updatedAt: str
+
+
+class EvaluationPage(TypedDict):
+    items: list[Evaluation]
+    nextCursor: str | None
+
+
+class StartEvaluationRequest(TypedDict):
+    attemptId: str
+
+
+class FinishEvaluationRequest(StartEvaluationRequest):
+    comparisonId: str
+
+
+class InterruptEvaluationRequest(TypedDict):
+    reason: str
+
+
+class EvaluationCapabilities(TypedDict):
+    schemaVersion: Literal[1]
+    projectId: str
+    principalId: str
+    checkedAt: str
+    readUnpublished: Literal[True]
+    writeEvaluation: bool
+    retainedEvaluationOperations: Literal[True]
+
+
+class IntegrationLatestObservation(TypedDict):
+    eventId: str
+    stage: str
+    versionId: str
+    digest: str
+    occurredAt: str
+    receivedAt: str
+
+
+class IntegrationObservation(TypedDict):
+    id: str
+    displayName: str
+    bundleId: str
+    channel: str
+    enabled: bool
+    latestObservation: IntegrationLatestObservation | None
+
+
+class IntegrationObservationPage(TypedDict):
+    items: list[IntegrationObservation]
+    nextCursor: str | None
+
+
+class Draft(TypedDict):
+    id: str
+    channel: str
+    baseVersionId: str
+    baseRevision: str
+    snapshotVersion: VersionMetadata
+    generation: int
+    status: Literal["open", "discarded", "published"]
+    createdAt: str
+    updatedAt: str
+    promotionId: str | None
+
+
+class CreateDraftRequest(TypedDict):
+    baseVersionId: str
+    baseRevision: str
+    payload: BundlePayload
+
+
+class SaveDraftRequest(TypedDict):
+    expectedGeneration: int
+    payload: BundlePayload
+
+
+class DiscardDraftRequest(TypedDict):
+    expectedGeneration: int
+
+
+class PublishDraftRequest(TypedDict):
+    expectedGeneration: int
+    expectedRevision: str
+    comparisonId: NotRequired[str]
+    unevaluatedReason: NotRequired[str]
+
+
+class DraftSnapshot(TypedDict):
+    generation: int
+    version: VersionMetadata
+
+
+class DraftPage(TypedDict):
+    items: list[Draft]
+    nextCursor: str | None
+
+
+class DraftSnapshotPage(TypedDict):
+    items: list[DraftSnapshot]
+    nextCursor: str | None
+
+
+class OperationCommitted(TypedDict):
+    status: Literal["committed"]
+    operationId: str
+    path: str
+    requestFingerprint: NotRequired[str]
+    result: Draft | Evaluation | Comparison | Promotion | Proposal | dict
+
+
+class OperationNotObserved(TypedDict):
+    status: Literal["not_observed"]
+    operationId: str
+
+
+class OperationClosed(TypedDict):
+    status: Literal["closed"]
+    operationId: str
+    path: NotRequired[str]
+
+
+Operation = OperationCommitted | OperationNotObserved | OperationClosed

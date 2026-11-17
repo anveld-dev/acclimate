@@ -1,5 +1,9 @@
 import { consoleClient } from './console-client';
-import { evaluationConfiguration } from '../lib/evaluation-config';
+import {
+  evaluationConfiguration,
+  isPaymentSimulatorConfiguration,
+  paymentSimulatorIssue,
+} from '../lib/evaluation-config';
 import type {
   Comparison,
   Evaluation,
@@ -10,7 +14,6 @@ import type {
   BundlePayload,
 } from '@acclimate/sdk';
 import { exactOperation, lookupOperation, closeOperation } from './exact-operation';
-import { localEvaluationDescriptor } from '../../../../examples/evaluation/descriptor';
 import { readChannel } from './channel';
 import { readVersion } from './version-workflows';
 
@@ -133,6 +136,12 @@ export async function improvement(
             : 'promotion',
       };
     }
+    if (input.action === 'evaluate' && input.configuration === undefined)
+      return {
+        ok: false,
+        message:
+          'Choose an evaluator and provide its public configuration before creating a request.',
+      };
     const state = await readChannel(env, fetcher);
     if (state.status !== 'ready')
       return { ok: false as const, message: 'Select a configured channel first.' };
@@ -223,13 +232,18 @@ export async function improvement(
         input.expectedRevision !== state.resolution.revision
       )
         throw new Error('stale');
-      if (input.action === 'evaluate')
+      if (input.action === 'evaluate') {
+        const configuration = evaluationConfiguration(input.configuration);
+        const prerequisite = isPaymentSimulatorConfiguration(configuration)
+          ? paymentSimulatorIssue(candidate.payload)
+          : undefined;
+        if (prerequisite) return { ok: false, message: prerequisite };
         return {
           ok: true as const,
           command: {
             operationPath: `/v1/projects/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/evaluation-requests`,
             body: JSON.stringify({
-              ...evaluationConfiguration(input.configuration ?? localEvaluationDescriptor),
+              ...configuration,
               requireBoundEvidence: true,
               parentVersionId: state.resolution.version.id,
               parentDigest: state.resolution.version.digest,
@@ -241,6 +255,7 @@ export async function improvement(
             }),
           },
         };
+      }
       const evidence = typeof input.comparisonId === 'string' && input.comparisonId.trim();
       if (!evidence && (typeof input.reason !== 'string' || !input.reason.trim()))
         throw new Error('reason');

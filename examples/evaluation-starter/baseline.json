@@ -1,0 +1,1 @@
+{"schemaVersion":1,"files":[{"path":"instructions.md","kind":"instruction","text":"For this payment fixture, use a fresh idempotency key on every retry."}]}

@@ -2,6 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { evaluationRequestLabels } from '../src/lib/evaluation-request-labels';
 
+test('a requested handoff reports intent without claiming evaluator readiness', () => {
+  const labels = evaluationRequestLabels(
+    { id: 'request', datasetRevision: 'saved-app', status: 'requested' },
+    false,
+  );
+  assert.equal(labels.status, 'Requested');
+  assert.doesNotMatch(Object.values(labels).join(' '), /ready/i);
+});
+
 test('same datasets and colliding display prefixes retain distinct full actionable identities', () => {
   const requests = [
     '12345678-1111-4111-8111-111111111111',

@@ -114,6 +114,8 @@ def strict_helper_release(context):
     p = w.browser_fixture.page
     p.get_by_role('link', name='Continue to evaluation', exact=True).click()
     open_details(p, 'Set up evaluation request')
+    expect(p.get_by_role('button', name='Create evaluation request', exact=True)).to_be_disabled()
+    p.get_by_label('Evaluation configuration', exact=True).select_option('payment-retry')
     p.get_by_role('button', name='Create evaluation request', exact=True).click()
     expect(p.get_by_role('status').filter(has_text='Evaluation request created. Run it in your app, then return here for the results.')).to_be_visible()
     w.browser_request = w.call('GET', w.bundle+'/evaluation-requests')['items'][0]

@@ -4,7 +4,7 @@ use acclimate_service::{
     validate_grants,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-use std::{env, net::SocketAddr, process::ExitCode, sync::Arc, time::Duration};
+use std::{env, io::Read, net::SocketAddr, process::ExitCode, sync::Arc, time::Duration};
 
 const QUEUE_LOCK: i64 = 729183421001;
 #[derive(Debug)]
@@ -17,9 +17,26 @@ impl std::fmt::Display for QueueOwnershipLost {
 impl std::error::Error for QueueOwnershipLost {}
 type RunResult = Result<(), Box<dyn std::error::Error>>;
 
-#[tokio::main]
-async fn main() -> ExitCode {
-    match run().await {
+fn main() -> ExitCode {
+    let args: Vec<_> = env::args_os().skip(1).collect();
+    if args.len() == 1 && args[0] == "--check-grants" {
+        return check_grants(std::io::stdin().lock());
+    }
+    if !args.is_empty() {
+        eprintln!(r#"{{"schemaVersion":1,"valid":false,"code":"command.invalid"}}"#);
+        return ExitCode::FAILURE;
+    }
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(_) => {
+            eprintln!("Error: runtime initialization failed");
+            return ExitCode::FAILURE;
+        }
+    };
+    match runtime.block_on(run()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             // EX_TEMPFAIL identifies lost singleton ownership to the supervisor.
@@ -32,6 +49,46 @@ async fn main() -> ExitCode {
             ExitCode::from(code)
         }
     }
+}
+
+/// Check only the explicitly supplied static grants. This executes before even
+/// constructing a Tokio runtime or reading service/provider environment config.
+fn check_grants(input: impl Read) -> ExitCode {
+    const MAX_INPUT: u64 = 1024 * 1024;
+    let mut bytes = Vec::new();
+    let valid = input.take(MAX_INPUT + 1).read_to_end(&mut bytes).is_ok()
+        && bytes.len() <= MAX_INPUT as usize
+        && validate_grant_input(&bytes);
+    if valid {
+        println!(r#"{{"schemaVersion":1,"valid":true}}"#);
+        ExitCode::SUCCESS
+    } else {
+        // Do not render serde/I/O errors: they can carry operator input.
+        eprintln!(r#"{{"schemaVersion":1,"valid":false,"code":"grants.invalid"}}"#);
+        ExitCode::FAILURE
+    }
+}
+
+fn validate_grant_input(bytes: &[u8]) -> bool {
+    // Deserialize the real schema first, preserving serde's duplicate-field and
+    // value-type checks, then reject fields the historical Grant reader ignores.
+    let Ok(grants) = serde_json::from_slice::<Vec<Grant>>(bytes) else {
+        return false;
+    };
+    let Ok(objects) =
+        serde_json::from_slice::<Vec<serde_json::Map<String, serde_json::Value>>>(bytes)
+    else {
+        return false;
+    };
+    objects.iter().all(|object| {
+        object.len() == 4
+            && object.keys().all(|key| {
+                matches!(
+                    key.as_str(),
+                    "token" | "principalId" | "projectId" | "rights"
+                )
+            })
+    }) && validate_grants(&grants).is_ok()
 }
 fn required(name: &str) -> Result<String, std::io::Error> {
     env::var(name)

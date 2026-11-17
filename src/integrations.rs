@@ -17,6 +17,10 @@ use uuid::Uuid;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/v1/projects/{project}/integration-observations",
+            get(observations),
+        )
+        .route(
             "/v1/projects/{project}/integrations",
             get(list).post(create),
         )
@@ -118,6 +122,59 @@ async fn create(
 struct Page {
     cursor: Option<Uuid>,
     limit: Option<i64>,
+}
+/// Safe discovery for project readers; credential administration stays separate.
+async fn observations(
+    State(s): State<AppState>,
+    Path(p): Path<String>,
+    h: HeaderMap,
+    Query(q): Query<Page>,
+) -> ApiResult<Json<Value>> {
+    let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
+    let limit = q.limit.unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return Err(invalid());
+    }
+    // The existing recent index supports each bounded lateral lookup. All latest
+    // fields come from ONE server-receive-ordered receipt, including tied events.
+    let rows = sqlx::query(
+        "SELECT i.id,i.display_name,i.bundle_id,i.channel,i.enabled,r.body AS observation_body,r.received_at AS observation_received_at \
+         FROM integrations i LEFT JOIN LATERAL ( \
+           SELECT body,received_at FROM integration_receipts \
+           WHERE project_id=i.project_id AND integration_id=i.id \
+             AND received_at>=now()-interval '30 days' \
+           ORDER BY received_at DESC,event_id DESC LIMIT 1 \
+         ) r ON true \
+         WHERE i.project_id=$1 AND ($2::uuid IS NULL OR i.id<$2) \
+         ORDER BY i.id DESC LIMIT $3",
+    )
+    .bind(&p)
+    .bind(q.cursor)
+    .bind(limit + 1)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(db)?;
+    let next = (rows.len() > limit as usize).then(|| rows[limit as usize - 1].get::<Uuid, _>("id"));
+    let items: Vec<_> = rows
+        .iter()
+        .take(limit as usize)
+        .map(|row| {
+            let body: Option<Value> = row.get("observation_body");
+            let received: Option<DateTime<Utc>> = row.get("observation_received_at");
+            let latest = body.zip(received).map(|(body, received)| {
+                json!({"eventId":body["eventId"],"stage":body["stage"],
+                    "versionId":body["versionId"],"digest":body["digest"],
+                    "occurredAt":body["occurredAt"],"receivedAt":received})
+            });
+            json!({"id":row.get::<Uuid,_>("id"),
+                "displayName":row.get::<String,_>("display_name"),
+                "bundleId":row.get::<Uuid,_>("bundle_id"),
+                "channel":row.get::<String,_>("channel"),
+                "enabled":row.get::<bool,_>("enabled"),"latestObservation":latest})
+        })
+        .collect();
+    tx.commit().await.map_err(db)?;
+    Ok(Json(json!({"items":items,"nextCursor":next})))
 }
 async fn list(
     State(s): State<AppState>,

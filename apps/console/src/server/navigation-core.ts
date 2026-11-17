@@ -57,7 +57,10 @@ export async function landingState(
     return {
       href: workspaceHref(project.id, project.role === 'admin' ? 'members' : 'bundles'),
     };
-  if (legacy === 'integrations') return { href: workspaceHref(project.id, 'connections') };
+  if (legacy === 'integrations')
+    return {
+      href: workspaceHref(project.id, project.role === 'admin' ? 'connections' : 'delivery'),
+    };
   if (['content', 'releases', 'improvement'].includes(legacy || '') && env.CONSOLE_BUNDLE) {
     const scope = {
       projectId: project.id,

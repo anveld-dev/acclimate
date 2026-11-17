@@ -41,6 +41,13 @@ function SideDetails({ name, outcome }: { name: string; outcome: Outcome | undef
             <dt>Output reference</dt>
             <dd>{outcome.outputRef || 'None'}</dd>
           </div>
+          <div>
+            <dt>Review artifacts</dt>
+            <dd>
+              Private/local unless deliberately exported. Use your installed app’s export command
+              and selected review mapper; references are never fetched automatically.
+            </dd>
+          </div>
         </dl>
       ) : (
         <p>Missing outcome · grade missing · cost unknown</p>

@@ -1,6 +1,6 @@
 # Continuous learning architecture
 
-Status: the selected first profile is implemented in this checkout, 2026-11-17. See the [implementation status and validation](implementation.md) for supported behavior and remaining work. This architecture follows the [second concept review](../../research/continuous-harness-review/second-pass/README.md); alternative profiles and future capabilities remain design proposals.
+This architecture describes the application-owned learner. See the [implementation status and validation](implementation.md) for supported behavior and the [connected learning operator guide](../../../deploy/README.md#operate-connected-learning) for the service-managed workflow. The [second concept review](../../research/continuous-harness-review/second-pass/README.md) records the earlier design alternatives.
 
 ## Decision
 
@@ -13,14 +13,14 @@ The Rust service remains authoritative for immutable content, its own proposal/e
 ### Selected first profile
 
 - One campaign owner on one retained canonical local volume; one active external operation and one unresolved candidate.
-- Fixed installed executable harness/tool policy; bounded refinement of existing content files.
+- Fixed installed executable harness and tool policy. Candidate proposals refine existing files by default. The installed adapter can opt into bounded structural skill changes.
 - Each candidate is a direct child of the published baseline captured at round start. Rejected candidates never become the next baseline.
-- Separate development and audit inventories, with durable exposure accounting and a fresh audit epoch before another audited release attempt.
+- Separate development and audit inventories. Each protected audit consumes a fresh cohort, with an explicit epoch migration when the roster needs replacement.
 - Human release through the existing console/operator path. The learner's default service credential has no `promote` right.
 - Operation/round bounds are supported. A hard dollar bound is accepted only for an adapter with an enforceable maximum liability; unknown cost remains unknown and reserved.
 - Local status and explicit review export first. Shared console campaign status requires a later authenticated projection.
 
-Broader mutations, automated release, multi-candidate search and shared coordination are optional profiles, not implied defaults. The record contracts allow them to be designed without changing delivery semantics.
+The installed controller supports bounded sequential development retry, optional structural mutations and a shared local audit ledger. Automated release, concurrent candidate search and shared campaign coordination remain broader profiles.
 
 ## Alternatives considered
 
@@ -107,7 +107,7 @@ Retain these facts separately:
 2. **Admission decision:** which sanitized teaching view is authorized for which scope and purpose, with policy, applicability, provenance and exclusion reasons. An observation can be retained while excluded from learning.
 3. **Harness treatment:** content plus runner/config/native mapping/tool/context-policy identities. Parent and candidate can have different treatment manifests when a later profile permits that variation.
 4. **Experiment:** invariant task/grader/collection protocol, expected pairs, parent/candidate treatment commitments, actual trial identities and retained results.
-5. **Search decision:** accept/reject/indeterminate under a frozen selection policy, preserving rejected attempts.
+5. **Search decision:** accept/reject/indeterminate under a frozen selection policy, preserving rejected attempts. The Acclimate adapter provides the development and audit policies. The controller stores their canonical bytes as private artifacts at creation, binds their digests into the campaign definition, and records the applicable digest in each selection verdict. Reopen requires the same policies and verifies that both artifacts remain readable. Custom adapters that omit policies manage selection policy themselves. A checkpoint created before policy binding cannot acquire a binding on reopen because it has no record of the original policy.
 6. **Audit/release decision:** audit epoch/exposure, exact audited target and published baseline, reviewer/policy authority, expected channel revision and observed promotion result.
 
 Store private manifests as immutable, digest-checked artifacts. Encode approved public commitments in namespaced keys in the existing runtime map; a wire migration is unnecessary for one installed learner. A digest establishes identity of retained bytes, not truthful execution, universal relevance or an immutable hosted model.

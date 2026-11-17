@@ -147,3 +147,49 @@ test('closing optional reporting stops claiming queued events after an in-flight
   await reporter.flush();
   assert.equal(calls, 1);
 });
+
+test('started receipts return exact event identity and refuse observation from a sibling connection', async () => {
+  const integrationId = 'a7100000-0000-0000-0000-000000000001';
+  const sibling = 'a7100000-0000-0000-0000-000000000002';
+  const events: DeliveryReceiptRequest[] = [];
+  const client = new AcclimateClient({
+    baseUrl: 'https://service.test',
+    token: 'receipt',
+    scope: 'p',
+    fetch: async (_url, init) => {
+      events.push(JSON.parse(String(init?.body)));
+      return Response.json({});
+    },
+  });
+  const reporter = createReceiptReporter({ client, projectId: 'p', integrationId });
+  const bundle = {
+    version,
+    payload: { schemaVersion: 1 as const, files: [] },
+    resolvedAt: Date.now(),
+    stale: false,
+    resolution: { channel: 'main', revision: '3', version },
+    connection: { projectId: 'p', integrationId },
+  };
+  const otherBundle = { ...bundle, connection: { projectId: 'p', integrationId: sibling } };
+  const observation = {
+    selection: { projectId: 'p', bundleId: 'b', channel: 'main' },
+    bundle,
+    source: 'cache' as const,
+    downloaded: false,
+  };
+  assert.throws(() => reporter.observeDelivery({ ...observation, bundle: otherBundle }), /scope/);
+  assert.throws(() => reporter.reportStartedReceipt(otherBundle), /has not been observed/);
+  reporter.observeDelivery(observation);
+  const started = reporter.reportStartedReceipt(bundle);
+  assert.ok(started);
+  assert.equal(started.integrationId, integrationId);
+  assert.equal(started.revision, '3');
+  assert.equal(started.stage, 'started');
+  assert(Object.isFrozen(started));
+  await reporter.flush();
+  assert.deepEqual(
+    events.find((event) => event.stage === 'started'),
+    started,
+  );
+  assert(events.every((event) => event.integrationId === integrationId));
+});

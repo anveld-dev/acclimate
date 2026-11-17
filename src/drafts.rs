@@ -141,6 +141,9 @@ async fn create(
     h: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Response> {
+    if crate::connected_learning::internal_channel(&c) {
+        return Err(err(StatusCode::NOT_FOUND, "not_found", "Channel not found"));
+    }
     let a = crate::auth::actor(&h, &s, &p, "write")?;
     let req: Create = decode(&body)?;
     let route = format!("/v1/projects/{p}/bundles/{b}/channels/{c}/drafts");
@@ -207,6 +210,9 @@ async fn change(
     body: Bytes,
     kind: &str,
 ) -> ApiResult<Response> {
+    if crate::connected_learning::internal_channel(&c) {
+        return Err(err(StatusCode::NOT_FOUND, "not_found", "Channel not found"));
+    }
     let a = crate::auth::actor(
         &h,
         &s,
@@ -450,6 +456,7 @@ async fn setup(
         || req.name.len() > 240
         || !matches!(req.origin.as_str(), "created" | "example" | "imported")
         || !crate::channels::valid_channel(&req.channel)
+        || crate::connected_learning::internal_channel(&req.channel)
     {
         return Err(invalid());
     }

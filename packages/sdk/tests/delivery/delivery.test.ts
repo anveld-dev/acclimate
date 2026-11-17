@@ -271,3 +271,47 @@ test('redirect responses are errors and cannot silently forward credentials', as
     await target.close();
   }
 });
+
+test('connection-qualified delivery isolates conditional and offline entries for a shared reader', async () => {
+  const enrolled = 'a7100000-0000-0000-0000-000000000001';
+  const sibling = 'a7100000-0000-0000-0000-000000000002';
+  const candidate = { ...version, id: 'candidate' };
+  const seen: Array<{ path: string; connection?: string; etag?: string }> = [];
+  let offline = false;
+  const service = await fixture((req, res) => {
+    const connection = req.headers['x-acclimate-integration-id'] as string | undefined;
+    seen.push({ path: req.url, connection, etag: req.headers['if-none-match'] });
+    if (offline) return send(res, 503, {});
+    if (req.url.endsWith('/channels/stable')) {
+      return send(res, 200, { ...resolution, version: connection === enrolled ? candidate : version }, {
+        etag: connection === enrolled ? '"connection:1"' : '"1"',
+      });
+    }
+    if (req.url.endsWith('/payload')) {
+      res.writeHead(200);
+      return res.end(payloadBytes);
+    }
+    return send(res, 404, {});
+  });
+  const dir = await mkdtemp(join(await realpath(tmpdir()), 'acclimate-connection-cache-'));
+  try {
+    const make = (integrationId?: string) => new AcclimateClient({
+      baseUrl: service.baseUrl, token: 'shared-reader', scope: 'project-reader', integrationId,
+    });
+    const policy = { cacheDir: dir, offline: { maxAgeMs: 60_000 } };
+    const selection = { projectId: 'p', bundleId: 'b1', channel: 'stable' };
+    const resolved = await resolveAndCache(make(enrolled), selection, policy);
+    assert.equal(resolved.version.id, 'candidate');
+    assert.deepEqual(resolved.connection, { projectId: 'p', integrationId: enrolled });
+    assert.equal((await resolveAndCache(make(sibling), selection, policy)).version.id, 'v1');
+    assert.deepEqual(seen.map(call => call.connection), [enrolled, enrolled, sibling, sibling]);
+    assert.equal(seen[2]?.etag, undefined);
+    offline = true;
+    assert.equal((await resolveAndCache(make(enrolled), selection, policy)).version.id, 'candidate');
+    assert.equal((await resolveAndCache(make(sibling), selection, policy)).version.id, 'v1');
+    await assert.rejects(resolveAndCache(make(), selection, policy), ApiError);
+  } finally {
+    await service.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

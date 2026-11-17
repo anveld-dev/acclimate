@@ -25,26 +25,37 @@ const client = () =>
     scope: required('ACCLIMATE_SCOPE'),
   });
 if (args[0] === 'run' || args[0] === 'run-service') {
+  const serviceAuthored = args[0] === 'run-service';
   if (!args.includes('--live'))
-    throw new Error('Pass --live to authorize up to five paid Luna turns');
-  const modelName = process.env.ACCLIMATE_MODEL ?? 'gpt-6-luna';
-  if (!['gpt-6-luna', 'gpt-5.6-luna'].includes(modelName))
-    throw new Error('Only gpt-6-luna or gpt-5.6-luna is allowed');
+    throw new Error(
+      serviceAuthored
+        ? 'Pass --live to authorize a service proposal and up to four paid Luna reviews'
+        : 'Pass --live to authorize one paid Sol draft and up to four paid Luna reviews',
+    );
+  const authorModel = 'gpt-6.2-sol';
+  const reviewModel = process.env.ACCLIMATE_CODEX_MODEL ?? 'gpt-6-luna';
+  if (!['gpt-6-luna', 'gpt-5.6-luna'].includes(reviewModel))
+    throw new Error('ACCLIMATE_CODEX_MODEL must be gpt-6-luna or gpt-5.6-luna');
   const sdk = JSON.parse(
     await readFile(
       fileURLToPath(new URL('../package.json', import.meta.resolve('@openai/codex-sdk'))),
       'utf8',
     ),
   ) as { version: string };
-  const maxTurns = args[0] === 'run-service' ? 4 : 5;
+  const maxTurns = serviceAuthored ? 4 : 5;
   const codex = new Codex();
   let turns = 0;
-  const run = async (bundle: VerifiedBundle, prompt: string, outputSchema?: unknown) => {
+  const run = async (
+    model: string,
+    bundle: VerifiedBundle,
+    prompt: string,
+    outputSchema: unknown,
+  ) => {
     if (++turns > maxTurns) throw new Error('Paid turn limit exceeded');
     const prepared = await prepare(bundle);
     try {
       const thread = codex.startThread({
-        model: modelName,
+        model,
         workingDirectory: prepared.cwd,
         skipGitRepoCheck: true,
         sandboxMode: 'read-only',
@@ -54,7 +65,7 @@ if (args[0] === 'run' || args[0] === 'run-service') {
       });
       return await thread.run(
         `${prompt}\n\nRead and apply the prepared skill file(s): ${prepared.skillPaths.join(', ')}.`,
-        { signal: AbortSignal.timeout(110_000), ...(outputSchema ? { outputSchema } : {}) },
+        { signal: AbortSignal.timeout(110_000), outputSchema },
       );
     } finally {
       await prepared.cleanup();
@@ -64,6 +75,7 @@ if (args[0] === 'run' || args[0] === 'run-service') {
     draft: async (parent, skillPath) => {
       const skill = parent.payload.files.find((f) => f.path === skillPath)!;
       const result = await run(
+        authorModel,
         parent,
         `Revise this skill to help a reviewer identify unsafe retries of side-effecting operations. Return the entire replacement skill text, including its original YAML name and a description, in skillText. Make one bounded edit.\n\n${skill.text}`,
         {
@@ -86,6 +98,7 @@ if (args[0] === 'run' || args[0] === 'run-service') {
     },
     review: async (bundle, snapshot) => {
       const result = await run(
+        reviewModel,
         bundle,
         `Use the prepared review skill to review this saved code snapshot. Return only JSON with exactly one boolean field unsafeRetry indicating whether retries can repeat a side effect without an idempotency key.\n\n${snapshot.diff}`,
         {
@@ -103,20 +116,19 @@ if (args[0] === 'run' || args[0] === 'run-service') {
       };
     },
   };
-  const executeWorkflow = args[0] === 'run-service' ? improveService : improve;
-  const result = await executeWorkflow(
-    client(),
-    {
-      project: required('ACCLIMATE_PROJECT', 'ACCLIMATE_PROJECT_ID'),
-      bundle: required('ACCLIMATE_BUNDLE', 'ACCLIMATE_BUNDLE_ID'),
-      channel: required('ACCLIMATE_CHANNEL'),
-      skillPath: required('ACCLIMATE_SKILL_PATH'),
-      outputDir: process.env.ACCLIMATE_OUTPUT_DIR ?? `improvement-${randomUUID()}`,
-      model: modelName,
-      sdkVersion: sdk.version,
-    },
-    model,
-  );
+  const acclimate = client();
+  const config = {
+    project: required('ACCLIMATE_PROJECT', 'ACCLIMATE_PROJECT_ID'),
+    bundle: required('ACCLIMATE_BUNDLE', 'ACCLIMATE_BUNDLE_ID'),
+    channel: required('ACCLIMATE_CHANNEL'),
+    skillPath: required('ACCLIMATE_SKILL_PATH'),
+    outputDir: process.env.ACCLIMATE_OUTPUT_DIR ?? `improvement-${randomUUID()}`,
+    model: reviewModel,
+    sdkVersion: sdk.version,
+  };
+  const result = serviceAuthored
+    ? await improveService(acclimate, config, model)
+    : await improve(acclimate, { ...config, authorModel }, model);
   console.log(JSON.stringify(result, null, 2));
 } else if (args[0] === 'promote') {
   const summaryFile = flag('--summary');

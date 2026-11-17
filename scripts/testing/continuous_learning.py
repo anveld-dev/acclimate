@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Model-free recurring learner qualification against an owned PostgreSQL/Rust service.
+"""Run recurring learner qualification against a disposable PostgreSQL/Rust service.
 
-Generates private disposable credentials and never reads ambient application configuration.
-No model calls, payment processor requests, or existing workspace mutations are made.
+The default run is model-free. --live enables bounded Codex turns using the
+configured Codex login. Both modes use synthetic payment incidents and private
+disposable service credentials.
 """
 import argparse
 import json
@@ -32,6 +33,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--pg-bin')
     parser.add_argument('--skip-build', action='store_true')
+    parser.add_argument('--live', action='store_true', help='Explicitly enable bounded authenticated Codex model turns')
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, mode=0o700, exist_ok=False)
@@ -48,7 +50,7 @@ def main():
         config.write_text(json.dumps(dict(
             schemaVersion=1, serviceUrl=harness.base, projectId=harness.project,
             learnerToken=harness.tokens['evaluator'], reviewerToken=harness.tokens['operator'],
-            output=str(output),
+            output=str(output), live=args.live,
         )))
         config.chmod(0o600)
         env = {k: v for k, v in os.environ.items()
@@ -57,16 +59,17 @@ def main():
         env['ACCLIMATE_TEST_PYTHON'] = sys.executable
         with (output / 'run.log').open('w') as log:
             process = subprocess.Popen(
-                ['node', '--import', 'tsx', 'examples/continuous-learning/run.ts',
+                ['node', '--import', 'tsx',
+                 'examples/continuous-learning/live.ts' if args.live else 'examples/continuous-learning/run.ts',
                  '--config', str(config)], cwd=ROOT, env=env,
                 stdout=log, stderr=log, start_new_session=True,
             )
-            status = process.wait(timeout=180)
+            status = process.wait(timeout=5400 if args.live else 600)
         if status:
             raise RuntimeError('Recurring learner qualification failed; inspect private run.log')
         summary = json.loads((output / 'summary.json').read_text())
         if summary.get('status') != 'passed':
-            raise RuntimeError('Recurring learner did not retain a passing summary')
+            raise RuntimeError(f'Recurring learner did not pass. Evidence: {output}')
         print('Recurring learner qualification passed. Evidence: ' + str(output))
     finally:
         if process and process.poll() is None:

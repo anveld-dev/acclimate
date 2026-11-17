@@ -167,6 +167,8 @@ Reservation is exclusive for the epoch. Crossing the durable dispatch barrier co
 
 The frozen learner definition supplies a finite ordered roster of eligible audit cohorts/installed definitions. Reservation advances its durable allocation cursor; an exhausted roster produces `audit-refresh-required`. Refresh is an explicit definition/epoch migration preserving exposure, unsettled work and lifetime spend, never an ordinary resume. V1 consumes one release-candidate audit per cohort epoch. Detailed audit answers do not become proposal feedback in that epoch. A failed or indeterminate audit closes release for that epoch; additional search requires a fresh cohort/epoch under the retained audit-use policy. Revealing old audit results for development retires them from protected use. Policy retains both the exposure decision and the fact of any view/export used for feedback. Restrict artifact access to the owning app/authorized reviewer; metadata cannot by itself prevent an owner from inspecting private answers.
 
+Campaigns with the same project and bundle can share a private audit lineage directory. A registered cohort claims its dataset digest, canonical task input digests and owner-assigned semantic task family fingerprints. Claims serialize across campaigns and are idempotent for the original operation. If the controller fails after claiming and before committing dispatch, the original prepared intent can reuse its own claim. Other operations cannot reuse the exposure. If campaigns prepare overlapping cohorts concurrently, the losing operation releases its pre-dispatch budget reservation and selects again.
+
 ## Crash and recovery matrix
 
 | Crash or race | Durable evidence | Required next action | Forbidden inference |

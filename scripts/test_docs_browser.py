@@ -18,7 +18,8 @@ def main():
     parser.add_argument('--channel', default='chrome')
     parser.add_argument('--screenshots', type=Path)
     args = parser.parse_args()
-    pages = json.loads((SITE / 'site-manifest.json').read_text())
+    pages = [item for item in json.loads((SITE / 'site-manifest.json').read_text())
+             if item.get('kind') != 'source']
     errors = []
     network = []
     layouts = 0

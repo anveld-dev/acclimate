@@ -24,10 +24,20 @@ async fn provider_requires_bounded_complete_patch_response() {
     let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     // This integration-test executable owns its environment and has one test; no other threads read it.
     unsafe {
-        std::env::set_var("ACCLIMATE_MODEL_ENDPOINT", format!("http://{address}/"));
         std::env::set_var("ACCLIMATE_MODEL_TOKEN", "disposable-http-fixture");
-        std::env::set_var("ACCLIMATE_MODEL", "gpt-6-luna");
+        std::env::remove_var("ACCLIMATE_MODEL_ENDPOINT");
     }
+    assert!(OpenAiModel::from_env().unwrap().is_none());
+    unsafe {
+        std::env::set_var("ACCLIMATE_MODEL_ENDPOINT", format!("http://{address}/"));
+        std::env::set_var("ACCLIMATE_MODEL", "gpt-unapproved");
+    }
+    assert!(OpenAiModel::from_env().is_err());
+    for legacy_model in ["gpt-6-luna", "gpt-5.6-luna"] {
+        unsafe { std::env::set_var("ACCLIMATE_MODEL", legacy_model) };
+        assert!(OpenAiModel::from_env().unwrap().is_some());
+    }
+    unsafe { std::env::set_var("ACCLIMATE_MODEL", "gpt-6.2-sol") };
     let model = OpenAiModel::from_env().unwrap().unwrap();
     let parent:BundlePayload=serde_json::from_value(json!({"schemaVersion":1,"files":[{"path":"guide.md","kind":"instruction","text":"before\n"},{"path":"large.md","kind":"memory","text":"保留".repeat(10000)}]})).unwrap();
     let request = ProposalRequest {
@@ -55,12 +65,10 @@ async fn provider_requires_bounded_complete_patch_response() {
         .unwrap();
     assert_eq!(candidate.files[0].text, "after\n");
     assert_eq!(candidate.files[1].text, parent.files[1].text);
-    let prompt: Value = serde_json::from_str(
-        observed.lock().unwrap()["messages"][0]["content"]
-            .as_str()
-            .unwrap(),
-    )
-    .unwrap();
+    let body = observed.lock().unwrap().clone();
+    assert_eq!(body["model"], "gpt-6.2-sol");
+    let prompt: Value =
+        serde_json::from_str(body["messages"][0]["content"].as_str().unwrap()).unwrap();
     assert!(prompt["instruction"].as_str().unwrap().contains("oldText"));
     for content in [
         json!({"payload":parent,"rationale":"full echo"}).to_string(),

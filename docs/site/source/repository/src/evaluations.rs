@@ -54,7 +54,7 @@ fn conflict() -> crate::ApiErr {
         "Evaluation state, evaluator or attempt does not match",
     )
 }
-fn decode(r: PgRow) -> ApiResult<Evaluation> {
+pub(crate) fn decode(r: PgRow) -> ApiResult<Evaluation> {
     Ok(Evaluation {
         id: r.get::<Uuid, _>("id").to_string(),
         request: serde_json::from_value(r.get("body")).map_err(db)?,
@@ -177,15 +177,26 @@ async fn create(
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),
     };
-    if !bounded(&q) {
+    let bid = path(&b)?;
+    let evaluation = enqueue_evaluation(&mut cmd.tx, &p, bid, &a.principal, &q).await?;
+    crate::commands::finish_mutation(cmd, StatusCode::CREATED, evaluation).await
+}
+
+pub(crate) async fn enqueue_evaluation(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    project: &str,
+    bid: Uuid,
+    principal: &str,
+    q: &CreateEvaluationRequest,
+) -> ApiResult<Evaluation> {
+    if !bounded(q) {
         return Err(invalid(
             "Evaluation request exceeds limits or has duplicate cases",
         ));
     }
-    let bid = path(&b)?;
     let parent = path(&q.parent_version_id)?;
     let candidate = path(&q.candidate_version_id)?;
-    let rows=sqlx::query("SELECT id,digest,parent_version_id FROM versions WHERE project_id=$1 AND bundle_id=$2 AND id=ANY($3)").bind(&p).bind(bid).bind(vec![parent,candidate]).fetch_all(&mut *cmd.tx).await.map_err(db)?;
+    let rows=sqlx::query("SELECT id,digest,parent_version_id FROM versions WHERE project_id=$1 AND bundle_id=$2 AND id=ANY($3)").bind(project).bind(bid).bind(vec![parent,candidate]).fetch_all(&mut **tx).await.map_err(db)?;
     if !rows.iter().any(|r| {
         r.get::<Uuid, _>("id") == parent && r.get::<String, _>("digest") == q.parent_digest
     }) || !rows.iter().any(|r| {
@@ -198,13 +209,13 @@ async fn create(
         ));
     }
     if let Some(proposal) = &q.proposal_id {
-        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM proposals WHERE project_id=$1 AND bundle_id=$2 AND id=$3 AND parent_version_id=$4 AND candidate_version_id=$5 AND status='succeeded')").bind(&p).bind(bid).bind(path(proposal)?).bind(parent).bind(candidate).fetch_one(&mut *cmd.tx).await.map_err(db)?;
+        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM proposals WHERE project_id=$1 AND bundle_id=$2 AND id=$3 AND parent_version_id=$4 AND candidate_version_id=$5 AND status='succeeded')").bind(project).bind(bid).bind(path(proposal)?).bind(parent).bind(candidate).fetch_one(&mut **tx).await.map_err(db)?;
         if !valid {
             return Err(invalid("Proposal does not match candidate"));
         }
     }
-    let row=sqlx::query("INSERT INTO evaluation_requests(id,project_id,bundle_id,body,requested_by,status) VALUES($1,$2,$3,$4,$5,'requested') RETURNING *").bind(Uuid::new_v4()).bind(p).bind(bid).bind(serde_json::to_value(q).map_err(db)?).bind(a.principal).fetch_one(&mut *cmd.tx).await.map_err(db)?;
-    crate::commands::finish_mutation(cmd, StatusCode::CREATED, decode(row)?).await
+    let row=sqlx::query("INSERT INTO evaluation_requests(id,project_id,bundle_id,body,requested_by,status) VALUES($1,$2,$3,$4,$5,'requested') RETURNING *").bind(Uuid::new_v4()).bind(project).bind(bid).bind(serde_json::to_value(q).map_err(db)?).bind(principal).fetch_one(&mut **tx).await.map_err(db)?;
+    decode(row)
 }
 async fn detail(
     State(s): State<AppState>,
@@ -212,12 +223,17 @@ async fn detail(
     h: HeaderMap,
 ) -> ApiResult<Json<Evaluation>> {
     let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
-    let row = sqlx::query(
-        "SELECT * FROM evaluation_requests WHERE project_id=$1 AND bundle_id=$2 AND id=$3",
-    )
+    let (principal, reviewer) =
+        crate::connected_learning::audit_reader(&s, &h, &mut tx, &p).await?;
+    let visible = crate::connected_learning::audit_visible("r.audit_request_id=e.id", 4, 5);
+    let row = sqlx::query(&format!(
+        "SELECT e.* FROM evaluation_requests e WHERE e.project_id=$1 AND e.bundle_id=$2 AND e.id=$3 AND {visible}",
+    ))
     .bind(p)
     .bind(path(&b)?)
     .bind(path(&id)?)
+    .bind(principal)
+    .bind(reviewer)
     .fetch_optional(&mut *tx)
     .await
     .map_err(db)?
@@ -242,7 +258,24 @@ async fn list(
     let c =
         crate::pagination::resolve(&mut tx, "evaluation_requests", &p, bid, q.cursor.as_deref())
             .await?;
-    let rows=sqlx::query("SELECT * FROM evaluation_requests WHERE project_id=$1 AND bundle_id=$2 AND ($3::timestamptz IS NULL OR (created_at,id)<($3,$4)) ORDER BY created_at DESC,id DESC LIMIT $5").bind(&p).bind(bid).bind(c.map(|x|x.0)).bind(c.map(|x|x.1)).bind(n+1).fetch_all(&mut *tx).await.map_err(db)?;
+    let (principal, reviewer) =
+        crate::connected_learning::audit_reader(&s, &h, &mut tx, &p).await?;
+    let visible = crate::connected_learning::audit_visible("r.audit_request_id=e.id", 6, 7);
+    let rows = sqlx::query(&format!(
+        "SELECT e.* FROM evaluation_requests e WHERE e.project_id=$1 AND e.bundle_id=$2
+         AND ($3::timestamptz IS NULL OR (e.created_at,e.id)<($3,$4)) AND {visible}
+         ORDER BY e.created_at DESC,e.id DESC LIMIT $5",
+    ))
+    .bind(&p)
+    .bind(bid)
+    .bind(c.map(|x| x.0))
+    .bind(c.map(|x| x.1))
+    .bind(n + 1)
+    .bind(principal)
+    .bind(reviewer)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(db)?;
     let items = rows
         .into_iter()
         .map(decode)
@@ -306,6 +339,15 @@ async fn transition(
     };
     let bid = path(&b)?;
     let eid = path(&id)?;
+    crate::connected_learning::authorize_evaluator(
+        &mut cmd.tx,
+        &p,
+        bid,
+        eid,
+        &a.principal,
+        action == "start",
+    )
+    .await?;
     let row=sqlx::query("SELECT * FROM evaluation_requests WHERE project_id=$1 AND bundle_id=$2 AND id=$3 FOR UPDATE").bind(&p).bind(bid).bind(eid).fetch_optional(&mut *cmd.tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Evaluation request not found"))?;
     let mut e = decode(row)?;
     match action {

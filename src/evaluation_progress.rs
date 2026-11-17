@@ -103,9 +103,15 @@ async fn read(
     h: HeaderMap,
 ) -> ApiResult<Json<serde_json::Value>> {
     let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
+    let (principal, reviewer) =
+        crate::connected_learning::audit_reader(&s, &h, &mut tx, &p).await?;
+    let visible = crate::connected_learning::audit_visible("r.audit_request_id=e.id", 4, 5);
     // Same lock order as reporting/lifecycle transitions gives a coherent snapshot.
-    let row = sqlx::query("SELECT * FROM evaluation_requests WHERE project_id=$1 AND bundle_id=$2 AND id=$3 FOR SHARE")
-        .bind(&p).bind(path(&b)?).bind(path(&id)?).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(missing)?;
+    let row = sqlx::query(&format!(
+        "SELECT e.* FROM evaluation_requests e WHERE e.project_id=$1 AND e.bundle_id=$2 AND e.id=$3 AND {visible} FOR SHARE OF e",
+    ))
+    .bind(&p).bind(path(&b)?).bind(path(&id)?).bind(principal).bind(reviewer)
+    .fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(missing)?;
     Ok(Json(view(&mut tx, &row).await?))
 }
 async fn report(

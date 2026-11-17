@@ -18,13 +18,15 @@ Reviews keep missing retry bugs. An authorized developer sends a few selected ex
 
 The service's proposer drafts a changed `skills/retry-review/SKILL.md` against `v7`. It saves candidate `v8` with the diff and rationale. The app's evaluation helper runs `v7` and `v8` on the same saved PRs using its native SDK and grading code. It uploads the comparison. A reviewer promotes `v8` if the evidence is good enough.
 
+For recurring improvement, enroll one connection to admit proposals from the app's terminal outcomes. The service assigns development and independent audit evaluations to the app. A passing audit makes the candidate eligible for human review or explicitly authorized automatic rollout to that connection. After rollout, the connection can use independently graded samples of served jobs to restore its previous version. [Operate connected learning](../../deploy/README.md#operate-connected-learning).
+
 This changes files, not model weights. It does not grant the agent new tools or permissions.
 
 ## Who owns what?
 
 | Part | Owns |
 | --- | --- |
-| Acclimate service | Bundle versions, scoped access, proposals, comparison records, and an approved channel pointer. |
+| Acclimate service | Bundle versions, scoped access, proposals, comparison records, release pointers, and scheduling for enrolled connections. |
 | Acclimate SDK | Resolve/download, verified local caching, safe materialization, and optional evaluation helpers. |
 | Harness plugin | Map one bundle to a native SDK's supported configuration or file locations. |
 | Your application + native SDK | Agent loop, sessions, model/tool access, credentials, execution, recovery, and runtime safety. |

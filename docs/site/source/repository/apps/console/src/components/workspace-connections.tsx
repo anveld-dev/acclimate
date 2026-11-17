@@ -9,6 +9,7 @@ import { Label } from './ui/label';
 import { NativeSelect } from './ui/native-select';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
 import { ConnectionReports } from './connection-reports';
+import { ConnectionLearning } from './connection-learning';
 import {
   Dialog,
   DialogContent,
@@ -765,6 +766,16 @@ function ConnectionWorkspace({
                 }}
               />
             </div>
+            <ConnectionLearning
+              key={`${selected.id}:${selected.enabled}`}
+              target={{ projectId: state.projectId, integrationId: selected.id }}
+              bundleId={selected.bundleId}
+              channel={selected.channel}
+              currentVersionId={state.selected!.currentVersionId}
+              currentRevision={state.selected!.currentRevision}
+              canManage={state.canManage}
+              enabled={selected.enabled}
+            />
           </div>
         )}
       </div>

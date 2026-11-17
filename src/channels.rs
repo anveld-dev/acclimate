@@ -24,7 +24,11 @@ pub(crate) async fn resolve(
     Path((p, b, c)): Path<(String, String, String)>,
     h: HeaderMap,
 ) -> ApiResult<Response> {
-    let mut tx = crate::integrations::content_transaction(&s, &h, &p, &b, Some(&c), None).await?;
+    let (mut tx, effective) =
+        crate::integrations::content_scope(&s, &h, &p, &b, Some(&c), None).await?;
+    if crate::connected_learning::internal_channel(&c) {
+        return Err(err(StatusCode::NOT_FOUND, "not_found", "Channel not found"));
+    }
     if !valid_channel(&c) {
         return Err(err(
             StatusCode::BAD_REQUEST,
@@ -32,9 +36,12 @@ pub(crate) async fn resolve(
             "Invalid channel",
         ));
     }
-    let r=sqlx::query("SELECT c.revision,v.id,v.bundle_id,v.parent_version_id,v.digest,v.created_at FROM channels c JOIN versions v ON v.id=c.version_id AND v.project_id=c.project_id AND v.bundle_id=c.bundle_id WHERE c.project_id=$1 AND c.bundle_id=$2 AND c.name=$3").bind(&p).bind(path(&b)?).bind(&c).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Channel not found"))?;
+    let r=sqlx::query("SELECT c.revision,v.id,v.bundle_id,v.parent_version_id,v.digest,v.created_at FROM channels c JOIN versions v ON v.id=c.version_id AND v.project_id=c.project_id AND v.bundle_id=c.bundle_id WHERE c.project_id=$1 AND c.bundle_id=$2 AND c.name=$3").bind(&p).bind(path(&b)?).bind(effective.as_deref().unwrap_or(&c)).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Channel not found"))?;
     let rev: i64 = r.get("revision");
-    let etag = format!("\"{rev}\"");
+    let etag = match effective {
+        Some(channel) => format!("\"{channel}:{rev}\""),
+        None => format!("\"{rev}\""),
+    };
     if h.get(header::IF_NONE_MATCH).and_then(|x| x.to_str().ok()) == Some(etag.as_str()) {
         return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response());
     }
@@ -139,6 +146,9 @@ pub(crate) async fn promote(
     body: Bytes,
 ) -> ApiResult<Response> {
     let a = crate::auth::actor(&h, &s, &p, "promote")?;
+    if crate::connected_learning::internal_channel(&c) {
+        return Err(err(StatusCode::NOT_FOUND, "not_found", "Channel not found"));
+    }
     let req: PromoteRequest = serde_json::from_slice(&body).map_err(|_| {
         err(
             StatusCode::BAD_REQUEST,

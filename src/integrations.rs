@@ -89,6 +89,7 @@ async fn create(
     if b.display_name.trim().is_empty()
         || b.display_name.len() > 120
         || !crate::channels::valid_channel(&b.channel)
+        || crate::connected_learning::internal_channel(&b.channel)
     {
         return Err(invalid());
     }
@@ -303,36 +304,112 @@ pub(crate) async fn content_transaction<'a>(
     channel: Option<&str>,
     version: Option<Uuid>,
 ) -> ApiResult<sqlx::Transaction<'a, sqlx::Postgres>> {
+    Ok(content_scope(s, h, p, b, channel, version).await?.0)
+}
+
+pub(crate) async fn content_scope<'a>(
+    s: &'a AppState,
+    h: &HeaderMap,
+    p: &str,
+    b: &str,
+    channel: Option<&str>,
+    version: Option<Uuid>,
+) -> ApiResult<(sqlx::Transaction<'a, sqlx::Postgres>, Option<String>)> {
+    let connection = h
+        .get(crate::connected_learning::CONNECTION_HEADER)
+        .map(|value| {
+            value
+                .to_str()
+                .ok()
+                .and_then(|value| Uuid::parse_str(value).ok())
+                .ok_or_else(invalid)
+        })
+        .transpose()?;
     let token = h
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("");
-    if (s.grants.iter().any(|g| g.token == token) || s.access.console_token() == token)
-        || !token.starts_with("aci_")
-    {
-        return crate::auth::read_transaction(s, h, p).await;
+    let integration_token = token.starts_with("aci_")
+        && !s.grants.iter().any(|g| g.token == token)
+        && s.access.console_token() != token;
+    if !integration_token && connection.is_none() {
+        return Ok((crate::auth::read_transaction(s, h, p).await?, None));
     }
-    let mut tx = s.db.begin().await.map_err(db)?;
-    let r=sqlx::query("SELECT i.*,c.kind FROM integration_credentials c JOIN integrations i ON i.id=c.integration_id AND i.project_id=c.project_id WHERE c.secret_hash=$1 AND c.revoked_at IS NULL AND i.enabled FOR SHARE OF c,i").bind(crate::digest(token.as_bytes())).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(denied)?;
-    if r.get::<String, _>("project_id") != p
-        || r.get::<Uuid, _>("bundle_id") != path(b)?
-        || r.get::<String, _>("kind") != "content-read"
-    {
-        return Err(denied());
-    }
-    let allowed: String = r.get("channel");
-    if channel.is_some_and(|c| c != allowed) {
-        return Err(denied());
-    }
-    if let Some(v) = version {
-        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM promotions WHERE project_id=$1 AND bundle_id=$2 AND channel=$3 AND version_id=$4)").bind(p).bind(path(b)?).bind(&allowed).bind(v).fetch_one(&mut *tx).await.map_err(db)?;
-        if !valid {
+    let mut tx = if integration_token {
+        s.db.begin().await.map_err(db)?
+    } else {
+        crate::auth::read_transaction(s, h, p).await?
+    };
+    let bundle = path(b)?;
+    let (id, source) = if integration_token {
+        let r = sqlx::query("SELECT i.project_id,i.bundle_id,i.channel,i.id,c.kind FROM integration_credentials c JOIN integrations i ON (i.project_id,i.id)=(c.project_id,c.integration_id) WHERE c.secret_hash=$1 AND c.revoked_at IS NULL AND i.enabled FOR SHARE OF c,i")
+            .bind(crate::digest(token.as_bytes())).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(denied)?;
+        let id: Uuid = r.get("id");
+        if r.get::<String, _>("project_id") != p
+            || r.get::<Uuid, _>("bundle_id") != bundle
+            || r.get::<String, _>("kind") != "content-read"
+            || connection.is_some_and(|connection| connection != id)
+        {
             return Err(denied());
         }
+        (id, r.get::<String, _>("channel"))
+    } else {
+        let id = connection.ok_or_else(denied)?;
+        let source: String = sqlx::query_scalar("SELECT channel FROM integrations WHERE project_id=$1 AND bundle_id=$2 AND id=$3 AND enabled FOR SHARE")
+            .bind(p).bind(bundle).bind(id).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(denied)?;
+        (id, source)
+    };
+    if channel.is_some_and(|c| c != source) {
+        return Err(denied());
     }
-    Ok(tx)
+    let effective: Option<String> = sqlx::query_scalar("SELECT delivery_channel FROM connected_learning_enrollments WHERE project_id=$1 AND integration_id=$2")
+        .bind(p).bind(id).fetch_optional(&mut *tx).await.map_err(db)?;
+    if let Some(version) = version
+        && !delivery_history(
+            &mut tx,
+            p,
+            bundle,
+            id,
+            &source,
+            DeliveryVersion {
+                id: version,
+                digest: None,
+                revision: None,
+            },
+        )
+        .await?
+    {
+        return Err(denied());
+    }
+    Ok((tx, effective))
 }
+
+struct DeliveryVersion<'a> {
+    id: Uuid,
+    digest: Option<&'a str>,
+    revision: Option<i64>,
+}
+
+async fn delivery_history(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    project: &str,
+    bundle: Uuid,
+    integration: Uuid,
+    source: &str,
+    version: DeliveryVersion<'_>,
+) -> ApiResult<bool> {
+    sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM promotions p
+           JOIN versions v ON (v.project_id,v.bundle_id,v.id)=(p.project_id,p.bundle_id,p.version_id)
+           LEFT JOIN connected_learning_enrollments e ON e.project_id=p.project_id AND e.bundle_id=p.bundle_id AND e.integration_id=$3
+           WHERE p.project_id=$1 AND p.bundle_id=$2 AND p.version_id=$5
+             AND ((p.channel=$4 AND (e.source_revision IS NULL OR p.revision <= e.source_revision)) OR p.channel=e.delivery_channel)
+             AND ($6::text IS NULL OR v.digest=$6) AND ($7::bigint IS NULL OR p.revision=$7))",
+    ).bind(project).bind(bundle).bind(integration).bind(source).bind(version.id).bind(version.digest).bind(version.revision)
+        .fetch_one(&mut **tx).await.map_err(db)
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Receipt {
@@ -397,10 +474,6 @@ async fn receive(
         .map(|v| v.parse::<i64>())
         .transpose()
         .map_err(|_| invalid())?;
-    let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM versions v JOIN promotions pr ON pr.project_id=v.project_id AND pr.bundle_id=v.bundle_id AND pr.version_id=v.id WHERE v.project_id=$1 AND v.bundle_id=$2 AND v.id=$3 AND v.digest=$4 AND pr.channel=$5 AND ($6::bigint IS NULL OR pr.revision=$6))").bind(&p).bind(b.bundle_id).bind(b.version_id).bind(&b.digest).bind(channel).bind(revision).fetch_one(&s.db).await.map_err(db)?;
-    if !valid {
-        return Err(denied());
-    }
     let body = serde_json::to_value(&b).map_err(db)?;
     let fingerprint = crate::digest(&serde_json::to_vec(&body).map_err(db)?);
     let mut tx = s.db.begin().await.map_err(db)?;
@@ -412,6 +485,22 @@ async fn receive(
     let still_valid=sqlx::query("SELECT c.id FROM integration_credentials c JOIN integrations i ON i.id=c.integration_id AND i.project_id=c.project_id WHERE c.secret_hash=$1 AND c.revoked_at IS NULL AND i.enabled AND i.id=$2 AND i.project_id=$3 AND c.kind='receipt-write' FOR SHARE OF c,i")
         .bind(crate::digest(token.as_bytes())).bind(i).bind(&p).fetch_optional(&mut *tx).await.map_err(db)?;
     if still_valid.is_none() {
+        return Err(denied());
+    }
+    if !delivery_history(
+        &mut tx,
+        &p,
+        b.bundle_id,
+        i,
+        &channel,
+        DeliveryVersion {
+            id: b.version_id,
+            digest: Some(&b.digest),
+            revision,
+        },
+    )
+    .await?
+    {
         return Err(denied());
     }
     // Cooperative retention is applied on each receipt operation, including dedup keys.

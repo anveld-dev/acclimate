@@ -474,6 +474,7 @@ export async function runCapturedEvaluation(options: {
     if (state.report) assertReport(state.report, request, state.attemptId);
     phase = 'claim';
     if (request.status === 'requested') {
+      signal.throwIfAborted();
       const body = await ensureBody(
         journal,
         state,
@@ -505,6 +506,7 @@ export async function runCapturedEvaluation(options: {
     };
     request = await check();
     if (!state.report) {
+      signal.throwIfAborted();
       phase = 'verify';
       const bundles = await verified(
         api,
@@ -514,6 +516,7 @@ export async function runCapturedEvaluation(options: {
         path.join(journal.directory, 'cache'),
       );
       request = await check();
+      signal.throwIfAborted();
       if (captured.collection) {
         await atomicPrivateWrite(
           path.join(journal.directory, 'collection.json'),

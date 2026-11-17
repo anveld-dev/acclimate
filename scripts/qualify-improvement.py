@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a disposable service + Python delivery + explicitly paid Luna author/review flow."""
+"""Qualify disposable service delivery, one paid Sol draft, and four paid Luna reviews."""
 
 import argparse
 import json
@@ -21,11 +21,11 @@ from acclimate import AcclimateClient, prepare_files, resolve_and_cache
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument(
-    "--live", action="store_true", help="Authorize at most five Luna SDK turns."
+    "--live", action="store_true", help="Authorize one Sol draft and up to four Luna reviews."
 )
 args = parser.parse_args()
 if not args.live:
-    parser.error("--live is required; this check can make five paid Luna calls")
+    parser.error("--live is required to authorize one paid Sol draft and up to four paid Luna reviews")
 database = os.environ.get("EVALUATION_TEST_DATABASE_URL")
 if not database:
     parser.error("EVALUATION_TEST_DATABASE_URL must name an owned disposable qualification database")
@@ -82,7 +82,7 @@ try:
                 raise
             time.sleep(0.1)
     bundle = client.create_bundle(
-        project, {"name": "Luna improvement qualification"}, uuid.uuid4().hex
+        project, {"name": "Sol and Luna improvement qualification"}, uuid.uuid4().hex
     )
     payload = json.loads((ROOT / "contracts/fixtures/bundle-v1.json").read_text())
     skill_path = "skills/retry-review/SKILL.md"
@@ -129,7 +129,7 @@ try:
         ACCLIMATE_BUNDLE=bundle["id"],
         ACCLIMATE_CHANNEL="stable",
         ACCLIMATE_SKILL_PATH=skill_path,
-        ACCLIMATE_MODEL="gpt-6-luna",
+        ACCLIMATE_CODEX_MODEL="gpt-6-luna",
         ACCLIMATE_OUTPUT_DIR=str(artifacts / "review"),
     )
     output = artifacts / "workflow-output.json"
@@ -151,7 +151,10 @@ try:
         )
     result = json.loads(output.read_text())
     summary = result["summary"]
+    assert summary["authorModel"] == "gpt-6.2-sol"
+    assert summary["model"] == "gpt-6-luna"
     comparison = client.get_comparison(project, bundle["id"], summary["comparisonId"])
+    assert comparison["runtime"]["model"] == summary["model"]
     assert comparison["candidateVersionId"] == summary["candidate"]["id"]
     assert comparison["candidateDigest"] == summary["candidate"]["digest"]
     assert len(comparison["expectedCases"]) == 2 and len(comparison["results"]) == 2
@@ -162,7 +165,8 @@ try:
     print(
         json.dumps(
             {
-                "model": "gpt-6-luna",
+                "authorModel": summary["authorModel"],
+                "model": summary["model"],
                 "summaryPath": result["summaryPath"],
                 "comparisonComplete": comparison["complete"],
                 "expectedPairs": 2,

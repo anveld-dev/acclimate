@@ -2,7 +2,7 @@
 
 [Design guide](README.md)
 
-Use one Rust HTTP service and one database. Its job is content versions, proposals, comparison records, and channel updates. The agent application is a separate system.
+One Rust HTTP service and one PostgreSQL database store content versions, proposals, comparison records, releases, and connected learning state. The application runs and grades its agent jobs.
 
 ## The records
 
@@ -14,6 +14,9 @@ Use one Rust HTTP service and one database. Its job is content versions, proposa
 | Proposal | Parent, allowed edit scope, rationale, evidence refs, candidate, status. |
 | Comparison | Version/dataset/grader identities, expected cases, results, completeness, submitter. |
 | Promotion | Selected version, evidence or unevaluated reason, reviewer, previous version, old/new channel revisions. |
+| Learning enrollment | Connection and installation, permitted paths, proposal allowance, evaluation descriptors, authorized principals, rollout mode, and rollback policy. |
+| Learning outcome and round | Stable terminal outcome ID, version and digest, optional teaching summary, and durable proposal, evaluation, audit and release references. |
+| Post-rollout verdict | Served job and started receipt, active release and predecessor, evaluator identity, verdict, and any rollback reference. |
 
 A version payload is a small UTF-8 JSON document containing a schema version and relative-path/kind/text entries. Store and return its exact bytes; the separate version record names their SHA-256 digest. Small file contents can live in the same PostgreSQL database as metadata, with project byte limits. Add external blob storage only when actual size or retention needs justify it.
 
@@ -42,6 +45,12 @@ Persist the request and status before acknowledging it. A bounded in-process bac
 Record each attempt and any returned candidate before marking completion. After a restart, identify interrupted jobs and apply the bounded retry policy or mark them for explicit retry. A completed candidate is reused. This promises recoverable proposal records, not exactly-once model billing or recovery of the consuming agent's session.
 
 The proposer uses its own configured provider access. It never needs the app's agent credentials or a gateway intercepting app traffic. Applications run evaluations where they already run their background agents and upload the results.
+
+## Connected learning
+
+The service admits eligible outcomes for an enrolled connection, proposes edits to permitted files, and assigns paired development and independent audit requests. The application reports its terminal outcomes under a dedicated principal and serves assigned evaluations under a separate evaluator principal. A complete comparison with a strict gain and no scored pair regressions can advance to the next stage. Failed, incomplete, and losing comparisons remain in the round history.
+
+After a passing audit, a reviewer may release the exact candidate, or the service can release it under the enrollment's explicitly enabled automatic rollout authority. An enrolled connection follows its own delivery target. Supported post-rollout audits bind an actual started delivery and terminal outcome to its active rollout and compare the served version with the preceding version. Automatic rollback can restore that preceding version on the same connection. Other connections keep their own targets, and jobs already prepared continue with their pinned versions. See the [operator setup](../../deploy/README.md#operate-connected-learning) and [service learning contract](../../contracts/learning.md).
 
 ## Production basics that stay
 

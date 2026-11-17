@@ -29,7 +29,7 @@ export function ConnectionReports({
       <div>
         <h2 className="font-semibold">App-reported delivery</h2>
         <p className="mt-1 break-all text-sm text-muted-foreground">
-          Current {channel}: revision {currentRevision} · version {currentVersionId}
+          Bundle channel {channel}: revision {currentRevision} · version {currentVersionId}
         </p>
       </div>
       <p className="text-sm text-muted-foreground">

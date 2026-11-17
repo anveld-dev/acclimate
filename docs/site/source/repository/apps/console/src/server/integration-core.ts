@@ -2,7 +2,10 @@ import { consoleClient } from './console-client';
 import { allPages } from './listing';
 import { ApiError } from '@acclimate/sdk';
 import type { Integration, IntegrationCredential, DeliveryReceipt, Page } from '@acclimate/sdk';
+import type { LearningEnrollmentStatus, LearningRound } from '@acclimate/sdk';
 import { requireSession, actorScope, type Environment } from './selection';
+import { learningPolicy, renewalSettings, type LearningSetup } from './connection-learning-policy';
+import { randomUUID } from 'node:crypto';
 
 type Entry = { integration: Integration; receipts: Page<DeliveryReceipt> };
 export type IntegrationState = {
@@ -273,6 +276,219 @@ export async function connectionCommand(
 
 function validScopePart(value: unknown): value is string {
   return typeof value === 'string' && /^[^\x00-\x20\x7f/]{1,200}$/.test(value);
+}
+
+type LearningTarget = { projectId: string; integrationId: string };
+export type LearningRequest = LearningTarget &
+  (
+    | { action: 'read' }
+    | { action: 'enroll'; setup: LearningSetup }
+    | { action: 'rollout'; automaticRollout: boolean }
+    | { action: 'rollback'; automaticRollback: boolean }
+    | { action: 'stop' }
+    | { action: 'review'; roundId: string; approve: boolean }
+    | {
+        action: 'renew';
+        renewalId: string;
+        expectedRevision: number;
+        proposalAdmissions: string;
+        descriptors: string;
+      }
+  );
+type LearningStatus = Pick<
+  LearningEnrollmentStatus,
+  | 'automaticRollout'
+  | 'automaticRollback'
+  | 'stoppedAt'
+  | 'enabled'
+  | 'auditCount'
+  | 'remainingAudits'
+  | 'renewalRevision'
+  | 'proposalAdmissions'
+  | 'maxProposalAdmissions'
+  | 'deliveredVersionId'
+  | 'deliveredRevision'
+> & { rounds: LearningRound[] };
+export type LearningResult =
+  | { ok: true; status: LearningStatus | null }
+  | { ok: false; message: string };
+
+export async function connectionLearning(
+  env: Environment,
+  input: LearningRequest,
+  fetcher: typeof fetch = fetch,
+): Promise<LearningResult> {
+  if (
+    !input ||
+    !['read', 'enroll', 'rollout', 'rollback', 'stop', 'review', 'renew'].includes(input.action) ||
+    !validScopePart(input.projectId) ||
+    typeof input.integrationId !== 'string' ||
+    !uuid.test(input.integrationId)
+  )
+    return { ok: false, message: 'Select a connection in this workspace.' };
+  if (input.action !== 'read' && env.CONSOLE_ALLOW_EDITS !== 'true')
+    return { ok: false, message: 'Editing is disabled for this console.' };
+
+  try {
+    const { client, integrations, projectId } = await workspaceContext(env, input.projectId, fetcher);
+    const integration = integrations.find((item) => item.id === input.integrationId);
+    if (!integration) return { ok: false, message: 'Connection not found in this workspace.' };
+    const { id, bundleId, channel } = integration;
+    async function inspect() {
+      try {
+        const status = await client.getLearningEnrollment(projectId, id);
+        if (
+          status.projectId !== projectId ||
+          status.integrationId !== id ||
+          status.bundleId !== bundleId ||
+          status.channel !== channel
+        )
+          throw Error('Learning scope mismatch');
+        return { ...status, automaticRollback: status.automaticRollback ?? true };
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404 && error.code === 'not_found')
+          return null;
+        throw error;
+      }
+    }
+    switch (input.action) {
+      case 'enroll': {
+        if (!integration.enabled) return { ok: false, message: 'This connection is revoked.' };
+        let policy;
+        try {
+          policy = learningPolicy(input.setup);
+        } catch (error) {
+          return {
+            ok: false,
+            message: error instanceof Error ? error.message : 'Invalid learning setup.',
+          };
+        }
+        await client.enrollLearning(projectId, id, policy, randomUUID());
+        break;
+      }
+      case 'rollout':
+      case 'rollback': {
+        const rollback = input.action === 'rollback';
+        const desired = rollback ? input.automaticRollback : input.automaticRollout;
+        if (typeof desired !== 'boolean')
+          return {
+            ok: false,
+            message: rollback ? 'Choose a post-rollout policy.' : 'Choose a rollout policy.',
+          };
+        const current = await inspect();
+        if (!current?.enabled || current.stoppedAt || !current.audits?.length)
+          return { ok: false, message: 'This learning enrollment is unavailable for editing.' };
+        const previous = rollback ? current.automaticRollback : current.automaticRollout;
+        if (previous !== desired) {
+          await client.enrollLearning(
+            projectId,
+            id,
+            {
+              installationId: current.installationId,
+              outcomePrincipal: current.outcomePrincipal,
+              evaluatorPrincipal: current.evaluatorPrincipal,
+              permittedPaths: current.permittedPaths,
+              maxProposalAdmissions: current.maxProposalAdmissions,
+              development: current.development,
+              audits: current.audits,
+              automaticRollout: rollback ? current.automaticRollout : desired,
+              expectedAutomaticRollout: current.automaticRollout,
+              ...(rollback ? { automaticRollback: desired } : {}),
+            },
+            randomUUID(),
+          );
+        }
+        break;
+      }
+      case 'stop':
+        await client.stopLearning(projectId, id, randomUUID());
+        break;
+      case 'review':
+        if (typeof input.roundId !== 'string' || !uuid.test(input.roundId) || typeof input.approve !== 'boolean')
+          return { ok: false, message: 'Select a valid round and decision.' };
+        await client.reviewLearningRound(projectId, id, input.roundId, input.approve, randomUUID());
+        break;
+      case 'renew': {
+        if (
+          typeof input.renewalId !== 'string' ||
+          !uuid.test(input.renewalId) ||
+          !Number.isSafeInteger(input.expectedRevision) ||
+          input.expectedRevision < 0
+        )
+          return { ok: false, message: 'Refresh to get the current enrollment revision.' };
+        let settings;
+        try {
+          settings = renewalSettings(input.proposalAdmissions, input.descriptors);
+        } catch (error) {
+          return {
+            ok: false,
+            message: error instanceof Error ? error.message : 'Invalid renewal settings.',
+          };
+        }
+        await client.renewLearning(projectId, id, {
+          ...settings,
+          renewalId: input.renewalId,
+          expectedRevision: input.expectedRevision,
+        });
+        break;
+      }
+    }
+    const status = await inspect();
+    return {
+      ok: true,
+      status: status && {
+        enabled: status.enabled,
+        stoppedAt: status.stoppedAt,
+        automaticRollout: status.automaticRollout,
+        automaticRollback: status.automaticRollback,
+        auditCount: status.auditCount,
+        remainingAudits: status.remainingAudits,
+        renewalRevision: status.renewalRevision,
+        proposalAdmissions: status.proposalAdmissions,
+        maxProposalAdmissions: status.maxProposalAdmissions,
+        deliveredVersionId: status.deliveredVersionId,
+        deliveredRevision: status.deliveredRevision,
+        rounds: status.rounds.map((round) => ({
+          id: round.id,
+          outcomeId: round.outcomeId,
+          state: round.state,
+          reason: round.reason,
+          parentVersionId: round.parentVersionId,
+          candidateVersionId: round.candidateVersionId,
+          proposalId: round.proposalId,
+          developmentRequestId: round.developmentRequestId,
+          developmentComparisonId: round.developmentComparisonId,
+          auditRequestId: round.auditRequestId,
+          auditComparisonId: round.auditComparisonId,
+          promotionId: round.promotionId,
+          fieldAudits: round.fieldAudits && {
+            windowSize: round.fieldAudits.windowSize,
+            regressions: round.fieldAudits.regressions,
+            rollbackPromotionId: round.fieldAudits.rollbackPromotionId,
+          },
+        })),
+      },
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if ([401, 403].includes(error.status))
+        return { ok: false, message: 'Learning administration requires current workspace access.' };
+      if (error.status === 400)
+        return {
+          ok: false,
+          message: 'The service rejected the learning settings. Check the evaluator descriptors, bundle paths, and machine principal grants.',
+        };
+      if (error.status === 409)
+        return {
+          ok: false,
+          message: 'The learning state changed or the enrollment has different settings. Refresh to see the current state.',
+        };
+    }
+    return {
+      ok: false,
+      message: 'Could not confirm the learning state. Refresh status before trying again.',
+    };
+  }
 }
 
 export type ConnectionBundle = {

@@ -68,6 +68,15 @@ export interface CandidatePlanV1 {
   requiredPreflightIds: string[];
   referenceReview: { state: 'required' | 'not-required'; paths: string[] };
 }
+export interface MutationPreparationV1 {
+  schemaVersion: 1;
+  kind: 'learning-mutation-preparation';
+  operationId: string;
+  attemptId: string;
+  mutation: MutationV1;
+  plan: CandidatePlanV1;
+  passedPreflightIds: string[];
+}
 export type MutationErrorCode =
   | 'mutation.schema_unsupported'
   | 'mutation.invalid'

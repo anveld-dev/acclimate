@@ -1,6 +1,6 @@
 # Implementation architecture
 
-The application-owned [continuous learner](continuous-learning/README.md) now implements the selected first profile. Its [implementation record](continuous-learning/implementation.md) covers evidence, recovery, controlled evaluation, qualification and deferred profiles.
+Acclimate also [schedules continuous learning for enrolled connections](../../deploy/README.md#operate-connected-learning). The [application-owned learner](continuous-learning/README.md) provides a separate SDK-controlled profile for private evidence, admission and experiment state. Its [implementation record](continuous-learning/implementation.md) covers recovery and qualification.
 
 The [deepening review](deepening-review.md) records the latest committee decisions, preserved behavior, and test surfaces.
 

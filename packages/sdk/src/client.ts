@@ -14,6 +14,17 @@ import type {
   IntegrationCredentialKind,
   DeliveryReceipt,
   DeliveryReceiptRequest,
+  LearningEnrollment,
+  LearningEnrollmentRequest,
+  LearningEnrollmentStatus,
+  LearningFieldAuditReceipt,
+  LearningFieldAuditRequest,
+  LearningOutcomeReceipt,
+  LearningOutcomeRequest,
+  LearningReviewReceipt,
+  LearningRenewalRequest,
+  LearningRenewalReceipt,
+  LearningWork,
 } from './types.js';
 import type {
   Evaluation,
@@ -77,6 +88,8 @@ export interface ClientOptions {
   /** Trusted console-server session only; never populate from browser state automatically. */
   sessionToken?: string;
   scope: string;
+  /** Stable service integration ID of the application installation consuming content. */
+  integrationId?: string;
   fetch?: typeof fetch;
   retries?: number;
   timeoutMs?: number;
@@ -96,6 +109,7 @@ export interface ChannelResult {
 export class AcclimateClient {
   readonly baseUrl: string;
   readonly scope: string;
+  readonly integrationId?: string;
   private readonly token: string;
   private readonly sessionToken?: string;
   private readonly fetcher: typeof fetch;
@@ -119,6 +133,12 @@ export class AcclimateClient {
       );
     this.baseUrl = url.toString().replace(/\/$/, '');
     this.scope = options.scope;
+    if (
+      options.integrationId !== undefined &&
+      !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(options.integrationId)
+    )
+      throw new TypeError('integrationId must be a UUID');
+    this.integrationId = options.integrationId?.toLowerCase();
     this.token = options.token;
     this.sessionToken = options.sessionToken;
     this.fetcher = options.fetch ?? fetch;
@@ -153,6 +173,9 @@ export class AcclimateClient {
   }
   private path(projectId: string, suffix: string): string {
     return `/v1/projects/${this.part(projectId)}${suffix}`;
+  }
+  private deliveryHeaders(): Record<string, string> {
+    return this.integrationId ? { 'X-Acclimate-Integration-Id': this.integrationId } : {};
   }
   private async readBytes(response: Response, limit: number, payload = false): Promise<Uint8Array> {
     const fail = () =>
@@ -307,6 +330,9 @@ export class AcclimateClient {
     return this.request(
       'GET',
       this.path(projectId, `/bundles/${this.part(bundleId)}/versions/${this.part(versionId)}`),
+      undefined,
+      undefined,
+      this.deliveryHeaders(),
     );
   }
   getPayload(projectId: string, bundleId: string, versionId: string): Promise<Uint8Array> {
@@ -318,7 +344,7 @@ export class AcclimateClient {
       ),
       undefined,
       undefined,
-      {},
+      this.deliveryHeaders(),
       true,
     );
   }
@@ -333,11 +359,97 @@ export class AcclimateClient {
       this.path(projectId, `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}`),
       undefined,
       undefined,
-      options.etag ? { 'If-None-Match': options.etag } : {},
+      { ...this.deliveryHeaders(), ...(options.etag ? { 'If-None-Match': options.etag } : {}) },
       false,
       true,
     );
     return result.notModified ? { resolution: null, etag: result.etag, notModified: true } : result;
+  }
+  private learningPath(projectId: string, integrationId: string): string {
+    return this.path(projectId, `/integrations/${this.part(integrationId)}/learning`);
+  }
+  enrollLearning(
+    projectId: string,
+    integrationId: string,
+    body: LearningEnrollmentRequest,
+    key: string,
+  ): Promise<LearningEnrollment> {
+    return this.request(
+      'PUT',
+      this.learningPath(projectId, integrationId),
+      JSON.stringify(body),
+      key,
+    );
+  }
+  getLearningEnrollment(
+    projectId: string,
+    integrationId: string,
+  ): Promise<LearningEnrollmentStatus> {
+    return this.request('GET', this.learningPath(projectId, integrationId));
+  }
+  stopLearning(projectId: string, integrationId: string, key: string): Promise<LearningEnrollment> {
+    return this.request(
+      'POST',
+      this.learningPath(projectId, integrationId) + '/stop',
+      undefined,
+      key,
+    );
+  }
+  reportLearningOutcome(
+    projectId: string,
+    integrationId: string,
+    body: LearningOutcomeRequest,
+    key = body.outcomeId,
+  ): Promise<LearningOutcomeReceipt> {
+    return this.request(
+      'POST',
+      this.learningPath(projectId, integrationId) + '/outcomes',
+      JSON.stringify(body),
+      key,
+    );
+  }
+  getLearningWork(projectId: string, integrationId: string): Promise<LearningWork> {
+    return this.request('GET', this.learningPath(projectId, integrationId) + '/work');
+  }
+  reportLearningFieldAudit(
+    projectId: string,
+    integrationId: string,
+    body: LearningFieldAuditRequest,
+    key = body.outcomeId,
+  ): Promise<LearningFieldAuditReceipt> {
+    return this.request(
+      'POST',
+      this.learningPath(projectId, integrationId) + '/field-audits',
+      JSON.stringify(body),
+      key,
+    );
+  }
+  reviewLearningRound(
+    projectId: string,
+    integrationId: string,
+    roundId: string,
+    approve: boolean,
+    key: string,
+  ): Promise<LearningReviewReceipt> {
+    return this.request(
+      'POST',
+      this.learningPath(projectId, integrationId) + `/rounds/${this.part(roundId)}/review`,
+      JSON.stringify({ approve }),
+      key,
+    );
+  }
+  renewLearning(
+    projectId: string,
+    integrationId: string,
+    body: LearningRenewalRequest,
+    key = body.renewalId,
+  ): Promise<LearningRenewalReceipt> {
+    return this.request(
+      'POST',
+      this.learningPath(projectId, integrationId) + '/renew',
+      JSON.stringify(body),
+      key,
+    );
   }
   listPromotions(
     projectId: string,

@@ -56,6 +56,7 @@ PAGES = [
     ('apps/console/README.md', 'operate/console.html', 'Operate', 'Web console', 'Configure the authenticated TanStack Start console for content and release history.'),
     ('tools/operator/README.md', 'operate/review.html', 'Operate', 'Review and release', 'Verified reviews, proposal requests, history, explicit promotion and rollback.'),
     ('deploy/README.md', 'operate/deploy.html', 'Operate', 'Deploy and restore', 'One-process deployment recipes and private PostgreSQL backup/restore.'),
+    ('docs/evaluator-operations.md', 'operate/evaluators.html', 'Operate', 'Evaluator operations', 'Provision application evaluators and serve connected learning assignments.'),
     ('deploy/sign-in.md', 'operate/sign-in.html', 'Operate', 'Production sign-in', 'Keycloak decision, realm issuer, callback and application authority.'),
     ('deploy/keycloak/README.md', 'operate/keycloak.html', 'Operate', 'Keycloak setup', 'PostgreSQL identity deployment, confidential client, bootstrap and qualification.'),
     ('scripts/full-roadmap/README.md', 'operate/qualification.html', 'Operate', 'Full qualification', 'Repeat the central proposer, app evaluation and fixture release flow.'),

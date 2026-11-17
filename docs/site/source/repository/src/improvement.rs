@@ -170,13 +170,33 @@ pub async fn create_comparison(
     )
     .await
 }
+// The binding exists as soon as the evaluator submits the report. The round's
+// comparison pointer is populated only after evaluation settlement.
+const AUDIT_COMPARISON_MATCH: &str =
+    "r.audit_comparison_id=c.id OR r.audit_request_id::text=c.body #>> '{evaluation,requestId}'";
+
 pub async fn get_comparison(
     State(s): State<AppState>,
     Path((p, b, id)): Path<(String, String, String)>,
     h: HeaderMap,
 ) -> ApiResult<Json<Comparison>> {
     let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
-    let r=sqlx::query("SELECT body,complete,submitter,created_at FROM comparisons WHERE project_id=$1 AND bundle_id=$2 AND id=$3").bind(p).bind(path(&b)?).bind(path(&id)?).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Comparison not found"))?;
+    let (principal, reviewer) =
+        crate::connected_learning::audit_reader(&s, &h, &mut tx, &p).await?;
+    let visible = crate::connected_learning::audit_visible(AUDIT_COMPARISON_MATCH, 4, 5);
+    let r = sqlx::query(&format!(
+        "SELECT c.body,c.complete,c.submitter,c.created_at FROM comparisons c
+         WHERE c.project_id=$1 AND c.bundle_id=$2 AND c.id=$3 AND {visible}",
+    ))
+    .bind(p)
+    .bind(path(&b)?)
+    .bind(path(&id)?)
+    .bind(principal)
+    .bind(reviewer)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(db)?
+    .ok_or_else(|| err(StatusCode::NOT_FOUND, "not_found", "Comparison not found"))?;
     Ok(Json(Comparison {
         request: serde_json::from_value(r.get("body")).map_err(db)?,
         id,
@@ -204,6 +224,28 @@ pub async fn create_proposal(
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),
     };
+    let bid = path(&b)?;
+    let (id, created_at) = enqueue_proposal(&mut command.tx, &p, bid, &a.principal, &q).await?;
+    let out = Proposal {
+        id: id.to_string(),
+        parent_version_id: q.parent_version_id,
+        status: "queued".into(),
+        attempts: 0,
+        candidate: None,
+        rationale: None,
+        error: None,
+        created_at: created_at.to_rfc3339(),
+    };
+    crate::commands::finish_mutation(command, StatusCode::ACCEPTED, out).await
+}
+
+pub(crate) async fn enqueue_proposal(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    project: &str,
+    bid: Uuid,
+    principal: &str,
+    q: &ProposalRequest,
+) -> ApiResult<(Uuid, DateTime<Utc>)> {
     if q.allowed_paths.is_empty()
         || q.allowed_paths.len() > 128
         || q.hypothesis.trim().is_empty()
@@ -217,14 +259,13 @@ pub async fn create_proposal(
             "Proposal request exceeds limits",
         ));
     }
-    let bid = path(&b)?;
     let parent = path(&q.parent_version_id)?;
     let parent_row =
         sqlx::query("SELECT payload FROM versions WHERE project_id=$1 AND bundle_id=$2 AND id=$3")
-            .bind(&p)
+            .bind(project)
             .bind(bid)
             .bind(parent)
-            .fetch_optional(&mut *command.tx)
+            .fetch_optional(&mut **tx)
             .await
             .map_err(db)?
             .ok_or_else(|| {
@@ -249,18 +290,8 @@ pub async fn create_proposal(
         ));
     }
     let id = Uuid::new_v4();
-    let row=sqlx::query("INSERT INTO proposals(id,project_id,bundle_id,parent_version_id,request,status,requested_by) SELECT $1,$2,$3,$4,$5,'queued',$6 WHERE EXISTS(SELECT 1 FROM versions WHERE project_id=$2 AND bundle_id=$3 AND id=$4) RETURNING created_at").bind(id).bind(&p).bind(bid).bind(parent).bind(serde_json::to_value(&q).map_err(db)?).bind(&a.principal).fetch_optional(&mut *command.tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Parent version not found"))?;
-    let out = Proposal {
-        id: id.to_string(),
-        parent_version_id: q.parent_version_id,
-        status: "queued".into(),
-        attempts: 0,
-        candidate: None,
-        rationale: None,
-        error: None,
-        created_at: row.get::<DateTime<Utc>, _>("created_at").to_rfc3339(),
-    };
-    crate::commands::finish_mutation(command, StatusCode::ACCEPTED, out).await
+    let row=sqlx::query("INSERT INTO proposals(id,project_id,bundle_id,parent_version_id,request,status,requested_by) SELECT $1,$2,$3,$4,$5,'queued',$6 WHERE EXISTS(SELECT 1 FROM versions WHERE project_id=$2 AND bundle_id=$3 AND id=$4) RETURNING created_at").bind(id).bind(project).bind(bid).bind(parent).bind(serde_json::to_value(q).map_err(db)?).bind(principal).fetch_optional(&mut **tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Parent version not found"))?;
+    Ok((id, row.get("created_at")))
 }
 pub async fn get_proposal(
     State(s): State<AppState>,
@@ -316,11 +347,25 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
     let Some(claim_permit) = s.runtime.claim_permit().await else {
         return;
     };
-    let claimed=sqlx::query("UPDATE proposals SET status='running',attempts=attempts+1 WHERE id=$1 AND status='queued' AND attempts<3 RETURNING request,parent_version_id,requested_by,attempts").bind(id).fetch_optional(&s.db).await.ok().flatten();
+    let Ok(mut tx) = s.db.begin().await else {
+        return;
+    };
+    match crate::connected_learning_worker::authorize_proposal(&mut tx, &s, &p, b, id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            let _ = tx.commit().await;
+            return;
+        }
+        Err(_) => return,
+    }
+    let Ok(claimed) = sqlx::query("UPDATE proposals SET status='running',attempts=attempts+1 WHERE id=$1 AND status='queued' AND attempts<3 RETURNING request,parent_version_id,requested_by,attempts").bind(id).fetch_optional(&mut *tx).await else { return };
+    if tx.commit().await.is_err() {
+        return;
+    }
     drop(claim_permit);
     let Some(r) = claimed else { return };
     let attempt: i32 = r.get("attempts");
-    let Some(provider) = s.provider else {
+    let Some(provider) = &s.provider else {
         let _=sqlx::query("UPDATE proposals SET status='failed',error='proposal provider disabled' WHERE id=$1 AND status='running' AND attempts=$2").bind(id).bind(attempt).execute(&s.db).await;
         return;
     };
@@ -387,6 +432,14 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
         Ok(t) => t,
         Err(_) => return,
     };
+    match crate::connected_learning_worker::authorize_proposal(&mut tx, &s, &p, b, id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            let _ = tx.commit().await;
+            return;
+        }
+        Err(_) => return,
+    }
     let current: Option<(String, i32)> =
         match sqlx::query_as("SELECT status, attempts FROM proposals WHERE id=$1 FOR UPDATE")
             .bind(id)
@@ -447,7 +500,24 @@ pub async fn list_comparisons(
     let bid = path(&b)?;
     let c =
         crate::pagination::resolve(&mut tx, "comparisons", &p, bid, q.cursor.as_deref()).await?;
-    let rows=sqlx::query("SELECT * FROM comparisons WHERE project_id=$1 AND bundle_id=$2 AND ($3::timestamptz IS NULL OR (created_at,id)<($3,$4)) ORDER BY created_at DESC,id DESC LIMIT $5").bind(&p).bind(bid).bind(c.map(|x|x.0)).bind(c.map(|x|x.1)).bind(n+1).fetch_all(&mut *tx).await.map_err(db)?;
+    let (principal, reviewer) =
+        crate::connected_learning::audit_reader(&s, &h, &mut tx, &p).await?;
+    let visible = crate::connected_learning::audit_visible(AUDIT_COMPARISON_MATCH, 6, 7);
+    let rows = sqlx::query(&format!(
+        "SELECT c.* FROM comparisons c WHERE c.project_id=$1 AND c.bundle_id=$2
+         AND ($3::timestamptz IS NULL OR (c.created_at,c.id)<($3,$4)) AND {visible}
+         ORDER BY c.created_at DESC,c.id DESC LIMIT $5"
+    ))
+    .bind(&p)
+    .bind(bid)
+    .bind(c.map(|x| x.0))
+    .bind(c.map(|x| x.1))
+    .bind(n + 1)
+    .bind(principal)
+    .bind(reviewer)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(db)?;
     let items = rows
         .into_iter()
         .map(|r| {

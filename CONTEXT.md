@@ -1,6 +1,6 @@
 # Acclimate
 
-Acclimate delivers versioned agent content and records proposed improvements, comparisons, and deliberate releases. The integrating application owns agent execution and grading.
+Acclimate delivers versioned agent content and records proposed improvements, comparisons, and deliberate releases. An enrolled connection lets Acclimate schedule improvement from trusted outcomes. The integrating application owns agent execution and grading.
 
 ## Language
 
@@ -41,3 +41,15 @@ Verified content materialized for an application-owned job, including the paths 
 **Delivery receipt**:
 An optional application-reported observation of content delivery or job preparation and startup. It is distinct from an operation result and from proof of agent behavior.
 _Avoid_: Operation result
+
+**Connection**:
+A service-managed integration bound to a workspace, bundle, and source channel. A stable connection UUID identifies the installation for delivery, reporting, and learning scope.
+
+**Task outcome**:
+A terminal application report tied to the exact bundle version a logical task used. The app may include a bounded graded discrepancy or teaching instruction approved for proposer use.
+
+**Connected learning enrollment**:
+A workspace administrator's authorization for a connection to admit a bounded number of proposals, run paired development and independent audit evaluations through a registered app, and use the selected release mode. Each enrollment has a separate delivery target seeded from its source channel.
+
+**Audit cohort**:
+An independent evaluation case inventory registered before use. A managed learning round consumes an available cohort when it queues the audit.

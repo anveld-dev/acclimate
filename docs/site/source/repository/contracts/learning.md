@@ -52,29 +52,71 @@ The [recurring learner starter](../examples/continuous-learning/README.md) exerc
 
 ## Service-managed connected learning
 
-The service-managed workflow uses `/v1/projects/{project}/integrations/{integration}/learning` as its base resource. This enrollment provides the authority for the service to schedule recurring rounds while the installed application retains execution and grading.
+All suffixes below use `/v1/projects/{project}/integrations/{integration}/learning`. The application runs its native agents and graders and retains private inputs, expected answers and traces.
 
-| Method and suffix | Operation |
+| Method and suffix | Authority and operation |
 | --- | --- |
-| `PUT` | Enroll the enabled connection with an installation ID, permitted existing paths, bounded proposal allowance, public development and audit descriptors, rollout mode, and separate outcome/evaluator principals. An update may change `automaticRollout` and `automaticRollback`. Other enrollment controls remain frozen. |
-| `GET` | Read enrollment, remaining audits, delivery target, and recent round references. Each round exposes `fieldAudits` with `windowSize`, `regressions`, and `rollbackPromotionId`. Audit descriptors are available to authorized administrators. |
-| `POST /outcomes` | Submit a terminal `completed` or `failed` outcome with stable UUID, delivered version ID, digest, and optional bounded teaching instruction or graded expected/observed discrepancy. The enrolled outcome principal owns the write. Identical outcome replay retains its original identity. Optionally supply both `startedReceiptId` and `deliveryRevision` for a field audit. |
-| `GET /work` | Read outstanding evaluation request IDs and phases for the enrolled evaluator principal. The installed evaluator loads the normal request and executes its matching descriptor. |
-| `POST /rounds/{round}/review` | Record an authorized approval or rejection of a qualifying audited candidate. An approval uses the exact audit comparison and the current enrolled delivery baseline. |
-| `POST /field-audits` | Submit one independently graded verdict per served job for the current learned rollout. The enrolled evaluator principal owns the write. |
-| `POST /renew` | Append independent audit cohorts or increase the proposal admission allowance using a stable renewal UUID and the current renewal revision. Prior cohorts and consumed exposure are retained. |
-| `POST /stop` | Close admission, field auditing, and future rollout or automatic rollback while keeping the current delivery target. |
+| `PUT` | A workspace administrator enrolls an enabled connection with a released source channel, separate outcome/evaluator principals, an installation ID, file permissions, proposal allowance, development and audit descriptors and rollout settings. Enabling automatic rollout requires promotion authority. |
+| `GET` | Inspect enrollment, remaining audit inventory, delivery target and recent rounds. Protected audit descriptors are available to authorized administrators. |
+| `POST /outcomes` | The outcome principal reports `outcomeId`, `status`, `versionId`, `digest`, the observed `deliveryRevision` and optional teaching. A matching `startedReceiptId` identifies a sample for field grading. |
+| `POST /corrections` | The outcome principal appends a correction to a recorded outcome. Supply a stable `correctionId`, the original `outcomeId`, and an approved `lesson` or `feedback`. Replay the same contents under the same ID. |
+| `GET /work` | The enrolled evaluator fetches its assigned development/audit evaluations and outstanding observation rechecks. |
+| `POST /rechecks` | The evaluator submits `correctionId`, current `versionId`, `digest`, `revision`, and `verdict` after privately checking whether the original failure persists. |
+| `POST /rounds/{round}/review` | An independent reviewer approves or rejects a qualifying audited candidate. Promotion checks the exact candidate, audit comparison, parent and delivery revision. |
+| `POST /field-audits` | The evaluator reports a verdict for the exact job and served release. Historical verdicts stay with their original release. |
+| `GET /field-requalifications/{versionId}` | The evaluator obtains the private outcome IDs it must replay before previously withdrawn content can be authorized on the current baseline. |
+| `POST /field-requalifications` | The evaluator records the pinned candidate, current baseline revision, outcome ID and result of one private replay. |
+| `POST /renew` | An administrator submits a stable `renewalId` and numeric `expectedRevision` to increase admissions, append fresh audits, or change development and selection controls at a round boundary. Past audit exposures remain consumed. |
+| `POST /restore` | An independent reviewer with promotion authority restores an earlier connection release or adopts the current approved source release under a checked delivery revision. |
+| `POST /stop` | Stop learning on the connection. Jobs continue to resolve its last delivered release. |
 
-Connection-qualified content reads use `X-Acclimate-Integration-Id` with the integration UUID. A scoped content credential can identify its connection directly. Resolution returns the original logical channel, the enrolled delivery target's revision and version, and an opaque conditional ETag. An enrolled update only changes that connection's delivery target; other connections and existing prepared jobs retain their own content.
+#### Fixtures, acceptance and mutation
 
-`automaticRollback` defaults to true for new enrollments, and migration initializes existing enrollments to true. Set it to false to opt out. Omitting the field on an enrollment update preserves the stored value.
+Register descriptors made by `connectedEvaluationDescriptor(app)` from `@acclimate/sdk/learning`. The `installed-v1` fixture protocol hashes the ordered inventory of case IDs, normalized repetitions and canonical hashes of the private inputs and expected answers. The runner also commits to the sorted input fingerprints so the cohort registry can detect reused inputs under different case IDs. The service registers declared cohort identities and binds the fixture commitment to the evaluation request and report. The installed evaluator recomputes the commitment before grading. Audit inputs must be disjoint from exposed development and other audit inputs within the bundle. The application chooses genuinely independent tasks and can supply family fingerprints to register known relationships.
 
-An enrollment update may include `expectedAutomaticRollout` to check the current rollout setting. The service returns a conflict if that setting has changed since the caller read it.
+An enrollment may specify `selectionPolicies: { development, audit }`. Each stage accepts a versioned evaluation policy with metric direction, equal-case mean aggregation, minimum mean improvement, maximum regression per case, required cases, and optional absolute threshold, task-failure and monetary limits.
 
-A field-audit outcome requires a matching nonstale channel-started receipt that the service received within the previous 30 days. The service matches project, bundle, connection, version, digest, logical channel, and delivery revision. The receipt can come from a verified network or cache delivery. When the delivered version and revision match the current managed rollout, the outcome response includes `fieldAudit: { parentVersionId, parentDigest }`. Ordinary outcome eligibility for proposal scheduling is separate.
+A `requiredCases` entry must occur in every applicable cohort. `protectedCaseThresholds` maps individual case IDs to thresholds. In a cohort containing a named case, every repetition must complete and meet its threshold. Use `minimumRepetitionsPerCase` to require repeated measurements and `minimumCostSavingsUsd` to require savings across the paired jobs. The relevant per-arm costs must be known. The thresholds describe this sample and workload.
 
-The evaluator submits `outcomeId`, `startedReceiptId`, `versionId`, `digest`, `revision`, `parentVersionId`, `parentDigest`, and `verdict` (`pass` or `regression`). `revision` is the same canonical decimal string as `deliveryRevision`. The service checks the exact managed promotion and its predecessor against the bound outcome. A response contains `outcomeId`, `accepted`, `windowSize`, and `regressions`, with `rollbackPromotionId` if the verdict triggered rollback. An identical retry returns the stored response. Changed verdicts, reused receipts, stale revisions, and disabled connection authority reject a new verdict.
+Select an audit policy that permits maintained behavior on a saturated protected suite if that is the intended qualification criterion. Supply `development` or `selectionPolicies` in a renewal to create a new policy epoch at a round boundary. The round retains the epoch that governed its decision. New enrollments require a positive mean development gain and permit audit ties by default. Both defaults allow zero case-mean regression and zero candidate task failures. Upgraded enrollments preserve their original pairwise, strict-gain behavior until an administrator supplies explicit policies.
 
-The service counts the latest ten accepted verdicts in the current rollout's submission order. If automatic rollback is enabled and at least three are regressions, the verdict and connection-scoped promotion restoring the preceding version commit together. Disabling automatic rollback keeps recording verdicts. The restored version has a new delivery revision.
+For example, a team grading binary correctness can paste the following policy pair into enrollment. Each development and audit case in this example runs three or more repetitions. The development gate requires a five-point gain in mean accuracy, and the audit accepts stable mean accuracy with no drop on any case.
 
-Run the application-side evaluator and terminal reporting hook as described in [Evaluator operations](../docs/evaluator-operations.md#serve-connected-learning). See the [operator guide](../deploy/README.md#monitor-and-roll-back-a-release) for sampling, evidence, and recovery.
+```json
+{
+  "development": {
+    "schemaVersion": 1, "id": "accuracy-development", "revision": "1",
+    "metric": {"name": "correct", "unit": "fraction", "direction": "higher"},
+    "aggregation": "equal-case-means", "minimumMeanImprovement": 0.05,
+    "maximumCaseRegression": 0, "minimumRepetitionsPerCase": 3,
+    "maximumCandidateTaskFailures": 0, "requiredCases": []
+  },
+  "audit": {
+    "schemaVersion": 1, "id": "accuracy-audit", "revision": "1",
+    "metric": {"name": "correct", "unit": "fraction", "direction": "higher"},
+    "aggregation": "equal-case-means", "minimumMeanImprovement": 0,
+    "maximumCaseRegression": 0, "minimumRepetitionsPerCase": 3,
+    "maximumCandidateTaskFailures": 0, "requiredCases": []
+  }
+}
+```
+
+Existing-file edits are bounded by `permittedPaths`. To permit named skill package creation or retirement, configure `skillPackages: {createSkillNames, retireSkillNames}`. Each list authorizes only its named operation. An omitted policy creates a fixed-file enrollment. On an enrollment update, omission preserves the current policy, and two empty lists turn off structural editing. Change permissions between rounds. For subsequent text edits inside a creatable package, list those files in `permittedPaths`. These entries can be adjusted at the same idle boundary.
+
+For a graded discrepancy, an authorized proposer can return `skillOperations` alongside ordinary anchored edits. A create supplies a name and files with `relativePath` and `text`, including the package's `SKILL.md`. A retirement supplies a name and the expected digest of its existing package. A path-specific lesson constrains changes to its named file. Native compatibility validation applies to the reconstructed candidate. An unchanged candidate ends the proposal before a development or audit request is issued.
+
+#### Observations and delayed feedback
+
+Each job retains its resolved version and delivery revision. The outcome and each subsequent correction have independent immutable IDs. A correction can outlive its observed revision. When the parent moves or an older outcome lacks revision provenance, the evaluator rechecks the original failure against the current, pinned bundle. `reproduced` admits a fresh parent-bound proposal, `resolved` closes the correction, and `unavailable` leaves it parked on that revision. A complete development rejection allows a bounded second attempt for that correction, subject to proposal budget and remaining audit inventory. Development retries retain their measured evidence. An audit or reviewer rejection closes the attempt to release on that evidence.
+
+#### Field evidence and recovery
+
+Connection-qualified reads use `X-Acclimate-Integration-Id` or a scoped delivery credential. Resolution returns the logical channel and the connection's delivery revision and version. A field sample binds an accepted outcome to a matching fresh channel-started receipt accepted within the prior 30 days. The service returns `fieldAudit: { parentVersionId, parentDigest }` when it has an eligible comparison control. Use the exact returned control, including when several releases have shipped since it was validated.
+
+The evaluator sends `outcomeId`, `startedReceiptId`, `versionId`, `digest`, `revision`, `parentVersionId`, `parentDigest` and a `pass` or `regression` verdict. A retry with identical contents returns the original result. The latest ten accepted verdicts form the release's field window. With automatic rollback enabled, three regressions in the current release's window can change delivery transactionally. A late verdict for a superseded release updates its historical assessment and can require requalification of those bytes before reuse. It cannot move present traffic. Each restore creates a new delivery revision.
+
+To requalify previously withdrawn bytes, the enrolled evaluator looks up the candidate version and reads the `pendingOutcomeIds`, `failedOutcomeIds` and `baselineRevision`. Replay each required private outcome using the exact candidate. Submit `{versionId, digest, baselineRevision, outcomeId, verdict}` with `verdict` set to `pass` or `regression`. Each result binds that case, candidate and baseline. Managed promotion and manual restore check these obligations. The private replay callback can complete this work through its normal evaluator polling loop.
+
+For a reviewed restore, send `{restoreId, expectedRevision, target: {kind, revision, versionId}, reason}`. Delivery and target revisions are canonical decimal strings. Pin a prior managed release with `kind: "delivery"` or the currently approved release on the enrollment's source channel with `kind: "source"`. Retain the request ID for exact retries. Read eligible `restoreTargets` from the enrollment. The request reason is nonempty and at most 1,024 bytes. A successful response is a promotion on the connection's private channel. Replaying the same restore ID and body as its original reviewer returns that promotion. Restoring an enabled, stopped connection leaves its learner stopped.
+
+[Evaluator installation and reporting](../docs/evaluator-operations.md#serve-connected-learning) · [Operator setup and upgrade](../deploy/README.md#operate-connected-learning)

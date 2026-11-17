@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
@@ -14,6 +14,8 @@ import {
 } from '../packages/sdk/src/index.js';
 import { defineEvaluation } from '../packages/sdk/src/evaluation/index.js';
 import {
+  type ConnectedLearningDriverOptions,
+  connectedEvaluationDescriptor,
   createLearningFieldAuditor,
   createLearningOutcomeReporter,
   serveConnectedLearning,
@@ -83,19 +85,44 @@ async function stopService() {
 }
 
 // An installed refund-response harness interprets small instruction rules for actual app behavior.
-type Task = { kind: 'refund' | 'refund-status' | 'refund-escalation' };
+type Task = {
+  kind: 'refund' | 'refund-status' | 'refund-escalation' | 'exchange';
+  purchase?: { chargedCents: number; refundedCents: number };
+};
 const expectedResponse: Record<Task['kind'], string> = {
   refund: 'Quote the refund window.',
   'refund-status': 'Ask for the receipt number.',
   'refund-escalation': 'Send the case to support.',
+  exchange: 'Offer an exchange.',
 };
 function runRefundTask(payload: BundlePayload, task: Task): string {
-  const rules = payload.files.find((file) => file.path === 'AGENTS.md')?.text.split('\n') ?? [];
+  const rules = payload.files
+    .filter((file) => file.path === 'AGENTS.md' || file.path === 'skills/refunds/SKILL.md')
+    .flatMap((file) => file.text.split('\n'));
   const rule = rules.reverse().find((line) => line.startsWith(`${task.kind} = `));
-  return rule?.split(' = ')[1] ?? 'Send the case to support.';
+  const action = rule?.split(' = ')[1] ?? 'Send the case to support.';
+  const purchase = task.purchase;
+  return purchase
+    ? `${action} Remaining balance: ${purchase.chargedCents - purchase.refundedCents} cents.`
+    : action;
 }
 
+// Each cohort uses distinct purchases with a different correct refund balance.
+let purchaseSequence = 0;
 function cohort(dataset: string, tasks: Task[]) {
+  const cases = tasks.map((task, index) => {
+    const sequence = ++purchaseSequence;
+    const remainingBalance = 650 + sequence * 157;
+    const refundedCents = (sequence % 5) * 250;
+    return {
+      caseId: `${dataset}-${index}`,
+      input: {
+        ...task,
+        purchase: { chargedCents: remainingBalance + refundedCents, refundedCents },
+      },
+      expected: `${expectedResponse[task.kind]} Remaining balance: ${remainingBalance} cents.`,
+    };
+  });
   return defineEvaluation<Task, string, string>({
     configId: 'refund-harness-fixture',
     configRevision: '1',
@@ -103,11 +130,7 @@ function cohort(dataset: string, tasks: Task[]) {
     graderRevision: 'refund-expected-responses-v1',
     runtime: { app: 'refund', provider: 'local-fixture' },
     execution: 'model-free',
-    cases: tasks.map((input, index) => ({
-      caseId: `${dataset}-${index}`,
-      input,
-      expected: expectedResponse[input.kind],
-    })),
+    cases,
     async execute({ bundle, input, caseId }) {
       executions.push({ dataset, caseId, version: bundle.version.id });
       return { output: runRefundTask(bundle.payload, input) };
@@ -121,6 +144,8 @@ function cohort(dataset: string, tasks: Task[]) {
 interface Round {
   id: string;
   outcomeId: string;
+  correctionId: string;
+  attempt: number;
   state: string;
   reason: string | null;
   parentVersionId: string;
@@ -143,6 +168,7 @@ try {
         assert.equal(req.headers.authorization, `Bearer ${modelToken}`);
         const request = JSON.parse(JSON.parse(body).messages[0].content) as {
           parent: BundlePayload;
+          packageDigests?: Record<string, string>;
           request: { hypothesis: string; allowedPaths: string[]; evidence: string[] };
         };
         assert.deepEqual(request.request.allowedPaths, ['AGENTS.md']);
@@ -157,16 +183,48 @@ try {
           instruction,
           allowedPaths: request.request.allowedPaths,
         });
+        const applyRules = (rules: string) => [
+          { path: file.path, oldText: file.text, newText: `${file.text.trimEnd()}\n${rules}` },
+        ];
+        let edits = applyRules(instruction);
+        let skillOperations: object[] | undefined;
+        if (instruction === 'Keep current behavior exactly.') edits = [];
+        if (instruction === 'Create a reusable refund skill.') {
+          const earlierAttempt =
+            modelRequests.filter((call) => call.instruction === instruction).length > 1;
+          if (earlierAttempt) {
+            assert(request.request.evidence.some((entry) => entry.includes('failed development')));
+            edits = [];
+            skillOperations = [
+              {
+                op: 'createSkill',
+                name: 'refunds',
+                files: [
+                  {
+                    relativePath: 'SKILL.md',
+                    text: '---\nname: refunds\ndescription: Answer refund questions.\n---\nrefund = Quote the refund window.\n',
+                  },
+                ],
+              },
+            ];
+          } else {
+            // This honest candidate changes the instructions but does not solve the task.
+            edits = applyRules('Read the refund policy.');
+          }
+        }
+        if (instruction === 'Consolidate both rules in the root instructions.') {
+          const digest = request.packageDigests?.refunds;
+          assert(digest, 'retirement must use the content of the installed skill');
+          edits = applyRules(
+            'refund = Quote the refund window.\nrefund-status = Ask for the receipt number.',
+          );
+          skillOperations = [{ op: 'retireSkill', name: 'refunds', expectedPackageDigest: digest }];
+        }
         const content = JSON.stringify({
           schemaVersion: 1,
-          edits: [
-            {
-              path: file.path,
-              oldText: file.text,
-              newText: `${file.text.trimEnd()}\n${instruction}`,
-            },
-          ],
-          rationale: 'Apply the proposed refund response rules to the permitted instruction file.',
+          edits,
+          skillOperations,
+          rationale: 'Apply the proposed refund response rules.',
         });
         res.writeHead(200, { 'content-type': 'application/json' }).end(
           JSON.stringify({
@@ -276,6 +334,7 @@ try {
     integrationId: string,
     installationId: string,
     apps: ReturnType<typeof evaluationApps>,
+    hooks: Pick<ConnectedLearningDriverOptions['apps'], 'recheck' | 'requalifyFieldCase'> = {},
   ) {
     const installed = new AbortController();
     const signal = AbortSignal.any([controller.signal, installed.signal]);
@@ -283,7 +342,13 @@ try {
       integrationId,
       installationId,
       configPath,
-      apps: { development: apps.development, audit: apps.audits },
+      apps: {
+        development: apps.development,
+        audit: apps.audits,
+        ...(hooks.recheck ? { recheckExecution: 'model-free' as const } : {}),
+        ...(hooks.requalifyFieldCase ? { requalifyFieldCaseExecution: 'model-free' as const } : {}),
+        ...hooks,
+      },
       pollIntervalMs: 100,
       signal,
       onDiagnostic: (diagnostic) => {
@@ -313,21 +378,14 @@ try {
   }
 
   function rollbackApps(installation: string) {
-    const tasks: Task[] = [{ kind: 'refund' }, { kind: 'refund-status' }];
+    const tasks: Task[] = [{ kind: 'refund' }, { kind: 'refund-status' }, { kind: 'exchange' }];
     return {
       development: cohort(`${installation}-development`, tasks),
-      audits: [1, 2, 3].map((index) => cohort(`${installation}-audit-${index}`, tasks)),
+      audits: [1, 2, 3, 4].map((index) => cohort(`${installation}-audit-${index}`, tasks)),
     };
   }
 
-  function descriptor(app: ReturnType<typeof cohort>) {
-    const fingerprint = (identity: string) => createHash('sha256').update(identity).digest('hex');
-    return {
-      ...app.descriptor,
-      datasetDigest: fingerprint(app.descriptor.datasetRevision),
-      caseFingerprints: app.descriptor.expectedCases.map(({ caseId }) => fingerprint(caseId)),
-    };
-  }
+  const descriptor = connectedEvaluationDescriptor;
 
   async function enroll(connection: string, installationId: string, automaticRollout: boolean) {
     const apps = evaluationApps(installationId);
@@ -341,6 +399,19 @@ try {
       evaluatorPrincipal: 'evaluator',
       outcomePrincipal: 'other',
     };
+    if (automaticRollout) {
+      await api(
+        'PUT',
+        learning(connection),
+        {
+          ...body,
+          development: apps.development.descriptor,
+          audits: apps.audits.map((app) => app.descriptor),
+        },
+        'admin',
+        400,
+      );
+    }
     await api('PUT', learning(connection), body, 'other', 403);
     await api('PUT', learning(connection), body);
     await api('PUT', learning(connection), body);
@@ -443,11 +514,20 @@ try {
   assert.equal((await fresh(automatic)).id, baseline.id);
   assert.equal((await fresh(manual)).id, baseline.id);
 
-  async function submit(connection: string, version: VersionMetadata, instruction: string) {
+  async function submit(
+    connection: string,
+    version: VersionMetadata,
+    instruction: string,
+    observedRevision?: string,
+  ) {
+    const resolution = (await installedBundle(connection)).resolution!;
+    if (!observedRevision) assert.equal(resolution.version.id, version.id);
+
     const body = {
       outcomeId: randomUUID(),
       versionId: version.id,
       digest: version.digest,
+      deliveryRevision: observedRevision ?? resolution.revision,
       status: 'completed' as const,
       lesson: { path: 'AGENTS.md', instruction },
     };
@@ -499,6 +579,14 @@ try {
   const accepted = await reporter(initialTaskBundle, terminalOutcome);
   assert.deepEqual(accepted, { outcomeId: first, accepted: true, eligible: true });
   assert.deepEqual(await reporter(initialTaskBundle, terminalOutcome), accepted);
+  // The support desk grades this second baseline job after the first correction ships.
+  const delayedTask: Task = { kind: 'refund-status' };
+  const delayedJob = randomUUID();
+  const delayedCompletion = await reporter(initialTaskBundle, {
+    outcomeId: delayedJob,
+    status: 'failed',
+  });
+  assert.equal(delayedCompletion.eligible, false);
   const pending = await observe(automatic, first, 'development');
   assert(pending.developmentRequestId);
   await api('GET', `${learning(automatic)}/work`, undefined, 'other', 403);
@@ -511,7 +599,20 @@ try {
   );
   await stopService();
   await startService();
-  enableDriver(automatic, 'auto-refund-fixture', autoApps);
+  const driftApp = cohort(autoApps.development.descriptor.datasetRevision, [
+    { kind: 'refund' },
+    { kind: 'refund-status' },
+  ]);
+  const wrongDriver = enableDriver(automatic, 'auto-refund-fixture', {
+    ...autoApps,
+    development: driftApp,
+  });
+  await waitFor('installed fixture mismatch', async () =>
+    logs.includes('descriptor.mismatch') ? true : undefined,
+  );
+  await wrongDriver();
+  assert.equal(executions.length, 0, 'drifted fixture must be rejected before executing a task');
+  const pauseAutoDriver = enableDriver(automatic, 'auto-refund-fixture', autoApps);
   enableDriver(manual, 'manual-refund-fixture', manualApps);
 
   const promoted = await observe(automatic, first, 'promoted');
@@ -519,6 +620,11 @@ try {
   assert.equal(promoted.developmentRequestId, pending.developmentRequestId);
   assert(promoted.auditComparisonId && promoted.developmentComparisonId && promoted.promotionId);
   assert.notEqual(promoted.auditRequestId, promoted.developmentRequestId);
+  const firstAudit = await operator.getComparison(project, bundle.id, promoted.auditComparisonId);
+  assert.equal(
+    firstAudit.runtime['acclimate.fixtures.v1.dataset'],
+    descriptor(autoApps.audits[0]!).datasetDigest,
+  );
   const firstVersion = await fresh(automatic);
   assert.equal(firstVersion.id, promoted.candidateVersionId);
   const pinned = await client('operator', automatic).getPayload(project, bundle.id, baseline.id);
@@ -532,23 +638,74 @@ try {
     () => client('operator', sibling).getPayload(project, bundle.id, firstVersion.id),
     { status: 403 },
   );
-  const stale = await submit(automatic, baseline, beta);
-  const staleRound = await observe(automatic, stale, 'rejected');
-  assert.equal(staleRound.candidateVersionId, null);
-  assert.equal(staleRound.developmentRequestId, null);
-  assert.equal((await fresh(automatic)).id, firstVersion.id);
-
   const negative = await submit(automatic, firstVersion, `${beta}\nrefund-escalation = Give up.`);
   const rejected = await observe(automatic, negative, 'rejected');
   assert(rejected.developmentComparisonId && rejected.auditComparisonId);
   assert.equal(rejected.promotionId, null);
   assert.equal((await fresh(automatic)).id, firstVersion.id);
 
-  const nextTaskBundle = await installedBundle(automatic);
-  assert.equal(nextTaskBundle.version.id, firstVersion.id);
-  const nextOutcome = gradedOutcome({ kind: 'refund-status' }, nextTaskBundle);
-  const positive = (await reporter(nextTaskBundle, nextOutcome)).outcomeId;
-  const second = await observe(automatic, positive, 'promoted');
+  const correctionPath = `${learning(automatic)}/corrections`;
+  const correction = {
+    correctionId: randomUUID(),
+    outcomeId: delayedJob,
+    feedback: gradedOutcome(delayedTask, initialTaskBundle).feedback,
+  };
+  const corrected = await client('other', automatic).reportLearningCorrection(
+    project,
+    automatic,
+    correction,
+  );
+  assert.deepEqual(await api('POST', correctionPath, correction, 'other'), corrected);
+  await api(
+    'POST',
+    correctionPath,
+    { ...correction, feedback: { expected: 'Different rule', observed: 'Old behavior' } },
+    'other',
+    409,
+  );
+  const recheck = await waitFor('recheck stale observation', async () => {
+    const work = await api('GET', `${learning(automatic)}/work`, undefined, 'evaluator');
+    return work.rechecks.find(
+      (item: { correctionId: string }) => item.correctionId === correction.correctionId,
+    );
+  });
+  const nowDelivered = await installedBundle(automatic);
+  assert.equal(recheck.versionId, nowDelivered.version.id);
+  assert.notEqual(
+    runRefundTask(nowDelivered.payload, delayedTask),
+    expectedResponse[delayedTask.kind],
+  );
+  const replay = {
+    correctionId: correction.correctionId,
+    versionId: nowDelivered.version.id,
+    digest: nowDelivered.version.digest,
+    revision: nowDelivered.resolution!.revision,
+    verdict: 'reproduced' as const,
+  };
+  const rechecksPath = `${learning(automatic)}/rechecks`;
+  await api('POST', rechecksPath, replay, 'other', 403);
+  await pauseAutoDriver();
+  let rechecksPerformed = 0;
+  enableDriver(automatic, 'auto-refund-fixture', autoApps, {
+    async recheck({ assignment, baseline: installed }) {
+      assert.equal(assignment.outcomeId, delayedJob);
+      assert.equal(assignment.correctionId, correction.correctionId);
+      assert.equal(installed.version.id, recheck.versionId);
+      rechecksPerformed++;
+      return runRefundTask(installed.payload, delayedTask) === expectedResponse[delayedTask.kind]
+        ? 'resolved'
+        : 'reproduced';
+    },
+  });
+  const second = await observe(automatic, delayedJob, 'promoted');
+  assert.equal(rechecksPerformed, 1);
+  const replayed = await client('evaluator', automatic).reportLearningRecheck(
+    project,
+    automatic,
+    replay,
+  );
+  assert.equal(replayed.accepted, true);
+  assert.equal(second.correctionId, correction.correctionId);
   assert.equal(second.parentVersionId, firstVersion.id);
   assert(second.auditComparisonId && second.developmentComparisonId && second.promotionId);
   assert.notEqual(second.auditRequestId, rejected.auditRequestId);
@@ -693,7 +850,7 @@ try {
     automaticRollout: true,
     automaticRollback: false,
     permittedPaths: ['AGENTS.md'],
-    maxProposalAdmissions: 3,
+    maxProposalAdmissions: 4,
     development: descriptor(rollbackEvaluation.development),
     audits: rollbackEvaluation.audits.map(descriptor),
     evaluatorPrincipal: 'evaluator',
@@ -748,7 +905,7 @@ try {
       };
     },
   });
-  async function runServedTask(task: Task, externalFailure = false) {
+  async function startServedTask(task: Task, externalFailure = false) {
     const installed = await resolveAndCache(
       servedClient,
       {
@@ -764,20 +921,26 @@ try {
     assert.equal(receiptReporter.pendingCount, 0);
     const output = runRefundTask(installed.payload, task);
     const outcomeId = randomUUID();
-    const receipt = await reportServedOutcome(installed, {
-      outcomeId,
-      status: externalFailure || output !== expectedResponse[task.kind] ? 'failed' : 'completed',
-      startedReceipt: started,
-    });
-    assert.equal(receipt.eligible, false);
-    assert(receipt.fieldAudit);
-    const prepared = await prepareServedAudit(installed, {
-      job: { task, output },
-      outcome: receipt,
-      startedReceipt: started,
-    });
-    assert(prepared);
-    return prepared;
+    return async () => {
+      const receipt = await reportServedOutcome(installed, {
+        outcomeId,
+        status: externalFailure || output !== expectedResponse[task.kind] ? 'failed' : 'completed',
+        startedReceipt: started,
+      });
+      assert.equal(receipt.eligible, false);
+      assert(receipt.fieldAudit);
+      const prepared = await prepareServedAudit(installed, {
+        job: { task, output },
+        outcome: receipt,
+        startedReceipt: started,
+      });
+      assert(prepared);
+      return prepared;
+    };
+  }
+  async function runServedTask(task: Task, externalFailure = false) {
+    const finish = await startServedTask(task, externalFailure);
+    return finish();
   }
   const auditServedTask = (body: Awaited<ReturnType<typeof runServedTask>>) =>
     auditClient.reportLearningFieldAudit(project, rollbackConnection, body);
@@ -794,6 +957,10 @@ try {
   assert.equal(inconclusive.windowSize, 1);
   assert(!inconclusive.rollbackPromotionId);
   assert.equal((await fresh(rollbackConnection)).id, healthy.version.id);
+  for (let passed = 1; passed < 10; passed++) {
+    const sample = await runServedTask({ kind: 'refund' });
+    assert.equal((await auditServedTask(sample)).windowSize, passed + 1);
+  }
   const late = await runServedTask({ kind: 'refund-escalation' });
 
   const badOutcome = await submit(
@@ -801,17 +968,49 @@ try {
     healthy.version,
     `${beta}\nrefund-escalation = Give up.`,
   );
-  const badRound = await observe(rollbackConnection, badOutcome, 'promoted');
+  const firstBadRound = await observe(rollbackConnection, badOutcome, 'promoted');
+  const firstBad = await installedBundle(rollbackConnection);
+  const finishEarlierJob = await startServedTask({ kind: 'refund-escalation' });
+  const delayedRegression = await runServedTask({ kind: 'refund-escalation' });
+  assert.equal(delayedRegression.parentVersionId, healthy.version.id);
+  assert.equal(delayedRegression.verdict, 'regression');
+  const inherited = await submit(
+    rollbackConnection,
+    firstBad.version,
+    'exchange = Offer an exchange.',
+  );
+  const badRound = await observe(rollbackConnection, inherited, 'promoted');
   const bad = await installedBundle(rollbackConnection);
+  assert.equal(badRound.parentVersionId, firstBadRound.candidateVersionId);
+  const historical = await auditServedTask(delayedRegression);
+  assert.equal(historical.regressions, 1);
+  assert(!historical.rollbackPromotionId);
+  assert.deepEqual(await auditServedTask(delayedRegression), historical);
+  const lateCompletion = await finishEarlierJob();
+  assert.equal(lateCompletion.versionId, firstBad.version.id);
+  assert.equal(lateCompletion.parentVersionId, healthy.version.id);
+  assert.equal((await auditServedTask(lateCompletion)).regressions, 2);
+  assert.equal((await fresh(rollbackConnection)).id, bad.version.id);
   assert.equal(bad.version.id, badRound.candidateVersionId);
   assert.equal(
     runRefundTask(healthy.payload, { kind: 'refund-escalation' }),
     'Send the case to support.',
   );
   assert.equal(runRefundTask(bad.payload, { kind: 'refund-escalation' }), 'Give up.');
-  await api('POST', auditPath, late, 'evaluator', 409);
+  const historicalPass = await auditServedTask(late);
+  assert(!historicalPass.rollbackPromotionId);
+  // Initial healthy traffic can validate a release before a slower failing task is graded.
+  for (let count = 1; count <= 10; count++) {
+    const passing = await runServedTask({ kind: 'refund' });
+    assert.equal((await auditServedTask(passing)).windowSize, count);
+  }
   const firstRegression = await runServedTask({ kind: 'refund-escalation' });
   assert.equal(firstRegression.verdict, 'regression');
+  assert.equal(
+    firstRegression.parentVersionId,
+    healthy.version.id,
+    'inherited defect is compared to the field-validated checkpoint',
+  );
   await api('POST', auditPath, { ...firstRegression, outcomeId: randomUUID() }, 'evaluator', 409);
   await api(
     'POST',
@@ -822,7 +1021,7 @@ try {
   );
   const firstFieldAudit = await auditServedTask(firstRegression);
   assert.equal(firstFieldAudit.regressions, 1);
-  assert.equal(firstFieldAudit.windowSize, 1);
+  assert.equal(firstFieldAudit.windowSize, 10);
   assert(!firstFieldAudit.rollbackPromotionId);
   assert.deepEqual(await auditServedTask(firstRegression), firstFieldAudit);
   const sideTask = await runServedTask({ kind: 'refund-status' });
@@ -836,14 +1035,14 @@ try {
   );
   const sideAudit = await auditServedTask(sideTask);
   assert.equal(sideAudit.regressions, 1);
-  assert.equal(sideAudit.windowSize, 2);
+  assert.equal(sideAudit.windowSize, 10);
   const secondRegression = await runServedTask({ kind: 'refund-escalation' });
   assert.equal((await auditServedTask(secondRegression)).regressions, 2);
   assert.equal((await fresh(rollbackConnection)).id, bad.version.id);
   const thirdRegression = await runServedTask({ kind: 'refund-escalation' });
   const disabled = await auditServedTask(thirdRegression);
   assert.equal(disabled.regressions, 3);
-  assert.equal(disabled.windowSize, 4);
+  assert.equal(disabled.windowSize, 10);
   assert(!disabled.rollbackPromotionId);
   assert.equal((await fresh(rollbackConnection)).id, bad.version.id);
   await pauseRollbackDriver();
@@ -868,7 +1067,7 @@ try {
   const proposalCountBeforeRollback = modelRequests.length;
   const rollback = await auditServedTask(fourthRegression);
   assert.equal(rollback.regressions, 4);
-  assert.equal(rollback.windowSize, 5);
+  assert.equal(rollback.windowSize, 10);
   assert(rollback.rollbackPromotionId);
   assert.deepEqual(await auditServedTask(fourthRegression), rollback);
   assert.deepEqual(await auditServedTask(thirdRegression), disabled);
@@ -905,22 +1104,251 @@ try {
     { cacheDir: path.join(dir, 'rollback-delivery-cache') },
   );
   assert.equal(explicitOldPin.version.id, bad.version.id);
-  await api('POST', auditPath, tooLate, 'evaluator', 409);
-  await api('POST', auditPath, late, 'evaluator', 409);
+  const afterSupersession = await auditServedTask(tooLate);
+  assert(!afterSupersession.rollbackPromotionId, 'historical grades cannot move traffic');
+  assert.deepEqual(await auditServedTask(late), historicalPass);
+  const restoredSample = await runServedTask({ kind: 'refund-escalation' });
+  assert.equal(restoredSample.versionId, healthy.version.id);
+  assert.equal(
+    restoredSample.parentVersionId,
+    baseline.id,
+    'a previously validated but withdrawn release cannot become the restore control',
+  );
+  assert.equal(restoredSample.revision, rolledBack.resolution!.revision);
+  assert.equal(restoredSample.verdict, 'pass');
+  await auditServedTask(restoredSample);
   const afterFieldAudit = await api('GET', learning(rollbackConnection));
   const rolledBackRound = afterFieldAudit.rounds.find((round: Round) => round.id === badRound.id);
   assert(rolledBackRound);
   assert.equal(rolledBackRound.state, 'promoted');
   assert.equal(rolledBackRound.fieldAudits.rollbackPromotionId, rollback.rollbackPromotionId);
   assert.equal((await fresh(rollbackConnection)).id, healthy.version.id);
-  assert.equal(proposalCountBeforeRollback, 8, 'each teaching admission calls the proposer once');
+  assert.equal(proposalCountBeforeRollback, 9, 'each teaching admission calls the proposer once');
   assert.equal(
     modelRequests.length,
     proposalCountBeforeRollback,
     'field audit never invokes the proposer',
   );
+  const fieldObligations = `${learning(rollbackConnection)}/field-requalifications`;
+  const inspectWithdrawal = () =>
+    auditClient.getLearningFieldRequalification(project, rollbackConnection, bad.version.id);
+  const withdrawal = await inspectWithdrawal();
+  assert(withdrawal.pendingOutcomeIds.includes(fourthRegression.outcomeId));
+  const failedReplay = {
+    versionId: bad.version.id,
+    digest: bad.version.digest,
+    baselineRevision: withdrawal.baselineRevision,
+    outcomeId: fourthRegression.outcomeId,
+    verdict:
+      runRefundTask(bad.payload, { kind: 'refund-escalation' }) ===
+      expectedResponse['refund-escalation']
+        ? 'pass'
+        : 'regression',
+  };
+  await api('POST', fieldObligations, failedReplay, 'other', 403);
+  await api('POST', fieldObligations, failedReplay, 'evaluator');
+  assert((await inspectWithdrawal()).failedOutcomeIds.includes(fourthRegression.outcomeId));
+  await api(
+    'POST',
+    `${learning(rollbackConnection)}/restore`,
+    {
+      restoreId: randomUUID(),
+      expectedRevision: rolledBack.resolution!.revision,
+      target: { kind: 'delivery', versionId: bad.version.id, revision: bad.resolution!.revision },
+      reason: 'Exercise withdrawn content requalification.',
+    },
+    'admin',
+    409,
+  );
+
+  // Stop preserves delivery. A reviewer can still explicitly restore without reissuing connection credentials.
+  const restorePath = `${learning(automatic)}/restore`;
+  const stoppedVersion = await installedBundle(automatic);
+  const restore = {
+    restoreId: randomUUID(),
+    expectedRevision: stoppedVersion.resolution!.revision,
+    target: {
+      kind: 'delivery',
+      revision: initialTaskBundle.resolution!.revision,
+      versionId: baseline.id,
+    },
+    reason: 'Restore the original approved behavior after stopping.',
+  };
+  await api('POST', restorePath, restore, 'evaluator', 403);
+  const restored = await api('POST', restorePath, restore);
+  assert.equal(restored.version.id, baseline.id);
+  assert.deepEqual(await api('POST', restorePath, restore), restored);
+  await api('POST', restorePath, { ...restore, restoreId: randomUUID() }, 'admin', 409);
+  await api('POST', restorePath, { ...restore, reason: 'Changed reviewer decision' }, 'admin', 409);
+  assert.equal((await fresh(automatic)).id, baseline.id);
+
+  // Exercise an enrolled package policy, a bounded development retry, distinct release policy, and policy rotation.
+  const structural = await makeConnection('Authorized skill packages');
+  const structuralInstallation = 'skill-package-fixture';
+  const initialDevelopment = cohort('skill-dev-v1', [{ kind: 'refund' }]);
+  const updatedDevelopment = cohort('skill-dev-v2', [
+    { kind: 'refund' },
+    { kind: 'refund-status' },
+  ]);
+  const auditApps = ['skill-audit-v1', 'skill-audit-v2'].map((dataset) =>
+    cohort(dataset, [{ kind: 'refund-escalation' }]),
+  );
+  const quality = {
+    schemaVersion: 1,
+    id: 'refund-quality',
+    revision: '1',
+    metric: { name: 'correctness', unit: 'reward', direction: 'higher' },
+    aggregation: 'equal-case-means',
+    minimumMeanImprovement: 0.2,
+    maximumCaseRegression: 0,
+    requiredCases: [],
+  };
+  const policies = {
+    development: quality,
+    audit: { ...quality, id: 'refund-nonregression', minimumMeanImprovement: 0 },
+  };
+  await api('PUT', learning(structural), {
+    installationId: structuralInstallation,
+    automaticRollout: true,
+    permittedPaths: ['AGENTS.md'],
+    maxProposalAdmissions: 4,
+    skillPackages: { createSkillNames: ['refunds'], retireSkillNames: ['refunds'] },
+    development: descriptor(initialDevelopment),
+    audits: auditApps.map(descriptor),
+    selectionPolicies: policies,
+    evaluatorPrincipal: 'evaluator',
+    outcomePrincipal: 'other',
+  });
+  const empty = await submit(structural, baseline, 'Keep current behavior exactly.');
+  const unchanged = await observe(structural, empty, 'rejected');
+  assert.equal(unchanged.candidateVersionId, null);
+  assert.equal(unchanged.developmentRequestId, null);
+  assert.equal((await api('GET', learning(structural))).remainingAudits, 2);
+  const reportSkill = createLearningOutcomeReporter({
+    client: client('other', structural),
+    projectId: project,
+    integrationId: structural,
+  });
+  async function skillFeedback(expected: string) {
+    return (
+      await reportSkill(await installedBundle(structural), {
+        outcomeId: randomUUID(),
+        status: 'failed',
+        feedback: { expected, observed: 'The installed refund behavior is incomplete.' },
+      })
+    ).outcomeId;
+  }
+  const create = await skillFeedback('Create a reusable refund skill.');
+  await observe(structural, create, 'development');
+  const rotation = {
+    renewalId: randomUUID(),
+    expectedRevision: 0,
+    proposalAdmissions: 0,
+    audits: [],
+    development: descriptor(updatedDevelopment),
+    selectionPolicies: { ...policies, development: { ...quality, revision: '2' } },
+  };
+  await api('POST', `${learning(structural)}/renew`, rotation, 'admin', 409);
+  const pauseOldInstallation = enableDriver(structural, structuralInstallation, {
+    development: initialDevelopment,
+    audits: auditApps,
+  });
+  const creationView = await waitFor('revised skill proposal to be promoted', async () => {
+    const view = await api('GET', learning(structural));
+    return view.rounds.some(
+      (round: Round) => round.outcomeId === create && round.state === 'promoted',
+    )
+      ? view
+      : undefined;
+  });
+  const attempts = creationView.rounds
+    .filter((round: Round) => round.outcomeId === create)
+    .sort((a: Round, b: Round) => a.attempt - b.attempt);
+  assert.deepEqual(
+    attempts.map((round: Round) => [round.attempt, round.state]),
+    [
+      [1, 'rejected'],
+      [2, 'promoted'],
+    ],
+  );
+  assert.equal(attempts[1].policyEpoch, 0);
+  assert.deepEqual(await scores(attempts[1].auditComparisonId, attempts[1].auditRequestId), [0]);
+  const withSkill = await installedBundle(structural);
+  assert(withSkill.payload.files.some((f) => f.path === 'skills/refunds/SKILL.md'));
+  assert.equal(runRefundTask(withSkill.payload, { kind: 'refund' }), expectedResponse.refund);
+  await pauseOldInstallation();
+  const rotated = await api('POST', `${learning(structural)}/renew`, rotation);
+  assert.equal(rotated.policyEpoch, 1);
+  enableDriver(structural, structuralInstallation, {
+    development: updatedDevelopment,
+    audits: auditApps,
+  });
+  const retirement = await skillFeedback('Consolidate both rules in the root instructions.');
+  const retiredRound = await observe(structural, retirement, 'promoted');
+  assert.equal(retiredRound.parentVersionId, withSkill.version.id);
+  const retired = await installedBundle(structural);
+  assert(!retired.payload.files.some((f) => f.path.startsWith('skills/refunds/')));
+  assert.equal(
+    runRefundTask(retired.payload, { kind: 'refund-status' }),
+    expectedResponse['refund-status'],
+  );
+  const finalRounds = (await api('GET', learning(structural))).rounds;
+  assert.equal(finalRounds.find((r: Round) => r.id === retiredRound.id).policyEpoch, 1);
+  assert.equal(finalRounds.find((r: Round) => r.id === attempts[1].id).policyEpoch, 0);
+
+  const sourceUpdate = await operator.createVersion(
+    project,
+    bundle.id,
+    {
+      parentVersionId: baseline.id,
+      payload: {
+        ...initialTaskBundle.payload,
+        files: initialTaskBundle.payload.files.map((file) =>
+          file.path === 'AGENTS.md' ? { ...file, text: 'Operator reviewed policy refresh.' } : file,
+        ),
+      },
+    },
+    randomUUID(),
+  );
+  const sourcePromotion = await operator.promote(
+    project,
+    bundle.id,
+    'stable',
+    {
+      versionId: sourceUpdate.id,
+      expectedRevision: '1',
+      unevaluatedReason: 'Qualified source correction.',
+    },
+    randomUUID(),
+  );
+  const beforeRefresh = await installedBundle(automatic);
+  const refresh = {
+    restoreId: randomUUID(),
+    expectedRevision: beforeRefresh.resolution!.revision,
+    target: { kind: 'source', revision: sourcePromotion.revision, versionId: sourceUpdate.id },
+    reason: 'Refresh the stopped connection to the reviewed source release.',
+  };
+  const refreshed = await api('POST', restorePath, refresh);
+  assert.equal(refreshed.version.id, sourceUpdate.id);
+  assert.equal((await fresh(automatic)).id, sourceUpdate.id);
+  assert.equal((await fresh(structural)).id, retired.version.id);
+  evidence.recoveryOperations = {
+    stoppedRestore: restored.id,
+    sourceRefresh: refreshed.id,
+    failedWithdrawalReplay: fourthRegression.outcomeId,
+  };
+  evidence.structuralLearning = {
+    unchanged: unchanged.id,
+    attempts: attempts.map((r: Round) => r.id),
+    retirement: retiredRound.id,
+  };
   evidence.project = project;
-  evidence.rounds = [promoted, staleRound, rejected, second, reviewed, afterRevoke];
+  evidence.rounds = [promoted, rejected, second, reviewed, afterRevoke];
+  evidence.delayedCorrection = {
+    outcomeId: delayedJob,
+    correctionId: correction.correctionId,
+    recheckedAgainst: recheck.versionId,
+  };
   evidence.datasetRuns = Object.fromEntries(
     [...new Set(executions.map(({ dataset }) => dataset))].map((dataset) => [
       dataset,
@@ -929,10 +1357,11 @@ try {
   );
   evidence.delivery = {
     pinned: baseline.id,
-    sibling: baseline.id,
-    source: baseline.id,
-    automatic: second.candidateVersionId,
-    manual: reviewed.candidateVersionId,
+    sibling: (await fresh(sibling)).id,
+    source: (await fresh()).id,
+    automatic: (await fresh(automatic)).id,
+    manualBeforeRevocation: reviewed.candidateVersionId,
+    structural: retired.version.id,
   };
   evidence.restartPreservedDevelopmentRequest = pending.developmentRequestId;
   evidence.stopAndRevokeVerified = true;
@@ -949,7 +1378,9 @@ try {
     policyDisabledAtThreshold: disabled,
     staleEvaluationInterrupted: interrupted.id,
     rollback,
-    staleAuditsRejected: true,
+    lateGradesRetained: true,
+    inheritedRegressionDetected: true,
+    restoredRevisionGraded: true,
     priorRevision: bad.resolution?.revision,
     rollbackRevision: rolledBack.resolution?.revision,
     pinnedVersion: explicitOldPin.version.id,

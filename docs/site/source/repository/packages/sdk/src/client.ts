@@ -19,9 +19,14 @@ import type {
   LearningEnrollmentStatus,
   LearningFieldAuditReceipt,
   LearningFieldAuditRequest,
+  LearningFieldRequalification,
+  LearningFieldReplay,
   LearningOutcomeReceipt,
   LearningOutcomeRequest,
+  LearningCorrectionRequest,
+  LearningRecheckRequest,
   LearningReviewReceipt,
+  LearningRestoreRequest,
   LearningRenewalRequest,
   LearningRenewalReceipt,
   LearningWork,
@@ -408,8 +413,61 @@ export class AcclimateClient {
       key,
     );
   }
+  reportLearningCorrection(
+    projectId: string,
+    integrationId: string,
+    body: LearningCorrectionRequest,
+  ): Promise<{ correctionId: string; outcomeId: string; accepted: true }> {
+    return this.request(
+      'POST',
+      this.learningPath(projectId, integrationId) + '/corrections',
+      JSON.stringify(body),
+      body.correctionId,
+    );
+  }
+  reportLearningRecheck(
+    projectId: string,
+    integrationId: string,
+    body: LearningRecheckRequest,
+  ): Promise<{
+    correctionId: string;
+    revision: string;
+    verdict: LearningRecheckRequest['verdict'];
+    accepted: true;
+  }> {
+    return this.request(
+      'POST',
+      this.learningPath(projectId, integrationId) + '/rechecks',
+      JSON.stringify(body),
+      body.correctionId + ':' + body.revision,
+    );
+  }
   getLearningWork(projectId: string, integrationId: string): Promise<LearningWork> {
     return this.request('GET', this.learningPath(projectId, integrationId) + '/work');
+  }
+  getLearningFieldRequalification(
+    projectId: string,
+    integrationId: string,
+    versionId: string,
+  ): Promise<LearningFieldRequalification> {
+    return this.request(
+      'GET',
+      this.learningPath(projectId, integrationId) +
+        '/field-requalifications/' +
+        encodeURIComponent(versionId),
+    );
+  }
+  reportLearningFieldReplay(
+    projectId: string,
+    integrationId: string,
+    body: LearningFieldReplay,
+  ): Promise<{ accepted: true }> {
+    return this.request(
+      'POST',
+      this.learningPath(projectId, integrationId) + '/field-requalifications',
+      JSON.stringify(body),
+      [body.outcomeId, body.versionId, body.baselineRevision].join(':'),
+    );
   }
   reportLearningFieldAudit(
     projectId: string,
@@ -447,6 +505,19 @@ export class AcclimateClient {
     return this.request(
       'POST',
       this.learningPath(projectId, integrationId) + '/renew',
+      JSON.stringify(body),
+      key,
+    );
+  }
+  restoreLearning(
+    projectId: string,
+    integrationId: string,
+    body: LearningRestoreRequest,
+    key = body.restoreId,
+  ): Promise<Promotion> {
+    return this.request(
+      'POST',
+      this.learningPath(projectId, integrationId) + '/restore',
       JSON.stringify(body),
       key,
     );

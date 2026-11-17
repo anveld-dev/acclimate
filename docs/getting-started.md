@@ -24,7 +24,7 @@ python3.11 acclimate_eval.py describe
 
 The trial makes no service, OIDC or provider call. It compares deterministic in-memory task behavior and prints simulated observations, not release evidence. JavaScript runs directly without a TypeScript runner or implicit `npx` download. Durable TypeScript evaluation needs Node 22.22+, POSIX and `python3` with `fcntl`; the Python evaluator has no Node or third-party runtime dependency. Both need private local persistent storage.
 
-Building from source is a contributor alternative, documented in [development](development.md#publish-and-consume-content). To schedule ongoing improvement from an installed TypeScript app's graded outcomes, follow the [connected learning setup](../deploy/README.md#operate-connected-learning).
+Building from source is a contributor alternative, documented in [development](development.md#publish-and-consume-content). For ongoing improvement from TypeScript, export the installed development and audit apps with `connectedEvaluationDescriptor`, attach the terminal-outcome hook, and enroll the connection. The setup guide covers the evaluator process, receipts and release policies. [Connected learning setup](../deploy/README.md#operate-connected-learning).
 
 ## 2. Verify delivery, then attach the real agent
 

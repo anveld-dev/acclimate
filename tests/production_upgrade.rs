@@ -124,19 +124,25 @@ async fn migration_0012_to_current_preserves_business_rows_and_revokes_sessions_
         request["progress_fingerprint"] = Value::Null;
     }
     expected.insert("evaluation_progress".into(), serde_json::json!([]));
-    for table in [
-        "connected_learning_cohorts",
-        "connected_learning_enrollments",
-        "connected_learning_field_verdicts",
-        "connected_learning_outcomes",
-        "connected_learning_renewals",
-        "connected_learning_rounds",
-    ] {
-        expected.insert(table.into(), serde_json::json!([]));
+    for proposal in expected
+        .get_mut("proposals")
+        .unwrap()
+        .as_array_mut()
+        .unwrap()
+    {
+        proposal["skill_packages"] = Value::Null;
+    }
+    let after = snapshot(&mut connection, &schema).await;
+    // This pre-learning project never enrolled a connection. Every newly
+    // introduced learning table must therefore be empty after migration.
+    for table in after
+        .keys()
+        .filter(|name| name.starts_with("connected_learning_"))
+    {
+        expected.insert(table.clone(), serde_json::json!([]));
     }
     assert_eq!(
-        expected,
-        snapshot(&mut connection, &schema).await,
+        expected, after,
         "upgrade must preserve exact business identities, payloads, ownership and timestamps"
     );
     let revoked = sqlx::query(
@@ -186,7 +192,7 @@ async fn migration_0012_to_current_preserves_business_rows_and_revokes_sessions_
 }
 
 #[tokio::test]
-async fn upgrade_reserves_legacy_audits_and_quarantines_overlapping_slots() {
+async fn upgrade_preserves_connected_history_and_quarantines_overlapping_slots() {
     let Ok(url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
         return;
     };
@@ -206,13 +212,16 @@ async fn upgrade_reserves_legacy_audits_and_quarantines_overlapping_slots() {
     legacy.run(&mut connection).await.unwrap();
     let bundle = Uuid::new_v4();
     let version = Uuid::new_v4();
+    let original_digest = format!("sha256:{}", "a".repeat(64));
     sqlx::raw_sql(&format!(
         "INSERT INTO projects(id,name) VALUES('upgrade-cohorts','Upgrade fixtures');
          INSERT INTO bundles(project_id,id,name) VALUES('upgrade-cohorts','{bundle}','Fixture');
          INSERT INTO versions(project_id,bundle_id,id,digest,payload)
-           VALUES('upgrade-cohorts','{bundle}','{version}','fixture-digest',decode('7b7d','hex'));
+           VALUES('upgrade-cohorts','{bundle}','{version}','{original_digest}',decode('7b7d','hex'));
          INSERT INTO channels(project_id,bundle_id,name,revision,version_id)
-           VALUES('upgrade-cohorts','{bundle}','stable',1,'{version}');"
+           VALUES('upgrade-cohorts','{bundle}','stable',1,'{version}');
+         INSERT INTO promotions(project_id,bundle_id,id,channel,revision,version_id,reviewer)
+           VALUES('upgrade-cohorts','{bundle}',gen_random_uuid(),'stable',1,'{version}','operator');"
     ))
     .execute(&mut connection)
     .await
@@ -225,17 +234,20 @@ async fn upgrade_reserves_legacy_audits_and_quarantines_overlapping_slots() {
             "INSERT INTO integrations(project_id,bundle_id,id,channel,display_name)
                VALUES('upgrade-cohorts','{bundle}','{integration}','stable','Fixture');
              INSERT INTO channels(project_id,bundle_id,name,revision,version_id)
-               VALUES('upgrade-cohorts','{bundle}','{delivery}',1,'{version}');"
+               VALUES('upgrade-cohorts','{bundle}','{delivery}',1,'{version}');
+             INSERT INTO promotions(project_id,bundle_id,id,channel,revision,version_id,reviewer)
+               VALUES('upgrade-cohorts','{bundle}',gen_random_uuid(),'{delivery}',1,'{version}','operator');"
         ))
         .execute(&mut connection)
         .await
         .unwrap();
         let development = serde_json::json!({
-            "datasetRevision":"development","expectedCases":[{"caseId":"dev","repetition":0}]
+            "datasetRevision":"development","graderRevision":"v1","runtime":{},
+            "expectedCases":[{"caseId":"dev","repetition":0}]
         });
         let audits = serde_json::json!([
-            {"datasetRevision":format!("first-{integration}"),"expectedCases":[{"caseId":"overlap","repetition":0}]},
-            {"datasetRevision":format!("second-{integration}"),"expectedCases":[{"caseId":format!("fresh-{integration}"),"repetition":0}]}
+            {"datasetRevision":format!("first-{integration}"),"graderRevision":"v1","runtime":{},"expectedCases":[{"caseId":"overlap","repetition":0}]},
+            {"datasetRevision":format!("second-{integration}"),"graderRevision":"v1","runtime":{},"expectedCases":[{"caseId":format!("fresh-{integration}"),"repetition":0}]}
         ]);
         sqlx::query(
             "INSERT INTO connected_learning_enrollments(project_id,bundle_id,integration_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,proposal_admissions,development,audits,automatic_rollout,outcome_principal,evaluator_principal,authorized_by)
@@ -251,7 +263,93 @@ async fn upgrade_reserves_legacy_audits_and_quarantines_overlapping_slots() {
         .unwrap();
     }
 
+    // Rehearse an existing managed release with an outstanding job and one field grade.
+    let previous = sqlx::migrate::Migrator {
+        migrations: Cow::Owned(full.iter().filter(|m| m.version <= 20).cloned().collect()),
+        ..sqlx::migrate::Migrator::DEFAULT
+    };
+    previous.run(&mut connection).await.unwrap();
+    let integration = enrollments[0];
+    let delivery = format!("learn-{integration}");
+    let promoted = Uuid::new_v4();
+    let promotion = Uuid::new_v4();
+    let proposal = Uuid::new_v4();
+    let round = Uuid::new_v4();
+    let outcome = Uuid::new_v4();
+    let field_outcome = Uuid::new_v4();
+    let receipt = Uuid::new_v4();
+    let comparison = Uuid::new_v4();
+    let dev_comparison = Uuid::new_v4();
+    let dev_request = Uuid::new_v4();
+    let audit_request = Uuid::new_v4();
+    let candidate_digest = format!("sha256:{}", "b".repeat(64));
+    let field_request = serde_json::json!({
+        "outcomeId":field_outcome,"startedReceiptId":receipt,"versionId":promoted,
+        "digest":candidate_digest,"revision":"2","parentVersionId":version,
+        "parentDigest":original_digest,"verdict":"regression"
+    });
+    let field_response = serde_json::json!({"outcomeId":field_outcome,"accepted":true,"windowSize":1,"regressions":1});
+    sqlx::raw_sql(&format!(
+        r#"
+        INSERT INTO proposals(project_id,bundle_id,id,parent_version_id,request,status)
+          VALUES('upgrade-cohorts','{bundle}','{proposal}','{version}','{{}}','succeeded');
+        INSERT INTO versions(project_id,bundle_id,id,parent_version_id,proposal_id,digest,payload)
+          VALUES('upgrade-cohorts','{bundle}','{promoted}','{version}','{proposal}','{candidate_digest}',decode('7b7d','hex'));
+        UPDATE proposals SET candidate_version_id='{promoted}' WHERE id='{proposal}';
+        INSERT INTO comparisons(project_id,bundle_id,id,body,complete,submitter)
+          VALUES('upgrade-cohorts','{bundle}','{dev_comparison}','{{}}',true,'evaluator'),
+                ('upgrade-cohorts','{bundle}','{comparison}','{{}}',true,'evaluator');
+        INSERT INTO evaluation_requests(project_id,bundle_id,id,body,requested_by,status,comparison_id)
+          VALUES('upgrade-cohorts','{bundle}','{dev_request}','{{}}','service','completed','{dev_comparison}'),
+                ('upgrade-cohorts','{bundle}','{audit_request}','{{}}','service','completed','{comparison}');
+        INSERT INTO promotions(project_id,bundle_id,id,channel,revision,version_id,previous_version_id,comparison_id,reviewer)
+          VALUES('upgrade-cohorts','{bundle}','{promotion}','{delivery}',2,'{promoted}','{version}','{comparison}','admin');
+        UPDATE channels SET version_id='{promoted}',revision=2 WHERE name='{delivery}';
+        INSERT INTO connected_learning_outcomes(project_id,bundle_id,integration_id,outcome_id,version_id,digest,status,feedback,submitted_by,fingerprint)
+          VALUES('upgrade-cohorts','{bundle}','{integration}','{outcome}','{version}','{original_digest}','failed','{{"expected":"resolved","observed":"pending"}}','outcome','old-body');
+        INSERT INTO connected_learning_rounds(project_id,bundle_id,integration_id,id,outcome_id,parent_version_id,parent_revision,proposal_id,candidate_version_id,development_request_id,development_comparison_id,audit_index,audit_request_id,audit_comparison_id,promotion_id,state,field_audit_window_size,field_audit_regressions)
+          VALUES('upgrade-cohorts','{bundle}','{integration}','{round}','{outcome}','{version}',1,'{proposal}','{promoted}','{dev_request}','{dev_comparison}',1,'{audit_request}','{comparison}','{promotion}','promoted',1,1);
+        INSERT INTO connected_learning_outcomes(project_id,bundle_id,integration_id,outcome_id,version_id,digest,status,submitted_by,fingerprint,started_receipt_id,delivery_revision,field_parent_version_id)
+          VALUES('upgrade-cohorts','{bundle}','{integration}','{field_outcome}','{promoted}','{candidate_digest}','completed','outcome','old-field-body','{receipt}',2,'{version}');
+        INSERT INTO connected_learning_field_verdicts(project_id,bundle_id,integration_id,round_id,outcome_id,started_receipt_id,verdict,evaluator_principal,request,response)
+          VALUES('upgrade-cohorts','{bundle}','{integration}','{round}','{field_outcome}','{receipt}','regression','evaluator','{field_request}','{field_response}');
+        "#
+    ))
+    .execute(&mut connection)
+    .await
+    .unwrap();
     full.run(&mut connection).await.unwrap();
+    full.run(&mut connection).await.unwrap();
+    let preserved: (Uuid, i64, Value, Value, bool) = sqlx::query_as(
+        "SELECT c.version_id,c.revision,v.request,v.response,e.automatic_rollout
+         FROM connected_learning_enrollments e JOIN channels c
+           ON (c.project_id,c.bundle_id,c.name)=(e.project_id,e.bundle_id,e.delivery_channel)
+         JOIN connected_learning_field_verdicts v
+           ON (e.project_id,e.bundle_id,e.integration_id)=(v.project_id,v.bundle_id,v.integration_id)
+         WHERE e.integration_id=$1 AND v.outcome_id=$2",
+    )
+    .bind(integration)
+    .bind(field_outcome)
+    .fetch_one(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        preserved,
+        (promoted, 2, field_request, field_response, false)
+    );
+    let history: (Uuid, bool, i32, i64, bool) = sqlx::query_as(
+        "SELECT f.control_version_id,c.pending,c.attempts,r.policy_epoch,ep.selection_policies IS NULL
+         FROM connected_learning_rounds r
+         JOIN connected_learning_field_releases f ON f.promotion_id=r.promotion_id
+         JOIN connected_learning_corrections c ON (c.project_id,c.integration_id,c.correction_id)=(r.project_id,r.integration_id,r.correction_id)
+         JOIN connected_learning_policy_epochs ep ON (ep.project_id,ep.integration_id,ep.epoch)=(r.project_id,r.integration_id,r.policy_epoch)
+         WHERE r.id=$1",
+    )
+    .bind(round)
+    .fetch_one(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(history, (version, false, 1, 0, true));
     let registrations: Vec<(i32, i64, bool, bool, bool)> = sqlx::query_as(
         "SELECT proposal_admissions,renewal_revision,automatic_rollback,
                 connected_learning_audit_registered(project_id,bundle_id,integration_id,0,audits->0),

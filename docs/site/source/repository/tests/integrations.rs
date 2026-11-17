@@ -313,7 +313,8 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     }
     sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'stable',1,$3)")
         .bind(&p).bind(bundle).bind(baseline).execute(&db).await.unwrap();
-    for id in [enrollment_id, sibling_id] {
+    let legacy_id = Uuid::new_v4();
+    for id in [enrollment_id, sibling_id, legacy_id] {
         sqlx::query("INSERT INTO integrations(id,project_id,bundle_id,channel,display_name) VALUES($1,$2,$3,'stable','fixture')")
             .bind(id).bind(&p).bind(bundle).execute(&db).await.unwrap();
     }
@@ -340,9 +341,18 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     let sibling = format!("/v1/projects/{p}/integrations/{sibling_id}");
     let enrollment = format!("{connection}/learning");
     let descriptor = |cohort: &str| {
+        // The API test's private input is the cohort string itself; the driver qualification
+        // separately uses connectedEvaluationDescriptor() on executing app fixtures.
+        use sha2::{Digest, Sha256};
+        let fingerprint = hex::encode(Sha256::digest(serde_json::to_vec(cohort).unwrap()));
+        let expected = hex::encode(Sha256::digest(b"true"));
+        let cases =
+            json!([{"caseId":cohort,"input":fingerprint,"expected":expected,"repetitions":1}]);
+        let dataset = hex::encode(Sha256::digest(serde_json::to_vec(&cases).unwrap()));
         json!({
             "datasetRevision":cohort,"runtime":{"fixture":"local"},"graderRevision":"grader",
             "expectedCases":[{"caseId":cohort,"repetition":0}],
+            "fixtureProtocol":"installed-v1","datasetDigest":dataset,"caseFingerprints":[fingerprint],
         })
     };
     let settings = json!({
@@ -350,6 +360,65 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
       "development":descriptor("dev"),"audits":[descriptor("audit")],"automaticRollout":true,
       "outcomePrincipal":"outcome","evaluatorPrincipal":"evaluator",
     });
+    let legacy_endpoint = format!("/v1/projects/{p}/integrations/{legacy_id}/learning");
+    let dev = descriptor("legacy-dev");
+    let audit = descriptor("legacy-audit");
+    let mut legacy = settings.clone();
+    legacy["development"] = dev.clone();
+    legacy["audits"] = json!([audit]);
+    legacy["development"]
+        .as_object_mut()
+        .unwrap()
+        .remove("fixtureProtocol");
+    legacy["audits"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("fixtureProtocol");
+    // Previous schemas allowed declared fingerprints without checking the installed fixtures.
+    assert_eq!(
+        call(&app, "PUT", &legacy_endpoint, "owner", legacy.clone())
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    legacy["automaticRollout"] = json!(false);
+    assert_eq!(
+        call(&app, "PUT", &legacy_endpoint, "owner", legacy.clone())
+            .await
+            .0,
+        StatusCode::OK
+    );
+    legacy["automaticRollout"] = json!(true);
+    assert_eq!(
+        call(&app, "PUT", &legacy_endpoint, "owner", legacy.clone())
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+
+    // Retain the original development identities and the old audit slot while authorizing
+    // a new bound development epoch and an independent, content-bound audit.
+    let fresh = descriptor("fresh-audit");
+    let renew_legacy = json!({"renewalId":Uuid::new_v4(),"expectedRevision":0,
+        "proposalAdmissions":0,"development":dev,"audits":[fresh]});
+    let upgraded = call(
+        &app,
+        "POST",
+        &format!("{legacy_endpoint}/renew"),
+        "owner",
+        renew_legacy,
+    )
+    .await;
+    assert_eq!(upgraded.0, StatusCode::OK, "{}", upgraded.1);
+    legacy["development"] = dev;
+    legacy["audits"].as_array_mut().unwrap().push(fresh);
+    let enabled = call(&app, "PUT", &legacy_endpoint, "owner", legacy).await;
+    assert_eq!(enabled.0, StatusCode::OK, "{}", enabled.1);
+    let upgraded = call(&app, "GET", &legacy_endpoint, "owner", Value::Null)
+        .await
+        .1;
+    assert_eq!(upgraded["auditCount"], 2);
+    assert_eq!(upgraded["remainingAudits"], 1);
     let actual = call(&app, "PUT", &enrollment, "owner", settings.clone()).await;
     assert_eq!(actual.0, StatusCode::OK, "{}", actual.1);
     assert_eq!(
@@ -568,6 +637,75 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     let graded = call(&app, "POST", &outcomes, "outcome", graded).await;
     assert_eq!(graded.0, StatusCode::OK);
     assert_eq!(graded.1["eligible"], true);
+    // Old submitters lacked a delivery epoch. Recover their observations only after
+    // the trusted evaluator checks the private job on the exact active delivery.
+    let corrections = format!("{enrollment}/corrections");
+    let rechecks = format!("{enrollment}/rechecks");
+    let completed = json!({"outcomeId":Uuid::new_v4(),"versionId":baseline,"digest":digest,"status":"completed"});
+    assert_eq!(
+        call(&app, "POST", &outcomes, "outcome", completed.clone())
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let correction_id = Uuid::new_v4();
+    let correction = json!({"outcomeId":completed["outcomeId"],"correctionId":correction_id,"feedback":{"observed":"A","expected":"B"}});
+    assert_eq!(
+        call(&app, "POST", &corrections, "evaluator", correction.clone())
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let receipt = call(&app, "POST", &corrections, "outcome", correction.clone()).await;
+    assert_eq!(receipt.0, StatusCode::OK, "{}", receipt.1);
+    assert_eq!(
+        call(&app, "POST", &corrections, "outcome", correction.clone()).await,
+        receipt
+    );
+    let mut changed = correction.clone();
+    changed["feedback"]["expected"] = json!("different");
+    assert_eq!(
+        call(&app, "POST", &corrections, "outcome", changed).await.0,
+        StatusCode::CONFLICT
+    );
+    let work = call(
+        &app,
+        "GET",
+        &format!("{enrollment}/work"),
+        "evaluator",
+        Value::Null,
+    )
+    .await
+    .1;
+    assert!(
+        work["rechecks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|job| job["correctionId"] == json!(correction_id) && job["revision"] == "1")
+    );
+    let recheck = json!({"correctionId":correction_id,"versionId":baseline,"revision":"1","digest":digest,"verdict":"reproduced"});
+    assert_eq!(
+        call(&app, "POST", &rechecks, "outcome", recheck.clone())
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let mut wrong = recheck.clone();
+    wrong["revision"] = json!("2");
+    assert_eq!(
+        call(&app, "POST", &rechecks, "evaluator", wrong).await.0,
+        StatusCode::CONFLICT
+    );
+    let verdict = call(&app, "POST", &rechecks, "evaluator", recheck.clone()).await;
+    assert_eq!(verdict.0, StatusCode::OK, "{}", verdict.1);
+    assert_eq!(
+        call(&app, "POST", &rechecks, "evaluator", recheck).await,
+        verdict
+    );
+    let action:String=sqlx::query_scalar("SELECT action FROM connected_learning_correction_work WHERE project_id=$1 AND correction_id=$2")
+        .bind(&p).bind(correction_id).fetch_one(&db).await.unwrap();
+    assert_eq!(action, "ready");
     let development_id = Uuid::new_v4();
     let audit_id = Uuid::new_v4();
     let development_comparison = Uuid::new_v4();
@@ -581,6 +719,12 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         (audit_id, audit_comparison, "private-audit-case"),
     ] {
         let mut controls = descriptor(cohort);
+        controls.as_object_mut().unwrap().retain(|key, _| {
+            matches!(
+                key.as_str(),
+                "datasetRevision" | "runtime" | "graderRevision" | "expectedCases"
+            )
+        });
         controls["parentVersionId"] = json!(baseline);
         controls["parentDigest"] = json!(digest);
         controls["candidateVersionId"] = json!(replacement);
@@ -595,7 +739,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     let proposal = Uuid::new_v4();
     sqlx::query("INSERT INTO proposals(id,project_id,bundle_id,parent_version_id,request,status) VALUES($1,$2,$3,$4,'{}','succeeded')")
         .bind(proposal).bind(&p).bind(bundle).bind(baseline).execute(&db).await.unwrap();
-    sqlx::query("INSERT INTO connected_learning_rounds(project_id,bundle_id,integration_id,id,outcome_id,parent_version_id,parent_revision,proposal_id,candidate_version_id,development_request_id,development_comparison_id,audit_index,audit_request_id,state) VALUES($1,$2,$3,$4,$5,$6,1,$7,$8,$9,$10,0,$11,'audit')")
+    sqlx::query("INSERT INTO connected_learning_rounds(project_id,bundle_id,integration_id,id,outcome_id,parent_version_id,parent_revision,proposal_id,candidate_version_id,development_request_id,development_comparison_id,audit_index,audit_request_id,state,correction_id,attempt) VALUES($1,$2,$3,$4,$5,$6,1,$7,$8,$9,$10,0,$11,'audit',$5,1)")
         .bind(&p).bind(bundle).bind(enrollment_id).bind(Uuid::new_v4())
         .bind(Uuid::parse_str(outcome["outcomeId"].as_str().unwrap()).unwrap()).bind(baseline)
         .bind(proposal).bind(replacement).bind(development_id).bind(development_comparison).bind(audit_id)
@@ -788,5 +932,72 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     assert_eq!(
         call(&app, "POST", &outcomes, "outcome", fresh).await.0,
         StatusCode::CONFLICT
+    );
+
+    // A stopped enrollment still serves its private channel and supports reviewed recovery.
+    let restore = format!("{enrollment}/restore");
+    let reviewed = json!({
+        "restoreId":Uuid::new_v4(), "expectedRevision":"2", "reason":"Restore previously reviewed instructions",
+        "target":{"kind":"delivery", "versionId":baseline, "revision":"1"}
+    });
+    let available = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;
+    assert!(
+        available["restoreTargets"]
+            .as_array()
+            .unwrap()
+            .contains(&reviewed["target"])
+    );
+    for forbidden in ["outcome", "evaluator", "observer"] {
+        assert_eq!(
+            call(&app, "POST", &restore, forbidden, reviewed.clone())
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    let (restored, concurrent_retry) = tokio::join!(
+        call(&app, "POST", &restore, "owner", reviewed.clone()),
+        call(&app, "POST", &restore, "owner", reviewed.clone()),
+    );
+    assert_eq!(restored.0, StatusCode::OK, "{}", restored.1);
+    assert_eq!(concurrent_retry, restored);
+    assert_eq!(restored.1["revision"], "3");
+    assert_eq!(restored.1["version"]["id"], baseline.to_string());
+    let mut refresh = json!({
+        "restoreId":Uuid::new_v4(), "expectedRevision":"3", "reason":"Adopt an operator-reviewed source correction",
+        "target":{"kind":"source", "revision":"1", "versionId":replacement}
+    });
+    let published = call(&app, "POST", &format!("{resolve}/promotions"), "owner",
+        json!({"expectedRevision":"1","versionId":replacement,"unevaluatedReason":"Reviewed source update"})).await;
+    assert_eq!(published.0, StatusCode::CREATED, "{}", published.1);
+    assert_eq!(
+        call(&app, "POST", &restore, "owner", refresh.clone())
+            .await
+            .0,
+        StatusCode::CONFLICT
+    );
+    refresh["target"]["revision"] = json!("2");
+    let updated = call(&app, "POST", &restore, "owner", refresh).await;
+    assert_eq!(updated.0, StatusCode::OK, "{}", updated.1);
+    assert_eq!(updated.1["revision"], "4");
+    assert_eq!(
+        call(&app, "POST", &restore, "owner", reviewed.clone()).await,
+        restored
+    );
+    let mut reused = reviewed.clone();
+    reused["reason"] = json!("different review");
+    assert_eq!(
+        call(&app, "POST", &restore, "owner", reused).await.0,
+        StatusCode::CONFLICT
+    );
+    let mut stale = reviewed;
+    stale["restoreId"] = json!(Uuid::new_v4());
+    assert_eq!(
+        call(&app, "POST", &restore, "owner", stale).await.0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        call(&app, "GET", &work, "evaluator", Value::Null).await.1["active"],
+        false
     );
 }

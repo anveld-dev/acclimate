@@ -49,6 +49,8 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: python scripts/productization/rust_tests.py --pg-bin /usr/lib/postgresql/16/bin
       - run: cargo build
+      - name: Qualify connected learning against PostgreSQL
+        run: python scripts/productization/connected_learning.py --skip-build --pg-bin /usr/lib/postgresql/16/bin
       - run: npm run test:e2e -- --skip-build --pg-bin /usr/lib/postgresql/16/bin
       - run: npm run qualify:full-roadmap -- --skip-build --pg-bin /usr/lib/postgresql/16/bin
       - run: python scripts/check_docs.py

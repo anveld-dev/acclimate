@@ -100,12 +100,14 @@ fn protocol_bounds_and_no_full_payload_fallback() {
 #[test]
 fn inclusive_protocol_limits_and_final_payload_limit() {
     let p = parent("original");
-    let mut content = patch(json!([]));
+    let change = json!([{"path":"guide.md", "oldText":"original", "newText":"updated"}]);
+    let mut content = patch(change.clone());
     content.extend(std::iter::repeat_n(' ', 32768 - content.len()));
     assert!(reconstruct(&p, &request(), &content).is_ok());
     content.push(' ');
     assert!(reconstruct(&p, &request(), &content).is_err());
-    let rationale = json!({"schemaVersion":1,"edits":[],"rationale":"x".repeat(4096)}).to_string();
+    let rationale =
+        json!({"schemaVersion":1,"edits":change,"rationale":"x".repeat(4096)}).to_string();
     assert!(reconstruct(&p, &request(), &rationale).is_ok());
     let original = (0..128)
         .map(|i| format!("anchor-{i:03} "))
@@ -125,4 +127,62 @@ fn inclusive_protocol_limits_and_final_payload_limit() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn a_proposal_must_change_parent_content() {
+    let p = parent("original");
+    for edits in [
+        json!([]),
+        json!([{"path":"guide.md","oldText":"original","newText":"original"}]),
+    ] {
+        assert!(
+            matches!(reconstruct(&p, &request(), &patch(edits)), Err(ref e) if e == "Proposal did not change any file")
+        );
+    }
+}
+
+#[test]
+fn scoped_skill_mutations_require_complete_packages_and_exact_parent_inventory() {
+    use acclimate_service::proposal_edits::{SkillPackages, reconstruct_scoped};
+    let policy = SkillPackages {
+        create_skill_names: vec!["settlement".into()],
+        retire_skill_names: vec!["settlement".into()],
+    };
+    let scoped = |p: &BundlePayload, ops: Value| {
+        let response =
+            json!({"schemaVersion":1,"edits":[],"skillOperations":ops,"rationale":"fix"})
+                .to_string();
+        reconstruct_scoped(p, &request(), Some(&policy), &response)
+    };
+    let manifest =
+        "---\nname: settlement\ndescription: Classify a settlement\n---\nUse the helper.";
+    let create = json!({"op":"createSkill","name":"settlement","files":[{"relativePath":"SKILL.md","text":manifest}]});
+    let p = parent("unchanged");
+    let (created, _) = scoped(&p, json!([create.clone()])).unwrap();
+    assert_eq!(created.files[2].path, "skills/settlement/SKILL.md");
+    assert!(scoped(&created, json!([create.clone()])).is_err());
+    // Computed independently with the SDK's packageDigest for this manifest.
+    let retire = json!({"op":"retireSkill","name":"settlement","expectedPackageDigest":"sha256:5eca19aa33955298395808785953d1e4dcb409fb0f24d04bb71a2c4f4ed6a010"});
+    assert_eq!(
+        scoped(&created, json!([retire.clone()]))
+            .unwrap()
+            .0
+            .files
+            .len(),
+        2
+    );
+    let mut changed = created.clone();
+    changed.files[2].text.push('!');
+    assert!(scoped(&changed, json!([retire.clone()])).is_err());
+    assert!(scoped(&p, json!([create.clone(), retire])).is_err());
+    for (name, file, content) in [
+        ("other", "SKILL.md", manifest),
+        ("settlement", "../escape", manifest),
+        ("settlement", "helper.md", "missing manifest"),
+        ("settlement", "SKILL.md", "invalid metadata"),
+    ] {
+        assert!(scoped(&p, json!([{"op":"createSkill","name":name,"files":[{"relativePath":file,"text":content}]}])).is_err());
+    }
+    assert!(reconstruct(&p,&request(), &json!({"schemaVersion":1,"edits":[],"skillOperations":[create],"rationale":"unauthorized"}).to_string()).is_err());
 }

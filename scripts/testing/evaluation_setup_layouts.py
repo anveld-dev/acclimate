@@ -107,9 +107,9 @@ def run(args):
             expect(trigger).to_have_attribute('aria-expanded','false')
             capture_layout(p,out,'another-request-collapsed')
             article.get_by_role('button',name='Copy request ID',exact=True).click();assert p.evaluate('navigator.clipboard.readText()')==request['id']
-            article.get_by_role('button',name='Copy configuration',exact=True).click();handoff=json.loads(p.evaluate('navigator.clipboard.readText()'));assert handoff['requestId']==request['id'] and handoff['configuration']==valid
+            article.get_by_role('button',name='Copy request JSON',exact=True).click();handoff=json.loads(p.evaluate('navigator.clipboard.readText()'));assert handoff['requestId']==request['id'] and handoff['configuration']==valid
             trigger.click();editor.fill(json.dumps(configuration(7)))
-            article.get_by_role('button',name='Copy configuration',exact=True).click();assert json.loads(p.evaluate('navigator.clipboard.readText()'))['configuration']==valid
+            article.get_by_role('button',name='Copy request JSON',exact=True).click();assert json.loads(p.evaluate('navigator.clipboard.readText()'))['configuration']==valid
             capture_layout(p,out,'created-frozen-custom-handoff')
             assert w.call('GET',w.bundle+'/comparisons')['items']==[]
             assert w.call('GET',w.bundle+'/evaluation-requests/'+request['id'])==request

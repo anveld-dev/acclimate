@@ -236,9 +236,8 @@ export function ConnectionLearning({
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            Field audits grade served jobs against the connection’s comparison version. Three
-            regressions in the latest ten eligible verdicts can restore that version on the current
-            rollout.
+            Field audits compare served jobs with an independent control. A sequential test of
+            wins and losses can trigger rollback or validate the release.
           </p>
           <dl className="learning-capacity">
             <div>
@@ -258,6 +257,25 @@ export function ConnectionLearning({
               </dd>
             </div>
           </dl>
+          {status.noiseCalibration && (
+            <p className="text-sm">
+              Baseline noise calibration · {status.noiseCalibration.status}
+              {status.noiseCalibration.minimumDetectableEffect !== undefined && (
+                <>
+                  <br />
+                  Estimated detectable improvement ·{' '}
+                  {status.noiseCalibration.minimumDetectableEffect.toPrecision(3)} metric units at
+                  80% power
+                </>
+              )}
+              {status.noiseCalibration.warning && (
+                <>
+                  <br />
+                  {status.noiseCalibration.warning}
+                </>
+              )}
+            </p>
+          )}
           {!status.developmentCommitted && (
             <p className="text-sm">
               Automatic rollout requires a committed development descriptor and a fresh committed
@@ -884,7 +902,7 @@ function LearningRound({
         {fieldAudits && (
           <div className="space-y-1">
             <p>
-              Post-rollout audit window · {fieldAudits.regressions}{' '}
+              Post-rollout paired audit · {fieldAudits.regressions}{' '}
               {fieldAudits.regressions === 1 ? 'regression' : 'regressions'} in{' '}
               {fieldAudits.windowSize} graded {fieldAudits.windowSize === 1 ? 'job' : 'jobs'}
             </p>

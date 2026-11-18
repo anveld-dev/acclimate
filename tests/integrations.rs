@@ -926,6 +926,75 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     .execute(&db)
     .await
     .unwrap();
+    let calibration = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let view = call(&app, "GET", &work, "evaluator", Value::Null).await.1;
+            if let Some(item) = view["items"]
+                .as_array()
+                .and_then(|items| items.iter().find(|item| item["phase"] == "calibration"))
+            {
+                break item["evaluationRequestId"].as_str().unwrap().to_owned();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let bundle_path = format!("/v1/projects/{p}/bundles/{bundle}");
+    let calibration_path = format!("{bundle_path}/evaluation-requests/{calibration}");
+    let attempt = Uuid::new_v4().to_string();
+    let response = call(
+        &app,
+        "POST",
+        &format!("{calibration_path}/start"),
+        "evaluator",
+        json!({"attemptId":attempt}),
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::OK, "{}", response.1);
+    assert_eq!(
+        response.1["parentVersionId"],
+        response.1["candidateVersionId"]
+    );
+    let mut report = response.1;
+    report.as_object_mut().unwrap().retain(|key, _| {
+        matches!(
+            key.as_str(),
+            "parentVersionId"
+                | "parentDigest"
+                | "candidateVersionId"
+                | "candidateDigest"
+                | "datasetRevision"
+                | "runtime"
+                | "graderRevision"
+                | "expectedCases"
+        )
+    });
+    let calibration_outcome =
+        json!({"executionStatus":"completed","gradingStatus":"scored","reward":0});
+    report["results"] = json!(report["expectedCases"].as_array().unwrap().iter().map(|key|
+        json!({"caseId":key["caseId"],"repetition":key["repetition"],"parent":calibration_outcome,"candidate":calibration_outcome})
+    ).collect::<Vec<_>>());
+    report["evaluation"] = json!({"requestId":calibration,"attemptId":attempt});
+    let comparison = call(
+        &app,
+        "POST",
+        &format!("{bundle_path}/comparisons"),
+        "evaluator",
+        report,
+    )
+    .await;
+    assert_eq!(comparison.0, StatusCode::CREATED, "{}", comparison.1);
+    let finished = call(
+        &app,
+        "POST",
+        &format!("{calibration_path}/finish"),
+        "evaluator",
+        json!({"attemptId":attempt,"comparisonId":comparison.1["id"]}),
+    )
+    .await;
+    assert_eq!(finished.0, StatusCode::OK, "{}", finished.1);
+    assert_eq!(finished.1["status"], "completed");
     let malformed = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             let reason: Option<String> = sqlx::query_scalar(

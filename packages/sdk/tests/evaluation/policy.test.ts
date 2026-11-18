@@ -269,3 +269,35 @@ test('all generated diagnostics and verdict checks exclude arbitrary error strin
   });
   assert.ok(!JSON.stringify(result).includes('secret-canary'));
 });
+
+const confidence = JSON.parse(
+  readFileSync(
+    new URL('../../../../contracts/fixtures/connected-confidence-decisions.json', import.meta.url),
+    'utf8',
+  ),
+);
+for (const decision of confidence) {
+  test(`shared confidence decision: ${decision.name}`, () => {
+    const { comparison, binding, descriptor, policy } = structuredClone(fixtures.vectors[0]);
+    const template = comparison.results[0];
+    comparison.results = decision.gains.map((gain: number, index: number) => ({
+      ...template,
+      caseId: String(index),
+      parent: { ...template.parent, reward: 0 },
+      candidate: { ...template.candidate, reward: gain },
+    }));
+    descriptor.expectedCases = comparison.results.map(
+      ({ caseId, repetition }: { caseId: string; repetition: number }) => ({ caseId, repetition }),
+    );
+    comparison.expectedCases = descriptor.expectedCases;
+    const result = checkComparison({
+      comparison,
+      expectedBinding: binding,
+      expectedDescriptor: descriptor,
+      policy: { ...policy, schemaVersion: 2, nonInferiorityMargin: decision.nonInferiorityMargin },
+      stage: decision.stage,
+      calibratedStandardDeviation: decision.calibratedStandardDeviation,
+    });
+    assert.equal(result.verdict, decision.pass ? 'pass' : 'fail');
+  });
+}

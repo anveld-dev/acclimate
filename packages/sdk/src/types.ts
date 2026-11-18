@@ -1,4 +1,4 @@
-import type { EvaluationPolicyV1 } from './evaluation/policy.js';
+import type { EvaluationPolicy } from './evaluation/policy.js';
 export type CompatibilityTarget = 'generic' | 'codex' | 'claude' | 'pi' | 'cursor';
 export type FileKind = 'instruction' | 'skill' | 'memory';
 export interface BundleFile {
@@ -327,7 +327,7 @@ export interface LearningEvaluationDescriptor extends EvaluationDescriptor {
   caseFingerprints?: string[];
   familyFingerprints?: string[];
 }
-export type LearningSelectionPolicy = EvaluationPolicyV1;
+export type LearningSelectionPolicy = EvaluationPolicy;
 export interface LearningSelectionPolicies {
   development: LearningSelectionPolicy;
   audit: LearningSelectionPolicy;
@@ -396,6 +396,16 @@ export interface LearningEnrollmentStatus extends LearningEnrollment {
   }>;
   rounds: LearningRound[];
   remainingAudits: number;
+  noiseCalibration?: {
+    requestId: string | null;
+    status: 'queued' | 'requested' | 'running' | 'completed' | 'failed' | 'interrupted';
+    caseCount?: number;
+    flipRate?: number;
+    pairedStandardDeviation?: number;
+    standardError?: number;
+    minimumDetectableEffect?: number;
+    warning?: string | null;
+  };
   deliveredVersionId: string;
   deliveredRevision: string;
   restoreTargets?: LearningRestoreTarget[];
@@ -441,6 +451,7 @@ export interface LearningIncidentReplay {
   digest: string;
   baselineRevision: string;
   verdict: Exclude<LearningIncidentReplayStatus, 'pending'>;
+  attempts?: Array<Exclude<LearningIncidentReplayStatus, 'pending'>>;
 }
 export interface LearningReleaseEvidence {
   promotionId: string;
@@ -458,7 +469,7 @@ export interface LearningOutcomeStatus {
   currentDelivery?: { versionId: string; revision: string };
   servedRelease?: LearningReleaseEvidence | null;
   fieldAudit?: {
-    verdict: 'pass' | 'regression';
+    verdict: LearningFieldAuditRequest['verdict'];
     controlVersionId: string;
     triggeredRollback: boolean;
   } | null;
@@ -527,7 +538,7 @@ export interface LearningFieldAuditRequest {
   revision: string;
   parentVersionId: string;
   parentDigest: string;
-  verdict: 'pass' | 'regression';
+  verdict: 'pass' | 'regression' | 'win' | 'loss' | 'tie';
 }
 export interface LearningFieldRequalification {
   versionId: string;
@@ -542,23 +553,23 @@ export interface LearningFieldReplay {
   baselineRevision: string;
   outcomeId: string;
   verdict: 'pass' | 'regression';
+  attempts?: Array<'pass' | 'regression'>;
 }
 export interface LearningFieldAuditReceipt {
   outcomeId: string;
   accepted: true;
   regressions: number;
   windowSize: number;
+  wins?: number;
   rollbackPromotionId?: string;
 }
-export interface LearningWorkItem {
-  roundId: string;
+export type LearningWorkItem = {
   evaluationRequestId: string;
-  phase: 'development' | 'audit';
   status: 'requested' | 'running';
-}
+} & ({ phase: 'development' | 'audit'; roundId: string } | { phase: 'calibration'; roundId: null });
 export interface LearningWork {
-  incidentReplays?: Omit<LearningIncidentReplay, 'verdict'>[];
-  fieldReplays?: Omit<LearningFieldReplay, 'verdict'>[];
+  incidentReplays?: Omit<LearningIncidentReplay, 'verdict' | 'attempts'>[];
+  fieldReplays?: Omit<LearningFieldReplay, 'verdict' | 'attempts'>[];
   installationId: string;
   bundleId: string;
   active: boolean;

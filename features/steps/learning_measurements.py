@@ -21,7 +21,12 @@ def enroll_measured(w, grader, case_ids, *, admissions, policies=None):
 
 @given('a connection evaluates partial-credit review tasks and allows a second proposal')
 def partial_credit(context):
-    enroll_measured(context.world, 'partial-credit-v1', ['retry-review'], admissions=2)
+    quality = dict(schemaVersion=2, id='partial-credit', revision='1',
+                   metric=dict(name='coverage', unit='reward', direction='higher'),
+                   aggregation='equal-case-means', minimumMeanImprovement=-0.5, maximumCaseRegression=0,
+                   maximumCandidateTaskFailures=0, requiredCases=['retry-review'])
+    enroll_measured(context.world, 'partial-credit-v1', ['retry-review'], admissions=2,
+                    policies=dict(development=quality, audit=dict(quality, requiredCases=[])))
 
 
 @when('its evaluator reports these paired review results')

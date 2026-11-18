@@ -140,8 +140,12 @@ impl Connection {
             && (role.as_deref() == Some("admin") || has_grant(&authorizer, &["write", "promote"]))
             && has_grant(&submitter, &["write"])
             && has_grant(&evaluator, &["read", "write"]);
-        let policies: crate::connected_learning::selection::Policies =
-            serde_json::from_value(row.get("selection_policies")).map_err(db)?;
+        let policies: crate::connected_learning::selection::Policies = row
+            .get::<Option<Value>, _>("selection_policies")
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(db)?
+            .unwrap_or_default();
         Ok(Some(Self {
             policy_epoch: row.get("policy_epoch"),
             higher_is_better: policies.development.higher_is_better(),
@@ -440,6 +444,112 @@ impl Connection {
         path(&evaluation.id)
     }
 
+    async fn calibrate(&self, tx: &mut Tx<'_>, baseline: Uuid) -> ApiResult<bool> {
+        use crate::connected_learning::statistics::scored_reward;
+        let row = sqlx::query(
+            "SELECT p.calibration_request_id,p.noise_calibration,p.selection_policies,
+                    e.status,c.body,c.complete,c.submitter,
+                    CASE WHEN e.started_at IS NULL THEN e.created_at < now()-interval '7 days'
+                         ELSE e.started_at < now()-make_interval(secs => $4) END AS expired
+             FROM connected_learning_policy_epochs p
+             LEFT JOIN evaluation_requests e ON e.id=p.calibration_request_id
+             LEFT JOIN comparisons c ON c.id=e.comparison_id
+             WHERE (p.project_id,p.integration_id,p.epoch)=($1,$2,$3)",
+        )
+        .bind(&self.project)
+        .bind(self.integration)
+        .bind(self.policy_epoch)
+        .bind(deadline_seconds(
+            "ACCLIMATE_LEARNING_EVALUATION_SECONDS",
+            86_400,
+        ))
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(db)?;
+        if row.get::<Option<Value>, _>("noise_calibration").is_some() {
+            return Ok(true);
+        }
+        if row
+            .get::<Option<Uuid>, _>("calibration_request_id")
+            .is_none()
+        {
+            let digest: String = sqlx::query_scalar("SELECT digest FROM versions WHERE id=$1")
+                .bind(baseline)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(db)?;
+            let d = &self.development;
+            let request = CreateEvaluationRequest {
+                parent_version_id: baseline.to_string(),
+                candidate_version_id: baseline.to_string(),
+                parent_digest: digest.clone(),
+                candidate_digest: digest,
+                dataset_revision: d.dataset_revision.clone(),
+                grader_revision: d.grader_revision.clone(),
+                runtime: d.evaluation_runtime(),
+                expected_cases: d.expected_cases.clone(),
+                proposal_id: None,
+                require_bound_evidence: true,
+            };
+            let evaluation =
+                enqueue_evaluation(tx, &self.project, self.bundle, WORKER, &request).await?;
+            sqlx::query(
+                "UPDATE connected_learning_policy_epochs SET calibration_request_id=$4
+                         WHERE (project_id,integration_id,epoch)=($1,$2,$3)",
+            )
+            .bind(&self.project)
+            .bind(self.integration)
+            .bind(self.policy_epoch)
+            .bind(path(&evaluation.id)?)
+            .execute(&mut **tx)
+            .await
+            .map_err(db)?;
+            return Ok(false);
+        }
+        let status: Option<String> = row.get("status");
+        if matches!(status.as_deref(), Some("requested" | "running"))
+            && row.get::<Option<bool>, _>("expired") == Some(true)
+        {
+            sqlx::query("UPDATE evaluation_requests SET status='interrupted',error='Calibration deadline expired',updated_at=now()
+                         WHERE id=$1 AND status IN ('requested','running')")
+                .bind(row.get::<Uuid,_>("calibration_request_id"))
+                .execute(&mut **tx).await.map_err(db)?;
+            return Ok(false);
+        }
+        if status.as_deref() != Some("completed")
+            || row.get::<Option<bool>, _>("complete") != Some(true)
+            || row.get::<Option<String>, _>("submitter").as_deref() != Some(&self.evaluator)
+        {
+            return Ok(false);
+        }
+        let comparison: ComparisonRequest = serde_json::from_value(row.get("body")).map_err(db)?;
+        let calibration =
+            crate::connected_learning::statistics::calibrate(&comparison, scored_reward);
+        let policies: crate::connected_learning::selection::Policies = row
+            .get::<Option<Value>, _>("selection_policies")
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(db)?
+            .unwrap_or_default();
+        let mut view = serde_json::to_value(&calibration).map_err(db)?;
+        view["warning"] =
+            json!((policies.development.minimum_mean_improvement()
+            < calibration.minimum_detectable_effect).then_some(
+            "The configured minimum improvement is below the estimated detectable effect"));
+        sqlx::query(
+            "UPDATE connected_learning_policy_epochs SET noise_calibration=$4
+                     WHERE (project_id,integration_id,epoch)=($1,$2,$3)",
+        )
+        .bind(&self.project)
+        .bind(self.integration)
+        .bind(self.policy_epoch)
+        .bind(view)
+        .execute(&mut **tx)
+        .await
+        .map_err(db)?;
+        Ok(true)
+    }
+
     async fn evidence(
         &self,
         tx: &mut Tx<'_>,
@@ -512,8 +622,8 @@ impl Connection {
                 "Evidence bindings or completeness checks failed",
             ));
         }
-        let policy: Value = sqlx::query_scalar(
-            "SELECT selection_policies FROM connected_learning_policy_epochs
+        let (policy, calibration): (Option<Value>, Option<Value>) = sqlx::query_as(
+            "SELECT selection_policies,noise_calibration FROM connected_learning_policy_epochs
              WHERE project_id=$1 AND integration_id=$2 AND epoch=$3",
         )
         .bind(&self.project)
@@ -522,16 +632,28 @@ impl Connection {
         .fetch_one(&mut **tx)
         .await
         .map_err(db)?;
-        let policies: crate::connected_learning::selection::Policies =
-            serde_json::from_value(policy).map_err(db)?;
+        let policies: crate::connected_learning::selection::Policies = policy
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(db)?
+            .unwrap_or_default();
         let development =
             round.get::<Option<Uuid>, _>("development_request_id") == Some(request_id);
-        let selection = if development {
-            policies.development.check(&comparison)
+        let calibrated_sd = calibration
+            .and_then(|v| v["pairedStandardDeviation"].as_f64())
+            .unwrap_or(0.0);
+        let policy = if development {
+            &policies.development
         } else {
-            policies.audit.check(&comparison)
+            &policies.audit
         };
-        if let Err(reason) = selection {
+        if let Err(reason) = policy.check_calibrated(&comparison, !development, calibrated_sd) {
+            if matches!(
+                reason,
+                "Candidate cost is unknown" | "Parent cost is unknown"
+            ) {
+                return Ok(Evidence::Indeterminate(comparison_id));
+            }
             return Ok(Evidence::Rejected {
                 comparison: Some(comparison_id),
                 reason,
@@ -624,6 +746,7 @@ enum Evidence {
         failed_quality_policy: bool,
     },
     Passed(Uuid),
+    Indeterminate(Uuid),
 }
 
 impl Evidence {
@@ -792,10 +915,11 @@ async fn advance(
         }
         "development" => {
             let request = round.get("development_request_id");
-            match connection
+            let evidence = connection
                 .evidence(tx, round, request, &connection.development)
-                .await?
-            {
+                .await?;
+            let unknown_cost = matches!(evidence, Evidence::Indeterminate(_));
+            match evidence {
                 Evidence::Pending => {}
                 Evidence::Rejected {
                     comparison,
@@ -809,7 +933,7 @@ async fn advance(
                         requeue_correction(tx, round).await?;
                     }
                 }
-                Evidence::Passed(comparison) => {
+                Evidence::Passed(comparison) | Evidence::Indeterminate(comparison) => {
                     // Preserve the suite result while waiting for independent private evidence.
                     if round.get::<Option<String>, _>("incident_replay").is_some()
                         && round
@@ -833,8 +957,8 @@ async fn advance(
                     let request = connection
                         .queue_evaluation(tx, round, candidate, &connection.audits[index])
                         .await?;
-                    sqlx::query("UPDATE connected_learning_rounds SET state='audit',development_comparison_id=$2,audit_index=$3,audit_request_id=$4,updated_at=now() WHERE id=$1")
-                        .bind(id).bind(comparison).bind(index as i32).bind(request)
+                    sqlx::query("UPDATE connected_learning_rounds SET state='audit',development_comparison_id=$2,audit_index=$3,audit_request_id=$4,indeterminate_development_cost=$5,updated_at=now() WHERE id=$1")
+                        .bind(id).bind(comparison).bind(index as i32).bind(request).bind(unknown_cost)
                         .execute(&mut **tx).await.map_err(db)?;
                 }
             }
@@ -856,7 +980,10 @@ async fn advance(
                 return Ok(());
             }
             let request = round.get("audit_request_id");
-            match connection.evidence(tx, round, request, descriptor).await? {
+            let evidence = connection.evidence(tx, round, request, descriptor).await?;
+            let unknown_cost = matches!(evidence, Evidence::Indeterminate(_))
+                || round.get::<bool, _>("indeterminate_development_cost");
+            match evidence {
                 Evidence::Pending => {}
                 Evidence::Rejected {
                     comparison, reason, ..
@@ -871,12 +998,15 @@ async fn advance(
                     .map_err(db)?;
                     close(tx, round, reason).await?;
                 }
-                Evidence::Passed(comparison) => {
+                Evidence::Passed(comparison) | Evidence::Indeterminate(comparison) => {
                     if !field_requalification::check_required_replays(tx, connection, round).await?
                     {
                         return Ok(());
                     }
-                    if can_automate {
+                    if unknown_cost {
+                        sqlx::query("UPDATE connected_learning_rounds SET state='awaiting_review',review_started_at=COALESCE(review_started_at,now()),audit_comparison_id=$2,decision='policy_review',reason='Evaluation cost is unknown',updated_at=now() WHERE id=$1")
+                            .bind(id).bind(comparison).execute(&mut **tx).await.map_err(db)?;
+                    } else if can_automate {
                         match connection
                             .promote(tx, round, comparison, WORKER, None)
                             .await
@@ -977,7 +1107,9 @@ async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<boo
             return Ok(true);
         }
         let baseline = connection.baseline(&mut tx).await?;
-        connection.admit(&mut tx, baseline).await?;
+        if connection.calibrate(&mut tx, baseline.0).await? {
+            connection.admit(&mut tx, baseline).await?;
+        }
     }
     tx.commit().await.map_err(db)?;
     Ok(false)
@@ -1038,18 +1170,23 @@ pub async fn connected_learning_worker(s: AppState) {
                  NOT EXISTS (SELECT 1 FROM connected_learning_rounds r
                      WHERE (r.project_id,r.integration_id)=(e.project_id,e.integration_id)
                      AND r.state IN ('proposing','development','audit','awaiting_review'))
-                 AND e.stopped_at IS NULL AND e.proposal_admissions < e.max_proposal_admissions
+                 AND e.stopped_at IS NULL
                  AND EXISTS (
                      SELECT 1 FROM integrations i WHERE (i.project_id,i.id)=(e.project_id,e.integration_id) AND i.enabled
                  )
-                 AND EXISTS (
+                 AND (EXISTS (
+                     SELECT 1 FROM connected_learning_policy_epochs p
+                     LEFT JOIN evaluation_requests q ON q.id=p.calibration_request_id
+                     WHERE (p.project_id,p.integration_id,p.epoch)=(e.project_id,e.integration_id,e.policy_epoch)
+                       AND p.noise_calibration IS NULL AND (q.id IS NULL OR q.status IN ('requested','running','completed'))
+                 ) OR (e.proposal_admissions < e.max_proposal_admissions AND EXISTS (
                      SELECT 1 FROM connected_learning_correction_work f
                      WHERE (f.project_id,f.integration_id)=(e.project_id,e.integration_id) AND f.action='ready'
                  )
                  AND EXISTS (
                      SELECT 1 FROM connected_learning_available_audits a
                      WHERE (a.project_id,a.integration_id)=(e.project_id,e.integration_id)
-                 )
+                 )))
              )
              ORDER BY e.project_id,e.integration_id",
         ).fetch_all(&s.db).await;
@@ -1244,7 +1381,7 @@ async fn review(
     let evidence = connection
         .evidence(&mut tx, &round, round.get("audit_request_id"), descriptor)
         .await?;
-    let Evidence::Passed(comparison) = evidence else {
+    let (Evidence::Passed(comparison) | Evidence::Indeterminate(comparison)) = evidence else {
         return Err(conflict("Audit evidence is not eligible for promotion"));
     };
     let promotion = connection
@@ -1280,7 +1417,7 @@ mod tests {
     }
 
     #[test]
-    fn rollout_requires_a_strict_gain_without_regressions() {
+    fn rollout_requires_a_paired_confidence_bound() {
         let keys = ["policy", "guard"].map(|case_id| CaseKey {
             case_id: case_id.into(),
             repetition: 0,
@@ -1306,7 +1443,8 @@ mod tests {
         };
         let policy = crate::connected_learning::selection::Policies::default().development;
         assert!(policy.check(&comparison).is_err());
-        comparison.results[0].candidate.reward = Some(10.0);
+        comparison.results[0].candidate.reward = Some(2.0);
+        comparison.results[1].candidate.reward = Some(2.0);
         assert!(policy.check(&comparison).is_ok());
         comparison.results[1].candidate.reward = Some(0.0);
         assert!(policy.check(&comparison).is_err());

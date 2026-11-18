@@ -1,3 +1,4 @@
+use super::statistics::{AUDIT_Z, DEVELOPMENT_Z, lower_bound};
 use super::{Descriptor, bounded, invalid};
 use crate::{ApiResult, ComparisonRequest};
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,8 @@ pub(crate) struct SelectionPolicy {
     aggregation: String,
     minimum_mean_improvement: f64,
     maximum_case_regression: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    non_inferiority_margin: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     candidate_threshold: Option<f64>,
     required_cases: Vec<String>,
@@ -62,7 +65,7 @@ struct Cost {
 impl Default for Policies {
     fn default() -> Self {
         let audit = SelectionPolicy {
-            schema_version: 1,
+            schema_version: 2,
             id: "connected-audit".into(),
             revision: "1".into(),
             metric: Metric {
@@ -73,6 +76,7 @@ impl Default for Policies {
             aggregation: "equal-case-means".into(),
             minimum_mean_improvement: 0.0,
             maximum_case_regression: 0.0,
+            non_inferiority_margin: Some(0.0),
             candidate_threshold: None,
             required_cases: vec![],
             maximum_candidate_task_failures: Some(0),
@@ -83,7 +87,8 @@ impl Default for Policies {
         };
         let development = SelectionPolicy {
             id: "connected-development".into(),
-            minimum_mean_improvement: f64::EPSILON,
+            minimum_mean_improvement: 0.0,
+            non_inferiority_margin: None,
             ..audit.clone()
         };
         Self { development, audit }
@@ -106,7 +111,10 @@ impl SelectionPolicy {
         if self
             .minimum_repetitions_per_case
             .is_some_and(|n| !(1..=1000).contains(&n))
-            || self.schema_version != 1
+            || !matches!(self.schema_version, 1 | 2)
+            || self
+                .non_inferiority_margin
+                .is_some_and(|v| self.schema_version == 1 || !v.is_finite() || v < 0.0)
             || !bounded(&self.id, 128)
             || !bounded(&self.revision, 1024)
             || !bounded(&self.metric.name, 128)
@@ -166,12 +174,35 @@ impl SelectionPolicy {
         Ok(())
     }
 
+    fn protected(&self, case: &str) -> bool {
+        self.protected_case_thresholds.contains_key(case)
+            || self.required_cases.iter().any(|id| id == case)
+    }
+
     pub(crate) fn higher_is_better(&self) -> bool {
         self.metric.direction == Direction::Higher
     }
 
-    /// Called only after the service verifies a complete, bound comparison.
+    pub(crate) fn audit_margin(&self) -> f64 {
+        self.non_inferiority_margin.unwrap_or(0.0)
+    }
+
+    pub(crate) fn minimum_mean_improvement(&self) -> f64 {
+        self.minimum_mean_improvement
+    }
+
+    #[cfg(test)]
     pub(crate) fn check(&self, comparison: &ComparisonRequest) -> Result<(), &'static str> {
+        self.check_calibrated(comparison, self.id == "connected-audit", 0.0)
+    }
+
+    /// Called only after the service verifies a complete, bound comparison.
+    pub(crate) fn check_calibrated(
+        &self,
+        comparison: &ComparisonRequest,
+        audit: bool,
+        calibrated_sd: f64,
+    ) -> Result<(), &'static str> {
         let sign = if self.metric.direction == Direction::Higher {
             1.0
         } else {
@@ -183,15 +214,26 @@ impl SelectionPolicy {
         let mut means = BTreeMap::new();
         let (mut parent_cost, mut candidate_cost) = (Some(0.0), Some(0.0));
         let mut failed = 0;
+        let worst = super::statistics::worst_reward(
+            pairs
+                .iter()
+                .flat_map(|pair| [&pair.parent, &pair.candidate])
+                .filter_map(super::statistics::scored_reward),
+            self.higher_is_better(),
+        );
         for pair in pairs {
-            let (Some(p), Some(c)) = (pair.parent.reward, pair.candidate.reward) else {
-                return Err("Incomplete scored pairs");
-            };
-            if pair.candidate.execution_status == "task_failed" {
-                failed += 1
+            let p = super::statistics::scored_reward(&pair.parent).unwrap_or(worst);
+            let c = super::statistics::scored_reward(&pair.candidate).unwrap_or(worst);
+            if self.protected(&pair.key.case_id)
+                && (pair.candidate.execution_status == "task_failed"
+                    || super::statistics::scored_reward(&pair.candidate).is_none())
+            {
+                failed += 1;
             }
             if let Some(threshold) = self.protected_case_thresholds.get(&pair.key.case_id)
-                && (pair.candidate.execution_status != "completed" || sign * c < sign * threshold)
+                && (pair.candidate.execution_status != "completed"
+                    || super::statistics::scored_reward(&pair.candidate).is_none()
+                    || sign * c < sign * threshold)
             {
                 return Err("Protected case threshold failed");
             }
@@ -211,8 +253,8 @@ impl SelectionPolicy {
             return Err("Selection policy lacks required case evidence");
         }
         let case_count = means.len() as f64;
-        let (mut gains, mut candidates) = (0.0, 0.0);
-        for (_, (parent, candidate, count)) in means {
+        let (mut gains, mut candidates) = (Vec::new(), 0.0);
+        for (id, (parent, candidate, count)) in means {
             if self
                 .minimum_repetitions_per_case
                 .is_some_and(|n| (count as usize) < n)
@@ -221,16 +263,22 @@ impl SelectionPolicy {
             }
             let candidate_mean = candidate / f64::from(count);
             let gain = sign * (candidate_mean - parent / f64::from(count));
-            if !gain.is_finite() || -gain > self.maximum_case_regression {
+            if !gain.is_finite() || (self.protected(id) && -gain > self.maximum_case_regression) {
                 return Err("Maximum case regression exceeded");
             }
-            gains += gain;
+            gains.push(gain);
             candidates += candidate_mean;
         }
-        if !gains.is_finite() || !candidates.is_finite() {
+        if !candidates.is_finite() {
             return Err("Nonfinite selection arithmetic");
         }
-        if gains / case_count < self.minimum_mean_improvement {
+        let (z, threshold) = if audit {
+            (AUDIT_Z, -self.audit_margin())
+        } else {
+            (DEVELOPMENT_Z, self.minimum_mean_improvement)
+        };
+        let bound = lower_bound(&gains, calibrated_sd, z);
+        if !bound.is_finite() || bound <= threshold {
             return Err("Minimum mean improvement was not reached");
         }
         if self
@@ -352,11 +400,59 @@ mod tests {
     }
 
     #[test]
-    fn default_development_requires_gain_and_audit_accepts_a_tie() {
+    fn shared_confidence_decisions() {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Decision {
+            name: String,
+            stage: String,
+            calibrated_standard_deviation: f64,
+            non_inferiority_margin: Option<f64>,
+            gains: Vec<f64>,
+            pass: bool,
+        }
+        let decisions: Vec<Decision> = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/connected-confidence-decisions.json"
+        ))
+        .unwrap();
+        for decision in decisions {
+            let audit = decision.stage == "audit";
+            let policies = Policies::default();
+            let mut policy = if audit {
+                policies.audit
+            } else {
+                policies.development
+            };
+            policy.non_inferiority_margin = decision.non_inferiority_margin;
+            let ids: Vec<_> = (0..decision.gains.len())
+                .map(|index| index.to_string())
+                .collect();
+            let cases: Vec<_> = ids
+                .iter()
+                .zip(decision.gains)
+                .map(|(id, gain)| (id.as_str(), 0.0, gain))
+                .collect();
+            assert_eq!(
+                policy
+                    .check_calibrated(
+                        &comparison(&cases),
+                        audit,
+                        decision.calibrated_standard_deviation
+                    )
+                    .is_ok(),
+                decision.pass,
+                "{}",
+                decision.name
+            );
+        }
+    }
+
+    #[test]
+    fn default_stages_require_positive_evidence() {
         let policies = Policies::default();
         let tied = comparison(&[("ordinary", 1., 1.)]);
         assert!(policies.development.check(&tied).is_err());
-        assert!(policies.audit.check(&tied).is_ok());
+        assert!(policies.audit.check(&tied).is_err());
         let regressed = comparison(&[("ordinary", 0., 2.), ("invariant", 1., 0.)]);
         assert!(policies.audit.check(&regressed).is_err());
     }
@@ -365,8 +461,8 @@ mod tests {
     fn repetitions_average_per_case_and_protected_threshold_applies_to_each_repeat() {
         let mut policy = Policies::default().development;
         let measurements = comparison(&[("a", 1., 0.), ("a", 0., 1.), ("b", 1., 2.)]);
-        policy.minimum_mean_improvement = 0.49;
-        assert!(policy.check(&measurements).is_ok()); // case means produce .5; pair weighting would be .333.
+        policy.minimum_mean_improvement = -0.2;
+        assert!(policy.check(&measurements).is_ok()); // LCB = .5 - 1.282 * .5.
         policy.minimum_repetitions_per_case = Some(2);
         assert!(policy.check(&measurements).is_err());
         policy.minimum_repetitions_per_case = None;
@@ -375,9 +471,41 @@ mod tests {
     }
 
     #[test]
+    fn explicit_missing_arms_keep_the_inventory_and_denominator() {
+        let ids: Vec<_> = (0..10).map(|index| index.to_string()).collect();
+        let cases: Vec<_> = ids.iter().map(|id| (id.as_str(), 0.0, 1.0)).collect();
+        let mut evidence = comparison(&cases);
+        evidence.runtime.insert("app".into(), "test".into());
+        evidence.evaluation = Some(crate::EvaluationBinding {
+            request_id: "request".into(),
+            attempt_id: "attempt".into(),
+        });
+        for pair in evidence.results.iter_mut().take(3) {
+            pair.candidate.reward = None;
+            pair.candidate.grading_status = "missing".into();
+        }
+        assert_eq!(crate::improvement::validate_comparison(&evidence), Ok(true));
+        let mut policy = Policies::default().development;
+        policy.minimum_mean_improvement = 0.8;
+        assert!(policy.check(&evidence).is_err());
+        evidence.results[3].candidate.reward = None;
+        evidence.results[3].candidate.grading_status = "missing".into();
+        assert_eq!(
+            crate::improvement::validate_comparison(&evidence),
+            Ok(false)
+        );
+        evidence.results.remove(3);
+        assert_eq!(
+            crate::improvement::validate_comparison(&evidence),
+            Ok(false)
+        );
+    }
+
+    #[test]
     fn cost_optimization_requires_observed_savings() {
         let mut policy = Policies::default().audit;
         policy.minimum_cost_savings_usd = Some(0.5);
+        policy.non_inferiority_margin = Some(0.1);
         let mut results = comparison(&[("a", 1., 1.)]);
         assert!(policy.check(&results).is_err());
         results.results[0]

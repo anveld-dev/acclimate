@@ -257,7 +257,8 @@ async function verified(
   if (
     parent.version.digest !== request.parentDigest ||
     candidate.version.digest !== request.candidateDigest ||
-    candidate.version.parentVersionId !== parent.version.id
+    (candidate.version.id !== parent.version.id &&
+      candidate.version.parentVersionId !== parent.version.id)
   )
     throw new EvaluationError('version.binding_mismatch');
   return [deepFreeze(parent), deepFreeze(candidate)];
@@ -423,16 +424,27 @@ export async function runEvaluation<I, E, O>(
     throw new EvaluationError('config.schema');
   const transport = createEvaluationTransport(config);
   await verifyEvaluatorAuthority(transport.client, config);
-  return runCapturedEvaluation({ captured, config, handoff, transport, signal: options.signal });
+  return runCapturedEvaluation({
+    captured,
+    config,
+    handoff,
+    transport,
+    signal: options.signal,
+    retryMissingTrial: options.retryMissingTrial,
+  });
 }
 
 /** Source-internal integration seam. Not exported from the installed package interface. */
 export async function runCapturedEvaluation(options: {
   captured: CapturedDefinition<any, any, any>;
-  config: Pick<EvaluatorConfig, 'serviceUrl' | 'projectId' | 'evaluatorPrincipalId' | 'journalRoot' | 'captureCallbackErrors'>;
+  config: Pick<
+    EvaluatorConfig,
+    'serviceUrl' | 'projectId' | 'evaluatorPrincipalId' | 'journalRoot' | 'captureCallbackErrors'
+  >;
   handoff: EvaluationHandoff;
   transport: ReturnType<typeof createEvaluationTransport>;
   signal?: AbortSignal;
+  retryMissingTrial?: boolean;
 }): Promise<EvaluationRunResult> {
   const { captured, config, handoff, transport } = options,
     api = transport.client;
@@ -592,216 +604,147 @@ export async function runCapturedEvaluation(options: {
               ? (['parent', 'candidate'] as const)
               : (['candidate', 'parent'] as const);
           for (const [armIndex, side] of order.entries()) {
-            if (signal.aborted || cancelled) {
-              pair[side] = unavailable();
-              continue;
-            }
-            await check();
-            const bundle = bundles[side === 'parent' ? 0 : 1];
-            const jobId = createHash('sha256')
-              .update(
-                JSON.stringify([
-                  scope.requestId,
-                  state.attemptId,
-                  side,
-                  bundle.version.id,
-                  item.caseId,
-                  repetition,
-                ]),
-              )
-              .digest('hex');
-            const privateJobDirectory = path.join(journal.directory, 'jobs', jobId);
-            await privateDirectory(privateJobDirectory);
-            const context = {
-              requestId: scope.requestId,
-              attemptId: state.attemptId,
-              side,
-              jobId,
-              privateJobDirectory,
-              ...(captured.collection
-                ? {
-                    collection: Object.freeze({
-                      protocol: captured.collection.protocol,
-                      scheduleDigest: captured.collection.digest,
-                      pairIndex,
-                      armIndex,
-                      firstSide,
-                    }),
-                  }
-                : {}),
-            };
-            await atomicPrivateWrite(
-              path.join(privateJobDirectory, 'binding.json'),
-              JSON.stringify({
-                ...context,
-                privateJobDirectory: undefined,
-                collection: undefined,
-                caseId: item.caseId,
-                repetition,
-                versionId: bundle.version.id,
-                digest: bundle.version.digest,
-              }) + '\n',
-            );
-            if (context.collection) {
+            const attempts = options.retryMissingTrial ? 2 : 1;
+            const firstArtifact = index.entries.length;
+            for (let retry = 0; retry < attempts; retry++) {
+              if (signal.aborted || cancelled) {
+                pair[side] = unavailable();
+                break;
+              }
+              if (retry && index.entries.length > firstArtifact) {
+                index.entries.length = firstArtifact;
+                await journal.saveArtifactIndex(index);
+              }
+              await check();
+              const bundle = bundles[side === 'parent' ? 0 : 1];
+              const jobId = createHash('sha256')
+                .update(
+                  JSON.stringify([
+                    scope.requestId,
+                    state.attemptId,
+                    side,
+                    bundle.version.id,
+                    item.caseId,
+                    repetition,
+                    ...(retry ? [retry] : []),
+                  ]),
+                )
+                .digest('hex');
+              const privateJobDirectory = path.join(journal.directory, 'jobs', jobId);
+              await privateDirectory(privateJobDirectory);
+              const context = {
+                requestId: scope.requestId,
+                attemptId: state.attemptId,
+                side,
+                jobId,
+                privateJobDirectory,
+                ...(captured.collection
+                  ? {
+                      collection: Object.freeze({
+                        protocol: captured.collection.protocol,
+                        scheduleDigest: captured.collection.digest,
+                        pairIndex,
+                        armIndex,
+                        firstSide,
+                      }),
+                    }
+                  : {}),
+              };
               await atomicPrivateWrite(
-                path.join(privateJobDirectory, 'collection-binding.json'),
+                path.join(privateJobDirectory, 'binding.json'),
                 JSON.stringify({
-                  schemaVersion: 1,
-                  jobId,
+                  ...context,
+                  privateJobDirectory: undefined,
+                  collection: undefined,
                   caseId: item.caseId,
                   repetition,
-                  side,
-                  ...context.collection,
+                  versionId: bundle.version.id,
+                  digest: bundle.version.digest,
                 }) + '\n',
               );
-            }
-            journal.assertOwned();
-            if (signal.aborted || cancelled) {
-              pair[side] = unavailable();
-              continue;
-            }
-            const recordOutputError = async (error: OutputValidationError) => {
+              if (context.collection) {
+                await atomicPrivateWrite(
+                  path.join(privateJobDirectory, 'collection-binding.json'),
+                  JSON.stringify({
+                    schemaVersion: 1,
+                    jobId,
+                    caseId: item.caseId,
+                    repetition,
+                    side,
+                    ...context.collection,
+                  }) + '\n',
+                );
+              }
               journal.assertOwned();
-              // Keep field names inside the application's private job.
-              await atomicPrivateWrite(
-                path.join(privateJobDirectory, 'output-validation.json'),
-                JSON.stringify({ field: error.field, reason: error.reason }),
-              );
-            };
-            let execution;
-            try {
-              callbacksStarted++;
-              execution = await captured.execute({
-                bundle: structuredClone(bundle),
-                caseId: item.caseId,
-                repetition,
-                input: structuredClone(item.input),
-                signal,
-                context: Object.freeze(context),
-              });
-              journal.assertOwned();
-            } catch (error) {
-              if (error instanceof ExecutionUncertainError) throw error;
-              if (error instanceof CallbackCancelled) {
-                cancelled = true;
+              if (signal.aborted || cancelled) {
                 pair[side] = unavailable();
                 continue;
               }
-              if (error instanceof EvaluationError && error.code === 'journal.ownership_lost')
-                throw error;
-              if (error instanceof OutputValidationError) {
-                await recordOutputError(error);
-                pair[side] = unavailable('output_invalid');
-                continue;
-              }
-              if (config.captureCallbackErrors)
-                await saveCallbackError(privateJobDirectory, 'execute', error);
-              pair[side] =
-                error instanceof TaskExecutionError
-                  ? { ...unavailable('task_failed'), executionStatus: 'task_failed' }
-                  : unavailable('execution_failed');
-              continue;
-            }
-            let entry;
-            let capturedOutput: unknown;
-            let capturedExecutionStatus: 'completed' | 'task_failed' = 'completed';
-            let capturedReference: unknown;
-            let capturedUsage: Outcome['usage'] = null;
-            try {
-              const returnedOutput = execution.output;
-              assertEvaluationOutput(returnedOutput);
-              capturedOutput = structuredClone(returnedOutput);
-              const returnedStatus = execution.executionStatus;
-              if (!['completed', 'task_failed', undefined].includes(returnedStatus))
-                throw new Error();
-              capturedExecutionStatus = returnedStatus ?? 'completed';
-              capturedReference = execution.outputRef;
-              capturedUsage = usage(execution.usage);
-              if (
-                artifactBytes + Buffer.byteLength(JSON.stringify(capturedOutput)) + 16 * 1024 >
-                MAX_PRIVATE
-              ) {
-                cancelled = true;
-                throw new Error();
-              }
-              entry = await journal.writeArtifact(
-                {
-                  requestId: scope.requestId,
-                  attemptId: state.attemptId,
+              const recordOutputError = async (error: OutputValidationError) => {
+                journal.assertOwned();
+                // Keep field names inside the application's private job.
+                await atomicPrivateWrite(
+                  path.join(privateJobDirectory, 'output-validation.json'),
+                  JSON.stringify({ field: error.field, reason: error.reason }),
+                );
+              };
+              let execution;
+              try {
+                callbacksStarted++;
+                execution = await captured.execute({
+                  bundle: structuredClone(bundle),
                   caseId: item.caseId,
                   repetition,
-                  side,
-                  versionId: bundle.version.id,
-                  digest: bundle.version.digest,
-                  role: 'output',
-                },
-                capturedOutput,
-              );
-              artifactBytes += entry.bytes;
-              index.entries.push(entry);
-              await journal.saveArtifactIndex(index);
-            } catch (error) {
-              if (error instanceof OutputValidationError) {
-                await recordOutputError(error);
+                  input: structuredClone(item.input),
+                  signal,
+                  context: Object.freeze(context),
+                });
+                journal.assertOwned();
+              } catch (error) {
+                if (error instanceof ExecutionUncertainError) throw error;
+                if (error instanceof CallbackCancelled) {
+                  cancelled = true;
+                  pair[side] = unavailable();
+                  continue;
+                }
+                if (error instanceof EvaluationError && error.code === 'journal.ownership_lost')
+                  throw error;
+                if (error instanceof OutputValidationError) {
+                  await recordOutputError(error);
+                  pair[side] = unavailable('output_invalid');
+                  continue;
+                }
+                if (config.captureCallbackErrors)
+                  await saveCallbackError(privateJobDirectory, 'execute', error);
+                pair[side] =
+                  error instanceof TaskExecutionError
+                    ? { ...unavailable('task_failed'), executionStatus: 'task_failed' }
+                    : unavailable('execution_failed');
+                continue;
               }
-              pair[side] = unavailable('output_invalid');
-              continue;
-            }
-            const reference = capturedReference ?? `acclimate:artifact:${entry.sha256}`;
-            if (
-              typeof reference !== 'string' ||
-              Buffer.byteLength(reference) > 1024 ||
-              /[\u0000-\u001f\u007f\ud800-\udfff]/u.test(reference)
-            ) {
-              pair[side] = unavailable('output_reference_invalid');
-              continue;
-            }
-            const outcome: Outcome = {
-              executionStatus: capturedExecutionStatus,
-              gradingStatus: 'missing',
-              reward: null,
-              outputRef: reference,
-              error: null,
-              usage: capturedUsage,
-            };
-            if (signal.aborted || cancelled) {
-              pair[side] = { ...outcome, error: 'cancelled' };
-              continue;
-            }
-            await check();
-            journal.assertOwned();
-            if (signal.aborted || cancelled) {
-              pair[side] = { ...outcome, error: 'cancelled' };
-              continue;
-            }
-            let gradeReturned = false;
-            try {
-              const grade = await captured.grade({
-                output: structuredClone(capturedOutput),
-                expected: structuredClone(item.expected),
-                caseId: item.caseId,
-                repetition,
-                signal,
-              });
-              gradeReturned = true;
-              journal.assertOwned();
-              const reward = grade.reward;
-              if (typeof reward !== 'number' || !Number.isFinite(reward)) throw new Error();
-              const returnedExplanation = grade.explanation;
-              let capturedExplanation: unknown;
-              if (returnedExplanation !== undefined) {
-                assertJson(returnedExplanation, MAX_ARTIFACT);
-                capturedExplanation = structuredClone(returnedExplanation);
+              let entry;
+              let capturedOutput: unknown;
+              let capturedExecutionStatus: 'completed' | 'task_failed' = 'completed';
+              let capturedReference: unknown;
+              let capturedUsage: Outcome['usage'] = null;
+              try {
+                const returnedOutput = execution.output;
+                assertEvaluationOutput(returnedOutput);
+                capturedOutput = structuredClone(returnedOutput);
+                const returnedStatus = execution.executionStatus;
+                if (!['completed', 'task_failed', undefined].includes(returnedStatus))
+                  throw new Error();
+                capturedExecutionStatus = returnedStatus ?? 'completed';
+                capturedReference = execution.outputRef;
+                capturedUsage = usage(execution.usage);
                 if (
-                  artifactBytes +
-                    Buffer.byteLength(JSON.stringify(capturedExplanation)) +
-                    16 * 1024 >
+                  artifactBytes + Buffer.byteLength(JSON.stringify(capturedOutput)) + 16 * 1024 >
                   MAX_PRIVATE
                 ) {
                   cancelled = true;
                   throw new Error();
                 }
-                const explanation = await journal.writeArtifact(
+                entry = await journal.writeArtifact(
                   {
                     requestId: scope.requestId,
                     attemptId: state.attemptId,
@@ -810,27 +753,106 @@ export async function runCapturedEvaluation(options: {
                     side,
                     versionId: bundle.version.id,
                     digest: bundle.version.digest,
-                    role: 'grader-explanation',
+                    role: 'output',
                   },
-                  capturedExplanation,
+                  capturedOutput,
                 );
-                artifactBytes += explanation.bytes;
-                index.entries.push(explanation);
+                artifactBytes += entry.bytes;
+                index.entries.push(entry);
                 await journal.saveArtifactIndex(index);
+              } catch (error) {
+                if (error instanceof OutputValidationError) {
+                  await recordOutputError(error);
+                }
+                pair[side] = unavailable('output_invalid');
+                continue;
               }
-              pair[side] = { ...outcome, gradingStatus: 'scored', reward };
-            } catch (error) {
-              if (error instanceof ExecutionUncertainError) throw error;
-              if (error instanceof EvaluationError && error.code === 'journal.ownership_lost')
-                throw error;
-              if (error instanceof CallbackCancelled) cancelled = true;
-              else if (!gradeReturned && config.captureCallbackErrors)
-                await saveCallbackError(privateJobDirectory, 'grade', error);
-              pair[side] = {
-                ...outcome,
-                gradingStatus: 'failed',
-                error: error instanceof CallbackCancelled ? 'cancelled' : 'grading_failed',
+              const reference = capturedReference ?? `acclimate:artifact:${entry.sha256}`;
+              if (
+                typeof reference !== 'string' ||
+                Buffer.byteLength(reference) > 1024 ||
+                /[\u0000-\u001f\u007f\ud800-\udfff]/u.test(reference)
+              ) {
+                pair[side] = unavailable('output_reference_invalid');
+                continue;
+              }
+              const outcome: Outcome = {
+                executionStatus: capturedExecutionStatus,
+                gradingStatus: 'missing',
+                reward: null,
+                outputRef: reference,
+                error: null,
+                usage: capturedUsage,
               };
+              if (signal.aborted || cancelled) {
+                pair[side] = { ...outcome, error: 'cancelled' };
+                continue;
+              }
+              await check();
+              journal.assertOwned();
+              if (signal.aborted || cancelled) {
+                pair[side] = { ...outcome, error: 'cancelled' };
+                continue;
+              }
+              let gradeReturned = false;
+              try {
+                const grade = await captured.grade({
+                  output: structuredClone(capturedOutput),
+                  expected: structuredClone(item.expected),
+                  caseId: item.caseId,
+                  repetition,
+                  signal,
+                });
+                gradeReturned = true;
+                journal.assertOwned();
+                const reward = grade.reward;
+                if (typeof reward !== 'number' || !Number.isFinite(reward)) throw new Error();
+                const returnedExplanation = grade.explanation;
+                let capturedExplanation: unknown;
+                if (returnedExplanation !== undefined) {
+                  assertJson(returnedExplanation, MAX_ARTIFACT);
+                  capturedExplanation = structuredClone(returnedExplanation);
+                  if (
+                    artifactBytes +
+                      Buffer.byteLength(JSON.stringify(capturedExplanation)) +
+                      16 * 1024 >
+                    MAX_PRIVATE
+                  ) {
+                    cancelled = true;
+                    throw new Error();
+                  }
+                  const explanation = await journal.writeArtifact(
+                    {
+                      requestId: scope.requestId,
+                      attemptId: state.attemptId,
+                      caseId: item.caseId,
+                      repetition,
+                      side,
+                      versionId: bundle.version.id,
+                      digest: bundle.version.digest,
+                      role: 'grader-explanation',
+                    },
+                    capturedExplanation,
+                  );
+                  artifactBytes += explanation.bytes;
+                  index.entries.push(explanation);
+                  await journal.saveArtifactIndex(index);
+                }
+                pair[side] = { ...outcome, gradingStatus: 'scored', reward };
+                break;
+              } catch (error) {
+                if (error instanceof ExecutionUncertainError) throw error;
+                if (error instanceof EvaluationError && error.code === 'journal.ownership_lost')
+                  throw error;
+                if (error instanceof CallbackCancelled) cancelled = true;
+                else if (!gradeReturned && config.captureCallbackErrors)
+                  await saveCallbackError(privateJobDirectory, 'grade', error);
+                pair[side] = {
+                  ...outcome,
+                  gradingStatus: 'failed',
+                  error: error instanceof CallbackCancelled ? 'cancelled' : 'grading_failed',
+                };
+              }
             }
           }
           report.results.push(pair);

@@ -47,15 +47,21 @@ pub fn validate_comparison(q: &ComparisonRequest) -> Result<bool, String> {
             }
         }
     }
+    use crate::connected_learning::statistics::{MAX_MISSING_PERCENT, scored_reward};
+    let missing = q
+        .results
+        .iter()
+        .flat_map(|pair| [&pair.parent, &pair.candidate])
+        .filter(|outcome| scored_reward(outcome).is_none())
+        .count();
     Ok(seen.len() == expected.len()
-        && q.results.iter().all(|r| {
-            r.parent.execution_status != "infrastructure_failed"
-                && r.candidate.execution_status != "infrastructure_failed"
-                && r.parent.grading_status == "scored"
-                && r.candidate.grading_status == "scored"
-                && r.parent.reward.is_some()
-                && r.candidate.reward.is_some()
-        }))
+        && missing * 100
+            <= 2 * expected.len()
+                * if q.evaluation.is_some() {
+                    MAX_MISSING_PERCENT
+                } else {
+                    0
+                })
 }
 
 // Only fixed local edit-validation errors are public. Never reflect arbitrary provider details.
@@ -145,10 +151,13 @@ pub async fn create_comparison(
         .fetch_one(&mut *command.tx)
         .await
         .map_err(db)?;
-    if pr
-        .get::<Option<Uuid>, _>("parent_version_id")
-        .map(|x| x.to_string())
-        != Some(q.parent_version_id.clone())
+    // Only the managed calibration scheduler can create a bound self-comparison.
+    let calibration = q.evaluation.is_some() && q.parent_version_id == q.candidate_version_id;
+    if !calibration
+        && pr
+            .get::<Option<Uuid>, _>("parent_version_id")
+            .map(|x| x.to_string())
+            != Some(q.parent_version_id.clone())
     {
         return Err(err(
             StatusCode::BAD_REQUEST,

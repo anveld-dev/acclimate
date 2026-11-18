@@ -1,0 +1,31 @@
+[
+  {
+    "name": "tied audit at the default margin",
+    "stage": "audit",
+    "calibratedStandardDeviation": 0.2,
+    "gains": [0, 0, 0, 0],
+    "pass": false
+  },
+  {
+    "name": "tied audit within a positive margin",
+    "stage": "audit",
+    "calibratedStandardDeviation": 0.2,
+    "nonInferiorityMargin": 0.2,
+    "gains": [0, 0, 0, 0],
+    "pass": true
+  },
+  {
+    "name": "large development gain despite one unprotected regression",
+    "stage": "development",
+    "calibratedStandardDeviation": 0.2,
+    "gains": [-1, 1, 1, 1, 1, 1, 1, 1],
+    "pass": true
+  },
+  {
+    "name": "small uniform development gain below the noise floor",
+    "stage": "development",
+    "calibratedStandardDeviation": 0.2,
+    "gains": [0.05, 0.05, 0.05, 0.05],
+    "pass": false
+  }
+]

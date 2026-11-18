@@ -49,8 +49,8 @@ Feature: Learning from application feedback
     Given I issued a receipt-write credential
     And an independently graded field job triggered automatic rollback
     When the source republishes the withdrawn bytes under a new version ID
-    Then the four original field jobs block restoring those bytes
-    When the application repairs its default code check and replays three original jobs
+    Then the eight original field jobs block restoring those bytes
+    When the application repairs its default code check and replays seven original jobs
     Then the outstanding job still blocks restore on the current delivery revision
     When the last original job passes and the reviewer retries the restore after restart
     Then the connection serves the requalified version with exactly one new release

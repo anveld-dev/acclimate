@@ -135,5 +135,6 @@ export interface RunEvaluationOptions<I = Json, E = Json, O = Json> {
   configPath: string;
   handoff: EvaluationHandoff;
   allowLive?: boolean;
+  retryMissingTrial?: boolean;
   signal?: AbortSignal;
 }

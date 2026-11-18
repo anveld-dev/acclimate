@@ -16,7 +16,9 @@ pub(super) struct Replay {
     digest: String,
     baseline_revision: String,
     outcome_id: Uuid,
-    verdict: super::field_audits::Verdict,
+    verdict: String,
+    #[serde(default)]
+    attempts: Vec<String>,
 }
 
 async fn evaluator(
@@ -146,21 +148,30 @@ pub(super) async fn submit(
     .map_err(db)?
     .ok_or_else(|| conflict("Outcome is not a required field replay for these bytes"))?;
     if let Some(previous) = previous {
-        if previous != replay.verdict.as_str() {
+        if previous != replay.verdict {
             return Err(conflict("A different field replay result already exists"));
         }
     } else {
+        if !matches!(replay.verdict.as_str(), "pass" | "regression")
+            || !crate::connected_learning::statistics::valid_replays(
+                &replay.verdict,
+                &replay.attempts,
+                false,
+            )
+        {
+            return Err(conflict("Invalid field replay attempts"));
+        }
         if c.baseline(&mut tx).await?.1 != revision {
             return Err(conflict("Field replay baseline has changed"));
         }
         sqlx::query("INSERT INTO connected_learning_replay_obligations
-            (project_id,integration_id,bundle_id,regression_sequence,version_id,baseline_revision,verdict,evaluator)
-            VALUES ($6,$7,$8,$1,$2,$3,$4,$5)
+            (project_id,integration_id,bundle_id,regression_sequence,version_id,baseline_revision,verdict,evaluator,attempts)
+            VALUES ($6,$7,$8,$1,$2,$3,$4,$5,$9)
             ON CONFLICT(regression_sequence,version_id,baseline_revision)
-            DO UPDATE SET verdict=EXCLUDED.verdict,evaluator=EXCLUDED.evaluator
+            DO UPDATE SET verdict=EXCLUDED.verdict,evaluator=EXCLUDED.evaluator,attempts=EXCLUDED.attempts
             WHERE connected_learning_replay_obligations.verdict IS NULL")
-            .bind(sequence).bind(replay.version_id).bind(revision).bind(replay.verdict.as_str()).bind(&c.evaluator)
-            .bind(&c.project).bind(integration).bind(c.bundle)
+            .bind(sequence).bind(replay.version_id).bind(revision).bind(&replay.verdict).bind(&c.evaluator)
+            .bind(&c.project).bind(integration).bind(c.bundle).bind(&replay.attempts)
             .execute(&mut *tx).await.map_err(db)?;
     }
     tx.commit().await.map_err(db)?;

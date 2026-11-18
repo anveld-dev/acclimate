@@ -353,6 +353,7 @@ type LearningStatus = Pick<
   | 'enabled'
   | 'auditCount'
   | 'remainingAudits'
+  | 'noiseCalibration'
   | 'renewalRevision'
   | 'proposalAdmissions'
   | 'maxProposalAdmissions'
@@ -761,6 +762,7 @@ export async function connectionLearning(
         automaticRollback: status.automaticRollback,
         auditCount: status.auditCount,
         remainingAudits: status.remainingAudits,
+        noiseCalibration: status.noiseCalibration,
         renewalRevision: status.renewalRevision,
         proposalAdmissions: status.proposalAdmissions,
         maxProposalAdmissions: status.maxProposalAdmissions,

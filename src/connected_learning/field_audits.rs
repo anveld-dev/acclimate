@@ -10,8 +10,7 @@ use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
-const WINDOW_CAPACITY: i64 = 10;
-const REGRESSION_THRESHOLD: i64 = 3;
+use crate::connected_learning::statistics::{FieldDecision, field_decision};
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -31,13 +30,18 @@ pub(super) struct FieldVerdict {
 pub(super) enum Verdict {
     Pass,
     Regression,
+    Win,
+    Loss,
+    Tie,
 }
 
 impl Verdict {
     pub(super) fn as_str(&self) -> &'static str {
         match self {
             Self::Pass => "pass",
-            Self::Regression => "regression",
+            Self::Regression | Self::Loss => "regression",
+            Self::Win => "win",
+            Self::Tie => "tie",
         }
     }
 }
@@ -138,14 +142,15 @@ pub(super) async fn submit(
             "A field verdict already exists for this served job",
         ));
     };
-    let (window_size, regressions) = window(&mut tx, release, verdict.parent_version_id).await?;
+    let (window_size, regressions, wins, decision) =
+        sequential_test(&mut tx, release, verdict.parent_version_id).await?;
     let same_control = control == Some(verdict.parent_version_id);
-    let withdraw = connection.automatic_rollback && regressions >= REGRESSION_THRESHOLD;
+    let withdraw = connection.automatic_rollback && decision == FieldDecision::Withdraw;
     // Quarantine the failing bytes before the promotion chooses a
     // comparison version for the restored release.
     sqlx::query("UPDATE connected_learning_field_releases
         SET validated=(validated OR $2) AND NOT (withdrawn OR $3),withdrawn=withdrawn OR $3 WHERE promotion_id=$1")
-        .bind(release).bind(current && same_control && window_size == WINDOW_CAPACITY && regressions == 0)
+        .bind(release).bind(current && same_control && decision == FieldDecision::Validate)
         .bind(withdraw).execute(&mut *tx).await.map_err(db)?;
     // Once superseded, a served revision can still contribute evidence, but it
     // can never move traffic. Only a control still eligible for delivery may be restored.
@@ -161,7 +166,7 @@ pub(super) async fn submit(
     }
     let attempted = if let Some(target) = restore {
         let reason = format!(
-            "Automatic rollback after {regressions} regressions in {window_size} independently graded served jobs"
+            "Automatic rollback after {regressions} losses and {wins} wins in {window_size} independently graded served jobs"
         );
         match crate::channels::promote_in_tx(
             &mut tx,
@@ -237,7 +242,7 @@ pub(super) async fn submit(
                      updated_at=now() WHERE id=$1")
             .bind(round).bind(window_size as i32).bind(regressions as i32).execute(&mut *tx).await.map_err(db)?;
     }
-    let mut response = json!({"outcomeId":verdict.outcome_id,"accepted":true,"windowSize":window_size,"regressions":regressions});
+    let mut response = json!({"outcomeId":verdict.outcome_id,"accepted":true,"windowSize":window_size,"regressions":regressions,"wins":wins});
     if let Some(promotion) = promotion {
         response["rollbackPromotionId"] = json!(promotion);
     }
@@ -251,80 +256,32 @@ pub(super) async fn submit(
     Ok(Json(response))
 }
 
-async fn window(tx: &mut Tx<'_>, release: Uuid, control: Uuid) -> ApiResult<(i64, i64)> {
-    sqlx::query_as(
-        "SELECT count(*),count(*) FILTER (WHERE verdict='regression')
-         FROM (SELECT verdict FROM connected_learning_field_verdicts WHERE promotion_id=$1 AND request->>'parentVersionId'=$3
-               ORDER BY sequence DESC LIMIT $2) recent",
+async fn sequential_test(
+    tx: &mut Tx<'_>,
+    release: Uuid,
+    control: Uuid,
+) -> ApiResult<(i64, i64, i64, FieldDecision)> {
+    // Legacy pass combined wins and ties. Exclude both legacy labels from inference.
+    let rows: Vec<String> = sqlx::query_scalar(
+        "SELECT request->>'verdict' FROM connected_learning_field_verdicts
+         WHERE promotion_id=$1 AND request->>'parentVersionId'=$2
+           AND request->>'verdict' IN ('win','loss','tie')
+         ORDER BY sequence",
     )
     .bind(release)
-    .bind(WINDOW_CAPACITY)
     .bind(control.to_string())
-    .fetch_one(&mut **tx)
+    .fetch_all(&mut **tx)
     .await
-    .map_err(db)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-    async fn rollback_window_expires_old_verdicts_and_partitions_releases() {
-        let url =
-            std::env::var("ACCLIMATE_TEST_DATABASE_URL").expect("requires isolated PostgreSQL");
-        let pool = sqlx::PgPool::connect(&url).await.unwrap();
-        let mut tx = pool.begin().await.unwrap();
-        sqlx::query(
-            "CREATE TEMP TABLE connected_learning_field_verdicts (
-                sequence bigint GENERATED ALWAYS AS IDENTITY, promotion_id uuid NOT NULL, verdict text NOT NULL, request jsonb NOT NULL
-            ) ON COMMIT DROP",
-        )
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-        let target = Uuid::new_v4();
-        let another = Uuid::new_v4();
-        let control = Uuid::new_v4();
-        let insert = "INSERT INTO connected_learning_field_verdicts (promotion_id, verdict,request)
-                      SELECT $1, verdict,jsonb_build_object('parentVersionId',$3::uuid) FROM unnest($2::text[]) AS verdict";
-        sqlx::query(insert)
-            .bind(target)
-            .bind(["regression"; 3].as_slice())
-            .bind(control)
-            .execute(&mut *tx)
-            .await
-            .unwrap();
-        sqlx::query(insert)
-            .bind(another)
-            .bind(["regression"; 4].as_slice())
-            .bind(control)
-            .execute(&mut *tx)
-            .await
-            .unwrap();
-        assert_eq!(window(&mut tx, target, control).await.unwrap(), (3, 3));
-        sqlx::query(insert)
-            .bind(target)
-            .bind(["pass"; 8].as_slice())
-            .bind(control)
-            .execute(&mut *tx)
-            .await
-            .unwrap();
-        assert_eq!(window(&mut tx, target, control).await.unwrap(), (10, 2));
-        assert_eq!(window(&mut tx, another, control).await.unwrap(), (4, 4));
-        let replacement_control = Uuid::new_v4();
-        sqlx::query(insert)
-            .bind(target)
-            .bind(["regression"].as_slice())
-            .bind(replacement_control)
-            .execute(&mut *tx)
-            .await
-            .unwrap();
-        assert_eq!(
-            window(&mut tx, target, replacement_control).await.unwrap(),
-            (1, 1)
-        );
-        assert_eq!(window(&mut tx, target, control).await.unwrap(), (10, 2));
+    .map_err(db)?;
+    let (mut count, mut wins, mut losses) = (0, 0, 0);
+    for verdict in rows {
+        count += 1;
+        wins += i64::from(verdict == "win");
+        losses += i64::from(verdict == "loss");
+        let decision = field_decision(wins, losses);
+        if decision != FieldDecision::Pending {
+            return Ok((count, losses, wins, decision));
+        }
     }
+    Ok((count, losses, wins, FieldDecision::Pending))
 }

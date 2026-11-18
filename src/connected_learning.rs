@@ -17,6 +17,7 @@ pub(crate) mod epochs;
 mod incident;
 mod restore;
 pub(crate) mod selection;
+pub(crate) mod statistics;
 
 pub(crate) const CONNECTION_HEADER: &str = "x-acclimate-integration-id";
 
@@ -626,6 +627,14 @@ async fn inspect(
         _ => false,
     };
     let mut view = enrollment_view(&row, row.get("enabled"), include_audits)?;
+    view["noiseCalibration"] = sqlx::query_scalar::<_, Value>(
+        "SELECT jsonb_build_object('requestId',p.calibration_request_id,'status',COALESCE(e.status,'queued'))
+             || COALESCE(p.noise_calibration,'{}'::jsonb)
+         FROM connected_learning_policy_epochs p
+         LEFT JOIN evaluation_requests e ON e.id=p.calibration_request_id
+         WHERE (p.project_id,p.integration_id,p.epoch)=($1,$2,$3)",
+    ).bind(&project).bind(integration).bind(row.get::<i64,_>("policy_epoch"))
+     .fetch_one(&mut *tx).await.map_err(db)?;
     view["remainingAudits"] =
         json!(epochs::remaining_audits(&mut tx, &project, integration).await?);
     let delivery = sqlx::query(
@@ -937,7 +946,14 @@ async fn work(
         }
     }
     let items: Vec<Value> = if active {
-        sqlx::query_scalar("SELECT jsonb_build_object('roundId',r.id,'evaluationRequestId',e.id,'phase', CASE WHEN e.id=r.audit_request_id THEN 'audit' ELSE 'development' END,'status',e.status) FROM connected_learning_rounds r JOIN evaluation_requests e ON e.project_id=r.project_id AND e.bundle_id=r.bundle_id AND e.id=CASE r.state WHEN 'audit' THEN r.audit_request_id WHEN 'development' THEN r.development_request_id END WHERE r.project_id=$1 AND r.integration_id=$2 AND e.status IN ('requested','running') ORDER BY r.created_at,r.id LIMIT 100")
+        sqlx::query_scalar("SELECT payload FROM (
+            SELECT jsonb_build_object('roundId',NULL,'evaluationRequestId',e.id,'phase','calibration','status',e.status) AS payload
+            FROM connected_learning_policy_epochs p
+            JOIN connected_learning_enrollments l ON (l.project_id,l.integration_id,l.policy_epoch)=(p.project_id,p.integration_id,p.epoch)
+            JOIN evaluation_requests e ON e.id=p.calibration_request_id
+            WHERE (p.project_id,p.integration_id)=($1,$2) AND e.status IN ('requested','running')
+            UNION ALL
+            SELECT jsonb_build_object('roundId',r.id,'evaluationRequestId',e.id,'phase', CASE WHEN e.id=r.audit_request_id THEN 'audit' ELSE 'development' END,'status',e.status) FROM connected_learning_rounds r JOIN evaluation_requests e ON e.project_id=r.project_id AND e.bundle_id=r.bundle_id AND e.id=CASE r.state WHEN 'audit' THEN r.audit_request_id WHEN 'development' THEN r.development_request_id END WHERE r.project_id=$1 AND r.integration_id=$2 AND e.status IN ('requested','running')  ) assigned LIMIT 100")
             .bind(project).bind(integration).fetch_all(&mut *tx).await.map_err(db)?
     } else {
         vec![]
@@ -959,7 +975,11 @@ pub(crate) async fn authorize_evaluator(
     starting: bool,
 ) -> ApiResult<()> {
     let round = sqlx::query(
-        "SELECT integration_id,CASE WHEN audit_request_id=$3 THEN 'audit' ELSE 'development' END AS phase FROM connected_learning_rounds WHERE project_id=$1 AND bundle_id=$2 AND (development_request_id=$3 OR audit_request_id=$3)",
+        "SELECT integration_id,CASE WHEN audit_request_id=$3 THEN 'audit' ELSE 'development' END AS phase FROM connected_learning_rounds WHERE project_id=$1 AND bundle_id=$2 AND (development_request_id=$3 OR audit_request_id=$3)
+         UNION ALL
+         SELECT p.integration_id,'calibration' FROM connected_learning_policy_epochs p
+         JOIN connected_learning_enrollments e USING(project_id,integration_id)
+         WHERE (p.project_id,e.bundle_id,p.calibration_request_id)=($1,$2,$3)",
     )
     .bind(project).bind(bundle).bind(evaluation).fetch_optional(&mut **tx).await.map_err(db)?;
     let Some(round) = round else {
@@ -973,11 +993,26 @@ pub(crate) async fn authorize_evaluator(
     if starting {
         let active: bool = sqlx::query_scalar("SELECT stopped_at IS NULL FROM connected_learning_enrollments WHERE project_id=$1 AND integration_id=$2 FOR SHARE")
             .bind(project).bind(integration).fetch_one(&mut **tx).await.map_err(db)?;
-        let current: bool = sqlx::query_scalar(
+        let phase: String = round.get("phase");
+        let current: bool = if phase == "calibration" {
+            sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM connected_learning_policy_epochs
+                WHERE (project_id,integration_id,epoch,calibration_request_id)=($1,$2,$3,$4))",
+            )
+            .bind(project)
+            .bind(integration)
+            .bind(row.get::<i64, _>("policy_epoch"))
+            .bind(evaluation)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(db)?
+        } else {
+            sqlx::query_scalar(
             "SELECT state=$3 FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 AND (development_request_id=$4 OR audit_request_id=$4)",
         )
-        .bind(project).bind(integration).bind(round.get::<String, _>("phase")).bind(evaluation)
-        .fetch_one(&mut **tx).await.map_err(db)?;
+        .bind(project).bind(integration).bind(phase).bind(evaluation)
+        .fetch_one(&mut **tx).await.map_err(db)?
+        };
         if !active || !current || !row.get::<bool, _>("enabled") {
             return Err(conflict("Learning dispatch is closed"));
         }

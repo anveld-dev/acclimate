@@ -165,14 +165,15 @@ for (const kind of ['recheck', 'field', 'incident'] as const) {
       assert.equal(record.callbacks, 0);
       record.failPost = true;
       assert.equal((await run('live', true)).length, 1);
-      assert.equal(record.callbacks, 1);
+      assert.equal(record.callbacks, kind === 'recheck' ? 1 : 3);
       record.failPost = false;
       assert.deepEqual(await run('live', false), []);
       assert.ok(record.posts.length >= 2);
       assert.equal(new Set(record.posts).size, 1);
       assert.equal(new Set(record.keys).size, 1);
       assert.ok(record.keys[0]);
-      assert.equal(record.callbacks, 1);
+      if (kind !== 'recheck') assert.deepEqual(JSON.parse(record.posts[0]!).attempts, ['pass', 'pass', 'pass']);
+      assert.equal(record.callbacks, kind === 'recheck' ? 1 : 3);
     },
   );
   test(

@@ -209,7 +209,10 @@ pub(crate) async fn enqueue_evaluation(
     }) || !rows.iter().any(|r| {
         r.get::<Uuid, _>("id") == candidate
             && r.get::<String, _>("digest") == q.candidate_digest
-            && r.get::<Option<Uuid>, _>("parent_version_id") == Some(parent)
+            && (r.get::<Option<Uuid>, _>("parent_version_id") == Some(parent)
+                || (parent == candidate
+                    && principal == "service:connected-learning"
+                    && q.proposal_id.is_none()))
     }) {
         return Err(invalid(
             "Version identities or candidate parent do not match",

@@ -195,18 +195,20 @@ test('field auditor links the exact started receipt and grades only the authoriz
     revision: '2',
     parentVersionId: parent.id,
     parentDigest: parent.digest,
-    verdict: 'regression',
+    verdict: 'loss',
   });
   assert.equal(executions, 1);
   await client.reportLearningFieldAudit(projectId, integrationId, body!);
   assert.equal(requests.at(-1)!.headers.get('idempotency-key'), outcomeId);
   assert.deepEqual(await requests.at(-1)!.json(), body);
   grades = { served: 'incorrect', predecessor: 'incorrect' };
-  assert.equal(await prepare(bundle, sample), null);
+  assert.equal((await prepare(bundle, sample))?.verdict, 'tie');
   grades = { served: 'correct', predecessor: 'indeterminate' };
   assert.equal(await prepare(bundle, sample), null);
   grades = { served: 'correct', predecessor: 'correct' };
-  assert.equal((await prepare(bundle, sample))?.verdict, 'pass');
+  assert.equal((await prepare(bundle, sample))?.verdict, 'tie');
+  grades = { served: 'correct', predecessor: 'incorrect' };
+  assert.equal((await prepare(bundle, sample))?.verdict, 'win');
 });
 
 test('enrollment PUT preserves an explicit false rollout precondition', async () => {

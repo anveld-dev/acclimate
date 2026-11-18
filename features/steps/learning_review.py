@@ -203,21 +203,22 @@ def automatic_rollback(context):
     # on opposite sides of the rollback, so only one can be its cause.
     grades = []
     w.private_field_jobs = {}
-    for path in ('src/parser.ts', 'src/runner.ts', 'src/review.ts', 'src/cache.ts'):
+    for index in range(8):
+        path = f'src/review-{index}.ts'
         job = dict(changedPaths=[path, 'CHANGELOG.md'], expectedPaths=[path])
         grade = w.sdk('gradeFieldJob', actor='evaluator', integrationId=w.integration['id'],
                       readerToken=w.read_credential['secret'], receiptToken=w.write_credential['secret'],
                       outcomeToken=w.h.tokens['other'], fieldJob=job)
-        assert grade.get('verdict') == 'regression', grade
+        assert grade.get('verdict') == 'loss', grade
         assert grade['versionId'] == w.served['version']['id']
         assert grade['parentVersionId'] == w.original_delivery['version']['id']
         grades.append(grade)
         w.private_field_jobs[grade['outcomeId']] = job
     assert len({grade['outcomeId'] for grade in grades}) == len(grades)
     audits = w.learning_path + '/field-audits'
-    for grade in grades[:2]:
+    for grade in grades[:6]:
         assert 'rollbackPromotionId' not in w.call('POST', audits, grade, actor='evaluator')
-    w.triggering_job, w.later_job = grades[2:]
+    w.triggering_job, w.later_job = grades[6:]
     w.rollback_id = w.call('POST', audits, w.triggering_job, actor='evaluator')['rollbackPromotionId']
     assert 'rollbackPromotionId' not in w.call('POST', audits, w.later_job, actor='evaluator')
     rollback = w.call('GET', w.history_path)['items'][0]
@@ -255,7 +256,7 @@ def expect_traced_outcome(w, *, triggered):
     ]
     for line in lines:
         expect(region.get_by_text(line, exact=True)).to_be_visible()
-    verdict = f"Field verdict · regression against control {version}"
+    verdict = f"Field verdict · loss against control {version}"
     if triggered:
         verdict += ' · this verdict triggered automatic rollback'
     expect(region.get_by_text(verdict, exact=True)).to_be_visible()

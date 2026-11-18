@@ -35,6 +35,8 @@ pub(super) struct Verdict {
     digest: String,
     baseline_revision: String,
     verdict: String,
+    #[serde(default)]
+    attempts: Vec<String>,
 }
 
 pub(super) async fn submit(
@@ -74,6 +76,9 @@ pub(super) async fn submit(
      .ok_or_else(|| conflict("Incident replay identity does not match this round"))?;
     let saved: Option<String> = row.get("incident_replay");
     if saved.as_deref() != Some(&input.verdict) {
+        if !super::statistics::valid_replays(&input.verdict, &input.attempts, true) {
+            return Err(invalid("Invalid incident replay attempts"));
+        }
         if !active
             || !row.get::<bool, _>("current")
             || row.get::<String, _>("state") != "development"
@@ -83,10 +88,11 @@ pub(super) async fn submit(
                 "Incident replay is not pending for this candidate",
             ));
         }
-        sqlx::query("UPDATE connected_learning_replay_obligations SET verdict=$2,evaluator=$3 WHERE round_id=$1")
+        sqlx::query("UPDATE connected_learning_replay_obligations SET verdict=$2,evaluator=$3,attempts=$4 WHERE round_id=$1")
             .bind(input.round_id)
             .bind(&input.verdict)
             .bind(&actor.principal)
+            .bind(&input.attempts)
             .execute(&mut *tx)
             .await
             .map_err(db)?;

@@ -434,6 +434,34 @@ try {
 
   const descriptor = connectedEvaluationDescriptor;
 
+  // Small deterministic cohorts exercise workflow transitions with explicit tolerances.
+  const qualificationDevelopment = {
+    schemaVersion: 2 as const,
+    id: 'fixture-development',
+    revision: '1',
+    metric: { name: 'correctness', unit: 'reward', direction: 'higher' as const },
+    aggregation: 'equal-case-means' as const,
+    minimumMeanImprovement: -0.25,
+    maximumCaseRegression: 0,
+    requiredCases: [],
+  };
+  const qualificationPolicies = {
+    development: qualificationDevelopment,
+    audit: { ...qualificationDevelopment, id: 'fixture-audit', nonInferiorityMargin: 0.55 },
+  };
+  async function calibrateOnly(
+    connection: string,
+    installation: string,
+    development: ReturnType<typeof cohort>,
+  ) {
+    const stop = enableDriver(connection, installation, { development, audits: [] });
+    await waitFor('noise calibration', async () => {
+      const view = await api('GET', learning(connection));
+      return view.noiseCalibration?.standardError > 0 ? true : undefined;
+    });
+    await stop();
+  }
+
   async function enroll(connection: string, installationId: string, automaticRollout: boolean) {
     const apps = evaluationApps(installationId);
     const body = {
@@ -441,6 +469,7 @@ try {
       automaticRollout,
       permittedPaths: ['AGENTS.md'],
       maxProposalAdmissions: automaticRollout ? 4 : 1,
+      selectionPolicies: qualificationPolicies,
       development: descriptor(apps.development),
       audits: apps.audits.slice(0, automaticRollout ? 4 : 1).map(descriptor),
       evaluatorPrincipal: 'evaluator',
@@ -618,6 +647,8 @@ try {
       },
     };
   }
+  await calibrateOnly(automatic, 'auto-refund-fixture', autoApps.development);
+  const executionsBeforeDrift = executions.length;
   const initialTaskBundle = await installedBundle(automatic);
   const terminalOutcome = gradedOutcome({ kind: 'refund' }, initialTaskBundle);
   assert(terminalOutcome.feedback);
@@ -671,7 +702,11 @@ try {
     logs.includes('descriptor.mismatch') ? true : undefined,
   );
   await wrongDriver();
-  assert.equal(executions.length, 0, 'drifted fixture must be rejected before executing a task');
+  assert.equal(
+    executions.length,
+    executionsBeforeDrift,
+    'drifted fixture must be rejected before executing a task',
+  );
   const pauseAutoDriver = enableDriver(automatic, 'auto-refund-fixture', autoApps);
   enableDriver(manual, 'manual-refund-fixture', manualApps);
 
@@ -971,6 +1006,7 @@ try {
     installationId: rollbackInstallation,
     automaticRollout: true,
     automaticRollback: false,
+    selectionPolicies: qualificationPolicies,
     permittedPaths: ['AGENTS.md'],
     maxProposalAdmissions: 4,
     development: descriptor(rollbackEvaluation.development),
@@ -1151,14 +1187,14 @@ try {
   const healthy = await installedBundle(rollbackConnection);
   assert.equal(healthy.version.id, healthyRound.candidateVersionId);
   const unrelated = await runServedTask({ kind: 'refund-escalation' }, true);
-  assert.equal(unrelated.verdict, 'pass');
+  assert.equal(unrelated.verdict, 'tie');
   await api('POST', auditPath, unrelated, 'other', 403);
   const inconclusive = await auditServedTask(unrelated);
   assert.equal(inconclusive.regressions, 0);
   assert.equal(inconclusive.windowSize, 1);
   assert(!inconclusive.rollbackPromotionId);
   assert.equal((await fresh(rollbackConnection)).id, healthy.version.id);
-  for (let passed = 1; passed < 10; passed++) {
+  for (let passed = 1; passed <= 3; passed++) {
     const sample = await runServedTask({ kind: 'refund' });
     assert.equal((await auditServedTask(sample)).windowSize, passed + 1);
   }
@@ -1174,7 +1210,7 @@ try {
   const finishEarlierJob = await startServedTask({ kind: 'refund-escalation' });
   const delayedRegression = await runServedTask({ kind: 'refund-escalation' });
   assert.equal(delayedRegression.parentVersionId, healthy.version.id);
-  assert.equal(delayedRegression.verdict, 'regression');
+  assert.equal(delayedRegression.verdict, 'loss');
   const inherited = await submit(
     rollbackConnection,
     firstBad.version,
@@ -1200,13 +1236,13 @@ try {
   assert.equal(runRefundTask(bad.payload, { kind: 'refund-escalation' }), 'Give up.');
   const historicalPass = await auditServedTask(late);
   assert(!historicalPass.rollbackPromotionId);
-  // Initial healthy traffic can validate a release before a slower failing task is graded.
+  // Ten ties leave the sequential test open for the slower failing jobs.
   for (let count = 1; count <= 10; count++) {
     const passing = await runServedTask({ kind: 'refund' });
     assert.equal((await auditServedTask(passing)).windowSize, count);
   }
   const firstRegression = await runServedTask({ kind: 'refund-escalation' });
-  assert.equal(firstRegression.verdict, 'regression');
+  assert.equal(firstRegression.verdict, 'loss');
   assert.equal(
     firstRegression.parentVersionId,
     healthy.version.id,
@@ -1222,11 +1258,11 @@ try {
   );
   const firstFieldAudit = await auditServedTask(firstRegression);
   assert.equal(firstFieldAudit.regressions, 1);
-  assert.equal(firstFieldAudit.windowSize, 10);
+  assert.equal(firstFieldAudit.windowSize, 11);
   assert(!firstFieldAudit.rollbackPromotionId);
   assert.deepEqual(await auditServedTask(firstRegression), firstFieldAudit);
-  const sideTask = await runServedTask({ kind: 'refund-status' });
-  assert.equal(sideTask.verdict, 'pass');
+  const sideTask = await runServedTask({ kind: 'refund' });
+  assert.equal(sideTask.verdict, 'tie');
   await api(
     'POST',
     auditPath,
@@ -1236,14 +1272,14 @@ try {
   );
   const sideAudit = await auditServedTask(sideTask);
   assert.equal(sideAudit.regressions, 1);
-  assert.equal(sideAudit.windowSize, 10);
+  assert.equal(sideAudit.windowSize, 12);
   const secondRegression = await runServedTask({ kind: 'refund-escalation' });
   assert.equal((await auditServedTask(secondRegression)).regressions, 2);
   assert.equal((await fresh(rollbackConnection)).id, bad.version.id);
   const thirdRegression = await runServedTask({ kind: 'refund-escalation' });
   const disabled = await auditServedTask(thirdRegression);
   assert.equal(disabled.regressions, 3);
-  assert.equal(disabled.windowSize, 10);
+  assert.equal(disabled.windowSize, 14);
   assert(!disabled.rollbackPromotionId);
   assert.equal((await fresh(rollbackConnection)).id, bad.version.id);
   await pauseRollbackDriver();
@@ -1263,14 +1299,19 @@ try {
     bad.version.id,
     'policy change waits for a fresh verdict',
   );
-  const fourthRegression = await runServedTask({ kind: 'refund-escalation' });
+  for (let loss = 4; loss < 7; loss++) {
+    const verdict = await auditServedTask(await runServedTask({ kind: 'refund-escalation' }));
+    assert.equal(verdict.regressions, loss);
+    assert(!verdict.rollbackPromotionId);
+  }
+  const triggeringLoss = await runServedTask({ kind: 'refund-escalation' });
   const tooLate = await runServedTask({ kind: 'refund-escalation' });
   const proposalCountBeforeRollback = modelRequests.length;
-  const rollback = await auditServedTask(fourthRegression);
-  assert.equal(rollback.regressions, 4);
-  assert.equal(rollback.windowSize, 10);
+  const rollback = await auditServedTask(triggeringLoss);
+  assert.equal(rollback.regressions, 7);
+  assert.equal(rollback.windowSize, 18);
   assert(rollback.rollbackPromotionId);
-  assert.deepEqual(await auditServedTask(fourthRegression), rollback);
+  assert.deepEqual(await auditServedTask(triggeringLoss), rollback);
   assert.deepEqual(await auditServedTask(thirdRegression), disabled);
   const staleRejected = await observe(rollbackConnection, staleTeaching, 'rejected');
   assert.match(staleRejected.reason ?? '', /withdrawn by automatic rollback/);
@@ -1326,7 +1367,7 @@ try {
     'a previously validated but withdrawn release cannot become the restore control',
   );
   assert.equal(restoredSample.revision, rolledBack.resolution!.revision);
-  assert.equal(restoredSample.verdict, 'pass');
+  assert.equal(restoredSample.verdict, 'tie');
   await auditServedTask(restoredSample);
   const afterFieldAudit = await api('GET', learning(rollbackConnection));
   const rolledBackRound = afterFieldAudit.rounds.find((round: Round) => round.id === badRound.id);
@@ -1349,15 +1390,15 @@ try {
   const triggeringTicket = await operator.getLearningOutcome(
     project,
     rollbackConnection,
-    fourthRegression.outcomeId,
+    triggeringLoss.outcomeId,
   );
   assert.equal(triggeringTicket.corrections.length, 0);
   assert.equal(triggeringTicket.servedRelease?.versionId, bad.version.id);
   assert.equal(triggeringTicket.servedRelease?.withdrawn, true);
   assert.equal(triggeringTicket.servedRelease?.rollback?.revision, rolledBack.resolution!.revision);
   assert.deepEqual(triggeringTicket.fieldAudit, {
-    verdict: 'regression',
-    controlVersionId: fourthRegression.parentVersionId,
+    verdict: 'loss',
+    controlVersionId: triggeringLoss.parentVersionId,
     triggeredRollback: true,
   });
   const lateTicket = await operator.getLearningOutcome(
@@ -1376,12 +1417,12 @@ try {
   const inspectWithdrawal = () =>
     auditClient.getLearningFieldRequalification(project, rollbackConnection, bad.version.id);
   const withdrawal = await inspectWithdrawal();
-  assert(withdrawal.pendingOutcomeIds.includes(fourthRegression.outcomeId));
+  assert(withdrawal.pendingOutcomeIds.includes(triggeringLoss.outcomeId));
   const failedReplay = {
     versionId: bad.version.id,
     digest: bad.version.digest,
     baselineRevision: withdrawal.baselineRevision,
-    outcomeId: fourthRegression.outcomeId,
+    outcomeId: triggeringLoss.outcomeId,
     verdict:
       runRefundTask(bad.payload, { kind: 'refund-escalation' }) ===
       expectedResponse['refund-escalation']
@@ -1390,7 +1431,7 @@ try {
   };
   await api('POST', fieldObligations, failedReplay, 'other', 403);
   await api('POST', fieldObligations, failedReplay, 'evaluator');
-  assert((await inspectWithdrawal()).failedOutcomeIds.includes(fourthRegression.outcomeId));
+  assert((await inspectWithdrawal()).failedOutcomeIds.includes(triggeringLoss.outcomeId));
   await api(
     'POST',
     `${learning(rollbackConnection)}/restore`,
@@ -1440,18 +1481,18 @@ try {
     cohort(dataset, [{ kind: 'refund-escalation' }]),
   );
   const quality = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: 'refund-quality',
     revision: '1',
     metric: { name: 'correctness', unit: 'reward', direction: 'higher' },
     aggregation: 'equal-case-means',
-    minimumMeanImprovement: 0.2,
+    minimumMeanImprovement: -0.2,
     maximumCaseRegression: 0,
     requiredCases: [],
   };
   const policies = {
     development: quality,
-    audit: { ...quality, id: 'refund-nonregression', minimumMeanImprovement: 0 },
+    audit: { ...quality, id: 'refund-nonregression', nonInferiorityMargin: 1 },
   };
   await api('PUT', learning(structural), {
     installationId: structuralInstallation,
@@ -1465,6 +1506,7 @@ try {
     evaluatorPrincipal: 'evaluator',
     outcomePrincipal: 'other',
   });
+  await calibrateOnly(structural, structuralInstallation, initialDevelopment);
   const empty = await submit(structural, baseline, 'Keep current behavior exactly.');
   const unchanged = await observe(structural, empty, 'rejected');
   assert.equal(unchanged.candidateVersionId, null);
@@ -1629,7 +1671,7 @@ try {
   evidence.recoveryOperations = {
     stoppedRestore: restored.id,
     sourceRefresh: refreshed.id,
-    failedWithdrawalReplay: fourthRegression.outcomeId,
+    failedWithdrawalReplay: triggeringLoss.outcomeId,
   };
   evidence.structuralLearning = {
     unchanged: unchanged.id,
@@ -1668,8 +1710,8 @@ try {
   evidence.fieldRollback = {
     healthyRelease: healthyRound,
     rolledBackRelease: rolledBackRound,
-    passAfterUnrelatedTaskFailure: inconclusive,
-    policyDisabledAtThreshold: disabled,
+    tieAfterUnrelatedTaskFailure: inconclusive,
+    rollbackDisabledBeforeBoundary: disabled,
     staleEvaluationInterrupted: interrupted.id,
     rollback,
     lateGradesRetained: true,

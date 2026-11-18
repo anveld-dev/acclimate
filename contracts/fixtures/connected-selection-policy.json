@@ -43,7 +43,8 @@
       "name": "all optional fields",
       "valid": true,
       "policy": {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
+        "nonInferiorityMargin": 0.05,
         "id": "connected-audit",
         "revision": "1",
         "metric": {

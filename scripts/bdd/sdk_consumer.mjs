@@ -191,10 +191,12 @@ async function replayFieldJob() {
   assert.equal(candidate.version.digest, input.digest);
   const instructions = candidate.payload.files.find((file) => file.path === 'AGENTS.md').text;
   assert.equal(fieldJobPasses(instructions, input.fieldJob), false, 'Original application must reproduce the loss');
-  const verdict = fieldJobPasses(instructions, input.fieldJob, input.defaultChecks) ? 'pass' : 'regression';
+  const attempts = Array.from({ length: 3 }, () =>
+    fieldJobPasses(instructions, input.fieldJob, input.defaultChecks) ? 'pass' : 'regression');
+  const verdict = attempts.filter((result) => result === 'pass').length >= 2 ? 'pass' : 'regression';
   const receipt = await client.reportLearningFieldReplay(base.projectId, input.integrationId, {
     versionId: candidate.version.id, digest: candidate.version.digest, baselineRevision: input.baselineRevision,
-    outcomeId: input.outcomeId, verdict,
+    outcomeId: input.outcomeId, verdict, attempts,
   });
   return { ...receipt, verdict };
 }

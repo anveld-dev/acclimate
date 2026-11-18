@@ -58,7 +58,7 @@ fn check_grants(input: impl Read) -> ExitCode {
     let mut bytes = Vec::new();
     let valid = input.take(MAX_INPUT + 1).read_to_end(&mut bytes).is_ok()
         && bytes.len() <= MAX_INPUT as usize
-        && validate_grant_input(&bytes);
+        && parse_grants(&bytes).is_ok();
     if valid {
         println!(r#"{{"schemaVersion":1,"valid":true}}"#);
         ExitCode::SUCCESS
@@ -69,26 +69,20 @@ fn check_grants(input: impl Read) -> ExitCode {
     }
 }
 
-fn validate_grant_input(bytes: &[u8]) -> bool {
-    // Deserialize the real schema first, preserving serde's duplicate-field and
-    // value-type checks, then reject fields the historical Grant reader ignores.
-    let Ok(grants) = serde_json::from_slice::<Vec<Grant>>(bytes) else {
-        return false;
-    };
-    let Ok(objects) =
-        serde_json::from_slice::<Vec<serde_json::Map<String, serde_json::Value>>>(bytes)
-    else {
-        return false;
-    };
-    objects.iter().all(|object| {
-        object.len() == 4
-            && object.keys().all(|key| {
-                matches!(
-                    key.as_str(),
-                    "token" | "principalId" | "projectId" | "rights"
-                )
-            })
-    }) && validate_grants(&grants).is_ok()
+fn parse_grants(bytes: &[u8]) -> Result<Vec<Grant>, &'static str> {
+    const INVALID: &str = "invalid ACCLIMATE_AUTH JSON";
+    let entries: Vec<&serde_json::value::RawValue> =
+        serde_json::from_slice(bytes).map_err(|_| INVALID)?;
+    let mut grants = Vec::with_capacity(entries.len());
+    for entry in entries {
+        // Serde also accepts positional arrays for structs. Static grants require named fields.
+        if !entry.get().starts_with('{') {
+            return Err(INVALID);
+        }
+        grants.push(serde_json::from_str(entry.get()).map_err(|_| INVALID)?);
+    }
+    validate_grants(&grants)?;
+    Ok(grants)
 }
 fn required(name: &str) -> Result<String, std::io::Error> {
     env::var(name)
@@ -132,9 +126,8 @@ async fn run() -> RunResult {
         )
         .into());
     }
-    let grants: Vec<Grant> = serde_json::from_str(&required("ACCLIMATE_AUTH")?)
-        .map_err(|_| std::io::Error::other("invalid ACCLIMATE_AUTH JSON"))?;
-    validate_grants(&grants).map_err(std::io::Error::other)?;
+    let grants =
+        parse_grants(required("ACCLIMATE_AUTH")?.as_bytes()).map_err(std::io::Error::other)?;
     let access = Arc::new(AccessConfig::from_env(&grants).map_err(std::io::Error::other)?);
     let bind: SocketAddr = env::var("ACCLIMATE_BIND")
         .unwrap_or_else(|_| "127.0.0.1:3000".into())

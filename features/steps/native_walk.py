@@ -135,6 +135,7 @@ def strict_helper_release(context):
     assert any(pair['parent']['reward'] == 0 for pair in report['results'])
     assert w.call('GET', w.channel)['revision'] == '1', 'App evaluation must not promote automatically'
     review_publish(context, expected_verdict='pass')
+    open_details(p,'Case map and all outcomes')
     open_details(p,'Evidence details')
     expect(p.locator('.comparison-evidence-binding').get_by_text(request['id'],exact=True)).to_be_visible()
     expect(p.locator('.comparison-evidence-provenance')).to_contain_text('Attempt '+request['attemptId'])

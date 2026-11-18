@@ -6,7 +6,7 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { atomicPrivateWrite } from '../../scripts/private-state.js';
+import { atomicPrivateWrite } from '../../packages/sdk/src/evaluation/private-state.js';
 import { parseEvaluatorArguments } from '../../scripts/evaluate-app.js';
 import { fixture, projectId, bundleId, requestId, evaluatorPrincipalId } from './fixture.js';
 import { localEvaluationDescriptor } from './tests/descriptors.js';

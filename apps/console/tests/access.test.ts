@@ -67,24 +67,21 @@ test('only absent or typed expired sessions request sign-in; outages and denial 
     const state = await readAccessState(env, async () =>
       Response.json({ error: { code } }, { status }),
     );
-    assert.equal(!state.ok && Boolean(state.requiresSignIn), shouldSignIn);
+    assert.equal(state.ok, false);
+    assert.equal(Boolean(state.requiresSignIn), shouldSignIn);
   }
   const offline = await readAccessState(env, async () => {
     throw new Error('offline');
   });
-  assert.equal(!offline.ok && Boolean(offline.requiresSignIn), false);
+  assert.equal(offline.ok, false);
+  assert.equal(Boolean(offline.requiresSignIn), false);
 });
-test('missing hosted session denies before transport; local identifies machine grants', async () => {
+test('retired local mode denies access and workspace creation before transport', async () => {
   let calls = 0;
-  const fetcher = (async () => {
+  const fetcher: typeof fetch = async () => {
     calls++;
     return Response.json({ items: [], nextCursor: null });
-  }) as typeof fetch;
-  assert.equal(
-    (await readAccessState({ ...env, CONSOLE_SESSION_TOKEN: undefined }, fetcher)).ok,
-    false,
-  );
-  assert.equal(calls, 0);
+  };
   const local = await readAccessState(
     { ...env, CONSOLE_MODE: 'local', CONSOLE_SESSION_TOKEN: undefined },
     fetcher,
@@ -101,6 +98,7 @@ test('missing hosted session denies before transport; local identifies machine g
     ).ok,
     false,
   );
+  assert.equal(calls, 0);
 });
 test('lookup confirms identity; mismatched confirmation never mutates', async () => {
   const f = fixture();

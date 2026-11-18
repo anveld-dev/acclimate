@@ -106,7 +106,7 @@ def workspace_menu(page):
     """Open the desktop rail's actual workspace menu, preserving route guards."""
     menu=page.get_by_role('menu')
     if not menu.count():
-        page.get_by_role('button',name='Workspaces',exact=True).click()
+        page.get_by_role('button',name='Workspaces').click()
     expect(menu).to_be_visible()
     return menu
 

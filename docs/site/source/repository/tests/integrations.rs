@@ -53,10 +53,9 @@ async fn call_with_key(
     )
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
-    let Ok(url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
-        return;
-    };
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let p = format!("receipt-{}", Uuid::new_v4());
@@ -77,7 +76,7 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
         .unwrap();
     for id in [v, candidate] {
         sqlx::query(
-            "INSERT INTO versions(id,project_id,bundle_id,digest,payload) VALUES($1,$2,$3,$4,$5)",
+            "INSERT INTO versions(id,project_id,bundle_id,digest,payload,created_by) VALUES($1,$2,$3,$4,$5,'fixture-author')",
         )
         .bind(id)
         .bind(&p)
@@ -281,10 +280,9 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn learning_admission_and_delivery_are_connection_scoped() {
-    let Ok(url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
-        return;
-    };
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let p = format!("connected-{}", Uuid::new_v4());
@@ -306,7 +304,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         .await
         .unwrap();
     for version in [baseline, replacement] {
-        sqlx::query("INSERT INTO versions(id,project_id,bundle_id,digest,payload) VALUES($1,$2,$3,$4,$5)")
+        sqlx::query("INSERT INTO versions(id,project_id,bundle_id,digest,payload,created_by) VALUES($1,$2,$3,$4,$5,'fixture-author')")
             .bind(version).bind(&p).bind(bundle).bind(&digest)
             .bind(serde_json::to_vec(&json!({"schemaVersion":1,"files":[{"path":"guide.md","kind":"instruction","text":"guide"}]})).unwrap())
             .execute(&db).await.unwrap();
@@ -737,7 +735,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             .bind(comparison).bind(&p).bind(bundle).bind(controls).execute(&db).await.unwrap();
     }
     let proposal = Uuid::new_v4();
-    sqlx::query("INSERT INTO proposals(id,project_id,bundle_id,parent_version_id,request,status) VALUES($1,$2,$3,$4,'{}','succeeded')")
+    sqlx::query("INSERT INTO proposals(id,project_id,bundle_id,parent_version_id,request,status,requested_by) VALUES($1,$2,$3,$4,'{}','succeeded','fixture-author')")
         .bind(proposal).bind(&p).bind(bundle).bind(baseline).execute(&db).await.unwrap();
     sqlx::query("INSERT INTO connected_learning_rounds(project_id,bundle_id,integration_id,id,outcome_id,parent_version_id,parent_revision,proposal_id,candidate_version_id,development_request_id,development_comparison_id,audit_index,audit_request_id,state,correction_id,attempt) VALUES($1,$2,$3,$4,$5,$6,1,$7,$8,$9,$10,0,$11,'audit',$5,1)")
         .bind(&p).bind(bundle).bind(enrollment_id).bind(Uuid::new_v4())
@@ -873,6 +871,31 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         accepted
     );
     let channels = format!("/v1/projects/{p}/bundles/{bundle}/channels");
+    // Public learn-* channels stay navigable, including when private names sort onto the first page.
+    sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'learn-public',1,$3)")
+        .bind(&p).bind(bundle).bind(baseline).execute(&db).await.unwrap();
+    let first = call(
+        &app,
+        "GET",
+        &format!("{channels}?limit=1"),
+        "owner",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(first.0, StatusCode::OK);
+    assert_eq!(first.1["items"][0]["name"], "learn-public");
+    let cursor = first.1["nextCursor"].as_str().unwrap();
+    let second = call(
+        &app,
+        "GET",
+        &format!("{channels}?limit=1&cursor={cursor}"),
+        "owner",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(second.0, StatusCode::OK);
+    assert_eq!(second.1["items"][0]["name"], "stable");
+    assert!(second.1["nextCursor"].is_null());
     let resolve = format!("{channels}/stable");
     assert_eq!(
         call(&app, "GET", &resolve, &read_tokens[0], Value::Null)

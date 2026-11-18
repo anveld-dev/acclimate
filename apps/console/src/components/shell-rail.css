@@ -7,18 +7,22 @@
   top: 0;
   z-index: 30;
   display: flex;
-  flex: 0 0 64px;
+  --rail-width: 64px;
+  container: workspace-rail / inline-size;
+  flex: 0 0 var(--rail-width);
   flex-direction: column;
   align-self: flex-start;
   align-items: center;
   gap: 20px;
-  width: 64px;
+  width: var(--rail-width);
   height: 100dvh;
-  min-height: 280px;
+  min-height: 0;
+  overflow-y: auto;
   padding: 12px 8px;
   border: 0;
-  border-right: 1px solid var(--border);
-  background: var(--card);
+  border-right: 1px solid var(--sidebar-border);
+  color: var(--sidebar-foreground);
+  background: var(--sidebar);
 }
 .workspace-shell-rail > .workspace-column {
   flex: 1;
@@ -33,7 +37,9 @@
   min-height: 40px;
   margin: 0;
   padding: 0;
-  color: var(--foreground);
+  color: var(--sidebar-primary-foreground);
+  background: var(--sidebar-primary);
+  border-radius: 12px;
 }
 .workspace-rail-navigation,
 .workspace-rail-bottom {
@@ -45,6 +51,13 @@
 }
 .workspace-desktop-rail .workspace-rail-bottom {
   margin-top: auto;
+}
+.workspace-desktop-rail .workspace-scope-indicator {
+  display: none;
+}
+.workspace-rail-navigation {
+  border-top: 1px solid var(--sidebar-border);
+  padding-top: 12px;
 }
 .workspace-desktop-rail .workspace-rail-control[data-slot='button'] {
   display: inline-flex;
@@ -59,22 +72,90 @@
   margin: 0;
   padding: 0;
   border-radius: 7px;
-  color: var(--muted-foreground);
+  color: var(--sidebar-foreground);
   background: transparent;
   box-shadow: none;
 }
 .workspace-desktop-rail .workspace-rail-control[data-slot='button']:hover,
 .workspace-desktop-rail .workspace-rail-control[data-state='open'] {
-  color: var(--foreground);
-  background: var(--muted);
+  color: var(--sidebar-accent-foreground);
+  background: var(--sidebar-accent);
 }
 .workspace-desktop-rail .workspace-rail-control.is-current[data-slot='button'] {
-  color: var(--accent-foreground);
-  background: var(--accent);
+  color: var(--sidebar-accent-foreground);
+  background: var(--sidebar-accent);
+  box-shadow: inset 3px 0 var(--sidebar-primary);
 }
 .workspace-desktop-rail .workspace-rail-control:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--sidebar-ring);
   outline-offset: -2px;
+}
+.workspace-shell-rail > .workspace-desktop-rail[data-rail-expanded='true'] {
+  --rail-width: var(--sidebar-width);
+}
+@media (min-width: 1280px) {
+  .workspace-shell-rail > .workspace-desktop-rail:not([data-rail-expanded]) {
+    --rail-width: var(--sidebar-width);
+  }
+}
+@container workspace-rail (min-width: 120px) {
+  .workspace-desktop-rail .workspace-rail-brand,
+  .workspace-desktop-rail .workspace-rail-control[data-slot='button'] {
+    display: flex;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 10px;
+    padding-inline: 12px;
+  }
+  .workspace-desktop-rail .workspace-rail-brand {
+    color: var(--sidebar-foreground);
+    background: transparent;
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.03em;
+  }
+  .workspace-rail-control.is-current {
+    font-weight: 600;
+  }
+  .workspace-desktop-rail .workspace-rail-label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    min-width: 0;
+    overflow: hidden;
+    clip: auto;
+    clip-path: none;
+    text-overflow: ellipsis;
+    text-align: left;
+  }
+  .workspace-rail-label small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 14px;
+    font-weight: 400;
+  }
+  .workspace-rail-workspaces .workspace-rail-label small {
+    font-size: 12px;
+    opacity: .82;
+  }
+  .workspace-desktop-rail .workspace-rail-workspaces[data-slot='button'] {
+    border: 1px solid var(--sidebar-border);
+    padding-inline: 8px;
+    gap: 8px;
+  }
+  .workspace-desktop-rail .workspace-scope-indicator {
+    display: block;
+    width: 14px;
+    margin-inline-start: auto;
+  }
+  .workspace-rail-workspaces .workspace-rail-label strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+  }
 }
 .workspace-rail-account-icon {
   display: grid;
@@ -139,6 +220,10 @@
 /* Account actions stay attached to their rail control, without an overlay. */
 .account-menu[data-slot='popover-content'] {
   width: 304px;
+  max-width: calc(100vw - 16px);
+  max-height: var(--radix-popover-content-available-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   gap: 4px;
   padding: 6px;
   font-size: 14px;

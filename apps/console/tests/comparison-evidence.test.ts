@@ -168,3 +168,24 @@ test('standalone evidence uses expected gradeable pairs and excludes unexpected 
   assert.match(missing, /<dt>Total cost<\/dt><dd>unknown<\/dd>/);
   assert.match(missing, /<dt>Missing grades<\/dt><dd>2<\/dd>/);
 });
+
+test('an exact case link can inspect a repetition beyond the first results page', () => {
+  const expectedCases = Array.from({ length: 32 }, (_, repetition) => ({
+    caseId: 'path/has ? and #',
+    repetition,
+  }));
+  const comparisonWithRepetitions = {
+    ...comparison,
+    expectedCases,
+    results: expectedCases.map((key) => ({ ...key, parent: scored, candidate: scored })),
+  };
+  const html = renderToStaticMarkup(
+    createElement(ComparisonEvidence, {
+      comparison: comparisonWithRepetitions,
+      linkedPair: 'case:' + JSON.stringify([expectedCases[31].caseId, 31]),
+    }),
+  );
+  assert.match(html, /Inspect case path\/has \? and # \/ 31/);
+  assert.doesNotMatch(html, /Inspect case path\/has \? and # \/ 0"/);
+  assert.match(html, /aria-expanded="true"/);
+});

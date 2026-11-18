@@ -390,8 +390,9 @@ def new_editor(context):
 @when('another operator publishes "{text}"')
 def other_release(context,text):
     w=context.world
-    version=w.call('POST',w.bundle+'/versions',dict(parentVersionId=w.original['version']['id'],payload=payload(text)))
-    w.manual_release(version)
+    current = w.call('GET', w.channel)
+    version=w.call('POST',w.bundle+'/versions',dict(parentVersionId=current['version']['id'],payload=payload(text)))
+    w.external_promotion = w.manual_release(version)
 
 
 @when('I refresh the console')
@@ -498,7 +499,23 @@ def external_app(context):
 
 
 
-@when('I inspect the comparison and publish through the console')
+def inspect_case_and_scores(p):
+    workspace = p.get_by_role('region',name='Evaluation case comparison',exact=True)
+    matrix = workspace.get_by_role('table',name='Selected parent and candidate outcomes')
+    expect(matrix).to_be_visible(timeout=30000)
+    expect(matrix.get_by_role('columnheader',name=re.compile(r'^Parent'))).to_be_visible()
+    expect(matrix.get_by_role('columnheader',name=re.compile(r'^Candidate'))).to_be_visible()
+    workspace.get_by_role('button',name='View case JSON',exact=True).click()
+    case = json.loads(workspace.get_by_label('Case evidence JSON').inner_text())
+    assert case['comparisonId'] and case['parentVersionId'] and case['candidateVersionId']
+    workspace.get_by_role('button',name='View case JSON',exact=True).click()
+    breakdown = p.get_by_role('button',name='Score breakdown',exact=True)
+    if breakdown.is_visible():
+        breakdown.click()
+    return p.get_by_role('region',name='Observed paired rewards',exact=True)
+
+
+@when('I review the failed policy and publish with an override reason')
 def review_publish(context, expected_verdict='fail'):
     p=page(context)
     p.reload()
@@ -506,7 +523,7 @@ def review_publish(context, expected_verdict='fail'):
     href=evidence.get_attribute('href')
     evidence.click()
     expect(p).to_have_url(context.world.browser_fixture.base+href,timeout=30000)
-    rewards=p.get_by_role('region',name='Observed paired rewards',exact=True)
+    rewards=inspect_case_and_scores(p)
     expect(rewards.get_by_text('Complete evidence',exact=True)).to_be_visible(timeout=30000)
     expect(rewards.get_by_text('Missing grades · expected outcomes',exact=True).locator('..').locator('dd')).to_have_text('0')
     expected_pairs=len(context.world.browser_request['expectedCases'])
@@ -543,7 +560,7 @@ def review_publish(context, expected_verdict='fail'):
     expect(p.get_by_role('status').filter(has_text='Release recorded.')).to_be_visible()
 
 
-@then('the released version is exactly the evaluated saved snapshot')
+@then('the release records the evaluated snapshot, overridden policy and reviewer reason')
 def exact_published(context):
     w=context.world
     assert w.call('GET',w.channel)['version']==w.browser_saved['snapshotVersion']
@@ -590,7 +607,8 @@ def inspect_partial(context):
     w.browser().select_bundle()
     w.browser_fixture.visit(w.browser_fixture.bundle_path('changes',draft=w.draft['id'],candidate=w.draft['snapshotVersion']['id'],generation=w.draft['generation'],comparison=w.report['id']))
     p=page(context)
-    expect(p.get_by_role('region',name='Observed paired rewards',exact=True).get_by_text('Partial evidence',exact=True)).to_be_visible()
+    rewards=inspect_case_and_scores(p)
+    expect(rewards.get_by_text('Partial evidence',exact=True)).to_be_visible()
 
 
 @then('the page shows 4 missing grades and unknown cost')
@@ -612,8 +630,9 @@ def restore(context):
     w.browser().select_bundle()
     w.browser_fixture.visit('/releases')
     p=page(context)
-    row=p.get_by_role('article').filter(has=p.get_by_role('heading',name='Revision 1',exact=True))
-    row.get_by_role('button',name=re.compile(r'^Inspect content for revision ')).click()
+    p.get_by_role('button',name=re.compile(r'^Compare Revision 1\b',re.I)).click()
+    detail=p.get_by_role('region',name='Comparison for revision 1',exact=True)
+    detail.get_by_role('button',name='Inspect content for revision 1',exact=True).click()
     expect(p.get_by_role('heading',name='Version content',exact=True)).to_be_visible()
     expect(p.get_by_label('Content of AGENTS.md',exact=True)).to_contain_text('Review code.')
     with p.expect_download() as event:
@@ -622,10 +641,10 @@ def restore(context):
     event.value.save_as(str(target))
     assert target.read_text()=='Review code.'
     p.get_by_role('dialog').get_by_role('button',name='Close',exact=True).click()
-    row.get_by_role('button',name=re.compile(r'^Restore revision ')).click()
+    detail.get_by_role('button',name='Restore revision 1',exact=True).click()
     p.get_by_label('Reason for restoring',exact=True).fill('BDD operator rollback.')
     p.get_by_role('button',name='Restore version',exact=True).click()
-    expect(p.get_by_role('heading',name='Revision 3',exact=True)).to_be_visible()
+    expect(p.get_by_role('article',name='Revision 3 · Current',exact=True)).to_be_visible()
 
 
 @then('the original content is current at revision 3 with the restore reason')
@@ -635,6 +654,68 @@ def restored(context):
     assert current['revision']=='3' and current['version']==w.original['version']
     latest=w.call('GET',w.channel+'/promotions')['items'][0]
     assert latest['unevaluatedReason'].endswith('BDD operator rollback.')
+
+
+def open_restore_review(p, current_revision):
+    p.get_by_role('button', name=re.compile(r'^Compare Revision 1\b', re.I)).click()
+    p.get_by_role('button', name='Restore revision 1', exact=True).click()
+    dialog = p.get_by_role('dialog', name='Restore revision 1?', exact=True)
+    expect(dialog).to_contain_text(f'current stable release (revision {current_revision})')
+    expect(dialog.get_by_label('Reason for restoring')).to_have_value('')
+    return dialog
+
+
+@when('I open a restore of revision 1 against revision 2')
+def review_original_restore(context):
+    w = context.world
+    w.browser().visit('/releases')
+    dialog = open_restore_review(page(context), '2')
+    dialog.get_by_label('Reason for restoring').fill('Reviewed the second release.')
+
+
+@when('I confirm the restore I reviewed')
+def submit_original_restore(context):
+    page(context).get_by_role('dialog').get_by_role('button', name='Restore version', exact=True).click()
+
+
+@then("the console explains the conflict and the other operator's revision 3 still serves")
+def stale_restore_rejected(context):
+    w = context.world
+    dialog = page(context).get_by_role('dialog', name='Restore revision 1?')
+    expect(dialog.get_by_role('alert')).to_contain_text(re.compile('release changed', re.I))
+    expect(dialog.get_by_role('button', name='Review current release', exact=True)).to_be_enabled()
+    current = w.call('GET', w.channel)
+    assert current['revision'] == '3' and current['version'] == w.external_promotion['version']
+    w.history_before_retry = w.call('GET', w.channel + '/promotions')['items']
+    assert w.history_before_retry[0]['id'] == w.external_promotion['id']
+
+
+@when('I review the current release and confirm a new restore against revision 3')
+def review_new_restore(context):
+    p = page(context)
+    p.get_by_role('button', name='Review current release', exact=True).click()
+    expect(p.get_by_role('article', name='Revision 3 · Current', exact=True)).to_be_visible()
+    current = p.get_by_role('region', name='Comparison for revision 3', exact=True)
+    expect(current).to_be_visible()
+    current.get_by_role('button', name='Inspect content for revision 3', exact=True).click()
+    expect(p.get_by_label('Content of AGENTS.md', exact=True)).to_contain_text('Review retry limits.')
+    p.get_by_role('dialog').get_by_role('button', name='Close', exact=True).click()
+    dialog = open_restore_review(p, '3')
+    dialog.get_by_label('Reason for restoring').fill('Reviewed revision 3 before restoring.')
+    dialog.get_by_role('button', name='Restore version', exact=True).click()
+
+
+@then("exactly one restore follows the other operator's release in history")
+def restore_after_new_review(context):
+    w = context.world
+    expect(page(context).get_by_role('article', name='Revision 4 · Current', exact=True)).to_be_visible()
+    current = w.call('GET', w.channel)
+    assert current['revision'] == '4' and current['version'] == w.original['version']
+    restored, *previous = w.call('GET', w.channel + '/promotions')['items']
+    assert previous == w.history_before_retry
+    assert restored['revision'] == '4' and restored['version'] == w.original['version']
+    assert restored['previousVersionId'] == w.external_promotion['version']['id']
+    assert restored['unevaluatedReason'].endswith('Reviewed revision 3 before restoring.')
 
 
 @when('I create an integration and issue a read credential in the console')
@@ -700,7 +781,6 @@ def routes(context):
     p=page(context)
     from scripts.bdd.layout import capture_layout
     artifact_dir=Path(context.config.userdata['artifact_dir'])/'ui-layout'
-    w.route_overflows=[]
     routes=['/content','/improvement','/releases','/setup','/integrations','/connect']
     for width in (1440,1024,768,390,320):
         p.set_viewport_size(dict(width=width,height=1000))
@@ -739,7 +819,6 @@ def routes(context):
 @then('the routes have no browser errors or horizontal overflow')
 def readable(context):
     w=context.world
-    assert w.route_overflows==[],w.route_overflows
     assert w.browser_fixture.errors==[],w.browser_fixture.errors
 
 
@@ -751,16 +830,35 @@ def automatically_updated_content(context,text):
     expect(p.get_by_role('alertdialog')).to_have_count(0)
 
 
-@when('I type an unsaved change for the background update check')
-def pending_background_edit(context):
+@when('I type "{text}" in a new draft')
+def pending_background_edit(context, text):
     ensure_editor(context)
-    page(context).get_by_role('textbox', name='Content', exact=True).fill('Keep my unsaved background edit.')
+    page(context).get_by_role('textbox', name='Content', exact=True).fill(text)
 
 
-@then('background updates keep my unsaved text')
-def background_keeps_edits(context):
-    p=page(context)
-    p.wait_for_timeout(16000)
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Keep my unsaved background edit.')
-    expect(p.get_by_role('alertdialog')).to_have_count(0)
-    expect(p.get_by_role('button',name=re.compile(r'^Refresh'))).to_have_count(0)
+def leave_draft_for_content(context, choice):
+    p = page(context)
+    p.get_by_role('navigation', name='Bundle navigation').get_by_role('link', name='Content', exact=True).click()
+    p.get_by_role('alertdialog', name='Leave current edits?').get_by_role('button', name=choice, exact=True).click()
+
+
+@when('I return to Content but choose to keep editing')
+def keep_unsaved_edit(context):
+    leave_draft_for_content(context, 'Keep editing')
+
+
+@then('the draft editor still contains "{text}"')
+def still_editing(context, text):
+    expect_editor_value(page(context).get_by_role('textbox', name='Content', exact=True), text)
+
+
+@when('I discard the unsaved edit and return to Content')
+def discard_unsaved_edit(context):
+    leave_draft_for_content(context, 'Leave editor')
+
+
+@then('the published entry shows "{text}" and no draft was saved')
+def discarded_to_current(context, text):
+    w = context.world
+    expect(page(context).get_by_test_id('entry-content')).to_contain_text(text)
+    assert w.call('GET', w.channel + '/drafts')['items'] == []

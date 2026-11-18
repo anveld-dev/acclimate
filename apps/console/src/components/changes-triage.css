@@ -1,0 +1,150 @@
+.changes-overview[data-triage] {
+  padding: clamp(12px, 1.5vw, 24px);
+  background: var(--background);
+  color: var(--foreground);
+  border: 0;
+}
+.changes-overview[data-triage] .changes-overview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 0;
+  border: 0;
+}
+.changes-overview[data-triage] .changes-overview-toolbar h2 {
+  font: 650 clamp(24px, 2.2vw, 34px) / 1.2 var(--font-mono, monospace);
+  letter-spacing: -0.055em;
+}
+.changes-overview[data-triage] .changes-frontpage {
+  display: block;
+  margin-bottom: 20px;
+}
+.triage-console {
+  color: var(--foreground);
+}
+.triage-runbar,
+.triage-workspace {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+}
+.triage-runbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 9px 4px;
+  row-gap: 8px;
+}
+.triage-runbar > div {
+  display: grid;
+  gap: 2px;
+  padding: 0 clamp(10px, 1.7vw, 26px);
+}
+.triage-runbar > div + div {
+  border-inline-start: 1px solid var(--border);
+}
+.triage-runbar span,
+.triage-run time {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.triage-run strong,
+.triage-runlink a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.triage-run strong,
+.triage-metric b,
+.triage-coverage strong {
+  font-family: var(--font-mono, monospace);
+}
+.triage-metric b {
+  font-size: 19px;
+  line-height: 1.2;
+}
+.triage-coverage progress {
+  width: 90px;
+  height: 5px;
+  accent-color: var(--primary);
+}
+.triage-runlink {
+  margin-left: auto;
+}
+.triage-runlink span {
+  text-transform: capitalize;
+}
+.triage-runlink a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.triage-workspace {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.8fr) minmax(240px, 1.6fr) minmax(285px, 1.7fr);
+  align-items: stretch;
+}
+.triage-workspace > * {
+  min-width: 0;
+}
+.triage-workspace > * + * {
+  border-inline-start: 1px solid var(--border);
+}
+.triage-unavailable {
+  padding: 14px;
+  color: var(--muted-foreground);
+}
+.changes-frontpage .changes-overview-queues {
+  margin-top: 14px;
+}
+@container changes-overview (min-width: 780px) {
+  .changes-frontpage .changes-worklists.change-queues {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .changes-frontpage .changes-worklists.change-queues .change-queue + .change-queue {
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+}
+@container changes-overview (max-width: 760px) {
+  .triage-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .triage-workspace > * + * {
+    border-inline-start: 0;
+    border-top: 1px solid var(--border);
+  }
+  .triage-runlink {
+    margin-left: 0;
+  }
+}
+
+@container changes-overview (max-width: 600px) {
+  .triage-runbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0;
+    gap: 0;
+  }
+  .triage-runbar > div {
+    padding: 8px 12px;
+    min-width: 0;
+  }
+  .triage-runbar > .triage-run {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--border);
+  }
+  .triage-runbar > .triage-run + div,
+  .triage-runbar > .triage-coverage {
+    border-inline-start: 0;
+  }
+  .triage-runbar > .triage-coverage,
+  .triage-runbar > .triage-runlink {
+    border-top: 1px solid var(--border);
+  }
+}

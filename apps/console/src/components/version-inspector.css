@@ -173,3 +173,33 @@
     min-width: 44px;
   }
 }
+@media (min-width: 900px) {
+  .version-inspector-dialog[data-slot='dialog-content'] {
+    width: min(1160px, calc(100vw - 80px));
+    height: min(830px, calc(100dvh - 64px));
+  }
+  .version-inspector-header {
+    padding: 18px 48px 16px 22px;
+  }
+  .version-inspector-header [data-slot='dialog-title'] {
+    font:
+      500 24px/1.25 Baskerville,
+      'Iowan Old Style',
+      Georgia,
+      serif;
+  }
+  .version-inspector-metadata dl {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    padding-block: 8px;
+  }
+  .version-inspector-metadata dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    border-top: 1px solid var(--border);
+    padding-block-start: 8px;
+    margin: 0;
+  }
+  .version-inspector-file-header {
+    align-items: center;
+  }
+}

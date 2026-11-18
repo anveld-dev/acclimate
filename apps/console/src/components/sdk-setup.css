@@ -233,8 +233,17 @@
   margin: 0;
 }
 @container (min-width: 860px) {
+  .sdk-setup-workspace .sdk-setup-checklist {
+    padding: 0 20px 0 0;
+    border: 0;
+    border-inline-end: 1px solid var(--border);
+    border-radius: 0;
+  }
+  .sdk-setup-workspace .sdk-recipe-toolbar {
+    background: var(--muted);
+  }
   .sdk-setup-workspace .sdk-setup-layout {
-    grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
+    grid-template-columns: clamp(290px, 32%, 440px) minmax(0, 1fr);
   }
 }
 .sdk-setup-workspace [aria-label='Recipe language'] button {
@@ -281,4 +290,234 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--card);
+}
+
+.sdk-recipe-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 16px;
+}
+.sdk-recipe-options label {
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-agent-step {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.sdk-agent-step > p {
+  max-width: 80ch;
+}
+@media (pointer: coarse) {
+  .sdk-recipe-options select {
+    min-height: 44px;
+  }
+}
+
+.sdk-recipe-file > .sdk-run-command {
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+@container (min-width: 860px) {
+  .sdk-recipe-file > .sdk-run-command {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+  }
+}
+.sdk-setup-workspace .sdk-recipe-toolbar {
+  flex-wrap: wrap;
+}
+
+.sdk-recipe-lab .sdk-setup-header {
+  align-items: center;
+  padding: 10px 0 12px;
+}
+.sdk-recipe-lab .sdk-setup-header h2 {
+  font: 650 clamp(23px, 2.3vw, 34px) / 1.15 var(--font-mono, monospace);
+  letter-spacing: -0.05em;
+}
+.sdk-recipe-lab .sdk-recipe-options {
+  display: flex;
+  align-items: end;
+  gap: 10px clamp(16px, 3vw, 48px);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+}
+.sdk-recipe-lab .sdk-control-group,
+.sdk-recipe-lab .sdk-scope {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.sdk-recipe-lab .sdk-scope strong,
+.sdk-recipe-lab .sdk-control-group > span,
+.sdk-recipe-lab .sdk-scope > span {
+  font-size: 13px;
+}
+.sdk-recipe-lab .sdk-control-group > span,
+.sdk-recipe-lab .sdk-scope > span {
+  color: var(--muted-foreground);
+}
+.sdk-recipe-lab .sdk-scope strong {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  font-family: var(--font-mono, monospace);
+  overflow-wrap: anywhere;
+}
+.sdk-recipe-lab .sdk-scope svg,
+.sdk-recipe-lab .sdk-file-name svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.sdk-source-jump {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sdk-recipe-lab .sdk-setup-layout {
+  grid-template-areas: 'receipt' 'checklist' 'source';
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.sdk-receipt-panel {
+  grid-area: receipt;
+  min-width: 0;
+}
+.sdk-recipe-lab .setup-receipt {
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+.sdk-recipe-lab .sdk-setup-checklist {
+  grid-area: checklist;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+}
+.sdk-recipe-lab .sdk-setup-checklist .sdk-step {
+  padding: 12px 0;
+}
+.sdk-recipe-lab .sdk-run-step {
+  border-top: 1px solid var(--border);
+}
+.sdk-recipe-lab .sdk-setup-checklist .sdk-step p {
+  margin-block: 5px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.sdk-recipe-lab .sdk-setup-checklist .sdk-disclosure > [data-slot='disclosure-trigger'] {
+  min-height: 30px;
+  line-height: 1.35;
+}
+.sdk-recipe-lab .sdk-check-step {
+  grid-area: source;
+  scroll-margin-top: 8px;
+}
+.sdk-recipe-lab .sdk-check-step .sdk-recipe-file {
+  margin: 0;
+  border-radius: 6px;
+}
+.sdk-recipe-lab .sdk-file-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.sdk-recipe-lab .sdk-file-name h3 {
+  font: 600 14px/1.4 var(--font-mono, monospace);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.sdk-recipe-lab .sdk-check-step .sdk-recipe-code {
+  padding: 12px 8px;
+  max-height: min(58dvh, 590px);
+}
+.sdk-recipe-lab .sdk-check-step .sdk-recipe-code > code {
+  min-width: max-content;
+}
+.sdk-recipe-lab .sdk-agent-drawer {
+  margin-top: 16px;
+  border-block: 1px solid var(--border);
+}
+.sdk-recipe-lab .sdk-agent-step {
+  margin: 0;
+  padding: 12px 0;
+  border: 0;
+}
+.sdk-recipe-lab .sdk-setup-support {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+@container (min-width: 740px) {
+  .sdk-recipe-lab .sdk-source-jump {
+    display: none;
+  }
+  .sdk-recipe-lab .sdk-setup-layout {
+    grid-template-areas: 'receipt receipt' 'checklist source';
+    grid-template-columns: minmax(240px, 0.72fr) minmax(0, 1.5fr);
+  }
+}
+@container (min-width: 1100px) {
+  .sdk-recipe-lab .sdk-setup-layout {
+    grid-template-areas: 'checklist source receipt';
+    grid-template-columns: minmax(240px, 0.87fr) minmax(360px, 1.8fr) minmax(180px, 0.65fr);
+  }
+  .sdk-recipe-lab .setup-receipt > div {
+    display: grid;
+    gap: 8px;
+  }
+}
+@media (pointer: coarse) {
+  .sdk-recipe-lab .sdk-setup-checklist .sdk-disclosure > [data-slot='disclosure-trigger'],
+  .sdk-recipe-lab .sdk-control-group button {
+    min-height: 44px;
+  }
+}
+.sdk-runtime-column {
+  display: contents;
+}
+.sdk-recipe-lab .sdk-run-step {
+  grid-area: run;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--card);
+}
+.sdk-recipe-lab .sdk-run-step p {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.sdk-recipe-lab .sdk-setup-layout {
+  grid-template-areas: 'receipt' 'checklist' 'run' 'source';
+}
+@container (min-width:740px) {
+  .sdk-recipe-lab .sdk-setup-layout {
+    grid-template-areas: 'receipt receipt' 'checklist source' 'run source';
+    grid-template-rows: auto minmax(0, min-content) 1fr;
+  }
+}
+@container (min-width:1100px) {
+  .sdk-recipe-lab .sdk-setup-layout {
+    grid-template-areas: 'checklist source runtime';
+    grid-template-rows: auto;
+  }
+  .sdk-runtime-column {
+    display: grid;
+    grid-area: runtime;
+    min-width: 0;
+    gap: 10px;
+  }
+  .sdk-runtime-column > .sdk-run-step,
+  .sdk-runtime-column > .sdk-receipt-panel {
+    grid-area: auto;
+  }
 }

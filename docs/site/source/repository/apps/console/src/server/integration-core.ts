@@ -5,6 +5,7 @@ import type {
   AcclimateClient,
   DeliveryReceipt,
   Integration,
+  IntegrationObservation,
   IntegrationCredential,
   LearningEnrollmentStatus,
   LearningOutcomeStatus,
@@ -870,6 +871,10 @@ export type ConnectionsState = {
   canManage: boolean;
   integrations: Integration[];
   bundles: ConnectionBundle[];
+  reports?: Record<
+    string,
+    Pick<NonNullable<IntegrationObservation['latestObservation']>, 'stage' | 'receivedAt'> | null
+  >;
   selected?: {
     integration: Integration;
     receipts: Page<DeliveryReceipt>;
@@ -879,7 +884,7 @@ export type ConnectionsState = {
 };
 export type ConnectionsResult =
   | { ok: true; state: ConnectionsState }
-  | { ok: false; message: string };
+  | { ok: false; message: string; connectionMissing?: boolean };
 
 export async function readConnectionsState(
   env: Environment,
@@ -888,10 +893,28 @@ export async function readConnectionsState(
 ): Promise<ConnectionsResult> {
   try {
     const c = await workspaceContext(env, input.projectId, fetcher);
-    const summaries = await allPages(
-      (cursor) => c.client.listBundles(c.projectId, { limit: 100, cursor }),
-      MAX_LISTING_PAGES,
-    );
+    const [summaries, observations] = await Promise.all([
+      allPages(
+        (cursor) => c.client.listBundles(c.projectId, { limit: 100, cursor }),
+        MAX_LISTING_PAGES,
+      ),
+      input.integrationId
+        ? undefined
+        : allPages(
+            (cursor) => c.client.listIntegrationObservations(c.projectId, { limit: 100, cursor }),
+            MAX_LISTING_PAGES,
+          ).catch(() => undefined),
+    ]);
+    const reports =
+      observations &&
+      Object.fromEntries(
+        observations.map(({ id, latestObservation }) => [
+          id,
+          latestObservation
+            ? { stage: latestObservation.stage, receivedAt: latestObservation.receivedAt }
+            : null,
+        ]),
+      );
     const bundles = await Promise.all(
       summaries.map(async (bundle) => ({
         id: bundle.id,
@@ -907,7 +930,11 @@ export async function readConnectionsState(
       ? c.integrations.find((item) => item.id === input.integrationId)
       : undefined;
     if (input.integrationId && !integration)
-      return { ok: false, message: 'Connection not found in this workspace.' };
+      return {
+        ok: false,
+        message: 'Connection not found in this workspace.',
+        connectionMissing: true,
+      };
     let selected: ConnectionsState['selected'];
     if (integration) {
       const [receipts, result] = await Promise.all([
@@ -930,6 +957,7 @@ export async function readConnectionsState(
         actorScope: actorScope(env),
         canManage: c.canManage,
         integrations: c.integrations,
+        reports,
         bundles,
         selected,
       },

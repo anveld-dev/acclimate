@@ -15,12 +15,18 @@ class ExternalGateTests(unittest.TestCase):
     def test_default_never_calls_network_process_or_environment(self):
         with patch.object(external, 'run', side_effect=AssertionError('must not execute')), contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(external.main([]), 0)
-        self.assertTrue(all(row['status'] == 'not run' for row in json.loads(out.getvalue())['gates'].values()))
+        statuses = {gate: row['status'] for gate, row in json.loads(out.getvalue())['gates'].items()}
+        self.assertEqual(statuses, dict.fromkeys(external.GATES, 'not run'))
 
     def test_model_gate_requires_explicit_live_before_credentials_or_network(self):
-        with patch.object(external, 'request', side_effect=AssertionError('must not call')), contextlib.redirect_stdout(io.StringIO()) as out:
-            self.assertEqual(external.main(['--execute', '--gate', 'remote-model']), 1)
-        self.assertEqual(json.loads(out.getvalue())['gates']['remote-model']['status'], 'blocked')
+        args = ['--execute', '--gate', 'remote-model', '--url', 'https://model.example',
+                '--token-env', 'FIXTURE_TOKEN']
+        with patch.object(external, 'request') as request, patch.dict(external.os.environ, {'FIXTURE_TOKEN': 'fixture'}), contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(external.main(args), 1)
+        request.assert_not_called()
+        gate = json.loads(out.getvalue())['gates']['remote-model']
+        self.assertEqual(gate['status'], 'blocked')
+        self.assertIn('--live', gate['reason'])
 
     def test_failure_does_not_print_endpoint_secret(self):
         with patch.object(external, 'run', side_effect=RuntimeError('Bearer private-secret')), contextlib.redirect_stdout(io.StringIO()) as out:

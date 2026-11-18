@@ -24,7 +24,7 @@ class Bundle(TypedDict):
     id: str
     name: str
     projectId: str
-    compatibilityTarget: NotRequired[CompatibilityTarget]
+    compatibilityTarget: CompatibilityTarget
     createdAt: str
 
 
@@ -176,16 +176,20 @@ class EvaluationHandoff(TypedDict):
     configuration: EvaluationDescriptor
 
 
-class EvaluationRequest(EvaluationDescriptor):
+class _EvaluationTarget(EvaluationDescriptor):
     parentVersionId: str
     parentDigest: str
     candidateVersionId: str
     candidateDigest: str
     proposalId: NotRequired[str | None]
-    requireBoundEvidence: NotRequired[bool]
 
 
-class Evaluation(EvaluationRequest):
+class EvaluationRequest(_EvaluationTarget):
+    requireBoundEvidence: NotRequired[Literal[True]]
+
+
+class Evaluation(_EvaluationTarget):
+    requireBoundEvidence: Literal[True]
     id: str
     status: Literal["requested", "running", "completed", "failed", "interrupted"]
     evaluatorPrincipal: str | None

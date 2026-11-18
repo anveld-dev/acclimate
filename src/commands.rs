@@ -163,9 +163,7 @@ pub(crate) struct MutationTx<'a> {
     path: String,
     key: String,
     fingerprint: Vec<u8>,
-    durable: bool,
     retained: bool,
-    required_right: String,
     user_id: Option<uuid::Uuid>,
     service_principal: String,
 }
@@ -236,7 +234,7 @@ async fn begin_mutation_inner<'a>(
             "Target does not support retained evaluator operations",
         ));
     }
-    let retained = audited && marked;
+    let retained = durable || (audited && marked);
     let mut hash = Sha256::new();
     hash.update(b"POST\0");
     hash.update(path.as_bytes());
@@ -253,8 +251,8 @@ async fn begin_mutation_inner<'a>(
         .execute(&mut *tx)
         .await
         .map_err(db)?;
-    // All writers consult retained state, including old/unmarked clients.
-    let recorded = if audited {
+    // An unmarked retry must also honor a retained result or closed operation.
+    let recorded = if audited || durable {
         sqlx::query("SELECT path,status,fingerprint,response_status,response_body FROM operation_records WHERE principal_id=$1 AND project_id=$2 AND namespace=$3 AND key=$4").bind(&a.principal).bind(project).bind(namespace(path)).bind(key).fetch_optional(&mut *tx).await.map_err(db)?
     } else {
         None
@@ -268,17 +266,12 @@ async fn begin_mutation_inner<'a>(
             "Operation was closed; review a new request",
         ));
     }
-    let old_global = if durable {
-        sqlx::query("SELECT path,fingerprint,response_status,response_body FROM command_results WHERE principal_id=$1 AND project_id=$2 AND key=$3").bind(&a.principal).bind(project).bind(key).fetch_optional(&mut *tx).await.map_err(db)?
-    } else {
-        None
-    };
-    let old = if recorded.is_none() && old_global.is_none() {
+    let transient = if recorded.is_none() && !durable {
         sqlx::query("SELECT path,fingerprint,response_status,response_body FROM idempotency WHERE principal_id=$1 AND project_id=$2 AND method='POST' AND path=$3 AND key=$4 AND expires_at>now() FOR UPDATE").bind(&a.principal).bind(project).bind(path).bind(key).fetch_optional(&mut *tx).await.map_err(db)?
     } else {
         None
     };
-    let replay = recorded.as_ref().or(old_global.as_ref()).or(old.as_ref());
+    let replay = recorded.as_ref().or(transient.as_ref());
     if let Some(row) = replay {
         if row.get::<Vec<u8>, _>("fingerprint") != fingerprint
             || row.get::<String, _>("path") != path
@@ -289,7 +282,7 @@ async fn begin_mutation_inner<'a>(
                 "Key was used with different request bytes",
             ));
         }
-        // Marked adoption retains the existing legacy commit; it never executes again.
+        // A marked retry can retain an earlier transient result without executing it again.
         if retained && recorded.is_none() {
             store_receipt(
                 &mut tx,
@@ -321,9 +314,7 @@ async fn begin_mutation_inner<'a>(
         path: path.into(),
         key: key.into(),
         fingerprint,
-        durable,
         retained,
-        required_right: a.required_right.clone(),
         user_id: a.user_id,
         service_principal: a.service_principal.clone(),
     }))
@@ -347,10 +338,6 @@ pub(crate) async fn finish_mutation(
     value: impl Serialize,
 ) -> ApiResult<Response> {
     let bytes = serde_json::to_vec(&value).map_err(db)?;
-    sqlx::query("INSERT INTO idempotency(principal_id,project_id,method,path,key,fingerprint,response_status,response_body,expires_at) VALUES($1,$2,'POST',$3,$4,$5,$6,$7,now()+interval '24 hours')").bind(&c.principal).bind(&c.project).bind(&c.path).bind(&c.key).bind(&c.fingerprint).bind(status.as_u16() as i32).bind(&bytes).execute(&mut *c.tx).await.map_err(db)?;
-    if c.durable {
-        sqlx::query("INSERT INTO command_results(principal_id,project_id,key,path,required_right,fingerprint,response_status,response_body) VALUES($1,$2,$3,$4,$5,$6,$7,$8)").bind(&c.principal).bind(&c.project).bind(&c.key).bind(&c.path).bind(&c.required_right).bind(&c.fingerprint).bind(status.as_u16() as i32).bind(&bytes).execute(&mut *c.tx).await.map_err(db)?;
-    }
     if c.retained {
         store_receipt(
             &mut c.tx,
@@ -362,6 +349,8 @@ pub(crate) async fn finish_mutation(
             (status.as_u16() as i32, bytes.clone()),
         )
         .await?;
+    } else {
+        sqlx::query("INSERT INTO idempotency(principal_id,project_id,method,path,key,fingerprint,response_status,response_body,expires_at) VALUES($1,$2,'POST',$3,$4,$5,$6,$7,now()+interval '24 hours')").bind(&c.principal).bind(&c.project).bind(&c.path).bind(&c.key).bind(&c.fingerprint).bind(status.as_u16() as i32).bind(&bytes).execute(&mut *c.tx).await.map_err(db)?;
     }
     sqlx::query("INSERT INTO mutation_audit(project_id,actor_user_id,service_principal,principal_id,path,operation_key) VALUES($1,$2,$3,$4,$5,$6)").bind(&c.project).bind(c.user_id).bind(&c.service_principal).bind(&c.principal).bind(&c.path).bind(&c.key).execute(&mut *c.tx).await.map_err(db)?;
     c.tx.commit().await.map_err(db)?;
@@ -442,13 +431,8 @@ async fn outcome(
         .execute(&mut *tx)
         .await
         .map_err(db)?;
-    let row=sqlx::query("SELECT path,status,fingerprint,response_status,response_body FROM operation_records WHERE principal_id=$1 AND project_id=$2 AND namespace=$3 AND key=$4").bind(&actor.principal).bind(&p).bind(if path.is_empty(){""}else{namespace(path)}).bind(&id).fetch_optional(&mut *tx).await.map_err(db)?;
-    let legacy = if row.is_none() && (path.is_empty() || global(path)) {
-        sqlx::query("SELECT path,fingerprint,response_status,response_body FROM command_results WHERE principal_id=$1 AND project_id=$2 AND key=$3").bind(&actor.principal).bind(&p).bind(&id).fetch_optional(&mut *tx).await.map_err(db)?
-    } else {
-        None
-    };
-    let route_legacy = if row.is_none() && legacy.is_none() && !path.is_empty() {
+    let row=sqlx::query("SELECT path,status,fingerprint,response_status,response_body FROM operation_records WHERE principal_id=$1 AND project_id=$2 AND namespace=$3 AND key=$4").bind(&actor.principal).bind(&p).bind(namespace(path)).bind(&id).fetch_optional(&mut *tx).await.map_err(db)?;
+    let transient = if row.is_none() && !path.is_empty() && !global(path) {
         sqlx::query("SELECT path,fingerprint,response_status,response_body FROM idempotency WHERE principal_id=$1 AND project_id=$2 AND method='POST' AND path=$3 AND key=$4 AND expires_at>now()").bind(&actor.principal).bind(&p).bind(path).bind(&id).fetch_optional(&mut *tx).await.map_err(db)?
     } else {
         None
@@ -456,8 +440,7 @@ async fn outcome(
     let committed = row
         .as_ref()
         .filter(|r| r.get::<String, _>("status") == "committed")
-        .or(legacy.as_ref())
-        .or(route_legacy.as_ref());
+        .or(transient.as_ref());
     let actual_path = committed
         .or(row.as_ref())
         .map(|r| r.get::<String, _>("path"))
@@ -484,7 +467,7 @@ async fn outcome(
         json!({"status":"committed","operationId":id,"path":actual_path,"requestFingerprint":format!("sha256:{}",hex::encode(row.get::<Vec<u8>,_>("fingerprint"))),"result":serde_json::from_slice::<Value>(&row.get::<Vec<u8>,_>("response_body")).map_err(db)?})
     } else if closing || row.is_some() {
         if closing {
-            sqlx::query("INSERT INTO operation_records(principal_id,project_id,namespace,key,path,status) VALUES($1,$2,$3,$4,$5,'closed') ON CONFLICT DO NOTHING").bind(&actor.principal).bind(&p).bind(if path.is_empty(){""}else{namespace(path)}).bind(&id).bind(path).execute(&mut *tx).await.map_err(db)?;
+            sqlx::query("INSERT INTO operation_records(principal_id,project_id,namespace,key,path,status) VALUES($1,$2,$3,$4,$5,'closed') ON CONFLICT DO NOTHING").bind(&actor.principal).bind(&p).bind(namespace(path)).bind(&id).bind(path).execute(&mut *tx).await.map_err(db)?;
         }
         json!({"status":"closed","operationId":id})
     } else {

@@ -446,7 +446,7 @@ export async function serveConnectedLearning(
     const request = await client.getEvaluation(projectId, bundleId, item.evaluationRequestId);
     if (
       request.id !== item.evaluationRequestId ||
-      !request.requireBoundEvidence ||
+      request.requireBoundEvidence !== true ||
       !request.proposalId
     )
       throw new EvaluationError('evidence.identity_mismatch');

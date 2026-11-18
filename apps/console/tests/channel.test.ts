@@ -43,7 +43,7 @@ function fixture(content = bytes, role = 'admin', versionDigest = resolution.ver
         nextCursor: null,
       });
     if (url.includes('/bundles?'))
-      return Response.json({ items: [{ id: 'bundle', origin: 'unknown' }], nextCursor: null });
+      return Response.json({ items: [{ id: 'bundle', origin: 'unknown', compatibilityTarget: 'codex' }], nextCursor: null });
     calls.push(url);
     assert.equal(init?.method, 'GET');
     assert.equal(init?.redirect, 'manual');
@@ -74,6 +74,7 @@ test('loads a pinned channel payload and bounded history without exposing servic
   assert.equal(result.status, 'ready');
   if (result.status !== 'ready') return;
   assert.deepEqual(result.payload, payload);
+  assert.equal(result.compatibilityTarget, 'codex');
   assert.deepEqual(result.source, {
     kind: 'configured-bundle',
     storage: 'postgresql',

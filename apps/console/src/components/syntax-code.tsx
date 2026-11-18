@@ -4,6 +4,7 @@ import {
   useEffect,
   useState,
   type ComponentProps,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 import { highlightCode, syntaxLanguage } from '../lib/highlighter';
@@ -14,12 +15,13 @@ type SyntaxCodeProps = Omit<ComponentProps<'pre'>, 'children'> & {
   language?: string;
   path?: string;
   wrap?: boolean;
+  lineNumbers?: boolean;
 };
 const MAX_HIGHLIGHT_LENGTH = 100_000;
 
 /** Exact, selectable source first; syntax colors enhance it after hydration. */
 export const SyntaxCode = forwardRef<HTMLPreElement, SyntaxCodeProps>(function SyntaxCode(
-  { code, language, path, wrap = true, className = '', ...props },
+  { code, language, path, wrap = true, lineNumbers = false, className = '', ...props },
   ref,
 ) {
   const selectedLanguage = syntaxLanguage(path, language);
@@ -57,13 +59,25 @@ export const SyntaxCode = forwardRef<HTMLPreElement, SyntaxCodeProps>(function S
       data-syntax-language={selectedLanguage ?? 'text'}
       data-highlighted={tokens ? 'true' : 'false'}
       data-wrap={wrap || undefined}
+      data-line-numbers={lineNumbers || undefined}
       className={`syntax-code ${className}`}
     >
-      <code>
-        {tokens
+      <code
+        style={
+          lineNumbers
+            ? ({
+                '--source-gutter': `${Math.max(2, String(lines.length).length)}ch`,
+              } as CSSProperties)
+            : undefined
+        }
+      >
+        {tokens || lineNumbers
           ? lines.map((line, index) => (
               <Fragment key={index}>
-                {tokens[index]}
+                {lineNumbers && (
+                  <span className="source-line-marker" aria-hidden="true" data-line={index + 1} />
+                )}
+                {tokens ? tokens[index] : line.text}
                 {line.ending}
               </Fragment>
             ))

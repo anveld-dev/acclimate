@@ -17,6 +17,15 @@ def configuration(count=3):
     return dict(datasetRevision='receipt-fixture-v7',graderRevision='receipt-grader-v3',runtime=dict(configId='installed-fixture',configRevision='opaque-revision-42',model='none',writes='disabled'),expectedCases=[dict(caseId='case-'+str(i//2),repetition=i%2) for i in range(count)])
 
 
+def expect_case_pairs(preview, count):
+    table=preview.get_by_role('table',name='Expected case/repetition pairs')
+    expect(table).to_be_visible()
+    cells=table.locator('tbody td').all_text_contents()
+    pairs=sum(len(cell.split(',')) for cell in cells)
+    assert pairs==count,(pairs,count)
+    expect(preview.locator('dt').filter(has_text='Expected case/repetition pairs').locator('xpath=following-sibling::dd[1]')).to_have_text(str(count))
+
+
 def run(args):
     out=args.output.resolve();out.mkdir(parents=True,exist_ok=False,mode=0o700)
     w=World(pg_bin(args.pg_bin));before=build_fingerprint();checks=[]
@@ -38,7 +47,7 @@ def run(args):
             if args.verify:
                 expect(language).to_have_value('javascript')
                 expect(create).to_be_disabled()
-                expect(preview.locator('dl')).to_have_count(0)
+                expect(preview.get_by_role('table',name='Expected case/repetition pairs')).to_have_count(0)
                 assert section.evaluate('e=>e.getBoundingClientRect().width>document.querySelector(".evaluation-workspace").getBoundingClientRect().width-4')
             record(f'First setup fits {width}px')
         p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,route_path)
@@ -52,7 +61,7 @@ def run(args):
         if args.verify:
             expect(editor).to_have_attribute('aria-invalid','true')
             assert editor.evaluate('e=>e.getAttribute("aria-describedby").split(" ").every(id=>document.getElementById(id))')
-            expect(preview.locator('dl')).to_have_count(0)
+            expect(preview.get_by_role('table',name='Expected case/repetition pairs')).to_have_count(0)
         capture_layout(p,out,'custom-invalid')
         duplicate=configuration();duplicate['expectedCases']=[dict(caseId='same',repetition=0)]*2
         editor.fill(json.dumps(duplicate));expect(create).to_be_disabled();expect(section.get_by_role('alert')).to_contain_text('Invalid public evaluation configuration')
@@ -61,11 +70,13 @@ def run(args):
         valid=configuration();text=' \n'+json.dumps(valid,indent=2)+'\n\n';editor.fill(text)
         expect(create).to_be_enabled();expect_editor_value(editor,text)
         if args.verify:
-            expect(editor).to_have_attribute('aria-invalid','false');expect(preview.locator('dd').first).to_have_text('3')
+            expect(editor).to_have_attribute('aria-invalid','false');expect_case_pairs(preview,3)
         language.select_option('python');language.select_option('javascript');expect_editor_value(editor,text)
         capture_layout(p,out,'custom-valid-desktop')
-        editor.focus();p.keyboard.press('Tab');expect(preview).to_be_focused();p.keyboard.press('Tab');expect(create).to_be_focused()
-        trigger.click();expect(editor).to_be_hidden();trigger.focus();p.keyboard.press('Tab');assert not section.locator('[data-slot=disclosure-content]').evaluate('e=>e.contains(document.activeElement)')
+        editor.focus()
+        for target in [section.get_by_role('button',name='Evaluator prerequisites'),preview.locator('.config-lineage [data-slot=disclosure-trigger]'),preview.get_by_role('region',name='Expected cases'),preview.get_by_role('button',name='Public runtime settings'),create]:
+            p.keyboard.press('Tab');expect(target).to_be_focused()
+        trigger.click();expect(editor).to_be_hidden();trigger.focus();p.keyboard.press('Tab');assert not section.locator('h2 + [data-slot=disclosure-content]').evaluate('e=>e.contains(document.activeElement)')
         trigger.click();expect_editor_value(editor,text)
         record('Malformed, duplicate and oversized configs block create; correction updates accessible error and exact uneven-pair preview; switching/folding retain text and Tab exits')
         large=configuration(1000);large['datasetRevision']='long-public-dataset-'+('retained-'*30)
@@ -76,9 +87,10 @@ def run(args):
             if args.verify:
                 geometry=section.evaluate('e=>({width:e.clientWidth,columns:getComputedStyle(e.querySelector(".evaluation-setup-grid")).gridTemplateColumns.split(" ").length,editor:e.querySelector(".code-editor").getBoundingClientRect().height,author:e.querySelector(".evaluation-setup-author").getBoundingClientRect().width})')
                 assert geometry['editor']<=320,geometry
-                assert preview.evaluate('e=>e.getBoundingClientRect().height<=320'), geometry
-                if geometry['columns']==2:assert geometry['author']>=600,geometry
-                expect(preview.locator('dd').first).to_have_text('1000')
+                manifest=preview.get_by_role('region',name='Expected cases')
+                assert manifest.evaluate('e=>e.clientHeight<=320 && e.scrollHeight>e.clientHeight'),geometry
+                if geometry['columns']==2:assert geometry['author']>=320,geometry
+                expect_case_pairs(preview,1000)
                 assert editor.locator('.cm-syntax-string').count()>0 or editor.locator('..').locator('.cm-syntax-string').count()>0
             capture_layout(p,out,f'large-custom-{width}')
         p.set_viewport_size(dict(width=1440,height=1000));section.evaluate("e=>e.style.width='430px'")

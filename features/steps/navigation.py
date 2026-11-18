@@ -70,6 +70,11 @@ def desktop_icon_navigation(context):
     p=browser(context).page
     rail=p.locator('.workspace-desktop-rail')
     expect(rail).to_be_visible()
+    collapse=rail.get_by_role('button',name='Collapse navigation',exact=True)
+    if collapse.count():
+        assert rail.bounding_box()['width'] > 100
+        collapse.click()
+    expect(rail.get_by_role('button',name='Expand navigation',exact=True)).to_have_attribute('aria-expanded','false')
     bounds=rail.bounding_box()
     assert abs(bounds['x'])<=1 and abs(bounds['width']-64)<=1,bounds
     navigation=rail.get_by_role('navigation',name='Main navigation',exact=True)
@@ -93,13 +98,15 @@ def desktop_icon_navigation(context):
         expect(control).to_be_focused()
 
 
-@then('workspace switching sits above the account at the bottom of the rail')
-def bottom_workspace_account(context):
+@then('workspace switching precedes navigation and the account remains at the bottom of the rail')
+def workspace_scope_and_account(context):
     p=browser(context).page
     rail=p.locator('.workspace-desktop-rail')
-    workspace=rail.get_by_role('button',name='Workspaces',exact=True)
+    workspace=rail.get_by_role('button',name='Workspaces')
     account=rail.get_by_role('button',name='Account',exact=True)
     wr,ar,rr=workspace.bounding_box(),account.bounding_box(),rail.bounding_box()
+    nav=rail.get_by_role('navigation',name='Main navigation').bounding_box()
+    assert wr['y']+wr['height']<=nav['y'],dict(workspace=wr,navigation=nav)
     assert wr['y']+wr['height']<=ar['y'] and ar['y']+ar['height']<=rr['y']+rr['height'],dict(workspace=wr,account=ar,rail=rr)
     assert ar['y']+ar['height']>=rr['y']+rr['height']-24,dict(account=ar,rail=rr)
     menu=workspace_menu(p)
@@ -232,9 +239,10 @@ def histories_isolated(context):
             row.get_by_role('link',name='stable',exact=True).click()
             tabs(context).get_by_role('link',name='Releases',exact=True).click()
         expect(b.page).to_have_url(b.base+b.bundle_path('releases',bundle_id=bundle_id))
-        row=b.page.get_by_role('article').filter(has=b.page.get_by_role('heading',name='Revision 1',exact=True))
+        row=b.page.get_by_role('article',name=re.compile(r'^Revision 1( · Current)?$'))
         expect(b.page.get_by_role('article')).to_have_count(1)
-        row.get_by_role('button',name=re.compile(r'^Inspect content for revision ')).click()
+        row.get_by_role('button',name=re.compile(r'^Compare Revision 1\b',re.I)).click()
+        b.page.get_by_role('region',name='Comparison for revision 1',exact=True).get_by_role('button',name='Inspect content for revision 1',exact=True).click()
         expect(b.page.get_by_label('Content of AGENTS.md',exact=True)).to_contain_text(text)
         b.page.get_by_role('dialog').get_by_role('button',name='Close',exact=True).click()
 
@@ -331,23 +339,35 @@ def admin_menu(context):
 def previous_creation(context):
     w=context.world
     b=browser(context)
-    cookie=next(row for row in b.context.cookies(b.base) if row['name']=='acclimate_session')
-    w.previous_browser_secret=cookie['value']
-    w.sessions['_previous-browser']=dict(secret=w.previous_browser_secret)
-    w.creation_key=str(uuid.uuid4())
-    w.previous_creation=w.call('POST',w.root+'/bundle-setups',dict(name='Recovered browser bundle',origin='created',channel='stable',payload=payload('Recovered instructions.'),reason='Explicit initial release.'),key=w.creation_key,actor='_previous-browser')
+    b.visit('/setup')
+    page=b.page
+    page.get_by_role('button',name='Create your first bundle',exact=True).click()
+    page.get_by_label('Bundle name',exact=True).fill('Recovered browser bundle')
+    page.get_by_label('Instructions',exact=True).fill('Recovered instructions.')
+    # The real service commits, then the browser loses the response before it can clear recovery.
+    def drop(route):
+        if route.request.method=='POST':
+            assert route.fetch().ok
+            route.abort('failed')
+        else:
+            route.continue_()
+    page.route('**/*',drop)
+    try:
+        page.get_by_role('button',name='Create and publish',exact=True).click()
+        expect(page.get_by_role('button',name='Check result',exact=True)).to_be_enabled()
+    finally:
+        page.unroute('**/*',drop)
+    bundles=w.call('GET',w.root+'/bundles')['items']
+    assert len(bundles)==1
+    w.previous_bundle_id=bundles[0]['id']
+    w.pending_slot=page.evaluate("Object.keys(sessionStorage).find(key=>key.startsWith('acclimate:operation:v1:'))")
+    assert w.pending_slot
 
 
 @when('I reopen the bundle library with its previous operation record')
 def previous_operation(context):
-    import hashlib
-    w=context.world
     b=browser(context)
-    b.visit('/setup')
-    actor=hashlib.sha256((w.h.base+'\0'+w.previous_browser_secret).encode()).hexdigest()[:32]
-    w.legacy_creation_key='acclimate-pending-setup:'+actor
-    b.page.evaluate('([key,value])=>localStorage.setItem(key,JSON.stringify(value))',[w.legacy_creation_key,dict(projectId=w.h.project,key=w.creation_key,fingerprint='previous-browser-content')])
-    b.visit('/setup')
+    b.page.reload(wait_until='networkidle')
     expect(b.page.get_by_role('button',name='Check result',exact=True)).to_be_visible()
 
 
@@ -360,12 +380,12 @@ def recover_previous(context):
 def previous_once(context):
     w=context.world
     b=browser(context)
-    expected=b.base+b.bundle_path('content',bundle_id=w.previous_creation['bundle']['id'])
+    expected=b.base+b.bundle_path('content',bundle_id=w.previous_bundle_id)
     expect(b.page).to_have_url(expected)
     expect(b.page.get_by_test_id('entry-content')).to_contain_text('Recovered instructions.')
     rows=w.call('GET',w.root+'/bundles')['items']
-    assert [row['id'] for row in rows]==[w.previous_creation['bundle']['id']]
-    assert b.page.evaluate('(key)=>localStorage.getItem(key)',w.legacy_creation_key) is None
+    assert [row['id'] for row in rows]==[w.previous_bundle_id]
+    assert b.page.evaluate('(key)=>sessionStorage.getItem(key)',w.pending_slot) is None
 
 
 @when('I search for memory, edit that entry and go Back')

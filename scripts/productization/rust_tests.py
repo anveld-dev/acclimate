@@ -10,7 +10,7 @@ args=parser.parse_args()
 h=Harness(args.pg_bin)
 try:
     h.start_database()
-    env=dict(h.env,ACCLIMATE_TEST_DATABASE_URL=h.env['DATABASE_URL'],EVALUATION_TEST_DATABASE_URL=h.env['DATABASE_URL'],TEST_DATABASE_URL=h.env['DATABASE_URL'])
-    subprocess.run(['cargo','test','--all-targets','--','--test-threads=1'],cwd=ROOT,env=env,check=True)
+    env = dict(h.env, ACCLIMATE_TEST_DATABASE_URL=h.env['DATABASE_URL'])
+    subprocess.run(['cargo','test','--all-targets','--','--include-ignored','--test-threads=1'],cwd=ROOT,env=env,check=True)
 finally:
     h.close()

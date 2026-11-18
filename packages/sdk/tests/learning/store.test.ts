@@ -308,7 +308,7 @@ test('a continuation from released worker ownership cannot write later checkpoin
   }
 });
 
-test('a full legacy observation inbox reserves admission for stop and resolution', async () => {
+test('a full observation inbox reserves admission for stop and resolution', async () => {
   const f = await fixture();
   try {
     const command = { kind: 'observe' };
@@ -322,7 +322,8 @@ test('a full legacy observation inbox reserves admission for stop and resolution
     await writeFile(
       path.join(f.directory, 'inbox.json'),
       canonicalJson({
-        schemaVersion: 1,
+        schemaVersion: 2,
+        compactedThrough: 0,
         directory: f.directory,
         admissionClosed: false,
         entries,
@@ -389,7 +390,8 @@ test('queued resolutions cannot exhaust the stop reserve', async () => {
     await writeFile(
       path.join(f.directory, 'inbox.json'),
       canonicalJson({
-        schemaVersion: 1,
+        schemaVersion: 2,
+        compactedThrough: 0,
         directory: f.directory,
         admissionClosed: false,
         entries,

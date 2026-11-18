@@ -16,14 +16,8 @@ struct Harness {
     project: String,
 }
 impl Harness {
-    async fn new() -> Option<Self> {
-        let url = match std::env::var("DATABASE_URL") {
-            Ok(v) => v,
-            Err(_) => {
-                eprintln!("skipping HTTP PostgreSQL contract tests: DATABASE_URL is not set");
-                return None;
-            }
-        };
+    async fn new() -> Self {
+        let url = common::database_url();
         let db = sqlx::postgres::PgPoolOptions::new()
             .max_connections(12)
             .connect(&url)
@@ -56,7 +50,7 @@ impl Harness {
                 rights: vec!["read".into()],
             },
         ];
-        Some(Self {
+        Self {
             app: router(AppState {
                 access: common::access(),
                 runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
@@ -66,7 +60,7 @@ impl Harness {
             }),
             db,
             project,
-        })
+        }
     }
     async fn req(
         &self,
@@ -155,10 +149,9 @@ fn err_code(bytes: &[u8]) -> String {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn scope_payload_bytes_and_validation_contract() {
-    let Some(h) = Harness::new().await else {
-        return;
-    };
+    let h = Harness::new().await;
     let bundle = h.bundle().await;
     let base = format!("{}/{bundle}", h.root());
     let (s, _, _) = h
@@ -222,10 +215,9 @@ async fn scope_payload_bytes_and_validation_contract() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn idempotency_replay_conflict_distinct_paths_and_parallel_duplicates() {
-    let Some(h) = Harness::new().await else {
-        return;
-    };
+    let h = Harness::new().await;
     let bundle = h.bundle().await;
     let uri = format!("{}/{bundle}/versions", h.root());
     let body = json!({"parentVersionId":null,"payload":{"schemaVersion":1,"files":[{"path":"a","kind":"skill","text":"x"}]}});
@@ -310,10 +302,9 @@ async fn idempotency_replay_conflict_distinct_paths_and_parallel_duplicates() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn channel_etag_cas_comparisons_and_promotion_history() {
-    let Some(h) = Harness::new().await else {
-        return;
-    };
+    let h = Harness::new().await;
     let bundle = h.bundle().await;
     let base = format!("{}/{bundle}", h.root());
     let parent = h.version(&bundle, Value::Null, "base", "parent").await;
@@ -546,10 +537,9 @@ async fn channel_etag_cas_comparisons_and_promotion_history() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn oversized_requests_return_the_typed_error_contract() {
-    let Some(h) = Harness::new().await else {
-        return;
-    };
+    let h = Harness::new().await;
     let (status, body, _) = h
         .req(
             "POST",
@@ -565,10 +555,9 @@ async fn oversized_requests_return_the_typed_error_contract() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn paginated_history_is_scoped_stable_and_includes_rollback() {
-    let Some(h) = Harness::new().await else {
-        return;
-    };
+    let h = Harness::new().await;
     let bundle = h.bundle().await;
     let first = h.version(&bundle, Value::Null, "first", "history-v1").await;
     let second = h

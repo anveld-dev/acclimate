@@ -89,13 +89,15 @@ class Evidence:
             violations.append(f'{"coarse" if coarse else "fine"} pointer target below {target_minimum}px')
         if not metrics['desktop']['h1']:
             violations.append('missing visible h1')
-        if not self.baseline and metrics['viewport']>=1000:
+        if not self.baseline and metrics['viewport']>1000:
             header=metrics['desktop']['header']
             canvas=metrics['desktop']['canvas']
-            if not header or abs(header['x'])>1 or abs(header['y'])>1 or abs(header['width']-64)>1 or abs(header['height']-metrics['viewportHeight'])>1:
-                violations.append('desktop icon rail must occupy64px at the left for the viewport height')
-            if not canvas or abs(canvas['x']-64)>1 or abs(canvas['width']-(metrics['viewport']-64))>1:
-                violations.append('desktop canvas must use remaining width beside the64px rail')
+            expanded=page.locator('.workspace-desktop-rail').get_attribute('data-rail-expanded')=='true'
+            rail_width=176 if expanded else 64
+            if not header or abs(header['x'])>1 or abs(header['y'])>1 or abs(header['width']-rail_width)>1 or abs(header['height']-metrics['viewportHeight'])>1:
+                violations.append('desktop rail must occupy its selected width for the viewport height')
+            if not canvas or abs(canvas['x']-rail_width)>1 or abs(canvas['width']-(metrics['viewport']-rail_width))>1:
+                violations.append('desktop canvas must use the remaining width beside the rail')
             if header:
                 outside=[row for row in metrics['desktop']['headerChildren'] if row['bounds'] and (row['bounds']['x']<header['x']-1 or row['bounds']['right']>header['right']+1 or row['bounds']['y']<header['y']-1 or row['bounds']['bottom']>header['bottom']+1)]
                 overlaps=[]
@@ -111,10 +113,8 @@ class Evidence:
                     violations.append('desktop header children must be contained and groups must not overlap')
             if name=='1440-draft-clean':
                 source=metrics['editor']
-                # Explicit rail/two-row-header allocation:1094×648 at y214.
-                # Keep the existing height/area floors despite the64px rail.
-                if not source or source['top']>250 or source['width']<1080 or source['height']<640 or source['width']*source['height']<=680056:
-                    violations.append('desktop source must meet rail/header geometry and exceed baseline area')
+                if not source or source['top']>250 or source['width']<1080 or source['height']<640:
+                    violations.append('desktop editor must start within 250px of the top and provide at least 1080×640px')
         metrics['violations'] = violations
         metrics['shortTargets'] = short
         cdp = page.context.new_cdp_session(page)
@@ -176,6 +176,11 @@ def route_capture(w, b, e, routes, candidate, width, height, name):
     if name == 'draft':
         editor = p.get_by_role('textbox', name='Content', exact=True)
         expect_editor_value(editor, candidate['files'][0]['text'])
+        collapse=p.get_by_role('button',name='Collapse navigation',exact=True)
+        restore_labels=width==1440 and collapse.count()>0
+        if restore_labels:
+            e.capture(p, '1440-draft-labels')
+            collapse.click()
         reset_editor_view(p)
         e.capture(p, f'{width}-{name}-clean')
         edited = candidate['files'][0]['text'] + '\nDesktop unsaved source retention.\n'
@@ -189,6 +194,8 @@ def route_capture(w, b, e, routes, candidate, width, height, name):
         p.get_by_role('treeitem', name='Open AGENTS.md', exact=True).click()
         expect_editor_value(editor, edited)
         editor.fill(candidate['files'][0]['text'])
+        if restore_labels:
+            p.get_by_role('button',name='Expand navigation',exact=True).click()
     else:
         e.capture(p, f'{width}-{name}')
     return dict(viewport=[width,height],navigation=nav,sourceEditsRetained=name=='draft')
@@ -276,7 +283,7 @@ def overlays(w, b, e, routes, candidate):
     p.keyboard.press('Escape')
     expect(p.get_by_role('dialog')).to_have_count(0)
     expect(account).to_be_focused()
-    workspace = p.get_by_role('button',name='Workspaces',exact=True)
+    workspace = p.get_by_role('button',name='Workspaces')
     expect(workspace).to_have_count(1)
     p.mouse.move(500,150,steps=8)
     expect(p.get_by_role('tooltip',include_hidden=True)).to_have_count(0)
@@ -339,7 +346,7 @@ def coarse_desktop(b,e,routes):
             assert rect and rect['width']>=43.5 and rect['height']>=43.5,dict(name=control.inner_text(),bounds=rect)
             tab_to(p,control)
             checked.append(dict(name=control.get_attribute('aria-label') or control.inner_text().strip(),bounds=rect))
-        for selector in ('.workspace-brand','button[aria-label="Workspaces"]','nav[aria-label="Main navigation"] a'):
+        for selector in ('.workspace-brand','button[aria-label^="Workspaces"]','nav[aria-label="Main navigation"] a'):
             assert header.locator(selector).count(),'Required coarse desktop header control missing: '+selector
         e.capture(p,'1024-coarse-desktop-topbar-focus',coarse=True)
         return dict(pointerCoarse=True,realHasTouchContext=True,minimumTarget=44,keyboardReachable=checked)

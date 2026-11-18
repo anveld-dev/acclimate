@@ -1,4 +1,6 @@
 import { useId, useRef, useState } from 'react';
+import './evaluation-configuration.css';
+import { ClipboardList, Check } from 'lucide-react';
 import type React from 'react';
 import {
   applicationEvaluatorCommand,
@@ -16,6 +18,7 @@ export type EvaluationSetupProps = {
   configuration?: ReturnType<typeof evaluationConfiguration>;
   configurationError: string;
   savedGeneration?: number;
+  scopeIdentity?: { channel: string; parent?: string | null; candidate: string };
   fieldsDisabled: boolean;
   submitDisabled: boolean;
   blockedReason?: string;
@@ -32,6 +35,7 @@ export function EvaluationSetup({
   configuration,
   configurationError,
   savedGeneration,
+  scopeIdentity,
   fieldsDisabled,
   submitDisabled,
   blockedReason,
@@ -49,8 +53,18 @@ export function EvaluationSetup({
   const error = `${id}-error`;
   const prerequisites = `${id}-prerequisites`;
   const valid = configuration && !configurationError ? configuration : undefined;
+  const caseGroups = new Map<string, number[]>();
+  for (const { caseId, repetition } of valid?.expectedCases ?? []) {
+    const existing = caseGroups.get(caseId);
+    if (existing) existing.push(repetition);
+    else caseGroups.set(caseId, [repetition]);
+  }
+  const blocked = `${id}-blocked`;
   return (
-    <section className="review-section evaluation-setup" aria-label="Create evaluation request">
+    <section
+      className="review-section evaluation-setup configuration-studio"
+      aria-label="Create evaluation request"
+    >
       <Disclosure
         open={open}
         onOpenChange={(next) => {
@@ -133,20 +147,68 @@ export function EvaluationSetup({
                     {configurationError}
                   </p>
                 )}
+                <Disclosure className="evaluation-prerequisites">
+                  <DisclosureTrigger>Evaluator prerequisites</DisclosureTrigger>
+                  <DisclosureContent className="space-y-2 pt-2">
+                    <p>
+                      Install your app’s evaluator and run <code>describe</code> to obtain its
+                      public configuration.
+                    </p>
+                    <p>
+                      Ask your operator for a dedicated project read/write machine principal.
+                      Delivery credentials cannot read unpublished candidates or run evaluations.
+                    </p>
+                    <p>
+                      Keep the private configuration and durable journal on the evaluator machine.
+                      Run <code>doctor</code> there to check access before execution.
+                    </p>
+                  </DisclosureContent>
+                </Disclosure>
               </div>
-              <div
-                className="evaluation-setup-preview"
-                role="region"
-                aria-label="Request preview"
-                tabIndex={0}
-              >
-                <h3>Request preview</h3>
+              <div className="evaluation-setup-preview" role="region" aria-label="Request preview">
+                <h3>
+                  <ClipboardList aria-hidden="true" />
+                  Request preview
+                  {valid && (
+                    <span className="config-valid">
+                      <Check aria-hidden="true" />
+                      Valid configuration
+                    </span>
+                  )}
+                </h3>
+                {scopeIdentity && (
+                  <Disclosure className="config-lineage">
+                    <DisclosureTrigger>
+                      <span>{scopeIdentity.channel}</span> ·{' '}
+                      {scopeIdentity.parent ? (
+                        <>
+                          Parent <code>{scopeIdentity.parent.slice(0, 8)}</code> →{' '}
+                        </>
+                      ) : null}
+                      Candidate <code>{scopeIdentity.candidate.slice(0, 8)}</code>
+                    </DisclosureTrigger>
+                    <DisclosureContent>
+                      <dl>
+                        {scopeIdentity.parent && (
+                          <>
+                            <dt>Parent version</dt>
+                            <dd>{scopeIdentity.parent}</dd>
+                          </>
+                        )}
+                        <dt>Candidate version</dt>
+                        <dd>{scopeIdentity.candidate}</dd>
+                      </dl>
+                    </DisclosureContent>
+                  </Disclosure>
+                )}
                 {valid ? (
                   <>
-                    <p aria-label="Selected evaluator summary">
-                      {valid.runtime.configId} · revision {valid.runtime.configRevision} ·{' '}
-                      {new Set(valid.expectedCases.map((item) => item.caseId)).size} tasks ·{' '}
-                      {valid.expectedCases.length} repetition pairs
+                    <p className="config-preview-identity" aria-label="Selected evaluator summary">
+                      <strong>{valid.runtime.configId}</strong>
+                      <span>
+                        Revision {valid.runtime.configRevision} · {caseGroups.size}{' '}
+                        {caseGroups.size === 1 ? 'task' : 'tasks'}
+                      </span>
                     </p>
                     <dl>
                       <dt>Expected case/repetition pairs</dt>
@@ -155,10 +217,6 @@ export function EvaluationSetup({
                       <dd>{valid.datasetRevision}</dd>
                       <dt>Grader revision</dt>
                       <dd>{valid.graderRevision}</dd>
-                      <dt>Config ID</dt>
-                      <dd>{valid.runtime.configId}</dd>
-                      <dt>Config revision</dt>
-                      <dd>{valid.runtime.configRevision}</dd>
                       {valid.runtime.model && (
                         <>
                           <dt>Model</dt>
@@ -166,6 +224,43 @@ export function EvaluationSetup({
                         </>
                       )}
                     </dl>
+                    <div
+                      className="config-case-manifest"
+                      role="region"
+                      aria-label="Expected cases"
+                      tabIndex={0}
+                    >
+                      <table>
+                        <caption className="sr-only">Expected case/repetition pairs</caption>
+                        <thead>
+                          <tr>
+                            <th scope="col">Expected case</th>
+                            <th scope="col">Repetitions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Array.from(caseGroups, ([caseId, repetitions]) => (
+                            <tr key={caseId}>
+                              <th scope="row">{caseId}</th>
+                              <td>{repetitions.join(', ')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Disclosure className="config-runtime">
+                      <DisclosureTrigger>Public runtime settings</DisclosureTrigger>
+                      <DisclosureContent>
+                        <dl>
+                          {Object.entries(valid.runtime).map(([key, value]) => (
+                            <div key={key}>
+                              <dt>{key}</dt>
+                              <dd>{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </DisclosureContent>
+                    </Disclosure>
                   </>
                 ) : (
                   <p>
@@ -181,10 +276,23 @@ export function EvaluationSetup({
                 Creating a request freezes the configuration and versions. Send its public handoff
                 to the person running the evaluator.
               </p>
+              {blockedReason && (
+                <p id={blocked} className="config-blocked">
+                  {blockedReason}
+                </p>
+              )}
               <Button
                 ref={createActionRef}
                 disabled={submitDisabled}
-                aria-describedby={prerequisites}
+                aria-describedby={
+                  [
+                    prerequisites,
+                    configurationError && customConfiguration.trim() && error,
+                    blockedReason && blocked,
+                  ]
+                    .filter(Boolean)
+                    .join(' ') || undefined
+                }
                 onClick={onCreate}
               >
                 Create evaluation request
@@ -193,7 +301,7 @@ export function EvaluationSetup({
           </div>
         </DisclosureContent>
       </Disclosure>
-      {blockedReason && <p className="evaluation-setup-blocked-reason">{blockedReason}</p>}
+      {blockedReason && !open && <p className="evaluation-setup-blocked-reason">{blockedReason}</p>}
     </section>
   );
 }

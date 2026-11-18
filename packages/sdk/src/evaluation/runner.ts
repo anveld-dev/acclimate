@@ -18,11 +18,7 @@ import {
   evaluationDescriptorDifferences,
   validateEvaluationHandoff,
 } from '../validation.js';
-import {
-  createEvaluationTransport,
-  evaluationOperationPath,
-  evaluationFingerprint,
-} from '../internal/evaluation-transport.js';
+import { createEvaluationTransport } from '../internal/evaluation-transport.js';
 import {
   assertJson,
   assertEvaluationOutput,
@@ -219,7 +215,10 @@ function assertTarget(config: EvaluatorConfig, handoff: EvaluationHandoff) {
   if (handoff.serviceUrl !== config.serviceUrl || handoff.projectId !== config.projectId)
     throw new EvaluationError('auth.principal_mismatch');
 }
-async function authority(api: AcclimateClient, config: EvaluatorConfig) {
+export async function verifyEvaluatorAuthority(
+  api: AcclimateClient,
+  config: Pick<EvaluatorConfig, 'projectId' | 'evaluatorPrincipalId'>,
+) {
   let capabilities;
   try {
     capabilities = await api.getEvaluationCapabilities(config.projectId);
@@ -240,7 +239,7 @@ async function authority(api: AcclimateClient, config: EvaluatorConfig) {
 }
 async function verified(
   api: AcclimateClient,
-  config: EvaluatorConfig,
+  config: Pick<EvaluatorConfig, 'projectId'>,
   bundleId: string,
   request: Evaluation,
   cacheDir: string,
@@ -341,7 +340,7 @@ export async function preflightEvaluation<I, E, O>(
     pass('lock');
     const api = createEvaluationTransport(config).client;
     currentCheck = 'evaluatorAccess';
-    await authority(api, config);
+    await verifyEvaluatorAuthority(api, config);
     result.authorization = 'verified';
     pass('serviceIdentity');
     pass('evaluatorAccess');
@@ -351,7 +350,7 @@ export async function preflightEvaluation<I, E, O>(
     if (requestId) {
       currentCheck = 'targetRequest';
       const request = await api.getEvaluation(config.projectId, bundleId, requestId);
-      if (request.id !== requestId || !request.requireBoundEvidence)
+      if (request.id !== requestId || request.requireBoundEvidence !== true)
         throw new EvaluationError('evidence.identity_mismatch');
       pass('targetRequest');
       currentCheck = 'descriptor';
@@ -423,19 +422,17 @@ export async function runEvaluation<I, E, O>(
   if ((captured.execution === 'live') !== (options.allowLive === true))
     throw new EvaluationError('config.schema');
   const transport = createEvaluationTransport(config);
-  await authority(transport.client, config);
+  await verifyEvaluatorAuthority(transport.client, config);
   return runCapturedEvaluation({ captured, config, handoff, transport, signal: options.signal });
 }
 
 /** Source-internal integration seam. Not exported from the installed package interface. */
 export async function runCapturedEvaluation(options: {
   captured: CapturedDefinition<any, any, any>;
-  config: EvaluatorConfig;
+  config: Pick<EvaluatorConfig, 'serviceUrl' | 'projectId' | 'evaluatorPrincipalId' | 'journalRoot' | 'captureCallbackErrors'>;
   handoff: EvaluationHandoff;
   transport: ReturnType<typeof createEvaluationTransport>;
   signal?: AbortSignal;
-  /** Original checkout descriptors may predate strict request binding. */
-  allowLegacyUnbound?: boolean;
 }): Promise<EvaluationRunResult> {
   const { captured, config, handoff, transport } = options,
     api = transport.client;
@@ -463,10 +460,7 @@ export async function runCapturedEvaluation(options: {
         ? 'may_have_started'
         : 'not_started';
     let request = await api.getEvaluation(scope.projectId, scope.bundleId, scope.requestId);
-    if (
-      request.id !== scope.requestId ||
-      (!options.allowLegacyUnbound && !request.requireBoundEvidence)
-    )
+    if (request.id !== scope.requestId || request.requireBoundEvidence !== true)
       throw new EvaluationError('evidence.identity_mismatch');
     assertDescriptor(request, captured.descriptor);
     if (state) {
@@ -565,9 +559,6 @@ export async function runCapturedEvaluation(options: {
           JSON.stringify({ schemaVersion: 1, ...captured.collection }) + '\n',
         );
       }
-      // A legacy journal that has not executed has no historical submission to
-      // confuse with the report this invocation is about to create.
-      state.retainedOperations = true;
       state.executionStarted = true;
       await journal.save(state);
       certainty = 'may_have_started';
@@ -859,42 +850,20 @@ export async function runCapturedEvaluation(options: {
     phase = 'submit';
     await check();
     if (!state.comparisonId) {
-      if (!state.retainedOperations) {
-        const operation = await api.getOperation(
-          scope.projectId,
-          state.keys.submit,
-          evaluationOperationPath('submit', scope),
-        );
-        const body = JSON.stringify(state.report);
-        if (
-          operation.status !== 'committed' ||
-          operation.requestFingerprint !== evaluationFingerprint('submit', scope, body)
-        )
-          throw new EvaluationError('legacy.submission_unconfirmed');
-        const result = operation.result as Comparison;
-        assertReport(result, request, state.attemptId);
-        state.comparisonId = result.id;
-        await api.closeOperation(
-          scope.projectId,
-          state.keys.submit,
-          evaluationOperationPath('submit', scope),
-        );
-      } else {
-        const body = await journal.readBody('submit', state);
-        if (JSON.stringify(JSON.parse(body)) !== JSON.stringify(state.report))
-          throw new EvaluationError('journal.invalid');
-        journal.assertOwned();
-        const comparison = await transport.mutate<Comparison>(
-          'submit',
-          scope,
-          body,
-          state.keys.submit,
-        );
-        assertReport(comparison, request, state.attemptId);
-        if (!comparison.id || comparison.submitter !== scope.evaluatorPrincipalId)
-          throw new EvaluationError('evidence.identity_mismatch');
-        state.comparisonId = comparison.id;
-      }
+      const body = await journal.readBody('submit', state);
+      if (JSON.stringify(JSON.parse(body)) !== JSON.stringify(state.report))
+        throw new EvaluationError('journal.invalid');
+      journal.assertOwned();
+      const comparison = await transport.mutate<Comparison>(
+        'submit',
+        scope,
+        body,
+        state.keys.submit,
+      );
+      assertReport(comparison, request, state.attemptId);
+      if (!comparison.id || comparison.submitter !== scope.evaluatorPrincipalId)
+        throw new EvaluationError('evidence.identity_mismatch');
+      state.comparisonId = comparison.id;
       await journal.save(state);
     }
     await reconcileArtifactIndex(journal, state);
@@ -982,7 +951,7 @@ async function ensureBody(
   kind: 'start' | 'finish',
   body: string,
 ) {
-  if (state.wireBodies?.[kind]) {
+  if (state.wireBodies[kind]) {
     const previous = await journal.readBody(kind, state);
     if (previous !== body) throw new EvaluationError('journal.invalid');
     return previous;

@@ -93,6 +93,13 @@ export const runReleaseOperation = createServerFn({ method: 'POST' })
       });
       return { ok: true as const, promotion };
     } catch (error) {
+      if (error instanceof ApiError && error.status === 409 && error.code === 'revision_conflict')
+        return {
+          ok: false as const,
+          message: 'The release changed since you opened this restore.',
+          revisionChanged: true as const,
+          uncertain: false,
+        };
       return {
         ok: false as const,
         message: 'The release could not be confirmed. Reconcile or retry this exact operation.',

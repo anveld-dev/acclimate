@@ -4,6 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Comparison, Evaluation, Outcome } from '@acclimate/sdk';
 import type { EvaluationHistoryModel } from '../src/lib/changes-workspace';
+import { requestEvidence } from '../src/lib/evaluation-history';
 import { EvaluationHistoryView } from '../src/components/evaluation-history-view';
 
 const outcome: Outcome = {
@@ -15,6 +16,7 @@ const outcome: Outcome = {
   usage: { costUsd: 0 },
 };
 const request: Evaluation = {
+  requireBoundEvidence: true,
   id: 'request-12345678',
   candidateVersionId: 'candidate-full',
   parentVersionId: 'parent-full',
@@ -69,6 +71,8 @@ const render = (overrides: Partial<Parameters<typeof EvaluationHistoryView>[0]> 
   renderToStaticMarkup(
     createElement(EvaluationHistoryView, {
       model: model(),
+      filters: { query: '', status: '' },
+      onFiltersChange: () => {},
       selectedRequestId: request.id,
       onSelectRequest: () => {},
       reviewHref: () => '/review',
@@ -111,12 +115,19 @@ test('unbound and mismatched reports never contribute aggregates', () => {
   for (const status of ['unbound', 'mismatch'] as const) {
     const html = render({
       model: model({
-        evidence: { [request.id]: { status, comparison, message: 'Identity differs' } },
+        evidence: {
+          [request.id]: requestEvidence(
+            request,
+            status === 'unbound'
+              ? { ...comparison, evaluation: undefined }
+              : { ...comparison, parentDigest: 'different' },
+          ),
+        },
       }),
     });
     assert.match(
       html,
-      status === 'unbound' ? /Legacy unbound evidence/ : /Evidence binding mismatch/,
+      status === 'unbound' ? /standalone comparison/ : /Evidence binding mismatch/,
     );
     assert.doesNotMatch(html, /1 \/ 8 · partial/);
     assert.match(html, /Inspect comparison independently/);
@@ -149,4 +160,45 @@ test('filtered empty state retains pagination and comparison-less handoff', () =
   });
   assert.match(html, /Interrupted externally/);
   assert.match(html, /Open evaluation/);
+});
+
+test('paired score graphics retain a finite zero baseline across signed extremes', () => {
+  const report = {
+    ...comparison,
+    expectedCases: [request.expectedCases[0]],
+    results: [
+      {
+        ...request.expectedCases[0],
+        parent: { ...outcome, reward: -Number.MAX_VALUE },
+        candidate: { ...outcome, reward: Number.MAX_VALUE },
+      },
+    ],
+  };
+  const html = render({
+    model: model({ evidence: { [request.id]: { status: 'bound', comparison: report } } }),
+  });
+  assert.match(html, /left:0%;width:50%/);
+  assert.match(html, /left:50%;width:50%/);
+  assert.doesNotMatch(html, /NaN%|Infinity%/);
+});
+
+test('search matches exact comparison IDs and retains selected runs outside the matching count', () => {
+  const matched = render({ filters: { query: request.comparisonId!, status: 'completed' } });
+  assert.match(matched, /1 matching request/);
+  const excluded = render({ filters: { query: 'another harness', status: 'running' } });
+  assert.match(excluded, /0 matching requests/);
+  assert.match(excluded, /Selected outside filters/);
+  assert.match(excluded, /Open full review/);
+  assert.match(excluded, /No loaded requests match/);
+});
+
+test('a selected request remains inspectable when the history list cannot be loaded', () => {
+  const html = render({
+    model: model({ requests: [], error: 'List unavailable. Retrying automatically.' }),
+  });
+  assert.match(html, /History list unavailable/);
+  assert.doesNotMatch(html, /0 loaded requests|previously loaded requests/);
+  assert.equal((html.match(/Retrying automatically/g) ?? []).length, 1);
+  assert.match(html, /Selected outside loaded history/);
+  assert.match(html, /Open full review/);
 });

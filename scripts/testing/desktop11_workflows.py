@@ -145,8 +145,8 @@ def creation(w,b,e,f):
 def changes(w,b,e,f):
     p=b.page;p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,b.bundle_path('changes'));drafts=p.get_by_role('region',name='Saved drafts',exact=True);suggestions=p.get_by_role('region',name='Suggestions',exact=True)
     expect(drafts.get_by_text('Loading saved drafts…',exact=True)).to_have_count(0);expect(drafts).to_contain_text('No open drafts on the loaded pages. Load more drafts to check older entries.');expect(drafts.get_by_role('button',name='Load more drafts',exact=True)).to_be_visible();capture(e,p,'1440-changes-closed-first-page-has-older-open-cursor')
-    drafts.get_by_role('button',name='Include published and discarded drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(20);expect(drafts.get_by_role('button',name='Show open drafts',exact=True)).to_have_attribute('aria-pressed','true');capture(e,p,'1440-changes-twenty-real-discarded-rows')
-    drafts.get_by_role('button',name='Load more drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(22);drafts.get_by_role('button',name='Show open drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(2)
+    drafts.get_by_role('button',name='Include closed drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(20);expect(drafts.get_by_role('button',name='Include closed drafts',exact=True)).to_have_attribute('aria-pressed','true');capture(e,p,'1440-changes-twenty-real-discarded-rows')
+    drafts.get_by_role('button',name='Load more drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(22);drafts.get_by_role('button',name='Include closed drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(2)
     for draft in f['openDrafts']:
         row=drafts.locator('li').filter(has=p.get_by_role('link',name='Draft '+draft['id'][:8],exact=True));row.get_by_role('button',name='Draft details',exact=True).click()
         for value in (draft['id'],draft['baseVersionId'],draft['snapshotVersion']['id']):expect(row).to_contain_text(value)
@@ -161,7 +161,7 @@ def changes(w,b,e,f):
         p.set_viewport_size(dict(width=width,height=1000));g=capture(e,p,f'{width}-changes-full-identities-independent-details');assert g['changes'] and g['changes']['width']<=1024+1,g
         for item in g['detailFields']:
             if item['dt'] and item['dd']:assert item['dd']['x']>=item['dt']['right'],item
-    drafts.get_by_role('button',name='Include published and discarded drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(22);drafts.get_by_role('button',name='Show open drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(2)
+    drafts.get_by_role('button',name='Include closed drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(22);drafts.get_by_role('button',name='Include closed drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(2)
     visit(p,b,b.bundle_path('changes',channel='preview'));drafts=p.get_by_role('region',name='Saved drafts',exact=True);expect(drafts.locator('li')).to_have_count(1);expect(drafts).to_contain_text('Draft '+f['previewDraft']['id'][:8]);expect(p.get_by_role('region',name='Suggestions',exact=True).locator('li')).to_have_count(3);capture(e,p,'1024-preview-drafts-scope-suggestions-all-channels')
     return dict(closedFirstPage=20,olderOpenDrafts=2,allDrafts=22,paginationReal=True,toggleBothWays=True,draftChannelScope=True,suggestionsAllChannels=True,terminalSuggestionStatuses=[proposal['status'] for proposal in f['proposals']],naturalRejectedWritePathError=True,fullIdsAndIndependentDetails=True)
 

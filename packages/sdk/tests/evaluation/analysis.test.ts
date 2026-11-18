@@ -93,10 +93,9 @@ test('protocol is opt-in, per-metric stream independent of metric ordering, and 
   assert.notEqual(value.expectedBinding.requestId, 'changed');
   assert.notEqual(value.uncertainty.samplingProtocol, 'changed');
   delete value.uncertainty;
-  assert(
-    analyzeComparison(value).metrics.every(
-      (metric) => metric.uncertainty.status === 'not_requested',
-    ),
+  assert.deepEqual(
+    analyzeComparison(value).metrics.map(({ metric, uncertainty }) => [metric.id, uncertainty.status]),
+    value.metrics.map(({ id }: { id: string }) => [id, 'not_requested']),
   );
 });
 

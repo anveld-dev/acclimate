@@ -62,3 +62,33 @@ export function formatReward(value: number) {
     ? value.toExponential(2)
     : value.toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
+
+export function evaluationCaseHref(reviewHref: string, row: EvaluationPair) {
+  const url = new URL(reviewHref, 'https://console.invalid');
+  url.searchParams.set('pair', 'case:' + row.id);
+  return url.pathname + url.search + '#linked-case';
+}
+
+export function evaluationCaseJson(comparison: Comparison, row: EvaluationPair) {
+  const { key, pair, expected } = row;
+  return JSON.stringify(
+    {
+      caseId: key.caseId,
+      repetition: key.repetition,
+      expected,
+      parent: pair?.parent ?? null,
+      candidate: pair?.candidate ?? null,
+      comparisonId: comparison.id,
+      evaluation: comparison.evaluation ?? null,
+      parentVersionId: comparison.parentVersionId,
+      parentDigest: comparison.parentDigest,
+      candidateVersionId: comparison.candidateVersionId,
+      candidateDigest: comparison.candidateDigest,
+      datasetRevision: comparison.datasetRevision,
+      graderRevision: comparison.graderRevision,
+      runtime: comparison.runtime,
+    },
+    null,
+    2,
+  );
+}

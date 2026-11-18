@@ -388,3 +388,18 @@ test('an unavailable bookmarked connection never silently selects another record
     false,
   );
 });
+
+test('directory projects the latest service-received status without receipt or credential details', async () => {
+  const { readConnectionsState } = await import('../src/server/integration-core');
+  const f = fixture();
+  const receivedAt = '2026-11-17T10:00:00Z';
+  const result = await readConnectionsState(env, { projectId:'project' }, async (input,init) => {
+    if(String(input).includes('/integration-observations?')) return Response.json({
+      items:[{id,latestObservation:{stage:'verified',receivedAt,eventId:'excluded-event',credential:'excluded-secret'}},
+        {id:other,latestObservation:null}],nextCursor:null
+    });
+    return f.fetcher(input,init);
+  });
+  assert(result.ok);
+  assert.deepEqual(result.state.reports,{[id]:{stage:'verified',receivedAt},[other]:null});
+});

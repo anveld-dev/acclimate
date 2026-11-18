@@ -6,11 +6,13 @@ import { evaluationPairs } from '../src/lib/evaluation-pairs';
 import { mergeHistory } from '../src/lib/improvement-history';
 
 const outcome = (reward: number | null, extra: Partial<Outcome> = {}): Outcome => ({ executionStatus: 'completed', gradingStatus: 'scored', reward, outputRef: null, error: null, usage: { costUsd: 1 }, ...extra });
-const request: Evaluation = { id: 'r', attemptId: 'a', comparisonId: 'c', parentVersionId: 'p', candidateVersionId: 'v', parentDigest: 'pd', candidateDigest: 'vd', datasetRevision: 'd', graderRevision: 'g', runtime: { b: '2', a: '1' }, expectedCases: [{ caseId: 'one', repetition: 0 }, { caseId: 'two', repetition: 0 }], proposalId: null, status: 'completed', evaluatorPrincipal: null, error: null, createdAt: '', updatedAt: '' };
+const request: Evaluation = { requireBoundEvidence: true, id: 'r', attemptId: 'a', comparisonId: 'c', parentVersionId: 'p', candidateVersionId: 'v', parentDigest: 'pd', candidateDigest: 'vd', datasetRevision: 'd', graderRevision: 'g', runtime: { b: '2', a: '1' }, expectedCases: [{ caseId: 'one', repetition: 0 }, { caseId: 'two', repetition: 0 }], proposalId: null, status: 'completed', evaluatorPrincipal: null, error: null, createdAt: '', updatedAt: '' };
 const comparison: Comparison = { id: 'c', evaluation: { requestId: 'r', attemptId: 'a' }, parentVersionId: 'p', candidateVersionId: 'v', parentDigest: 'pd', candidateDigest: 'vd', datasetRevision: 'd', graderRevision: 'g', runtime: { a: '1', b: '2' }, expectedCases: [...request.expectedCases].reverse(), results: [{ caseId: 'one', repetition: 0, parent: outcome(-100, { executionStatus: 'task_failed' }), candidate: outcome(200) }, { caseId: 'extra', repetition: 0, parent: outcome(999), candidate: outcome(999) }], complete: true, submitter: '', createdAt: '' };
 
 test('binding checks semantic settings and inventory as well as identifiers', () => {
   assert.equal(requestEvidence(request, comparison).status, 'bound');
+  for (const change of [{ id: 'other' }, { candidateDigest: 'wrong' }, { parentVersionId: 'wrong' }])
+    assert.equal(requestEvidence(request, { ...comparison, ...change }).status, 'mismatch');
   assert.equal(requestEvidence(request, { ...comparison, runtime: { a: 'wrong', b: '2' } }).status, 'mismatch');
   assert.equal(requestEvidence(request, { ...comparison, expectedCases: [request.expectedCases[0]] }).status, 'mismatch');
   assert.equal(requestEvidence(request, { ...comparison, evaluation: { requestId: 'r', attemptId: 'other' } }).status, 'mismatch');

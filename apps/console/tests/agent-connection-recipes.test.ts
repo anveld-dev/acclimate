@@ -114,13 +114,13 @@ def run_existing_agent(*, instruction, skill_files, approved_memory, task):
       assert.equal(result.result.task, 'Check the latest receipt');
       assert.equal((await stat(resultPath)).mode & 0o777, 0o600);
       assert.doesNotMatch(child.stdout, /instructionProvided|Prepared instruction/);
-      await assert.rejects(access(instructionPath));
+      await assert.rejects(access(instructionPath), { code: 'ENOENT' });
     } else {
       assert.notEqual(child.status, 0);
       await access(instructionPath);
       if (behavior === 'collision')
         assert.equal(await readFile(resultPath, 'utf8'), 'original output');
-      else await assert.rejects(access(resultPath));
+      else await assert.rejects(access(resultPath), { code: 'ENOENT' });
     }
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -97,6 +97,35 @@ function response(status: number, message: string) {
     headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' },
   });
 }
+function expiredSignIn(request: Request) {
+  if (!request.headers.get('accept')?.includes('text/html'))
+    return response(400, 'Sign-in expired or could not be verified. Start again.');
+  // Fixed markup keeps callback parameters out of the recovery page and its retry link.
+  return new Response(
+    `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in again · Acclimate</title>
+<style>
+:root { color-scheme: light dark; font: 100%/1.5 system-ui, sans-serif; }
+main { max-width: 28rem; margin: 15vh auto; padding: 1.5rem; }
+h1 { font-size: 1.65rem; line-height: 1.2; }
+a { display: inline-block; padding: .65rem 1rem; border-radius: .45rem; background: CanvasText; color: Canvas; font-weight: 600; text-decoration: none; }
+a:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
+</style></head><body><main><h1>Sign in again</h1>
+<p>Acclimate could not verify this sign-in attempt. Start a new one to open your workspace.</p>
+<a href="/auth/login">Restart sign-in</a></main></body></html>`,
+    {
+      status: 400,
+      headers: {
+        'Cache-Control': 'no-store',
+        'Content-Type': 'text/html; charset=utf-8',
+        'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy':
+          "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+      },
+    },
+  );
+}
 function redirect(location: string, cookies: string[]) {
   const headers = new Headers({ Location: location, 'Cache-Control': 'no-store' });
   for (const value of cookies) headers.append('Set-Cookie', value);
@@ -125,7 +154,7 @@ export function createIdentityHandler(
         const destinations = url.searchParams.getAll('returnTo');
         const returnTo = destinations.length
           ? validateReturnDestination(destinations[0])
-          : '/setup';
+          : '/';
         if (!returnTo || destinations.length > 1)
           return response(400, 'Invalid sign-in destination.');
         if (flows.size >= 1000) return response(503, 'Sign-in is busy. Please retry shortly.');
@@ -152,8 +181,7 @@ export function createIdentityHandler(
         const state = url.searchParams.get('state') || '';
         const flow = flows.get(state);
         flows.delete(state); // Consume before any asynchronous exchange, including failed callbacks.
-        if (!flow || cookie(request, FLOW_COOKIE) !== flow.binding)
-          return response(400, 'Sign-in expired or could not be verified. Start again.');
+        if (!flow || cookie(request, FLOW_COOKIE) !== flow.binding) return expiredSignIn(request);
         const claims = await provider.claims(env, url, state, flow.verifier, flow.nonce);
         if (claims.iss !== env.CONSOLE_OIDC_ISSUER || !claims.sub || claims.sub.length > 512)
           throw new Error('Invalid identity');

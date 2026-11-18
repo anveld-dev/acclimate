@@ -1,6 +1,8 @@
 import { validateOperationTarget } from './operation-target';
 // Only submitted text lives here. Unresolved metadata outlives explicit text forgetting.
+const owners = ['draft', 'releases', 'improvement', 'library'] as const;
 export type PendingScope = {
+  owner: (typeof owners)[number];
   actorScope: string;
   projectId: string;
   bundleId?: string;
@@ -21,55 +23,29 @@ const PREFIX = 'acclimate:operation:v1:';
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_AGE = 24 * 60 * 60 * 1000;
 function slot(scope: PendingScope) {
-  return PREFIX + JSON.stringify(scope);
+  return (
+    PREFIX +
+    JSON.stringify([
+      scope.actorScope,
+      scope.serviceIdentity,
+      scope.projectId,
+      scope.bundleId,
+      scope.channel,
+      scope.owner,
+    ])
+  );
 }
 
-// Existing envelopes keep their exact storage keys. Compare fields rather than
-// serialization order when checking other pages for an unresolved submission.
 export function findRelatedPending(
   storage: PendingStorage,
   scope: PendingScope,
 ): PendingOperation | null {
-  const matches: PendingOperation[] = [];
-  for (let index = 0; index < storage.length; index++) {
-    const key = storage.key(index);
-    if (!key?.startsWith(PREFIX) || key === slot(scope)) continue;
-    const raw = storage.getItem(key);
-    if (!raw) continue;
-    let record: PendingOperation;
-    try {
-      record = JSON.parse(raw);
-    } catch {
-      continue;
-    }
-    if (!record || typeof record !== 'object') continue;
-    const other = record.scope;
-    if (
-      record.version !== 1 ||
-      !other ||
-      !/^[a-f0-9-]{36}$/i.test(record.key) ||
-      typeof record.action !== 'string' ||
-      !Number.isFinite(record.createdAt)
-    )
-      continue;
-    if (key !== slot(other)) continue;
-    if (
-      other.actorScope !== scope.actorScope ||
-      other.projectId !== scope.projectId ||
-      other.bundleId !== scope.bundleId ||
-      other.channel !== scope.channel
-    )
-      continue;
-    // Older draft editors used the already service-bound actor hash here.
-    if (
-      other.serviceIdentity !== scope.serviceIdentity &&
-      other.serviceIdentity !== other.actorScope &&
-      scope.serviceIdentity !== scope.actorScope
-    )
-      continue;
-    matches.push(record);
+  for (const owner of owners) {
+    if (owner === scope.owner) continue;
+    const record = loadPending(storage, { ...scope, owner });
+    if (record) return record;
   }
-  return matches.sort((a, b) => a.createdAt - b.createdAt || a.key.localeCompare(b.key))[0] ?? null;
+  return null;
 }
 export function loadPending(storage: PendingStorage, scope: PendingScope): PendingOperation | null {
   const raw = storage.getItem(slot(scope));
@@ -77,7 +53,8 @@ export function loadPending(storage: PendingStorage, scope: PendingScope): Pendi
   const record = JSON.parse(raw) as PendingOperation;
   if (
     record.version !== 1 ||
-    JSON.stringify(record.scope) !== JSON.stringify(scope) ||
+    !record.scope ||
+    slot(record.scope) !== slot(scope) ||
     !/^[a-f0-9-]{36}$/i.test(record.key) ||
     typeof record.action !== 'string' ||
     !Number.isFinite(record.createdAt)

@@ -1,11 +1,23 @@
 import './source-editor.css';
-import { useEffect, useState } from 'react';
+import './published-source.css';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
-import { Download, Search } from 'lucide-react';
+import {
+  Braces,
+  Code2,
+  Download,
+  Ellipsis,
+  Pencil,
+  Search,
+  ShieldCheck,
+  WrapText,
+} from 'lucide-react';
 import { Button } from './ui/button';
 import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupButton } from './ui/input-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { Label } from './ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { sourceLines } from '../lib/syntax-source';
 import { Badge } from './ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { FileGlyph, KindBadge, PathText, fileTitle } from './shared';
@@ -29,6 +41,16 @@ export function BundleContent({
   const [query, setQuery] = useState(typeof search.q === 'string' ? search.q : '');
   useEffect(() => setQuery(typeof search.q === 'string' ? search.q : ''), [search.q]);
   const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
+  const [view, setView] = useState('source');
+  const requestedSourceFocus = useRef<string | null>(null);
+  const [wrap, setWrap] = useState(true);
+  const inventory = useMemo(() => {
+    const encoder = new TextEncoder();
+    return state.payload.files.map((file) => ({
+      file,
+      bytes: encoder.encode(file.text).byteLength,
+    }));
+  }, [state.payload]);
   const searchTerm = String(search.q || '')
     .trim()
     .toLowerCase();
@@ -41,6 +63,25 @@ export function BundleContent({
   const filtered = Boolean(search.q);
   const requestedPath = typeof search.path === 'string' ? search.path : undefined;
   const selected = requestedPath ? files.find((file) => file.path === requestedPath) : files[0];
+  const lineCount = useMemo(
+    () => (selected ? sourceLines(selected.text).length : 0),
+    [selected?.text],
+  );
+  const version = state.resolution.version;
+  const selectedBytes = inventory.find((item) => item.file.path === selected?.path)?.bytes ?? 0;
+  const fileReference = selected
+    ? JSON.stringify(
+        {
+          projectId: scope.projectId,
+          bundleId: scope.bundleId,
+          versionId: version.id,
+          versionDigest: version.digest,
+          path: selected.path,
+        },
+        null,
+        2,
+      )
+    : '';
   const link = (values: Record<string, string | undefined>) =>
     bundleHref(scope, 'content', {
       path: typeof search.path === 'string' ? search.path : undefined,
@@ -60,8 +101,12 @@ export function BundleContent({
   }
   return (
     <div className="space-y-4">
-      <section data-testid="file-browser" className="content-workspace file-explorer-workspace">
+      <section
+        data-testid="file-browser"
+        className="content-workspace file-explorer-workspace published-source-workspace"
+      >
         <FileNavigator
+          collapsible
           count={files.length}
           totalCount={state.payload.files.length}
           filtered={filtered}
@@ -110,11 +155,12 @@ export function BundleContent({
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => {
+                onClick={async () => {
                   setQuery('');
-                  void router.navigate({
+                  await router.navigate({
                     href: link({ q: undefined, kind: undefined, path: undefined }),
                   });
+                  requestAnimationFrame(() => document.getElementById('file-search')?.focus());
                 }}
               >
                 Clear filters
@@ -154,7 +200,18 @@ export function BundleContent({
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <h2 className="break-words text-sm font-semibold">{fileTitle(selected)}</h2>
                       <div className="content-entry-metadata flex flex-wrap items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Published</span>
+                        <a
+                          className="published-revision-link text-xs text-muted-foreground"
+                          href={
+                            bundleHref(scope, 'releases') +
+                            '#revision-' +
+                            encodeURIComponent(state.resolution.revision)
+                          }
+                          aria-label={`Published · revision ${state.resolution.revision}, view release history`}
+                        >
+                          <span className="published-state-prefix">Published ·&nbsp;</span>revision{' '}
+                          {state.resolution.revision}
+                        </a>
                         <KindBadge kind={selected.kind} />
                         {!state.canEdit && <Badge variant="outline">Read only</Badge>}
                       </div>
@@ -174,26 +231,40 @@ export function BundleContent({
                     <Button asChild>
                       <ConsoleLink
                         href={bundleHref(scope, 'changes', { draft: 'new', path: selected.path })}
+                        aria-label="Edit entry"
+                        title="Edit entry"
                       >
-                        Edit entry
+                        <Pencil aria-hidden="true" className="compact-source-action-icon" />
+                        <span className="source-action-label">Edit entry</span>
                       </ConsoleLink>
                     </Button>
                   )}
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="outline" aria-label="Content actions">
-                        Actions
+                      <Button
+                        variant="outline"
+                        aria-label="Content actions"
+                        title="Content actions"
+                      >
+                        <Ellipsis aria-hidden="true" className="compact-source-action-icon" />
+                        <span className="source-action-label">Actions</span>
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent
                       align="end"
                       aria-label="Published entry actions"
-                      className="w-60 max-w-[calc(100vw-2rem)] gap-2"
+                      className="published-file-actions w-52 max-w-[calc(100vw-2rem)] gap-1"
                     >
-                      <div className="flex flex-col items-stretch gap-2 [&>span]:w-full">
+                      <div className="flex flex-col items-stretch gap-1 [&>span]:w-full">
                         <CopyButton
                           value={selected.text}
                           label="Copy content"
+                          size="default"
+                          className="w-full justify-between"
+                        />
+                        <CopyButton
+                          value={selected.path}
+                          label="Copy file path"
                           size="default"
                           className="w-full justify-between"
                         />
@@ -211,20 +282,160 @@ export function BundleContent({
                   </Popover>
                 </div>
               </header>
-              <div className="content-editor-body">
-                <SyntaxCode
-                  code={selected.text}
-                  path={selected.path}
-                  data-testid="entry-content"
-                  className="read-only-content text-sm leading-7"
-                  tabIndex={0}
-                  aria-label={`Content of ${selected.path}`}
-                />
-              </div>
+              <Tabs className="published-source-views" value={view} onValueChange={setView}>
+                <div className="published-reading-tools">
+                  <TabsList variant="line" aria-label="Published file view">
+                    <TabsTrigger value="source">
+                      <Code2 aria-hidden="true" />
+                      Source
+                    </TabsTrigger>
+                    <TabsTrigger value="manifest">
+                      <Braces aria-hidden="true" />
+                      Manifest
+                    </TabsTrigger>
+                  </TabsList>
+                  {view === 'source' && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="published-wrap-control"
+                      aria-pressed={wrap}
+                      onClick={() => setWrap(!wrap)}
+                    >
+                      <WrapText aria-hidden="true" />
+                      Wrap lines
+                    </Button>
+                  )}
+                </div>
+                <TabsContent value="source" className="content-editor-body">
+                  <SyntaxCode
+                    ref={(node) => {
+                      if (node && requestedSourceFocus.current === selected.path) {
+                        requestedSourceFocus.current = null;
+                        node.focus({ preventScroll: true });
+                      }
+                    }}
+                    lineNumbers
+                    wrap={wrap}
+                    code={selected.text}
+                    path={selected.path}
+                    data-testid="entry-content"
+                    className="read-only-content text-sm leading-7"
+                    tabIndex={0}
+                    aria-label={`Content of ${selected.path}`}
+                  />
+                  <div className="published-source-status">
+                    <span>
+                      <ShieldCheck aria-hidden="true" />
+                      Verified bundle
+                    </span>
+                    <span>
+                      {lineCount} {lineCount === 1 ? 'line' : 'lines'}
+                    </span>
+                    <span>
+                      {selectedBytes.toLocaleString()} UTF-8{' '}
+                      {selectedBytes === 1 ? 'byte' : 'bytes'}
+                    </span>
+                  </div>
+                </TabsContent>
+                <TabsContent value="manifest" className="published-source-manifest">
+                  <section className="published-manifest-provenance">
+                    <header>
+                      <h3>Published version</h3>
+                      <span>
+                        <ShieldCheck aria-hidden="true" />
+                        Verified bundle
+                      </span>
+                    </header>
+                    <dl>
+                      <dt>Channel</dt>
+                      <dd>
+                        {scope.channel} · Revision {state.resolution.revision}
+                      </dd>
+                      <dt>Version ID</dt>
+                      <dd>
+                        <code>{version.id}</code>
+                        <CopyButton value={version.id} label="Copy version ID" iconOnly />
+                      </dd>
+                      <dt>Bundle SHA-256</dt>
+                      <dd>
+                        <code>{version.digest}</code>
+                        <CopyButton value={version.digest} label="Copy bundle digest" iconOnly />
+                      </dd>
+                      <dt>Origin</dt>
+                      <dd>
+                        {state.source.kind === 'imported'
+                          ? 'Imported content'
+                          : state.source.kind === 'seeded-example'
+                            ? 'Seeded example'
+                            : 'Stored bundle'}
+                      </dd>
+                    </dl>
+                  </section>
+                  <section className="published-manifest-inventory">
+                    <header>
+                      <h3>Files in revision {state.resolution.revision}</h3>
+                      <span>
+                        {inventory.length} {inventory.length === 1 ? 'file' : 'files'}
+                      </span>
+                    </header>
+                    <div className="published-manifest-table-scroll">
+                      <table aria-label="Published file inventory">
+                        <thead>
+                          <tr>
+                            <th>Path</th>
+                            <th>Kind</th>
+                            <th>Bytes</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {inventory.map(({ file, bytes }) => (
+                            <tr
+                              key={file.path}
+                              data-selected={file.path === selected.path || undefined}
+                            >
+                              <td>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    requestedSourceFocus.current = file.path;
+                                    if (file.path !== selected.path)
+                                      await router.navigate({
+                                        href: link({ path: file.path, q: undefined, kind: undefined }),
+                                      });
+                                    setView('source');
+                                  }}
+                                  aria-label={`Read source for ${file.path}`}
+                                >
+                                  <PathText value={file.path} />
+                                </button>
+                              </td>
+                              <td>{file.kind}</td>
+                              <td>{bytes.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                  <section className="published-manifest-reference">
+                    <header>
+                      <h3>Selected file reference</h3>
+                      <CopyButton value={fileReference} label="Copy file reference" />
+                    </header>
+                    <SyntaxCode
+                      code={fileReference}
+                      language="json"
+                      aria-label="Immutable file reference"
+                      className="published-reference-code"
+                    />
+                  </section>
+                </TabsContent>
+              </Tabs>
             </>
           ) : (
             <div className="space-y-3 p-4">
-              <p className="text-sm text-muted-foreground">
+              <p className="break-words text-sm text-muted-foreground">
                 {requestedPath
                   ? `“${requestedPath}” ${filtered ? 'isn’t in these search results' : 'isn’t available in this channel'}. Choose an entry from the list.`
                   : filtered
@@ -233,10 +444,20 @@ export function BundleContent({
                       ? 'Add your first entry in a draft, then save and review its release.'
                       : 'Published content will appear here after an editor releases it.'}
               </p>
-              {requestedPath && (
-                <Button variant="outline" asChild>
-                  <ConsoleLink href={link({ path: undefined })}>Clear selection</ConsoleLink>
-                </Button>
+              {filtered && <p className="break-all text-sm">Search for “{String(search.q)}”</p>}
+              {(filtered || requestedPath) && (
+                <div className="flex flex-wrap gap-2">
+                  {filtered && (
+                    <Button variant="outline" asChild>
+                      <ConsoleLink href={link({ q: undefined })}>Clear search</ConsoleLink>
+                    </Button>
+                  )}
+                  {requestedPath && (
+                    <Button variant="outline" asChild>
+                      <ConsoleLink href={link({ path: undefined })}>Clear selection</ConsoleLink>
+                    </Button>
+                  )}
+                </div>
               )}
               {!requestedPath && !filtered && state.canEdit && (
                 <Button asChild>

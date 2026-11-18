@@ -8,6 +8,8 @@ class ProviderFixture:
     def __init__(self):
         self.mode = 'valid'
         self.requests = []
+        self.returned_edits = []
+        self.replacement = lambda request: 'Review retries and duplicated effects.'
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -24,12 +26,13 @@ class ProviderFixture:
                 prompt = json.loads(request['messages'][0]['content'])
                 target = 'memory/team.md' if owner.mode == 'outside-paths' else prompt['request']['allowedPaths'][0]
                 original = next(entry['text'] for entry in prompt['parent']['files'] if entry['path'] == target)
-                edit = dict(path=target, oldText=original, newText='Review retries and duplicated effects.')
+                edit = dict(path=target, oldText=original, newText=owner.replacement(prompt['request']))
                 response = json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(dict(schemaVersion=1, edits=[edit], rationale='Deterministic fixture edit; no quality claim.'))}}]}).encode()
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.send_header('Content-Length', str(len(response)))
                 self.end_headers()
+                owner.returned_edits.append(edit)
                 self.wfile.write(response)
 
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)

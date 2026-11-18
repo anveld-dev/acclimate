@@ -162,3 +162,36 @@ def create_app_reporter():
 # Drain and close the reporter when the job ends.`,
   };
 }
+
+/** Verify the selected channel using the actual runtime plugin without starting a model. */
+export function nativeDeliveryRecipe(
+  selection: { projectId: string; bundleId: string; channel: string },
+  runtime: 'codex' | 'claude' | 'pi' | 'cursor',
+) {
+  return `import { AcclimateClient, resolveAndCache } from '@acclimate/sdk';
+import { prepare } from '@acclimate/${runtime}-plugin';
+
+for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE', 'ACCLIMATE_CACHE']) {
+  if (!process.env[key]) throw new Error('Set ' + key);
+}
+const client = new AcclimateClient({
+  baseUrl: process.env.ACCLIMATE_URL,
+  token: process.env.ACCLIMATE_TOKEN,
+  scope: process.env.ACCLIMATE_SCOPE,
+});
+const selection = ${JSON.stringify(selection, null, 2)};
+const bundle = await resolveAndCache(client, selection, { cacheDir: process.env.ACCLIMATE_CACHE });
+const prepared = await prepare(bundle);
+try {
+  console.log({
+    version: prepared.versionId,
+    digest: prepared.digest,
+    instructionPrepared: prepared.instructionPath !== null,
+    skillManifests: prepared.skillPaths.length,
+    memoryFiles: prepared.memoryFiles.length,
+  });
+} finally {
+  await prepared.cleanup();
+}
+`;
+}

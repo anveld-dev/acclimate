@@ -68,12 +68,12 @@ fn state(db: sqlx::PgPool, project: String) -> AppState {
         provider: None,
     }
 }
-async fn fixture() -> Option<(sqlx::PgPool, AppState, String)> {
-    let url = std::env::var("ACCLIMATE_TEST_DATABASE_URL").ok()?;
+async fn fixture() -> (sqlx::PgPool, AppState, String) {
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let project = format!("production-{}", Uuid::new_v4());
-    Some((db.clone(), state(db, project.clone()), project))
+    (db.clone(), state(db, project.clone()), project)
 }
 async fn login(app: &axum::Router, subject: &str, previous: Option<&str>) -> Value {
     let result = call(
@@ -131,10 +131,9 @@ async fn transport_is_classified_before_any_session_lookup() {
     assert_eq!(impersonation.1["error"]["code"], "invalid_session");
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn exact_issuer_account_switch_revocation_and_typed_logout() {
-    let Some((_db, s, _p)) = fixture().await else {
-        return;
-    };
+    let (_db, s, _p) = fixture().await;
     let app = router(s);
     let invalid = call(
         &app,
@@ -198,10 +197,9 @@ async fn exact_issuer_account_switch_revocation_and_typed_logout() {
     );
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn adoption_is_explicit_serialized_immutable_and_never_regrants() {
-    let Some((db, s, p)) = fixture().await else {
-        return;
-    };
+    let (db, s, p) = fixture().await;
     acclimate_service::backfill_projects(&s).await.unwrap();
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM project_memberships WHERE project_id=$1")
@@ -336,10 +334,9 @@ async fn adoption_is_explicit_serialized_immutable_and_never_regrants() {
     assert_eq!(not_found.0, StatusCode::NOT_FOUND);
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn listing_projects_is_read_only() {
-    let Some((db, s, p)) = fixture().await else {
-        return;
-    };
+    let (db, s, p) = fixture().await;
     let result = call(
         &router(s),
         "GET",
@@ -359,10 +356,9 @@ async fn listing_projects_is_read_only() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn explicit_prefixed_console_authority_resolves_content_and_rejects_dot_workspaces() {
-    let Some((db, mut s, p)) = fixture().await else {
-        return;
-    };
+    let (db, mut s, p) = fixture().await;
     let console = "aci_explicit-console-authority";
     s.access = Arc::new(
         AccessConfig::new(
@@ -413,7 +409,7 @@ async fn explicit_prefixed_console_authority_resolves_content_and_rejects_dot_wo
         .execute(&db)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO versions(id,project_id,bundle_id,digest,payload) VALUES($1,$2,$3,'test-digest',$4)").bind(version).bind(&p).bind(bundle).bind(br#"{"schemaVersion":1,"files":[]}"#.to_vec()).execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO versions(id,project_id,bundle_id,digest,payload,created_by) VALUES($1,$2,$3,'test-digest',$4,'fixture-author')").bind(version).bind(&p).bind(bundle).bind(br#"{"schemaVersion":1,"files":[]}"#.to_vec()).execute(&db).await.unwrap();
     sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'stable',1,$3)").bind(&p).bind(bundle).bind(version).execute(&db).await.unwrap();
     for path in [
         format!("/v1/projects/{p}/bundles/{bundle}/channels/stable"),

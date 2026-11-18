@@ -201,6 +201,9 @@ def library(w,b,e,expected):
         actual={}
         for bundle_id,(name,channels) in expected.items():
             row=rows.filter(has=p.get_by_role('heading',name=name,exact=True));expect(row).to_have_count(1)
+            more=row.get_by_role('button',name=re.compile('Other channels'))
+            if more.count():
+                more.click()
             hrefs=row.get_by_role('link').evaluate_all('els=>els.map(el=>({text:el.textContent.trim(),href:el.getAttribute("href")}))')
             expected_links={c:b.bundle_path('content',bundle_id=bundle_id,channel=c) for c in channels}
             for channel,href in expected_links.items():
@@ -208,12 +211,15 @@ def library(w,b,e,expected):
             if not channels:
                 expect(row.get_by_role('link')).to_have_count(0);expect(row.get_by_text('No published channels',exact=True)).to_be_visible()
             else:
-                assert len(hrefs)==len(channels)+1,hrefs
+                for channel in channels:
+                    revision=row.get_by_role('link',name=f'Revision 1 on {channel} for {name}',exact=True)
+                    expect(revision).to_have_attribute('href',b.bundle_path('releases',bundle_id=bundle_id,channel=channel)+'#revision-1')
+                assert len(hrefs)==len(channels)*2+1,hrefs
                 assert row.get_by_role('link',name=name,exact=True).get_attribute('href') in expected_links.values()
             actual[name]=hrefs
         metrics=e.capture(p,f'{width}-library-inventory')
         bounds=p.locator('.bundle-library').evaluate('''el=>{const r=el.getBoundingClientRect(),h=el.querySelector('h1').getBoundingClientRect();return {x:r.x,width:r.width,right:r.right,headingX:h.x}}''')
-        assert bounds['width']<=1024+1,bounds
+        assert 0<=bounds['x']<bounds['right']<=width+1,bounds
         assert abs(bounds['x']-bounds['headingX'])<2,bounds
         assert not metrics['violations'],metrics['violations']
         p.get_by_label('Find a bundle',exact=True).fill('no channels');expect(rows).to_have_count(1)

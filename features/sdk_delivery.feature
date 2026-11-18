@@ -9,15 +9,15 @@ Feature: Application SDK delivery
   Scenario: Resolve and prepare real files from a verified release
     When an application resolves and prepares the stable release
     Then its prepared instruction file contains "Review code."
-    And its selected version and digest match the release
+    And its selected version and digest match the original release
 
   @SDK-02
-  Scenario: An existing pinned workspace stays unchanged after publication
-    Given an application resolved and prepared the stable release
-    And I have saved a draft containing "Review retries."
+  Scenario: A fresh job can request the original version by ID after publication
+    Given I have saved a draft containing "Review retries."
     When I published the saved draft manually
-    And the application fetches its original immutable pin
+    And a fresh job requests the original version by ID
     Then its prepared instruction file contains "Review code."
+    And its selected version and digest match the original release
     And the latest channel still contains the newer release
 
   @SDK-03
@@ -47,7 +47,13 @@ Feature: Application SDK delivery
     Given I created an integration for this bundle and channel
     And I issued a content-read credential
     And that integration cached the published release
-    When I revoke that credential
+    When the service becomes unavailable
+    And that integration requests bounded offline delivery
+    Then its prepared instruction file contains "Review code."
+    And its selected version and digest match the original release
+    And the returned mapping is marked stale
+    When the service restarts
+    And I revoke that credential
     And that integration requests bounded offline delivery
     Then delivery is denied despite the cached files
 
@@ -90,10 +96,12 @@ Feature: Application SDK delivery
       | explicit | 1     |
 
   @SDK-12
-  Scenario: Reporting outages do not prevent content delivery
-    When an application prepares content with an unavailable reporting credential
-    Then its prepared instruction file contains "Review code."
-    And no delivery success is invented by the service
+  Scenario: A temporary reporting outage preserves the original prepared receipt
+    Given I created an integration for this bundle and channel
+    And I issued both credential kinds
+    When the application prepares content during a reporting outage and recovers within the retry window
+    Then the prepared file is usable while the service has no receipt for it
+    And recovery records the original prepared event exactly once
 
   @SDK-13
   Scenario: Reporter stages reflect explicit application actions
@@ -105,8 +113,10 @@ Feature: Application SDK delivery
   @SDK-14
   Scenario: Expired queued observations are dropped instead of reminted
     Given I created an integration for this bundle and channel
-    When an undelivered observation ages past the retry window
-    Then the queue is empty and no report was recorded
+    And I issued both credential kinds
+    When the application prepares content during a reporting outage and recovers after the retry window
+    Then the prepared file is usable while the service has no receipt for it
+    And recovery drops every expired event without sending another request
 
   @SDK-15
   Scenario: A mutating failed grader does not change the next grading attempt

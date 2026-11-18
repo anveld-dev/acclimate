@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   bundleDetailLabel,
+  releaseRevision,
   bundleHref,
   bundleViewLabels,
   channelSwitchSearch,
@@ -86,4 +87,31 @@ test('bundle breadcrumbs identify the current detail using short labels', () => 
   );
   assert.equal(bundleDetailLabel('changes', { draft: 42, candidate: {} }), undefined);
   assert.equal(bundleDetailLabel('connect', { draft: 'unused' }), undefined);
+});
+
+test('release return locations use positive 64-bit revisions and drop them on channel switch', () => {
+  for (const [value, normalized] of [
+    [1, '1'],
+    ['42', '42'],
+    ['9223372036854775807', '9223372036854775807'],
+  ]) {
+    assert.equal(releaseRevision(value), normalized);
+  }
+  for (const invalid of [
+    undefined,
+    0,
+    '-1',
+    '01',
+    1.5,
+    {},
+    'other/channel',
+    '9223372036854775808',
+    1e30,
+  ]) {
+    assert.equal(releaseRevision(invalid), undefined);
+  }
+  assert.deepEqual(
+    channelSwitchSearch('changes', { candidate: 'v', history: 1, tab: 'files', fromRevision: 4 }),
+    { candidate: 'v', history: 1, tab: 'files' },
+  );
 });

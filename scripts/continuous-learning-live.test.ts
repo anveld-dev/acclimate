@@ -72,21 +72,22 @@ test('grounded execution validates policy and abstains on unsupported or conflic
 });
 
 test('grounded prompts include documentation only for the established interface', async () => {
-  const infer = (present: boolean) => async (prompt: string) => {
-    assert.equal(prompt.includes('Established interface documentation v1'), present);
-    if (present) {
-      assert.match(prompt, /for checkout: httpStatus 200 reports a processor posting/);
-      assert.doesNotMatch(prompt, /settlementCode/);
+  for (const transport of ['checkout', 'other']) {
+    const prompts: string[] = [];
+    await assert.rejects(groundedExecution(fixturePolicy, {
+      requestKey: 'example', signal: { transport, httpStatus: 500 },
+    }, async (prompt) => {
+      prompts.push(prompt);
+      return { completion: null, delivery: null, preDispatch: null };
+    }), { reason: 'unknown' });
+    assert.equal(prompts.length, 1);
+    if (transport === 'checkout') {
+      assert.match(prompts[0], /Established interface documentation v1 for checkout: httpStatus 200 reports a processor posting/);
+      assert.doesNotMatch(prompts[0], /settlementCode/);
+    } else {
+      assert.doesNotMatch(prompts[0], /Established interface documentation v1/);
     }
-    return { completion: null, delivery: null, preDispatch: null };
-  };
-  const requestKey = 'example';
-  await assert.rejects(groundedExecution(fixturePolicy, {
-    requestKey, signal: { transport: 'checkout', httpStatus: 500 },
-  }, infer(true)), { reason: 'unknown' });
-  await assert.rejects(groundedExecution(fixturePolicy, {
-    requestKey, signal: { transport: 'other', httpStatus: 500 },
-  }, infer(false)), { reason: 'unknown' });
+  }
 });
 
 test('live proposals use Sol and simulated jobs use Luna at the Codex CLI boundary', async (t) => {

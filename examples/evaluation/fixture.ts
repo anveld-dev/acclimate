@@ -85,23 +85,6 @@ export function fixture(
       retainedEvaluationOperations: true,
     }),
     getComparison: async () => structuredClone(savedComparison),
-    getOperation: async (_p: string, key: string, operationPath: string) => {
-      const body = reports.get(key);
-      return body
-        ? {
-            status: 'committed',
-            operationId: key,
-            path: operationPath,
-            requestFingerprint:
-              'sha256:' +
-              createHash('sha256')
-                .update('POST\0' + operationPath + '\0' + body)
-                .digest('hex'),
-            result: savedComparison,
-          }
-        : { status: 'not_observed', operationId: key };
-    },
-    closeOperation: async () => ({ status: 'committed' }),
     getEvaluation: async () => structuredClone(request),
     getVersion: async (_p: string, _b: string, id: string) => version(id),
     getPayload: async (_p: string, _b: string, id: string) => bytes.get(id)!,

@@ -28,6 +28,7 @@ def disabled(context):
 @when('I request a proposal that may edit only "{path}"')
 def propose(context, path):
     w = context.world
+    w.proposal_parent = w.call('GET', w.bundle + '/versions/' + w.original['version']['id'] + '/payload')
     w.proposal = w.call('POST', w.bundle + '/proposals', dict(parentVersionId=w.original['version']['id'],allowedPaths=[path],hypothesis='Improve retry review.',evidence=['Explicit authorized fixture evidence.']))
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
@@ -44,11 +45,16 @@ def candidate(context, path):
     assert w.proposal['status'] == 'succeeded'
     candidate = w.proposal['candidate']
     assert candidate['parentVersionId'] == w.original['version']['id']
-    before = w.call('GET', w.bundle + '/versions/' + w.original['version']['id'] + '/payload')
+    parent = w.call('GET', w.bundle + '/versions/' + w.original['version']['id'] + '/payload')
+    assert parent == w.proposal_parent, 'Proposal generation changed the published parent'
     after = w.call('GET', w.bundle + '/versions/' + candidate['id'] + '/payload')
-    changed = [entry['path'] for entry, original in zip(after['files'], before['files']) if entry != original]
-    assert changed == [path]
-    assert after['files'][0]['text'] == 'Review retries and duplicated effects.'
+    expected = {entry['path']: entry for entry in w.proposal_parent['files']}
+    revised_text = 'Review retries and duplicated effects.'
+    assert expected[path]['text'] != revised_text
+    expected[path] = dict(expected[path], text=revised_text)
+    actual = {entry['path']: entry for entry in after['files']}
+    assert len(after['files']) == len(actual), 'Candidate contains duplicate paths'
+    assert actual == expected, (actual, expected)
     assert w.proposal['rationale']
 
 
@@ -58,6 +64,21 @@ def failed(context):
     assert w.proposal['status'] == 'failed'
     assert w.proposal['candidate'] is None
     assert w.proposal['error']
+
+
+@then('the service rejects the returned memory edit as outside the allowed paths')
+def rejected_path(context):
+    w = context.world
+    assert dict(path='memory/team.md', oldText='Approved shared project context.',
+                newText='Review retries and duplicated effects.') in w.provider.returned_edits
+    assert w.proposal['error'] == 'provider edit is outside allowed paths', w.proposal['error']
+
+
+@then('the service reports a provider request failure')
+def failed_request(context):
+    w = context.world
+    assert w.provider.requests and not w.provider.returned_edits
+    assert w.proposal['error'] == 'provider request failed', w.proposal['error']
 
 
 @then('the same proposal is discoverable in the scoped proposal list')

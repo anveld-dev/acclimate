@@ -1,10 +1,10 @@
 # Productization implementation
 
-> Earlier implementation record. Production startup, identity and evaluator setup now follow the [production-only plan](../../production-only/plan.md). Old local-launcher commands below are retired.
+> Earlier implementation record. Evaluation completion now requires evidence bound to the exact request and attempt. Production startup, identity and evaluator setup now follow the [production-only plan](../../production-only/plan.md). Old local-launcher commands below are retired.
 
 The [2026-11-14 audit](../current-audit.md) led to the reviewed [fix plan](plan.md), [review decisions](review.md) and [parallel implementation](parallel-work.md). The A01–A22 local changes are complete. **The final run passed all 132 behaviors, 171 scenarios and 814 steps, with no skips.** Focused Rust, SDK, console, Python and evaluator checks also passed. The later [UI pass](../ui-improvements.md#implementation-evidence) expanded coverage to 141 behaviors and 183 scenarios, all passing. External qualification remains separate in the [shipping ledger](shipping-evidence.md).
 
-The service still owns content, frozen evaluation intent, evidence and deliberate releases. Apps own execution and grading. Native drafts can be saved incomplete and repaired; publishing validates the immutable compatibility target. Uncertain writes retain an exact submitted snapshot and support reconciliation, exact retry and authenticated close. Legacy unbound evaluations remain compatible and labeled.
+The service still owns content, frozen evaluation intent, evidence and deliberate releases. Apps own execution and grading. Native drafts can be saved incomplete and repaired; publishing validates the immutable compatibility target. Uncertain writes retain an exact submitted snapshot and support reconciliation, exact retry and authenticated close. Standalone comparisons remain available for inspection and direct promotion.
 
 ## Local acceptance matrix
 
@@ -39,15 +39,13 @@ These rows map the audit IDs from the [plan](plan.md#coverage-of-the-audit) to l
 
 The console offers payment retry simulation, file presence, native Codex/Luna review, or a bounded public configuration from your app. Custom JSON declares dataset/grader revisions, runtime `configId`/`configRevision` and settings, and expected case/repetition identities. It carries no credentials, case contents or executable loader.
 
-Selecting a profile or creating its strict request runs nothing. The app's installed adapter must match the frozen configuration. For the three included adapters, the console copies the matching command:
+Creating a request freezes its evaluation configuration. Run the matching adapter on the evaluator machine with an explicit private configuration. For the included native review adapter:
 
 ```sh
-npm run evaluate:local -- --bundleID UUID --requestID UUID
-npm run evaluate:local -- --bundleID UUID --requestID UUID --adapter presence-contract
-npm run evaluate:local -- --bundleID UUID --requestID UUID --adapter codex-luna-review --live
+npm run evaluate:app -- --config /absolute/private/evaluator.json --bundleID UUID --requestID UUID --adapter codex-luna-review --live
 ```
 
-The first uses payment-policy traces and no model. Presence checks file contracts. Native review requires the explicit `--live` invocation and configured Codex/Luna access. An unrelated custom configuration is handed to its own installed app runner; it does not receive a misleading local command. See [the adapter guide](../../../../examples/evaluation/README.md) and [console guide](../../../../apps/console/README.md).
+See the [installed adapter guide](../../../../examples/evaluation/README.md) for credentials, journals and live execution requirements.
 
 Complete losing evidence remains complete. Neither the simulator nor a narrow native run establishes statistical improvement. No package publication or deployment is part of local completion; [shipping evidence](shipping-evidence.md) is the source for exact qualified scope and remaining gates.
 

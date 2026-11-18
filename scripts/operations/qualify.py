@@ -69,10 +69,11 @@ try:
         )
     sql(
         """
+      INSERT INTO projects(id,name) VALUES ('ops','Backup qualification');
       INSERT INTO bundles(id,project_id,name) VALUES ('00000000-0000-0000-0000-000000000001','ops','backup fixture');
       INSERT INTO versions(id,project_id,bundle_id,digest,payload,created_by) VALUES
        ('00000000-0000-0000-0000-000000000002','ops','00000000-0000-0000-0000-000000000001','digest',decode('00ff0a726573746f7265','hex'),'author');
-      INSERT INTO channels VALUES ('ops','00000000-0000-0000-0000-000000000001','stable',1,'00000000-0000-0000-0000-000000000002');
+      INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES ('ops','00000000-0000-0000-0000-000000000001','stable',1,'00000000-0000-0000-0000-000000000002');
       INSERT INTO promotions(id,project_id,bundle_id,channel,revision,version_id,unevaluated_reason,reviewer) VALUES
        ('00000000-0000-0000-0000-000000000003','ops','00000000-0000-0000-0000-000000000001','stable',1,'00000000-0000-0000-0000-000000000002','fixture','reviewer');
       INSERT INTO comparisons(id,project_id,bundle_id,body,complete,submitter) VALUES

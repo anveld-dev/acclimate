@@ -9,11 +9,10 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn workspace_membership_and_session_revocation() {
     // Explicit isolated test database only; never use a developer/demo DATABASE_URL.
-    let Ok(url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
-        return;
-    };
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let project = format!("access-{}", Uuid::new_v4());

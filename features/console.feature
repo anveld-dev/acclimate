@@ -102,13 +102,13 @@ Feature: Work with content through the console
     Then a new browser draft starts with "New current instructions."
 
   @UI-EVAL-01
-  Scenario: Review and publish a saved snapshot after actual app-owned fixture evaluation
+  Scenario: A reviewer overrides a failed policy to publish the evaluated snapshot
     Given a published bundle containing "Review code."
     And I opened its Content page
     When I save a browser draft and request its evaluation
     And the test application runs the downloaded handoff using the displayed command
-    And I inspect the comparison and publish through the console
-    Then the released version is exactly the evaluated saved snapshot
+    And I review the failed policy and publish with an override reason
+    Then the release records the evaluated snapshot, overridden policy and reviewer reason
 
   @UI-EVAL-02
   Scenario: Incomplete evidence shows all missing grades and unknown cost
@@ -162,6 +162,18 @@ Feature: Work with content through the console
     When I inspect the old release and restore it through the console
     Then the original content is current at revision 3 with the restore reason
 
+  @UI-RELEASE-03
+  Scenario: Review the new current release before retrying a stale restore
+    Given a published bundle containing "Review code."
+    And I have saved a draft containing "Review retries."
+    And I published the saved draft manually
+    When I open a restore of revision 1 against revision 2
+    And another operator publishes "Review retry limits."
+    And I confirm the restore I reviewed
+    Then the console explains the conflict and the other operator's revision 3 still serves
+    When I review the current release and confirm a new restore against revision 3
+    Then exactly one restore follows the other operator's release in history
+
   @UI-INTEGRATION-01
   Scenario: Issue a one-time credential and revoke it through the console
     Given a published bundle containing "Review code."
@@ -169,6 +181,74 @@ Feature: Work with content through the console
     Then its secret is shown once and missing delivery is labelled unknown
     When I close the secret dialog and revoke that credential
     Then the closed secret is not displayed and its next fetch is denied
+
+  @UI-LEARNING-01 @provider_fixture
+  Scenario: Refresh a stale rollout approval and acknowledge both blocking policies
+    Given a published bundle containing "Review code."
+    And I signed in as the configured operator
+    And I created an integration for this bundle and channel
+    And I issued a content-read credential
+    And its audited candidate is awaiting rollout with one blocking policy
+    When the reviewer opens the rollout dialog and acknowledges the first policy
+    And the evaluator records another blocking policy before the reviewer confirms
+    And the reviewer submits the open rollout dialog
+    Then the console explains the conflict and the connection still serves the original revision
+    When the reviewer refreshes learning status and reviews both policies
+    And the reviewer approves with a new reason
+    Then exactly one release records the candidate, reviewer, new reason and both receipts
+
+  @UI-LEARNING-05 @provider_fixture
+  Scenario: A competing reviewer sees the decision that already released the candidate
+    Given a published bundle containing "Review code."
+    And I signed in as the configured operator
+    And I created an integration for this bundle and channel
+    And I issued a content-read credential
+    And its audited candidate is awaiting rollout with one blocking policy
+    When the reviewer opens the rollout dialog and acknowledges the first policy
+    And a different reviewer approves that candidate and retries the recorded decision
+    And the reviewer submits the open rollout dialog
+    Then the console identifies the reviewer and reason that won the race
+    And the release retains one decision even if its author sends a different acknowledgment
+
+  @UI-LEARNING-02 @provider_fixture
+  Scenario: Trace a failed job to the withdrawn release and its independent audit
+    Given a published bundle containing "Review code."
+    And I signed in as the configured operator
+    And I created an integration for this bundle and channel
+    And I issued a content-read credential
+    And I issued a receipt-write credential
+    And an independently graded field job triggered automatic rollback
+    When I look up the triggering job on the connection
+    Then its outcome identifies the withdrawn release, the restored revision and the triggering verdict
+    When I follow its audit evidence
+    Then the console opens the independent audit for the exact served candidate
+    When I return and look up the job graded after the rollback
+    Then its regression identifies the same withdrawn release without claiming it triggered rollback
+
+  @UI-LEARNING-03 @provider_fixture
+  Scenario: A reviewer traces a rejected rollout to the regressed audit case
+    Given a published bundle containing "Review code."
+    And I signed in as the configured operator
+    And I created an integration for this bundle and channel
+    And I issued a content-read credential
+    And a candidate improved development but lost a protected code-review instruction in audit
+    When I open the rejected round on the connection
+    Then I see the audit rejection reason and cannot approve that round
+    When I follow the round's audit evidence to the regressed case
+    Then the case shows the parent earned 1 and the candidate earned 0
+    And the next application job uses the original revision and instructions
+
+  @UI-LEARNING-04 @provider_fixture
+  Scenario: Stopping learning during a passing audit prevents a late automatic rollout
+    Given a published bundle containing "Review code."
+    And I signed in as the configured operator
+    And I created an integration for this bundle and channel
+    And I issued a content-read credential
+    And an automatic rollout is waiting for its evaluator to finish a passing audit
+    When I confirm Stop learning on the connection
+    And the evaluator delivers the late audit completion and the service restarts
+    Then the stopped connection shows a rejected round and assigns no further work
+    And the next application job uses the original revision and instructions
 
   @UI-STATUS-01
   Scenario: A failed refresh shows the last observation without displaying stale content as current
@@ -269,9 +349,12 @@ Feature: Work with content through the console
     Then the published entry becomes "Updated policy." without a refresh control
 
   @UI-POLL-02
-  Scenario: Background updates leave unsaved draft text alone
+  Scenario: Keep an unsaved edit across publication and see the latest content after discarding it
     Given a published bundle containing "Review code."
     And I opened its Content page
-    When I type an unsaved change for the background update check
+    When I type "My unfinished review." in a new draft
     And another operator publishes "Updated policy."
-    Then background updates keep my unsaved text
+    And I return to Content but choose to keep editing
+    Then the draft editor still contains "My unfinished review."
+    When I discard the unsaved edit and return to Content
+    Then the published entry shows "Updated policy." and no draft was saved

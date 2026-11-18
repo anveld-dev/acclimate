@@ -44,7 +44,7 @@ The campaign retains a finite roster of audit cohorts and consumes exposure befo
 
 Audit exhaustion stops further audited release work. Open an enrolled campaign with `startEpoch: { previousDefinitionDigest }`, a new policy epoch and a fresh roster to explicitly replace the frozen definition. The journal must have no outstanding operation, pending review or unapplied inbox command and must be waiting or blocked for audit refresh. The migration retains operation and decision history, budget totals, audit exposures, command cursor and stop state. It starts a new round allowance and clears queued teaching from the old policy epoch. The earlier installation can no longer submit or advance work. Resume only changes the stop state.
 
-Legacy journals using unchanged custom adapters without bound selection policies can reopen and keep their retained operations, reviews and campaign-local exposure history. The current Acclimate adapter refuses legacy journals without verifiable selection thresholds with `definition-conflict`. Keep the checkpoint and evidence, and use the original installation to settle or reconcile outstanding work. Epoch migration requires existing enrollment in the same shared lineage. Each candidate is a direct child of its round's published baseline. The reviewer remains subject to the channel's current-parent and expected-revision requirements.
+Reopen a campaign with its original definition and a checkpoint written in the current format. Epoch migration requires existing enrollment in the same shared lineage. Each candidate is a direct child of its round's published baseline. The reviewer remains subject to the channel's current-parent and expected-revision requirements.
 
 ## Qualification
 

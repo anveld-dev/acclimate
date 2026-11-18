@@ -1,9 +1,8 @@
 //! Chronological list policy and scoped cursors. Timestamps preserve PostgreSQL microseconds.
-use crate::{ApiResult, db, err};
+use crate::{ApiResult, err};
 use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 #[derive(Deserialize, Default)]
@@ -85,38 +84,13 @@ pub(crate) fn encode(
         hex::encode(serde_json::to_vec(&cursor).expect("cursor serialization"))
     )
 }
-pub(crate) async fn resolve(
-    tx: &mut Transaction<'_, Postgres>,
+pub(crate) fn decode(
     collection: &str,
     project: &str,
     bundle: Uuid,
     value: Option<&str>,
 ) -> ApiResult<Option<(DateTime<Utc>, Uuid)>> {
     let Some(value) = value else { return Ok(None) };
-    if let Ok(id) = Uuid::parse_str(value) {
-        // Legacy UUID cursors resolve only inside the selected collection and scope.
-        let query = match collection {
-            "evaluation_requests" => {
-                "SELECT created_at,id FROM evaluation_requests WHERE project_id=$1 AND bundle_id=$2 AND id=$3"
-            }
-            "proposals" => {
-                "SELECT created_at,id FROM proposals WHERE project_id=$1 AND bundle_id=$2 AND id=$3"
-            }
-            "comparisons" => {
-                "SELECT created_at,id FROM comparisons WHERE project_id=$1 AND bundle_id=$2 AND id=$3"
-            }
-            _ => return Err(invalid()),
-        };
-        return sqlx::query_as(query)
-            .bind(project)
-            .bind(bundle)
-            .bind(id)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(db)?
-            .map(Some)
-            .ok_or_else(invalid);
-    }
     if value.len() > 4096 {
         return Err(invalid());
     }

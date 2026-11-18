@@ -11,7 +11,7 @@ export interface BundlePayload {
   files: BundleFile[];
 }
 export interface Bundle {
-  compatibilityTarget?: CompatibilityTarget;
+  compatibilityTarget: CompatibilityTarget;
   id: string;
   name: string;
   projectId: string;
@@ -257,7 +257,7 @@ export interface DraftSnapshot {
   version: VersionMetadata;
 }
 export interface EvaluationRequest {
-  requireBoundEvidence?: boolean;
+  requireBoundEvidence?: true;
   parentVersionId: string;
   parentDigest: string;
   candidateVersionId: string;
@@ -269,6 +269,7 @@ export interface EvaluationRequest {
   proposalId?: string | null;
 }
 export interface Evaluation extends EvaluationRequest {
+  requireBoundEvidence: true;
   id: string;
   proposalId: string | null;
   status: 'requested' | 'running' | 'completed' | 'failed' | 'interrupted';

@@ -20,11 +20,23 @@ function JoinWorkspace() {
       ? 'This invitation has already been accepted.'
       : 'This invitation has expired or was revoked. Ask an administrator for a new one.';
   return (
-    <div className="mx-auto w-full max-w-xl space-y-5 py-8">
+    <div className="mx-auto w-full max-w-xl space-y-5 rounded-xl border bg-card p-5 sm:p-8">
       <PageTitle
         title={invitation ? `Join ${invitation.projectName}` : 'Workspace invitation'}
-        description={invitation ? `Invited as ${invitation.role} · ${invitation.email}` : ''}
+        description=""
       />
+      {invitation && (
+        <dl className="grid gap-3 rounded-lg bg-muted p-4 text-sm sm:grid-cols-[minmax(0,1fr)_auto]">
+          <div>
+            <dt className="text-muted-foreground">Invited account</dt>
+            <dd className="mt-1 break-all font-medium">{invitation.email}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Workspace role</dt>
+            <dd className="mt-1 font-medium capitalize">{invitation.role}</dd>
+          </div>
+        </dl>
+      )}
       {!result.ok ? (
         <p role="alert">{result.message}</p>
       ) : !active ? (

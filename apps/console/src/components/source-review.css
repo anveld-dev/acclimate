@@ -60,3 +60,10 @@
   max-height: none;
   overflow: visible;
 }
+
+.diff-line-counts {
+  display: inline-flex;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}

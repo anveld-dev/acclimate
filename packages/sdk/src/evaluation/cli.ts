@@ -755,7 +755,6 @@ async function runCommand(
       [
         'execution.uncertain',
         'submission.unconfirmed',
-        'legacy.submission_unconfirmed',
         'journal.busy',
         'journal.foreign',
         'journal.missing',

@@ -132,5 +132,8 @@ test('app setup publishes the configured public API URL and scopes administratio
     assert.match(html, /Copy API URL/);
     assert.doesNotMatch(html, /private-api|Manage app credentials/);
   }
-  assert.match(markup(createElement(SdkSetup, { state, role: 'admin' })), /Manage app credentials/);
+  const admin = markup(createElement(SdkSetup, { state, role: 'admin' }));
+  assert.match(admin, /href="\/w\/workspace\/connections\?bundleId=bundle&amp;channel=stable"/);
+  assert.match(admin, /href="\/w\/workspace\/delivery"/);
+  assert.match(admin, /href="\/w\/workspace\/bundles\/bundle\/changes\?channel=stable"/);
 });

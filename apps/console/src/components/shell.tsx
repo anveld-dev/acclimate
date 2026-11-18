@@ -1,7 +1,7 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { Label } from './ui/label';
 import { useRouter, useRouterState } from '@tanstack/react-router';
-import { BookOpen, Building2, Files, Users, Plug, Plus, Radio } from 'lucide-react';
+import { BookOpen, Building2, ChevronsUpDown, Files, Users, Plug, Plus, Radio, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -30,14 +30,16 @@ import { ConsoleLink, consoleDestination } from './console-link';
 import { workspaceHref, bundleViewLabels, bundleDetailLabel, type BundleView } from '../navigation';
 import { useNavigation } from './use-navigation';
 import { useBackgroundRefresh } from './use-background-refresh';
-import { WorkspaceChromeProvider, WorkspaceChromeTools } from './workspace-chrome';
+import { WorkspaceChromeProvider, WorkspaceMenuButton } from './workspace-chrome';
 
 function Navigation({
   onNavigate,
   layout = 'sidebar',
+  expanded = false,
 }: {
   onNavigate?: (href: string) => void;
   layout?: 'sidebar' | 'rail';
+  expanded?: boolean;
 }) {
   const nav = useNavigation();
   if (!nav?.projectId) return null;
@@ -56,7 +58,6 @@ function Navigation({
       aria-label="Main navigation"
       className={layout === 'rail' ? 'workspace-rail-navigation' : 'space-y-1'}
     >
-      {layout === 'sidebar' && <p className="sidebar-heading">WORKSPACE</p>}
       {links.map(({ view, label, icon: Icon }) => {
         const current =
           nav.location?.view === view || (view === 'bundles' && Boolean(nav.bundleId));
@@ -69,7 +70,7 @@ function Navigation({
             aria-current={current ? 'page' : undefined}
           >
             <Icon className="size-[18px]" aria-hidden="true" />
-            <span className={layout === 'rail' ? 'sr-only' : undefined}>{label}</span>
+            <span className={layout === 'rail' ? 'sr-only workspace-rail-label' : undefined}>{label}</span>
           </ConsoleLink>
         );
         return layout === 'rail' ? (
@@ -79,7 +80,7 @@ function Navigation({
                 {link}
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={10}>
+            <TooltipContent side="right" sideOffset={10} hidden={expanded}>
               {label}
             </TooltipContent>
           </Tooltip>
@@ -99,6 +100,9 @@ export function Shell({ children }: { children: ReactNode }) {
   const { hasPendingChanges } = usePendingChanges();
   const [open, setOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [railPreference, setRailPreference] = useState<boolean>();
+  const [wideViewport, setWideViewport] = useState(false);
+  const railExpanded = railPreference ?? wideViewport;
   const [creating, setCreating] = useState(false);
   const [creationPending, setCreationPending] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
@@ -115,13 +119,36 @@ export function Shell({ children }: { children: ReactNode }) {
       state.matches.some((match) => match.status === 'error' || match.status === 'notFound'),
   });
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const menuInShell = !nav?.location || routeFailed;
   const previousPath = useRef(pathname);
   const focusAfterSheetNavigation = useRef(false);
   const returnTo = useRouterState({ select: (state) => state.location.href });
   const search = useRouterState({
     select: (state) => state.location.search as Record<string, unknown>,
   });
-  useEffect(() => setHydrated(true), []);
+  useEffect(() => {
+    const wide = window.matchMedia('(min-width: 1280px)');
+    const syncWidth = () => setWideViewport(wide.matches);
+    syncWidth();
+    wide.addEventListener('change', syncWidth);
+    try {
+      const saved = localStorage.getItem('acclimate.navigation.expanded');
+      if (saved === 'true' || saved === 'false') setRailPreference(saved === 'true');
+    } catch {
+      // The current session can still expand and collapse navigation.
+    }
+    setHydrated(true);
+    return () => wide.removeEventListener('change', syncWidth);
+  }, []);
+  function toggleRail() {
+    const next = !railExpanded;
+    setRailPreference(next);
+    try {
+      localStorage.setItem('acclimate.navigation.expanded', String(next));
+    } catch {
+      // Keep the chosen width for this session when storage is unavailable.
+    }
+  }
   useEffect(() => {
     // A browser can blur a display:none control before dispatching resize.
     // Remember its region while visible, clearing it on intentional focus moves.
@@ -185,7 +212,15 @@ export function Shell({ children }: { children: ReactNode }) {
     if (open) focusAfterSheetNavigation.current = true;
     setOpen(false);
     setCreating(false);
-    const focusFrame = requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }));
+    const focusFrame = requestAnimationFrame(() => {
+      const fragment = document.getElementById(window.location.hash.slice(1));
+      if (fragment && mainRef.current?.contains(fragment)) {
+        if (fragment.tabIndex < 0) fragment.tabIndex = -1;
+        fragment.focus({ preventScroll: true });
+      } else {
+        mainRef.current?.focus({ preventScroll: true });
+      }
+    });
     return () => cancelAnimationFrame(focusFrame);
   }, [pathname, loading, open]);
   useEffect(() => {
@@ -228,12 +263,18 @@ export function Shell({ children }: { children: ReactNode }) {
           ? 'Members'
           : 'Bundles';
   useEffect(() => {
-    document.title = nav?.projectId
-      ? [detailLabel, viewLabel, nav.bundleName, nav.projectName, 'Acclimate']
-          .filter(Boolean)
-          .join(' · ')
-      : 'Welcome · Acclimate';
-  }, [nav?.projectId, nav?.projectName, nav?.bundleName, detailLabel, viewLabel]);
+    const page = nav?.projectId
+      ? [detailLabel, viewLabel, nav.bundleName].filter(Boolean).join(' · ')
+      : mainRef.current?.querySelector('h1')?.textContent || 'Welcome';
+    let title = page;
+    for (const label of [nav?.projectName, 'Acclimate']) {
+      if (!label) continue;
+      const suffix = title.toLowerCase();
+      const identity = label.toLowerCase();
+      if (suffix !== identity && !suffix.endsWith(' · ' + identity)) title += ' · ' + label;
+    }
+    document.title = title;
+  }, [nav?.projectId, nav?.projectName, nav?.bundleName, detailLabel, viewLabel, pathname]);
   const projects = nav?.access.ok ? nav.access.projects : [];
   const canCreate = nav?.access.ok && nav.access.canCreateWorkspace;
   function workspaceRole(role: string) {
@@ -319,6 +360,7 @@ export function Shell({ children }: { children: ReactNode }) {
       value={{
         hydrated,
         menuRef,
+        menuInShell,
       }}
     >
       <Sheet open={open} onOpenChange={setOpen}>
@@ -327,121 +369,151 @@ export function Shell({ children }: { children: ReactNode }) {
             Skip to content
           </a>
           <header
+            id="desktop-workspace-rail"
+            data-rail-expanded={hydrated ? railExpanded : undefined}
             ref={desktopHeaderRef}
             className="workspace-desktop-header workspace-desktop-rail"
             aria-label="Application"
           >
             <div className="workspace-brand workspace-rail-brand" role="img" aria-label="Acclimate">
               <BookOpen className="size-5" aria-hidden="true" />
+              <span className="sr-only workspace-rail-label">Acclimate</span>
             </div>
-            <Navigation layout="rail" />
-            <div className="workspace-rail-bottom">
-              {(projects.length > 0 || canCreate) && (
-                <DropdownMenu open={workspaceMenuOpen} onOpenChange={setWorkspaceMenuOpen}>
-                  <Tooltip>
-                    <TooltipTrigger asChild data-slot="button">
-                      <DropdownMenuTrigger asChild data-slot="button">
-                        <Button
-                          ref={workspaceMenuRef}
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="workspace-rail-control workspace-rail-workspaces"
-                          disabled={!hydrated}
-                          aria-label="Workspaces"
-                        >
-                          <Building2 aria-hidden="true" className="size-[18px]" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="right"
-                      sideOffset={10}
-                      hidden={workspaceMenuOpen}
-                      className="workspace-rail-tooltip"
-                    >
-                      <span className="font-medium">Workspaces</span>
-                      <span className="opacity-75">{nav?.projectName ?? 'Choose a workspace'}</span>
-                    </TooltipContent>
-                  </Tooltip>
-                  <DropdownMenuContent
+            {(projects.length > 0 || canCreate) && (
+              <DropdownMenu modal={false} open={workspaceMenuOpen} onOpenChange={setWorkspaceMenuOpen}>
+                <Tooltip>
+                  <TooltipTrigger asChild data-slot="button">
+                    <DropdownMenuTrigger asChild data-slot="button">
+                      <Button
+                        ref={workspaceMenuRef}
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="workspace-rail-control workspace-rail-workspaces"
+                        disabled={!hydrated}
+                        aria-label={nav?.projectName ? `Workspaces ${nav.projectName}` : 'Workspaces'}
+                      >
+                        <Building2 aria-hidden="true" className="size-[18px]" />
+                        <span className="sr-only workspace-rail-label">
+                          <small>Workspaces</small>{' '}
+                          <strong>{nav?.projectName ?? 'Choose workspace'}</strong>
+                        </span>
+                        <ChevronsUpDown className="workspace-scope-indicator" aria-hidden="true" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent
                     side="right"
-                    align="end"
-                    sideOffset={12}
-                    className="workspace-rail-workspace-menu"
-                    onCloseAutoFocus={(event) => {
-                      if (openingWorkspaceDialog.current) {
-                        event.preventDefault();
-                        openingWorkspaceDialog.current = false;
-                      } else if (!workspaceMenuRef.current?.getClientRects().length) {
-                        event.preventDefault();
-                        const menu = menuRef.current;
-                        if (menu?.getClientRects().length) menu.focus({ preventScroll: true });
-                        else mainRef.current?.focus({ preventScroll: true });
-                      }
+                    sideOffset={10}
+                    hidden={railExpanded || workspaceMenuOpen}
+                    className="workspace-rail-tooltip"
+                  >
+                    <span className="font-medium">Workspaces</span>
+                    <span className="opacity-75">{nav?.projectName ?? 'Choose a workspace'}</span>
+                  </TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent
+                  side="right"
+                  align="start"
+                  sideOffset={12}
+                  className="workspace-rail-workspace-menu"
+                  onCloseAutoFocus={(event) => {
+                    if (openingWorkspaceDialog.current) {
+                      event.preventDefault();
+                      openingWorkspaceDialog.current = false;
+                    } else if (!workspaceMenuRef.current?.getClientRects().length) {
+                      event.preventDefault();
+                      const menu = menuRef.current;
+                      if (menu?.getClientRects().length) menu.focus({ preventScroll: true });
+                      else mainRef.current?.focus({ preventScroll: true });
+                    }
+                  }}
+                >
+                  <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={nav?.projectId ?? ''}
+                    aria-label="Workspaces"
+                    className="workspace-rail-workspace-list"
+                    onValueChange={(id) => {
+                      if (id && id !== nav?.projectId)
+                        void router.navigate(consoleDestination(workspaceHref(id)));
                     }}
                   >
-                    <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
-                    <DropdownMenuRadioGroup
-                      value={nav?.projectId ?? ''}
-                      aria-label="Workspaces"
-                      className="workspace-rail-workspace-list"
-                      onValueChange={(id) => {
-                        if (id && id !== nav?.projectId)
-                          void router.navigate(consoleDestination(workspaceHref(id)));
-                      }}
-                    >
-                      {projects.map((project) => (
-                        <DropdownMenuRadioItem
-                          key={project.id}
-                          value={project.id}
-                          data-workspace-id={project.id}
-                          className="workspace-rail-workspace-option"
-                        >
-                          <span>
-                            <span>{project.name}</span>
-                            <span className="workspace-rail-workspace-role">
-                              {workspaceRole(project.role)}
-                            </span>
-                            {hasDuplicateName(project) && (
-                              <span className="workspace-rail-workspace-id">{project.id}</span>
-                            )}
+                    {projects.map((project) => (
+                      <DropdownMenuRadioItem
+                        key={project.id}
+                        value={project.id}
+                        data-workspace-id={project.id}
+                        className="workspace-rail-workspace-option"
+                      >
+                        <span>
+                          <span>{project.name}</span>
+                          <span className="workspace-rail-workspace-role">
+                            {workspaceRole(project.role)}
                           </span>
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                    {canCreate && (
-                      <>
-                        {projects.length > 0 && <DropdownMenuSeparator />}
-                        <DropdownMenuItem
-                          onSelect={() => {
-                            openingWorkspaceDialog.current = true;
-                            startCreating(workspaceMenuRef.current);
-                          }}
-                        >
-                          <Plus aria-hidden="true" />
-                          New workspace
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+                          {hasDuplicateName(project) && (
+                            <span className="workspace-rail-workspace-id">{project.id}</span>
+                          )}
+                        </span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                  {canCreate && (
+                    <>
+                      {projects.length > 0 && <DropdownMenuSeparator />}
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          openingWorkspaceDialog.current = true;
+                          startCreating(workspaceMenuRef.current);
+                        }}
+                      >
+                        <Plus aria-hidden="true" />
+                        New workspace
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            <Navigation layout="rail" expanded={railExpanded} />
+            <div className="workspace-rail-bottom">
+              <Tooltip>
+                <TooltipTrigger asChild data-slot="button">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="workspace-rail-control"
+                    aria-label={railExpanded ? 'Collapse navigation' : 'Expand navigation'}
+                    aria-controls="desktop-workspace-rail"
+                    aria-expanded={railExpanded}
+                    disabled={!hydrated}
+                    onClick={toggleRail}
+                  >
+                    {railExpanded ? <PanelLeftClose aria-hidden="true" /> : <PanelLeftOpen aria-hidden="true" />}
+                    <span className="sr-only workspace-rail-label">{railExpanded ? 'Collapse' : 'Expand'}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" hidden={railExpanded}>
+                  Expand navigation
+                </TooltipContent>
+              </Tooltip>
               {nav && (
                 <AccountMenu
                   access={nav.access}
                   returnTo={returnTo}
                   compact
                   iconOnly
-                  suppressTooltip={workspaceMenuOpen}
+                  suppressTooltip={railExpanded || workspaceMenuOpen}
                 />
               )}
             </div>
           </header>
           <div className="workspace-column">
-            {(!nav?.location || routeFailed) && (
+            {menuInShell && (
               <header className="workspace-topbar workspace-fallback-header">
-                <WorkspaceChromeTools />
+                <div className="workspace-chrome-tools">
+                  <WorkspaceMenuButton inShell />
+                </div>
               </header>
             )}
             <main ref={mainRef} id="main" tabIndex={-1} className="workspace-main">
@@ -502,13 +574,13 @@ export function Shell({ children }: { children: ReactNode }) {
             <BookOpen className="size-5" aria-hidden="true" /> Acclimate
           </SheetTitle>
           <SheetDescription className="sr-only">Workspace navigation</SheetDescription>
+          {switcher('mobile-workspace-switcher')}
           <Navigation
             onNavigate={(href) => {
               if (href === pathname) setOpen(false);
             }}
           />
           <div className="mt-auto border-t pt-4">
-            {switcher('mobile-workspace-switcher')}
             {nav && <AccountMenu access={nav.access} returnTo={returnTo} />}
           </div>
         </SheetContent>

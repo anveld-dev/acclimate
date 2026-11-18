@@ -45,7 +45,7 @@ test('stages native project inputs privately and cleans only its workspace', asy
     await prepared.cleanup();
     await prepared.cleanup();
   }
-  await assert.rejects(access(prepared.cwd));
+  await assert.rejects(access(prepared.cwd), { code: 'ENOENT' });
 });
 
 test('rejects Cursor-incompatible skill names and invalid manifests', async () => {
@@ -61,7 +61,7 @@ test('memory is absent unless explicitly approved', async () => {
   const prepared = await prepare(bundle);
   try {
     assert.deepEqual(prepared.memoryFiles, []);
-    await assert.rejects(access(path.join(prepared.cwd, '.acclimate')));
+    await assert.rejects(access(path.join(prepared.cwd, '.acclimate')), { code: 'ENOENT' });
   } finally {
     await prepared.cleanup();
   }

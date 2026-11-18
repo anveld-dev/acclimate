@@ -1,6 +1,7 @@
 import type { IntegrationObservation, Page } from '@acclimate/sdk';
 import { ApiError } from '@acclimate/sdk';
 import { consoleClient } from './console-client';
+import { publicReport } from './delivery-detail-core';
 import { allPages } from './listing';
 import { requireSession, type Environment } from './selection';
 
@@ -11,7 +12,7 @@ export type DeliveryObservationsResult =
 /** Reading app observations deliberately does not enter the admin Connections context. */
 export async function readDeliveryObservationsState(
   env: Environment,
-  input: { projectId: string; cursor?: string },
+  input: { projectId: string; cursor?: string; integrationId?: string },
   fetcher: typeof fetch = fetch,
 ): Promise<DeliveryObservationsResult> {
   try {
@@ -20,7 +21,8 @@ export async function readDeliveryObservationsState(
       !input ||
       typeof input.projectId !== 'string' ||
       !/^[^\x00-\x20\x7f/]{1,200}$/.test(input.projectId) ||
-      (input.cursor !== undefined && !/^[a-f0-9-]{36}$/i.test(input.cursor))
+      (input.cursor !== undefined && !/^[a-f0-9-]{36}$/i.test(input.cursor)) ||
+      (input.integrationId !== undefined && !/^[a-f0-9-]{36}$/i.test(input.integrationId))
     )
       return { ok: false, message: 'Select a workspace and a valid delivery page.' };
     const api = consoleClient(env, fetcher);
@@ -32,6 +34,20 @@ export async function readDeliveryObservationsState(
       cursor: input.cursor,
       limit: 50,
     });
+    if (
+      input.integrationId &&
+      !response.items.some((item) => item.id === input.integrationId) &&
+      response.nextCursor
+    ) {
+      const remaining = await allPages((cursor) =>
+        api.listIntegrationObservations(input.projectId, {
+          cursor: cursor ?? response.nextCursor!,
+          limit: 100,
+        }),
+      );
+      const linked = remaining.find((item) => item.id === input.integrationId);
+      if (linked) response.items.push(linked);
+    }
     // Project only the public observation DTO, even if an upstream version adds fields.
     const page: Page<IntegrationObservation> = {
       nextCursor: response.nextCursor,
@@ -41,16 +57,7 @@ export async function readDeliveryObservationsState(
         bundleId: item.bundleId,
         channel: item.channel,
         enabled: item.enabled,
-        latestObservation: item.latestObservation
-          ? {
-              eventId: item.latestObservation.eventId,
-              stage: item.latestObservation.stage,
-              versionId: item.latestObservation.versionId,
-              digest: item.latestObservation.digest,
-              occurredAt: item.latestObservation.occurredAt,
-              receivedAt: item.latestObservation.receivedAt,
-            }
-          : null,
+        latestObservation: item.latestObservation ? publicReport(item.latestObservation) : null,
       })),
     };
     return { ok: true, projectId: project.id, projectName: project.name, page };

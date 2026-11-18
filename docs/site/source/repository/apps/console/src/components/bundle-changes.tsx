@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import './changes-queues.css';
 import { useRouter } from '@tanstack/react-router';
 import type { Draft, Proposal } from '@acclimate/sdk';
 import type { ConsoleState } from '../server/channel';
@@ -10,7 +11,7 @@ import { DraftWorkspace } from './draft-workspace';
 import { ImprovementWorkspace } from './improvement-workspace';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { FilePenLine, GitPullRequest, Plus, Sparkles } from 'lucide-react';
+import { FilePenLine, ListFilter, Plus, Sparkles } from 'lucide-react';
 import { ChangeRecordDetails } from './change-record-details';
 import { mergeHistory, refreshKnownActive } from '../lib/improvement-history';
 import { ChangesOverview } from './changes-overview';
@@ -78,6 +79,8 @@ export function BundleChanges({
             versionId={state.resolution.version.id}
             scope={storageScope}
             commandScope={scope}
+            actorScope={state.actorScope}
+            serviceIdentity={state.serviceIdentity}
             initialDraftId={draft === 'new' ? undefined : draft}
             initialPath={text(search.path)}
             canEdit={state.canEdit}
@@ -122,6 +125,11 @@ export function BundleChanges({
             generation: Number(search.generation) || 0,
             proposal,
             comparison: text(search.comparison),
+            pair: text(search.pair),
+            fromRevision:
+              typeof search.fromRevision === 'number' || typeof search.fromRevision === 'string'
+                ? search.fromRevision
+                : undefined,
             request: text(search.request),
           }}
           mode={proposal === 'new' ? 'proposal' : 'review'}
@@ -146,9 +154,10 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
     [proposalError, setProposalError] = useState('');
   const [draftBusy, setDraftBusy] = useState(true),
     [proposalBusy, setProposalBusy] = useState(true);
+  const [proposalsRead, setProposalsRead] = useState(false);
   const [showClosedDrafts, setShowClosedDrafts] = useState(false);
-  const [draftsOpen, setDraftsOpen] = useState(false);
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [draftsOpen, setDraftsOpen] = useState(() => String(search.history) !== '1');
+  const [suggestionsOpen, setSuggestionsOpen] = useState(() => String(search.history) !== '1');
   const draftTrigger = useRef<HTMLButtonElement>(null);
   const suggestionTrigger = useRef<HTMLButtonElement>(null);
   const draftBody = useRef<HTMLDivElement>(null);
@@ -212,6 +221,7 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
       if ('proposals' in result && result.proposals) {
         const page = result.proposals;
         setProposals((previous) => mergeHistory(previous, page.items, !!cursor));
+        setProposalsRead(true);
         if (cursor || !loadedMore.current) setProposalCursor(page.nextCursor);
         if (cursor) loadedMore.current = true;
       }
@@ -227,6 +237,7 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
     const started = epoch.current;
     setDrafts([]);
     setProposals([]);
+    setProposalsRead(false);
     loadedMore.current = false;
     setProposalCursor(null);
     draftLoadedMore.current = false;
@@ -266,8 +277,8 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
   }, [state.actorScope, state.projectId, state.bundleId, state.channel]);
   return (
     <ChangesOverview state={state} search={search}>
-      <div className="change-queues">
-        <section className="change-queue" aria-label="Saved drafts">
+      <div className="change-queues changes-worklists">
+        <section className="change-queue draft-worklist" aria-label="Saved drafts">
           <Disclosure
             open={draftsOpen}
             onOpenChange={(open) =>
@@ -280,24 +291,36 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
                   <span className="change-queue-title">
                     {showClosedDrafts ? 'All drafts' : 'Open drafts'}
                   </span>
+                  <span className="worklist-count" aria-hidden="true">
+                    {!drafts.length && draftError
+                      ? '—'
+                      : draftBusy && !drafts.length
+                        ? '…'
+                        : visibleDrafts.length}
+                  </span>
                   <span className="change-queue-scope">
-                    {state.channel} channel ·{' '}
-                    {showClosedDrafts ? '' : `${visibleDrafts.length} open in `}
-                    {drafts.length} loaded{draftBusy ? ' · Loading…' : ''}
+                    {state.channel} channel
+                    <span className="sr-only">
+                      {' '}
+                      · {showClosedDrafts ? '' : `${visibleDrafts.length} open in `}
+                      {drafts.length} loaded{draftBusy ? ' · Loading…' : ''}
+                    </span>
+                    {draftCursor && <span> · More available</span>}
                   </span>
                 </DisclosureTrigger>
               </h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-pressed={showClosedDrafts}
-                aria-label={
-                  showClosedDrafts ? 'Show open drafts' : 'Include published and discarded drafts'
-                }
-                onClick={() => setShowClosedDrafts(!showClosedDrafts)}
-              >
-                {showClosedDrafts ? 'Open only' : 'Include closed'}
-              </Button>
+              <div className="worklist-filter">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={showClosedDrafts}
+                  aria-label="Include closed drafts"
+                  aria-description="Include published and discarded drafts in this list"
+                  onClick={() => setShowClosedDrafts(!showClosedDrafts)}
+                >
+                  <ListFilter aria-hidden="true" /> Include closed
+                </Button>
+              </div>
             </div>
             {draftError && (
               <p role="alert" className="change-queue-message text-destructive">
@@ -329,29 +352,32 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
                         <div className="change-record-copy">
                           <ConsoleLink
                             className="change-record-title"
-                            aria-label={`Draft ${draft.id}`}
                             href={bundleHref(scope, 'changes', { draft: draft.id })}
                           >
-                            Draft{' '}
-                            <span className="change-record-short-id">{draft.id.slice(0, 8)}</span>
+                            Draft from revision {draft.baseRevision}
+                            <span className="sr-only"> · {draft.id}</span>
                           </ConsoleLink>
                           <p className="change-record-meta">
-                            Generation {draft.generation} · updated{' '}
+                            <span className="worklist-record-id">#{draft.id.slice(0, 8)}</span>
+                            {' · '}Generation {draft.generation}
+                            {' · '}
                             <time dateTime={draft.updatedAt}>
-                              {new Date(draft.updatedAt).toLocaleString()}
+                              {new Date(draft.updatedAt).toLocaleDateString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })}
                             </time>
                           </p>
                         </div>
                         <div className="change-record-actions">
-                          {showClosedDrafts && (
-                            <Badge variant="outline">
-                              {draft.status === 'open'
-                                ? 'Open'
-                                : draft.status === 'published'
-                                  ? 'Published'
-                                  : 'Discarded'}
-                            </Badge>
-                          )}
+                          <Badge variant="outline" data-work-status={draft.status}>
+                            {draft.status === 'open'
+                              ? 'Open'
+                              : draft.status === 'published'
+                                ? 'Published'
+                                : 'Discarded'}
+                          </Badge>
                           <ChangeRecordDetails
                             title="Draft details"
                             identity={draft.id}
@@ -389,7 +415,7 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
             </DisclosureContent>
           </Disclosure>
         </section>
-        <section className="change-queue" aria-label="Suggestions">
+        <section className="change-queue suggestion-worklist" aria-label="Suggestions">
           <Disclosure
             open={suggestionsOpen}
             onOpenChange={(open) =>
@@ -405,9 +431,21 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
               <h3>
                 <DisclosureTrigger ref={suggestionTrigger} className="change-queue-trigger">
                   <span className="change-queue-title">Suggestions</span>
+                  <span className="worklist-count" aria-hidden="true">
+                    {!proposalsRead && proposalError
+                      ? '—'
+                      : !proposalsRead
+                        ? '…'
+                        : proposals.length}
+                  </span>
                   <span className="change-queue-scope">
-                    All bundle channels · {proposals.length} loaded
-                    {proposalBusy ? ' · Loading…' : ''}
+                    All bundle channels
+                    <span className="sr-only">
+                      {' '}
+                      · {proposals.length} loaded
+                      {proposalBusy && !proposalsRead ? ' · Loading…' : ''}
+                    </span>
+                    {proposalCursor && <span> · More available</span>}
                   </span>
                 </DisclosureTrigger>
               </h3>
@@ -419,20 +457,20 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
             )}
             <DisclosureContent className="change-queue-content" hidden={!suggestionsOpen}>
               <div ref={suggestionBody} className="change-queue-body">
-                {proposalBusy && !proposals.length ? (
+                {proposalBusy && !proposalsRead && !proposals.length ? (
                   <p role="status" className="change-queue-message">
                     Loading suggestions…
                   </p>
                 ) : !proposalError && !proposals.length ? (
                   <div className="change-queue-empty">
-                    <GitPullRequest aria-hidden="true" />
+                    <Sparkles aria-hidden="true" />
                     <p>No suggestions yet.</p>
                   </div>
                 ) : (
                   <ul className="change-record-list">
                     {proposals.map((proposal) => (
                       <li key={proposal.id} className="change-record-row">
-                        <GitPullRequest aria-hidden="true" className="change-record-icon" />
+                        <Sparkles aria-hidden="true" className="change-record-icon" />
                         <div className="change-record-copy">
                           <ConsoleLink
                             className="change-record-title change-proposal-title"
@@ -455,7 +493,14 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
                           )}
                         </div>
                         <div className="change-record-actions">
-                          <Badge variant={proposal.status === 'failed' ? 'destructive' : 'outline'}>
+                          <Badge
+                            variant={proposal.status === 'failed' ? 'destructive' : 'outline'}
+                            data-work-status={
+                              proposal.status === 'succeeded' && !proposal.candidate
+                                ? 'no-candidate'
+                                : proposal.status
+                            }
+                          >
                             {proposal.status === 'queued'
                               ? 'Queued'
                               : proposal.status === 'running'

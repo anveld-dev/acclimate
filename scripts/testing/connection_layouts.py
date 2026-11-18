@@ -106,7 +106,7 @@ def run(args):
         trigger.focus()
         p.keyboard.press('Enter')
         expect(report.locator('.connection-report-details')).to_contain_text(w.original['version']['digest'])
-        assert 'stale mapping' in trigger.get_attribute('aria-label') and 'delayed report' in trigger.get_attribute('aria-label')
+        expect(trigger).to_have_accessible_name(re.compile(r'Stale mapping.*Delayed report.*'+re.escape(delayed['eventId'])))
         expect(report).to_contain_text('Stale mapping');expect(report).to_contain_text('Delayed report')
         expect(report.locator('.connection-report-details')).to_contain_text(delayed['eventId'])
         expect(report.locator('.connection-report-details')).to_contain_text('revision 1')
@@ -118,6 +118,8 @@ def run(args):
         for _ in range(21):
             w.call('POST', w.integration_path + '/receipts', w.delivery_event(), actor='receipt-writer')
         p.reload(wait_until='networkidle')
+        expect(p.get_by_test_id('delivery-report')).to_have_count(3)
+        p.get_by_role('button',name='Show all 20 loaded reports').click()
         expect(p.get_by_test_id('delivery-report')).to_have_count(20)
         # Fail only this load attempt; existing loaded reports must remain visible.
         def fail_post(route):
@@ -137,7 +139,7 @@ def run(args):
         expect(p.get_by_role('button',name='Load older reports',exact=True)).to_have_count(0)
         checks.append('Cursor failure retains20 reports; retry loads25 in service-received order with an honest loaded count and no exhausted cursor')
         # A late page response must not overwrite the newly selected connection.
-        p.reload(wait_until='networkidle');expect(p.get_by_test_id('delivery-report')).to_have_count(20)
+        p.reload(wait_until='networkidle');expect(p.get_by_test_id('delivery-report')).to_have_count(3)
         held=[]
         def hold_page(route):
             # This phase performs one known read command; navigation reads are GET.

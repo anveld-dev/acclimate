@@ -1,14 +1,15 @@
-import { ArrowLeft, GitBranch } from 'lucide-react';
+import { ArrowLeft, GitBranch, History } from 'lucide-react';
 import { PageHeader } from '../components/page-header';
 import { Button } from '@/components/ui/button';
 import { WorkspaceMenuButton } from '../components/workspace-chrome';
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import {
   parseConsoleLocation,
   bundleHref,
   bundleViewLabels,
   channelSwitchSearch,
   workspaceHref,
+  releaseRevision,
   type BundleView,
 } from '../navigation';
 import { readWorkspaceBundles } from '../server/setup-actions';
@@ -25,7 +26,7 @@ import { WorkspaceDelivery } from '../components/workspace-delivery';
 import { readDeliveryObservations } from '../server/delivery-observations-actions';
 import { WorkspaceMembers } from '../components/workspace-members';
 import { ConsoleLink, consoleDestination } from '../components/console-link';
-import { ConnectionNotice } from '../components/shared';
+import { ConnectionNotice, PageTitle } from '../components/shared';
 import { useNavigation } from '../components/use-navigation';
 import {
   Select,
@@ -51,10 +52,13 @@ export const Route = createFileRoute('/w/$')({
             'candidate',
             'generation',
             'comparison',
+            'pair',
+            'fromRevision',
             'request',
             'history',
             'tab',
             'integration',
+            'access',
             'bundleId',
           ].includes(key) &&
           (typeof value === 'string' || typeof value === 'number'),
@@ -86,7 +90,13 @@ export const Route = createFileRoute('/w/$')({
       return {
         kind: 'delivery' as const,
         location,
-        result: await readDeliveryObservations({ data: { projectId: location.projectId } }),
+        result: await readDeliveryObservations({
+          data: {
+            projectId: location.projectId,
+            integrationId:
+              typeof deps.search.integration === 'string' ? deps.search.integration : undefined,
+          },
+        }),
       };
     if (location.view === 'members')
       return {
@@ -115,11 +125,40 @@ function ScopedPage() {
   const workspaceKey = `${navigation?.actorScope}:${navigation?.role}:${data.kind === 'missing' ? '' : data.location.projectId}`;
   if (data.kind === 'missing')
     return (
-      <div role="alert">
-        <h1>Page not found</h1>
-        <p>Choose a workspace from the sidebar.</p>
-      </div>
+      <section className="space-y-4">
+        <h1 className="text-xl font-semibold">Page not found</h1>
+        <p>This workspace link is no longer available.</p>
+        <Button asChild variant="outline">
+          <Link to="/">Back to bundles</Link>
+        </Button>
+      </section>
     );
+  if (
+    (data.kind === 'members' || data.kind === 'connections') &&
+    navigation?.projectId === data.location.projectId &&
+    (navigation.role === 'viewer' || navigation.role === 'editor')
+  ) {
+    const members = data.kind === 'members';
+    return (
+      <section className="space-y-4">
+        <PageTitle
+          title={members ? 'Members' : 'Connections'}
+          description={
+            members
+              ? 'A workspace administrator manages member access.'
+              : 'A workspace administrator manages app connections. You can view app delivery reports.'
+          }
+        />
+        <Button asChild variant="outline">
+          <ConsoleLink
+            href={workspaceHref(data.location.projectId, members ? 'bundles' : 'delivery')}
+          >
+            {members ? 'Browse bundles' : 'View delivery'}
+          </ConsoleLink>
+        </Button>
+      </section>
+    );
+  }
   if (data.kind === 'library')
     return (
       <BundleLibrary key={workspaceKey} projectId={data.location.projectId} state={data.result} />
@@ -137,6 +176,8 @@ function ScopedPage() {
     return (
       <WorkspaceDelivery
         key={workspaceKey}
+        initialAppId={typeof search.integration === 'string' ? search.integration : undefined}
+        canManage={navigation?.role === 'admin'}
         projectId={data.location.projectId}
         initial={data.result}
       />
@@ -160,6 +201,10 @@ function ScopedPage() {
           view={view}
           search={search}
           description="This bundle is currently unavailable."
+          unavailableChannel={
+            navigation?.bundleId === scope.bundleId &&
+            !navigation.channels.some((channel) => channel.name === scope.channel)
+          }
         />
         <ConnectionNotice state={state} />
         {navigation?.projectId === scope.projectId &&
@@ -200,6 +245,7 @@ function ScopedPage() {
         view={view}
         search={search}
         description={description}
+        currentRevision={state.resolution.revision}
       />
       {view === 'content' ? (
         <BundleContent key={identity} state={state} search={search} />
@@ -219,17 +265,43 @@ function BundleScopeHeader({
   view,
   search,
   description,
+  unavailableChannel = false,
+  currentRevision,
 }: {
   name: string;
   scope: { projectId: string; bundleId: string; channel: string };
   view: BundleView;
   search: Record<string, unknown>;
   description: string;
+  unavailableChannel?: boolean;
+  currentRevision?: string;
 }) {
+  const navigate = useNavigate();
+  const historyHref = bundleHref(scope, 'changes', { history: 1 }) + '#evaluation-history';
   const isChangeDetail =
+    !unavailableChannel &&
     view === 'changes' &&
-    Boolean(search.draft || search.proposal || search.candidate || search.comparison);
-  const parentLabel = isChangeDetail ? 'Back to changes' : 'Back to bundles';
+    Boolean(
+      search.draft || search.proposal || search.candidate || search.comparison || search.request,
+    );
+  const fromRevision =
+    isChangeDetail && search.candidate && currentRevision
+      ? releaseRevision(search.fromRevision)
+      : undefined;
+  const returnRevision =
+    fromRevision && currentRevision && BigInt(fromRevision) <= BigInt(currentRevision)
+      ? fromRevision
+      : undefined;
+  const parentLabel = returnRevision
+    ? `Back to revision ${returnRevision}`
+    : isChangeDetail
+      ? 'Back to changes'
+      : 'Back to bundles';
+  const parentHref = returnRevision
+    ? `${bundleHref(scope, 'releases')}#revision-${returnRevision}`
+    : isChangeDetail
+      ? bundleHref(scope, 'changes')
+      : workspaceHref(scope.projectId);
   return (
     <PageHeader
       title={name}
@@ -240,32 +312,67 @@ function BundleScopeHeader({
         <>
           <WorkspaceMenuButton />
           <Button asChild variant="ghost" size="sm" className="bundle-scope-return">
-            <ConsoleLink
-              aria-label={parentLabel}
-              href={isChangeDetail ? bundleHref(scope, 'changes') : workspaceHref(scope.projectId)}
-            >
+            <ConsoleLink aria-label={parentLabel} href={parentHref}>
               <ArrowLeft aria-hidden="true" className="size-4" />
               <span className="bundle-scope-return-label">{parentLabel}</span>
               <span className="bundle-scope-return-short" aria-hidden="true">
-                {isChangeDetail ? 'Changes' : 'Bundles'}
+                {returnRevision
+                  ? `Revision ${returnRevision}`
+                  : isChangeDetail
+                    ? 'Changes'
+                    : 'Bundles'}
               </span>
             </ConsoleLink>
           </Button>
+          {!unavailableChannel && (
+            <Button asChild variant="ghost" size="sm" className="ml-auto">
+              <ConsoleLink
+                aria-label="Evaluation history"
+                className="bundle-evaluation-history"
+                href={historyHref}
+                onClick={async (event) => {
+                  const link = event.currentTarget;
+                  if (
+                    event.button !== 0 ||
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey ||
+                    link.pathname !== window.location.pathname
+                  )
+                    return;
+                  event.preventDefault();
+                  const destination = link.href;
+                  await navigate(consoleDestination(historyHref));
+                  requestAnimationFrame(() => {
+                    if (window.location.href === destination)
+                      document.getElementById('evaluation-history')?.focus({ preventScroll: true });
+                  });
+                }}
+              >
+                <History aria-hidden="true" className="size-4" />
+                <span className="hidden sm:inline">Evaluation history</span>
+                <span className="sm:hidden">History</span>
+              </ConsoleLink>
+            </Button>
+          )}
         </>
       }
       actions={<ChannelPicker scope={scope} view={view} search={search} />}
       footer={
-        <nav aria-label="Bundle navigation" className="bundle-tabs bundle-scope-navigation">
-          {(['content', 'changes', 'releases', 'connect'] as const).map((tab) => (
-            <ConsoleLink
-              key={tab}
-              href={bundleHref(scope, tab)}
-              aria-current={view === tab ? 'page' : undefined}
-            >
-              {bundleViewLabels[tab]}
-            </ConsoleLink>
-          ))}
-        </nav>
+        !unavailableChannel && (
+          <nav aria-label="Bundle navigation" className="bundle-tabs bundle-scope-navigation">
+            {(['content', 'changes', 'releases', 'connect'] as const).map((tab) => (
+              <ConsoleLink
+                key={tab}
+                href={bundleHref(scope, tab)}
+                aria-current={view === tab ? 'page' : undefined}
+              >
+                {bundleViewLabels[tab]}
+              </ConsoleLink>
+            ))}
+          </nav>
+        )
       }
     />
   );
@@ -282,14 +389,13 @@ function ChannelPicker({
   const nav = useNavigation();
   const navigate = useNavigate();
   const channels = nav?.channels ?? [];
-  const options = channels.some((channel) => channel.name === scope.channel)
-    ? channels
-    : [{ name: scope.channel, revision: '' }, ...channels];
+  const published = channels.some((channel) => channel.name === scope.channel);
   return (
     <div className="bundle-channel-picker">
       <span className="bundle-channel-label">Channel</span>
       <Select
-        value={scope.channel}
+        value={published ? scope.channel : ''}
+        disabled={!channels.length}
         onValueChange={(channel) => {
           void navigate(
             consoleDestination(
@@ -300,10 +406,10 @@ function ChannelPicker({
       >
         <SelectTrigger aria-label="Channel" className="bundle-channel-trigger">
           <GitBranch aria-hidden="true" className="size-4" />
-          <SelectValue />
+          <SelectValue placeholder="Choose channel" />
         </SelectTrigger>
         <SelectContent position="popper" align="end" className="bundle-channel-options">
-          {options.map((channel) => (
+          {channels.map((channel) => (
             <SelectItem key={channel.name} value={channel.name} className="bundle-channel-option">
               {channel.name}
             </SelectItem>

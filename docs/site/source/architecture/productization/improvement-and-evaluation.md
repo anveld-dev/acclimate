@@ -2,7 +2,7 @@
 
 **Implemented as an operator workflow.** Connect existing proposals, versions, comparisons and promotions. The application runs and grades its own agent; the operator reviews the evidence and chooses a release.
 
-The current boundaries are in [the improvement design](../../design/improvement.md), [service](../../../src/improvement.rs), [compare helper](../../../packages/sdk/src/compare.ts) and [app-owned example](../../../examples/service-proposer/workflow.ts). The [release console](../../../apps/console/src/routes/releases.tsx) has history and rollback, not this workflow.
+The current boundaries are in [the improvement design](../../design/improvement.md), [service](../../../src/improvement.rs), [compare helper](../../../packages/sdk/src/compare.ts) and [app-owned example](../../../examples/service-proposer/workflow.ts). The [release console](../../../apps/console/src/components/bundle-releases.tsx) has history and rollback, not this workflow.
 
 ```text
 save a draft or request a proposal → choose an immutable candidate
@@ -41,7 +41,7 @@ requested or running → interrupted (terminal)
 
 Start, finish and interrupt use conditional database transitions. Both requested and running can be interrupted; an interrupted request cannot later start or finish. Same-attempt replay is safe; another attempt conflicts. `completed` means a matching complete comparison exists, not that the candidate won. `failed` can retain partial evidence. A crashed evaluator stays at its last reported state; show that current execution is unknown. Interruption changes metadata and does not stop remote work or undo charges. Retry uses a new linked request. No leases, automatic reassignment or dispatcher.
 
-The app gives both versions the same fixture snapshots, settings and repetitions, enforces limits, prevents live writes and supplies `execute`/`grade` to `compare`. Keep task failures, infrastructure failures, missing grades and unknown cost distinct. Existing unbound comparisons remain inspectable but cannot finish an unrelated request.
+The app gives both versions the same fixture snapshots, settings and repetitions, enforces limits, prevents live writes and supplies `execute`/`grade` to `compare`. Keep task failures, infrastructure failures, missing grades and unknown cost distinct. Completing an evaluation requires its exact request and attempt IDs on the comparison. Standalone comparison reports remain available for inspection and direct promotion.
 
 For durable regrading, the app saves immutable outputs with case/repetition, version identity and a content digest, then verifies bytes before reuse. This is app responsibility and is separate from in-process grade retries. Changed grading rules create new evidence. Acclimate stores the report, not a second immutable output index. In v1, render output references as bounded escaped text; defer clickable links, remote fetching and preview resolvers.
 

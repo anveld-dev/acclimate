@@ -31,7 +31,7 @@ SOURCE_ONLY = [
     dict(state='Prehydration disabled controls and loading refresh', reason='Transient production timing, source inventory only; screenshots do not claim deterministic coverage.'),
     dict(state='No-workspace noncreator, sign-in/access failures, read-only library, bundles without channels', reason='Separate permission/session/data fixtures are outside this navigation run; implementation is inventoried in navigation.md.'),
     dict(state='Native multi-workspace select popup', reason='Real persisted second workspace is created and the native select is asserted; platform option popup appearance is not a screenshot claim.'),
-    dict(state='Recovery storage failure, legacy migration and body expiry', reason='Real app-written pending operation survives reload, can forget its body, and closes; storage failure/expiry are not injected.'),
+    dict(state='Recovery storage failure and body expiry', reason='Real app-written pending operation survives reload, can forget its body, and closes; storage failure/expiry are not injected.'),
 ]
 
 
@@ -147,8 +147,8 @@ def account(p,e,prefix,coarse=False,collapsed=False,clipboard=False):
 
 def workspace(p,e,prefix,coarse=False,adopt=False):
     menu(p)
-    if p.get_by_role('button',name='Workspaces',exact=True).is_visible():
-        p.get_by_role('button',name='Workspaces',exact=True).click()
+    if p.get_by_role('button',name='Workspaces').is_visible():
+        p.get_by_role('button',name='Workspaces').click()
         p.get_by_role('menuitem',name='New workspace',exact=True).click()
     else: visible(p,'button','New workspace').click()
     dialog=p.get_by_role('dialog',name='Create a workspace',exact=True)
@@ -182,7 +182,7 @@ def workspace(p,e,prefix,coarse=False,adopt=False):
 def singleton(p,b,e,prefix,coarse=False,tooltip=False):
     visit(p,b,b.workspace_path());menu(p)
     link=p.locator('.workspace-switcher-name').filter(visible=True).first
-    desktop=p.get_by_role('button',name='Workspaces',exact=True)
+    desktop=p.get_by_role('button',name='Workspaces')
     if desktop.is_visible():
         desktop.hover();expect(p.get_by_role('tooltip')).to_contain_text(NAME)
         e.capture(p,prefix+'-singleton-hover')
@@ -270,8 +270,8 @@ def sources(w,b,p,e):
 
 def create_workspace(w,b,p,e):
     visit(p,b,b.workspace_path());menu(p)
-    if p.get_by_role('button',name='Workspaces',exact=True).is_visible():
-        p.get_by_role('button',name='Workspaces',exact=True).click()
+    if p.get_by_role('button',name='Workspaces').is_visible():
+        p.get_by_role('button',name='Workspaces').click()
         p.get_by_role('menuitem',name='New workspace',exact=True).click()
     else: visible(p,'button','New workspace').click()
     p.get_by_label('Workspace name',exact=True).fill('Navigation acceptance second workspace')
@@ -279,7 +279,7 @@ def create_workspace(w,b,p,e):
     p.get_by_label('Workspace ID',exact=True).fill(project)
     p.get_by_role('button',name='Create workspace',exact=True).click()
     expect(p).to_have_url(b.base+b.workspace_path(project_id=project))
-    p.get_by_role('button',name='Workspaces',exact=True).click()
+    p.get_by_role('button',name='Workspaces').click()
     expect(p.locator('[data-workspace-id="'+project+'"]')).to_have_attribute('aria-checked','true')
     p.keyboard.press('Escape')
     projects=w.personal_projects('admin')

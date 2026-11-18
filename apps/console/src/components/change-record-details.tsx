@@ -34,7 +34,7 @@ export function ChangeRecordDetails({
   const trigger = useRef<HTMLButtonElement>(null);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Tooltip disableHoverableContent>
+      <Tooltip>
         <TooltipTrigger asChild data-slot="button">
           <DialogTrigger asChild data-slot="button">
             <Button
@@ -51,7 +51,7 @@ export function ChangeRecordDetails({
         <TooltipContent
           side="top"
           hidden={open}
-          className="change-record-details-tooltip pointer-events-none max-w-[min(20rem,var(--radix-tooltip-content-available-width))] break-all"
+          className="change-record-details-tooltip max-w-[min(20rem,var(--radix-tooltip-content-available-width))] break-all"
         >
           {triggerLabel}
         </TooltipContent>

@@ -564,7 +564,7 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                     raise EvaluationError("journal.missing",phase="claim",next_action="restore_original_journal")
                 state={"scope":scope,"request":_request_snapshot(request),"attemptId":str(uuid.uuid4()),
                     "keys":{name:str(uuid.uuid4()) for name in ("start","submit","finish")},
-                    "retainedOperations":True,"wireBodies":{}}
+                    "wireBodies":{}}
                 state["wireBodies"]["start"]=journal.save_body("start",json_bytes({"attemptId":state["attemptId"]}))
                 journal.save(state)
             if state.get("executionStarted") and not state.get("report"):

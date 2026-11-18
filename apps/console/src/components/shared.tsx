@@ -60,7 +60,7 @@ export function ConnectionNotice({ state }: { state: Exclude<ConsoleState, { sta
           workspace is missing.
         </p>
         <Button asChild variant="outline" size="sm">
-          <Link to="/setup">Open workspace setup</Link>
+          <Link to="/">Open workspace setup</Link>
         </Button>
         {state.missing.length > 0 && (
           <Disclosure className="text-xs">

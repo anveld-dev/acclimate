@@ -5,6 +5,7 @@ import { SheetTrigger } from './ui/sheet';
 
 type WorkspaceChrome = {
   hydrated: boolean;
+  menuInShell: boolean;
   menuRef: RefObject<HTMLButtonElement | null>;
 };
 const Context = createContext<WorkspaceChrome | null>(null);
@@ -20,9 +21,9 @@ export function WorkspaceChromeProvider({
 }
 
 /** Optional so page components remain usable outside the application shell. */
-export function WorkspaceMenuButton() {
+export function WorkspaceMenuButton({ inShell = false }: { inShell?: boolean }) {
   const chrome = useContext(Context);
-  if (!chrome) return null;
+  if (!chrome || chrome.menuInShell !== inShell) return null;
   return (
     <div className="workspace-mobile-nav">
       <SheetTrigger asChild>
@@ -35,19 +36,9 @@ export function WorkspaceMenuButton() {
           aria-label="Open navigation"
         >
           <Menu aria-hidden="true" />
-          <span className="workspace-menu-label">Menu</span>
+          <span className="workspace-menu-label">Navigation</span>
         </Button>
       </SheetTrigger>
-    </div>
-  );
-}
-
-export function WorkspaceChromeTools({ className = '' }: { className?: string }) {
-  const chrome = useContext(Context);
-  if (!chrome) return null;
-  return (
-    <div className={`workspace-chrome-tools ${className}`}>
-      <WorkspaceMenuButton />
     </div>
   );
 }

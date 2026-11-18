@@ -19,7 +19,7 @@ export function requestEvidence(
     return {
       status: 'unbound',
       comparison,
-      message: 'This legacy comparison is not bound to an evaluation request.',
+      message: 'This standalone comparison cannot complete an evaluation request.',
     };
   const inventory = (cases: typeof request.expectedCases) =>
     cases.map(({ caseId, repetition }) => JSON.stringify([caseId, repetition])).sort();

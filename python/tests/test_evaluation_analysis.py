@@ -75,7 +75,10 @@ class EvaluationAnalysisTests(unittest.TestCase):
         self.assertNotEqual(value["expectedBinding"]["requestId"], "changed")
         self.assertNotEqual(value["uncertainty"]["samplingProtocol"], "changed")
         del value["uncertainty"]
-        self.assertTrue(all(metric["uncertainty"]["status"] == "not_requested" for metric in run(value)["metrics"]))
+        self.assertEqual(
+            [(row["metric"]["id"], row["uncertainty"]["status"]) for row in run(value)["metrics"]],
+            [(metric["id"], "not_requested") for metric in value["metrics"]],
+        )
 
     def test_nonfinite_scalar_no_interval(self):
         value = copy.deepcopy(FIXTURES["input"])

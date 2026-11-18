@@ -41,7 +41,7 @@ export function WorkspaceCreate({
   if (!access.canCreateWorkspace) {
     if (access.projects.length) return null;
     return (
-      <section className="workspace-panel space-y-5 p-6 sm:p-8">
+      <section className={showHeading ? 'workspace-panel space-y-5 p-6 sm:p-8' : undefined}>
         {showHeading && (
           <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <KeyRound aria-hidden="true" className="size-5" />
@@ -151,7 +151,7 @@ export function WorkspaceCreate({
                 aria-describedby={`${fieldId}-id-help`}
                 required
                 maxLength={128}
-                pattern="[a-zA-Z0-9_.-]+"
+                pattern={String.raw`[a-zA-Z0-9_.\-]+`}
                 title="Use letters, numbers, dots, hyphens or underscores."
                 autoCapitalize="none"
                 autoCorrect="off"
@@ -159,9 +159,8 @@ export function WorkspaceCreate({
                 disabled={pending}
               />
               <p id={`${fieldId}-id-help`} className="text-xs text-muted-foreground">
-                Used in workspace links. We fill this in from the name; you can change it before
-                creating. Use letters, numbers, dots, hyphens or underscores; the ID cannot be just
-                one or two dots.
+                This ID appears in workspace links. You can edit it before creating the workspace.
+                Use letters, numbers, dots, hyphens or underscores. A single or double dot is reserved.
               </p>
             </div>
             {message && (

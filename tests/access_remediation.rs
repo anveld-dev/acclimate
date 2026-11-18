@@ -66,8 +66,8 @@ async fn user(db: &sqlx::PgPool, project: &str, role: Option<&str>) -> (Uuid, St
     }
     (id, secret)
 }
-async fn fixture() -> Option<(sqlx::PgPool, axum::Router, String)> {
-    let url = std::env::var("ACCLIMATE_TEST_DATABASE_URL").ok()?;
+async fn fixture() -> (sqlx::PgPool, axum::Router, String) {
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let project = format!("access-remediation-{}", Uuid::new_v4());
@@ -88,14 +88,13 @@ async fn fixture() -> Option<(sqlx::PgPool, axum::Router, String)> {
         }]),
         provider: None,
     });
-    Some((db, app, project))
+    (db, app, project)
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn final_admin_survives_self_changes_and_crossed_writer_races() {
-    let Some((db, app, p)) = fixture().await else {
-        return;
-    };
+    let (db, app, p) = fixture().await;
     let (a, sa) = user(&db, &p, Some("admin")).await;
     let base = format!("/v1/projects/{p}/memberships");
     for (method, body) in [("DELETE", json!(null)), ("PUT", json!({"role":"editor"}))] {
@@ -203,10 +202,9 @@ async fn final_admin_survives_self_changes_and_crossed_writer_races() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn bounded_member_pages_and_nullable_current_role_require_browser_admin() {
-    let Some((db, app, p)) = fixture().await else {
-        return;
-    };
+    let (db, app, p) = fixture().await;
     let (_, sa) = user(&db, &p, Some("admin")).await;
     let (_, sv) = user(&db, &p, Some("viewer")).await;
     let (outsider, _) = user(&db, &p, None).await;
@@ -310,10 +308,9 @@ async fn bounded_member_pages_and_nullable_current_role_require_browser_admin() 
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn lost_issuance_returns_only_typed_original_metadata_and_revocation_state() {
-    let Some((db, app, p)) = fixture().await else {
-        return;
-    };
+    let (db, app, p) = fixture().await;
     let bundle = Uuid::new_v4();
     let integration = Uuid::new_v4();
     sqlx::query("INSERT INTO bundles(id,project_id,name) VALUES($1,$2,'fixture')")
@@ -324,7 +321,7 @@ async fn lost_issuance_returns_only_typed_original_metadata_and_revocation_state
         .unwrap();
     let version = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO versions(id,project_id,bundle_id,digest,payload) VALUES($1,$2,$3,$4,$5)",
+        "INSERT INTO versions(id,project_id,bundle_id,digest,payload,created_by) VALUES($1,$2,$3,$4,$5,'fixture-author')",
     )
     .bind(version)
     .bind(&p)

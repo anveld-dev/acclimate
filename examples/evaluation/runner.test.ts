@@ -11,7 +11,7 @@ const safeCode =
   (...codes: string[]) =>
   (error: unknown) =>
     error instanceof EvaluationError && codes.includes(error.code);
-import { openJournal, EvaluationBusyError } from './journal.js';
+import { openJournal, EvaluationBusyError } from '../../packages/sdk/src/evaluation/journal.js';
 import { paymentAdapter } from './tests/payment.js';
 import { localEvaluationDescriptor } from './tests/descriptors.js';
 import {
@@ -333,7 +333,7 @@ test('installed case inventory mismatch fails before starting or executing and c
     };
     await assert.rejects(
       runEvaluation({ ...options, adapter }),
-      /installed fixture\/application|inventory/,
+      safeCode('descriptor.mismatch'),
     );
     assert.equal(executions, 0);
     assert.deepEqual(f.events, []);
@@ -409,13 +409,13 @@ test('copying an unfinished journal to a different root refuses recovery and cal
   }
 });
 
-for (const changed of [
-  'id',
-  'runtime',
-  'candidateVersionId',
-  'candidateDigest',
-  'attemptId',
-  'evaluatorPrincipal',
+for (const [changed, expectedCode] of [
+  ['id', 'version.binding_mismatch'],
+  ['runtime', 'descriptor.mismatch'],
+  ['candidateVersionId', 'version.binding_mismatch'],
+  ['candidateDigest', 'version.binding_mismatch'],
+  ['attemptId', 'auth.principal_mismatch'],
+  ['evaluatorPrincipal', 'auth.principal_mismatch'],
 ] as const)
   test(`start response cannot change frozen ${changed} before app execution`, async () => {
     const { f, options, cleanup } = await disposable();
@@ -437,7 +437,7 @@ for (const changed of [
       };
     };
     try {
-      await assert.rejects(runEvaluation(options));
+      await assert.rejects(runEvaluation(options), safeCode(expectedCode));
       assert.equal(executions, 0);
       assert.deepEqual(
         f.events.map((event) => event.kind),

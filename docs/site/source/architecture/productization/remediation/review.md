@@ -1,6 +1,6 @@
 # Plan review and decisions
 
-> Earlier implementation record. Production startup, identity and evaluator setup now follow the [production-only plan](../../production-only/plan.md). Old local-launcher commands below are retired.
+> Earlier implementation record. Evaluation completion now requires evidence bound to the exact request and attempt. Production startup, identity and evaluator setup now follow the [production-only plan](../../production-only/plan.md). Old local-launcher commands below are retired.
 
 Four fresh agents reviewed the initial five-agent plan against implementation and test code. These are the resolutions for implementation, not evidence that the fixes have landed.
 

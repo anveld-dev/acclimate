@@ -1,5 +1,5 @@
 import { Compartment, EditorState, type Extension } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
+import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
@@ -12,12 +12,13 @@ export type EditorOptions = {
   path?: string;
   language?: string;
   disabled: boolean;
+  lineNumbers?: boolean;
   label: string;
   describedBy?: string;
   invalid?: boolean | 'true' | 'false' | 'grammar' | 'spelling';
 };
 
-const colors = HighlightStyle.define([
+export const colors = HighlightStyle.define([
   { tag: [tags.keyword, tags.modifier, tags.operatorKeyword], class: 'cm-syntax-keyword' },
   { tag: [tags.string, tags.special(tags.string)], class: 'cm-syntax-string' },
   { tag: [tags.number, tags.bool, tags.null], class: 'cm-syntax-number' },
@@ -30,7 +31,7 @@ const colors = HighlightStyle.define([
   },
 ]);
 
-async function editorLanguage(language: string | null): Promise<Extension> {
+export async function editorLanguage(language: string | null): Promise<Extension> {
   switch (language) {
     case 'markdown':
       return (await import('@codemirror/lang-markdown')).markdown();
@@ -72,6 +73,7 @@ export function createCodeEditor(
   let languageEpoch = 0;
   let disposed = false;
   const editSettings = () => [
+    ...(options.lineNumbers ? [lineNumbers()] : []),
     EditorState.readOnly.of(options.disabled),
     EditorView.editable.of(!options.disabled),
     EditorView.contentAttributes.of({
@@ -147,6 +149,7 @@ export function createCodeEditor(
       } else if (next.language !== previous.language) void highlight();
       if (
         next.disabled !== previous.disabled ||
+        next.lineNumbers !== previous.lineNumbers ||
         next.label !== previous.label ||
         next.describedBy !== previous.describedBy ||
         next.invalid !== previous.invalid

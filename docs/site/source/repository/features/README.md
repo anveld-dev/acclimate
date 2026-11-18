@@ -47,7 +47,7 @@ npm run test:bdd -- --dev-console --tags @UI-DRAFT-02
 | [Identity boundary](identity.feature) | Public callback handler against real Rust sessions; fixture external identity provider, transaction binding, expiry, logout and cookie flags |
 | [UX refinements](ux_refinement.feature), [reload recovery](recovery_reload.feature) | Invalid draft correction, explicit reload/cancel, missing files, evaluator edits, direct initial file import and lost-save recovery after browser reload |
 
-The reviewed [inventory](../scripts/bdd/inventory.json) records 155 behaviors and 198 scenario variants. Every expected variant must run and pass. A missing, skipped, undefined or failing variant leaves that behavior uncovered. The coverage checker has its own regression tests.
+The reviewed [inventory](../scripts/bdd/inventory.json) records 156 behaviors and 200 scenario variants. Every expected variant must run and pass. A missing, skipped, undefined or failing variant leaves that behavior uncovered. The coverage checker has its own regression tests.
 
 After a run, open `artifacts/bdd/coverage.md`. Machine results are in `coverage.json`, `results.json` and `junit/`. Browser failures save screenshots and Playwright traces in `failures/`; these contain disposable fixture data and should still be treated as private. To inspect a trace: `.venv-bdd/bin/playwright show-trace artifacts/bdd/failures/<name>.zip`.
 
@@ -64,7 +64,7 @@ Keep the fixture suite and real Keycloak checks. Fixtures let us test invalid si
 | Gate | Coverage | Command |
 |---|---|---|
 | Deployment and fixture contracts | Private ports, required configuration, PostgreSQL separation, confidential client, readiness failures and proxy-header handling | `npm run test:identity:contracts` |
-| Full product behaviors | All 155 behaviors / 198 variants, including drafts → evaluation → release, roles and identity boundaries | `npm run test:bdd` |
+| Full product behaviors | All 156 behaviors / 200 variants, including drafts → evaluation → release, roles and identity boundaries | `npm run test:bdd` |
 | OIDC failure cases | Built and Vite consoles, signed tokens, state/nonce/issuer/signature failures, callback replay, rotation, logout and canonical Host | `npm run test:identity:protocol -- --pg-bin /path/to/postgresql/bin --report artifacts/identity/protocol.json` |
 | Real Keycloak | Built and Vite consoles, rejected password, PKCE, callback and grant policies, rotation, memberships/removal, PostgreSQL restart, logout and SSO sign-in afterward | `npm run test:identity:keycloak -- …` (setup below) |
 
@@ -77,7 +77,7 @@ python3 scripts/testing/fetch_keycloak.py --output artifacts/test-tools/keycloak
 npm run test:identity:keycloak -- --keycloak-home artifacts/test-tools/keycloak/keycloak-26.8.2 --java-home /absolute/java21/home --pg-bin /path/to/postgresql/bin --report artifacts/keycloak/provider-check.json
 ```
 
-The default checks **both** runtimes, with a fresh PostgreSQL cluster and copied Keycloak installation for each. Use `--runtime built` or `--runtime vite` for a focused run; the report records which ran. Use a new report path each time. The provider gate is separate from the 155-story inventory, so fixture coverage cannot stand in for real Keycloak coverage.
+The default checks **both** runtimes, with a fresh PostgreSQL cluster and copied Keycloak installation for each. Use `--runtime built` or `--runtime vite` for a focused run; the report records which ran. Use a new report path each time. The provider gate is separate from the behavior inventory, so fixture coverage cannot stand in for real Keycloak coverage.
 
 CI runs all four gates and gives Keycloak its own job. The provider check verifies the public realm template and actual PostgreSQL identity rows; it doesn't run the Docker image, Caddy or your public DNS/TLS setup. Those remain deployment checks in the [Keycloak guide](../deploy/keycloak/README.md#qualification-and-operations).
 

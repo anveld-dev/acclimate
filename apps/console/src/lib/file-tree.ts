@@ -1,6 +1,11 @@
 import type { FileKind } from '@acclimate/sdk';
 
-export type FileTreeItem = { id: string; path: string; kind: FileKind };
+export type FileTreeItem = {
+  id: string;
+  path: string;
+  kind: FileKind;
+  changeDescription?: 'Added' | 'Changed';
+};
 export type FileTreeFolder = {
   type: 'folder';
   id: string;
@@ -8,6 +13,7 @@ export type FileTreeFolder = {
   path: string;
   parentId?: string;
   children: FileTreeNode[];
+  fileCount: number;
 };
 export type FileTreeLeaf = {
   type: 'file';
@@ -52,10 +58,12 @@ export function buildFileTree(items: readonly FileTreeItem[]): FileTreeNode[] {
             path: segments.join('/'),
             parentId,
             children: [],
+            fileCount: 0,
           };
           folders.set(id, folder);
           children.push(folder);
         }
+        folder.fileCount++;
         children = folder.children;
         parentId = id;
       }

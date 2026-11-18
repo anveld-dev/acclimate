@@ -222,3 +222,163 @@
 .content-workspace:has(> .file-navigator[data-compact='true']) .content-entry-heading .file-glyph {
   display: none;
 }
+
+.file-navigator .file-tree-row.is-selected {
+  box-shadow: inset 3px 0 var(--ring);
+}
+.file-navigator .file-tree-row.is-selected:focus-visible {
+  box-shadow: none;
+}
+.file-editor-workbench .draft-status p[data-unsaved='true'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-editor-workbench .draft-status p[data-unsaved='true']::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Keep the file picker independent of the desktop rail's reading-width preference. */
+.content-workspace:has(> .file-navigator[data-collapsed='true']) {
+  grid-template-columns: 46px minmax(0, 1fr);
+}
+.file-navigator .desktop-file-rail-toggle[data-slot='button'] {
+  position: absolute;
+  z-index: 1;
+  right: 6px;
+  bottom: 3px;
+  width: 32px;
+  height: 32px;
+  color: var(--muted-foreground);
+}
+.file-navigator .desktop-file-rail-toggle[hidden] {
+  display: none;
+}
+.file-navigator[data-collapsed='true'] .desktop-file-rail-toggle {
+  bottom: auto;
+  top: 8px;
+}
+.file-navigator[data-collapsed='true'] .desktop-file-rail-toggle[data-slot='button'] {
+  flex-direction: column;
+  width: 36px;
+  height: auto;
+  min-height: 96px;
+  gap: 10px;
+  right: 5px;
+  padding-block: 8px;
+}
+.file-rail-caption {
+  writing-mode: vertical-rl;
+  font-size: 14px;
+  line-height: 1;
+}
+.file-folder-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.file-folder-selected {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.file-tree-change {
+  margin-inline-start: auto;
+  font: 600 14px/1 var(--font-mono, monospace);
+  color: var(--primary);
+}
+.file-tree-row.is-selected .file-tree-change {
+  color: inherit;
+}
+.file-navigator[data-collapsible='true'][data-compact='false'] .file-navigator-footer {
+  padding-right: 46px;
+}
+.content-workspace:has(> .file-navigator[data-collapsible='true'][data-compact='false']) {
+  --file-forest: #274b3d;
+  --file-on-forest: #fffaf2;
+  --file-paper: #faf8f3;
+  --file-rule: #d9d6c9;
+  --file-current-surface: #e6ecdf;
+  --file-current-ink: #344a35;
+}
+.file-navigator[data-collapsible='true'][data-compact='false'] {
+  background: var(--file-paper);
+  border-color: var(--file-rule);
+}
+.file-navigator[data-collapsible='true'][data-compact='false'] .file-tree-row.is-selected {
+  color: var(--file-on-forest);
+  background: var(--file-forest);
+  box-shadow: none;
+}
+.file-navigator[data-collapsible='true'][data-compact='false']
+  .file-tree-row.is-selected
+  .file-glyph {
+  color: inherit;
+}
+.file-navigator[data-collapsible='true'][data-compact='false']
+  .file-tree-row.is-selected:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -4px;
+}
+.content-workspace:has(> .file-navigator[data-collapsible='true'][data-compact='false'])
+  .compact-selected-file
+  :is(h2, h3) {
+  font:
+    600 22px/1.2 Baskerville,
+    'Iowan Old Style',
+    Georgia,
+    serif;
+  letter-spacing: -0.02em;
+}
+.content-workspace:has(> .file-navigator[data-collapsible='true'][data-compact='false'])
+  .published-revision-link {
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--file-current-surface);
+  color: var(--file-current-ink);
+}
+.published-file-actions [data-slot='button'] {
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  gap: 10px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.published-file-actions [data-slot='button']:is(:hover, :focus-visible) {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+@media (prefers-color-scheme: dark) {
+  .content-workspace:has(> .file-navigator[data-collapsible='true'][data-compact='false']) {
+    --file-forest: #bad1bd;
+    --file-on-forest: #14261d;
+    --file-paper: #202321;
+    --file-rule: #41473f;
+    --file-current-surface: #344338;
+    --file-current-ink: #e5eedb;
+  }
+}
+
+/* Empty detail panels can be shorter than a search form and its recovery actions. */
+.content-workspace:not(:has(> .content-detail > .compact-selected-file))
+  > .file-navigator[data-collapsible='true'][data-compact='false']
+  > .file-navigator-body:not([hidden]) {
+  position: static;
+  min-height: 100%;
+}
+
+.file-rail-tooltip[data-slot='tooltip-content'] {
+  align-items: flex-start;
+  flex-direction: column;
+  overflow-wrap: anywhere;
+}

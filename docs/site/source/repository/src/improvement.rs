@@ -541,8 +541,7 @@ pub async fn list_comparisons(
     let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
     let n = q.bounds()?;
     let bid = path(&b)?;
-    let c =
-        crate::pagination::resolve(&mut tx, "comparisons", &p, bid, q.cursor.as_deref()).await?;
+    let c = crate::pagination::decode("comparisons", &p, bid, q.cursor.as_deref())?;
     let (principal, reviewer) =
         crate::connected_learning::audit_reader(&s, &h, &mut tx, &p).await?;
     let visible = crate::connected_learning::audit_visible(AUDIT_COMPARISON_MATCH, 6, 7);
@@ -586,7 +585,7 @@ pub async fn list_proposals(
     let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
     let n = q.bounds()?;
     let bid = path(&b)?;
-    let c = crate::pagination::resolve(&mut tx, "proposals", &p, bid, q.cursor.as_deref()).await?;
+    let c = crate::pagination::decode("proposals", &p, bid, q.cursor.as_deref())?;
     let rows=sqlx::query("SELECT p.id,p.parent_version_id AS proposal_parent_version_id,p.status,p.attempts,p.candidate_version_id,p.rationale,p.error,p.created_at,v.bundle_id,v.parent_version_id,v.digest,v.created_at AS v_created FROM proposals p LEFT JOIN versions v ON v.id=p.candidate_version_id WHERE p.project_id=$1 AND p.bundle_id=$2 AND ($3::timestamptz IS NULL OR (p.created_at,p.id)<($3,$4)) ORDER BY p.created_at DESC,p.id DESC LIMIT $5").bind(&p).bind(bid).bind(c.map(|x|x.0)).bind(c.map(|x|x.1)).bind(n+1).fetch_all(&mut *tx).await.map_err(db)?;
     let items = rows
         .into_iter()

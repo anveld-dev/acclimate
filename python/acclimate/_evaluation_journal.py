@@ -107,9 +107,6 @@ class Journal:
         atomic_private_write(self.directory/filename,body)
         return {"file":filename,"bytes":len(body),"sha256":sha256(body)}
 
-    def write_body(self,kind: str,body: bytes) -> dict:
-        return self.save_body(kind,body)
-
     def read_body(self,kind: str,state: dict) -> bytes:
         self.assert_owned()
         if kind not in ("start","submit","finish") or type(state.get("wireBodies")) is not dict:

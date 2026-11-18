@@ -4,7 +4,6 @@ import { spawnSync } from 'node:child_process';
 import ts from 'typescript';
 import {
   basicDeliveryRecipes,
-  agentConnectionRecipes,
   deliveryRecipes,
 } from '../src/components/sdk-setup-recipes';
 
@@ -62,48 +61,16 @@ print(json.dumps(ast.literal_eval(assignment.value)))`,
   assert.deepEqual(JSON.parse(python.stdout), Object.values(selection));
 });
 
-test('the basic path reports checked files without enabling reporters or claiming an agent start', () => {
-  const recipes = basicDeliveryRecipes({ projectId: 'p', bundleId: 'b', channel: 'stable' });
-  for (const code of Object.values(recipes)) {
-    assert.doesNotMatch(
-      code,
-      /createReceiptReporter|DeliveryReporter|subprocess|spawn|reportStarted|report_started|ACCLIMATE_RECEIPT_TOKEN|ACCLIMATE_INTEGRATION/,
-    );
-    assert.match(code, /checkedFiles/);
-    for (const key of [
-      'ACCLIMATE_URL',
-      'ACCLIMATE_TOKEN',
-      'ACCLIMATE_SCOPE',
-      'ACCLIMATE_CACHE',
-      'ACCLIMATE_JOB_DIR',
-    ])
-      assert.match(code, new RegExp(key));
-  }
-});
-
-test('all generated JavaScript recipes run with Node syntax and context recipes retain private result handling', () => {
+test('generated delivery scripts parse as Node ES modules', () => {
   const selection = { projectId: 'p', bundleId: 'b', channel: 'stable' };
-  for (const recipe of [
-    basicDeliveryRecipes(selection),
-    deliveryRecipes(selection),
-    agentConnectionRecipes(selection),
-  ]) {
+  for (const recipe of [basicDeliveryRecipes(selection), deliveryRecipes(selection)]) {
     const check = spawnSync(process.execPath, ['--input-type=module', '--check'], {
       input: recipe.typescript,
       encoding: 'utf8',
     });
-    assert.equal(check.status, 0, check.stderr);
     assert.ifError(check.error);
+    assert.equal(check.status, 0, check.stderr);
   }
-  const context = agentConnectionRecipes(selection);
-  assert.match(context.typescript, /instruction, skillFiles, approvedMemory/);
-  assert.match(context.typescript, /const approvedMemory = \[\]/);
-  assert.doesNotMatch(context.typescript, /fixtureResult: result/);
-  const python = spawnSync('python3', ['-c', 'import ast,sys; ast.parse(sys.stdin.read())'], {
-    input: context.python,
-    encoding: 'utf8',
-  });
-  assert.equal(python.status, 0, python.stderr);
 });
 
 test('optional observation recipes bind the project and leave start reporting to a real app event', () => {

@@ -1,4 +1,5 @@
 //! Actual process tests use only the explicitly supplied, disposable test cluster.
+mod common;
 use sqlx::{PgPool, Row};
 use std::{
     net::TcpListener,
@@ -90,10 +91,9 @@ async fn no_lock(db: &PgPool) {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn real_process_ownership_readiness_recovery_and_shutdown() {
-    let Ok(admin_url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
-        return;
-    };
+    let admin_url = common::database_url();
     let admin = PgPool::connect(&admin_url).await.unwrap();
     let name = format!("runtime_{}", Uuid::new_v4().simple());
     // A non-superuser service role lets us interrupt ordinary pool connections
@@ -257,10 +257,9 @@ async fn real_process_ownership_readiness_recovery_and_shutdown() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn migration_failure_never_opens_a_listener() {
-    let Ok(admin_url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
-        return;
-    };
+    let admin_url = common::database_url();
     let admin = PgPool::connect(&admin_url).await.unwrap();
     let name = format!("runtime_bad_schema_{}", Uuid::new_v4().simple());
     sqlx::query(&format!("CREATE DATABASE {name}"))
@@ -288,10 +287,9 @@ async fn migration_failure_never_opens_a_listener() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn blocked_worker_is_cancelled_before_queue_ownership_is_released() {
-    let Ok(admin_url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
-        return;
-    };
+    let admin_url = common::database_url();
     let admin = PgPool::connect(&admin_url).await.unwrap();
     let name = format!("runtime_shutdown_{}", Uuid::new_v4().simple());
     sqlx::query(&format!("CREATE DATABASE {name}"))

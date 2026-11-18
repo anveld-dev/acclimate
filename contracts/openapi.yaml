@@ -3,7 +3,7 @@
   "info": {
     "title": "Acclimate content service",
     "version": "0.1.0",
-    "description": "Content service with immutable native compatibility targets, recoverable audited console commands, explicit strict/legacy evaluation binding, and app-owned execution. See contracts/remediation.md for invariants and rollout."
+    "description": "Content service with immutable native compatibility targets, recoverable audited console commands, request- and attempt-bound evaluation evidence, and app-owned execution. See contracts/remediation.md for invariants and rollout."
   },
   "security": [
     {
@@ -1558,7 +1558,7 @@
             }
           }
         },
-        "description": "Chronological created_at/id keyset pagination; scoped legacy UUID cursors remain accepted."
+        "description": "Chronological created_at/id keyset pagination. Pass the scoped nextCursor returned by the preceding page."
       }
     },
     "/v1/projects/{projectId}/bundles/{bundleId}/evaluation-requests/{evaluationId}": {
@@ -1884,7 +1884,7 @@
             }
           }
         },
-        "description": "Legacy setup/draft lookup or explicit allowlisted canonical operationPath. Rechecks effective current action authority before returning a result."
+        "description": "Setup/draft lookup by key or route lookup by canonical operationPath. Rechecks effective current action authority before returning a result."
       }
     },
     "/v1/projects/{projectId}/operations/{operationId}/close": {
@@ -1950,7 +1950,7 @@
             }
           }
         },
-        "description": "Existing commit wins; otherwise fence the exact legacy-global or route-scoped identity. Repeatable; late marked and unmarked writes cannot pass the fence."
+        "description": "Existing commit wins; otherwise fence the matching global or route-scoped identity. Repeatable; late marked and unmarked writes cannot pass the fence."
       }
     },
     "/v1/projects/{projectId}/memberships": {
@@ -3261,8 +3261,9 @@
           },
           "requireBoundEvidence": {
             "type": "boolean",
-            "default": false,
-            "description": "New console requests set true; omitted legacy requests retain legacy completion semantics."
+            "const": true,
+            "default": true,
+            "description": "Completing an evaluation requires a comparison bound to its request and attempt."
           }
         },
         "required": [
@@ -3329,8 +3330,9 @@
           },
           "requireBoundEvidence": {
             "type": "boolean",
-            "default": false,
-            "description": "New console requests set true; omitted legacy requests retain legacy completion semantics."
+            "const": true,
+            "default": true,
+            "description": "Completing an evaluation requires a comparison bound to its request and attempt."
           },
           "id": {
             "type": "string",
@@ -3387,6 +3389,7 @@
           "runtime",
           "graderRevision",
           "expectedCases",
+          "requireBoundEvidence",
           "proposalId",
           "id",
           "status",

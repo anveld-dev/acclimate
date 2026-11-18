@@ -216,7 +216,6 @@ def journey(output):
                     "'bundles',(SELECT count(*) FROM bundles),"
                     "'versions',(SELECT count(*) FROM versions),"
                     "'operations',(SELECT count(*) FROM operation_records),"
-                    "'commands',(SELECT count(*) FROM command_results),"
                     "'audit',(SELECT count(*) FROM mutation_audit))"))
 
             def validate(value):

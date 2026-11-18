@@ -237,7 +237,7 @@ test('final ContentDiff includes kind-only changes and empty added/removed files
   assert.match(html, /Download current entry JSON/);
 });
 
-test('large diff keeps a bounded preview with complete downloadable changed lines', () => {
+test('large diff opens the shared merge view with complete downloadable changed lines', () => {
   const text = Array.from({ length: 700 }, (_, i) => `line-${i}`).join('\n');
   const html = renderToStaticMarkup(
     createElement(ContentDiff, {
@@ -245,7 +245,7 @@ test('large diff keeps a bounded preview with complete downloadable changed line
       current: { schemaVersion: 1, files: [{ path: 'large.md', kind: 'instruction', text }] },
     }),
   );
-  assert.match(html, /Preview limited to 500 changed lines/);
+  assert.match(html, /Changed lines in large.md/);
   assert.match(html, /Download all changed lines/);
   assert.match(decodeURIComponent(html), /line-699/);
 });

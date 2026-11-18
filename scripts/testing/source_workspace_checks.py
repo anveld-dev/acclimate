@@ -1,6 +1,6 @@
 """Focused actual-container, focus, source and review checks."""
 import json
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urlsplit
 from playwright.sync_api import expect
 from scripts.testing.compact_console import visit
 from scripts.bdd.layout import capture_layout
@@ -59,8 +59,12 @@ def verify(w,b,p,routes,out,checks):
     capture_layout(p,out,'whole-draft-review-1440')
     map=review.get_by_role('region',name='Changed artifact map',exact=True)
     change=map.get_by_role('button').first
-    change.click();expect(review.locator('.content-diff h3')).to_have_count(1)
-    expect(change).to_have_attribute('aria-pressed','true')
+    change.click()
+    expect(review.get_by_role('combobox',name='Review scope')).to_have_value('path:AGENTS.md')
+    merge=review.get_by_role('region',name='Changed lines in AGENTS.md')
+    expect(merge.locator('.cm-mergeView .cm-content')).to_have_count(2)
+    merge.get_by_role('button',name='Unified',exact=True).click()
+    expect(merge.locator('.cm-content')).to_have_count(1)
     review.get_by_role('button',name='Show all file changes',exact=True).click()
     expect(review.locator('.content-diff h3')).to_have_count(5)
     href=review.get_by_role('link',name='Download current entry JSON',exact=True).last.get_attribute('href')
@@ -73,8 +77,8 @@ def verify(w,b,p,routes,out,checks):
         assert button.locator('.artifact-change-path').evaluate('e=>e.scrollHeight<=e.clientHeight+1')
         assert button.evaluate('e=>e.scrollHeight<=e.clientHeight+1')
     long_change.focus();p.keyboard.press('Enter')
-    expect(review.locator('.content-diff h3')).to_have_count(1)
-    expect(long_change).to_have_attribute('aria-pressed','true')
+    selected_path=parse_qs(urlsplit(routes['draft']).query)['path'][0]
+    expect(review.get_by_role('combobox',name='Review scope')).to_have_value('path:'+selected_path)
     review.get_by_role('button',name='Show all file changes',exact=True).click()
     expect(review.locator('.content-diff h3')).to_have_count(5)
     capture_layout(p,out,'whole-draft-review-constrained-430')
@@ -82,4 +86,5 @@ def verify(w,b,p,routes,out,checks):
     # The source engine stays mounted or reconciles its exact source through review.
     current=p.get_by_role('textbox',name='Content',exact=True)
     expect_editor_value(current,edited)
+    expect(current).to_be_focused()
     checks.append('Whole-draft browser review map/selection/show-all, parsed JSON exact source, constrained reflow and edit retention')

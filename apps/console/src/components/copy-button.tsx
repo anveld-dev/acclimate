@@ -35,7 +35,7 @@ export function CopyButton({
       size={iconOnly ? 'icon' : size}
       className={`${iconOnly ? 'size-9 min-h-9 min-w-9' : ''} ${className ?? ''}`}
       disabled={disabled}
-      aria-label={label}
+      aria-label={status === 'Copied.' ? `Copied — ${label}` : label}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value);

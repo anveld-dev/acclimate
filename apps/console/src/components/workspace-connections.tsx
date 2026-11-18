@@ -4,6 +4,8 @@ import { useNavigate } from '@tanstack/react-router';
 import type { DeliveryReceipt, IntegrationCredential, Page } from '@acclimate/sdk';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { DirectorySearch } from './ui/directory-search';
+import { ArrowUpRight, ChevronRight, Radio } from 'lucide-react';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { NativeSelect } from './ui/native-select';
@@ -56,6 +58,7 @@ function ConnectionPage({
   initial?: ConnectionsResult;
 }) {
   const selectedId = typeof search.integration === 'string' ? search.integration : undefined;
+  const pendingFocus = useRef('');
   const [result, setResult] = useState<ConnectionsResult>(
     initial ?? { ok: false, message: 'Loading connections…' },
   );
@@ -80,6 +83,22 @@ function ConnectionPage({
       active = false;
     };
   }, [projectId, selectedId, initial]);
+  useEffect(() => {
+    if (
+      !result.ok ||
+      (result.state.selected?.integration.id ?? undefined) !== selectedId ||
+      !pendingFocus.current
+    )
+      return;
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById(pendingFocus.current);
+      if (target) {
+        target.focus();
+        pendingFocus.current = '';
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [result, selectedId]);
   async function refresh() {
     try {
       setResult(await readConnections({ data: { projectId, integrationId: selectedId } }));
@@ -92,21 +111,33 @@ function ConnectionPage({
       className="workspace-connections space-y-4"
       data-selected={result.ok && Boolean(result.state.selected)}
     >
-      <PageTitle
-        title="Connections"
-        description="App credentials and reported delivery for your bundles."
-      />
+      {!result.ok && (
+        <PageTitle
+          title="Connections"
+          description="App credentials and reported delivery for your bundles."
+        />
+      )}
       {result.ok ? (
         <ConnectionWorkspace
           key={`${result.state.actorScope}:${projectId}:${selectedId ?? 'index'}:${String(search.bundleId ?? '')}:${String(search.channel ?? '')}`}
           state={result.state}
           search={search}
           refresh={refresh}
+          focusAfterNavigation={(id) => {
+            pendingFocus.current = id;
+          }}
         />
       ) : (
-        <p role="alert" className="workspace-panel p-4">
-          {result.message}
-        </p>
+        <div className="workspace-panel space-y-3 p-4">
+          <p role="alert">{result.message}</p>
+          {result.connectionMissing && (
+            <Button asChild variant="outline" size="sm">
+              <ConsoleLink href={scopedConnectionHref(projectId, search)}>
+                Back to connections
+              </ConsoleLink>
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -116,7 +147,9 @@ function ConnectionWorkspace({
   state,
   search,
   refresh,
+  focusAfterNavigation,
 }: {
+  focusAfterNavigation: (id: string) => void;
   state: ConnectionsState;
   search: Record<string, unknown>;
   refresh: () => Promise<void>;
@@ -182,12 +215,39 @@ function ConnectionWorkspace({
   );
   const filterBundle = typeof search.bundleId === 'string' ? search.bundleId : undefined;
   const filterChannel = typeof search.channel === 'string' ? search.channel : undefined;
-  const rows = state.integrations.filter(
+  const initialQuery = typeof search.q === 'string' ? search.q : '';
+  const initialAccess =
+    search.access === 'enabled' || search.access === 'revoked' ? search.access : 'all';
+  const [query, setQuery] = useState(initialQuery);
+  const [access, setAccess] = useState<string>(initialAccess);
+  useEffect(() => {
+    setQuery(initialQuery);
+    setAccess(initialAccess);
+  }, [initialQuery, initialAccess]);
+  const bundleName = (id: string) => state.bundles.find((item) => item.id === id)?.name ?? id;
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const scopedRows = state.integrations.filter(
     (item) =>
       (!filterBundle || item.bundleId === filterBundle) &&
       (!filterChannel || item.channel === filterChannel),
   );
-  const connectionHref = (id: string) => scopedConnectionHref(state.projectId, search, id);
+  const rows = scopedRows.filter((item) => {
+    const fields = [
+      item.displayName,
+      item.id,
+      bundleName(item.bundleId),
+      item.bundleId,
+      item.channel,
+    ]
+      .join(' ')
+      .toLowerCase();
+    return (
+      terms.every((term) => fields.includes(term)) &&
+      (access === 'all' || item.enabled === (access === 'enabled'))
+    );
+  });
+  const directorySearch = { ...search, q: query, access };
+  const connectionHref = (id: string) => scopedConnectionHref(state.projectId, directorySearch, id);
   const setupHref = selected
     ? bundleHref(
         { projectId: state.projectId, bundleId: selected.bundleId, channel: selected.channel },
@@ -325,16 +385,49 @@ function ConnectionWorkspace({
                 setConfirm('credential');
               }}
             >
-              Revoke this credential
+              Revoke {item.kind === 'content-read' ? 'read' : 'reporting'} credential
             </Button>
           </div>
         ))}
       </div>
     );
   }
-  const bundleName = (id: string) => state.bundles.find((item) => item.id === id)?.name ?? id;
+  const directoryAbout = (
+    <Disclosure className="text-sm">
+      <DisclosureTrigger className="cursor-pointer text-muted-foreground">
+        Workspace details
+      </DisclosureTrigger>
+      <DisclosureContent className="space-y-2 pt-2">
+        <p className="text-muted-foreground">
+          A connection groups an app’s credentials for one bundle and channel. Creating one does not
+          connect a running app. SDK clients can fetch content without a connection.
+        </p>
+        <p className="break-words">Workspace: {state.projectName}</p>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span>Workspace ID:</span>
+          <code className="break-all">{state.projectId}</code>
+          <CopyButton value={state.projectId} label="Copy workspace ID" />
+        </div>
+      </DisclosureContent>
+    </Disclosure>
+  );
   return (
     <>
+      <PageTitle
+        title="Connections"
+        description="App credentials and reported delivery for your bundles."
+        actions={
+          <Button
+            disabled={!state.canManage || busy || !state.bundles.length}
+            onClick={(event) => {
+              createTriggerRef.current = event.currentTarget;
+              setCreating(true);
+            }}
+          >
+            New connection
+          </Button>
+        }
+      />
       <div className="connection-workspace" data-selected={Boolean(state.selected)}>
         <section
           className={
@@ -342,44 +435,20 @@ function ConnectionWorkspace({
           }
           aria-label="Workspace connections"
         >
-          <div className="connection-directory-header flex flex-wrap items-center justify-between gap-3">
-            {selected ? (
+          {selected && (
+            <div className="connection-directory-header">
               <ConsoleLink
-                href={scopedConnectionHref(state.projectId, search, undefined)}
+                href={scopedConnectionHref(state.projectId, directorySearch)}
                 className="underline"
+                onClick={(e) => {
+                  if (e.detail === 0) focusAfterNavigation('connection-entry-' + selected.id);
+                }}
               >
                 Back to connections
               </ConsoleLink>
-            ) : (
-              <h2 className="text-sm font-semibold">App connections</h2>
-            )}
-            <Button
-              disabled={!state.canManage || busy || !state.bundles.length}
-              onClick={(event) => {
-                createTriggerRef.current = event.currentTarget;
-                setCreating(true);
-              }}
-            >
-              New connection
-            </Button>
-          </div>
-          <Disclosure className="text-sm">
-            <DisclosureTrigger className="cursor-pointer text-muted-foreground">
-              About connections and workspace details
-            </DisclosureTrigger>
-            <DisclosureContent className="space-y-2 pt-2">
-              <p className="text-muted-foreground">
-                A connection groups an app’s credentials for one bundle and channel. Creating one
-                does not connect a running app. SDK clients can fetch content without a connection.
-              </p>
-              <p className="break-words">Workspace: {state.projectName}</p>
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span>Workspace ID:</span>
-                <code className="break-all">{state.projectId}</code>
-                <CopyButton value={state.projectId} label="Copy workspace ID" />
-              </div>
-            </DisclosureContent>
-          </Disclosure>
+            </div>
+          )}
+          {selected && directoryAbout}
           {selected && (
             <div className="space-y-2">
               <Label htmlFor="selected-app-connection">App connection</Label>
@@ -425,10 +494,12 @@ function ConnectionWorkspace({
               )}
             </div>
           )}
-          {(filterBundle || filterChannel) && (
+          {(filterBundle || filterChannel || (selected && (query || access !== 'all'))) && (
             <div className="text-sm">
               Filtered to {filterBundle ? bundleName(filterBundle) : 'all bundles'}
-              {filterChannel ? ` / ${filterChannel}` : ''}.{' '}
+              {filterChannel ? ` / ${filterChannel}` : ''}
+              {query ? ' · ' + query : ''}
+              {access !== 'all' ? ' · ' + access : ''}.{' '}
               <ConsoleLink
                 href={scopedConnectionHref(state.projectId, {}, selected?.id)}
                 className="underline"
@@ -437,18 +508,64 @@ function ConnectionWorkspace({
               </ConsoleLink>
             </div>
           )}
+          {!selected && (
+            <div className="connection-index-tools">
+              {scopedRows.length > 0 && (
+                <>
+                  <DirectorySearch
+                    id="connection-directory-search"
+                    label="Search connections"
+                    placeholder="Search app, bundle, channel or ID"
+                    value={query}
+                    onValueChange={setQuery}
+                  />
+                  <div className="connection-access-filter">
+                    <Label htmlFor="connection-directory-access">Access</Label>
+                    <NativeSelect
+                      id="connection-directory-access"
+                      value={access}
+                      onChange={(e) => setAccess(e.target.value)}
+                    >
+                      <option value="all">All access</option>
+                      <option value="enabled">Enabled</option>
+                      <option value="revoked">Revoked</option>
+                    </NativeSelect>
+                  </div>
+                  <span role="status">
+                    {rows.length} of {scopedRows.length} connections
+                  </span>
+                </>
+              )}
+              {directoryAbout}
+            </div>
+          )}
           {!selected &&
             (!rows.length ? (
               <div className="space-y-2 rounded border border-dashed p-4">
                 <p>
-                  {filterBundle || filterChannel
-                    ? 'No connections match these filters.'
-                    : !state.bundles.length
-                      ? 'Add a bundle before setting up app access.'
-                      : state.canManage
-                        ? 'Create a connection for app credentials and optional reporting.'
-                        : 'No connections yet. Ask a workspace administrator to configure app access.'}
+                  {query.trim() || access !== 'all'
+                    ? 'No connections match your search and access filters.'
+                    : filterBundle || filterChannel
+                      ? 'No connections match these filters.'
+                      : !state.bundles.length
+                        ? 'Add a bundle before setting up app access.'
+                        : state.canManage
+                          ? 'Create a connection for app credentials and optional reporting.'
+                          : 'No connections yet. Ask a workspace administrator to configure app access.'}
                 </p>
+                {scopedRows.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setQuery('');
+                      setAccess('all');
+                      document.getElementById('connection-directory-search')?.focus();
+                    }}
+                  >
+                    Reset search and access
+                  </Button>
+                )}
                 {!state.bundles.length && (
                   <ConsoleLink
                     href={workspaceHref(state.projectId, 'bundles')}
@@ -459,22 +576,82 @@ function ConnectionWorkspace({
                 )}
               </div>
             ) : (
-              <div className="connection-list divide-y rounded-md border bg-card">
-                {rows.map((item) => (
-                  <ConsoleLink
-                    key={item.id}
-                    href={connectionHref(item.id)}
-                    className="connection-row flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 hover:bg-muted/40 aria-[current=page]:bg-muted/60"
-                  >
-                    <div className="min-w-0 flex-1 basis-48">
-                      <strong className="break-words font-medium">{item.displayName}</strong>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {bundleName(item.bundleId)} / {item.channel}
-                      </p>
-                    </div>
-                    <Badge variant="outline">{item.enabled ? 'Enabled' : 'Revoked'}</Badge>
-                  </ConsoleLink>
-                ))}
+              <div className="connection-list connection-ledger divide-y rounded-md border bg-card">
+                <div className="connection-index-head" aria-hidden="true">
+                  <span>App connection</span>
+                  <span>Bundle / channel</span>
+                  <span>Credentials</span>
+                  <span>Last report · UTC</span>
+                  <span>Access</span>
+                  <span />
+                </div>
+                {rows.map((item) => {
+                  const report = state.reports?.[item.id];
+                  const unrevoked = item.credentials?.filter((c) => !c.revokedAt);
+                  return (
+                    <ConsoleLink
+                      key={item.id}
+                      href={connectionHref(item.id)}
+                      id={'connection-entry-' + item.id}
+                      onClick={(e) => {
+                        if (e.detail === 0) focusAfterNavigation('connection-selected-title');
+                      }}
+                      className="connection-row"
+                    >
+                      <span className="connection-cell connection-ledger-app">
+                        <Radio aria-hidden="true" size={15} />
+                        <span>
+                          <strong>{item.displayName}</strong>
+                          <code title={item.id}>{item.id.slice(0, 8)}</code>
+                        </span>
+                      </span>
+                      <span className="connection-cell">
+                        <small>Bundle / channel</small>
+                        <strong>{bundleName(item.bundleId)}</strong>
+                        <code>{item.channel}</code>
+                      </span>
+                      <span className="connection-cell">
+                        <small>Credentials</small>
+                        {unrevoked ? (
+                          <>
+                            <span>
+                              {unrevoked.filter((c) => c.kind === 'content-read').length} read
+                            </span>
+                            <span>
+                              {unrevoked.filter((c) => c.kind === 'receipt-write').length} reporting
+                            </span>
+                          </>
+                        ) : (
+                          <span>Unavailable</span>
+                        )}
+                      </span>
+                      <span className="connection-cell">
+                        <small>Last report · UTC</small>
+                        {report ? (
+                          <>
+                            <strong className="capitalize">{report.stage}</strong>
+                            <time dateTime={report.receivedAt} title={report.receivedAt}>
+                              {new Date(report.receivedAt).toLocaleString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hourCycle: 'h23',
+                                timeZone: 'UTC',
+                              })}
+                            </time>
+                          </>
+                        ) : (
+                          <span>{report === null ? 'No retained report' : 'Unavailable'}</span>
+                        )}
+                      </span>
+                      <Badge variant={item.enabled ? 'secondary' : 'outline'}>
+                        {item.enabled ? 'Enabled' : 'Revoked'}
+                      </Badge>
+                      <ChevronRight size={15} className="connection-row-arrow" aria-hidden="true" />
+                    </ConsoleLink>
+                  );
+                })}
               </div>
             ))}
           {!selected && !state.canManage && (
@@ -515,7 +692,13 @@ function ConnectionWorkspace({
             <header className="connection-selected-header space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="break-words text-lg font-semibold">{selected.displayName}</h2>
+                  <h2
+                    id="connection-selected-title"
+                    tabIndex={-1}
+                    className="break-words text-lg font-semibold"
+                  >
+                    {selected.displayName}
+                  </h2>
                   <p className="mt-1 break-words text-sm">
                     {bundleName(selected.bundleId)} / {selected.channel}
                   </p>
@@ -523,36 +706,66 @@ function ConnectionWorkspace({
                     {selected.enabled ? 'Access enabled' : 'Access revoked'}
                   </Badge>
                 </div>
-                <p className="text-sm">
+                <div className="connection-detail-actions">
+                  <ConsoleLink
+                    href={
+                      workspaceHref(state.projectId, 'delivery') +
+                      '?integration=' +
+                      encodeURIComponent(selected.id)
+                    }
+                    className="inline-flex min-h-9 items-center gap-1 rounded-md border px-3 text-sm font-medium hover:bg-muted"
+                  >
+                    View delivery <ArrowUpRight size={14} />
+                  </ConsoleLink>
                   <ConsoleLink
                     href={setupHref!}
                     className="inline-flex min-h-9 items-center rounded-md border px-3 font-medium hover:bg-muted"
                   >
                     Open app setup
                   </ConsoleLink>
-                </p>
+                </div>
               </div>
+              <nav aria-label="Connection sections" className="connection-sections">
+                <a href="#continuous-learning">Continuous learning</a>
+                <a href="#delivery-reports">Delivery reports</a>
+                <a href="#app-credentials">App credentials</a>
+              </nav>
               <Disclosure className="connection-identity text-sm">
                 <DisclosureTrigger className="cursor-pointer font-medium">
                   Connection identity details
                 </DisclosureTrigger>
                 <DisclosureContent>
-                  <div className="flex min-w-0 flex-wrap items-center gap-2 pt-3">
-                    <span>Workspace ID:</span>
-                    <code className="break-all">{state.projectId}</code>
-                    <CopyButton value={state.projectId} label="Copy workspace ID" />
-                    <span>Bundle ID:</span>
-                    <code className="break-all">{selected.bundleId}</code>
-                    <CopyButton value={selected.bundleId} label="Copy bundle ID" />
-                    <span>Connection ID:</span>
-                    <code className="min-w-0 break-all text-xs">{selected.id}</code>
-                    <CopyButton value={selected.id} label="Copy connection ID" />
-                  </div>
+                  <dl className="connection-identities">
+                    <div>
+                      <dt>Workspace ID</dt>
+                      <dd>
+                        <code className="break-all">{state.projectId}</code>
+                        <CopyButton value={state.projectId} label="Copy workspace ID" />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Bundle ID</dt>
+                      <dd>
+                        <code className="break-all">{selected.bundleId}</code>
+                        <CopyButton value={selected.bundleId} label="Copy bundle ID" />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Connection ID</dt>
+                      <dd>
+                        <code className="min-w-0 break-all text-xs">{selected.id}</code>
+                        <CopyButton value={selected.id} label="Copy connection ID" />
+                      </dd>
+                    </div>
+                  </dl>
                 </DisclosureContent>
               </Disclosure>
             </header>
             <div className="connection-detail-panels">
-              <section className="workspace-panel connection-credentials-panel space-y-4 p-4">
+              <section
+                id="app-credentials"
+                className="workspace-panel connection-credentials-panel space-y-4 p-4"
+              >
                 {(busy || !selected.enabled || recovery) && (
                   <p className="text-sm text-muted-foreground">
                     {busy
@@ -750,6 +963,7 @@ function ConnectionWorkspace({
                 </Disclosure>
               </section>
               <ConnectionReports
+                key={selected.id}
                 receipts={receiptPage}
                 channel={selected.channel}
                 currentRevision={state.selected!.currentRevision}
@@ -771,6 +985,7 @@ function ConnectionWorkspace({
               target={{ projectId: state.projectId, integrationId: selected.id }}
               bundleId={selected.bundleId}
               channel={selected.channel}
+              connectionName={selected.displayName}
               currentVersionId={state.selected!.currentVersionId}
               currentRevision={state.selected!.currentRevision}
               canManage={state.canManage}

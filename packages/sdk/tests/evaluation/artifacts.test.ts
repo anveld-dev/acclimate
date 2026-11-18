@@ -74,6 +74,7 @@ const request: Evaluation = {
   ...descriptor,
   ...report,
   id: ids.request,
+  requireBoundEvidence: true,
   status: 'completed',
   evaluatorPrincipal: 'evaluator',
   attemptId: ids.attempt,
@@ -168,6 +169,8 @@ async function localEvidence(f: Awaited<ReturnType<typeof fixture>>) {
     attemptId: ids.attempt,
     keys: { start: 'start', submit: 'submit', finish: 'finish' },
     executionStarted: true,
+    retainedOperations: true,
+    wireBodies: {},
   });
   const entry = await journal.writeArtifact(
     {
@@ -187,11 +190,11 @@ async function localEvidence(f: Awaited<ReturnType<typeof fixture>>) {
     attemptId: ids.attempt,
     keys: { start: 'start', submit: 'submit', finish: 'finish' },
     executionStarted: true,
+    retainedOperations: true,
     report,
     comparisonId: ids.comparison,
     completed: true,
     wireBodies: { submit: bodyRef },
-    retainedOperations: true,
   });
   await journal.saveArtifactIndex({
     schemaVersion: 1,
@@ -402,7 +405,7 @@ test('export budget stops mapping as soon as released bytes exceed the limit', a
       { code: 'artifact.integrity' },
     );
     assert.equal(calls, 65);
-    await assert.rejects(readFile(path.join(f.root, 'large', 'manifest.json')));
+    await assert.rejects(readFile(path.join(f.root, 'large', 'manifest.json')), { code: 'ENOENT' });
   } finally {
     descriptor.expectedCases.splice(0, descriptor.expectedCases.length, ...originalCases);
     report.results.splice(0, report.results.length, ...originalResults);
@@ -499,7 +502,7 @@ test('required missing explanation commits no manifest; optional missing remains
       toReviewArtifact: async () => null,
     };
     await assert.rejects(exportReviewEvidence(options), { code: 'artifact.missing' });
-    await assert.rejects(readFile(path.join(f.root, 'required', 'manifest.json')));
+    await assert.rejects(readFile(path.join(f.root, 'required', 'manifest.json')), { code: 'ENOENT' });
     const result = await exportReviewEvidence({
       ...options,
       outputDirectory: path.join(f.root, 'optional'),
@@ -677,7 +680,7 @@ test('missing journal stays unavailable and mapper failures/oversize never commi
       }),
       { code: 'artifact.mapper_failed' },
     );
-    await assert.rejects(readFile(path.join(f.root, 'large', 'manifest.json')));
+    await assert.rejects(readFile(path.join(f.root, 'large', 'manifest.json')), { code: 'ENOENT' });
   } finally {
     await f.close();
   }
@@ -800,7 +803,7 @@ test('scalar-only reader/evaluator exports reject fixed native workspace ownersh
         { code: 'artifact.integrity' },
       );
     }
-    await assert.rejects(readFile(path.join(f.journals, 'ownership.lock')));
+    await assert.rejects(readFile(path.join(f.journals, 'ownership.lock')), { code: 'ENOENT' });
   } finally {
     await f.close();
   }

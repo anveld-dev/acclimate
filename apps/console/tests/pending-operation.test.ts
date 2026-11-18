@@ -39,6 +39,7 @@ const draft = '22222222-2222-4222-8222-222222222222';
 const key = '33333333-3333-4333-8333-333333333333';
 const path = `/v1/projects/p/bundles/${bundle}/channels/stable/drafts/${draft}/save`;
 const scope = {
+  owner: 'draft' as const,
   actorScope: 'session-one',
   serviceIdentity: 'service-one',
   projectId: 'p',
@@ -61,34 +62,25 @@ const body = {
   },
 };
 
-test('different page property order cannot hide or overwrite an unresolved submission', () => {
+test('each page sees submissions from another editor only as related operations', () => {
   const storage = new MemoryStorage();
-  const otherPage = {
-    actorScope: scope.actorScope,
-    projectId: scope.projectId,
-    bundleId: scope.bundleId,
-    channel: scope.channel,
-    serviceIdentity: scope.serviceIdentity,
-  };
+  const otherPage = { ...scope, owner: 'releases' as const };
   const original = freezePending(storage, scope, path, body, key);
+  assert.equal(loadPending(storage, otherPage), null);
   assert.equal(findRelatedPending(storage, otherPage)?.key, key);
   assert.throws(() => freezePending(storage, otherPage, path, body), /earlier operation/);
   assert.equal(storage.length, 1);
   assert.deepEqual(loadPending(storage, scope), original);
+  for (const isolated of [
+    { actorScope: 'other-account' },
+    { projectId: 'other' },
+    { bundleId: 'other-bundle' },
+    { channel: 'canary' },
+    { serviceIdentity: 'other-service' },
+  ])
+    assert.equal(findRelatedPending(storage, { ...otherPage, ...isolated }), null);
   resolvePending(storage, original.scope);
   assert.equal(findRelatedPending(storage, otherPage), null);
-});
-
-test('related recovery recognizes legacy draft identity while isolating other actors, channels and services', () => {
-  const storage = new MemoryStorage();
-  const legacy = { ...scope, serviceIdentity: scope.actorScope };
-  freezePending(storage, legacy, path, body, key);
-  assert.equal(findRelatedPending(storage, scope)?.key, key);
-  assert.equal(findRelatedPending(storage, { ...scope, actorScope: 'other-person' }), null);
-  assert.equal(findRelatedPending(storage, { ...scope, channel: 'canary' }), null);
-  resolvePending(storage, legacy);
-  freezePending(storage, scope, path, body, key);
-  assert.equal(findRelatedPending(storage, { ...scope, serviceIdentity: 'other-service' }), null);
 });
 function fingerprint(path: string, body: string) {
   return (

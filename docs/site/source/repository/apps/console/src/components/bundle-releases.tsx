@@ -1,5 +1,7 @@
+import { ReleaseComparison } from './release-comparison';
+import './release-comparison.css';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
-import { useRouter } from '@tanstack/react-router';
+import { useRouter, useRouterState } from '@tanstack/react-router';
 import { RelatedPendingNotice, useRelatedPending } from './related-pending';
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -15,13 +17,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { VersionInspector } from './version-inspector';
-import { ConsoleLink } from './console-link';
+import { ConsoleLink, consoleDestination } from './console-link';
 import { CopyButton } from './copy-button';
-import { bundleHref } from '../navigation';
+import { bundleHref, releaseRevision } from '../navigation';
 import {
   freezePending,
   loadPending,
@@ -30,6 +33,7 @@ import {
   type PendingScope,
   type PendingOperation,
 } from '../lib/pending-operation';
+import { matchesRelease } from '../lib/release-search';
 import { restoreRequest } from '../lib/content-operation';
 import {
   readReleaseHistory,
@@ -45,6 +49,67 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
   const [page, setPage] = useState(state.history);
+  const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [linkedRelease, setLinkedRelease] = useState<(typeof page.items)[number] | null>(null);
+  const activeHash = useRouterState({ select: (state) => state.location.hash });
+  const fragment = activeHash ? '#' + activeHash : '';
+  useEffect(() => {
+    let ignore = false;
+    const revision = releaseRevision(/^#revision-(.+)$/.exec(fragment)?.[1]);
+    if (
+      !revision ||
+      linkedRelease?.revision === revision ||
+      page.items.some((item) => item.revision === revision)
+    )
+      return;
+    if (!page.nextBeforeRevision || BigInt(revision) >= BigInt(page.nextBeforeRevision)) return;
+    const beforeRevision = String(BigInt(revision) + 1n);
+    async function readLinkedRelease() {
+      try {
+        const result = await readReleaseHistory({
+          data: { scope, beforeRevision },
+        });
+        if (ignore) return;
+        if (!result.ok) setError(result.message);
+        else {
+          const found = result.page.items.find((item) => item.revision === revision);
+          if (found) setLinkedRelease(found);
+          else setError('This revision could not be found in the channel history.');
+        }
+      } catch {
+        if (!ignore) setError('Could not load the linked revision. Reload to retry.');
+      }
+    }
+    void readLinkedRelease();
+    return () => {
+      ignore = true;
+    };
+  }, [fragment, linkedRelease, page, state.projectId, state.bundleId, state.channel]);
+  useEffect(() => {
+    if (linkedRelease && fragment === '#revision-' + linkedRelease.revision) {
+      document.getElementById(fragment.slice(1))?.focus();
+    }
+  }, [linkedRelease, fragment]);
+  const showLinked =
+    linkedRelease &&
+    fragment === '#revision-' + linkedRelease.revision &&
+    !page.items.some((item) => item.id === linkedRelease.id);
+  const loadedItems = showLinked ? [...page.items, linkedRelease] : page.items;
+  const term = query.trim().toLowerCase();
+  const matches = loadedItems.filter((item) => matchesRelease(item, term));
+  const requestedRevision = releaseRevision(/^#revision-(.+)$/.exec(fragment)?.[1]);
+  const selected =
+    matches.find((item) => item.revision === requestedRevision) ??
+    (term || !requestedRevision ? matches[0] : undefined);
+  function chooseRevision(revision: string) {
+    void router.navigate({
+      ...consoleDestination(bundleHref(scope, 'releases') + '#revision-' + revision),
+      hashScrollIntoView: false,
+      resetScroll: false,
+      replace: true,
+    });
+  }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -52,6 +117,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const recoveryScope: PendingScope = {
+    owner: 'releases',
     actorScope: state.actorScope,
     serviceIdentity: state.serviceIdentity,
     projectId: state.projectId,
@@ -301,140 +367,204 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
             <h2 className="text-sm font-semibold">Release history</h2>
             {!state.canEdit && <span className="text-sm text-muted-foreground">Read only</span>}
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Channel revisions record release decisions. The same immutable content version can be
-            released more than once.
-          </p>
         </div>
-        {page.items.length ? (
-          <div className="release-record-list">
-            {page.items.map((item) => (
-              <article
-                data-testid="release-decision"
-                key={item.id}
-                aria-label={`Revision ${item.revision}${item.revision === state.resolution.revision ? ' · Current' : ''}`}
-                className={`release-row release-record-row${item.revision === state.resolution.revision ? ' is-current-release' : ''}`}
-              >
-                <span className="release-track-marker" aria-hidden="true">
-                  {item.revision === state.resolution.revision ? (
-                    <CircleCheck />
-                  ) : (
-                    <GitCommitHorizontal />
-                  )}
+        {loadedItems.length ? (
+          <div className="release-workbench">
+            <div className="release-picker" aria-label="Release revisions">
+              <div className="release-picker-search">
+                <div className="grid w-full max-w-sm gap-1.5">
+                  <Label htmlFor="release-search">Find a release</Label>
+                  <Input
+                    id="release-search"
+                    ref={searchRef}
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Revision, version ID, or digest"
+                  />
+                </div>
+                {term && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setQuery('');
+                      searchRef.current?.focus();
+                    }}
+                  >
+                    Clear search
+                  </Button>
+                )}
+                <span role="status" className="pb-1 text-xs text-muted-foreground">
+                  {term
+                    ? `${matches.length} of ${loadedItems.length} loaded releases`
+                    : `${loadedItems.length} loaded ${loadedItems.length === 1 ? 'release' : 'releases'}`}
                 </span>
-                <div className="release-summary min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-sm font-semibold">Revision {item.revision}</h3>
-                    {item.revision === state.resolution.revision && <Badge>Current</Badge>}
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    <time dateTime={item.createdAt} title={item.createdAt}>
-                      {new Date(item.createdAt).toLocaleString(undefined, {
-                        dateStyle: 'short',
-                        timeStyle: 'short',
-                      })}
-                    </time>
-                  </p>
-                </div>
-                <div className="release-decision min-w-0">
-                  <div className="release-decision-heading">
-                    <span className="release-evidence-kind">
-                      {item.policyOverride
-                        ? 'Policy overridden'
-                        : item.comparisonId
-                          ? 'Evaluation recorded'
-                          : 'Manual release'}
-                    </span>
-                    <span
-                      className="release-content-version text-muted-foreground"
-                      title={item.version.id}
+              </div>
+
+              <div className="release-picker-scroll">
+                {matches.map((item) => (
+                  <article
+                    data-testid="release-decision"
+                    key={item.id}
+                    id={`revision-${item.revision}`}
+                    tabIndex={-1}
+                    aria-label={`Revision ${item.revision}${item.revision === state.resolution.revision ? ' · Current' : ''}`}
+                  >
+                    <button
+                      type="button"
+                      className="release-picker-option"
+                      disabled={!hydrated}
+                      aria-pressed={selected?.id === item.id}
+                      onClick={() => chooseRevision(item.revision)}
                     >
-                      Content {item.version.id.slice(0, 8)}
-                    </span>
-                  </div>
-                  <p className="release-reason">
-                    {item.policyOverride?.reason ||
-                      item.unevaluatedReason ||
-                      (item.comparisonId
-                        ? 'Published with recorded evaluation evidence.'
-                        : 'No release reason recorded.')}
-                  </p>
-                </div>
-                <div className="release-actions">
-                  <div className="release-inspection-actions">
-                    <VersionInspector
-                      scope={scope}
-                      versionId={item.version.id}
-                      label="Inspect content"
-                      contextLabel={`revision ${item.revision}`}
-                    />
-                    <ChangeRecordDetails
-                      title="Release details"
-                      triggerLabel={`Release details for revision ${item.revision}`}
-                      description="The saved content, release decision and recorded evidence."
-                      copyLabel="Copy release details"
-                      value={JSON.stringify(item, null, 2)}
-                      fields={[
-                        ['Revision', item.revision],
-                        ['Published', new Date(item.createdAt).toLocaleString()],
-                        ['Reviewer', item.reviewer],
-                        [
-                          'Reason',
-                          item.policyOverride?.reason ||
-                            item.unevaluatedReason ||
-                            (item.comparisonId
-                              ? 'Recorded evaluation evidence.'
-                              : 'No release reason recorded.'),
-                        ],
-                        ...(item.policyOverride?.receipts.map((receipt): [string, string] => [
-                          'Overridden policy',
-                          `${receipt.policyDigest} · comparison ${receipt.comparisonId}`,
-                        ]) ?? []),
-                        ['Release ID', item.id],
-                        ['Version', item.version.id],
-                        ['Digest', item.version.digest],
-                        ['Previous version', item.previousVersionId || 'None'],
-                        ...(item.comparisonId
-                          ? [['Comparison', item.comparisonId] as [string, string]]
-                          : []),
-                      ]}
-                    />
-                  </div>
-                  {item.comparisonId && (
-                    <Button asChild variant="outline">
-                      <ConsoleLink
-                        aria-label={`Inspect evidence for revision ${item.revision}`}
-                        href={bundleHref(scope, 'changes', {
-                          candidate: item.version.id,
-                          comparison: item.comparisonId,
+                      {item.revision === state.resolution.revision ? (
+                        <CircleCheck aria-hidden="true" />
+                      ) : (
+                        <GitCommitHorizontal aria-hidden="true" />
+                      )}
+                      <strong>
+                        <span className="sr-only">Compare </span>Revision {item.revision}
+                      </strong>
+                      {item.revision === state.resolution.revision && <Badge>Current</Badge>}
+                      {showLinked && linkedRelease?.id === item.id && (
+                        <Badge variant="outline">Linked revision</Badge>
+                      )}
+                      <time dateTime={item.createdAt}>
+                        {new Date(item.createdAt).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
                         })}
+                      </time>
+                      <code>{item.version.id.slice(0, 8)}</code>
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </div>
+            {selected ? (
+              <ReleaseComparison
+                key={selected.id}
+                scope={scope}
+                release={selected}
+                current={selected.revision === state.resolution.revision}
+                actions={
+                  <>
+                    {selected.version.parentVersionId && (
+                      <ConsoleLink
+                        className="release-comparison-link"
+                        href={bundleHref(scope, 'changes', {
+                          history: 1,
+                          fromRevision: selected.revision,
+                          candidate: selected.version.id,
+                          tab: 'files',
+                        })}
+                        aria-label={`Compare with creation base for revision ${selected.revision}`}
                       >
-                        Inspect evidence
+                        Compare with creation base
                       </ConsoleLink>
-                    </Button>
-                  )}
-                  {state.canEdit && item.version.id !== state.resolution.version.id && (
-                    <Button
-                      variant="outline"
-                      aria-label={`Restore revision ${item.revision}`}
-                      disabled={!hydrated || Boolean(operation) || related.blocked}
-                      onClick={(event) => {
-                        restoreReturnRef.current = event.currentTarget;
-                        setError('');
-                        setStatus('');
-                        setReason('');
-                        setTarget(item);
-                      }}
-                    >
-                      Restore
-                    </Button>
-                  )}
-                </div>
-              </article>
-            ))}
+                    )}
+                    <div className="release-actions">
+                      <div className="release-inspection-actions">
+                        <VersionInspector
+                          scope={scope}
+                          versionId={selected.version.id}
+                          label="Inspect content"
+                          contextLabel={`revision ${selected.revision}`}
+                        />
+                        <ChangeRecordDetails
+                          title="Release details"
+                          triggerLabel={`Release details for revision ${selected.revision}`}
+                          description="The saved content, release decision and recorded evidence."
+                          copyLabel="Copy release details"
+                          value={JSON.stringify(selected, null, 2)}
+                          fields={[
+                            ['Revision', selected.revision],
+                            ['Published', new Date(selected.createdAt).toLocaleString()],
+                            ['Reviewer', selected.reviewer],
+                            [
+                              'Reason',
+                              selected.policyOverride?.reason ||
+                                selected.unevaluatedReason ||
+                                (selected.comparisonId
+                                  ? 'Recorded evaluation evidence.'
+                                  : 'No release reason recorded.'),
+                            ],
+                            ...(selected.policyOverride?.receipts.map(
+                              (receipt): [string, string] => [
+                                'Overridden policy',
+                                receipt.policyDigest + ' · comparison ' + receipt.comparisonId,
+                              ],
+                            ) ?? []),
+                            ['Release ID', selected.id],
+                            ['Version', selected.version.id],
+                            ['Digest', selected.version.digest],
+                            ['Previous version', selected.previousVersionId || 'None'],
+                            ...(selected.comparisonId
+                              ? [['Comparison', selected.comparisonId] as [string, string]]
+                              : []),
+                          ]}
+                        />
+                      </div>
+                      {selected.comparisonId && (
+                        <Button asChild variant="outline">
+                          <ConsoleLink
+                            aria-label={`Inspect evidence for revision ${selected.revision}`}
+                            href={bundleHref(scope, 'changes', {
+                              candidate: selected.version.id,
+                              comparison: selected.comparisonId,
+                              fromRevision: selected.revision,
+                            })}
+                          >
+                            Inspect evidence
+                          </ConsoleLink>
+                        </Button>
+                      )}
+                      {state.canEdit && selected.version.id !== state.resolution.version.id && (
+                        <Button
+                          variant="outline"
+                          aria-label={`Restore revision ${selected.revision}`}
+                          disabled={!hydrated || Boolean(operation) || related.blocked}
+                          onClick={(event) => {
+                            restoreReturnRef.current = event.currentTarget;
+                            setError('');
+                            setStatus('');
+                            setReason('');
+                            setTarget(selected);
+                          }}
+                        >
+                          Restore
+                        </Button>
+                      )}
+                    </div>
+                  </>
+                }
+              />
+            ) : !matches.length ? (
+              <p className="p-4 text-sm text-muted-foreground">
+                No loaded releases match your search.
+              </p>
+            ) : (
+              <div className="space-y-3 p-4">
+                <p role="status">
+                  {page.nextBeforeRevision &&
+                  requestedRevision &&
+                  BigInt(requestedRevision) < BigInt(page.nextBeforeRevision) &&
+                  !error
+                    ? 'Loading linked revision…'
+                    : 'This revision is unavailable in the channel history.'}
+                </p>
+                <Button variant="outline" onClick={() => chooseRevision(state.resolution.revision)}>
+                  Show current revision
+                </Button>
+              </div>
+            )}
           </div>
         ) : (
-          <p className="px-4 py-5 text-sm text-muted-foreground">No release decisions yet.</p>
+          <p className="px-4 py-5 text-sm text-muted-foreground">
+            {term ? 'No loaded releases match your search.' : 'No release decisions yet.'}
+          </p>
         )}
         {page.nextBeforeRevision && (
           <div className="border-t px-4 py-3">
@@ -475,22 +605,30 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
               history, without inheriting evaluation support.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 break-words text-sm">
-            <p>
-              Bundle: <strong>{state.bundleName || state.bundleId}</strong>
-            </p>
-            <p>
-              Target: <strong>{state.channel}</strong> · current revision{' '}
-              {state.resolution.revision}
-            </p>
-            <p>Selected revision: {target?.revision}</p>
-            <p className="break-all">Version: {target?.version.id}</p>
-          </div>
+          <dl className="release-restore-summary">
+            <div>
+              <dt>Bundle</dt>
+              <dd>{state.bundleName || state.bundleId}</dd>
+            </div>
+            <div>
+              <dt>Channel</dt>
+              <dd>{state.channel}</dd>
+            </div>
+            <div>
+              <dt>Current revision</dt>
+              <dd>{state.resolution.revision}</dd>
+            </div>
+            <div>
+              <dt>Restore content from</dt>
+              <dd>Revision {target?.revision}</dd>
+            </div>
+          </dl>
           <Disclosure className="text-sm text-muted-foreground">
             <DisclosureTrigger className="cursor-pointer">
               Selected version details
             </DisclosureTrigger>
             <DisclosureContent>
+              <p className="break-all">Version: {target?.version.id}</p>
               <p>Compatibility target: {state.compatibilityTarget}</p>
             </DisclosureContent>
           </Disclosure>

@@ -14,7 +14,7 @@ def instruction(context, text):
     assert context.world.delivery.get('instruction') == text
 
 
-@then('its selected version and digest match the release')
+@then('its selected version and digest match the original release')
 def selected(context):
     w = context.world
     assert w.delivery['version'] == w.original['version']
@@ -27,7 +27,7 @@ def publish_manual(context):
     w.published=w.call('POST',w.draft_path+'/publish',dict(expectedGeneration=w.draft['generation'],expectedRevision=current['revision'],unevaluatedReason='Operator reviewed this edit manually.'))
 
 
-@when('the application fetches its original immutable pin')
+@when('a fresh job requests the original version by ID')
 def pin(context):
     w = context.world
     w.delivery = w.sdk('delivery', versionId=w.original['version']['id'])
@@ -79,17 +79,24 @@ def no_mapping(context):
 
 @given('that integration cached the published release')
 def integration_cache(context):
-    context.world.delivery = context.world.sdk('delivery', actor='content-reader')
+    w = context.world
+    w.delivery = w.sdk('delivery', actor='content-reader')
+    assert w.delivery['version'] == w.original['version']
 
 
 @when('that integration requests bounded offline delivery')
 def integration_offline(context):
-    context.world.delivery = context.world.sdk('delivery', actor='content-reader', offline=True)
+    w = context.world
+    w.prepared_before_request = set(w.sdk_directory.glob('prepared-*'))
+    w.delivery = w.sdk('delivery', actor='content-reader', offline=True)
 
 
 @then('delivery is denied despite the cached files')
 def denied_cache(context):
-    assert context.world.delivery['error']['status'] == 403
+    w = context.world
+    assert w.delivery['error']['status'] == 403
+    assert 'instruction' not in w.delivery
+    assert set(w.sdk_directory.glob('prepared-*')) == w.prepared_before_request
 
 
 @when('an application edits its prepared instruction file')
@@ -161,18 +168,34 @@ def memory_count(context, count):
     assert context.world.delivery['memoryCount'] == count
 
 
-@when('an application prepares content with an unavailable reporting credential')
-def reporting_down(context):
+@when('the application prepares content during a reporting outage and recovers {when} the retry window')
+def recover_reporting(context, when):
     w = context.world
-    w.create_integration()
-    w.delivery = w.sdk('delivery', reporting=True, integrationId=w.integration['id'])
+    assert when in ('within', 'after')
+    w.reporting = w.sdk('recoverReporting', integrationId=w.integration['id'], readerToken=w.read_credential['secret'],
+                        receiptToken=w.write_credential['secret'], expired=when == 'after')
 
 
-@then('no delivery success is invented by the service')
-def no_success(context):
+@then('the prepared file is usable while the service has no receipt for it')
+def prepared_during_outage(context):
+    observed = context.world.reporting
+    assert observed['instruction'] == 'Review code.'
+    assert observed['pendingBefore'] == 4 and observed['receivedBefore'] == []
+    assert observed['preparedEvent']['stage'] == 'prepared'
+
+
+@then('recovery records the original prepared event exactly once')
+def recovered_preparation(context):
     w = context.world
-    assert w.delivery['pending'] > 0
-    assert w.call('GET', w.integration_path + '/receipts')['items'] == []
+    observed = w.reporting
+    assert observed['pendingAfter'] == 0
+    assert observed['sentAfter'] == observed['originalEvents']
+    items = w.call('GET', w.integration_path + '/receipts')['items']
+    assert sorted(item['stage'] for item in items) == ['downloaded', 'prepared', 'resolved', 'verified']
+    receipt, = [item for item in items if item['stage'] == 'prepared']
+    for field in ('eventId', 'occurredAt', 'versionId', 'digest'):
+        assert receipt[field] == observed['preparedEvent'][field], field
+    assert receipt['versionId'] == w.original['version']['id']
 
 
 @when('the application reports resolution, verification, preparation and its own start')
@@ -190,16 +213,10 @@ def stages(context):
     assert all(item['versionId'] == w.original['version']['id'] for item in items)
 
 
-@when('an undelivered observation ages past the retry window')
-def expired(context):
-    w = context.world
-    w.delivery = w.sdk('queueExpiry',integrationId=w.integration['id'])
-
-
-@then('the queue is empty and no report was recorded')
+@then('recovery drops every expired event without sending another request')
 def dropped(context):
     w = context.world
-    assert w.delivery == dict(before=1,after=0)
+    assert w.reporting['pendingAfter'] == 0 and w.reporting['sentAfter'] == []
     assert w.call('GET', w.integration_path + '/receipts')['items'] == []
 
 

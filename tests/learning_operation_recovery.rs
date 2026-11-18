@@ -9,8 +9,8 @@ use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-async fn fixture() -> Option<(AppState, String, Value)> {
-    let url = std::env::var("ACCLIMATE_TEST_DATABASE_URL").ok()?;
+async fn fixture() -> (AppState, String, Value) {
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let project = format!("learning-recovery-{}", Uuid::new_v4());
@@ -33,7 +33,7 @@ async fn fixture() -> Option<(AppState, String, Value)> {
         "reason":"Explicit disposable model-free setup"
     }), false).await;
     assert_eq!(setup.0, 201, "{}", setup.1);
-    Some((state, project, setup.1))
+    (state, project, setup.1)
 }
 fn with_rights(state: &AppState, rights: &[&str]) -> AppState {
     let mut changed = state.clone();
@@ -83,10 +83,9 @@ fn candidate(seed: &Value, text: &str) -> Value {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn retained_version_recovery_survives_transient_expiry_and_requires_current_write_right() {
-    let Some((state, project, seed)) = fixture().await else {
-        return;
-    };
+    let (state, project, seed) = fixture().await;
     // The learner need not have promotion authority to publish or recover a candidate.
     let writer = router(with_rights(&state, &["write"]));
     let versions = format!(
@@ -162,10 +161,9 @@ async fn retained_version_recovery_survives_transient_expiry_and_requires_curren
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn legacy_version_receipt_can_be_observed_then_adopted_without_reexecuting() {
-    let Some((state, project, seed)) = fixture().await else {
-        return;
-    };
+    let (state, project, seed) = fixture().await;
     let app = router(with_rights(&state, &["write"]));
     let versions = format!(
         "/v1/projects/{project}/bundles/{}/versions",
@@ -206,10 +204,9 @@ async fn legacy_version_receipt_can_be_observed_then_adopted_without_reexecuting
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn closing_an_unobserved_version_prevents_late_marked_and_unmarked_publication() {
-    let Some((state, project, seed)) = fixture().await else {
-        return;
-    };
+    let (state, project, seed) = fixture().await;
     let app = router(with_rights(&state, &["write"]));
     let versions = format!(
         "/v1/projects/{project}/bundles/{}/versions",

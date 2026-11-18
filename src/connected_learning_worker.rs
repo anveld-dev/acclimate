@@ -1,6 +1,6 @@
 use crate::{
     ApiResult, AppState, ComparisonRequest, PromoteRequest, ProposalRequest,
-    connected_learning::{Descriptor, epochs::audit_is_fresh},
+    connected_learning::Descriptor,
     db, err,
     evaluations::{CreateEvaluationRequest, decode, enqueue_evaluation, validate_report},
     improvement::{enqueue_managed_proposal, validate_comparison},
@@ -14,7 +14,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::{Postgres, Row, Transaction, postgres::PgRow};
+use sqlx::{Acquire, Postgres, Row, Transaction, postgres::PgRow};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -26,6 +26,7 @@ mod field_requalification;
 type Tx<'a> = Transaction<'a, Postgres>;
 const WORKER: &str = "service:connected-learning";
 const AUTOMATIC_ROLLOUT: &str = "Automatic rollout after a passing audit";
+const MAX_ROUND_FAILURES: i32 = 5;
 const REVIEW_DECLINED: &str = "Reviewer declined promotion";
 
 pub(crate) fn routes() -> Router<AppState> {
@@ -44,6 +45,14 @@ pub(crate) fn routes() -> Router<AppState> {
         )
 }
 
+fn processing_error(reason: &str) -> crate::ApiErr {
+    err(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "learning_processing_error",
+        reason,
+    )
+}
+
 fn conflict(reason: &str) -> crate::ApiErr {
     err(StatusCode::CONFLICT, "learning_conflict", reason)
 }
@@ -53,7 +62,6 @@ struct Connection {
     integration: Uuid,
     bundle: Uuid,
     channel: String,
-    authorizer: String,
     evaluator: String,
     submitter: String,
     permitted_paths: Vec<String>,
@@ -132,21 +140,15 @@ impl Connection {
             && (role.as_deref() == Some("admin") || has_grant(&authorizer, &["write", "promote"]))
             && has_grant(&submitter, &["write"])
             && has_grant(&evaluator, &["read", "write"]);
-        let policies: Option<crate::connected_learning::selection::Policies> = row
-            .get::<Option<Value>, _>("selection_policies")
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(db)?;
+        let policies: crate::connected_learning::selection::Policies =
+            serde_json::from_value(row.get("selection_policies")).map_err(db)?;
         Ok(Some(Self {
             policy_epoch: row.get("policy_epoch"),
-            higher_is_better: policies
-                .as_ref()
-                .is_none_or(|p| p.development.higher_is_better()),
+            higher_is_better: policies.development.higher_is_better(),
             project,
             integration,
             bundle: row.get("bundle_id"),
             channel: row.get("delivery_channel"),
-            authorizer,
             evaluator,
             submitter,
             permitted_paths: row.get("permitted_paths"),
@@ -157,6 +159,21 @@ impl Connection {
             has_budget: row.get("has_budget"),
             active,
         }))
+    }
+
+    async fn record_automatic(&self, tx: &mut Tx<'_>, promotion: Uuid) -> ApiResult<()> {
+        sqlx::query(
+            "INSERT INTO connected_learning_automatic_promotions(promotion_id,authorization_id)
+            VALUES ($3,(SELECT id FROM connected_learning_authorizations
+              WHERE (project_id,integration_id)=($1,$2) ORDER BY id DESC LIMIT 1))",
+        )
+        .bind(&self.project)
+        .bind(self.integration)
+        .bind(promotion)
+        .execute(&mut **tx)
+        .await
+        .map_err(db)?;
+        Ok(())
     }
 
     async fn baseline(&self, tx: &mut Tx<'_>) -> ApiResult<(Uuid, i64)> {
@@ -199,62 +216,76 @@ impl Connection {
         let lesson: Option<Value> = outcome.get("lesson");
         let feedback: Option<Value> = outcome.get("feedback");
         let correction: Uuid = outcome.get("correction_id");
-        let structural = lesson.is_none();
-        let (allowed_paths, hypothesis) = match lesson {
-            Some(lesson) => (
-                vec![
-                    lesson["path"]
+        let admission = async {
+            let structural = lesson.is_none();
+            let (allowed_paths, hypothesis) = match lesson {
+                Some(lesson) => (
+                    vec![
+                        lesson["path"]
+                            .as_str()
+                            .ok_or_else(|| processing_error("Missing lesson path"))?
+                            .to_owned(),
+                    ],
+                    lesson["instruction"]
                         .as_str()
-                        .ok_or_else(|| db("Missing lesson path"))?
+                        .ok_or_else(|| processing_error("Missing lesson instruction"))?
                         .to_owned(),
-                ],
-                lesson["instruction"]
-                    .as_str()
-                    .ok_or_else(|| db("Missing lesson instruction"))?
-                    .to_owned(),
-            ),
-            None => (
-                self.permitted_paths.clone(),
-                "Improve the bundle so future tasks satisfy the trusted expected outcome.".into(),
-            ),
-        };
-        let mut evidence = vec![format!(
-            "Connection task ended {status} using version {version} ({digest})."
-        )];
-        if version != baseline.0 || revision != Some(baseline.1) {
-            evidence.push(format!(
+                ),
+                None => (
+                    self.permitted_paths.clone(),
+                    "Improve the bundle so future tasks satisfy the trusted expected outcome."
+                        .into(),
+                ),
+            };
+            let mut evidence = vec![format!(
+                "Connection task ended {status} using version {version} ({digest})."
+            )];
+            if version != baseline.0 || revision != Some(baseline.1) {
+                evidence.push(format!(
                 "The evaluator reproduced this correction on version {} at delivery revision {}.",
                 baseline.0, baseline.1
             ));
+            }
+            if let Some(feedback) = feedback {
+                let expected = feedback["expected"]
+                    .as_str()
+                    .ok_or_else(|| processing_error("Missing expected outcome"))?;
+                let observed = feedback["observed"]
+                    .as_str()
+                    .ok_or_else(|| processing_error("Missing observed outcome"))?;
+                evidence.push(format!("Expected outcome: {expected}"));
+                evidence.push(format!("Observed outcome: {observed}"));
+            }
+            self.add_development_history(tx, baseline, correction, &mut evidence)
+                .await?;
+            let request = ProposalRequest {
+                parent_version_id: baseline.0.to_string(),
+                allowed_paths,
+                hypothesis,
+                evidence,
+            };
+            let proposal = enqueue_managed_proposal(
+                tx,
+                &self.project,
+                self.bundle,
+                self.integration,
+                &request,
+                structural,
+            )
+            .await?
+            .map(|(id, _)| id);
+            Ok::<_, crate::ApiErr>(proposal)
         }
-        if let Some(feedback) = feedback {
-            let expected = feedback["expected"]
-                .as_str()
-                .ok_or_else(|| db("Missing expected outcome"))?;
-            let observed = feedback["observed"]
-                .as_str()
-                .ok_or_else(|| db("Missing observed outcome"))?;
-            evidence.push(format!("Expected outcome: {expected}"));
-            evidence.push(format!("Observed outcome: {observed}"));
-        }
-        self.add_development_history(tx, baseline, correction, &mut evidence)
-            .await?;
-        let request = ProposalRequest {
-            parent_version_id: baseline.0.to_string(),
-            allowed_paths,
-            hypothesis,
-            evidence,
+        .await;
+        let (proposal, reason) = match admission {
+            Ok(Some(proposal)) => (Some(proposal), None),
+            Ok(None) => (
+                None,
+                Some("Correction has no applicable permitted paths".to_owned()),
+            ),
+            Err(error) if error.1 == "learning_processing_error" => (None, Some(error.2)),
+            Err(error) => return Err(error),
         };
-        let proposal = enqueue_managed_proposal(
-            tx,
-            &self.project,
-            self.bundle,
-            self.integration,
-            &request,
-            structural,
-        )
-        .await?
-        .map(|(id, _)| id);
         if proposal.is_some() {
             sqlx::query(
                 "UPDATE connected_learning_enrollments SET proposal_admissions=proposal_admissions+1 WHERE (project_id,integration_id)=($1,$2)",
@@ -275,13 +306,9 @@ impl Connection {
         .fetch_one(&mut **tx)
         .await
         .map_err(db)?;
-        let reason = proposal
-            .is_none()
-            .then_some("Correction has no applicable permitted paths");
         sqlx::query(
-            "INSERT INTO connected_learning_rounds (id,project_id,bundle_id,integration_id,outcome_id,parent_version_id,parent_revision,proposal_id,state,reason,correction_id,attempt,incident_replay)
-             SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN require_incident_replay THEN 'pending' END
-             FROM connected_learning_corrections WHERE (project_id,integration_id,correction_id)=($2,$4,$11)",
+            "INSERT INTO connected_learning_rounds (id,project_id,bundle_id,integration_id,outcome_id,parent_version_id,parent_revision,proposal_id,state,reason,correction_id,attempt,policy_epoch)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
         )
         .bind(Uuid::new_v4())
         .bind(&self.project)
@@ -293,7 +320,7 @@ impl Connection {
         .bind(proposal)
         .bind(if proposal.is_some() { "proposing" } else { "rejected" })
         .bind(reason)
-        .bind(correction).bind(attempt)
+        .bind(correction).bind(attempt).bind(self.policy_epoch)
         .execute(&mut **tx)
         .await
         .map_err(db)?;
@@ -356,10 +383,6 @@ impl Connection {
         .await
         .map_err(db)?;
         Ok(index.map(|value| value as usize))
-    }
-
-    async fn audit_is_registered(&self, tx: &mut Tx<'_>, index: i32) -> ApiResult<bool> {
-        audit_is_fresh(tx, &self.project, self.bundle, self.integration, index).await
     }
 
     async fn evaluation_request(
@@ -425,16 +448,19 @@ impl Connection {
         descriptor: &Descriptor,
     ) -> ApiResult<Evidence> {
         let row = sqlx::query(
-            "SELECT *, created_at < now()-interval '24 hours' AS expired FROM evaluation_requests WHERE (project_id,bundle_id,id)=($1,$2,$3)",
+            "SELECT *, CASE WHEN started_at IS NULL THEN created_at < now()-interval '7 days'
+                ELSE started_at < now()-make_interval(secs => $4) END AS expired FROM evaluation_requests WHERE (project_id,bundle_id,id)=($1,$2,$3)",
         )
         .bind(&self.project)
         .bind(self.bundle)
         .bind(request_id)
+        .bind(deadline_seconds("ACCLIMATE_LEARNING_EVALUATION_SECONDS", 86_400))
         .fetch_one(&mut **tx)
         .await
         .map_err(db)?;
         let expired: bool = row.get("expired");
-        let evaluation = decode(row)?;
+        let evaluation =
+            decode(row).map_err(|_| processing_error("Invalid stored evaluation request"))?;
         let comparison_id = evaluation.comparison_id.as_deref().map(path).transpose()?;
         match evaluation.status.as_str() {
             "requested" | "running" if !expired => return Ok(Evidence::Pending),
@@ -486,7 +512,7 @@ impl Connection {
                 "Evidence bindings or completeness checks failed",
             ));
         }
-        let policy: Option<Value> = sqlx::query_scalar(
+        let policy: Value = sqlx::query_scalar(
             "SELECT selection_policies FROM connected_learning_policy_epochs
              WHERE project_id=$1 AND integration_id=$2 AND epoch=$3",
         )
@@ -496,20 +522,14 @@ impl Connection {
         .fetch_one(&mut **tx)
         .await
         .map_err(db)?;
-        let selection = match policy {
-            Some(policy) => {
-                let policies: crate::connected_learning::selection::Policies =
-                    serde_json::from_value(policy).map_err(db)?;
-                let development =
-                    round.get::<Option<Uuid>, _>("development_request_id") == Some(request_id);
-                if development {
-                    policies.development.check(&comparison)
-                } else {
-                    policies.audit.check(&comparison)
-                }
-            }
-            None if improved(&comparison) => Ok(()),
-            None => Err("No strict improvement without a case regression"),
+        let policies: crate::connected_learning::selection::Policies =
+            serde_json::from_value(policy).map_err(db)?;
+        let development =
+            round.get::<Option<Uuid>, _>("development_request_id") == Some(request_id);
+        let selection = if development {
+            policies.development.check(&comparison)
+        } else {
+            policies.audit.check(&comparison)
         };
         if let Err(reason) = selection {
             return Ok(Evidence::Rejected {
@@ -616,23 +636,6 @@ impl Evidence {
     }
 }
 
-fn improved(comparison: &ComparisonRequest) -> bool {
-    let mut strictly_better = false;
-    for pair in &comparison.results {
-        let (Some(parent), Some(candidate)) = (pair.parent.reward, pair.candidate.reward) else {
-            return false;
-        };
-        if candidate < parent
-            || (pair.parent.execution_status == "completed"
-                && pair.candidate.execution_status != "completed")
-        {
-            return false;
-        }
-        strictly_better |= candidate > parent;
-    }
-    strictly_better
-}
-
 fn baseline_matches(round: &PgRow, baseline: (Uuid, i64)) -> bool {
     round.get::<Uuid, _>("parent_version_id") == baseline.0
         && round.get::<i64, _>("parent_revision") == baseline.1
@@ -661,8 +664,23 @@ pub(crate) async fn close(tx: &mut Tx<'_>, round: &PgRow, reason: &str) -> ApiRe
         FROM connected_learning_rounds r WHERE r.id=$1 AND (e.project_id,e.bundle_id)=(r.project_id,r.bundle_id)
         AND e.id IN (r.development_request_id,r.audit_request_id) AND e.status IN ('requested','running')")
         .bind(id).bind(reason).execute(&mut **tx).await.map_err(db)?;
-    sqlx::query("UPDATE connected_learning_rounds SET state='rejected',reason=$2,updated_at=now() WHERE id=$1")
-        .bind(id).bind(reason).execute(&mut **tx).await.map_err(db)?;
+    sqlx::query(
+        "UPDATE connected_learning_rounds SET state='rejected',reason=$2,updated_at=now(),
+        audit_released=audit_index IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM evaluation_requests e JOIN comparisons c
+            ON (c.project_id,c.bundle_id,c.id)=(e.project_id,e.bundle_id,e.comparison_id)
+            WHERE e.id=audit_request_id AND e.project_id=connected_learning_rounds.project_id
+            AND e.bundle_id=connected_learning_rounds.bundle_id AND c.complete
+        ) AND NOT EXISTS (SELECT 1 FROM comparisons c WHERE c.complete
+            AND (c.project_id,c.bundle_id)=(connected_learning_rounds.project_id,connected_learning_rounds.bundle_id)
+            AND (c.id=audit_comparison_id OR c.body->'evaluation'->>'requestId'=audit_request_id::text))
+        WHERE id=$1",
+    )
+    .bind(id)
+    .bind(reason)
+    .execute(&mut **tx)
+    .await
+    .map_err(db)?;
     // A release action may invalidate the trial while the underlying correction still applies.
     let superseded: bool = sqlx::query_scalar("SELECT (c.version_id,c.revision) IS DISTINCT FROM ($3,$4)
         FROM connected_learning_enrollments e JOIN channels c ON (c.project_id,c.bundle_id,c.name)=(e.project_id,e.bundle_id,e.delivery_channel)
@@ -675,17 +693,45 @@ pub(crate) async fn close(tx: &mut Tx<'_>, round: &PgRow, reason: &str) -> ApiRe
     Ok(())
 }
 
+fn deadline_seconds(name: &str, default: u32) -> f64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|&seconds| seconds > 0)
+        .unwrap_or(default)
+        .into()
+}
+
+pub(crate) async fn expire_review(tx: &mut Tx<'_>, round: &PgRow) -> ApiResult<bool> {
+    if round.get::<String, _>("state") != "awaiting_review" {
+        return Ok(false);
+    }
+    let expired = sqlx::query(
+        "UPDATE connected_learning_rounds SET decision='expired_review'
+        WHERE id=$1 AND review_started_at <= now()-make_interval(secs => $2)",
+    )
+    .bind(round.get::<Uuid, _>("id"))
+    .bind(deadline_seconds(
+        "ACCLIMATE_LEARNING_REVIEW_SECONDS",
+        14 * 86_400,
+    ))
+    .execute(&mut **tx)
+    .await
+    .map_err(db)?
+    .rows_affected()
+        != 0;
+    if expired {
+        close(tx, round, "Review deadline expired").await?;
+    }
+    Ok(expired)
+}
+
 async fn incident_replay_ready(tx: &mut Tx<'_>, round: &PgRow) -> ApiResult<bool> {
     let reason = match round.get::<Option<String>, _>("incident_replay").as_deref() {
         None | Some("pass") => return Ok(true),
         Some("regression") => "Candidate still fails the triggering incident",
         Some("unavailable") => "Evaluator could not reproduce the incident from private evidence",
-        Some("pending") => {
-            if !round.get::<bool, _>("replay_expired") {
-                return Ok(false);
-            }
-            "Timed out waiting for the evaluator to replay the triggering incident"
-        }
+        Some("pending") => return Ok(false),
         Some(_) => return Err(db("Invalid incident replay state")),
     };
     close(tx, round, reason).await?;
@@ -703,6 +749,9 @@ async fn advance(
     }
     if !baseline_matches(round, baseline) {
         return close(tx, round, "Delivery baseline changed").await;
+    }
+    if expire_review(tx, round).await? {
+        return Ok(());
     }
     let id: Uuid = round.get("id");
     let state: String = round.get("state");
@@ -724,6 +773,22 @@ async fn advance(
                 .await?;
             sqlx::query("UPDATE connected_learning_rounds SET state='development',candidate_version_id=$2,development_request_id=$3,updated_at=now() WHERE id=$1")
                 .bind(id).bind(candidate).bind(request_id).execute(&mut **tx).await.map_err(db)?;
+            if round.get::<Option<String>, _>("incident_replay").is_some() {
+                sqlx::query(
+                    "INSERT INTO connected_learning_replay_obligations
+                    (project_id,integration_id,bundle_id,version_id,baseline_revision,round_id)
+                    VALUES ($1,$2,$3,$4,$5,$6)",
+                )
+                .bind(&connection.project)
+                .bind(connection.integration)
+                .bind(connection.bundle)
+                .bind(candidate)
+                .bind(baseline.1)
+                .bind(id)
+                .execute(&mut **tx)
+                .await
+                .map_err(db)?;
+            }
         }
         "development" => {
             let request = round.get("development_request_id");
@@ -776,9 +841,6 @@ async fn advance(
         }
         "audit" | "awaiting_review" => {
             let index: i32 = round.get("audit_index");
-            if !connection.audit_is_registered(tx, index).await? {
-                return close(tx, round, "Audit cohort is not independently registered").await;
-            }
             let descriptor = connection
                 .audits
                 .get(index as usize)
@@ -788,8 +850,8 @@ async fn advance(
                 && descriptor.committed();
             if state == "awaiting_review"
                 && (!can_automate
-                    || round.get::<Option<String>, _>("reason").as_deref()
-                        == Some("Application policy requires explicit review"))
+                    || round.get::<Option<String>, _>("decision").as_deref()
+                        == Some("policy_review"))
             {
                 return Ok(());
             }
@@ -816,21 +878,15 @@ async fn advance(
                     }
                     if can_automate {
                         match connection
-                            .promote(tx, round, comparison, &connection.authorizer, None)
+                            .promote(tx, round, comparison, WORKER, None)
                             .await
                         {
                             Ok(promotion) => {
-                                record_promotion(
-                                    tx,
-                                    id,
-                                    comparison,
-                                    promotion,
-                                    Some(AUTOMATIC_ROLLOUT),
-                                )
-                                .await?
+                                connection.record_automatic(tx, promotion).await?;
+                                record_promotion(tx, id, comparison, promotion, true).await?
                             }
                             Err(error) if error.1 == "policy_override_required" => {
-                                sqlx::query("UPDATE connected_learning_rounds SET state='awaiting_review',audit_comparison_id=$2,reason='Application policy requires explicit review',updated_at=now() WHERE id=$1")
+                                sqlx::query("UPDATE connected_learning_rounds SET state='awaiting_review',review_started_at=COALESCE(review_started_at,now()),audit_comparison_id=$2,decision='policy_review',reason='Application policy requires explicit review',updated_at=now() WHERE id=$1")
                                     .bind(id).bind(comparison).execute(&mut **tx).await.map_err(db)?;
                             }
                             Err(error) if error.0.is_client_error() => {
@@ -841,7 +897,7 @@ async fn advance(
                             Err(error) => return Err(error),
                         }
                     } else {
-                        sqlx::query("UPDATE connected_learning_rounds SET state='awaiting_review',audit_comparison_id=$2,updated_at=now() WHERE id=$1")
+                        sqlx::query("UPDATE connected_learning_rounds SET state='awaiting_review',review_started_at=COALESCE(review_started_at,now()),audit_comparison_id=$2,updated_at=now() WHERE id=$1")
                             .bind(id).bind(comparison).execute(&mut **tx).await.map_err(db)?;
                     }
                 }
@@ -857,34 +913,74 @@ async fn record_promotion(
     round: Uuid,
     comparison: Uuid,
     promotion: Uuid,
-    reason: Option<&str>,
+    automatic: bool,
 ) -> ApiResult<()> {
-    sqlx::query("UPDATE connected_learning_rounds SET state='promoted',reason=$4,audit_comparison_id=$2,promotion_id=$3,updated_at=now() WHERE id=$1")
-        .bind(round).bind(comparison).bind(promotion).bind(reason).execute(&mut **tx).await.map_err(db)?;
+    let reason = automatic.then_some(AUTOMATIC_ROLLOUT);
+    sqlx::query("UPDATE connected_learning_rounds SET state='promoted',reason=$4,decision=CASE WHEN $5 THEN 'automatic_rollout' END,audit_comparison_id=$2,promotion_id=$3,updated_at=now() WHERE id=$1")
+        .bind(round).bind(comparison).bind(promotion).bind(reason).bind(automatic).execute(&mut **tx).await.map_err(db)?;
     Ok(())
 }
 
-async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<()> {
+async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<bool> {
     let Some(_permit) = s.runtime.claim_permit().await else {
-        return Ok(());
+        return Ok(false);
     };
     let mut tx = s.db.begin().await.map_err(db)?;
     let Some(connection) = Connection::lock(&mut tx, s, project, integration).await? else {
-        return Ok(());
+        return Ok(false);
     };
     let round = sqlx::query(
-        "SELECT *, updated_at < now()-interval '24 hours' AS replay_expired
-         FROM connected_learning_rounds WHERE (project_id,integration_id)=($1,$2)
-         AND state IN ('proposing','development','audit','awaiting_review') ORDER BY created_at,id LIMIT 1",
+        "SELECT r.*, replay.incident_replay, next_tick_at <= now() AS tick_due
+         FROM connected_learning_rounds r JOIN connected_learning_round_replays replay ON replay.round_id=r.id
+         WHERE (project_id,integration_id)=($1,$2) AND state IN ('proposing','development','audit','awaiting_review') ORDER BY created_at,id LIMIT 1",
     )
     .bind(&connection.project).bind(connection.integration).fetch_optional(&mut *tx).await.map_err(db)?;
-    let baseline = connection.baseline(&mut tx).await?;
     if let Some(round) = round {
-        advance(&mut tx, &connection, &round, baseline).await?;
+        if !round.get::<bool, _>("tick_due") {
+            return Ok(false);
+        }
+        let id: Uuid = round.get("id");
+        let mut attempt = tx.begin().await.map_err(db)?;
+        let result = async {
+            let baseline = connection.baseline(&mut attempt).await?;
+            advance(&mut attempt, &connection, &round, baseline).await
+        }
+        .await;
+        match result {
+            Ok(()) => {
+                attempt.commit().await.map_err(db)?;
+                sqlx::query("UPDATE connected_learning_rounds SET consecutive_failures=0,last_error=NULL,
+                    next_tick_at=now()+CASE WHEN state='awaiting_review' THEN interval '5 seconds' ELSE interval '0' END WHERE id=$1 AND (state='awaiting_review' OR consecutive_failures>0)")
+                    .bind(id).execute(&mut *tx).await.map_err(db)?;
+            }
+            Err(error) => {
+                attempt.rollback().await.map_err(db)?;
+                let detail = format!("{}: {}", error.1, error.2);
+                let failures: i32 = sqlx::query_scalar(
+                    "UPDATE connected_learning_rounds
+                    SET consecutive_failures=consecutive_failures+1,last_error=$2,
+                        next_tick_at=now()+make_interval(secs => power(2,consecutive_failures))
+                    WHERE id=$1 RETURNING consecutive_failures",
+                )
+                .bind(id)
+                .bind(&detail)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(db)?;
+                if failures >= MAX_ROUND_FAILURES {
+                    close(&mut tx, &round, &detail).await?;
+                }
+            }
+        }
     } else {
+        if !connection.active {
+            return Ok(true);
+        }
+        let baseline = connection.baseline(&mut tx).await?;
         connection.admit(&mut tx, baseline).await?;
     }
-    tx.commit().await.map_err(db)
+    tx.commit().await.map_err(db)?;
+    Ok(false)
 }
 
 /// Protect provider work before a queue claim and again before accepting its
@@ -926,16 +1022,23 @@ pub(crate) async fn authorize_proposal(
 }
 
 pub async fn connected_learning_worker(s: AppState) {
+    let mut retry_after = std::collections::HashMap::new();
     while !s.runtime.is_draining() {
+        let now = tokio::time::Instant::now();
+        retry_after.retain(|_, deadline| *deadline > now);
         let entries = sqlx::query_as::<_, (String, Uuid)>(
             "SELECT e.project_id,e.integration_id FROM connected_learning_enrollments e
              WHERE EXISTS (
                  SELECT 1 FROM connected_learning_rounds r
                  WHERE (r.project_id,r.integration_id)=(e.project_id,e.integration_id)
                  AND r.state IN ('proposing','development','audit','awaiting_review')
+                 AND r.next_tick_at <= now()
              )
              OR (
-                 e.stopped_at IS NULL AND e.proposal_admissions < e.max_proposal_admissions
+                 NOT EXISTS (SELECT 1 FROM connected_learning_rounds r
+                     WHERE (r.project_id,r.integration_id)=(e.project_id,e.integration_id)
+                     AND r.state IN ('proposing','development','audit','awaiting_review'))
+                 AND e.stopped_at IS NULL AND e.proposal_admissions < e.max_proposal_admissions
                  AND EXISTS (
                      SELECT 1 FROM integrations i WHERE (i.project_id,i.id)=(e.project_id,e.integration_id) AND i.enabled
                  )
@@ -956,11 +1059,23 @@ pub async fn connected_learning_worker(s: AppState) {
                     if s.runtime.is_draining() {
                         return;
                     }
-                    if let Err(error) = tick(&s, project.clone(), integration).await {
-                        eprintln!(
-                            "Connected learning round processing failed for {project}/{integration}: {}",
-                            error.1
-                        );
+                    if retry_after.contains_key(&(project.clone(), integration)) {
+                        continue;
+                    }
+                    match tick(&s, project.clone(), integration).await {
+                        Ok(false) => {}
+                        Ok(true) => {
+                            retry_after
+                                .insert((project, integration), now + Duration::from_secs(10));
+                        }
+                        Err(error) => {
+                            eprintln!(
+                                "Connected learning round processing failed for {project}/{integration}: {}",
+                                error.2
+                            );
+                            retry_after
+                                .insert((project, integration), now + Duration::from_secs(10));
+                        }
                     }
                 }
             }
@@ -1006,7 +1121,9 @@ async fn review(
         ));
     }
     let round = sqlx::query(
-        "SELECT * FROM connected_learning_rounds WHERE (project_id,integration_id,id)=($1,$2,$3)",
+        "SELECT r.*,replay.incident_replay FROM connected_learning_rounds r
+         JOIN connected_learning_round_replays replay ON replay.round_id=r.id
+         WHERE (project_id,integration_id,id)=($1,$2,$3)",
     )
     .bind(&connection.project)
     .bind(integration)
@@ -1022,7 +1139,7 @@ async fn review(
         )
     })?;
     let state: String = round.get("state");
-    let reason: Option<String> = round.get("reason");
+    let round_decision: Option<String> = round.get("decision");
     if state == "promoted" {
         let promotion: Uuid = round.get("promotion_id");
         let can_read = match crate::auth::actor(&headers, &s, &connection.project, "read") {
@@ -1043,7 +1160,7 @@ async fn review(
             .get::<Option<sqlx::types::Json<crate::PolicyOverride>>, _>("policy_override")
             .map(|v| v.0);
         let reviewer: String = decision.get("reviewer");
-        let automatic = reason.as_deref() == Some(AUTOMATIC_ROLLOUT);
+        let automatic = round_decision.as_deref() == Some("automatic_rollout");
         if review.approve
             && !automatic
             && reviewer == actor.principal
@@ -1076,7 +1193,7 @@ async fn review(
         "/v1/projects/{}/integrations/{integration}/learning/rounds/{round_id}/review",
         connection.project
     );
-    if state == "rejected" && reason.as_deref() == Some(REVIEW_DECLINED) {
+    if state == "rejected" && round_decision.as_deref() == Some("review_declined") {
         let reviewer: Option<String> = sqlx::query_scalar(
             "SELECT principal_id FROM mutation_audit WHERE project_id=$1 AND path=$2 AND operation_key=$3 ORDER BY id DESC LIMIT 1"
         ).bind(&connection.project).bind(&route).bind(round_id.to_string()).fetch_optional(&mut *tx).await.map_err(db)?;
@@ -1093,7 +1210,16 @@ async fn review(
     if state != "awaiting_review" {
         return Err(conflict("Round is not awaiting review"));
     }
+    if expire_review(&mut tx, &round).await? {
+        tx.commit().await.map_err(db)?;
+        return Err(conflict("Review deadline expired"));
+    }
     if !review.approve {
+        sqlx::query("UPDATE connected_learning_rounds SET decision='review_declined' WHERE id=$1")
+            .bind(round_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
         close(&mut tx, &round, REVIEW_DECLINED).await?;
         // A decline has no promotion. Keep the deciding identity in the mutation audit.
         sqlx::query("INSERT INTO mutation_audit(project_id,actor_user_id,service_principal,principal_id,path,operation_key)
@@ -1110,9 +1236,7 @@ async fn review(
         ));
     }
     let index: i32 = round.get("audit_index");
-    if !connection.audit_is_registered(&mut tx, index).await? {
-        return Err(conflict("Audit cohort is not independently registered"));
-    }
+
     let descriptor = connection
         .audits
         .get(index as usize)
@@ -1132,7 +1256,7 @@ async fn review(
             review.policy_override,
         )
         .await?;
-    record_promotion(&mut tx, round_id, comparison, promotion, None).await?;
+    record_promotion(&mut tx, round_id, comparison, promotion, false).await?;
     tx.commit().await.map_err(db)?;
     Ok(Json(
         json!({"roundId":round_id,"state":"promoted","promotionId":promotion}),
@@ -1180,15 +1304,16 @@ mod tests {
                 })
                 .collect(),
         };
-        assert!(!improved(&comparison));
+        let policy = crate::connected_learning::selection::Policies::default().development;
+        assert!(policy.check(&comparison).is_err());
         comparison.results[0].candidate.reward = Some(10.0);
-        assert!(improved(&comparison));
+        assert!(policy.check(&comparison).is_ok());
         comparison.results[1].candidate.reward = Some(0.0);
-        assert!(!improved(&comparison));
+        assert!(policy.check(&comparison).is_err());
         comparison.results[1].candidate = scored(1.0, "task_failed");
-        assert!(!improved(&comparison));
+        assert!(policy.check(&comparison).is_err());
         comparison.results[1].candidate = scored(1.0, "completed");
         comparison.results[1].candidate.reward = None;
-        assert!(!improved(&comparison));
+        assert!(policy.check(&comparison).is_err());
     }
 }

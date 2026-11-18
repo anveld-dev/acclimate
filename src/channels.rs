@@ -322,6 +322,21 @@ pub(crate) async fn promote_in_tx(
     sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(project_id,bundle_id,name) DO UPDATE SET revision=EXCLUDED.revision,version_id=EXCLUDED.version_id").bind(p).bind(bid).bind(c).bind(nr).bind(vid).execute(&mut **tx).await.map_err(db)?;
     let id = Uuid::new_v4();
     let row = sqlx::query("INSERT INTO promotions(id,project_id,bundle_id,channel,revision,version_id,previous_version_id,comparison_id,unevaluated_reason,reviewer,policy_override,policy_approval_promotion_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING created_at").bind(id).bind(p).bind(bid).bind(c).bind(nr).bind(vid).bind(previous).bind(req.comparison_id.as_deref().map(path).transpose()?).bind(&req.unevaluated_reason).bind(principal).bind(&policy_override).bind(approval_id).fetch_one(&mut **tx).await.map_err(db)?;
+    sqlx::query(
+        "INSERT INTO connected_learning_field_releases(promotion_id,control_version_id)
+        SELECT $4,connected_field_checkpoint(e.project_id,e.integration_id,$5,$6)
+        FROM connected_learning_enrollments e
+        WHERE (e.project_id,e.bundle_id,e.delivery_channel)=($1,$2,$3)",
+    )
+    .bind(p)
+    .bind(bid)
+    .bind(c)
+    .bind(id)
+    .bind(nr)
+    .bind(vid)
+    .execute(&mut **tx)
+    .await
+    .map_err(db)?;
     let when = row.get::<DateTime<Utc>, _>("created_at").to_rfc3339();
     Ok(Promotion {
         id: id.to_string(),

@@ -71,6 +71,29 @@ pub(super) async fn eligible(
         .map_err(db)
 }
 
+async fn register_pending(
+    tx: &mut Tx<'_>,
+    c: &Connection,
+    candidate: Uuid,
+    revision: i64,
+) -> ApiResult<()> {
+    sqlx::query(
+        "INSERT INTO connected_learning_replay_obligations
+        (project_id,integration_id,bundle_id,regression_sequence,version_id,baseline_revision)
+        SELECT $1,$2,$5,sequence,$3,$4 FROM connected_field_requirements($1,$2,$3,$4)
+        WHERE replay IS NULL ON CONFLICT DO NOTHING",
+    )
+    .bind(&c.project)
+    .bind(c.integration)
+    .bind(candidate)
+    .bind(revision)
+    .bind(c.bundle)
+    .execute(&mut **tx)
+    .await
+    .map_err(db)?;
+    Ok(())
+}
+
 pub(super) async fn inspect(
     State(s): State<AppState>,
     Path((project, integration, candidate)): Path<(String, Uuid, Uuid)>,
@@ -80,11 +103,13 @@ pub(super) async fn inspect(
     let c = evaluator(&mut tx, &s, &headers, project, integration).await?;
     let revision = c.baseline(&mut tx).await?.1;
     let digest = digest(&mut tx, &c, candidate).await?;
+    register_pending(&mut tx, &c, candidate, revision).await?;
     let (pending,failed): (Vec<Uuid>,Vec<Uuid>) = sqlx::query_as(
         "SELECT COALESCE(array_agg(outcome_id ORDER BY sequence) FILTER (WHERE replay IS NULL),'{}'::uuid[]),
-                COALESCE(array_agg(outcome_id ORDER BY sequence) FILTER (WHERE replay='regression'),'{}'::uuid[])
+                COALESCE(array_agg(outcome_id ORDER BY sequence) FILTER (WHERE replay IN ('regression','unavailable')),'{}'::uuid[])
          FROM connected_field_requirements($1,$2,$3,$4)")
         .bind(&c.project).bind(integration).bind(candidate).bind(revision).fetch_one(&mut *tx).await.map_err(db)?;
+    tx.commit().await.map_err(db)?;
     Ok(Json(
         json!({"versionId":candidate,"digest":digest,"baselineRevision":revision.to_string(),
                     "pendingOutcomeIds":pending,"failedOutcomeIds":failed}),
@@ -128,9 +153,14 @@ pub(super) async fn submit(
         if c.baseline(&mut tx).await?.1 != revision {
             return Err(conflict("Field replay baseline has changed"));
         }
-        sqlx::query("INSERT INTO connected_learning_field_requalifications
-            (regression_sequence,candidate_version_id,baseline_revision,verdict,evaluator_principal) VALUES ($1,$2,$3,$4,$5)")
+        sqlx::query("INSERT INTO connected_learning_replay_obligations
+            (project_id,integration_id,bundle_id,regression_sequence,version_id,baseline_revision,verdict,evaluator)
+            VALUES ($6,$7,$8,$1,$2,$3,$4,$5)
+            ON CONFLICT(regression_sequence,version_id,baseline_revision)
+            DO UPDATE SET verdict=EXCLUDED.verdict,evaluator=EXCLUDED.evaluator
+            WHERE connected_learning_replay_obligations.verdict IS NULL")
             .bind(sequence).bind(replay.version_id).bind(revision).bind(replay.verdict.as_str()).bind(&c.evaluator)
+            .bind(&c.project).bind(integration).bind(c.bundle)
             .execute(&mut *tx).await.map_err(db)?;
     }
     tx.commit().await.map_err(db)?;
@@ -148,23 +178,15 @@ pub(super) async fn check_required_replays(
     if eligible(tx, c, candidate, revision).await? {
         return Ok(true);
     }
-    let id: Uuid = round.get("id");
-    let (failed, expired): (bool, bool) = sqlx::query_as(
-        "SELECT EXISTS(SELECT FROM connected_field_requirements($1,$2,$3,$4) WHERE replay='regression'),
-           EXISTS(SELECT FROM connected_learning_rounds WHERE id=$5 AND updated_at < now()-interval '24 hours')")
-        .bind(&c.project).bind(c.integration).bind(candidate).bind(revision).bind(id).fetch_one(&mut **tx).await.map_err(db)?;
+    register_pending(tx, c, candidate, revision).await?;
+    let failed: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT FROM connected_field_requirements($1,$2,$3,$4) WHERE replay IN ('regression','unavailable'))")
+        .bind(&c.project).bind(c.integration).bind(candidate).bind(revision).fetch_one(&mut **tx).await.map_err(db)?;
     if failed {
         super::close(
             tx,
             round,
             "Withdrawn content failed a required field replay",
-        )
-        .await?;
-    } else if expired {
-        super::close(
-            tx,
-            round,
-            "Timed out waiting for required field replay verdicts",
         )
         .await?;
     }

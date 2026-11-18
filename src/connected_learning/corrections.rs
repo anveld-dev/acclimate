@@ -154,18 +154,6 @@ pub(super) async fn submit(
     ))
 }
 
-pub(super) async fn work(
-    tx: &mut Transaction<'_, Postgres>,
-    project: &str,
-    integration: Uuid,
-) -> ApiResult<Vec<Value>> {
-    sqlx::query_scalar("SELECT jsonb_strip_nulls(jsonb_build_object('correctionId',correction_id,'outcomeId',outcome_id,
-        'versionId',version_id,'revision',revision::text,'digest',digest,'lesson',lesson,'feedback',feedback))
-        FROM connected_learning_correction_work WHERE project_id=$1 AND integration_id=$2 AND action='recheck'
-        ORDER BY queued_at,correction_id LIMIT 100")
-        .bind(project).bind(integration).fetch_all(&mut **tx).await.map_err(db)
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Recheck {
@@ -204,8 +192,10 @@ pub(super) async fn recheck(
         json!({"correctionId":q.correction_id,"revision":q.revision,"verdict":q.verdict,"accepted":true}),
     );
     let prior: Option<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT version_id,digest,verdict FROM connected_learning_rechecks
-        WHERE (project_id,integration_id,correction_id,revision)=($1,$2,$3,$4)",
+        "SELECT k.version_id,v.digest,
+            CASE k.verdict WHEN 'pass' THEN 'reproduced' WHEN 'regression' THEN 'resolved' ELSE k.verdict END
+        FROM connected_learning_replay_results k JOIN versions v ON v.id=k.version_id
+        WHERE (k.project_id,k.integration_id,k.correction_id,k.baseline_revision)=($1,$2,$3,$4) AND k.verdict IS NOT NULL",
     )
     .bind(&project)
     .bind(integration)
@@ -225,9 +215,14 @@ pub(super) async fn recheck(
     if !enabled {
         return Err(conflict("Learning admission is closed"));
     }
-    let accepted = sqlx::query("INSERT INTO connected_learning_rechecks(project_id,integration_id,correction_id,version_id,revision,digest,verdict,evaluator)
-        SELECT project_id,integration_id,correction_id,version_id,revision,digest,$7,$8 FROM connected_learning_correction_work
-        WHERE (project_id,integration_id,correction_id,version_id,revision,digest)=($1,$2,$3,$4,$5,$6) AND action='recheck'")
+    let accepted = sqlx::query("INSERT INTO connected_learning_replay_obligations
+        (project_id,integration_id,bundle_id,correction_id,version_id,baseline_revision,verdict,evaluator)
+        SELECT project_id,integration_id,bundle_id,correction_id,version_id,revision,
+            CASE $7 WHEN 'reproduced' THEN 'pass' WHEN 'resolved' THEN 'regression' ELSE $7 END,$8 FROM connected_learning_correction_work
+        WHERE (project_id,integration_id,correction_id,version_id,revision,digest)=($1,$2,$3,$4,$5,$6) AND action='recheck'
+        ON CONFLICT(project_id,integration_id,correction_id,baseline_revision)
+        DO UPDATE SET verdict=EXCLUDED.verdict,evaluator=EXCLUDED.evaluator
+        WHERE connected_learning_replay_obligations.verdict IS NULL")
         .bind(&project).bind(integration).bind(q.correction_id).bind(q.version_id).bind(revision).bind(q.digest)
         .bind(&q.verdict).bind(&actor.principal).execute(&mut *tx).await.map_err(db)?;
     if accepted.rows_affected() != 1 {

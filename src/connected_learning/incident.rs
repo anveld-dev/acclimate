@@ -26,22 +26,6 @@ pub(super) async fn inspect(
     Ok(Json(result))
 }
 
-pub(super) async fn work(
-    tx: &mut Transaction<'_, Postgres>,
-    project: &str,
-    integration: Uuid,
-) -> ApiResult<Vec<Value>> {
-    sqlx::query_scalar(
-        "SELECT jsonb_build_object('roundId',r.id,'outcomeId',r.outcome_id,'versionId',v.id,
-                  'digest',v.digest,'baselineRevision',r.parent_revision::text)
-         FROM connected_learning_rounds r JOIN versions v ON v.id=r.candidate_version_id
-         JOIN connected_learning_enrollments e ON (e.project_id,e.integration_id)=(r.project_id,r.integration_id)
-         JOIN channels c ON (c.project_id,c.bundle_id,c.name)=(e.project_id,e.bundle_id,e.delivery_channel)
-         WHERE (r.project_id,r.integration_id)=($1,$2) AND r.state='development' AND r.incident_replay='pending'
-           AND (c.version_id,c.revision)=(r.parent_version_id,r.parent_revision)",
-    ).bind(project).bind(integration).fetch_all(&mut **tx).await.map_err(db)
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Verdict {
@@ -79,8 +63,9 @@ pub(super) async fn submit(
     }
     // The enrollment/connection lock serializes verdicts with state transitions.
     let row = sqlx::query(
-        "SELECT r.state,r.incident_replay,(c.version_id,c.revision)=(r.parent_version_id,r.parent_revision) AS current
+        "SELECT r.state,replay.incident_replay,(c.version_id,c.revision)=(r.parent_version_id,r.parent_revision) AS current
          FROM connected_learning_rounds r JOIN versions v ON v.id=r.candidate_version_id
+         JOIN connected_learning_round_replays replay ON replay.round_id=r.id
          JOIN connected_learning_enrollments e ON (e.project_id,e.integration_id)=(r.project_id,r.integration_id)
          JOIN channels c ON (c.project_id,c.bundle_id,c.name)=(e.project_id,e.bundle_id,e.delivery_channel)
          WHERE (r.project_id,r.integration_id,r.id,r.outcome_id,v.id,v.digest,r.parent_revision)=($1,$2,$3,$4,$5,$6,$7)",
@@ -98,9 +83,10 @@ pub(super) async fn submit(
                 "Incident replay is not pending for this candidate",
             ));
         }
-        sqlx::query("UPDATE connected_learning_rounds SET incident_replay=$2 WHERE id=$1")
+        sqlx::query("UPDATE connected_learning_replay_obligations SET verdict=$2,evaluator=$3 WHERE round_id=$1")
             .bind(input.round_id)
             .bind(&input.verdict)
+            .bind(&actor.principal)
             .execute(&mut *tx)
             .await
             .map_err(db)?;

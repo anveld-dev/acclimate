@@ -220,6 +220,8 @@ def automatic_rollback(context):
     w.triggering_job, w.later_job = grades[2:]
     w.rollback_id = w.call('POST', audits, w.triggering_job, actor='evaluator')['rollbackPromotionId']
     assert 'rollbackPromotionId' not in w.call('POST', audits, w.later_job, actor='evaluator')
+    rollback = w.call('GET', w.history_path)['items'][0]
+    assert rollback['id'] == w.rollback_id and rollback['reviewer'] == 'service:connected-learning'
     w.restored_delivery = w.call('GET', w.channel, actor='content-reader')
     assert w.restored_delivery['version'] == w.original_delivery['version']
     assert int(w.restored_delivery['revision']) == int(w.served['revision']) + 1

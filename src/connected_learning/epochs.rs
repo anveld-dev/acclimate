@@ -45,6 +45,55 @@ pub(super) fn valid_fingerprints(descriptor: &Descriptor) -> bool {
             })
 }
 
+pub(super) async fn save_policy_epoch(
+    tx: &mut Transaction<'_, Postgres>,
+    project: &str,
+    integration: Uuid,
+) -> ApiResult<()> {
+    sqlx::query("INSERT INTO connected_learning_policy_epochs(project_id,integration_id,epoch,development,selection_policies)
+        SELECT project_id,integration_id,policy_epoch,development,selection_policies
+        FROM connected_learning_enrollments WHERE (project_id,integration_id)=($1,$2)")
+        .bind(project).bind(integration).execute(&mut **tx).await.map_err(db)?;
+    Ok(())
+}
+
+pub(super) async fn register_cohorts(
+    tx: &mut Transaction<'_, Postgres>,
+    project: &str,
+    bundle: Uuid,
+    integration: Uuid,
+    development: Option<&Descriptor>,
+    previous_count: usize,
+    audits: &[Descriptor],
+) -> ApiResult<()> {
+    if development.is_none() && audits.is_empty() {
+        return Ok(());
+    }
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('connected-learning-cohorts:' || $1 || ':' || $2::uuid::text, 0))")
+        .bind(project).bind(bundle).execute(&mut **tx).await.map_err(db)?;
+    let registrations = development
+        .into_iter()
+        .map(|descriptor| (None, descriptor))
+        .chain(
+            audits
+                .iter()
+                .enumerate()
+                .map(|(index, descriptor)| (Some((previous_count + index) as i32), descriptor)),
+        );
+    for (slot, descriptor) in registrations {
+        sqlx::query("SELECT connected_learning_register($1,$2,$3,$4,$5)")
+            .bind(project)
+            .bind(bundle)
+            .bind(integration)
+            .bind(slot)
+            .bind(serde_json::to_value(descriptor).map_err(db)?)
+            .execute(&mut **tx)
+            .await
+            .map_err(registry_error)?;
+    }
+    Ok(())
+}
+
 pub(super) fn registry_error(error: sqlx::Error) -> ApiErr {
     if error
         .as_database_error()
@@ -155,6 +204,18 @@ pub(super) async fn renew(
         if settings.automatic_rollout {
             crate::auth::authorize_transaction(&mut tx, &actor, &project, "promote").await?;
         }
+        let reviews = sqlx::query(
+            "SELECT * FROM connected_learning_rounds
+            WHERE (project_id,integration_id)=($1,$2) AND state='awaiting_review'",
+        )
+        .bind(&project)
+        .bind(integration)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(db)?;
+        for round in reviews {
+            crate::connected_learning_worker::expire_review(&mut tx, &round).await?;
+        }
         let active: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2
              AND state NOT IN ('promoted','rejected'))"
@@ -175,7 +236,7 @@ pub(super) async fn renew(
         if let Some(policies) = policies {
             policies.development.validate(&[development], None)?;
             let spent = sqlx::query_scalar::<_, i32>(
-                "SELECT audit_index FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 AND audit_index IS NOT NULL"
+                "SELECT audit_index FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 AND audit_index IS NOT NULL AND NOT audit_released"
             ).bind(&project).bind(integration).fetch_all(&mut *tx).await.map_err(db)?
             .into_iter().collect::<std::collections::HashSet<_>>();
             let future_audits = settings
@@ -211,6 +272,19 @@ pub(super) async fn renew(
     .fetch_one(&mut *tx)
     .await
     .map_err(registry_error)?;
+    if rotate {
+        save_policy_epoch(&mut tx, &project, integration).await?;
+    }
+    register_cohorts(
+        &mut tx,
+        &project,
+        row.get("bundle_id"),
+        integration,
+        request.development.as_ref(),
+        settings.audits.len(),
+        &request.audits,
+    )
+    .await?;
     sqlx::query(
         "INSERT INTO connected_learning_renewals(project_id,integration_id,renewal_id,request,revision,authorized_by)
          VALUES($1,$2,$3,$4,$5,$6)",
@@ -228,26 +302,6 @@ pub(super) async fn renew(
     let mut view = enrollment_view(&updated, true, true)?;
     view["appliedRenewalRevision"] = json!(revision);
     Ok(Json(view))
-}
-
-pub(crate) async fn audit_is_fresh(
-    tx: &mut Transaction<'_, Postgres>,
-    project: &str,
-    bundle: Uuid,
-    integration: Uuid,
-    index: i32,
-) -> ApiResult<bool> {
-    sqlx::query_scalar(
-        "SELECT connected_learning_audit_registered(project_id,bundle_id,integration_id,$4,audits->$4)
-         FROM connected_learning_enrollments WHERE (project_id,bundle_id,integration_id)=($1,$2,$3)",
-    )
-    .bind(project)
-    .bind(bundle)
-    .bind(integration)
-    .bind(index)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(db)
 }
 
 pub(super) async fn remaining_audits(

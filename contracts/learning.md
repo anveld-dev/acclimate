@@ -4,6 +4,8 @@
 
 All suffixes below use `/v1/projects/{project}/integrations/{integration}/learning`. The application runs its native agents and graders and retains private inputs, expected answers and traces.
 
+A closed round releases its audit reservation if no complete comparison was recorded. Evaluation execution and review have configurable deadlines, defaulting to 24 hours from execution start and 14 days from entry into review. Replay obligations expire 24 hours after assignment. Expired reviews appear as rejected rounds with the expiry reason. After five consecutive processing errors, the round closes and its last error appears as the rejection reason. Automatic rollout and rollback promotions report `service:connected-learning` as the reviewer.
+
 | Method and suffix | Authority and operation |
 | --- | --- |
 | `PUT` | A workspace administrator enrolls an enabled connection with a released source channel, separate outcome/evaluator principals, an installation ID, file permissions, proposal allowance, development and audit descriptors and rollout settings. Enabling automatic rollout requires promotion authority. |

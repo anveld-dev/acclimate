@@ -170,6 +170,7 @@ export interface EvaluationBinding {
   attemptId: string;
 }
 export interface ComparisonRequest {
+  parentSourceComparisonId?: string;
   evaluation?: EvaluationBinding;
   parentVersionId: string;
   candidateVersionId: string;
@@ -345,6 +346,7 @@ export interface LearningEnrollmentRequest {
   /** Names authorized for whole-package operations on discrepancy-driven proposals. */
   skillPackages?: { createSkillNames: string[]; retireSkillNames: string[] };
   maxProposalAdmissions: number;
+  maxCorrectionsPerRound?: number;
   development: LearningEvaluationDescriptor;
   audits: LearningEvaluationDescriptor[];
   automaticRollout: boolean;
@@ -372,6 +374,9 @@ export interface LearningEnrollment
   enabled: boolean;
 }
 export interface LearningRound {
+  batchSize?: number;
+  includedCorrections?: { correctionId: string; outcomeId: string; attempt: number }[];
+  parentSourceComparisonId?: string | null;
   incidentReplay?: LearningIncidentReplayStatus | null;
   correctionId?: string;
   attempt?: number;
@@ -598,7 +603,13 @@ export interface LearningFieldAuditReceipt {
   wins?: number;
   rollbackPromotionId?: string;
 }
+export interface CachedLearningParent {
+  comparisonId: string;
+  results: (CaseKey & { parent: Outcome })[];
+}
+
 export type LearningWorkItem = {
+  cachedParent?: CachedLearningParent | null;
   evaluationRequestId: string;
   status: 'requested' | 'running';
 } & (

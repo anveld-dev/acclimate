@@ -70,6 +70,7 @@ struct Connection {
     automatic: bool,
     automatic_rollback: bool,
     has_budget: bool,
+    max_corrections_per_round: i32,
     policy_epoch: i64,
     higher_is_better: bool,
     active: bool,
@@ -161,6 +162,7 @@ impl Connection {
             automatic: row.get("automatic_rollout"),
             automatic_rollback: row.get("automatic_rollback"),
             has_budget: row.get("has_budget"),
+            max_corrections_per_round: row.get("max_corrections_per_round"),
             active,
         }))
     }
@@ -272,21 +274,22 @@ impl Connection {
         if !self.active || !self.has_budget || self.next_audit(tx).await?.is_none() {
             return Ok(());
         }
-        let outcome = sqlx::query(
+        let outcomes = sqlx::query(
             "SELECT * FROM connected_learning_correction_work
              WHERE (project_id,bundle_id,integration_id)=($1,$2,$3) AND action='ready'
              AND (version_id,revision)=($4,$5)
-             ORDER BY queued_at,correction_id LIMIT 1",
+             ORDER BY queued_at,correction_id LIMIT $6",
         )
         .bind(&self.project)
         .bind(self.bundle)
         .bind(self.integration)
         .bind(baseline.0)
         .bind(baseline.1)
-        .fetch_optional(&mut **tx)
+        .bind(i64::from(self.max_corrections_per_round))
+        .fetch_all(&mut **tx)
         .await
         .map_err(db)?;
-        let Some(outcome) = outcome else {
+        let Some(outcome) = outcomes.first() else {
             return Ok(());
         };
         let incumbent: Uuid = sqlx::query_scalar(
@@ -295,62 +298,104 @@ impl Connection {
         )
         .bind(&self.project).bind(self.integration).bind(self.policy_epoch)
         .fetch_one(&mut **tx).await.map_err(db)?;
-        let version: Uuid = outcome.get("observed_version");
-        let revision: Option<i64> = outcome.get("observed_revision");
-        let status: String = outcome.get("status");
-        let digest: String = outcome.get("observed_digest");
-        let lesson: Option<Value> = outcome.get("lesson");
-        let feedback: Option<Value> = outcome.get("feedback");
-        let correction: Uuid = outcome.get("correction_id");
-        let admission = async {
-            let structural = lesson.is_none();
-            let (allowed_paths, hypothesis) = match lesson {
-                Some(lesson) => (
-                    vec![
+        let mut included = Vec::new();
+        let mut structural = false;
+        let mut rejection = None;
+        let mut request = ProposalRequest {
+            parent_version_id: incumbent.to_string(),
+            allowed_paths: Vec::new(),
+            hypothesis: "Improve the bundle to address the admitted corrections.".into(),
+            evidence: Vec::new(),
+        };
+        for row in &outcomes {
+            let correction: Uuid = row.get("correction_id");
+            let lesson: Option<Value> = row.get("lesson");
+            let feedback: Option<Value> = row.get("feedback");
+            let mut next = request.clone();
+            let build = || -> ApiResult<ProposalRequest> {
+                let paths = match &lesson {
+                    Some(lesson) => vec![
                         lesson["path"]
                             .as_str()
                             .ok_or_else(|| processing_error("Missing lesson path"))?
                             .to_owned(),
                     ],
-                    lesson["instruction"]
+                    None => self.permitted_paths.clone(),
+                };
+                let provenance = json!({
+                    "correctionId": correction,
+                    "outcomeId": row.get::<Uuid, _>("outcome_id"),
+                    "observedVersionId": row.get::<Uuid, _>("observed_version"),
+                    "observedDigest": row.get::<String, _>("observed_digest"),
+                    "observedRevision": row.get::<Option<i64>, _>("observed_revision").map(|r| r.to_string()),
+                    "status": row.get::<String, _>("status"),
+                    "baselineVersionId": baseline.0,
+                    "baselineRevision": baseline.1.to_string(),
+                    "reproducedOnBaseline": row.get::<Uuid, _>("observed_version") != baseline.0
+                        || row.get::<Option<i64>, _>("observed_revision") != Some(baseline.1),
+                    "lessonPath": lesson.as_ref().map(|l| &l["path"]),
+                });
+                next.evidence.push(format!("Correction: {provenance}"));
+                if let Some(lesson) = &lesson {
+                    let instruction = lesson["instruction"]
                         .as_str()
-                        .ok_or_else(|| processing_error("Missing lesson instruction"))?
-                        .to_owned(),
-                ),
-                None => (
-                    self.permitted_paths.clone(),
-                    "Improve the bundle so future tasks satisfy the reported expected outcome."
-                        .into(),
-                ),
+                        .ok_or_else(|| processing_error("Missing lesson instruction"))?;
+                    if included.is_empty() {
+                        next.hypothesis = instruction.to_owned();
+                    }
+                    next.evidence.push(instruction.to_owned());
+                }
+                if let Some(feedback) = feedback {
+                    let expected = feedback["expected"]
+                        .as_str()
+                        .ok_or_else(|| processing_error("Missing expected outcome"))?;
+                    let observed = feedback["observed"]
+                        .as_str()
+                        .ok_or_else(|| processing_error("Missing observed outcome"))?;
+                    next.evidence.push(format!("Expected outcome: {expected}"));
+                    next.evidence.push(format!("Observed outcome: {observed}"));
+                }
+                for path in paths {
+                    if !next.allowed_paths.contains(&path) {
+                        next.allowed_paths.push(path);
+                    }
+                }
+                Ok(next)
             };
-            let mut evidence = vec![format!(
-                "Connection task ended {status} using version {version} ({digest})."
-            )];
-            if version != baseline.0 || revision != Some(baseline.1) {
-                evidence.push(format!(
-                "The evaluator reproduced this correction on version {} at delivery revision {}.",
-                baseline.0, baseline.1
-            ));
+            let next = match build() {
+                Ok(next) => next,
+                Err(error) => {
+                    if included.is_empty() {
+                        included.push(correction);
+                        rejection = Some(error.2);
+                    }
+                    break;
+                }
+            };
+            if !fits_proposal_prompt(&next) {
+                break;
             }
-            if let Some(feedback) = feedback {
-                let expected = feedback["expected"]
-                    .as_str()
-                    .ok_or_else(|| processing_error("Missing expected outcome"))?;
-                let observed = feedback["observed"]
-                    .as_str()
-                    .ok_or_else(|| processing_error("Missing observed outcome"))?;
-                evidence.push(format!("Expected outcome: {expected}"));
-                evidence.push(format!("Observed outcome: {observed}"));
-            }
-            self.add_proposal_history(tx, correction, &mut evidence)
+            structural |= lesson.is_none();
+            included.push(correction);
+            request = next;
+        }
+        let Some(&correction) = included.first() else {
+            return Ok(());
+        };
+        let proposal = if rejection.is_some() {
+            None
+        } else {
+            let mut history = Vec::new();
+            self.add_proposal_history(tx, &included, &mut history)
                 .await?;
-            let request = ProposalRequest {
-                parent_version_id: incumbent.to_string(),
-                allowed_paths,
-                hypothesis,
-                evidence,
-            };
-            let proposal = enqueue_managed_proposal(
+            for entry in history {
+                request.evidence.push(entry);
+                if !fits_proposal_prompt(&request) {
+                    request.evidence.pop();
+                    break;
+                }
+            }
+            enqueue_managed_proposal(
                 tx,
                 &self.project,
                 self.bundle,
@@ -359,19 +404,13 @@ impl Connection {
                 structural,
             )
             .await?
-            .map(|(id, _)| id);
-            Ok::<_, crate::ApiErr>(proposal)
-        }
-        .await;
-        let (proposal, reason) = match admission {
-            Ok(Some(proposal)) => (Some(proposal), None),
-            Ok(None) => (
-                None,
-                Some("Correction has no applicable permitted paths".to_owned()),
-            ),
-            Err(error) if error.1 == "learning_processing_error" => (None, Some(error.2)),
-            Err(error) => return Err(error),
+            .map(|(id, _)| id)
         };
+        let reason = rejection.or_else(|| {
+            proposal
+                .is_none()
+                .then(|| "Correction has no applicable permitted paths".to_owned())
+        });
         if proposal.is_some() {
             sqlx::query(
                 "UPDATE connected_learning_enrollments SET proposal_admissions=proposal_admissions+1 WHERE (project_id,integration_id)=($1,$2)",
@@ -382,21 +421,25 @@ impl Connection {
             .await
             .map_err(db)?;
         }
-        let attempt: i32 = sqlx::query_scalar(
+        let attempts: std::collections::HashMap<Uuid, i32> = sqlx::query_as::<_, (Uuid, i32)>(
             "UPDATE connected_learning_corrections SET pending=false, attempts=attempts+1
-            WHERE (project_id,integration_id,correction_id)=($1,$2,$3) RETURNING attempts",
+            WHERE (project_id,integration_id)=($1,$2) AND correction_id=ANY($3)
+            RETURNING correction_id,attempts",
         )
         .bind(&self.project)
         .bind(self.integration)
-        .bind(correction)
-        .fetch_one(&mut **tx)
+        .bind(&included)
+        .fetch_all(&mut **tx)
         .await
-        .map_err(db)?;
+        .map_err(db)?
+        .into_iter()
+        .collect();
+        let round_id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO connected_learning_rounds (id,project_id,bundle_id,integration_id,outcome_id,parent_version_id,parent_revision,proposal_id,state,reason,correction_id,attempt,policy_epoch,development_parent_id)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
         )
-        .bind(Uuid::new_v4())
+        .bind(round_id)
         .bind(&self.project)
         .bind(self.bundle)
         .bind(self.integration)
@@ -406,24 +449,40 @@ impl Connection {
         .bind(proposal)
         .bind(if proposal.is_some() { "proposing" } else { "rejected" })
         .bind(reason)
-        .bind(correction).bind(attempt).bind(self.policy_epoch).bind(incumbent)
+        .bind(correction).bind(attempts[&correction]).bind(self.policy_epoch).bind(incumbent)
         .execute(&mut **tx)
         .await
         .map_err(db)?;
+        for (index, correction) in included.iter().enumerate().skip(1) {
+            sqlx::query("INSERT INTO connected_learning_round_corrections
+                (round_id,project_id,integration_id,correction_id,attempt,position) VALUES ($1,$2,$3,$4,$5,$6)")
+                .bind(round_id).bind(&self.project).bind(self.integration).bind(correction)
+                .bind(attempts[correction]).bind(index as i32 + 1)
+                .execute(&mut **tx).await.map_err(db)?;
+        }
         Ok(())
     }
 
     async fn add_proposal_history(
         &self,
         tx: &mut Tx<'_>,
-        correction: Uuid,
+        corrections: &[Uuid],
         evidence: &mut Vec<String>,
     ) -> ApiResult<()> {
         let history = sqlx::query(
-            "SELECT r.candidate_version_id,r.state,r.reason,r.decision,r.audit_request_id,
+            "SELECT members.provenance,
+                    r.candidate_version_id,r.state,r.reason,r.decision,r.audit_request_id,
                     p.request->>'hypothesis' AS hypothesis,p.rationale,p.screening,
                     parent.payload AS before,candidate.payload AS after,c.body
              FROM connected_learning_rounds r
+             CROSS JOIN LATERAL (
+                 SELECT jsonb_agg(jsonb_build_object('correctionId',m.correction_id,'outcomeId',c.outcome_id,
+                            'attempt',m.attempt) ORDER BY m.position) AS provenance,
+                        bool_or(m.correction_id=ANY($4::uuid[])) AS same_correction
+                 FROM connected_learning_round_corrections m
+                 JOIN connected_learning_corrections c USING (project_id,integration_id,correction_id)
+                 WHERE m.round_id=r.id
+             ) members
              JOIN proposals p ON p.id=r.proposal_id
              JOIN versions parent ON parent.id=p.parent_version_id
              LEFT JOIN versions candidate ON candidate.id=r.candidate_version_id
@@ -435,9 +494,9 @@ impl Connection {
              WHERE (r.project_id,r.integration_id,r.bundle_id)=($1,$2,$3)
                AND (r.state IN ('promoted','developed') OR (r.state='rejected'
                  AND (r.candidate_version_id IS NOT NULL OR r.reason='critic-rejected')))
-             ORDER BY (r.correction_id=$4) DESC,r.updated_at DESC,r.id DESC LIMIT 12",
+             ORDER BY members.same_correction DESC,r.updated_at DESC,r.id DESC LIMIT 12",
         )
-        .bind(&self.project).bind(self.integration).bind(self.bundle).bind(correction)
+        .bind(&self.project).bind(self.integration).bind(self.bundle).bind(corrections)
         .fetch_all(&mut **tx).await.map_err(db)?;
         let mut remaining = 8192;
         for row in history {
@@ -497,6 +556,7 @@ impl Connection {
             });
             let entry = serde_json::json!({
                 "candidateVersionId": candidate,
+                "includedCorrections": row.get::<Value, _>("provenance"),
                 "outcome": outcome,
                 "rationale": rationale.or_else(|| row.get("hypothesis")).map(|text| text.chars().take(160).collect::<String>()),
                 "edits": excerpts,
@@ -591,7 +651,25 @@ impl Connection {
             .await?;
         let evaluation =
             enqueue_evaluation(tx, &self.project, self.bundle, WORKER, &request).await?;
-        path(&evaluation.id)
+        let id = path(&evaluation.id)?;
+        // A first step can also serve as the cumulative check against delivery.
+        let private_parent = development_parent(round) != round.get::<Uuid, _>("parent_version_id");
+        if step && private_parent {
+            crate::connected_learning::parent_cache::assign(
+                tx,
+                id,
+                (
+                    &self.project,
+                    self.integration,
+                    self.bundle,
+                    self.policy_epoch,
+                ),
+                &self.evaluator,
+                &request,
+            )
+            .await?;
+        }
+        Ok(id)
     }
 
     async fn calibrate(&self, tx: &mut Tx<'_>, baseline: Uuid) -> ApiResult<bool> {
@@ -955,14 +1033,24 @@ fn baseline_matches(round: &PgRow, baseline: (Uuid, i64)) -> bool {
         && round.get::<i64, _>("parent_revision") == baseline.1
 }
 
+fn fits_proposal_prompt(request: &ProposalRequest) -> bool {
+    request.evidence.len() <= 20
+        && json!(request)
+            .to_string()
+            .replace(['<', '>'], "\\u003c")
+            .len()
+            <= 65_536
+}
+
 async fn requeue_correction(tx: &mut Tx<'_>, round: &PgRow) -> ApiResult<()> {
     sqlx::query(
         "UPDATE connected_learning_corrections SET pending=true,queued_at=clock_timestamp()
-        WHERE (project_id,integration_id,correction_id)=($1,$2,$3) AND attempts<2",
+        WHERE (project_id,integration_id)=($1,$2) AND attempts<2 AND correction_id IN
+            (SELECT correction_id FROM connected_learning_round_corrections WHERE round_id=$3)",
     )
     .bind(round.get::<String, _>("project_id"))
     .bind(round.get::<Uuid, _>("integration_id"))
-    .bind(round.get::<Uuid, _>("correction_id"))
+    .bind(round.get::<Uuid, _>("id"))
     .execute(&mut **tx)
     .await
     .map_err(db)?;
@@ -1229,8 +1317,10 @@ async fn advance(
                             sqlx::query("UPDATE connected_learning_enrollments SET proposal_admissions=proposal_admissions-1 WHERE (project_id,integration_id)=($1,$2)")
                                 .bind(&connection.project).bind(connection.integration).execute(&mut **tx).await.map_err(db)?;
                             // The correction keeps its remaining allowance for future submissions.
-                            sqlx::query("UPDATE connected_learning_corrections SET attempts=LEAST(attempts,$4-1) WHERE (project_id,integration_id,correction_id)=($1,$2,$3)")
-                                .bind(&connection.project).bind(connection.integration).bind(round.get::<Uuid,_>("correction_id")).bind(round.get::<i32,_>("attempt")).execute(&mut **tx).await.map_err(db)?;
+                            sqlx::query("UPDATE connected_learning_corrections AS c SET attempts=LEAST(c.attempts,m.attempt-1)
+                                FROM connected_learning_round_corrections m
+                                WHERE (c.project_id,c.integration_id,c.correction_id)=(m.project_id,m.integration_id,m.correction_id) AND m.round_id=$1")
+                                .bind(id).execute(&mut **tx).await.map_err(db)?;
                             return Ok(());
                         }
                         _ => {
@@ -1250,8 +1340,11 @@ async fn advance(
             if round.get::<Option<String>, _>("incident_replay").is_some() {
                 sqlx::query(
                     "INSERT INTO connected_learning_replay_obligations
-                    (project_id,integration_id,bundle_id,version_id,baseline_revision,round_id)
-                    VALUES ($1,$2,$3,$4,$5,$6)",
+                    (project_id,integration_id,bundle_id,version_id,baseline_revision,round_id,incident_outcome_id)
+                    SELECT DISTINCT $1::text,$2::uuid,$3::uuid,$4::uuid,$5::bigint,$6::uuid,c.outcome_id
+                    FROM connected_learning_round_corrections m JOIN connected_learning_corrections c
+                      USING (project_id,integration_id,correction_id)
+                    WHERE m.round_id=$6 AND c.require_incident_replay",
                 )
                 .bind(&connection.project)
                 .bind(connection.integration)
@@ -1722,6 +1815,7 @@ mod tests {
             repetition: 0,
         });
         let mut comparison = ComparisonRequest {
+            parent_source_comparison_id: None,
             evaluation: None,
             parent_version_id: "parent".into(),
             candidate_version_id: "candidate".into(),

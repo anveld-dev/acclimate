@@ -399,6 +399,7 @@ mod tests {
             })
             .collect();
         ComparisonRequest {
+            parent_source_comparison_id: None,
             evaluation: None,
             parent_version_id: String::new(),
             candidate_version_id: String::new(),

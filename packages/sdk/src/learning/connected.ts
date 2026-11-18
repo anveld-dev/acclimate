@@ -490,6 +490,11 @@ export async function serveConnectedLearning(
           handoff,
           allowLive: live,
           retryMissingTrial: true,
+          cachedParent: item.cachedParent
+            ? async () =>
+                (await work()).items.find((next) => next.evaluationRequestId === request.id)
+                  ?.cachedParent
+            : undefined,
           signal: running,
         });
       },

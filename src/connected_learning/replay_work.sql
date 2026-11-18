@@ -8,10 +8,11 @@ FROM (
     ORDER BY position LIMIT 100
 ) corrections
 UNION ALL (
-    SELECT 'incident',jsonb_build_object('roundId',r.id,'outcomeId',r.outcome_id,'versionId',v.id,
+    SELECT 'incident',jsonb_build_object('roundId',r.id,'outcomeId',o.incident_outcome_id,'versionId',v.id,
                'digest',v.digest,'baselineRevision',r.parent_revision::text)
     FROM connected_learning_rounds r
-    JOIN connected_learning_replay_results replay ON replay.round_id=r.id
+    JOIN connected_learning_replay_obligations o ON o.round_id=r.id
+    JOIN connected_learning_replay_results replay ON replay.id=o.id
     JOIN versions v ON v.id=replay.version_id
     JOIN connected_learning_enrollments e ON (e.project_id,e.integration_id,e.bundle_id)=(r.project_id,r.integration_id,r.bundle_id)
     JOIN channels c ON (c.project_id,c.bundle_id,c.name)=(e.project_id,e.bundle_id,e.delivery_channel)

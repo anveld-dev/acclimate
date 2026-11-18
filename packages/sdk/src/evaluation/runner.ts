@@ -5,6 +5,7 @@ import { AcclimateClient, ApiError } from '../client.js';
 import { resolveAndCache } from '../cache.js';
 import { TaskExecutionError } from '../compare.js';
 import type {
+  CachedLearningParent,
   Comparison,
   ComparisonRequest,
   Evaluation,
@@ -193,6 +194,7 @@ export function reportsEqual(left: ComparisonRequest, right: ComparisonRequest):
     graderRevision: value.graderRevision,
     runtime: value.runtime,
     evaluation: value.evaluation,
+    parentSourceComparisonId: value.parentSourceComparisonId,
     expectedCases: [...value.expectedCases].sort((a, b) =>
       key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0,
     ),
@@ -431,6 +433,7 @@ export async function runEvaluation<I, E, O>(
     transport,
     signal: options.signal,
     retryMissingTrial: options.retryMissingTrial,
+    cachedParent: options.cachedParent,
   });
 }
 
@@ -445,6 +448,7 @@ export async function runCapturedEvaluation(options: {
   transport: ReturnType<typeof createEvaluationTransport>;
   signal?: AbortSignal;
   retryMissingTrial?: boolean;
+  cachedParent?: () => Promise<CachedLearningParent | null | undefined>;
 }): Promise<EvaluationRunResult> {
   const { captured, config, handoff, transport } = options,
     api = transport.client;
@@ -571,6 +575,21 @@ export async function runCapturedEvaluation(options: {
           JSON.stringify({ schemaVersion: 1, ...captured.collection }) + '\n',
         );
       }
+      const cachedParent = await options.cachedParent?.();
+      const cachedResults = new Map(
+        cachedParent?.results.map((pair) => [
+          JSON.stringify([pair.caseId, pair.repetition]),
+          pair.parent,
+        ]),
+      );
+      if (
+        cachedParent &&
+        (cachedResults.size !== request.expectedCases.length ||
+          request.expectedCases.some(
+            (key) => !cachedResults.has(JSON.stringify([key.caseId, key.repetition])),
+          ))
+      )
+        throw new EvaluationError('evidence.identity_mismatch');
       state.executionStarted = true;
       await journal.save(state);
       certainty = 'may_have_started';
@@ -586,6 +605,7 @@ export async function runCapturedEvaluation(options: {
       const report: ComparisonRequest = {
         ...frozen(request),
         evaluation: { requestId: scope.requestId, attemptId: state.attemptId },
+        ...(cachedParent ? { parentSourceComparisonId: cachedParent.comparisonId } : {}),
         results: [],
       };
       let pairIndex = -1;
@@ -598,12 +618,15 @@ export async function runCapturedEvaluation(options: {
             parent: unavailable(),
             candidate: unavailable(),
           };
+          if (cachedParent)
+            pair.parent = cachedResults.get(JSON.stringify([item.caseId, repetition]))!;
           const firstSide = captured.collection?.pairs[pairIndex].firstSide ?? 'parent';
           const order =
             firstSide === 'parent'
               ? (['parent', 'candidate'] as const)
               : (['candidate', 'parent'] as const);
           for (const [armIndex, side] of order.entries()) {
+            if (cachedParent && side === 'parent') continue;
             const attempts = options.retryMissingTrial ? 2 : 1;
             const firstArtifact = index.entries.length;
             for (let retry = 0; retry < attempts; retry++) {

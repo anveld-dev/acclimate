@@ -25,8 +25,9 @@ WITH job AS (
     LEFT JOIN LATERAL (SELECT id,state,reason,incident_replay,promotion_id,COALESCE(release_candidate_id,candidate_version_id) AS candidate_version_id,
                          COALESCE(cumulative_request_id,development_request_id) AS development_request_id,audit_request_id FROM connected_learning_rounds
         JOIN connected_learning_round_replays replay ON replay.round_id=connected_learning_rounds.id
-        WHERE (project_id,integration_id,correction_id)=(f.project_id,f.integration_id,f.correction_id)
-        ORDER BY attempt DESC LIMIT 1) r ON true
+        JOIN connected_learning_round_corrections m ON m.round_id=connected_learning_rounds.id
+        WHERE (m.project_id,m.integration_id,m.correction_id)=(f.project_id,f.integration_id,f.correction_id)
+        ORDER BY m.attempt DESC,connected_learning_rounds.created_at DESC LIMIT 1) r ON true
     LEFT JOIN LATERAL (SELECT verdict FROM connected_learning_replay_results
         WHERE (project_id,integration_id,correction_id)=(f.project_id,f.integration_id,f.correction_id)
         ORDER BY baseline_revision DESC LIMIT 1) k ON true

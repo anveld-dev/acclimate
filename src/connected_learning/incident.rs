@@ -65,12 +65,13 @@ pub(super) async fn submit(
     }
     // The enrollment/connection lock serializes verdicts with state transitions.
     let row = sqlx::query(
-        "SELECT r.state,replay.incident_replay,(c.version_id,c.revision)=(r.parent_version_id,r.parent_revision) AS current
+        "SELECT r.state,COALESCE(replay.verdict,'pending') AS incident_replay,(c.version_id,c.revision)=(r.parent_version_id,r.parent_revision) AS current
          FROM connected_learning_rounds r JOIN versions v ON v.id=r.candidate_version_id
-         JOIN connected_learning_round_replays replay ON replay.round_id=r.id
+         JOIN connected_learning_replay_obligations o ON o.round_id=r.id
+         JOIN connected_learning_replay_results replay ON replay.id=o.id
          JOIN connected_learning_enrollments e ON (e.project_id,e.integration_id)=(r.project_id,r.integration_id)
          JOIN channels c ON (c.project_id,c.bundle_id,c.name)=(e.project_id,e.bundle_id,e.delivery_channel)
-         WHERE (r.project_id,r.integration_id,r.id,r.outcome_id,v.id,v.digest,r.parent_revision)=($1,$2,$3,$4,$5,$6,$7)",
+         WHERE (r.project_id,r.integration_id,r.id,o.incident_outcome_id,v.id,v.digest,r.parent_revision)=($1,$2,$3,$4,$5,$6,$7)",
     ).bind(&project).bind(integration).bind(input.round_id).bind(input.outcome_id).bind(input.version_id)
      .bind(&input.digest).bind(revision).fetch_optional(&mut *tx).await.map_err(db)?
      .ok_or_else(|| conflict("Incident replay identity does not match this round"))?;
@@ -88,11 +89,11 @@ pub(super) async fn submit(
                 "Incident replay is not pending for this candidate",
             ));
         }
-        sqlx::query("UPDATE connected_learning_replay_obligations SET verdict=$2,evaluator=$3,attempts=$4 WHERE round_id=$1")
+        sqlx::query("UPDATE connected_learning_replay_obligations SET verdict=$2,evaluator=$3,attempts=$4 WHERE round_id=$1 AND incident_outcome_id=$5")
             .bind(input.round_id)
             .bind(&input.verdict)
             .bind(&actor.principal)
-            .bind(&input.attempts)
+            .bind(&input.attempts).bind(input.outcome_id)
             .execute(&mut *tx)
             .await
             .map_err(db)?;

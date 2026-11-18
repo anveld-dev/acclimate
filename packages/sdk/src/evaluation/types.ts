@@ -131,6 +131,8 @@ export interface PreflightOptions<I = Json, E = Json, O = Json> {
   target: { bundleId: string; requestId?: string } | { handoff: EvaluationHandoff };
 }
 export interface RunEvaluationOptions<I = Json, E = Json, O = Json> {
+  /** Resolve the connected learner's cache assignment after claiming the request. */
+  cachedParent?: () => Promise<import('../types.js').CachedLearningParent | null | undefined>;
   app: EvaluationApp<I, E, O>;
   configPath: string;
   handoff: EvaluationHandoff;

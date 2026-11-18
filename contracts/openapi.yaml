@@ -46,6 +46,52 @@
             }
           }
         }
+      },
+      "put": {
+        "operationId": "enrollLearning",
+        "summary": "Enroll a connection in connected learning",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "integrationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxCorrectionsPerRound": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "default": 5
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Enrollment settings and status"
+          }
+        }
       }
     },
     "/v1/projects/{projectId}/bundles": {
@@ -2448,6 +2494,43 @@
         },
         "description": "Read visible failed or indeterminate policy verdicts for the candidate version."
       }
+    },
+    "/v1/projects/{projectId}/integrations/{integrationId}/learning/work": {
+      "get": {
+        "operationId": "getLearningWork",
+        "summary": "Get assigned evaluator work",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "integrationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connected evaluator assignments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningWork"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2569,6 +2652,44 @@
                     "null"
                   ],
                   "format": "uuid"
+                },
+                "batchSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                },
+                "includedCorrections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "correctionId",
+                      "outcomeId",
+                      "attempt"
+                    ],
+                    "properties": {
+                      "correctionId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "outcomeId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "attempt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2
+                      }
+                    }
+                  }
+                },
+                "parentSourceComparisonId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
                 }
               },
               "cumulativeDevelopmentEstimate": {
@@ -2584,6 +2705,12 @@
                 ]
               }
             }
+          },
+          "maxCorrectionsPerRound": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 5
           }
         }
       },
@@ -3294,6 +3421,11 @@
           },
           "evaluation": {
             "$ref": "#/components/schemas/EvaluationBinding"
+          },
+          "parentSourceComparisonId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Source comparison for a cached development parent arm. Omitted for fresh pairs."
           }
         },
         "required": [
@@ -3374,6 +3506,11 @@
           },
           "evaluation": {
             "$ref": "#/components/schemas/EvaluationBinding"
+          },
+          "parentSourceComparisonId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Source comparison for a cached development parent arm. Omitted for fresh pairs."
           }
         },
         "required": [
@@ -4103,6 +4240,107 @@
         "required": [
           "items"
         ]
+      },
+      "LearningWork": {
+        "type": "object",
+        "required": [
+          "installationId",
+          "bundleId",
+          "active",
+          "items"
+        ],
+        "properties": {
+          "installationId": {
+            "type": "string"
+          },
+          "bundleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "evaluationRequestId",
+                "roundId",
+                "phase",
+                "status"
+              ],
+              "properties": {
+                "evaluationRequestId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "roundId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "phase": {
+                  "enum": [
+                    "calibration",
+                    "development",
+                    "audit"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "requested",
+                    "running"
+                  ]
+                },
+                "cumulative": {
+                  "type": "boolean"
+                },
+                "cachedParent": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "required": [
+                    "comparisonId",
+                    "results"
+                  ],
+                  "properties": {
+                    "comparisonId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "caseId",
+                          "repetition",
+                          "parent"
+                        ],
+                        "properties": {
+                          "caseId": {
+                            "type": "string"
+                          },
+                          "repetition": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "parent": {
+                            "$ref": "#/components/schemas/Outcome"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }

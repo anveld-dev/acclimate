@@ -1063,6 +1063,70 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     .await
     .unwrap();
     assert_eq!(ancestry, (replacement, baseline, development_comparison));
+    // Queue six corrections atomically so the worker sees the entire eligible batch.
+    let batch_outcome = Uuid::new_v4();
+    let mut queue = db.begin().await.unwrap();
+    sqlx::query(
+        "INSERT INTO connected_learning_outcomes
+            (project_id,bundle_id,integration_id,outcome_id,version_id,digest,status,submitted_by,fingerprint,observed_revision)
+         VALUES ($1,$2,$3,$4,$5,$6,'failed','outcome','batch-test',1)",
+    )
+    .bind(&p).bind(bundle).bind(enrollment_id).bind(batch_outcome).bind(baseline).bind(&digest)
+    .execute(&mut *queue).await.unwrap();
+    let correction_ids: Vec<Uuid> = (0..6).map(|_| Uuid::new_v4()).collect();
+    sqlx::query(
+        "INSERT INTO connected_learning_corrections
+            (project_id,bundle_id,integration_id,outcome_id,correction_id,feedback,submitted_by,queued_at)
+         SELECT $1,$2,$3,$4,id,$5,'outcome',now()+make_interval(secs => position)
+         FROM unnest($6::uuid[]) WITH ORDINALITY AS corrections(id,position)",
+    )
+    .bind(&p).bind(bundle).bind(enrollment_id).bind(batch_outcome)
+    .bind(json!({"expected":"Complete the review","observed":"The review was incomplete"}))
+    .bind(&correction_ids)
+    .execute(&mut *queue).await.unwrap();
+    let before: i32 = sqlx::query_scalar(
+        "SELECT proposal_admissions FROM connected_learning_enrollments WHERE project_id=$1 AND integration_id=$2",
+    ).bind(&p).bind(enrollment_id).fetch_one(&mut *queue).await.unwrap();
+    queue.commit().await.unwrap();
+    let batch_round = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if let Some(id) = sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM connected_learning_rounds WHERE outcome_id=$1 AND state='proposing'",
+            ).bind(batch_outcome).fetch_optional(&db).await.unwrap() {
+                break id;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    }).await.unwrap();
+    let members: Vec<(Uuid, i32, i32, bool)> = sqlx::query_as(
+        "SELECT m.correction_id,m.attempt,c.attempts,c.pending
+         FROM connected_learning_round_corrections m
+         JOIN connected_learning_corrections c USING (project_id,integration_id,correction_id)
+         WHERE m.round_id=$1 ORDER BY m.position",
+    )
+    .bind(batch_round)
+    .fetch_all(&db)
+    .await
+    .unwrap();
+    assert_eq!(
+        members,
+        correction_ids[..5]
+            .iter()
+            .map(|id| (*id, 1, 1, false))
+            .collect::<Vec<_>>()
+    );
+    let overflow: (i32, bool) = sqlx::query_as(
+        "SELECT attempts,pending FROM connected_learning_corrections WHERE correction_id=$1",
+    )
+    .bind(correction_ids[5])
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(overflow, (0, true));
+    let admissions: i32 = sqlx::query_scalar(
+        "SELECT proposal_admissions FROM connected_learning_enrollments WHERE project_id=$1 AND integration_id=$2",
+    ).bind(&p).bind(enrollment_id).fetch_one(&db).await.unwrap();
+    assert_eq!(admissions, before + 1);
     state.runtime.begin_draining();
     worker.await.unwrap();
     let inspected = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;

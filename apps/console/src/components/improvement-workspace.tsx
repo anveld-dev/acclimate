@@ -707,7 +707,7 @@ export function ImprovementWorkspace({
               ? { ok: true, proposal: submitted.result as Proposal }
               : submitted.resultKind === 'request'
                 ? { ok: true, request: submitted.result as Evaluation }
-                : { ok: true, promotion: submitted.result as import('@acclimate/sdk').Promotion };
+                : { ok: true, promotion: submitted.result as import('@acclimate/sdk').Release };
         }
       }
       if (epoch !== scopeEpoch.current) return;

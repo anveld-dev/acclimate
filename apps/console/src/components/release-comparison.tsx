@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { BundlePayload, Comparison, Promotion } from '@acclimate/sdk';
+import type { BundlePayload, Comparison, Release } from '@acclimate/sdk';
 import type { BundleScope } from '../server/selection';
 import { readStoredVersion } from '../server/read-console';
 import { runImprovement } from '../server/improvement-actions';
@@ -16,7 +16,7 @@ import { NativeSelect, NativeSelectOption } from './ui/native-select';
 const empty: BundlePayload = { schemaVersion: 1, files: [] };
 type Files = { before: BundlePayload; after: BundlePayload } | { error: string };
 
-async function readFiles(scope: BundleScope, release: Promotion): Promise<Files> {
+async function readFiles(scope: BundleScope, release: Release): Promise<Files> {
   const baseline = release.previousVersionId;
   if (!baseline && release.revision !== '1')
     return { error: 'The previous channel version was not recorded for this revision.' };
@@ -40,7 +40,7 @@ async function readFiles(scope: BundleScope, release: Promotion): Promise<Files>
   return { before: previous?.ok ? previous.payload : empty, after: selected.payload };
 }
 
-async function readEvidence(scope: BundleScope, release: Promotion): Promise<Comparison | string> {
+async function readEvidence(scope: BundleScope, release: Release): Promise<Comparison | string> {
   const result = await runImprovement({
     data: { scope, action: 'comparison', id: release.comparisonId },
   });
@@ -70,7 +70,7 @@ export function ReleaseComparison({
   actions,
 }: {
   scope: BundleScope;
-  release: Promotion;
+  release: Release;
   current: boolean;
   actions: ReactNode;
 }) {

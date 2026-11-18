@@ -128,7 +128,7 @@ def manual_truth(context):
     w=context.world
     current=w.call('GET',w.channel)
     assert current['revision']=='2' and current['version']==w.manual_saved['snapshotVersion']
-    release=w.call('GET',w.channel+'/promotions')['items'][0]
+    release=w.call('GET',w.channel+'/releases')['items'][0]
     assert release['unevaluatedReason']=='Operator reviewed the saved diff without evaluation.'
     assert release.get('comparisonId') is None
     assert w.call('GET',w.bundle+'/evaluation-requests')['items']==[]

@@ -288,7 +288,7 @@ try {
     report.results.every((pair) => pair.candidate.reward === 1 && pair.parent.reward !== null) &&
     report.results.some((pair) => pair.parent.reward === 0);
   if (eligible)
-    await api.promote(
+    await api.createRelease(
       project,
       bundle,
       'stable',

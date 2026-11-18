@@ -215,7 +215,7 @@ class AcclimateClient:
         return urllib.parse.quote(value, safe="")
 
     def _base(self, p: str, b: str | None = None) -> str:
-        path = "/v1/projects/" + self._part(p) + "/bundles"
+        path = "/v1/workspaces/" + self._part(p) + "/bundles"
         return path if b is None else path + "/" + self._part(b)
 
     def health(self) -> str:
@@ -261,32 +261,32 @@ class AcclimateClient:
             channel_resolution=True,
         )
 
-    def list_promotions(
+    def list_releases(
         self, project_id: str, bundle_id: str, channel: str, *,
         limit: int = 20, before_revision: str | None = None,
-    ) -> PromotionPage:
+    ) -> ReleasePage:
         query = {"limit": str(limit)}
         if before_revision is not None:
             query["beforeRevision"] = before_revision
         return self._request(
             "GET", self._base(project_id, bundle_id) + "/channels/" + self._part(channel)
-            + "/promotions?" + urllib.parse.urlencode(query),
+            + "/releases?" + urllib.parse.urlencode(query),
         )
 
-    def promote(
+    def create_release(
         self,
         project_id: str,
         bundle_id: str,
         channel: str,
-        request: PromoteRequest,
+        request: CreateReleaseRequest,
         key: str,
-    ) -> Promotion:
+    ) -> Release:
         return self._request(
             "POST",
             self._base(project_id, bundle_id)
             + "/channels/"
             + self._part(channel)
-            + "/promotions",
+            + "/releases",
             request,
             key,
         )
@@ -337,25 +337,25 @@ class AcclimateClient:
         key = "policy:" + comparison_id + ":" + report["policy"]["sha256"]
         return self._request("POST", self._comparison_policy_path(project_id, bundle_id, comparison_id), report, key)
 
-    def create_integration(self, project_id: str, request: dict, key: str) -> dict:
-        return self._request("POST", "/v1/projects/" + self._part(project_id) + "/integrations", request, key)
+    def create_connection(self, project_id: str, request: dict, key: str) -> dict:
+        return self._request("POST", "/v1/workspaces/" + self._part(project_id) + "/connections", request, key)
 
-    def list_integrations(self, project_id: str, *, cursor: str | None = None, limit: int = 50) -> dict:
+    def list_connections(self, project_id: str, *, cursor: str | None = None, limit: int = 50) -> dict:
         query = {"limit": str(limit)}
         if cursor is not None:
             query["cursor"] = cursor
-        return self._request("GET", "/v1/projects/" + self._part(project_id) + "/integrations?" + urllib.parse.urlencode(query))
+        return self._request("GET", "/v1/workspaces/" + self._part(project_id) + "/connections?" + urllib.parse.urlencode(query))
 
     def _integration(self, project_id: str, integration_id: str) -> str:
-        return "/v1/projects/" + self._part(project_id) + "/integrations/" + self._part(integration_id)
+        return "/v1/workspaces/" + self._part(project_id) + "/connections/" + self._part(integration_id)
 
-    def create_integration_credential(self, project_id: str, integration_id: str, kind: str, key: str) -> dict:
+    def create_connection_credential(self, project_id: str, integration_id: str, kind: str, key: str) -> dict:
         return self._request("POST", self._integration(project_id, integration_id) + "/credentials", {"kind": kind}, key)
 
-    def revoke_integration(self, project_id: str, integration_id: str, key: str) -> dict:
+    def revoke_connection(self, project_id: str, integration_id: str, key: str) -> dict:
         return self._request("POST", self._integration(project_id, integration_id) + "/revoke", {}, key)
 
-    def revoke_integration_credential(self, project_id: str, integration_id: str, credential_id: str, key: str) -> None:
+    def revoke_connection_credential(self, project_id: str, integration_id: str, credential_id: str, key: str) -> None:
         self._request("POST", self._integration(project_id, integration_id) + "/credentials/" + self._part(credential_id) + "/revoke", {}, key)
 
     def report_delivery_receipt(self, project_id: str, integration_id: str, receipt: dict) -> dict:
@@ -417,7 +417,7 @@ class AcclimateClient:
         return self._request("POST", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/interrupt", request, key)
 
     def get_evaluation_capabilities(self, project_id: str) -> EvaluationCapabilities:
-        return self._request("GET", "/v1/projects/" + self._part(project_id) + "/evaluation-capabilities")
+        return self._request("GET", "/v1/workspaces/" + self._part(project_id) + "/evaluation-capabilities")
 
     def get_evaluation_progress(self, project_id: str, bundle_id: str, evaluation_id: str) -> EvaluationProgressView:
         return self._request("GET", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/progress")
@@ -426,15 +426,39 @@ class AcclimateClient:
         # Attempt + sequence provide server idempotency; no retained key rows.
         return self._request("POST", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/progress", report, "progress:" + str(report["sequence"]))
 
-    def list_integration_observations(self, project_id: str, *, cursor: str | None = None, limit: int = 50) -> IntegrationObservationPage:
-        return self._request("GET", "/v1/projects/" + self._part(project_id) + "/integration-observations" + self._listing(cursor, limit))
+    def list_connection_observations(self, project_id: str, *, cursor: str | None = None, limit: int = 50) -> ConnectionObservationPage:
+        return self._request("GET", "/v1/workspaces/" + self._part(project_id) + "/connection-observations" + self._listing(cursor, limit))
 
     def get_operation(self, project_id: str, operation_id: str, *, operation_path: str | None = None) -> Operation:
         query = "?" + urllib.parse.urlencode({"operationPath": operation_path}) if operation_path is not None else ""
-        return self._request("GET", "/v1/projects/" + self._part(project_id) + "/operations/" + self._part(operation_id) + query)
+        return self._request("GET", "/v1/workspaces/" + self._part(project_id) + "/operations/" + self._part(operation_id) + query)
 
     def close_operation(self, project_id: str, operation_id: str, *, operation_path: str) -> Operation:
-        return self._request("POST", "/v1/projects/" + self._part(project_id) + "/operations/" + self._part(operation_id) + "/close", {"operationPath": operation_path}, operation_id)
+        return self._request("POST", "/v1/workspaces/" + self._part(project_id) + "/operations/" + self._part(operation_id) + "/close", {"operationPath": operation_path}, operation_id)
+
+    # Deprecated. Use list_releases.
+    list_promotions = list_releases
+
+    # Deprecated. Use create_release.
+    promote = create_release
+
+    # Deprecated. Use list_connection_observations.
+    list_integration_observations = list_connection_observations
+
+    # Deprecated. Use create_connection.
+    create_integration = create_connection
+
+    # Deprecated. Use list_connections.
+    list_integrations = list_connections
+
+    # Deprecated. Use create_connection_credential.
+    create_integration_credential = create_connection_credential
+
+    # Deprecated. Use revoke_connection.
+    revoke_integration = revoke_connection
+
+    # Deprecated. Use revoke_connection_credential.
+    revoke_integration_credential = revoke_connection_credential
 
 
 # Delivery uses this client for service reads. Load its public return type once the client exists.

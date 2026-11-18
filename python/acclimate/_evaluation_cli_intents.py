@@ -144,7 +144,7 @@ def _recover(client, operation, scope, body, key):
         raise _fail()
     if receipt.get("status") != "committed":
         return None
-    fingerprint = "sha256:" + hashlib.sha256(b"POST\0" + route.encode() + b"\0" + body).hexdigest()
+    fingerprint = "sha256:" + hashlib.sha256(b"POST\0" + route.replace("/v1/workspaces/", "/v1/projects/", 1).encode() + b"\0" + body).hexdigest()
     if receipt.get("requestFingerprint") != fingerprint or not isinstance(receipt.get("result"), dict):
         raise _fail()
     return receipt["result"]

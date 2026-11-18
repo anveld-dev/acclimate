@@ -234,7 +234,7 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
                 Connections; optional observations use a separate receipt-write credential.
               </p>
               <p>
-                <strong>Evaluation:</strong> ask the service operator for a dedicated project
+                <strong>Evaluation:</strong> ask the service operator for a dedicated workspace
                 read/write principal. Delivery credentials cannot read unpublished candidates or
                 execute evaluation requests. The operator currently validates static grants and
                 restarts the service.
@@ -263,7 +263,7 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
                         bundleId: state.bundleId,
                         rights: ['read', 'write'],
                         purpose:
-                          'Evaluate unpublished candidates; no propose or promote authority requested',
+                          'Evaluate unpublished candidates; proposal and release permissions are separate',
                       },
                       null,
                       2,
@@ -329,7 +329,7 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
                   Connections; optional observations use a separate receipt-write credential.
                 </p>
                 <p>
-                  <strong>Evaluation:</strong> ask the service operator for a dedicated project
+                  <strong>Evaluation:</strong> ask the service operator for a dedicated workspace
                   read/write principal. Delivery credentials cannot read unpublished candidates or
                   execute evaluation requests. The operator currently validates static grants and
                   restarts the service.
@@ -358,7 +358,7 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
                           bundleId: state.bundleId,
                           rights: ['read', 'write'],
                           purpose:
-                            'Evaluate unpublished candidates; no propose or promote authority requested',
+                            'Evaluate unpublished candidates; proposal and release permissions are separate',
                         },
                         null,
                         2,

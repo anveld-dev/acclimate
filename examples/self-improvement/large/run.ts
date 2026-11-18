@@ -103,7 +103,7 @@ try {
     (f) => f.path === 'skills/payment-triage/scripts/triage.py',
   );
   const initial = verifyDelivery
-    ? await client.promote(
+    ? await client.createRelease(
         project,
         bundle.id,
         'qualification',
@@ -295,7 +295,7 @@ try {
       candidateVersion: candidate.version,
       sourceCandidateDigest: candidateSource.version.digest,
     });
-    const promotion = await client.promote(
+    const promotion = await client.createRelease(
       project,
       bundle.id,
       'qualification',
@@ -375,7 +375,7 @@ try {
     );
     await assert.rejects(
       () =>
-        client.promote(
+        client.createRelease(
           project,
           bundle.id,
           'qualification',

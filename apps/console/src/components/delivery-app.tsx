@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Check, GitBranch, Radio } from 'lucide-react';
-import type { IntegrationObservation } from '@acclimate/sdk';
+import type { ConnectionObservation } from '@acclimate/sdk';
 import type { DeliveryDetail, Report } from '../server/delivery-detail-core';
 import { readDeliveryDetail } from '../server/delivery-observations-actions';
 import { Button } from './ui/button';
@@ -17,7 +17,7 @@ export function DeliveryApp({
   canManage,
 }: {
   projectId: string;
-  app: IntegrationObservation;
+  app: ConnectionObservation;
   canManage: boolean;
 }) {
   const reportedPanel = useRef<HTMLElement>(null);

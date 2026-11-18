@@ -39,11 +39,11 @@ export interface PolicyOverride {
   reason: string;
   receipts: Array<{ comparisonId: string; policyDigest: string }>;
 }
-export type PromoteRequest = { versionId: string; expectedRevision: string } & (
+export type CreateReleaseRequest = { versionId: string; expectedRevision: string } & (
   | { comparisonId: string; unevaluatedReason?: never; policyOverride?: PolicyOverride }
   | { unevaluatedReason: string; comparisonId?: never; policyOverride?: never }
 );
-export interface Promotion {
+export interface Release {
   id: string;
   channel: string;
   revision: string;
@@ -56,8 +56,8 @@ export interface Promotion {
   reviewer: string;
   createdAt: string;
 }
-export interface PromotionPage {
-  items: Promotion[];
+export interface ReleasePage {
+  items: Release[];
   nextBeforeRevision: string | null;
 }
 export interface ProposalRequest {
@@ -209,7 +209,7 @@ export interface ListOptions {
   limit?: number;
   cursor?: string;
 }
-export interface Project {
+export interface Workspace {
   id: string;
   name: string;
   role: string;
@@ -228,7 +228,7 @@ export interface BundleSetup {
   bundle: Bundle;
   version: VersionMetadata;
   resolution: ChannelResolution;
-  promotion: Promotion;
+  promotion: Release;
 }
 export interface Draft {
   id: string;
@@ -301,10 +301,10 @@ export interface Channel {
   revision: string;
   versionId: string;
 }
-export interface Integration {
+export interface Connection {
   credentials?: Array<{
     id: string;
-    kind: IntegrationCredentialKind;
+    kind: ConnectionCredentialKind;
     createdAt: string;
     revokedAt: string | null;
   }>;
@@ -316,15 +316,15 @@ export interface Integration {
   enabled: boolean;
   createdAt: string;
 }
-export interface CreateIntegrationRequest {
+export interface CreateConnectionRequest {
   bundleId: string;
   channel: string;
   displayName: string;
 }
-export type IntegrationCredentialKind = 'content-read' | 'receipt-write';
-export interface IntegrationCredential {
+export type ConnectionCredentialKind = 'content-read' | 'receipt-write';
+export interface ConnectionCredential {
   id: string;
-  kind: IntegrationCredentialKind;
+  kind: ConnectionCredentialKind;
   secret: string;
 }
 export interface LearningEvaluationDescriptor extends EvaluationDescriptor {
@@ -634,7 +634,7 @@ export interface DeliveryReceipt extends DeliveryReceiptRequest {
   delayed: boolean;
 }
 /** Safe project-readable discovery; all latest fields describe one received observation. */
-export interface IntegrationObservation {
+export interface ConnectionObservation {
   id: string;
   displayName: string;
   bundleId: string;
@@ -655,14 +655,26 @@ export type Operation =
       operationId: string;
       path: string;
       requestFingerprint?: string;
-      result:
-        | Draft
-        | BundleSetup
-        | Proposal
-        | Evaluation
-        | Promotion
-        | Comparison
-        | VersionMetadata;
+      result: Draft | BundleSetup | Proposal | Evaluation | Release | Comparison | VersionMetadata;
     }
   | { status: 'not_observed'; operationId: string }
   | { status: 'closed'; operationId: string; path?: string };
+
+/** @deprecated Use Workspace. */
+export type Project = Workspace;
+/** @deprecated Use Release. */
+export type Promotion = Release;
+/** @deprecated Use ReleasePage. */
+export type PromotionPage = ReleasePage;
+/** @deprecated Use CreateReleaseRequest. */
+export type PromoteRequest = CreateReleaseRequest;
+/** @deprecated Use Connection. */
+export type Integration = Connection;
+/** @deprecated Use CreateConnectionRequest. */
+export type CreateIntegrationRequest = CreateConnectionRequest;
+/** @deprecated Use ConnectionCredential. */
+export type IntegrationCredential = ConnectionCredential;
+/** @deprecated Use ConnectionCredentialKind. */
+export type IntegrationCredentialKind = ConnectionCredentialKind;
+/** @deprecated Use ConnectionObservation. */
+export type IntegrationObservation = ConnectionObservation;

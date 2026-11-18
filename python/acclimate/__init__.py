@@ -27,11 +27,11 @@ from .types import (
     VersionMetadata as VersionMetadata,
     ChannelResolution as ChannelResolution,
     CreateVersionRequest as CreateVersionRequest,
-    PromoteRequest as PromoteRequest,
+    CreateReleaseRequest as CreateReleaseRequest,
     PolicyOverride as PolicyOverride,
     PolicyReceiptReference as PolicyReceiptReference,
-    Promotion as Promotion,
-    PromotionPage as PromotionPage,
+    Release as Release,
+    ReleasePage as ReleasePage,
     ProposalRequest as ProposalRequest,
     Proposal as Proposal,
     CaseKey as CaseKey,
@@ -56,9 +56,9 @@ from .types import (
     ComparisonPolicyReceipt as ComparisonPolicyReceipt,
     ComparisonPolicyReceipts as ComparisonPolicyReceipts,
     EvaluationCapabilities as EvaluationCapabilities,
-    IntegrationLatestObservation as IntegrationLatestObservation,
-    IntegrationObservation as IntegrationObservation,
-    IntegrationObservationPage as IntegrationObservationPage,
+    ConnectionLatestObservation as ConnectionLatestObservation,
+    ConnectionObservation as ConnectionObservation,
+    ConnectionObservationPage as ConnectionObservationPage,
     Draft as Draft,
     CreateDraftRequest as CreateDraftRequest,
     SaveDraftRequest as SaveDraftRequest,
@@ -84,3 +84,14 @@ from .types import (
     EvaluationProgressView as EvaluationProgressView,
 )
 from .evaluation_progress import EvaluationProgressReporter as EvaluationProgressReporter
+
+# Deprecated compatibility exports.
+from .types import (
+    Promotion as Promotion,
+    PromotionPage as PromotionPage,
+    PromoteRequest as PromoteRequest,
+    IntegrationObservation as IntegrationObservation,
+    IntegrationLatestObservation as IntegrationLatestObservation,
+    IntegrationObservationPage as IntegrationObservationPage,
+
+)

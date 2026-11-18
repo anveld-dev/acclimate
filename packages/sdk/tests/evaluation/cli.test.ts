@@ -138,8 +138,9 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
         return reply(state.receipts.get(key) ?? { status: 'not_observed', operationId: key });
       }
       if (req.method === 'GET') {
-        if (route.endsWith('/policy-receipts')) return reply({ items: [...policyReceipts.values()] });
-        if (route === '/v1/projects/project/bundles')
+        if (route.endsWith('/policy-receipts'))
+          return reply({ items: [...policyReceipts.values()] });
+        if (route === '/v1/workspaces/project/bundles')
           return reply({ items: [{ id: bundleId }], nextCursor: null });
         if (route.endsWith('/channels/stable'))
           return reply({ channel: 'stable', revision: state.revision, version: parent });
@@ -177,7 +178,7 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
       const fingerprint =
         'sha256:' +
         createHash('sha256')
-          .update('POST\0' + route + '\0' + raw)
+          .update('POST\0' + route.replace(/^\/v1\/workspaces\//, '/v1/projects/') + '\0' + raw)
           .digest('hex');
       if (route.endsWith('/comparisons')) state.comparisonSubmissions.push({ key, body: raw });
       let result = state.receipts.get(key)?.result;
@@ -382,7 +383,8 @@ test('status reports bound activity and preserves lifecycle status without an ob
   try {
     assert.equal((await invoke(f.app, f.requestArgs)).status, 0);
     const status = async () =>
-      (await invoke(undefined, ['status', '--read-config', f.reader, '--handoff', f.handoff])).result;
+      (await invoke(undefined, ['status', '--read-config', f.reader, '--handoff', f.handoff]))
+        .result;
     assert.deepEqual((await status()).progress, { activity: 'unknown', reason: 'unavailable' });
     const view = {
       schemaVersion: 1,
@@ -449,7 +451,17 @@ test('a named comparison reports callback reuse and supplies a durable handle to
   const f = await fixture('live');
   try {
     const handle = ['--config', f.config, '--name', 'first-run'];
-    const compare = ['compare', ...handle, '--bundle', bundleId, '--channel', 'stable', '--payload', f.payloadFile, '--live'];
+    const compare = [
+      'compare',
+      ...handle,
+      '--bundle',
+      bundleId,
+      '--channel',
+      'stable',
+      '--payload',
+      f.payloadFile,
+      '--live',
+    ];
     const first = await invoke(f.app, compare);
     assert.equal(first.status, 0, first.err);
     assert.equal(first.result.runName, 'first-run');
@@ -457,11 +469,26 @@ test('a named comparison reports callback reuse and supplies a durable handle to
     const again = await invoke(f.app, compare);
     assert.deepEqual(again.result.invocation, { callbacksStarted: 0, reusedEvidence: true });
     assert.equal(again.result.requestId, first.result.requestId);
-    assert.equal((await invoke(undefined, ['status', ...handle])).result.requestId, first.result.requestId);
-    assert.equal((await invoke(f.app, ['check', ...handle, '--policy', f.policy])).result.verdict, 'pass');
+    assert.equal(
+      (await invoke(undefined, ['status', ...handle])).result.requestId,
+      first.result.requestId,
+    );
+    assert.equal(
+      (await invoke(f.app, ['check', ...handle, '--policy', f.policy])).result.verdict,
+      'pass',
+    );
     const destination = path.join(f.directory, 'named-export');
     assert.equal((await invoke(f.app, ['export', ...handle, '--out', destination])).status, 0);
-    assert.equal((await invoke(undefined, ['verify-export', '--manifest', path.join(destination, 'manifest.json')])).status, 0);
+    assert.equal(
+      (
+        await invoke(undefined, [
+          'verify-export',
+          '--manifest',
+          path.join(destination, 'manifest.json'),
+        ])
+      ).status,
+      0,
+    );
     assert.equal(f.state.executions, 2);
   } finally {
     await f.cleanup();
@@ -471,7 +498,18 @@ test('a named comparison reports callback reuse and supplies a durable handle to
 test('fresh attempt checks predecessor status, candidate payload and pinned base before creating work', async () => {
   const f = await fixture('live');
   try {
-    const inputs = ['compare', '--config', f.config, '--bundle', bundleId, '--channel', 'stable', '--payload', f.payloadFile, '--live'];
+    const inputs = [
+      'compare',
+      '--config',
+      f.config,
+      '--bundle',
+      bundleId,
+      '--channel',
+      'stable',
+      '--payload',
+      f.payloadFile,
+      '--live',
+    ];
     assert.equal((await invoke(f.app, [...inputs, '--name', 'original'])).status, 0);
     const retry = [...inputs, '--retry-after', 'original'];
     for (const status of ['requested', 'running', 'interrupted']) {
@@ -483,7 +521,13 @@ test('fresh attempt checks predecessor status, candidate payload and pinned base
     Object.assign(f.state.request, { status: 'completed' });
     f.state.revision = '2';
     assert.equal((await invoke(f.app, retry)).error.error.code, 'request.base_conflict');
-    await writeFile(f.payloadFile, JSON.stringify({ schemaVersion: 1, files: [{ path: 'instruction.md', kind: 'instruction', text: 'changed' }] }));
+    await writeFile(
+      f.payloadFile,
+      JSON.stringify({
+        schemaVersion: 1,
+        files: [{ path: 'instruction.md', kind: 'instruction', text: 'changed' }],
+      }),
+    );
     assert.equal((await invoke(f.app, retry)).error.error.code, 'request.intent_mismatch');
     assert.equal(f.state.drafts, 1);
     assert.equal(f.state.executions, 2);
@@ -496,10 +540,27 @@ test('an incomplete first policy reports only known missing schema fields before
   const f = await fixture('live');
   try {
     const { id, requiredCases, ...policy } = f.quality;
-    await writeFile(f.policy, JSON.stringify({ ...policy, metric: { name: 'PRIVATE_CANARY' }, PRIVATE_CANARY: 'x' }));
-    const result = await invoke(f.app, ['compare', '--config', f.config, '--handoff', f.handoff, '--policy', f.policy, '--live']);
+    await writeFile(
+      f.policy,
+      JSON.stringify({ ...policy, metric: { name: 'PRIVATE_CANARY' }, PRIVATE_CANARY: 'x' }),
+    );
+    const result = await invoke(f.app, [
+      'compare',
+      '--config',
+      f.config,
+      '--handoff',
+      f.handoff,
+      '--policy',
+      f.policy,
+      '--live',
+    ]);
     assert.equal(result.error.error.code, 'policy.invalid');
-    assert.deepEqual(result.error.error.missingFields.sort(), ['id', 'metric.direction', 'metric.unit', 'requiredCases']);
+    assert.deepEqual(result.error.error.missingFields.sort(), [
+      'id',
+      'metric.direction',
+      'metric.unit',
+      'requiredCases',
+    ]);
     assert.ok(!result.err.includes('PRIVATE_CANARY'));
     assert.equal(f.traffic.length, 0);
   } finally {
@@ -1126,7 +1187,11 @@ test('doctor distinguishes config aliases, journal aliases and directory permiss
     const config = JSON.parse(await readFile(f.config, 'utf8'));
     config.journalRoot = path.join(alias, 'missing', 'journals');
     await writeFile(f.config, JSON.stringify(config));
-    for (const filename of [linked, path.join(alias, path.relative(f.directory, f.config)), f.config]) {
+    for (const filename of [
+      linked,
+      path.join(alias, path.relative(f.directory, f.config)),
+      f.config,
+    ]) {
       const result = await invoke(f.app, ['doctor', '--config', filename, '--bundle', bundleId]);
       assert.equal(result.status, 1);
       const failure = result.error?.error ?? result.result.checks.at(-1);

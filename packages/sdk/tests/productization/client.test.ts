@@ -28,7 +28,7 @@ test('product commands retry identical bytes and keys with explicit server sessi
   assert.equal(calls.length, 2);
   assert.equal(
     calls[0].url,
-    'https://example.test/v1/projects/p/bundles/b/channels/review%2Fmain/drafts/d/save',
+    'https://example.test/v1/workspaces/p/bundles/b/channels/review%2Fmain/drafts/d/save',
   );
   assert.equal(calls[0].init.body, calls[1].init.body);
   assert.deepEqual(calls[0].init.headers, calls[1].init.headers);
@@ -44,7 +44,7 @@ test('list cursors are encoded and absent session stays absent', async () => {
     fetch: async (url, init) => {
       assert.equal(
         String(url),
-        'https://example.test/v1/projects/p/bundles/b/evaluation-requests?limit=3&cursor=a%2Fb%2B',
+        'https://example.test/v1/workspaces/p/bundles/b/evaluation-requests?limit=3&cursor=a%2Fb%2B',
       );
       assert.equal(new Headers(init?.headers).has('x-acclimate-session'), false);
       return Response.json({ items: [], nextCursor: 'next' });
@@ -80,7 +80,7 @@ test('draft status all preserves access to closed records', async () => {
     fetch: async (url) => {
       assert.equal(
         String(url),
-        'https://example.test/v1/projects/p/bundles/b/channels/main/drafts?limit=20&status=all',
+        'https://example.test/v1/workspaces/p/bundles/b/channels/main/drafts?limit=20&status=all',
       );
       return Response.json({ items: [{ id: 'd', status: 'published' }], nextCursor: null });
     },

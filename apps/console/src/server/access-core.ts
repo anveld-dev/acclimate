@@ -127,7 +127,7 @@ async function projects(request: ReturnType<typeof accessTransport>): Promise<Ac
   // Preserve the terminal page allowed after 1000 continuation cursors.
   return allPages(async (cursor) => {
     const page = await request(
-      `/v1/projects?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+      `/v1/workspaces?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
     );
     if (!Array.isArray(page.items)) throw new Error('Invalid projects');
     return {
@@ -271,12 +271,12 @@ export async function accessCommand(
         input.name.length > 200
       )
         return { ok: false, message: 'Enter a valid workspace ID and name.' };
-      const p = await request('/v1/projects', 'POST', { id: input.id, name: input.name.trim() });
+      const p = await request('/v1/workspaces', 'POST', { id: input.id, name: input.name.trim() });
       return { ok: true, kind: input.kind, project: { id: p.id, name: p.name, role: p.role } };
     }
     if (!projectId(input.projectId) || !userId(input.userId))
       return { ok: false, message: 'Enter a workspace and verified user ID.' };
-    const path = `/v1/projects/${encodeURIComponent(input.projectId)}`;
+    const path = `/v1/workspaces/${encodeURIComponent(input.projectId)}`;
     const value = await request(`${path}/users/${encodeURIComponent(input.userId)}`);
     const user: VerifiedUser = safeMember(value);
     if (input.kind === 'userLookup') return { ok: true, kind: input.kind, user };
@@ -336,7 +336,7 @@ export async function readMembershipPage(
       throw new Denied();
     const request = accessTransport(env, fetcher);
     const page = await request(
-      `/v1/projects/${encodeURIComponent(project)}/memberships?limit=25${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+      `/v1/workspaces/${encodeURIComponent(project)}/memberships?limit=25${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
     );
     if (
       !Array.isArray(page.items) ||

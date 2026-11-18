@@ -83,7 +83,7 @@ function historyFixture() {
   const calls: string[] = [];
   const fetcher: typeof fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.pathname === '/v1/projects')
+    if (url.pathname === '/v1/workspaces')
       return Response.json({
         items: [{ id: 'workspace', name: 'Workspace', role: 'admin' }],
         nextCursor: null,
@@ -118,7 +118,7 @@ function historyFixture() {
         items: [{ id: 'bundle', name: 'Bundle', origin: 'created' }],
         nextCursor: null,
       });
-    if (url.pathname.endsWith('/promotions'))
+    if (url.pathname.endsWith('/releases'))
       return Response.json({ items: [], nextBeforeRevision: null });
     if (url.pathname.endsWith('/proposals') || url.pathname.endsWith('/evaluation-requests'))
       return Response.json({ items: [], nextCursor: null });

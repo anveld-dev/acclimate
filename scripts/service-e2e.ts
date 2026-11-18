@@ -22,7 +22,9 @@ const required = (name: string) => {
 };
 const databaseUrl = required('EVALUATION_TEST_DATABASE_URL');
 if (!/^postgres(?:ql)?:\/\//.test(databaseUrl))
-  throw new Error('EVALUATION_TEST_DATABASE_URL must point to the owned disposable e2e PostgreSQL database');
+  throw new Error(
+    'EVALUATION_TEST_DATABASE_URL must point to the owned disposable e2e PostgreSQL database',
+  );
 const root = process.cwd(),
   binary = path.join(root, 'target/debug/acclimate-service');
 const project = `e2e-${randomUUID()}`,
@@ -110,7 +112,13 @@ try {
         if (!file) throw new Error('fixture expected an allowed path');
         const content = JSON.stringify({
           schemaVersion: 1,
-          edits: [{path: file.path, oldText: file.text, newText: file.text + '\n\nProposal: ' + prompt.request.hypothesis}],
+          edits: [
+            {
+              path: file.path,
+              oldText: file.text,
+              newText: file.text + '\n\nProposal: ' + prompt.request.hypothesis,
+            },
+          ],
           rationale: 'Fixture model applied the requested bounded text edit.',
         });
         res
@@ -130,14 +138,25 @@ try {
     s.on('error', reject);
   });
   // Share the private production fixture contract; machine grants keep their exact rights.
-  const productionEnv = JSON.parse(execFileSync(process.env.ACCLIMATE_TEST_PYTHON || 'python3',
-    ['-m', 'scripts.testing.production'], {
-      cwd: root,
-      input: JSON.stringify({database_url: databaseUrl, bind: `127.0.0.1:${servicePort}`,
-        project, tokens: {operator: token}, login_token: randomUUID() + randomUUID(),
-        console_token: randomUUID() + randomUUID(), base_env: process.env}),
-      encoding: 'utf8',
-    })) as NodeJS.ProcessEnv;
+  const productionEnv = JSON.parse(
+    execFileSync(
+      process.env.ACCLIMATE_TEST_PYTHON || 'python3',
+      ['-m', 'scripts.testing.production'],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          database_url: databaseUrl,
+          bind: `127.0.0.1:${servicePort}`,
+          project,
+          tokens: { operator: token },
+          login_token: randomUUID() + randomUUID(),
+          console_token: randomUUID() + randomUUID(),
+          base_env: process.env,
+        }),
+        encoding: 'utf8',
+      },
+    ),
+  ) as NodeJS.ProcessEnv;
   service = spawn(binary, [], {
     cwd: root,
     env: {
@@ -231,12 +250,33 @@ try {
     parent.digest.slice('sha256:'.length),
   );
   assert(bytes.at(-1) === 10, 'stored canonical JSON payload ends with newline');
-  const seeded = await client.promote(
+  const seeded = await client.createRelease(
     project,
     bundle.id,
     'stable',
     { versionId: parent.id, expectedRevision: '0', unevaluatedReason: 'Initial fixture seed' },
     'seed-channel',
+  );
+  // A retry using the previous URL must recover the same release.
+  const oldReleasePath = `/v1/projects/${project}/bundles/${bundle.id}/channels/stable/promotions`;
+  const oldRelease = await fetch(base + oldReleasePath, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'seed-channel',
+    },
+    body: JSON.stringify({
+      versionId: parent.id,
+      expectedRevision: '0',
+      unevaluatedReason: 'Initial fixture seed',
+    }),
+  });
+  assert(oldRelease.ok);
+  assert.deepEqual(await oldRelease.json(), seeded);
+  assert.deepEqual(
+    (await fetchError(base + oldReleasePath, token)).body,
+    await client.listReleases(project, bundle.id, 'stable'),
   );
   const channel = await client.resolveChannel(project, bundle.id, 'stable');
   assert.equal(channel.resolution?.version.id, parent.id);
@@ -337,7 +377,7 @@ try {
   );
   await expectApiError(
     () =>
-      client.promote(
+      client.createRelease(
         project,
         bundle.id,
         'stable',
@@ -359,7 +399,7 @@ try {
     'comparison-complete',
   );
   assert.equal(uploaded.complete, true);
-  const promoted = await client.promote(
+  const promoted = await client.createRelease(
     project,
     bundle.id,
     'stable',
@@ -368,7 +408,7 @@ try {
   );
   await expectApiError(
     () =>
-      client.promote(
+      client.createRelease(
         project,
         bundle.id,
         'stable',
@@ -378,7 +418,7 @@ try {
     409,
     'revision_conflict',
   );
-  const rollback = await client.promote(
+  const rollback = await client.createRelease(
     project,
     bundle.id,
     'stable',

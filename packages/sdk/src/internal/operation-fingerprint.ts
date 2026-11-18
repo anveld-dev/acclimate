@@ -6,7 +6,7 @@ export function postFingerprint(path: string, body: string): string {
     'sha256:' +
     createHash('sha256')
       .update('POST\0')
-      .update(path)
+      .update(path.replace(/^\/v1\/workspaces\//, '/v1/projects/'))
       .update('\0')
       .update(body, 'utf8')
       .digest('hex')

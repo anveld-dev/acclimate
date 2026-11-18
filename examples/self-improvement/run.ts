@@ -57,7 +57,7 @@ try {
     { parentVersionId: null, payload: seedPayload },
     randomUUID(),
   );
-  const initial = await client.promote(
+  const initial = await client.createRelease(
     project,
     bundle.id,
     'qualification',
@@ -299,7 +299,7 @@ try {
     limits:
       'Small synthetic gateway-policy experiment. Application feedback and grading are trusted inputs. No broad benchmark or production autonomy claim.',
   });
-  const promotion = await client.promote(
+  const promotion = await client.createRelease(
     project,
     bundle.id,
     'qualification',
@@ -326,7 +326,7 @@ try {
   );
   await assert.rejects(
     () =>
-      client.promote(
+      client.createRelease(
         project,
         bundle.id,
         'qualification',

@@ -153,7 +153,7 @@ if (args[0] === 'run' || args[0] === 'run-service') {
     );
   else {
     if (!expectedRevision) throw new Error('--expected-revision is required with --apply');
-    const result = await client().promote(
+    const result = await client().createRelease(
       plan.project,
       plan.bundle,
       plan.channel,

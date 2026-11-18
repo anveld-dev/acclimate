@@ -35,7 +35,7 @@ def exact(context):
 @then('release history records the comparison and previous version')
 def evidence_history(context):
     w = context.world
-    latest = w.call('GET', w.channel + '/promotions')['items'][0]
+    latest = w.call('GET', w.channel + '/releases')['items'][0]
     assert latest['comparisonId'] == w.report['id']
     assert latest['previousVersionId'] == w.original['version']['id']
 
@@ -64,7 +64,7 @@ def manual(context, reason='Operator reviewed this edit manually.'):
 @then('release history records that manual reason without a comparison')
 def manual_history(context):
     w = context.world
-    latest = w.call('GET', w.channel + '/promotions')['items'][0]
+    latest = w.call('GET', w.channel + '/releases')['items'][0]
     assert latest['unevaluatedReason'] == w.manual_reason
     assert latest['comparisonId'] is None
 
@@ -93,7 +93,7 @@ def original_at_new_revision(context):
 @then('rollback appears in release history')
 def recorded_rollback(context):
     w = context.world
-    latest = w.call('GET', w.channel + '/promotions')['items'][0]
+    latest = w.call('GET', w.channel + '/releases')['items'][0]
     assert latest['unevaluatedReason'] == 'Operator rolled back this release.'
     assert latest['previousVersionId'] == w.draft['snapshotVersion']['id']
 
@@ -104,7 +104,7 @@ def release_pages(context):
     before = None
     w.decisions = []
     for _ in range(10):
-        page = w.call('GET', w.channel + '/promotions?limit=1' + ('&beforeRevision=' + before if before else ''))
+        page = w.call('GET', w.channel + '/releases?limit=1' + ('&beforeRevision=' + before if before else ''))
         w.decisions.extend(page['items'])
         before = page['nextBeforeRevision']
         if not before: break

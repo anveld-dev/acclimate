@@ -32,7 +32,7 @@ export function evaluationOperationPath(
   assertGuidedTarget(scope);
   if (typeof scope.bundleId !== 'string' || !scope.bundleId)
     throw new TypeError('Evaluation bundle is required');
-  const base = `/v1/projects/${scope.projectId}/bundles/${scope.bundleId}`;
+  const base = `/v1/workspaces/${scope.projectId}/bundles/${scope.bundleId}`;
   if (operation === 'submit') return `${base}/comparisons`;
   if (operation === 'createRequest') return `${base}/evaluation-requests`;
   if (operation === 'createDraft') {

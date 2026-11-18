@@ -245,7 +245,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
           const frozen = freezePending(
             sessionStorage,
             recoveryScope,
-            `/v1/projects/${encodeURIComponent(projectId)}/bundle-setups`,
+            `/v1/workspaces/${encodeURIComponent(projectId)}/bundle-setups`,
             setupRequest(reviewed),
           );
           return { key: frozen.key, projectId, body: frozen.body };

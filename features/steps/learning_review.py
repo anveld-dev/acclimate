@@ -250,13 +250,13 @@ def expect_traced_outcome(w, *, triggered):
     version = restored['version']['id']
     lines = [
         f"Job failed · served version {served['version']['id']} · revision {served['revision']}",
-        f"Promotion {w.round['promotionId']} · revision {served['revision']} · withdrawn from field use",
-        f"Automatic rollback restored {version} · revision {restored['revision']} · promotion {w.rollback_id}",
-        f"Current delivery target {version} · revision {restored['revision']}",
+        f"Release {w.round['promotionId']} · revision {served['revision']} · withdrawn",
+        f"Automatic rollback restored {version} · revision {restored['revision']} · release {w.rollback_id}",
+        f"Current version {version} · revision {restored['revision']}",
     ]
     for line in lines:
         expect(region.get_by_text(line, exact=True)).to_be_visible()
-    verdict = f"Field verdict · loss against control {version}"
+    verdict = f"Outcome comparison · loss against control {version}"
     if triggered:
         verdict += ' · this verdict triggered automatic rollback'
     expect(region.get_by_text(verdict, exact=True)).to_be_visible()
@@ -272,7 +272,7 @@ def trace_trigger(context):
 @when('I follow its audit evidence')
 def follow_audit(context):
     region = context.world.browser_fixture.page.get_by_role('region', name='Continuous learning')
-    region.get_by_role('link', name='Audit evidence', exact=True).click()
+    region.get_by_role('link', name='Independent comparison', exact=True).click()
 
 
 @then('the console opens the independent audit for the exact served candidate')
@@ -340,7 +340,7 @@ def visible_rejection(context):
 def open_regressed_case(context):
     w = context.world
     page = w.browser_fixture.page
-    link = page.get_by_role('link', name='View audit evidence', exact=True)
+    link = page.get_by_role('link', name='View independent comparison', exact=True)
     href = link.get_attribute('href')
     link.click()
     expect(page).to_have_url(w.browser_fixture.base + href)

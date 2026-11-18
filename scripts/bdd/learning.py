@@ -67,7 +67,7 @@ def install_enrollment(w, enrollment):
     w.call('PUT', w.learning_path, enrollment)
     calibrate(w)
     w.original_delivery = w.call('GET', w.channel, actor='content-reader')
-    w.history_path = w.bundle + '/channels/learn-' + w.integration['id'] + '/promotions'
+    w.history_path = w.bundle + '/channels/learn-' + w.integration['id'] + '/releases'
     w.original_history = w.call('GET', w.history_path)['items']
 
 

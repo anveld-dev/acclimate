@@ -3,7 +3,7 @@ export function draftRequest(
   input: Record<string, any>,
   scope: BundleScope,
 ): { operationPath: string; body: string } {
-  const root = `/v1/projects/${encodeURIComponent(scope.projectId)}/bundles/${encodeURIComponent(scope.bundleId)}/channels/${encodeURIComponent(scope.channel)}/drafts`;
+  const root = `/v1/workspaces/${encodeURIComponent(scope.projectId)}/bundles/${encodeURIComponent(scope.bundleId)}/channels/${encodeURIComponent(scope.channel)}/drafts`;
   if (input.action === 'create')
     return {
       operationPath: root,
@@ -45,7 +45,7 @@ export function restoreRequest(
   scope: BundleScope,
 ) {
   return {
-    operationPath: `/v1/projects/${encodeURIComponent(scope.projectId)}/bundles/${encodeURIComponent(scope.bundleId)}/channels/${encodeURIComponent(scope.channel)}/promotions`,
+    operationPath: `/v1/workspaces/${encodeURIComponent(scope.projectId)}/bundles/${encodeURIComponent(scope.bundleId)}/channels/${encodeURIComponent(scope.channel)}/releases`,
     body: JSON.stringify({
       versionId: input.versionId,
       expectedRevision: input.expectedRevision,

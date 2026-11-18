@@ -15,7 +15,7 @@ test('email invitation sends only recipient and role using the server-selected c
     env,
     { kind: 'create', projectId: 'p', email: 'person@example.test', role: 'editor' },
     async (url, init) => {
-      assert.equal(new URL(String(url)).pathname, '/v1/projects/p/invitations');
+      assert.equal(new URL(String(url)).pathname, '/v1/workspaces/p/invitations');
       assert.equal(init?.method, 'POST');
       assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer transport-fixture');
       assert.equal(new Headers(init?.headers).get('x-acclimate-session'), 'session-fixture');

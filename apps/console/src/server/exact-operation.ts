@@ -1,4 +1,4 @@
-import { validateOperationTarget } from '../lib/operation-target';
+import { operationFingerprintPath, validateOperationTarget } from '../lib/operation-target';
 import { createHash } from 'node:crypto';
 import { ApiError } from '@acclimate/sdk';
 import { requireSession, type Environment } from './selection';
@@ -70,11 +70,11 @@ export async function lookupOperation(
   canonical(
     env,
     input.projectId,
-    input.operationPath || `/v1/projects/${input.projectId}/bundle-setups`,
+    input.operationPath || `/v1/workspaces/${input.projectId}/bundle-setups`,
   );
   return request(
     env,
-    `/v1/projects/${encodeURIComponent(input.projectId)}/operations/${encodeURIComponent(input.key)}${input.operationPath ? `?operationPath=${encodeURIComponent(input.operationPath)}` : ''}`,
+    `/v1/workspaces/${encodeURIComponent(input.projectId)}/operations/${encodeURIComponent(input.key)}${input.operationPath ? `?operationPath=${encodeURIComponent(input.operationPath)}` : ''}`,
     'GET',
     undefined,
     undefined,
@@ -91,11 +91,11 @@ export async function closeOperation(
   canonical(
     env,
     input.projectId,
-    input.operationPath || `/v1/projects/${input.projectId}/bundle-setups`,
+    input.operationPath || `/v1/workspaces/${input.projectId}/bundle-setups`,
   );
   return request(
     env,
-    `/v1/projects/${encodeURIComponent(input.projectId)}/operations/${encodeURIComponent(input.key)}/close`,
+    `/v1/workspaces/${encodeURIComponent(input.projectId)}/operations/${encodeURIComponent(input.key)}/close`,
     'POST',
     input.key,
     JSON.stringify({ operationPath: input.operationPath }),
@@ -119,7 +119,7 @@ export async function exactOperation<T>(
   // Receipt precedes every fresh client preflight. The server checks revisions only on first execution.
   const known = await lookupOperation(env, input, fetcher);
   if (known.status === 'committed') {
-    const fingerprint = `sha256:${createHash('sha256').update('POST\0').update(input.operationPath).update('\0').update(input.body).digest('hex')}`;
+    const fingerprint = `sha256:${createHash('sha256').update('POST\0').update(operationFingerprintPath(input.operationPath)).update('\0').update(input.body).digest('hex')}`;
     if (
       known.path !== input.operationPath ||
       (known.requestFingerprint && known.requestFingerprint !== fingerprint)

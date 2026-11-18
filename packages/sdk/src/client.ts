@@ -5,16 +5,16 @@ import type {
   ComparisonPolicyReceipt,
   ComparisonPolicyReport,
   EvaluationCapabilities,
-  IntegrationObservation,
+  ConnectionObservation,
   EvaluationProgressRequest,
   EvaluationProgressView,
 } from './types.js';
 import type {
   Channel,
-  Integration,
-  CreateIntegrationRequest,
-  IntegrationCredential,
-  IntegrationCredentialKind,
+  Connection,
+  CreateConnectionRequest,
+  ConnectionCredential,
+  ConnectionCredentialKind,
   DeliveryReceipt,
   DeliveryReceiptRequest,
   LearningEnrollment,
@@ -46,7 +46,7 @@ import type {
 import type {
   Page,
   ListOptions,
-  Project,
+  Workspace,
   BundleSetup,
   BundleSetupRequest,
   Draft,
@@ -63,9 +63,9 @@ import type {
   Comparison,
   ComparisonRequest,
   CreateVersionRequest,
-  Promotion,
-  PromotionPage,
-  PromoteRequest,
+  Release,
+  ReleasePage,
+  CreateReleaseRequest,
   Proposal,
   ProposalRequest,
   VersionMetadata,
@@ -187,7 +187,7 @@ export class AcclimateClient {
     return encodeURIComponent(value);
   }
   private path(projectId: string, suffix: string): string {
-    return `/v1/projects/${this.part(projectId)}${suffix}`;
+    return `/v1/workspaces/${this.part(projectId)}${suffix}`;
   }
   private deliveryHeaders(): Record<string, string> {
     return this.integrationId ? { 'X-Acclimate-Integration-Id': this.integrationId } : {};
@@ -381,7 +381,7 @@ export class AcclimateClient {
     return result.notModified ? { resolution: null, etag: result.etag, notModified: true } : result;
   }
   private learningPath(projectId: string, integrationId: string): string {
-    return this.path(projectId, `/integrations/${this.part(integrationId)}/learning`);
+    return this.path(projectId, `/connections/${this.part(integrationId)}/learning`);
   }
   enrollLearning(
     projectId: string,
@@ -547,7 +547,7 @@ export class AcclimateClient {
     integrationId: string,
     body: LearningRestoreRequest,
     key = body.restoreId,
-  ): Promise<Promotion> {
+  ): Promise<Release> {
     return this.request(
       'POST',
       this.learningPath(projectId, integrationId) + '/restore',
@@ -555,12 +555,12 @@ export class AcclimateClient {
       key,
     );
   }
-  listPromotions(
+  listReleases(
     projectId: string,
     bundleId: string,
     channel: string,
     options: { limit?: number; beforeRevision?: string } = {},
-  ): Promise<PromotionPage> {
+  ): Promise<ReleasePage> {
     const query = new URLSearchParams();
     if (options.limit !== undefined) query.set('limit', String(options.limit));
     if (options.beforeRevision !== undefined) query.set('beforeRevision', options.beforeRevision);
@@ -569,22 +569,22 @@ export class AcclimateClient {
       'GET',
       this.path(
         projectId,
-        `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}/promotions${suffix}`,
+        `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}/releases${suffix}`,
       ),
     );
   }
-  promote(
+  createRelease(
     projectId: string,
     bundleId: string,
     channel: string,
-    request: PromoteRequest,
+    request: CreateReleaseRequest,
     key: string,
-  ): Promise<Promotion> {
+  ): Promise<Release> {
     return this.request(
       'POST',
       this.path(
         projectId,
-        `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}/promotions`,
+        `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}/releases`,
       ),
       JSON.stringify(request),
       key,
@@ -679,8 +679,8 @@ export class AcclimateClient {
       `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}/drafts${id === undefined ? '' : `/${this.part(id)}`}`,
     );
   }
-  listProjects(options: ListOptions = {}): Promise<Page<Project>> {
-    return this.request('GET', `/v1/projects${this.listing(options)}`);
+  listWorkspaces(options: ListOptions = {}): Promise<Page<Workspace>> {
+    return this.request('GET', `/v1/workspaces${this.listing(options)}`);
   }
   listBundles(projectId: string, options: ListOptions = {}): Promise<Page<Bundle>> {
     return this.request('GET', this.path(projectId, `/bundles${this.listing(options)}`));
@@ -933,53 +933,48 @@ export class AcclimateClient {
   getEvaluationCapabilities(projectId: string): Promise<EvaluationCapabilities> {
     return this.request('GET', this.path(projectId, '/evaluation-capabilities'));
   }
-  listIntegrationObservations(
+  listConnectionObservations(
     projectId: string,
     options: ListOptions = {},
-  ): Promise<Page<IntegrationObservation>> {
+  ): Promise<Page<ConnectionObservation>> {
     return this.request(
       'GET',
-      this.path(projectId, '/integration-observations' + this.listing(options)),
+      this.path(projectId, '/connection-observations' + this.listing(options)),
     );
   }
 
-  createIntegration(
+  createConnection(
     projectId: string,
-    request: CreateIntegrationRequest,
+    request: CreateConnectionRequest,
     key: string,
-  ): Promise<Integration> {
-    return this.request(
-      'POST',
-      this.path(projectId, '/integrations'),
-      JSON.stringify(request),
-      key,
-    );
+  ): Promise<Connection> {
+    return this.request('POST', this.path(projectId, '/connections'), JSON.stringify(request), key);
   }
-  listIntegrations(projectId: string, options: ListOptions = {}): Promise<Page<Integration>> {
-    return this.request('GET', this.path(projectId, '/integrations' + this.listing(options)));
+  listConnections(projectId: string, options: ListOptions = {}): Promise<Page<Connection>> {
+    return this.request('GET', this.path(projectId, '/connections' + this.listing(options)));
   }
-  createIntegrationCredential(
+  createConnectionCredential(
     projectId: string,
     id: string,
-    request: { kind: IntegrationCredentialKind },
+    request: { kind: ConnectionCredentialKind },
     key: string,
-  ): Promise<IntegrationCredential> {
+  ): Promise<ConnectionCredential> {
     return this.request(
       'POST',
-      this.path(projectId, `/integrations/${this.part(id)}/credentials`),
+      this.path(projectId, `/connections/${this.part(id)}/credentials`),
       JSON.stringify(request),
       key,
     );
   }
-  revokeIntegration(projectId: string, id: string, key: string): Promise<Integration> {
+  revokeConnection(projectId: string, id: string, key: string): Promise<Connection> {
     return this.request(
       'POST',
-      this.path(projectId, `/integrations/${this.part(id)}/revoke`),
+      this.path(projectId, `/connections/${this.part(id)}/revoke`),
       '{}',
       key,
     );
   }
-  revokeIntegrationCredential(
+  revokeConnectionCredential(
     projectId: string,
     id: string,
     credentialId: string,
@@ -989,7 +984,7 @@ export class AcclimateClient {
       'POST',
       this.path(
         projectId,
-        `/integrations/${this.part(id)}/credentials/${this.part(credentialId)}/revoke`,
+        `/connections/${this.part(id)}/credentials/${this.part(credentialId)}/revoke`,
       ),
       '{}',
       key,
@@ -1003,7 +998,7 @@ export class AcclimateClient {
   ): Promise<DeliveryReceipt> {
     return this.request(
       'POST',
-      this.path(projectId, `/integrations/${this.part(id)}/receipts`),
+      this.path(projectId, `/connections/${this.part(id)}/receipts`),
       JSON.stringify(request),
       key,
     );
@@ -1015,7 +1010,7 @@ export class AcclimateClient {
   ): Promise<Page<DeliveryReceipt>> {
     return this.request(
       'GET',
-      this.path(projectId, `/integrations/${this.part(id)}/receipts${this.listing(options)}`),
+      this.path(projectId, `/connections/${this.part(id)}/receipts${this.listing(options)}`),
     );
   }
   getOperation(projectId: string, operationId: string, operationPath?: string): Promise<Operation> {
@@ -1036,5 +1031,67 @@ export class AcclimateClient {
       JSON.stringify({ operationPath }),
       operationId,
     );
+  }
+  /** @deprecated Use listWorkspaces. */
+  listProjects(
+    ...args: Parameters<AcclimateClient['listWorkspaces']>
+  ): ReturnType<AcclimateClient['listWorkspaces']> {
+    return this.listWorkspaces(...args);
+  }
+
+  /** @deprecated Use listReleases. */
+  listPromotions(
+    ...args: Parameters<AcclimateClient['listReleases']>
+  ): ReturnType<AcclimateClient['listReleases']> {
+    return this.listReleases(...args);
+  }
+
+  /** @deprecated Use createRelease. */
+  promote(
+    ...args: Parameters<AcclimateClient['createRelease']>
+  ): ReturnType<AcclimateClient['createRelease']> {
+    return this.createRelease(...args);
+  }
+
+  /** @deprecated Use listConnectionObservations. */
+  listIntegrationObservations(
+    ...args: Parameters<AcclimateClient['listConnectionObservations']>
+  ): ReturnType<AcclimateClient['listConnectionObservations']> {
+    return this.listConnectionObservations(...args);
+  }
+
+  /** @deprecated Use createConnection. */
+  createIntegration(
+    ...args: Parameters<AcclimateClient['createConnection']>
+  ): ReturnType<AcclimateClient['createConnection']> {
+    return this.createConnection(...args);
+  }
+
+  /** @deprecated Use listConnections. */
+  listIntegrations(
+    ...args: Parameters<AcclimateClient['listConnections']>
+  ): ReturnType<AcclimateClient['listConnections']> {
+    return this.listConnections(...args);
+  }
+
+  /** @deprecated Use createConnectionCredential. */
+  createIntegrationCredential(
+    ...args: Parameters<AcclimateClient['createConnectionCredential']>
+  ): ReturnType<AcclimateClient['createConnectionCredential']> {
+    return this.createConnectionCredential(...args);
+  }
+
+  /** @deprecated Use revokeConnection. */
+  revokeIntegration(
+    ...args: Parameters<AcclimateClient['revokeConnection']>
+  ): ReturnType<AcclimateClient['revokeConnection']> {
+    return this.revokeConnection(...args);
+  }
+
+  /** @deprecated Use revokeConnectionCredential. */
+  revokeIntegrationCredential(
+    ...args: Parameters<AcclimateClient['revokeConnectionCredential']>
+  ): ReturnType<AcclimateClient['revokeConnectionCredential']> {
+    return this.revokeConnectionCredential(...args);
   }
 }

@@ -54,7 +54,7 @@ def limited(context, resource):
     elif resource == 'content bytes':
         w.call('GET', w.bundle + '/versions/' + w.original['version']['id'] + '/payload', actor=actor, expected=(401,403))
     elif resource == 'publish':
-        w.call('POST', w.channel + '/promotions', dict(versionId=w.original['version']['id'], expectedRevision='1', unevaluatedReason='Denied credential use.'), actor=actor, expected=(401,403))
+        w.call('POST', w.channel + '/releases', dict(versionId=w.original['version']['id'], expectedRevision='1', unevaluatedReason='Denied credential use.'), actor=actor, expected=(401,403))
     else:
         raise AssertionError(resource)
 
@@ -112,14 +112,14 @@ def conflict(context):
 @given('another integration exists in this project')
 def other(context):
     w = context.world
-    w.other_integration = w.call('POST', w.root + '/integrations', dict(displayName='Other application', bundleId=w.setup['bundle']['id'], channel='stable'))
+    w.other_integration = w.call('POST', w.root + '/connections', dict(displayName='Other application', bundleId=w.setup['bundle']['id'], channel='stable'))
 
 
 @when('the first credential tries to report for the second integration')
 def another(context):
     w = context.world
     event = dict(w.delivery_event(), integrationId=w.other_integration['id'])
-    w.call('POST', w.root + '/integrations/' + w.other_integration['id'] + '/receipts', event, actor='receipt-writer', expected=403)
+    w.call('POST', w.root + '/connections/' + w.other_integration['id'] + '/receipts', event, actor='receipt-writer', expected=403)
 
 
 @when('the app submits a report with {invalid}')
@@ -191,7 +191,7 @@ def recover_id(context):
     assert w.last['error']['code'] == 'credential_already_issued'
     assert w.last['error']['details'] == dict(credentialId=w.credential['id'],kind='content-read',revokedAt=None)
     assert 'secret' not in w.last['error']['details']
-    entry = next(i for i in w.call('GET', w.root + '/integrations')['items'] if i['id'] == w.integration['id'])
+    entry = next(i for i in w.call('GET', w.root + '/connections')['items'] if i['id'] == w.integration['id'])
     assert len(entry['credentials']) == 1
     assert entry['credentials'][0]['id'] == w.credential['id']
 
@@ -199,6 +199,6 @@ def recover_id(context):
 @then('integration listings disclose no credential secret')
 def no_secrets(context):
     w = context.world
-    listing = json.dumps(w.call('GET', w.root + '/integrations'))
+    listing = json.dumps(w.call('GET', w.root + '/connections'))
     assert w.credential['secret'] not in listing
     assert 'secret_hash' not in listing

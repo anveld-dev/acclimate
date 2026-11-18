@@ -2,7 +2,7 @@ import { releaseRevision } from '../navigation';
 import { consoleClient } from './console-client';
 import { requireSession } from './selection';
 import { DeliveryError, verifyPayloadBytes } from '@acclimate/sdk';
-import type { BundlePayload, PromotionPage, VersionMetadata } from '@acclimate/sdk';
+import type { BundlePayload, ReleasePage, VersionMetadata } from '@acclimate/sdk';
 
 type Env = Record<string, string | undefined>;
 type Failure = { ok: false; message: string };
@@ -48,7 +48,7 @@ export async function readHistory(
   env: Env,
   input: unknown,
   fetcher: typeof fetch = fetch,
-): Promise<{ ok: true; page: PromotionPage } | Failure> {
+): Promise<{ ok: true; page: ReleasePage } | Failure> {
   const cursor =
     input && typeof input === 'object'
       ? (input as { beforeRevision?: unknown }).beforeRevision
@@ -58,7 +58,7 @@ export async function readHistory(
   try {
     requireSession(env);
     const client = configuredClient(env, fetcher);
-    const page = await client.listPromotions(
+    const page = await client.listReleases(
       env.CONSOLE_PROJECT!,
       env.CONSOLE_BUNDLE!,
       env.CONSOLE_CHANNEL || 'stable',

@@ -18,7 +18,7 @@ test('a frozen proposal needs consent matching exactly the evidence being disclo
   const command = {
     action: 'submitFrozen',
     key: '11111111-1111-4111-8111-111111111111',
-    operationPath: '/v1/projects/project/bundles/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/proposals',
+    operationPath: '/v1/workspaces/project/bundles/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/proposals',
     body: JSON.stringify({ evidence: ['selected trace'] }),
   };
   assert.equal((await improvement(env, command, fetcher)).ok, false);
@@ -51,10 +51,19 @@ const env = {
   CONSOLE_ALLOW_EDITS: 'true',
 };
 const operationPath =
-  '/v1/projects/project/bundles/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/evaluation-requests';
+  '/v1/workspaces/project/bundles/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/evaluation-requests';
 const key = '11111111-1111-4111-8111-111111111111';
 const frozenBody = JSON.stringify({ ...localEvaluationDescriptor, requireBoundEvidence: true });
-const fingerprint = `sha256:${createHash('sha256').update('POST\0').update(operationPath).update('\0').update(frozenBody).digest('hex')}`;
+const fingerprint = `sha256:${createHash('sha256')
+  .update('POST\0')
+  .update(
+    operationPath
+      .replace(/^\/v1\/workspaces\//, '/v1/projects/')
+      .replace(/\/releases$/, '/promotions'),
+  )
+  .update('\0')
+  .update(frozenBody)
+  .digest('hex')}`;
 
 test('exact uncertain evaluation retry returns receipt before mutable channel preflight', async () => {
   const calls: string[] = [];

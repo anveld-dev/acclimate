@@ -37,7 +37,7 @@ class MemoryStorage implements PendingStorage {
 const bundle = '11111111-1111-4111-8111-111111111111';
 const draft = '22222222-2222-4222-8222-222222222222';
 const key = '33333333-3333-4333-8333-333333333333';
-const path = `/v1/projects/p/bundles/${bundle}/channels/stable/drafts/${draft}/save`;
+const path = `/v1/workspaces/p/bundles/${bundle}/channels/stable/drafts/${draft}/save`;
 const scope = {
   owner: 'draft' as const,
   actorScope: 'session-one',
@@ -85,7 +85,14 @@ test('each page sees submissions from another editor only as related operations'
 function fingerprint(path: string, body: string) {
   return (
     'sha256:' +
-    createHash('sha256').update('POST\0').update(path).update('\0').update(body).digest('hex')
+    createHash('sha256')
+      .update('POST\0')
+      .update(
+        path.replace(/^\/v1\/workspaces\//, '/v1/projects/').replace(/\/releases$/, '/promotions'),
+      )
+      .update('\0')
+      .update(body)
+      .digest('hex')
   );
 }
 
@@ -151,7 +158,7 @@ test('receipt reconciliation wins before stale generation/revision preflight and
   );
   assert.equal(result.ok, true);
   assert.equal(calls, 1);
-  const releasePath = `/v1/projects/p/bundles/${bundle}/channels/stable/promotions`;
+  const releasePath = `/v1/workspaces/p/bundles/${bundle}/channels/stable/releases`;
   const restored = await editChannel(
     env,
     { action: 'rollback', key, expectedRevision: '1', versionId: 'old-version', reason: 'Restore' },
@@ -321,13 +328,13 @@ test('new skill allocation reserves all support paths and case collisions', () =
 });
 
 test('canonical operation families preserve exact bytes through browser freezing and server replay', async () => {
-  const root = `/v1/projects/p/bundles/${bundle}`;
+  const root = `/v1/workspaces/p/bundles/${bundle}`;
   const channel = `${root}/channels/stable`;
   const paths = [
-    '/v1/projects/p/bundle-setups',
+    '/v1/workspaces/p/bundle-setups',
     `${root}/proposals`,
     `${root}/evaluation-requests`,
-    `${channel}/promotions`,
+    `${channel}/releases`,
     `${channel}/drafts`,
     ...['save', 'publish', 'discard'].map((action) => `${channel}/drafts/${draft}/${action}`),
   ];
@@ -360,7 +367,7 @@ test('invalid operation targets never enter recovery storage or reach transport'
     throw Error('unexpected request');
   };
   const invalid = [
-    path.replace('/projects/p/', '/projects/other/'),
+    path.replace('/workspaces/p/', '/workspaces/other/'),
     path.replace(bundle, '44444444-4444-4444-8444-444444444444'),
     path.replace('stable', 'canary'),
     path.replace(bundle, 'not-a-bundle'),

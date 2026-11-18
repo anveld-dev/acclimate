@@ -79,7 +79,7 @@ try {
     randomUUID(),
   );
   assert.equal(rootMeta.digest, starter.sourceDigest);
-  const initial = await client.promote(
+  const initial = await client.createRelease(
     project,
     bundle.id,
     'qualification',
@@ -90,7 +90,7 @@ try {
     },
     randomUUID(),
   );
-  let working = await client.promote(
+  let working = await client.createRelease(
     project,
     bundle.id,
     'working',
@@ -295,7 +295,7 @@ try {
         accepted,
       };
       if (accepted) {
-        working = await client.promote(
+        working = await client.createRelease(
           project,
           bundle.id,
           'working',
@@ -384,7 +384,7 @@ try {
     parent: audit.parent,
     candidate: audit.candidate,
   });
-  const promotion = await client.promote(
+  const promotion = await client.createRelease(
     project,
     bundle.id,
     'qualification',
@@ -417,7 +417,7 @@ try {
   );
   await assert.rejects(
     () =>
-      client.promote(
+      client.createRelease(
         project,
         bundle.id,
         'qualification',

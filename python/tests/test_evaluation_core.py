@@ -74,7 +74,7 @@ class FakeService:
         return copy.deepcopy(self.comparison)
 
     def _request(self,method,path,body=None,key=None,**kwargs):
-        if method=="GET" and path.startswith("/v1/projects/project/bundles?"):
+        if method=="GET" and path.startswith("/v1/workspaces/project/bundles?"):
             return {"items":[{"id":BUNDLE}],"nextCursor":None}
         assert method=="POST" and kwargs["_retained"] is True
         data=kwargs["_body_bytes"]

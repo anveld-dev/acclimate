@@ -11,7 +11,11 @@ import {
   createReceiptReporter,
 } from '@acclimate/sdk';
 import { defineEvaluation } from '@acclimate/sdk/evaluation';
-import { connectedEvaluationDescriptor } from '@acclimate/sdk/learning';
+import {
+  connectedEvaluationDescriptor,
+  createLearningFieldAuditor,
+  createLearningOutcomeReporter,
+} from '@acclimate/sdk/learning';
 const input = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const client = new AcclimateClient({
   baseUrl: input.baseUrl,
@@ -129,9 +133,6 @@ function fieldJobPasses(instructions, job, defaultChecks = []) {
 }
 
 async function gradeFieldJob() {
-  const { createLearningFieldAuditor, createLearningOutcomeReporter } = await import(
-    '@acclimate/sdk/learning'
-  );
   const target = { projectId: base.projectId, integrationId: input.integrationId };
   const scopedClient = (token, role) =>
     new AcclimateClient({

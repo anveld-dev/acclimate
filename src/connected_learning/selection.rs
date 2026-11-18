@@ -281,6 +281,32 @@ mod tests {
     use super::*;
     use crate::{CaseKey, CasePair, Outcome, Usage};
 
+    #[test]
+    fn shared_selection_policy_conformance() {
+        #[derive(Deserialize)]
+        struct Fixture {
+            descriptor: Descriptor,
+            cases: Vec<Case>,
+        }
+
+        #[derive(Deserialize)]
+        struct Case {
+            name: String,
+            valid: bool,
+            policy: Box<serde_json::value::RawValue>,
+        }
+
+        let fixture: Fixture = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/connected-selection-policy.json"
+        ))
+        .unwrap();
+        for case in fixture.cases {
+            let accepted = serde_json::from_str::<SelectionPolicy>(case.policy.get())
+                .is_ok_and(|policy| policy.validate(&[&fixture.descriptor], None).is_ok());
+            assert_eq!(accepted, case.valid, "{}", case.name);
+        }
+    }
+
     fn comparison(values: &[(&str, f64, f64)]) -> ComparisonRequest {
         let outcome = |reward| Outcome {
             execution_status: "completed".into(),

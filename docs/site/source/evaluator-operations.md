@@ -76,6 +76,8 @@ Export deliberately selected/redacted review artifacts through the app's mapper.
 
 ## Serve connected learning
 
+The service schedules proposals, development evaluations, and held-out audits. The installed evaluator runs the assigned private fixtures and replays.
+
 Use the service connection UUID as `integrationId` when constructing the application's delivery
 `AcclimateClient`. Keep that UUID stable across process restarts and credential rotation.
 `resolveAndCache` then resolves the configured channel for this connection and keeps its offline
@@ -235,3 +237,5 @@ Open **Delivery → Find a reported outcome** for the connection, or call `clien
 The outcome lookup also shows the version and revision currently delivered by the connection. For an audited job it shows the field verdict, its control version and whether that verdict triggered a rollback. A correction that reached rollout retains its original promotion, along with any subsequent withdrawal and the version and revision the rollback restored. The development and independent audit links open the candidate's recorded evidence.
 
 At worker startup, `learning.apps_module_missing` means the `--apps` path does not identify an installed file. For `learning.apps_module_load_failed`, check the module's imports in the worker's Node installation. For `learning.apps_invalid_export`, default-export `{ development, audit: [...] }` using evaluations built with `defineEvaluation` from the installed SDK. Optional replay callbacks must be functions. The worker checks the module before reading evaluator configuration or polling for work.
+
+When embedding the worker, the second argument to `onDiagnostic` carries the local error, including any underlying callback error as its cause. The CLI prints the safe diagnostic.

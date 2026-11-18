@@ -209,7 +209,10 @@ pub(crate) async fn enqueue_evaluation(
     }) || !rows.iter().any(|r| {
         r.get::<Uuid, _>("id") == candidate
             && r.get::<String, _>("digest") == q.candidate_digest
-            && r.get::<Option<Uuid>, _>("parent_version_id") == Some(parent)
+            && (r.get::<Option<Uuid>, _>("parent_version_id") == Some(parent)
+                || (parent == candidate
+                    && principal == "service:connected-learning"
+                    && q.proposal_id.is_none()))
     }) {
         return Err(invalid(
             "Version identities or candidate parent do not match",
@@ -417,7 +420,7 @@ async fn transition(
         }
         _ => unreachable!(),
     }
-    let r=sqlx::query("UPDATE evaluation_requests SET status=$4,evaluator_principal=$5,attempt_id=$6,comparison_id=$7,error=$8,updated_at=CASE WHEN status=$4 AND evaluator_principal IS NOT DISTINCT FROM $5 AND attempt_id IS NOT DISTINCT FROM $6 AND comparison_id IS NOT DISTINCT FROM $7 AND error IS NOT DISTINCT FROM $8 THEN updated_at ELSE now() END WHERE project_id=$1 AND bundle_id=$2 AND id=$3 RETURNING *").bind(p).bind(bid).bind(eid).bind(e.status).bind(e.evaluator_principal).bind(e.attempt_id).bind(e.comparison_id.as_deref().map(path).transpose()?).bind(e.error).fetch_one(&mut *cmd.tx).await.map_err(db)?;
+    let r=sqlx::query("UPDATE evaluation_requests SET started_at=CASE WHEN $4='running' AND status<>'running' THEN now() ELSE started_at END,status=$4,evaluator_principal=$5,attempt_id=$6,comparison_id=$7,error=$8,updated_at=CASE WHEN status=$4 AND evaluator_principal IS NOT DISTINCT FROM $5 AND attempt_id IS NOT DISTINCT FROM $6 AND comparison_id IS NOT DISTINCT FROM $7 AND error IS NOT DISTINCT FROM $8 THEN updated_at ELSE now() END WHERE project_id=$1 AND bundle_id=$2 AND id=$3 RETURNING *").bind(p).bind(bid).bind(eid).bind(e.status).bind(e.evaluator_principal).bind(e.attempt_id).bind(e.comparison_id.as_deref().map(path).transpose()?).bind(e.error).fetch_one(&mut *cmd.tx).await.map_err(db)?;
     crate::commands::finish_mutation(cmd, StatusCode::OK, decode(r)?).await
 }
 

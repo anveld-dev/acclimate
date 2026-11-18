@@ -47,15 +47,21 @@ pub fn validate_comparison(q: &ComparisonRequest) -> Result<bool, String> {
             }
         }
     }
+    use crate::connected_learning::statistics::{MAX_MISSING_PERCENT, scored_reward};
+    let missing = q
+        .results
+        .iter()
+        .flat_map(|pair| [&pair.parent, &pair.candidate])
+        .filter(|outcome| scored_reward(outcome).is_none())
+        .count();
     Ok(seen.len() == expected.len()
-        && q.results.iter().all(|r| {
-            r.parent.execution_status != "infrastructure_failed"
-                && r.candidate.execution_status != "infrastructure_failed"
-                && r.parent.grading_status == "scored"
-                && r.candidate.grading_status == "scored"
-                && r.parent.reward.is_some()
-                && r.candidate.reward.is_some()
-        }))
+        && missing * 100
+            <= 2 * expected.len()
+                * if q.evaluation.is_some() {
+                    MAX_MISSING_PERCENT
+                } else {
+                    0
+                })
 }
 
 // Only fixed local edit-validation errors are public. Never reflect arbitrary provider details.
@@ -145,10 +151,13 @@ pub async fn create_comparison(
         .fetch_one(&mut *command.tx)
         .await
         .map_err(db)?;
-    if pr
-        .get::<Option<Uuid>, _>("parent_version_id")
-        .map(|x| x.to_string())
-        != Some(q.parent_version_id.clone())
+    // Only the managed calibration scheduler can create a bound self-comparison.
+    let calibration = q.evaluation.is_some() && q.parent_version_id == q.candidate_version_id;
+    if !calibration
+        && pr
+            .get::<Option<Uuid>, _>("parent_version_id")
+            .map(|x| x.to_string())
+            != Some(q.parent_version_id.clone())
     {
         return Err(err(
             StatusCode::BAD_REQUEST,
@@ -234,6 +243,7 @@ pub async fn create_proposal(
         attempts: 0,
         candidate: None,
         rationale: None,
+        screening: Vec::new(),
         error: None,
         created_at: created_at.to_rfc3339(),
     };
@@ -325,17 +335,20 @@ async fn enqueue(
     let parent_payload: BundlePayload =
         serde_json::from_slice(&parent_row.get::<Vec<u8>, _>("payload")).map_err(db)?;
     if filter_missing {
-        q.allowed_paths
-            .retain(|path| parent_payload.files.iter().any(|f| f.path == *path));
+        q.allowed_paths.retain(|path| {
+            crate::proposal_edits::memory_path(path)
+                || parent_payload.files.iter().any(|f| f.path == *path)
+        });
     }
     if q.allowed_paths.is_empty() && skill_packages.is_none() {
         return Ok(None);
     }
     let allowed: HashSet<_> = q.allowed_paths.iter().collect();
     if allowed.len() != q.allowed_paths.len()
-        || q.allowed_paths
-            .iter()
-            .any(|path| !parent_payload.files.iter().any(|f| f.path == *path))
+        || q.allowed_paths.iter().any(|path| {
+            !crate::proposal_edits::memory_path(path)
+                && !parent_payload.files.iter().any(|f| f.path == *path)
+        })
     {
         return Err(err(
             StatusCode::BAD_REQUEST,
@@ -353,7 +366,7 @@ pub async fn get_proposal(
     h: HeaderMap,
 ) -> ApiResult<Json<Proposal>> {
     let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
-    let r=sqlx::query("SELECT p.id,p.parent_version_id AS proposal_parent_version_id,p.status,p.attempts,p.candidate_version_id,p.rationale,p.error,p.created_at,v.id,v.bundle_id,v.parent_version_id,v.digest,v.created_at AS v_created FROM proposals p LEFT JOIN versions v ON v.id=p.candidate_version_id WHERE p.project_id=$1 AND p.bundle_id=$2 AND p.id=$3").bind(&p).bind(path(&b)?).bind(path(&id)?).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Proposal not found"))?;
+    let r=sqlx::query("SELECT p.id,p.parent_version_id AS proposal_parent_version_id,p.status,p.attempts,p.candidate_version_id,p.rationale,p.error,p.screening,p.created_at,v.id,v.bundle_id,v.parent_version_id,v.digest,v.created_at AS v_created FROM proposals p LEFT JOIN versions v ON v.id=p.candidate_version_id WHERE p.project_id=$1 AND p.bundle_id=$2 AND p.id=$3").bind(&p).bind(path(&b)?).bind(path(&id)?).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Proposal not found"))?;
     let candidate = r
         .get::<Option<Uuid>, _>("candidate_version_id")
         .map(|vid| VersionMetadata {
@@ -372,6 +385,9 @@ pub async fn get_proposal(
         attempts: r.get("attempts"),
         candidate,
         rationale: r.get("rationale"),
+        screening: r
+            .get::<sqlx::types::Json<Vec<serde_json::Value>>, _>("screening")
+            .0,
         error: r.get("error"),
         created_at: r.get::<DateTime<Utc>, _>("created_at").to_rfc3339(),
     }))
@@ -391,6 +407,18 @@ pub async fn proposal_worker(s: AppState) {
         }
     }
 }
+async fn fail_proposal(s: &AppState, id: Uuid, attempt: i32, error: &str) {
+    let _ = sqlx::query("UPDATE proposals SET status='failed',error=$3 WHERE id=$1 AND status='running' AND attempts=$2")
+        .bind(id).bind(attempt).bind(error).execute(&s.db).await;
+}
+
+fn add_critic_objections(request: &mut ProposalRequest, record: &serde_json::Value) {
+    request.evidence.push(format!(
+        "Critic objections for repair: {}",
+        serde_json::json!({"objections": record["result"]["objections"], "previousEdits": record["changes"]})
+    ));
+}
+
 async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
     let slot = PROPOSAL_SLOT
         .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(1)))
@@ -412,7 +440,7 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
         }
         Err(_) => return,
     }
-    let Ok(claimed) = sqlx::query("UPDATE proposals SET status='running',attempts=attempts+1 WHERE id=$1 AND status='queued' AND attempts<3 RETURNING request,parent_version_id,requested_by,attempts,skill_packages").bind(id).fetch_optional(&mut *tx).await else { return };
+    let Ok(claimed) = sqlx::query("UPDATE proposals SET status='running',attempts=attempts+1 WHERE id=$1 AND status='queued' AND attempts<3 RETURNING request,parent_version_id,requested_by,attempts,skill_packages,screening").bind(id).fetch_optional(&mut *tx).await else { return };
     if tx.commit().await.is_err() {
         return;
     }
@@ -449,43 +477,114 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
             Ok(x) => x,
             Err(_) => return,
         };
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(60),
-        provider.propose_scoped(parent_payload.clone(), q.clone(), policy.clone()),
-    )
-    .await;
-    let output = match result {
-        Ok(Ok(v)) => v,
-        Ok(Err(reason)) => {
-            let _ = sqlx::query("UPDATE proposals SET status='failed',error=$2 WHERE id=$1 AND status='running' AND attempts=$3")
-                .bind(id)
-                .bind(public_edit_error(&reason).unwrap_or("provider request failed"))
-                .bind(attempt)
-                .execute(&s.db)
-                .await;
-            return;
-        }
-        _ => {
-            let _ = sqlx::query(
-                "UPDATE proposals SET status='failed',error='provider timeout' WHERE id=$1 AND status='running' AND attempts=$2",
+    let managed = requested_by == "service:connected-learning";
+    let mut model_request = q.clone();
+    let mut candidate_output = None;
+    let screening: serde_json::Value = r.get("screening");
+    let first_rejection = screening
+        .get(0)
+        .filter(|record| record["result"]["verdict"] == "reject");
+    if let Some(record) = first_rejection {
+        add_critic_objections(&mut model_request, record);
+    }
+    for stage in usize::from(first_rejection.is_some())..2 {
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(125),
+            provider.propose_scoped(
+                parent_payload.clone(),
+                model_request.clone(),
+                policy.clone(),
+            ),
+        )
+        .await;
+        let (candidate, rationale) = match result {
+            Ok(Ok(output)) => output,
+            Ok(Err(reason)) => {
+                let error = if reason.starts_with("Proposal format rejected: ") && managed {
+                    "proposal-format-rejected"
+                } else {
+                    public_edit_error(
+                        reason
+                            .strip_prefix("Proposal format rejected: ")
+                            .unwrap_or(&reason),
+                    )
+                    .unwrap_or("provider request failed")
+                };
+                fail_proposal(&s, id, attempt, error).await;
+                return;
+            }
+            Err(_) => {
+                fail_proposal(&s, id, attempt, "provider timeout").await;
+                return;
+            }
+        };
+        let validation = crate::bundles::validate_payload(&candidate).and_then(|()| {
+            crate::proposal_edits::validate_changes(
+                &parent_payload,
+                &candidate,
+                &q,
+                policy.as_ref(),
+            )?;
+            crate::proposal_edits::validate_growth(&parent_payload, &candidate)
+        });
+        if let Err(reason) = validation {
+            fail_proposal(
+                &s,
+                id,
+                attempt,
+                public_edit_error(&reason).unwrap_or("provider returned invalid edits"),
             )
-            .bind(id)
-            .bind(attempt)
-            .execute(&s.db)
             .await;
             return;
         }
-    };
-    let (candidate, rationale) = output;
-    let validation = crate::bundles::validate_payload(&candidate).and_then(|()| {
-        crate::proposal_edits::validate_changes(&parent_payload, &candidate, &q, policy.as_ref())
-    });
-    if let Err(reason) = validation {
-        let _ = sqlx::query("UPDATE proposals SET status='failed',error=$3 WHERE id=$1 AND status='running' AND attempts=$2")
-            .bind(id).bind(attempt).bind(public_edit_error(&reason).unwrap_or("provider returned invalid edits"))
-            .execute(&s.db).await;
-        return;
+        if !managed {
+            candidate_output = Some((candidate, rationale, None));
+            break;
+        }
+        let changes = crate::proposal_edits::changed_files(&parent_payload, &candidate);
+        let data = serde_json::json!({
+            "request": q, "rationale": rationale, "changes": changes,
+            "parent": parent_payload
+        });
+        let verdict =
+            tokio::time::timeout(std::time::Duration::from_secs(60), provider.critique(data))
+                .await
+                .ok()
+                .and_then(Result::ok);
+        let record = serde_json::json!({
+            "stage": if stage == 0 { "initial" } else { "repair" },
+            "result": verdict,
+            "rationale": rationale,
+            "changes": crate::proposal_edits::edit_excerpts(&parent_payload, &candidate),
+        });
+        match verdict {
+            Some(crate::CriticVerdict::Accept { .. }) => {
+                candidate_output = Some((candidate, rationale, Some(record)));
+                break;
+            }
+            Some(crate::CriticVerdict::Reject { .. }) if stage == 0 => {
+                let recorded = sqlx::query("UPDATE proposals SET screening=jsonb_build_array($3::jsonb) WHERE id=$1 AND status='running' AND attempts=$2")
+                    .bind(id).bind(attempt).bind(&record).execute(&s.db).await;
+                if !matches!(recorded, Ok(result) if result.rows_affected() == 1) {
+                    return;
+                }
+                add_critic_objections(&mut model_request, &record);
+            }
+            verdict => {
+                let error = if verdict.is_some() {
+                    "critic-rejected"
+                } else {
+                    "critic-unavailable"
+                };
+                let _ = sqlx::query("UPDATE proposals SET status='failed',error=$3,screening=screening || jsonb_build_array($4::jsonb) WHERE id=$1 AND status='running' AND attempts=$2")
+                    .bind(id).bind(attempt).bind(error).bind(record).execute(&s.db).await;
+                return;
+            }
+        }
     }
+    let Some((candidate, rationale, screen)) = candidate_output else {
+        return;
+    };
     let bytes = match crate::encode_payload(&candidate) {
         Ok(bytes) => bytes,
         Err(_) => {
@@ -522,13 +621,13 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
         .await
         .is_err()
     {
-        let _ = sqlx::query("UPDATE proposals SET status='failed',error='provider candidate is incompatible with bundle target' WHERE id=$1 AND status='running' AND attempts=$2").bind(id).bind(attempt).execute(&mut *tx).await;
+        let _ = sqlx::query("UPDATE proposals SET status='failed',error='provider candidate is incompatible with bundle target',screening=screening || $3::jsonb WHERE id=$1 AND status='running' AND attempts=$2").bind(id).bind(attempt).bind(serde_json::json!(screen.into_iter().collect::<Vec<_>>())).execute(&mut *tx).await;
         let _ = tx.commit().await;
         return;
     }
     let vid = Uuid::new_v4();
     if sqlx::query("INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload,created_by,proposal_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)").bind(vid).bind(p).bind(b).bind(parent).bind(crate::digest(&bytes)).bind(bytes).bind(&requested_by).bind(id).execute(&mut *tx).await.is_err(){return}
-    let updated=sqlx::query("UPDATE proposals SET status='succeeded',candidate_version_id=$2,rationale=$3,error=NULL WHERE id=$1 AND status='running'").bind(id).bind(vid).bind(rationale).execute(&mut *tx).await;
+    let updated=sqlx::query("UPDATE proposals SET status='succeeded',candidate_version_id=$2,rationale=$3,error=NULL,screening=screening || $4::jsonb WHERE id=$1 AND status='running'").bind(id).bind(vid).bind(rationale).bind(serde_json::json!(screen.into_iter().collect::<Vec<_>>())).execute(&mut *tx).await;
     if !matches!(updated,Ok(result) if result.rows_affected()==1) {
         return;
     }
@@ -589,7 +688,7 @@ pub async fn list_proposals(
     let n = q.bounds()?;
     let bid = path(&b)?;
     let c = crate::pagination::decode("proposals", &p, bid, q.cursor.as_deref())?;
-    let rows=sqlx::query("SELECT p.id,p.parent_version_id AS proposal_parent_version_id,p.status,p.attempts,p.candidate_version_id,p.rationale,p.error,p.created_at,v.bundle_id,v.parent_version_id,v.digest,v.created_at AS v_created FROM proposals p LEFT JOIN versions v ON v.id=p.candidate_version_id WHERE p.project_id=$1 AND p.bundle_id=$2 AND ($3::timestamptz IS NULL OR (p.created_at,p.id)<($3,$4)) ORDER BY p.created_at DESC,p.id DESC LIMIT $5").bind(&p).bind(bid).bind(c.map(|x|x.0)).bind(c.map(|x|x.1)).bind(n+1).fetch_all(&mut *tx).await.map_err(db)?;
+    let rows=sqlx::query("SELECT p.id,p.parent_version_id AS proposal_parent_version_id,p.status,p.attempts,p.candidate_version_id,p.rationale,p.error,p.screening,p.created_at,v.bundle_id,v.parent_version_id,v.digest,v.created_at AS v_created FROM proposals p LEFT JOIN versions v ON v.id=p.candidate_version_id WHERE p.project_id=$1 AND p.bundle_id=$2 AND ($3::timestamptz IS NULL OR (p.created_at,p.id)<($3,$4)) ORDER BY p.created_at DESC,p.id DESC LIMIT $5").bind(&p).bind(bid).bind(c.map(|x|x.0)).bind(c.map(|x|x.1)).bind(n+1).fetch_all(&mut *tx).await.map_err(db)?;
     let items = rows
         .into_iter()
         .map(|r| Proposal {
@@ -609,6 +708,9 @@ pub async fn list_proposals(
                     created_at: r.get::<DateTime<Utc>, _>("v_created").to_rfc3339(),
                 }),
             rationale: r.get("rationale"),
+            screening: r
+                .get::<sqlx::types::Json<Vec<serde_json::Value>>, _>("screening")
+                .0,
             error: r.get("error"),
             created_at: r.get::<DateTime<Utc>, _>("created_at").to_rfc3339(),
         })

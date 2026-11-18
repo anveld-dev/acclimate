@@ -322,7 +322,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         project_id: p.clone(),
         rights: rights.iter().map(|right| (*right).into()).collect(),
     };
-    let app = router(AppState {
+    let state = AppState {
         access: common::access(),
         runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
         db: db.clone(),
@@ -334,7 +334,8 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             grant("evaluator", &["read", "write"]),
         ]),
         provider: None,
-    });
+    };
+    let app = router(state.clone());
     let connection = format!("/v1/projects/{p}/integrations/{enrollment_id}");
     let sibling = format!("/v1/projects/{p}/integrations/{sibling_id}");
     let enrollment = format!("{connection}/learning");
@@ -439,7 +440,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     let current = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;
     assert_eq!(current["automaticRollout"], false);
     assert_eq!(current["automaticRollback"], true);
-    assert_eq!(current["authorizedBy"], "other-operator");
+    assert_eq!(current["authorizedBy"], "owner");
     stale_rollback["automaticRollout"] = json!(false);
     stale_rollback["expectedAutomaticRollout"] = json!(false);
     let applied = call(&app, "PUT", &enrollment, "owner", stale_rollback).await;
@@ -450,6 +451,17 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     assert_eq!(edited.0, StatusCode::OK);
     assert_eq!(edited.1["automaticRollout"], true);
     assert_eq!(edited.1["automaticRollback"], false);
+    let authorizations: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM connected_learning_authorizations
+        WHERE (project_id,integration_id)=($1,$2)",
+    )
+    .bind(&p)
+    .bind(enrollment_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(authorizations, 2);
+
     let mut settings = settings;
     settings["automaticRollback"] = json!(true);
     assert_eq!(
@@ -797,6 +809,280 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         true
     );
 
+    let round_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM connected_learning_rounds WHERE audit_request_id=$1")
+            .bind(audit_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    sqlx::query(
+        "UPDATE connected_learning_rounds SET state='awaiting_review',
+        audit_comparison_id=$2,review_started_at=now()-interval '15 days' WHERE id=$1",
+    )
+    .bind(round_id)
+    .bind(audit_comparison)
+    .execute(&db)
+    .await
+    .unwrap();
+    let expired = call(
+        &app,
+        "POST",
+        &format!("{enrollment}/rounds/{round_id}/review"),
+        "owner",
+        json!({"approve":true}),
+    )
+    .await;
+    assert_eq!(expired.0, StatusCode::CONFLICT);
+    let decision: (String, bool) =
+        sqlx::query_as("SELECT decision,audit_released FROM connected_learning_rounds WHERE id=$1")
+            .bind(round_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(decision, ("expired_review".into(), false));
+
+    // An old queue timestamp does not expire a newly started evaluation.
+    sqlx::query(
+        "UPDATE connected_learning_rounds SET state='audit',decision=NULL,
+        audit_comparison_id=NULL,consecutive_failures=4 WHERE id=$1",
+    )
+    .bind(round_id)
+    .execute(&db)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE comparisons SET complete=false WHERE id=$1")
+        .bind(audit_comparison)
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE evaluation_requests SET status='running',created_at=now()-interval '2 days',
+        started_at=now(),evaluator_principal='evaluator',attempt_id=$2 WHERE id=$1",
+    )
+    .bind(audit_id)
+    .bind(Uuid::new_v4())
+    .execute(&db)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE connected_learning_corrections SET pending=false WHERE correction_id=$1")
+        .bind(correction_id)
+        .execute(&db)
+        .await
+        .unwrap();
+    let worker = tokio::spawn(acclimate_service::connected_learning_worker(state.clone()));
+    let wait_for_round = async |expected: &str, expected_failures: i32| {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                let row: (String, i32) = sqlx::query_as(
+                    "SELECT state,consecutive_failures FROM connected_learning_rounds WHERE id=$1",
+                )
+                .bind(round_id)
+                .fetch_one(&db)
+                .await
+                .unwrap();
+                if row.0 == expected && row.1 == expected_failures {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .unwrap();
+    };
+    wait_for_round("audit", 0).await;
+    sqlx::query("UPDATE evaluation_requests SET started_at=now()-interval '2 days' WHERE id=$1")
+        .bind(audit_id)
+        .execute(&db)
+        .await
+        .unwrap();
+    wait_for_round("rejected", 0).await;
+    let released: bool =
+        sqlx::query_scalar("SELECT audit_released FROM connected_learning_rounds WHERE id=$1")
+            .bind(round_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(released);
+
+    // A malformed terminal evaluation trips the consecutive failure limit.
+    sqlx::query("UPDATE evaluation_requests SET body='{}' WHERE id=$1")
+        .bind(audit_id)
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE connected_learning_rounds SET state='audit',audit_released=false,
+        consecutive_failures=4,next_tick_at=now() WHERE id=$1",
+    )
+    .bind(round_id)
+    .execute(&db)
+    .await
+    .unwrap();
+    wait_for_round("rejected", 5).await;
+    sqlx::query(
+        "UPDATE connected_learning_corrections SET pending=true,lesson='{}' WHERE correction_id=$1",
+    )
+    .bind(correction_id)
+    .execute(&db)
+    .await
+    .unwrap();
+    let calibration = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let view = call(&app, "GET", &work, "evaluator", Value::Null).await.1;
+            if let Some(item) = view["items"]
+                .as_array()
+                .and_then(|items| items.iter().find(|item| item["phase"] == "calibration"))
+            {
+                break item["evaluationRequestId"].as_str().unwrap().to_owned();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let bundle_path = format!("/v1/projects/{p}/bundles/{bundle}");
+    let calibration_path = format!("{bundle_path}/evaluation-requests/{calibration}");
+    let attempt = Uuid::new_v4().to_string();
+    let response = call(
+        &app,
+        "POST",
+        &format!("{calibration_path}/start"),
+        "evaluator",
+        json!({"attemptId":attempt}),
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::OK, "{}", response.1);
+    assert_eq!(
+        response.1["parentVersionId"],
+        response.1["candidateVersionId"]
+    );
+    let mut report = response.1;
+    report.as_object_mut().unwrap().retain(|key, _| {
+        matches!(
+            key.as_str(),
+            "parentVersionId"
+                | "parentDigest"
+                | "candidateVersionId"
+                | "candidateDigest"
+                | "datasetRevision"
+                | "runtime"
+                | "graderRevision"
+                | "expectedCases"
+        )
+    });
+    let calibration_outcome =
+        json!({"executionStatus":"completed","gradingStatus":"scored","reward":0});
+    report["results"] = json!(report["expectedCases"].as_array().unwrap().iter().map(|key|
+        json!({"caseId":key["caseId"],"repetition":key["repetition"],"parent":calibration_outcome,"candidate":calibration_outcome})
+    ).collect::<Vec<_>>());
+    report["evaluation"] = json!({"requestId":calibration,"attemptId":attempt});
+    let comparison = call(
+        &app,
+        "POST",
+        &format!("{bundle_path}/comparisons"),
+        "evaluator",
+        report,
+    )
+    .await;
+    assert_eq!(comparison.0, StatusCode::CREATED, "{}", comparison.1);
+    let finished = call(
+        &app,
+        "POST",
+        &format!("{calibration_path}/finish"),
+        "evaluator",
+        json!({"attemptId":attempt,"comparisonId":comparison.1["id"]}),
+    )
+    .await;
+    assert_eq!(finished.0, StatusCode::OK, "{}", finished.1);
+    assert_eq!(finished.1["status"], "completed");
+    let malformed = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let reason: Option<String> = sqlx::query_scalar(
+                "SELECT reason FROM connected_learning_rounds WHERE correction_id=$1 AND state='rejected'",
+            )
+            .bind(correction_id)
+            .fetch_optional(&db)
+            .await
+            .unwrap();
+            if let Some(reason) = reason {
+                break reason;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    }).await.unwrap();
+    assert_eq!(malformed, "Missing lesson path");
+    // Seed a developed search edge, then promote the source through the public API.
+    // The worker must persist the reset even without another admitted correction.
+    sqlx::query(
+        "INSERT INTO connected_learning_incumbent_events
+         (project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,source_revision,
+          version_id,parent_version_id,round_id,development_comparison_id,chain_length,reason)
+         SELECT project_id,integration_id,policy_epoch,parent_version_id,parent_revision,1,
+          candidate_version_id,parent_version_id,id,development_comparison_id,1,'development accepted'
+         FROM connected_learning_rounds WHERE id=$1",
+    )
+    .bind(round_id)
+    .execute(&db)
+    .await
+    .unwrap();
+    let source_change = call(
+        &app,
+        "POST",
+        &format!("/v1/projects/{p}/bundles/{bundle}/channels/stable/promotions"),
+        "owner",
+        json!({"expectedRevision":"1","versionId":baseline,"unevaluatedReason":"Review source again"}),
+    )
+    .await;
+    assert_eq!(source_change.0, StatusCode::CREATED, "{}", source_change.1);
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let latest: (Uuid, i32, String) = sqlx::query_as(
+                "SELECT version_id,chain_length,reason FROM connected_learning_incumbent_events
+                 WHERE (project_id,integration_id)=($1,$2) ORDER BY sequence DESC LIMIT 1",
+            )
+            .bind(&p)
+            .bind(enrollment_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+            if latest.1 == 0 {
+                assert_eq!(latest, (baseline, 0, "published channel changed".into()));
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let ancestry: (Uuid, Uuid, Uuid) = sqlx::query_as(
+        "SELECT version_id,parent_version_id,development_comparison_id
+         FROM connected_learning_incumbent_events WHERE round_id=$1 AND reason='development accepted'",
+    )
+    .bind(round_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(ancestry, (replacement, baseline, development_comparison));
+    state.runtime.begin_draining();
+    worker.await.unwrap();
+    let inspected = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;
+    assert!(inspected["rounds"].as_array().unwrap().iter().any(|row| {
+        row["id"] == json!(round_id)
+            && row["reason"]
+                .as_str()
+                .is_some_and(|reason| reason.contains("Invalid stored evaluation request"))
+    }));
+    sqlx::query("UPDATE comparisons SET complete=true WHERE id=$1")
+        .bind(audit_comparison)
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE connected_learning_rounds SET audit_released=false WHERE id=$1")
+        .bind(round_id)
+        .execute(&db)
+        .await
+        .unwrap();
+
     let private_channel = format!("learn-{enrollment_id}");
     sqlx::query(
         "UPDATE channels SET revision=2,version_id=$4 WHERE (project_id,bundle_id,name)=($1,$2,$3)",
@@ -812,8 +1098,10 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     sqlx::query("INSERT INTO promotions(id,project_id,bundle_id,channel,revision,version_id,previous_version_id,comparison_id,reviewer) VALUES($1,$2,$3,$4,2,$5,$6,$7,'fixture')")
         .bind(promotion).bind(&p).bind(bundle).bind(&private_channel).bind(replacement)
         .bind(baseline).bind(audit_comparison).execute(&db).await.unwrap();
-    sqlx::query("UPDATE connected_learning_rounds SET state='promoted',promotion_id=$1,audit_comparison_id=$2 WHERE project_id=$3 AND integration_id=$4")
-        .bind(promotion).bind(audit_comparison).bind(&p).bind(enrollment_id).execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO connected_learning_field_releases(promotion_id,control_version_id) VALUES($1,$2)")
+        .bind(promotion).bind(baseline).execute(&db).await.unwrap();
+    sqlx::query("UPDATE connected_learning_rounds SET state='promoted',promotion_id=$1,audit_comparison_id=$2 WHERE id=$3")
+        .bind(promotion).bind(audit_comparison).bind(round_id).execute(&db).await.unwrap();
 
     let receipt_route = format!("{connection}/receipts");
     let stale_id = Uuid::new_v4();
@@ -991,7 +1279,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         "target":{"kind":"source", "revision":"1", "versionId":replacement}
     });
     let published = call(&app, "POST", &format!("{resolve}/promotions"), "owner",
-        json!({"expectedRevision":"1","versionId":replacement,"unevaluatedReason":"Reviewed source update"})).await;
+        json!({"expectedRevision":"2","versionId":replacement,"unevaluatedReason":"Reviewed source update"})).await;
     assert_eq!(published.0, StatusCode::CREATED, "{}", published.1);
     assert_eq!(
         call(&app, "POST", &restore, "owner", refresh.clone())
@@ -999,7 +1287,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             .0,
         StatusCode::CONFLICT
     );
-    refresh["target"]["revision"] = json!("2");
+    refresh["target"]["revision"] = json!("3");
     let updated = call(&app, "POST", &restore, "owner", refresh).await;
     assert_eq!(updated.0, StatusCode::OK, "{}", updated.1);
     assert_eq!(updated.1["revision"], "4");

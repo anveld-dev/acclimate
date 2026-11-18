@@ -353,6 +353,7 @@ type LearningStatus = Pick<
   | 'enabled'
   | 'auditCount'
   | 'remainingAudits'
+  | 'noiseCalibration'
   | 'renewalRevision'
   | 'proposalAdmissions'
   | 'maxProposalAdmissions'
@@ -729,25 +730,29 @@ export async function connectionLearning(
     ): Promise<BlockingLearningPolicy[] | null | undefined> {
       if (round.state !== 'awaiting_review' || !round.candidateVersionId) return;
       try {
-        const receipts = await client.listCandidatePolicyReceipts(
-          projectId,
-          bundleId,
-          round.candidateVersionId,
+        const versions = new Set([round.candidateVersionId]);
+        if (round.developmentCandidateVersionId) versions.add(round.developmentCandidateVersionId);
+        const receipts = await Promise.all(
+          [...versions].map((version) =>
+            client.listCandidatePolicyReceipts(projectId, bundleId, version),
+          ),
         );
-        return receipts.items.flatMap(({ comparisonId, requestId, policy, verdict }) =>
-          verdict === 'fail' || verdict === 'indeterminate'
-            ? [
-                {
-                  comparisonId,
-                  requestId,
-                  policyId: policy.id,
-                  revision: policy.revision,
-                  policyDigest: policy.sha256,
-                  verdict,
-                },
-              ]
-            : [],
-        );
+        return receipts
+          .flatMap(({ items }) => items)
+          .flatMap(({ comparisonId, requestId, policy, verdict }) =>
+            verdict === 'fail' || verdict === 'indeterminate'
+              ? [
+                  {
+                    comparisonId,
+                    requestId,
+                    policyId: policy.id,
+                    revision: policy.revision,
+                    policyDigest: policy.sha256,
+                    verdict,
+                  },
+                ]
+              : [],
+          );
       } catch {
         return null;
       }
@@ -761,6 +766,7 @@ export async function connectionLearning(
         automaticRollback: status.automaticRollback,
         auditCount: status.auditCount,
         remainingAudits: status.remainingAudits,
+        noiseCalibration: status.noiseCalibration,
         renewalRevision: status.renewalRevision,
         proposalAdmissions: status.proposalAdmissions,
         maxProposalAdmissions: status.maxProposalAdmissions,
@@ -803,8 +809,10 @@ export async function connectionLearning(
             parentVersionId: round.parentVersionId,
             candidateVersionId: round.candidateVersionId,
             proposalId: round.proposalId,
-            developmentRequestId: round.developmentRequestId,
-            developmentComparisonId: round.developmentComparisonId,
+            developmentRequestId:
+              round.cumulativeDevelopmentRequestId ?? round.developmentRequestId,
+            developmentComparisonId:
+              round.cumulativeDevelopmentComparisonId ?? round.developmentComparisonId,
             auditRequestId: round.auditRequestId,
             auditComparisonId: round.auditComparisonId,
             promotionId: round.promotionId,

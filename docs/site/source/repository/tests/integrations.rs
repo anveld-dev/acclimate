@@ -25,13 +25,19 @@ async fn call_with_key(
     body: Value,
     key: Option<&str>,
 ) -> (StatusCode, Value) {
+    let (bearer, session) = token
+        .strip_prefix("browser:")
+        .map_or((token, ""), |secret| (common::CONSOLE_TOKEN, secret));
+    let mut request = Request::builder().header("authorization", format!("Bearer {bearer}"));
+    if !session.is_empty() {
+        request = request.header("x-acclimate-session", session);
+    }
     let response = app
         .clone()
         .oneshot(
-            Request::builder()
+            request
                 .method(method)
                 .uri(path)
-                .header("authorization", format!("Bearer {token}"))
                 .header("content-type", "application/json")
                 .header(
                     "idempotency-key",
@@ -335,6 +341,27 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         ]),
         provider: None,
     };
+    use sha2::{Digest, Sha256};
+    let user = Uuid::new_v4();
+    let secret = Uuid::new_v4().to_string();
+    let owner_token = format!("browser:{secret}");
+    let owner = owner_token.as_str();
+    sqlx::query("INSERT INTO users(id,issuer,subject) VALUES($1,'fixture',$2)")
+        .bind(user)
+        .bind(user.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO project_memberships(project_id,user_id,role) VALUES($1,$2,'admin')")
+        .bind(&p)
+        .bind(user)
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO browser_sessions(id,user_id,secret_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')")
+        .bind(Uuid::new_v4()).bind(user)
+        .bind(format!("sha256:{}",hex::encode(Sha256::digest(secret.as_bytes()))))
+        .execute(&db).await.unwrap();
     let app = router(state.clone());
     let connection = format!("/v1/projects/{p}/integrations/{enrollment_id}");
     let sibling = format!("/v1/projects/{p}/integrations/{sibling_id}");
@@ -359,6 +386,12 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
       "development":descriptor("dev"),"audits":[descriptor("audit")],"automaticRollout":true,
       "outcomePrincipal":"outcome","evaluatorPrincipal":"evaluator",
     });
+    assert_eq!(
+        call(&app, "PUT", &enrollment, "owner", settings.clone())
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
     let legacy_endpoint = format!("/v1/projects/{p}/integrations/{legacy_id}/learning");
     let dev = descriptor("legacy-dev");
     let audit = descriptor("legacy-audit");
@@ -375,21 +408,21 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         .remove("fixtureProtocol");
     // Previous schemas allowed declared fingerprints without checking the installed fixtures.
     assert_eq!(
-        call(&app, "PUT", &legacy_endpoint, "owner", legacy.clone())
+        call(&app, "PUT", &legacy_endpoint, owner, legacy.clone())
             .await
             .0,
         StatusCode::BAD_REQUEST
     );
     legacy["automaticRollout"] = json!(false);
     assert_eq!(
-        call(&app, "PUT", &legacy_endpoint, "owner", legacy.clone())
+        call(&app, "PUT", &legacy_endpoint, owner, legacy.clone())
             .await
             .0,
         StatusCode::OK
     );
     legacy["automaticRollout"] = json!(true);
     assert_eq!(
-        call(&app, "PUT", &legacy_endpoint, "owner", legacy.clone())
+        call(&app, "PUT", &legacy_endpoint, owner, legacy.clone())
             .await
             .0,
         StatusCode::BAD_REQUEST
@@ -404,16 +437,16 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         &app,
         "POST",
         &format!("{legacy_endpoint}/renew"),
-        "owner",
+        owner,
         renew_legacy,
     )
     .await;
     assert_eq!(upgraded.0, StatusCode::OK, "{}", upgraded.1);
     legacy["development"] = dev;
     legacy["audits"].as_array_mut().unwrap().push(fresh);
-    let enabled = call(&app, "PUT", &legacy_endpoint, "owner", legacy).await;
+    let enabled = call(&app, "PUT", &legacy_endpoint, owner, legacy).await;
     assert_eq!(enabled.0, StatusCode::OK, "{}", enabled.1);
-    let upgraded = call(&app, "GET", &legacy_endpoint, "owner", Value::Null)
+    let upgraded = call(&app, "GET", &legacy_endpoint, owner, Value::Null)
         .await
         .1;
     assert_eq!(upgraded["auditCount"], 2);
@@ -423,14 +456,14 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         &app,
         "PUT",
         &enrollment,
-        "owner",
+        owner,
         settings.clone(),
         Some(&enrollment_key),
     )
     .await;
     assert_eq!(actual.0, StatusCode::OK, "{}", actual.1);
     assert_eq!(
-        call(&app, "PUT", &enrollment, "owner", settings.clone()).await,
+        call(&app, "PUT", &enrollment, owner, settings.clone()).await,
         actual
     );
     assert_eq!(actual.1["automaticRollback"], true);
@@ -450,7 +483,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             &app,
             "PUT",
             &enrollment,
-            "owner",
+            owner,
             settings.clone(),
             Some(&enrollment_key)
         )
@@ -462,7 +495,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             &app,
             "PUT",
             &enrollment,
-            "owner",
+            owner,
             stale_rollback.clone(),
             Some(&enrollment_key)
         )
@@ -470,19 +503,19 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         .0,
         StatusCode::CONFLICT
     );
-    let stale = call(&app, "PUT", &enrollment, "owner", stale_rollback.clone()).await;
+    let stale = call(&app, "PUT", &enrollment, owner, stale_rollback.clone()).await;
     assert_eq!(stale.0, StatusCode::CONFLICT);
-    let current = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;
+    let current = call(&app, "GET", &enrollment, owner, Value::Null).await.1;
     assert_eq!(current["automaticRollout"], false);
     assert_eq!(current["automaticRollback"], true);
-    assert_eq!(current["authorizedBy"], "owner");
+    assert_eq!(current["authorizedBy"], format!("user:{user}"));
     stale_rollback["automaticRollout"] = json!(false);
     stale_rollback["expectedAutomaticRollout"] = json!(false);
-    let applied = call(&app, "PUT", &enrollment, "owner", stale_rollback).await;
+    let applied = call(&app, "PUT", &enrollment, owner, stale_rollback).await;
     assert_eq!(applied.0, StatusCode::OK);
     assert_eq!(applied.1["automaticRollout"], false);
     assert_eq!(applied.1["automaticRollback"], false);
-    let edited = call(&app, "PUT", &enrollment, "owner", settings.clone()).await;
+    let edited = call(&app, "PUT", &enrollment, owner, settings.clone()).await;
     assert_eq!(edited.0, StatusCode::OK);
     assert_eq!(edited.1["automaticRollout"], true);
     assert_eq!(edited.1["automaticRollback"], false);
@@ -500,7 +533,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     let mut settings = settings;
     settings["automaticRollback"] = json!(true);
     assert_eq!(
-        call(&app, "PUT", &enrollment, "owner", settings.clone()).await,
+        call(&app, "PUT", &enrollment, owner, settings.clone()).await,
         actual
     );
     let limited = call(&app, "GET", &enrollment, "outcome", Value::Null)
@@ -532,8 +565,8 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     sqlx::query("UPDATE connected_learning_enrollments SET proposal_admissions=1 WHERE project_id=$1 AND integration_id=$2")
         .bind(&p).bind(enrollment_id).execute(&mut *reservation).await.unwrap();
     let (first, second, ()) = tokio::join!(
-        call(&app, "POST", &renew, "owner", append.clone()),
-        call(&app, "POST", &renew, "owner", competing.clone()),
+        call(&app, "POST", &renew, owner, append.clone()),
+        call(&app, "POST", &renew, owner, competing.clone()),
         async { reservation.commit().await.unwrap() }
     );
     let (applied, applied_body, stale_body) = if first.0 == StatusCode::OK {
@@ -547,26 +580,26 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     assert_eq!(applied.1["proposalAdmissions"], 1);
     assert_eq!(applied.1["appliedRenewalRevision"], 1);
     assert_eq!(
-        call(&app, "POST", &renew, "owner", applied_body.clone()).await,
+        call(&app, "POST", &renew, owner, applied_body.clone()).await,
         applied
     );
     let mut changed_retry = applied_body;
     changed_retry["proposalAdmissions"] = json!(0);
     changed_retry["audits"] = json!([descriptor("changed-retry")]);
     assert_eq!(
-        call(&app, "POST", &renew, "owner", changed_retry).await.0,
+        call(&app, "POST", &renew, owner, changed_retry).await.0,
         StatusCode::CONFLICT
     );
     let mut next = stale_body;
     next["expectedRevision"] = json!(1);
-    let second_window = call(&app, "POST", &renew, "owner", next).await;
+    let second_window = call(&app, "POST", &renew, owner, next).await;
     assert_eq!(second_window.0, StatusCode::OK, "{}", second_window.1);
     assert_eq!(second_window.1["maxProposalAdmissions"], 103);
     assert_eq!(second_window.1["proposalAdmissions"], 1);
     let same_dataset = json!({"renewalId":Uuid::new_v4(),"expectedRevision":2,
                               "proposalAdmissions":0,"audits":[descriptor("audit")]});
     assert_eq!(
-        call(&app, "POST", &renew, "owner", same_dataset).await.0,
+        call(&app, "POST", &renew, owner, same_dataset).await.0,
         StatusCode::CONFLICT
     );
     for (field, fingerprint) in [
@@ -587,7 +620,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
                 &app,
                 "PUT",
                 &format!("{sibling}/learning"),
-                "owner",
+                owner,
                 sibling_settings
             )
             .await
@@ -607,14 +640,8 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     concurrent_enrollment["audits"] = json!([concurrent_audit]);
     let sibling_learning = format!("{sibling}/learning");
     let (left, right) = tokio::join!(
-        call(&app, "POST", &renew, "owner", concurrent_renewal),
-        call(
-            &app,
-            "PUT",
-            &sibling_learning,
-            "owner",
-            concurrent_enrollment
-        ),
+        call(&app, "POST", &renew, owner, concurrent_renewal),
+        call(&app, "PUT", &sibling_learning, owner, concurrent_enrollment),
     );
     assert!(
         (left.0 == StatusCode::OK && right.0 == StatusCode::CONFLICT)
@@ -637,7 +664,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             &app,
             "POST",
             &format!("{path}/credentials"),
-            "owner",
+            owner,
             json!({"kind":"content-read"}),
         )
         .await;
@@ -648,7 +675,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         &app,
         "POST",
         &format!("{connection}/credentials"),
-        "owner",
+        owner,
         json!({"kind":"receipt-write"}),
     )
     .await;
@@ -805,7 +832,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             call(&app, "GET", &private, "observer", Value::Null).await.0,
             StatusCode::NOT_FOUND
         );
-        for authorized in ["evaluator", "owner"] {
+        for authorized in ["evaluator", owner] {
             assert_eq!(
                 call(&app, "GET", &private, authorized, Value::Null).await.0,
                 StatusCode::OK
@@ -863,7 +890,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         &app,
         "POST",
         &format!("{enrollment}/rounds/{round_id}/review"),
-        "owner",
+        owner,
         json!({"approve":true}),
     )
     .await;
@@ -1064,7 +1091,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         &app,
         "POST",
         &format!("/v1/projects/{p}/bundles/{bundle}/channels/stable/promotions"),
-        "owner",
+        owner,
         json!({"expectedRevision":"1","versionId":baseline,"unevaluatedReason":"Review source again"}),
     )
     .await;
@@ -1164,7 +1191,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     assert_eq!(admissions, before + 1);
     state.runtime.begin_draining();
     worker.await.unwrap();
-    let inspected = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;
+    let inspected = call(&app, "GET", &enrollment, owner, Value::Null).await.1;
     assert!(inspected["rounds"].as_array().unwrap().iter().any(|row| {
         row["id"] == json!(round_id)
             && row["reason"]
@@ -1265,7 +1292,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         &app,
         "GET",
         &format!("{channels}?limit=1"),
-        "owner",
+        owner,
         Value::Null,
     )
     .await;
@@ -1276,7 +1303,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         &app,
         "GET",
         &format!("{channels}?limit=1&cursor={cursor}"),
-        "owner",
+        owner,
         Value::Null,
     )
     .await;
@@ -1301,7 +1328,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             &app,
             "GET",
             &format!("{channels}/{private_channel}"),
-            "owner",
+            owner,
             Value::Null
         )
         .await
@@ -1326,7 +1353,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             &app,
             "POST",
             &format!("{enrollment}/stop"),
-            "owner",
+            owner,
             Value::Null
         )
         .await
@@ -1350,7 +1377,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         "restoreId":Uuid::new_v4(), "expectedRevision":"2", "reason":"Restore previously reviewed instructions",
         "target":{"kind":"delivery", "versionId":baseline, "revision":"1"}
     });
-    let available = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;
+    let available = call(&app, "GET", &enrollment, owner, Value::Null).await.1;
     assert!(
         available["restoreTargets"]
             .as_array()
@@ -1366,8 +1393,8 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         );
     }
     let (restored, concurrent_retry) = tokio::join!(
-        call(&app, "POST", &restore, "owner", reviewed.clone()),
-        call(&app, "POST", &restore, "owner", reviewed.clone()),
+        call(&app, "POST", &restore, owner, reviewed.clone()),
+        call(&app, "POST", &restore, owner, reviewed.clone()),
     );
     assert_eq!(restored.0, StatusCode::OK, "{}", restored.1);
     assert_eq!(concurrent_retry, restored);
@@ -1377,33 +1404,31 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         "restoreId":Uuid::new_v4(), "expectedRevision":"3", "reason":"Adopt an operator-reviewed source correction",
         "target":{"kind":"source", "revision":"1", "versionId":replacement}
     });
-    let published = call(&app, "POST", &format!("{resolve}/promotions"), "owner",
+    let published = call(&app, "POST", &format!("{resolve}/promotions"), owner,
         json!({"expectedRevision":"2","versionId":replacement,"unevaluatedReason":"Reviewed source update"})).await;
     assert_eq!(published.0, StatusCode::CREATED, "{}", published.1);
     assert_eq!(
-        call(&app, "POST", &restore, "owner", refresh.clone())
-            .await
-            .0,
+        call(&app, "POST", &restore, owner, refresh.clone()).await.0,
         StatusCode::CONFLICT
     );
     refresh["target"]["revision"] = json!("3");
-    let updated = call(&app, "POST", &restore, "owner", refresh).await;
+    let updated = call(&app, "POST", &restore, owner, refresh).await;
     assert_eq!(updated.0, StatusCode::OK, "{}", updated.1);
     assert_eq!(updated.1["revision"], "4");
     assert_eq!(
-        call(&app, "POST", &restore, "owner", reviewed.clone()).await,
+        call(&app, "POST", &restore, owner, reviewed.clone()).await,
         restored
     );
     let mut reused = reviewed.clone();
     reused["reason"] = json!("different review");
     assert_eq!(
-        call(&app, "POST", &restore, "owner", reused).await.0,
+        call(&app, "POST", &restore, owner, reused).await.0,
         StatusCode::CONFLICT
     );
     let mut stale = reviewed;
     stale["restoreId"] = json!(Uuid::new_v4());
     assert_eq!(
-        call(&app, "POST", &restore, "owner", stale).await.0,
+        call(&app, "POST", &restore, owner, stale).await.0,
         StatusCode::CONFLICT
     );
     assert_eq!(

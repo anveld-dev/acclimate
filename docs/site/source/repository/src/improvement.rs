@@ -118,6 +118,7 @@ pub async fn create_comparison(
         validate_comparison(&q).map_err(|e| err(StatusCode::BAD_REQUEST, "invalid_content", e))?;
     let bid = path(&b)?;
     crate::evaluations::validate_submission(&mut command.tx, &p, bid, &q, &a.principal).await?;
+    crate::connected_learning::parent_cache::verify(&mut command.tx, &q).await?;
     for (id, dig) in [
         (&q.parent_version_id, &q.parent_digest),
         (&q.candidate_version_id, &q.candidate_digest),
@@ -166,7 +167,7 @@ pub async fn create_comparison(
         ));
     }
     let id = Uuid::new_v4();
-    let r=sqlx::query("INSERT INTO comparisons(id,project_id,bundle_id,body,complete,submitter) VALUES($1,$2,$3,$4,$5,$6) RETURNING created_at").bind(id).bind(&p).bind(bid).bind(serde_json::to_value(&q).map_err(db)?).bind(complete).bind(&a.principal).fetch_one(&mut *command.tx).await.map_err(db)?;
+    let r=sqlx::query("INSERT INTO comparisons(id,project_id,bundle_id,body,complete,submitter,parent_source_comparison_id) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING created_at").bind(id).bind(&p).bind(bid).bind(serde_json::to_value(&q).map_err(db)?).bind(complete).bind(&a.principal).bind(q.parent_source_comparison_id).fetch_one(&mut *command.tx).await.map_err(db)?;
     crate::commands::finish_mutation(
         command,
         StatusCode::CREATED,

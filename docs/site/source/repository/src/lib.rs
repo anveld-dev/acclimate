@@ -417,6 +417,7 @@ mod validation_tests {
         };
         assert!(bundles::validate_payload(&p).is_err());
         let q = ComparisonRequest {
+            parent_source_comparison_id: None,
             evaluation: None,
             parent_version_id: "p".into(),
             candidate_version_id: "c".into(),

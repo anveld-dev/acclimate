@@ -107,13 +107,13 @@ pub(super) async fn submit(
     let served = sqlx::query(
         "SELECT p.id AS promotion_id,r.id AS round_id,f.control_version_id,f.rollback_promotion_id
          FROM connected_learning_outcomes o
-         JOIN promotions p ON (p.project_id,p.bundle_id,p.channel,p.version_id,p.revision)=(o.project_id,o.bundle_id,$5,o.version_id,o.delivery_revision)
+         JOIN promotions p ON (p.project_id,p.bundle_id,p.channel,p.version_id,p.revision)=(o.project_id,o.bundle_id,$5,o.version_id,o.observed_revision)
          JOIN connected_learning_field_releases f ON f.promotion_id=p.id
          LEFT JOIN connected_learning_rounds r ON r.promotion_id=p.id
          JOIN versions v ON (v.project_id,v.bundle_id,v.id)=(o.project_id,o.bundle_id,o.field_parent_version_id)
          WHERE (o.outcome_id,o.project_id,o.bundle_id,o.integration_id)=($1,$2,$3,$4)
            AND (v.id,v.digest)=($8,$9)
-           AND (o.version_id,o.delivery_revision,o.digest,o.started_receipt_id,o.submitted_by)=($6,$7,$10,$11,$12)",
+           AND (o.version_id,o.observed_revision,o.digest,o.started_receipt_id,o.submitted_by)=($6,$7,$10,$11,$12)",
     )
     .bind(verdict.outcome_id).bind(&connection.project).bind(connection.bundle).bind(integration)
     .bind(&connection.channel).bind(verdict.version_id).bind(revision)
@@ -141,7 +141,7 @@ pub(super) async fn submit(
     let (window_size, regressions) = window(&mut tx, release, verdict.parent_version_id).await?;
     let same_control = control == Some(verdict.parent_version_id);
     let withdraw = connection.automatic_rollback && regressions >= REGRESSION_THRESHOLD;
-    // Quarantine the failing bytes before the promotion trigger chooses a
+    // Quarantine the failing bytes before the promotion chooses a
     // comparison version for the restored release.
     sqlx::query("UPDATE connected_learning_field_releases
         SET validated=(validated OR $2) AND NOT (withdrawn OR $3),withdrawn=withdrawn OR $3 WHERE promotion_id=$1")
@@ -168,7 +168,7 @@ pub(super) async fn submit(
             &connection.project,
             connection.bundle,
             &connection.channel,
-            &connection.authorizer,
+            super::WORKER,
             PromoteRequest {
                 version_id: target.to_string(),
                 expected_revision: verdict.revision,
@@ -205,7 +205,9 @@ pub(super) async fn submit(
             )
             .await?;
         }
-        Some(crate::path(&promotion.id)?)
+        let id = crate::path(&promotion.id)?;
+        connection.record_automatic(&mut tx, id).await?;
+        Some(id)
     } else {
         None
     };
@@ -228,11 +230,12 @@ pub(super) async fn submit(
     }
     if let Some(round) = round
         && same_control
+        && existing_rollback.is_none()
     {
         // Preserve the recorded basis for a rollback even when later historical grades arrive.
         sqlx::query("UPDATE connected_learning_rounds SET field_audit_window_size=$2,field_audit_regressions=$3,
-                     rollback_promotion_id=$4,updated_at=now() WHERE id=$1 AND rollback_promotion_id IS NULL")
-            .bind(round).bind(window_size as i32).bind(regressions as i32).bind(promotion).execute(&mut *tx).await.map_err(db)?;
+                     updated_at=now() WHERE id=$1")
+            .bind(round).bind(window_size as i32).bind(regressions as i32).execute(&mut *tx).await.map_err(db)?;
     }
     let mut response = json!({"outcomeId":verdict.outcome_id,"accepted":true,"windowSize":window_size,"regressions":regressions});
     if let Some(promotion) = promotion {

@@ -148,11 +148,9 @@ pub(super) async fn check_required_replays(
     if eligible(tx, c, candidate, revision).await? {
         return Ok(true);
     }
-    let id: Uuid = round.get("id");
-    let (failed, expired): (bool, bool) = sqlx::query_as(
-        "SELECT EXISTS(SELECT FROM connected_field_requirements($1,$2,$3,$4) WHERE replay='regression'),
-           EXISTS(SELECT FROM connected_learning_rounds WHERE id=$5 AND updated_at < now()-interval '24 hours')")
-        .bind(&c.project).bind(c.integration).bind(candidate).bind(revision).bind(id).fetch_one(&mut **tx).await.map_err(db)?;
+    let failed: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT FROM connected_field_requirements($1,$2,$3,$4) WHERE replay='regression')")
+        .bind(&c.project).bind(c.integration).bind(candidate).bind(revision).fetch_one(&mut **tx).await.map_err(db)?;
     if failed {
         super::close(
             tx,
@@ -160,7 +158,7 @@ pub(super) async fn check_required_replays(
             "Withdrawn content failed a required field replay",
         )
         .await?;
-    } else if expired {
+    } else if round.get::<bool, _>("replay_expired") {
         super::close(
             tx,
             round,

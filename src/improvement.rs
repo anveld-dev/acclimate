@@ -454,6 +454,27 @@ async fn fail_proposal(s: &AppState, id: Uuid, attempt: i32, error: &str) {
         .bind(id).bind(attempt).bind(error).execute(&s.db).await;
 }
 
+/// Appends a rejected screening's objections to the repair request as critic-sourced evidence.
+fn add_critic_objections(request: &mut ProposalRequest, record: &serde_json::Value) {
+    let objections: Vec<&str> = record["result"]["objections"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    if objections.is_empty() {
+        return;
+    }
+    request.evidence.push(
+        serde_json::json!({
+            "source": "critic",
+            "field": "criticObjections",
+            "text": serde_json::json!(objections).to_string(),
+        })
+        .to_string(),
+    );
+}
+
 /// Records a failure whose kind drives managed-learning control flow.
 async fn fail_proposal_kind(s: &AppState, id: Uuid, attempt: i32, kind: &str) {
     let _ = sqlx::query("UPDATE proposals SET status='failed',error=$3,failure_kind=$3 WHERE id=$1 AND status='running' AND attempts=$2")
@@ -533,10 +554,19 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
     let first_rejection = screening
         .get(0)
         .filter(|record| record["result"]["verdict"] == "reject");
+    // The repair attempt sees the critic's objections as fenced, structured evidence.
+    let mut model_request = q.clone();
+    if let Some(record) = first_rejection {
+        add_critic_objections(&mut model_request, record);
+    }
     for stage in usize::from(first_rejection.is_some())..2 {
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(125),
-            provider.propose_classified(parent_payload.clone(), q.clone(), policy.clone()),
+            provider.propose_classified(
+                parent_payload.clone(),
+                model_request.clone(),
+                policy.clone(),
+            ),
         )
         .await;
         let (candidate, rationale) = match result {
@@ -642,6 +672,7 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
                 if !matches!(recorded, Ok(result) if result.rows_affected() == 1) {
                     return;
                 }
+                add_critic_objections(&mut model_request, &record);
             }
             verdict => {
                 let error = if verdict.is_some() {

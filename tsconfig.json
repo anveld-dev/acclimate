@@ -7,7 +7,6 @@
     "noEmit": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "baseUrl": ".",
     "paths": {
       "@acclimate/sdk": ["./packages/sdk/src/index.ts"],
       "@acclimate/sdk/validation": ["./packages/sdk/src/validation.ts"],

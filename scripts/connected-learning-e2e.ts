@@ -242,6 +242,18 @@ try {
         let edits = applyRules(
           fencedCorrection && !repair ? `${instruction} Only for fixture-order-1395.` : instruction,
         );
+        // A chain retry can batch both corrections against the reset baseline.
+        const expected = request.request.evidence
+          .filter(({ source, field }) => source === 'app' && field === 'expected')
+          .map(({ text }) => text);
+        if (
+          expected.includes('refund = Quote the refund window.') &&
+          expected.includes('refund-status = Ask for the receipt number.')
+        ) {
+          edits = applyRules(
+            'refund = Quote the refund window.\nrefund-status = Ask for the receipt number.',
+          );
+        }
         let skillOperations: object[] | undefined;
         if (instruction === 'Keep current behavior exactly.') edits = [];
         if (instruction === 'Create a reusable refund skill.') {
@@ -2054,10 +2066,32 @@ try {
       assert.equal(finished.rounds.filter((round) => round.auditRequestId).length, 1);
       assert.equal(finished.remainingAudits, apps.audits.length - 1);
       if (mode === 'audit-failure') {
+        const retry = await waitFor('rejected retry of the audit-failed chain', async () => {
+          return (await inspect()).rounds.find(
+            (round) =>
+              round.state === 'rejected' &&
+              round.includedCorrections?.some(
+                ({ outcomeId, attempt }) => outcomeId === firstId && attempt === 2,
+              ),
+          );
+        });
+        assert.deepEqual(
+          retry.includedCorrections?.map(({ outcomeId, attempt }) => [outcomeId, attempt]),
+          [
+            [firstId, 2],
+            [secondId, 2],
+          ],
+        );
+        assert.match(retry.reason ?? '', /previously audit-rejected/);
+        assert.equal(retry.developmentRequestId, null);
+        assert.equal(retry.auditRequestId, null);
+        assert.equal((await inspect()).remainingAudits, 1);
+
         const duplicate = await submit(connection, baseline, `${alpha}\n${beta}`);
         const rejectedDuplicate = await observe(connection, duplicate, 'rejected');
         assert.match(rejectedDuplicate.reason ?? '', /previously audit-rejected/);
         assert.equal(rejectedDuplicate.developmentRequestId, null);
+        assert.equal(rejectedDuplicate.auditRequestId, null);
         assert.equal((await inspect()).remainingAudits, 1);
       }
     }

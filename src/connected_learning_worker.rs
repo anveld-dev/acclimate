@@ -525,7 +525,7 @@ impl Connection {
     ) -> ApiResult<()> {
         let history = sqlx::query(
             "SELECT members.provenance,
-                    r.candidate_version_id,r.state,r.reason,r.decision,r.audit_request_id,
+                    r.candidate_version_id,r.state,r.decision,r.audit_request_id,r.audit_policy_rejected,
                     CASE WHEN (NOT members.has_lesson OR $5)
                            AND p.screening -> -1 -> 'scannerClean' = 'true'::jsonb
                          THEN p.rationale END AS rationale,
@@ -574,6 +574,8 @@ impl Connection {
             } else if row.get::<Option<String>, _>("decision").as_deref() == Some("review_declined")
             {
                 "review-declined"
+            } else if row.get::<bool, _>("audit_policy_rejected") {
+                "audit-rejected"
             } else if row.get::<Option<String>, _>("decision").as_deref() == Some("chain_discarded")
             {
                 "chain-discarded"
@@ -1264,18 +1266,23 @@ pub(crate) async fn close(tx: &mut Tx<'_>, round: &PgRow, reason: &str) -> ApiRe
     .execute(&mut **tx)
     .await
     .map_err(db)?;
-    let reset = sqlx::query(
-        "INSERT INTO connected_learning_incumbent_events
-            (project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,source_revision,
-             version_id,round_id,chain_length,reason)
-         SELECT project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,source_revision,
-            baseline_version_id,$1,0,$2
-         FROM (SELECT h.* FROM connected_learning_incumbent_events h JOIN connected_learning_rounds r
-            ON (h.project_id,h.integration_id,h.policy_epoch)=(r.project_id,r.integration_id,r.policy_epoch)
-            WHERE r.id=$1 ORDER BY h.sequence DESC LIMIT 1) head
-         WHERE head.round_id=$1 AND head.chain_length>0",
-    ).bind(id).bind(reason).execute(&mut **tx).await.map_err(db)?;
-    if reset.rows_affected() != 0 {
+    let discarded_length: Option<i32> = sqlx::query_scalar(
+        "WITH head AS (
+             SELECT h.* FROM connected_learning_incumbent_events h JOIN connected_learning_rounds r
+               ON (h.project_id,h.integration_id,h.policy_epoch)=(r.project_id,r.integration_id,r.policy_epoch)
+             WHERE r.id=$1 ORDER BY h.sequence DESC LIMIT 1
+         ), reset AS (
+             INSERT INTO connected_learning_incumbent_events
+                 (project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,source_revision,
+                  version_id,round_id,chain_length,reason)
+             SELECT project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,source_revision,
+                 baseline_version_id,$1,0,$2
+             FROM head WHERE round_id=$1 AND chain_length>0
+             RETURNING sequence
+         )
+         SELECT head.chain_length FROM head CROSS JOIN reset",
+    ).bind(id).bind(reason).fetch_optional(&mut **tx).await.map_err(db)?;
+    if let Some(length) = discarded_length {
         discard_developed(
             tx,
             &round.get::<String, _>("project_id"),
@@ -1283,9 +1290,12 @@ pub(crate) async fn close(tx: &mut Tx<'_>, round: &PgRow, reason: &str) -> ApiRe
             round.get("policy_epoch"),
         )
         .await?;
-        if round
-            .get::<Option<chrono::DateTime<chrono::Utc>>, _>("developed_at")
-            .is_some()
+        // A multi-step chain head can go directly to audit without waiting in
+        // the developed state. Retry it along with the earlier discarded steps.
+        if length > 1
+            || round
+                .get::<Option<chrono::DateTime<chrono::Utc>>, _>("developed_at")
+                .is_some()
         {
             requeue_correction(tx, round).await?;
         }

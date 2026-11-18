@@ -331,9 +331,10 @@ def open_rejected(context):
 @then('I see the audit rejection reason and cannot approve that round')
 def visible_rejection(context):
     region = context.world.browser_fixture.page.get_by_role('region', name='Continuous learning')
-    expect(region.get_by_text('Maximum case regression exceeded', exact=True)).to_be_visible()
+    assert context.world.round['reason']
+    expect(region.get_by_text(context.world.round['reason'], exact=True)).to_be_visible()
     expect(region.get_by_role('button', name='Review rollout', exact=True)).to_have_count(0)
-    expect(region.get_by_role('link', name='View development evidence')).to_be_visible()
+    expect(region.get_by_role('link', name='View development comparison')).to_be_visible()
 
 
 @when("I follow the round's audit evidence to the regressed case")

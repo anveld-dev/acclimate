@@ -1,3 +1,4 @@
+import { canonicalOperationPath } from '../lib/operation-target';
 import { ApiError } from '@acclimate/sdk';
 import { consoleClient } from './console-client';
 import { evaluationConfiguration } from '../lib/evaluation-config';
@@ -6,7 +7,7 @@ import type {
   ComparisonPolicyReceipt,
   Evaluation,
   Proposal,
-  Promotion,
+  Release,
   Page,
   VersionMetadata,
   BundlePayload,
@@ -22,7 +23,7 @@ export type ImprovementResult =
   | {
       ok: true;
       outcome?: Awaited<ReturnType<typeof lookupOperation>>;
-      result?: Proposal | Evaluation | Promotion;
+      result?: Proposal | Evaluation | Release;
       resultKind?: 'proposal' | 'request' | 'promotion';
       command?: { operationPath: string; body: string };
       proposals?: Page<Proposal>;
@@ -35,7 +36,7 @@ export type ImprovementResult =
       parentPayload?: BundlePayload;
       comparison?: Comparison;
       receipts?: { comparison: ComparisonPolicyReceipt[]; blockers: ComparisonPolicyReceipt[] };
-      promotion?: Promotion;
+      promotion?: Release;
     };
 export function comparisonSummary(report: Comparison) {
   const outcomes = report.results.flatMap((pair) => [pair.parent, pair.candidate]);
@@ -71,20 +72,21 @@ export async function improvement(
         b = env.CONSOLE_BUNDLE,
         channel = env.CONSOLE_CHANNEL;
       if (!p || !b || !channel || env.CONSOLE_ALLOW_EDITS !== 'true') throw Error('scope');
-      const prefix = `/v1/projects/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}`;
+      const prefix = `/v1/workspaces/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}`;
       const operationPath = String(input.operationPath),
         key = String(input.key);
+      const target = canonicalOperationPath(operationPath);
       const allowed = [
         prefix + '/proposals',
         prefix + '/evaluation-requests',
-        prefix + `/channels/${encodeURIComponent(channel)}/promotions`,
+        prefix + `/channels/${encodeURIComponent(channel)}/releases`,
       ];
       const draftPublish =
-        operationPath.startsWith(prefix + `/channels/${encodeURIComponent(channel)}/drafts/`) &&
+        target.startsWith(prefix + `/channels/${encodeURIComponent(channel)}/drafts/`) &&
         /^[-a-f0-9]{36}\/publish$/i.test(
-          operationPath.slice((prefix + `/channels/${encodeURIComponent(channel)}/drafts/`).length),
+          target.slice((prefix + `/channels/${encodeURIComponent(channel)}/drafts/`).length),
         );
-      if (!allowed.includes(operationPath) && !draftPublish) throw Error('route');
+      if (!allowed.includes(target) && !draftPublish) throw Error('route');
       if (input.action === 'lookupFrozen')
         return {
           ok: true as const,
@@ -114,7 +116,7 @@ export async function improvement(
           );
       }
 
-      const value = await exactOperation<Proposal | Evaluation | Promotion>(
+      const value = await exactOperation<Proposal | Evaluation | Release>(
         env,
         { projectId: p, operationPath, key, body: input.body },
         fetcher,
@@ -221,7 +223,7 @@ export async function improvement(
       return {
         ok: true as const,
         command: {
-          operationPath: `/v1/projects/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/proposals`,
+          operationPath: `/v1/workspaces/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/proposals`,
           body: JSON.stringify({
             parentVersionId: state.resolution.version.id,
             allowedPaths: input.allowedPaths as string[],
@@ -244,7 +246,7 @@ export async function improvement(
         return {
           ok: true as const,
           command: {
-            operationPath: `/v1/projects/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/evaluation-requests`,
+            operationPath: `/v1/workspaces/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/evaluation-requests`,
             body: JSON.stringify({
               ...configuration,
               requireBoundEvidence: true,
@@ -278,7 +280,7 @@ export async function improvement(
         return {
           ok: true as const,
           command: {
-            operationPath: `/v1/projects/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/channels/${encodeURIComponent(state.channel)}/drafts/${encodeURIComponent(draft.id)}/publish`,
+            operationPath: `/v1/workspaces/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/channels/${encodeURIComponent(state.channel)}/drafts/${encodeURIComponent(draft.id)}/publish`,
             body: JSON.stringify({
               ...release,
               expectedGeneration: draft.generation,
@@ -290,7 +292,7 @@ export async function improvement(
       return {
         ok: true as const,
         command: {
-          operationPath: `/v1/projects/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/channels/${encodeURIComponent(state.channel)}/promotions`,
+          operationPath: `/v1/workspaces/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/channels/${encodeURIComponent(state.channel)}/releases`,
           body: JSON.stringify({
             ...release,
             versionId: candidate.version.id,

@@ -157,6 +157,27 @@ async fn request_limits(request: axum::extract::Request, next: axum::middleware:
         .into_response(),
     }
 }
+// Keep both spellings on the same method router and retain the original
+// handler-owned operation keys for replay across service upgrades.
+fn workspace_route_path(legacy: &str) -> String {
+    legacy
+        .replacen("/v1/projects", "/v1/workspaces", 1)
+        .replace("/integrations", "/connections")
+        .replace("/integration-observations", "/connection-observations")
+        .replace("/promotions", "/releases")
+}
+
+trait WorkspaceRoutes {
+    fn workspace_route(self, legacy: &str, methods: axum::routing::MethodRouter<AppState>) -> Self;
+}
+
+impl WorkspaceRoutes for Router<AppState> {
+    fn workspace_route(self, legacy: &str, methods: axum::routing::MethodRouter<AppState>) -> Self {
+        self.route(&workspace_route_path(legacy), methods.clone())
+            .route(legacy, methods)
+    }
+}
+
 pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(commands::routes())
@@ -171,43 +192,43 @@ pub fn router(state: AppState) -> Router {
         .merge(invitations::routes())
         .route("/health", get(|| async { "ok" }))
         .route("/ready", get(runtime::readiness))
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles",
             post(bundles::create_bundle),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/versions",
             post(bundles::create_version),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/versions/{version}",
             get(bundles::get_version),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/versions/{version}/payload",
             get(bundles::get_payload),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/channels/{channel}",
             get(channels::resolve),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/promotions",
             get(channels::list_promotions).post(channels::promote),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/comparisons",
             post(improvement::create_comparison).get(improvement::list_comparisons),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/comparisons/{id}",
             get(improvement::get_comparison),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/proposals",
             post(improvement::create_proposal).get(improvement::list_proposals),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/proposals/{id}",
             get(improvement::get_proposal),
         )

@@ -1,5 +1,7 @@
 # Provision and operate an evaluator
 
+Service-specific vocabulary is defined in [Internal terms](../CONTEXT.md#internal-terms).
+
 This guide is for the service operator. Application developers start with [Connect an existing agent](getting-started.md). The service records immutable requests and comparisons; the application owns agent execution, model credentials, tools and quality policy.
 
 ## Provision the exact identity
@@ -24,7 +26,7 @@ No evaluator secret enters the browser. Console authors create requests through 
 
 Running `compare --policy` or `check` with the original evaluator's private configuration reports the policy verdict for the settled comparison. A check using read-only configuration evaluates the same evidence locally. The receipt contains the public policy ID, revision and SHA-256 digest, verdict, named checks and reporting principal. Inputs, outputs, grading explanations, policy thresholds and credentials stay on the evaluator machine.
 
-The evaluator submits `POST /v1/projects/{project}/bundles/{bundle}/comparisons/{comparison}/policy-receipts` with `requestId`, `attemptId`, `policy` (`id`, `revision`, `sha256`), `verdict`, and `checks` (`code`, `result`). The service checks the machine principal against the submitted comparison and settled attempt. Repeating the same receipt returns the original timestamp. A different report for the same policy digest and comparison returns a conflict. Authorized readers can `GET` that collection. The candidate-wide `GET /v1/projects/{project}/bundles/{bundle}/versions/{candidate}/policy-receipts` lists visible failed and indeterminate receipts across its comparisons.
+The evaluator submits `POST /v1/workspaces/{project}/bundles/{bundle}/comparisons/{comparison}/policy-receipts` with `requestId`, `attemptId`, `policy` (`id`, `revision`, `sha256`), `verdict`, and `checks` (`code`, `result`). The service checks the machine principal against the submitted comparison and settled attempt. Repeating the same receipt returns the original timestamp. A different report for the same policy digest and comparison returns a conflict. Authorized readers can `GET` that collection. The candidate-wide `GET /v1/workspaces/{project}/bundles/{bundle}/versions/{candidate}/policy-receipts` lists visible failed and indeterminate receipts across its comparisons.
 
 Release reviewers see the receipts, reported checks and any override in the console. A complete comparison can have no checked policy yet. A candidate with a failed or indeterminate policy needs a release reviewer to acknowledge every current blocking receipt and record a reason. A partial comparison still needs complete evidence for evidence-based publication.
 

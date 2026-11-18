@@ -1,3 +1,4 @@
+use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, auth::Actor, db, err};
 use axum::{
     Json, Router,
@@ -363,8 +364,8 @@ struct OperationScope {
 }
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/v1/projects/{project}/operations/{id}", get(operation))
-        .route("/v1/projects/{project}/operations/{id}/close", post(close))
+        .workspace_route("/v1/projects/{project}/operations/{id}", get(operation))
+        .workspace_route("/v1/projects/{project}/operations/{id}/close", post(close))
 }
 async fn operation(
     State(s): State<AppState>,
@@ -398,7 +399,28 @@ async fn outcome(
     closing: bool,
 ) -> ApiResult<Json<Value>> {
     validate_key(&id)?;
-    let path = scope.operation_path.as_deref().unwrap_or("");
+    let requested_path = scope.operation_path.as_deref().unwrap_or("");
+    let canonical = requested_path.starts_with("/v1/workspaces/");
+    let legacy_path = canonical.then(|| {
+        let mut segments: Vec<_> = requested_path.split('/').collect();
+        segments[2] = "projects";
+        if let [
+            "",
+            "v1",
+            "projects",
+            _,
+            "bundles",
+            _,
+            "channels",
+            _,
+            action @ "releases",
+        ] = segments.as_mut_slice()
+        {
+            *action = "promotions";
+        }
+        segments.join("/")
+    });
+    let path = legacy_path.as_deref().unwrap_or(requested_path);
     if !path.is_empty() && rights(&p, path).is_none() {
         return Err(err(
             StatusCode::BAD_REQUEST,
@@ -463,8 +485,13 @@ async fn outcome(
         )
         .await?;
     }
+    let response_path = if canonical && actual_path == path {
+        requested_path
+    } else {
+        &actual_path
+    };
     let value = if let Some(row) = committed {
-        json!({"status":"committed","operationId":id,"path":actual_path,"requestFingerprint":format!("sha256:{}",hex::encode(row.get::<Vec<u8>,_>("fingerprint"))),"result":serde_json::from_slice::<Value>(&row.get::<Vec<u8>,_>("response_body")).map_err(db)?})
+        json!({"status":"committed","operationId":id,"path":response_path,"requestFingerprint":format!("sha256:{}",hex::encode(row.get::<Vec<u8>,_>("fingerprint"))),"result":serde_json::from_slice::<Value>(&row.get::<Vec<u8>,_>("response_body")).map_err(db)?})
     } else if closing || row.is_some() {
         if closing {
             sqlx::query("INSERT INTO operation_records(principal_id,project_id,namespace,key,path,status) VALUES($1,$2,$3,$4,$5,'closed') ON CONFLICT DO NOTHING").bind(&actor.principal).bind(&p).bind(namespace(path)).bind(&id).bind(path).execute(&mut *tx).await.map_err(db)?;

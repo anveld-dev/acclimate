@@ -43,3 +43,14 @@ Promotion takes a retained target, expected revision, and exactly one comparison
 4. Exercise public HTTP seams with a real test database: publish → resolve → fetch exact bytes, then propose → record comparison → promote. Check transaction rollback on failures and restore from a database backup before production use.
 
 The shared types, migration, auth, mutation helper, and fixtures unblock feature work. Bundles must expose version lookup and publication before channels and proposer integration; C1 reads immutable comparison rows under the shared schema for evidence binding, so it does not compile against the I1 proposer or handlers. Live report/promotion integration still requires I1. SDK work can proceed against the same fixtures while server commands are built. Coordinate interface changes through the contract owner rather than independently changing DTOs. See [parallel work](parallel-work.md) for ownership and integration gates.
+
+
+## Public routes and storage
+
+Routes are relative to `/v1`. The service also accepts the previous route spellings for existing callers.
+
+| Public term | Canonical route | PostgreSQL table |
+| --- | --- | --- |
+| Workspace | `/workspaces` | `projects` |
+| Connection | `/workspaces/{workspaceId}/connections` | `integrations` |
+| Release | `/workspaces/{workspaceId}/bundles/{bundleId}/channels/{channel}/releases` | `promotions` |

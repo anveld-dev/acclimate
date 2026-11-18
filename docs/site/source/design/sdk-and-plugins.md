@@ -6,40 +6,20 @@ The SDK is a library in your application. A plugin is a small mapping from a bun
 
 ## The application flow
 
-Proposed TypeScript-shaped pseudocode; these packages and methods aren't implemented:
-
-```typescript
-const bundle = await client.resolveAndCache({
-  project: "reviews",
-  bundle: "reviewer",
-  channel: "stable",
-  offline: "fail"
-});
-
-const prepared = await claudePlugin.prepare(bundle, {
-  workspace: jobWorkspace
-});
-try {
-  await runWithNativeSdk(prepared.nativeOptions, task);
-} finally {
-  await prepared.dispose();
-}
-```
-
-`runWithNativeSdk` is application code calling the actual Claude, Cursor, Codex, or Pi SDK. It is not an Acclimate task-execution method. The application records the bundle version and handles its own sessions, permissions, limits, cancellation, and credentials.
+Use **App setup** in the console to choose a workspace, bundle and channel and copy the SDK configuration. The SDK resolves the channel, verifies the version’s bytes and prepares its files for the native SDK. Run the job, save the version with its outcome and clean up the files when the job finishes. See the [getting started guide](../getting-started.md#2-connect-your-app) for TypeScript and Python calls.
 
 ## One plugin interface
 
 ```text
-prepare(verifiedBundle, applicationContext)
+prepare(version, applicationContext)
     -> nativeOptions + prepared file locations + cleanup
 ```
 
-The application context supplies a job workspace and an explicit collision/configuration policy. A plugin validates supported bundle content, translates it to native SDK inputs, and reports anything it cannot map. It cannot claim that a skill was invoked merely because its file was present.
+The application context supplies a job directory and an explicit collision/configuration policy. A plugin validates supported bundle content, translates it to native SDK inputs, and reports anything it cannot map. It cannot claim that a skill was invoked merely because its file was present.
 
 Plugins are ordinary application dependencies. No OCI registration, universal session RPC, four extension categories, host callbacks, or SDK-wide model interception is required. Other languages can use the same HTTP/payload format.
 
-## Native integration routes
+## Native SDKs
 
 | Target | Delivery route to validate |
 | --- | --- |
@@ -54,7 +34,7 @@ These routes are backed by [SDK research](../research/sdk-file-delivery.md). Cod
 
 ## Small SDK surface
 
-Start with resolve/cache/prepare support plus service calls for versions, proposals, comparison reports, and promotion. Fetch errors distinguish denial, missing content, offline cache miss, stale data, integrity failure, and unsupported schema. Retried mutations reuse a scoped idempotency key and the same payload.
+Start with resolve/cache/prepare support plus service calls for versions, proposals, comparison reports, and releases. Fetch errors distinguish denial, missing content, offline cache miss, stale data, integrity failure, and unsupported schema. Retried mutations reuse a scoped idempotency key and the same payload.
 
 The first implementation uses TypeScript with a Codex example and Claude/Pi preparation mappings. Add a thin Python client/helper and additional native examples after the delivery contract settles. Avoid generating multiple SDKs or a plugin marketplace before the common bundle contract works.
 

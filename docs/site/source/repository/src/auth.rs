@@ -317,7 +317,7 @@ pub(crate) async fn session_context(
         .and_then(|v| uuid::Uuid::parse_str(v).ok())
     {
         let parts: Vec<_> = request.uri().path().split('/').collect();
-        if parts.len() >= 4 && parts[1] == "v1" && parts[2] == "projects" {
+        if parts.len() >= 4 && parts[1] == "v1" && matches!(parts[2], "workspaces" | "projects") {
             let role: Option<String> = match sqlx::query_scalar(
                 "SELECT role FROM project_memberships WHERE project_id=$1 AND user_id=$2",
             )

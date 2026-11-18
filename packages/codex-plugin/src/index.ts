@@ -1,7 +1,7 @@
-import type { VerifiedBundle } from '../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../sdk/src/types.js';
 import { prepareNativeFiles } from '../../sdk/src/internal/native-files.js';
 
-export interface PreparedCodexBundle {
+export interface PreparedCodexVersion {
   cwd: string;
   versionId: string;
   digest: string;
@@ -12,7 +12,7 @@ export interface PreparedCodexBundle {
 }
 
 /** Stage verified bundle resources where Codex natively discovers repository instructions and skills. */
-export async function prepare(bundle: VerifiedBundle): Promise<PreparedCodexBundle> {
+export async function prepare(bundle: VerifiedVersion): Promise<PreparedCodexVersion> {
   const staged = await prepareNativeFiles(
     bundle,
     {
@@ -33,3 +33,6 @@ export async function prepare(bundle: VerifiedBundle): Promise<PreparedCodexBund
     cleanup: staged.cleanup,
   };
 }
+
+/** @deprecated Use PreparedCodexVersion. */
+export type PreparedCodexBundle = PreparedCodexVersion;

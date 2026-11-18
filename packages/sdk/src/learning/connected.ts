@@ -24,7 +24,7 @@ import type {
   LearningRecheckVerdict,
   LearningWork,
   LearningWorkItem,
-  VerifiedBundle,
+  VerifiedVersion,
 } from '../types.js';
 import { evaluationDescriptorDifferences, validateEvaluationHandoff } from '../validation.js';
 import { replayVerdict, type ReplayExecution } from './connected-replay.js';
@@ -47,7 +47,7 @@ type TerminalOutcome = Omit<
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const digest = /^sha256:[a-f0-9]{64}$/;
 
-function freshResolution(bundle: VerifiedBundle, projectId: string, integrationId: string) {
+function freshResolution(bundle: VerifiedVersion, projectId: string, integrationId: string) {
   const resolution = bundle.resolution;
   if (
     !resolution ||
@@ -62,7 +62,7 @@ function freshResolution(bundle: VerifiedBundle, projectId: string, integrationI
 }
 
 function startedBinding(
-  bundle: VerifiedBundle,
+  bundle: VerifiedVersion,
   projectId: string,
   integrationId: string,
   receipt: Readonly<DeliveryReceiptRequest>,
@@ -104,7 +104,7 @@ export function createLearningOutcomeReporter(options: LearningOutcomeReporterOp
   if (!uuid.test(options.integrationId)) throw new TypeError('integrationId must be a UUID');
   const integrationId = options.integrationId.toLowerCase();
   return async (
-    bundle: VerifiedBundle,
+    bundle: VerifiedVersion,
     outcome: TerminalOutcome,
   ): Promise<LearningOutcomeReceipt> => {
     const resolution = freshResolution(bundle, projectId, integrationId);
@@ -148,7 +148,7 @@ interface FieldAuditSample {
 }
 
 function fieldAuditBinding(
-  bundle: VerifiedBundle,
+  bundle: VerifiedVersion,
   projectId: string,
   integrationId: string,
   sample: FieldAuditSample,
@@ -191,7 +191,7 @@ export function createLearningFieldAuditReporter(options: LearningFieldAuditRepo
   if (!uuid.test(options.integrationId)) throw new TypeError('integrationId must be a UUID');
   const integrationId = options.integrationId.toLowerCase();
   return async (
-    bundle: VerifiedBundle,
+    bundle: VerifiedVersion,
     sample: FieldAuditSample & { verdict: LearningFieldAuditRequest['verdict'] },
   ): Promise<LearningFieldAuditReceipt> => {
     const binding = fieldAuditBinding(bundle, projectId, integrationId, sample);
@@ -212,8 +212,8 @@ export interface LearningFieldAuditorOptions<Job> extends LearningFieldAuditRepo
   /** Grade the recorded job and a read-only predecessor replay against the same objective. */
   evaluate(input: {
     job: Job;
-    served: VerifiedBundle;
-    predecessor: VerifiedBundle;
+    served: VerifiedVersion;
+    predecessor: VerifiedVersion;
     signal?: AbortSignal;
   }): Promise<{ served: LearningFieldGrade; predecessor: LearningFieldGrade }>;
 }
@@ -233,7 +233,7 @@ export function createLearningFieldAuditor<Job>(options: LearningFieldAuditorOpt
     );
   const integrationId = options.integrationId.toLowerCase();
   return async (
-    bundle: VerifiedBundle,
+    bundle: VerifiedVersion,
     sample: FieldAuditSample & { job: Job; signal?: AbortSignal },
   ): Promise<LearningFieldAuditRequest | null> => {
     const binding = fieldAuditBinding(bundle, projectId, integrationId, sample);
@@ -286,14 +286,14 @@ export interface ConnectedLearningDriverOptions {
     recheckExecution?: ReplayExecution;
     recheck?(input: {
       assignment: Readonly<LearningRecheck>;
-      baseline: VerifiedBundle;
+      baseline: VerifiedVersion;
       signal?: AbortSignal;
     }): Promise<LearningRecheckVerdict>;
     /** Re-run the triggering incident on a verified candidate using the original private evidence. */
     replayIncidentExecution?: ReplayExecution;
     replayIncident?(input: {
       assignment: Readonly<Omit<LearningIncidentReplay, 'verdict'>>;
-      candidate: VerifiedBundle;
+      candidate: VerifiedVersion;
       signal?: AbortSignal;
     }): Promise<LearningIncidentReplay['verdict']>;
     /** Opaque replay callbacks default to live. Mark deterministic callbacks model-free. */
@@ -301,7 +301,7 @@ export interface ConnectedLearningDriverOptions {
     /** Grade the original private field job using the supplied candidate. */
     requalifyFieldCase?(input: {
       assignment: Readonly<Omit<LearningFieldReplay, 'verdict'>>;
-      candidate: VerifiedBundle;
+      candidate: VerifiedVersion;
       signal?: AbortSignal;
     }): Promise<LearningFieldReplay['verdict']>;
     audit: readonly EvaluationApp<any, any, any>[];

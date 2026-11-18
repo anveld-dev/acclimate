@@ -5,7 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compare, submitComparison } from '../../packages/sdk/src/compare.js';
 import { ApiError, resolveAndCache } from '../../packages/sdk/src/index.js';
-import type { VerifiedBundle, ComparisonRequest } from '../../packages/sdk/src/types.js';
+import type { VerifiedVersion, ComparisonRequest } from '../../packages/sdk/src/types.js';
 import {
   batches,
   grade,
@@ -57,7 +57,7 @@ try {
     { parentVersionId: null, payload: seedPayload },
     randomUUID(),
   );
-  const initial = await client.promote(
+  const initial = await client.createRelease(
     project,
     bundle.id,
     'qualification',
@@ -75,7 +75,7 @@ try {
     cached(),
   );
   await save('parent.json', parent);
-  const scoreRuns = async (version: VerifiedBundle, items: Batch[], label: string) => {
+  const scoreRuns = async (version: VerifiedVersion, items: Batch[], label: string) => {
     const results = [];
     for (const batch of items) {
       console.log(`${label}: ${batch.id}`);
@@ -111,7 +111,7 @@ try {
     feedback.push(
       JSON.stringify(observations.slice(index, index + 2).map((row) => JSON.parse(row))),
     );
-  let candidate: VerifiedBundle | undefined, proposalId: string | undefined;
+  let candidate: VerifiedVersion | undefined, proposalId: string | undefined;
   const attempts = [];
   for (let round = 1; round <= 3; round++) {
     const proposal = await client.createProposal(
@@ -299,7 +299,7 @@ try {
     limits:
       'Small synthetic gateway-policy experiment. Application feedback and grading are trusted inputs. No broad benchmark or production autonomy claim.',
   });
-  const promotion = await client.promote(
+  const promotion = await client.createRelease(
     project,
     bundle.id,
     'qualification',
@@ -326,7 +326,7 @@ try {
   );
   await assert.rejects(
     () =>
-      client.promote(
+      client.createRelease(
         project,
         bundle.id,
         'qualification',

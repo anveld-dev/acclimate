@@ -4,9 +4,9 @@ import { ApiError } from '@acclimate/sdk';
 import type {
   AcclimateClient,
   DeliveryReceipt,
-  Integration,
-  IntegrationObservation,
-  IntegrationCredential,
+  Connection,
+  ConnectionObservation,
+  ConnectionCredential,
   LearningEnrollmentStatus,
   LearningOutcomeStatus,
   LearningReleaseEvidence,
@@ -25,7 +25,7 @@ import {
 } from './connection-learning-policy';
 import { randomUUID } from 'node:crypto';
 
-type Entry = { integration: Integration; receipts: Page<DeliveryReceipt> };
+type Entry = { integration: Connection; receipts: Page<DeliveryReceipt> };
 export type IntegrationState = {
   projectId: string;
   bundleId: string;
@@ -58,9 +58,9 @@ export type IntegrationResult =
   | {
       ok: true;
       state?: IntegrationState;
-      credential?: IntegrationCredential;
+      credential?: ConnectionCredential;
       receipts?: Page<DeliveryReceipt>;
-      integration?: Integration;
+      integration?: Connection;
     };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Preserve the terminal page allowed after 1000 continuation cursors.
@@ -77,8 +77,8 @@ function failure(error?: unknown): IntegrationResult {
     ok: false,
     message:
       error instanceof ApiError && [401, 403].includes(error.status)
-        ? 'Access denied. Integration administration requires a current workspace administrator.'
-        : 'Could not confirm the service response. Refresh to check current integrations before repeating an action.',
+        ? 'Access denied. Connection administration requires a current workspace administrator.'
+        : 'Could not confirm the service response. Refresh to check current connections before repeating an action.',
   };
 }
 function issuedMetadata(value: unknown): IssuedCredentialMetadata | undefined {
@@ -119,20 +119,19 @@ async function workspaceContext(env: Environment, projectId: string, fetcher: ty
   if (!validScopePart(projectId) || !env.CONSOLE_SERVICE_TOKEN) throw Error('Select a workspace');
   const client = consoleClient(env, fetcher);
   const projects = await allPages(
-    (cursor) => client.listProjects({ limit: 100, cursor }),
+    (cursor) => client.listWorkspaces({ limit: 100, cursor }),
     MAX_LISTING_PAGES,
   );
   const project = projects.find((p) => p.id === projectId);
-  if (!project) throw new ApiError(403, 'denied', 'Project unavailable', '');
+  if (!project) throw new ApiError(403, 'denied', 'Workspace unavailable', '');
   // The list itself is an admin route. Recheck live rights for every server command.
   const admin = project.role === 'admin';
   if (!admin) throw new ApiError(403, 'denied', 'Administrator required', '');
   const integrations = await allPages(
-    (cursor) => client.listIntegrations(projectId, { limit: 100, cursor }),
+    (cursor) => client.listConnections(projectId, { limit: 100, cursor }),
     MAX_LISTING_PAGES,
   );
-  if (integrations.some((i) => i.projectId !== projectId))
-    throw Error('Integration scope mismatch');
+  if (integrations.some((i) => i.projectId !== projectId)) throw Error('Connection scope mismatch');
   return {
     client,
     projectId,
@@ -141,7 +140,7 @@ async function workspaceContext(env: Environment, projectId: string, fetcher: ty
     canManage: admin && env.CONSOLE_ALLOW_EDITS === 'true',
   };
 }
-async function readReceiptPage(client: AcclimateClient, integration: Integration, cursor?: string) {
+async function readReceiptPage(client: AcclimateClient, integration: Connection, cursor?: string) {
   const { projectId, id, bundleId } = integration;
   const receipts = await client.listDeliveryReceipts(projectId, id, { limit: 20, cursor });
   if (
@@ -212,7 +211,7 @@ export async function integrationCommand(
         input.displayName.length > 120
       )
         return { ok: false, message: 'Use a display name of 1–120 characters.' };
-      const integration = await c.client.createIntegration(
+      const integration = await c.client.createConnection(
         c.projectId,
         { bundleId: c.bundleId, channel: c.channel, displayName: input.displayName.trim() },
         input.key,
@@ -221,7 +220,7 @@ export async function integrationCommand(
     } else {
       const integration = c.integrations.find((item) => item.id === input.id);
       if (!uuid.test(input.id) || !integration)
-        return { ok: false, message: 'Integration is outside the selected bundle and channel.' };
+        return { ok: false, message: 'Connection is outside the selected bundle and channel.' };
       if (input.action === 'receipts') {
         if (input.cursor && !uuid.test(input.cursor))
           return { ok: false, message: 'Invalid history cursor.' };
@@ -245,7 +244,7 @@ export async function integrationCommand(
                 'Refresh and confirm that the original scoped credential is revoked before creating a replacement.',
             };
         }
-        const credential = await c.client.createIntegrationCredential(
+        const credential = await c.client.createConnectionCredential(
           c.projectId,
           input.id,
           { kind: input.kind },
@@ -254,10 +253,10 @@ export async function integrationCommand(
         return { ok: true, credential };
       }
       if (input.action === 'revoke')
-        await c.client.revokeIntegration(c.projectId, input.id, input.key);
+        await c.client.revokeConnection(c.projectId, input.id, input.key);
       if (input.action === 'revokeCredential') {
         if (!uuid.test(input.credentialId)) return { ok: false, message: 'Invalid credential ID.' };
-        await c.client.revokeIntegrationCredential(
+        await c.client.revokeConnectionCredential(
           c.projectId,
           input.id,
           input.credentialId,
@@ -879,14 +878,14 @@ export type ConnectionsState = {
   projectName: string;
   actorScope: string;
   canManage: boolean;
-  integrations: Integration[];
+  integrations: Connection[];
   bundles: ConnectionBundle[];
   reports?: Record<
     string,
-    Pick<NonNullable<IntegrationObservation['latestObservation']>, 'stage' | 'receivedAt'> | null
+    Pick<NonNullable<ConnectionObservation['latestObservation']>, 'stage' | 'receivedAt'> | null
   >;
   selected?: {
-    integration: Integration;
+    integration: Connection;
     receipts: Page<DeliveryReceipt>;
     currentVersionId: string;
     currentRevision: string;
@@ -911,7 +910,7 @@ export async function readConnectionsState(
       input.integrationId
         ? undefined
         : allPages(
-            (cursor) => c.client.listIntegrationObservations(c.projectId, { limit: 100, cursor }),
+            (cursor) => c.client.listConnectionObservations(c.projectId, { limit: 100, cursor }),
             MAX_LISTING_PAGES,
           ).catch(() => undefined),
     ]);

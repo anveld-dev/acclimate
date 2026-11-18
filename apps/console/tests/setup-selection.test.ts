@@ -78,7 +78,7 @@ test('creating supplied instructions uses one atomic command and trusted session
       calls++;
       if (!init?.method || init.method === 'GET')
         return Response.json({ status: 'not_observed', operationId: 'key' });
-      assert.match(String(url), /projects\/one\/bundle-setups$/);
+      assert.match(String(url), /workspaces\/one\/bundle-setups$/);
       assert.equal((init?.headers as Record<string, string>)['X-Acclimate-Session'], 'session');
       const body = JSON.parse(String(init?.body));
       assert.equal(body.origin, 'created');
@@ -123,7 +123,7 @@ for (const fixture of [
         methods.push(init?.method ?? 'GET');
         if (init?.method === 'GET')
           return Response.json({ status: 'not_observed', operationId: key });
-        assert.equal(new URL(String(url)).pathname, '/v1/projects/one/bundle-setups');
+        assert.equal(new URL(String(url)).pathname, '/v1/workspaces/one/bundle-setups');
         assert.equal(new Headers(init?.headers).get('Idempotency-Key'), key);
         assert.equal(init?.body, expected);
         return Response.json({});
@@ -219,7 +219,7 @@ test('selection rechecks the exact scoped channel with current session', async (
     { ...env, CONSOLE_SESSION_TOKEN: 'current' },
     selection,
     async (url, init) => {
-      assert.match(String(url), /projects\/one\/bundles\/bundle-one\/channels\/stable$/);
+      assert.match(String(url), /workspaces\/one\/bundles\/bundle-one\/channels\/stable$/);
       assert.equal((init?.headers as Record<string, string>)['X-Acclimate-Session'], 'current');
       return Response.json({ channel: 'stable', revision: '1', version: { id: 'v' } });
     },

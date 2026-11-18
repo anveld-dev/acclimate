@@ -51,7 +51,7 @@ for (const [name, limit, read] of [
       const result = await read(async (input) => {
         const url = new URL(String(input));
         if (url.pathname.endsWith('/auth/session')) return Response.json(identity);
-        if (url.pathname === '/v1/projects') {
+        if (url.pathname === '/v1/workspaces') {
           assert.equal(url.searchParams.get('cursor'), pages ? `page-${pages}` : null);
           pages++;
           return Response.json({

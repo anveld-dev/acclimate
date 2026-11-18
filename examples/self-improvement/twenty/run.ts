@@ -5,7 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compare, submitComparison } from '../../../packages/sdk/src/compare.js';
 import { resolveAndCache, ApiError } from '../../../packages/sdk/src/index.js';
-import type { BundlePayload, VerifiedBundle } from '../../../packages/sdk/src/types.js';
+import type { BundlePayload, VerifiedVersion } from '../../../packages/sdk/src/types.js';
 import { Luna, model } from '../luna.js';
 import { startService } from '../service.js';
 import { dataset, grade, policy, prompt, schema, screen, type Batch } from './domain.js';
@@ -79,7 +79,7 @@ try {
     randomUUID(),
   );
   assert.equal(rootMeta.digest, starter.sourceDigest);
-  const initial = await client.promote(
+  const initial = await client.createRelease(
     project,
     bundle.id,
     'qualification',
@@ -90,7 +90,7 @@ try {
     },
     randomUUID(),
   );
-  let working = await client.promote(
+  let working = await client.createRelease(
     project,
     bundle.id,
     'working',
@@ -110,7 +110,7 @@ try {
     cache,
   );
   await save('parent.json', root);
-  const bytes = (v: VerifiedBundle) =>
+  const bytes = (v: VerifiedVersion) =>
     v.payload.files.reduce((n, f) => n + Buffer.byteLength(f.text), 0);
   let incumbent = root;
   let observations: Observation[] = [];
@@ -132,8 +132,8 @@ try {
     isolation: 'native read-only workspace; not hostile-tenant isolation',
   };
   const evaluate = async (
-    parent: VerifiedBundle,
-    candidate: VerifiedBundle,
+    parent: VerifiedVersion,
+    candidate: VerifiedVersion,
     batches: Batch[],
     repetitions: number,
     label: string,
@@ -295,7 +295,7 @@ try {
         accepted,
       };
       if (accepted) {
-        working = await client.promote(
+        working = await client.createRelease(
           project,
           bundle.id,
           'working',
@@ -384,7 +384,7 @@ try {
     parent: audit.parent,
     candidate: audit.candidate,
   });
-  const promotion = await client.promote(
+  const promotion = await client.createRelease(
     project,
     bundle.id,
     'qualification',
@@ -417,7 +417,7 @@ try {
   );
   await assert.rejects(
     () =>
-      client.promote(
+      client.createRelease(
         project,
         bundle.id,
         'qualification',

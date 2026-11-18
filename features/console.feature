@@ -225,7 +225,7 @@ Feature: Work with content through the console
     When I return and look up the job graded after the rollback
     Then its regression identifies the same withdrawn release without claiming it triggered rollback
 
-  @UI-LEARNING-03 @provider_fixture
+  @UI-LEARNING-03 @provider_fixture @learning
   Scenario: A reviewer traces a rejected rollout to the regressed audit case
     Given a published bundle containing "Review code."
     And I signed in as the configured operator
@@ -238,7 +238,7 @@ Feature: Work with content through the console
     Then the case shows the parent earned 1 and the candidate earned 0
     And the next application job uses the original revision and instructions
 
-  @UI-LEARNING-04 @provider_fixture
+  @UI-LEARNING-04 @provider_fixture @learning
   Scenario: Stopping learning during a passing audit prevents a late automatic rollout
     Given a published bundle containing "Review code."
     And I signed in as the configured operator

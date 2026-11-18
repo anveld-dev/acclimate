@@ -44,7 +44,7 @@ export async function invitationCommand(
     const request = accessTransport(env, fetcher);
     const base =
       'projectId' in input
-        ? `/v1/projects/${encodeURIComponent(input.projectId)}/invitations`
+        ? `/v1/workspaces/${encodeURIComponent(input.projectId)}/invitations`
         : `/v1/invitations/${input.id}`;
     if (input.kind === 'list') {
       const value = await request(base);

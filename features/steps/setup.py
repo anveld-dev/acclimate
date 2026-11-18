@@ -5,7 +5,7 @@ from scripts.productization.qualify import payload
 @when('I list the configured workspace and its bundles')
 def list_workspace(context):
     w = context.world
-    w.projects = w.call('GET', '/v1/projects')['items']
+    w.projects = w.call('GET', '/v1/workspaces')['items']
     w.bundles = w.call('GET', w.root + '/bundles')['items']
 
 
@@ -32,7 +32,7 @@ def origin_retained(context, origin):
 @then('its first release is explicitly unevaluated')
 def seed(context):
     w = context.world
-    release = w.call('GET', w.channel + '/promotions')['items'][0]
+    release = w.call('GET', w.channel + '/releases')['items'][0]
     assert release['comparisonId'] is None
     assert release['unevaluatedReason'] == 'Explicit behavior-test initial release.'
 

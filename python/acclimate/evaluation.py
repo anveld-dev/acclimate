@@ -18,7 +18,7 @@ import uuid
 
 from .delivery import resolve_and_cache
 from .client import ApiError
-from .types import VerifiedBundle
+from .types import VerifiedVersion
 from ._evaluation_shared import (
     MIB, DIGEST_RE, EvaluationError, ExecutionUncertainError, CallbackCancelled,
     PrivateJsonError, TaskExecutionError, _text, assert_descriptor, atomic_private_write, clone_json, descriptor_from,
@@ -78,7 +78,7 @@ class ExecutionContext:
 
 @dataclass(frozen=True)
 class ExecuteInput(Generic[I]):
-    bundle: VerifiedBundle
+    bundle: VerifiedVersion
     input: I
     case_id: str
     repetition: int

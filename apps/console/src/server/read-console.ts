@@ -84,8 +84,8 @@ export const runReleaseOperation = createServerFn({ method: 'POST' })
         )
       )
         return { ok: false as const, message: 'Invalid release request.', uncertain: false };
-      const root = `/v1/projects/${encodeURIComponent(data.scope.projectId)}/bundles/${encodeURIComponent(data.scope.bundleId)}/channels/${encodeURIComponent(data.scope.channel)}/promotions`;
-      const promotion = await exactOperation<import('@acclimate/sdk').Promotion>(env, {
+      const root = `/v1/workspaces/${encodeURIComponent(data.scope.projectId)}/bundles/${encodeURIComponent(data.scope.bundleId)}/channels/${encodeURIComponent(data.scope.channel)}/releases`;
+      const promotion = await exactOperation<import('@acclimate/sdk').Release>(env, {
         projectId: data.scope.projectId,
         operationPath: root,
         key: data.key,
@@ -115,7 +115,7 @@ export const reconcileReleaseOperation = createServerFn({ method: 'POST' })
     const { lookupOperation, closeOperation } = await import('./exact-operation');
     try {
       const env = bundleEnvironment(await requestEnvironment(), data.scope);
-      const operationPath = `/v1/projects/${encodeURIComponent(data.scope.projectId)}/bundles/${encodeURIComponent(data.scope.bundleId)}/channels/${encodeURIComponent(data.scope.channel)}/promotions`;
+      const operationPath = `/v1/workspaces/${encodeURIComponent(data.scope.projectId)}/bundles/${encodeURIComponent(data.scope.bundleId)}/channels/${encodeURIComponent(data.scope.channel)}/releases`;
       const operation = await (data.close ? closeOperation : lookupOperation)(env, {
         projectId: data.scope.projectId,
         operationPath,

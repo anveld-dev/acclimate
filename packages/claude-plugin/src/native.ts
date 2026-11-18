@@ -1,8 +1,8 @@
-import type { PreparedClaudeBundle } from './index.js';
+import type { PreparedClaudeVersion } from './index.js';
 
 /** Options for a fresh Claude Agent SDK session. The host supplies model, prompt and permissions. */
 export function claudeSessionOptions(
-  prepared: PreparedClaudeBundle,
+  prepared: PreparedClaudeVersion,
 ): Pick<import('@anthropic-ai/claude-agent-sdk').Options, 'cwd' | 'settingSources' | 'skills'> {
   return {
     cwd: prepared.cwd,

@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { resolveAndCache } from '../../../packages/sdk/src/index.js';
-import type { VerifiedBundle } from '../../../packages/sdk/src/types.js';
+import type { VerifiedVersion } from '../../../packages/sdk/src/types.js';
 import { Luna, model } from '../luna.js';
 import { startService } from '../service.js';
 import { dataset, grade, policy, prompt as flatPrompt, screen } from '../twenty/domain.js';
@@ -24,10 +24,10 @@ const source = path.resolve(get('--source-run')!),
 assert(database, 'Explicit disposable PostgreSQL required');
 const original = JSON.parse(
   await readFile(path.join(source, 'parent.json'), 'utf8'),
-) as VerifiedBundle;
+) as VerifiedVersion;
 const prototype = JSON.parse(
   await readFile(path.join(source, 'release-candidate.json'), 'utf8'),
-) as VerifiedBundle;
+) as VerifiedVersion;
 const helperPath = 'skills/payment-triage/scripts/triage.py',
   nativeHelper = '.agents/skills/payment-triage/scripts/triage.py';
 const flat = dataset(randomUUID()).development,
@@ -93,7 +93,7 @@ try {
     resolveAndCache(client, { projectId: project, bundleId: bundle.id, versionId }, cache);
   await save('parent.json', await fetch(root.id));
   let draft = await fetch(scaffold.id),
-    selected: VerifiedBundle | undefined;
+    selected: VerifiedVersion | undefined;
   const feedback: string[] = [];
   const allCases = [...flat, long];
   for (let round = 1; round <= 5; round++) {

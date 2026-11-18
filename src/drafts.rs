@@ -1,3 +1,4 @@
+use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, BundlePayload, PromoteRequest, VersionMetadata, db, err, path};
 use axum::{
     Json, Router,
@@ -102,28 +103,28 @@ async fn associate(
 }
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/v1/projects/{project}/bundle-setups", post(setup))
-        .route(
+        .workspace_route("/v1/projects/{project}/bundle-setups", post(setup))
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts",
             get(list).post(create),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}",
             get(get_draft),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/history",
             get(history),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/save",
             post(save),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/discard",
             post(discard),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish",
             post(publish),
         )

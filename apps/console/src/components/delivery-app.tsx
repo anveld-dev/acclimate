@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Check, GitBranch, Radio } from 'lucide-react';
-import type { IntegrationObservation } from '@acclimate/sdk';
+import type { ConnectionObservation } from '@acclimate/sdk';
 import type { DeliveryDetail, Report } from '../server/delivery-detail-core';
 import { readDeliveryDetail } from '../server/delivery-observations-actions';
 import { Button } from './ui/button';
@@ -17,7 +17,7 @@ export function DeliveryApp({
   canManage,
 }: {
   projectId: string;
-  app: IntegrationObservation;
+  app: ConnectionObservation;
   canManage: boolean;
 }) {
   const reportedPanel = useRef<HTMLElement>(null);
@@ -40,7 +40,7 @@ export function DeliveryApp({
       .catch(() => {
         if (active) {
           setInitialError(true);
-          setError('Receipt history is unavailable. Refresh to retry.');
+          setError('Report history is unavailable. Refresh to retry.');
         }
       });
     return () => {
@@ -174,7 +174,7 @@ export function DeliveryApp({
                   <dd>{current.revision}</dd>
                 </div>
                 <div>
-                  <dt>Promoted</dt>
+                  <dt>Released</dt>
                   <dd>
                     <ReceiptTime value={current.promotedAt} />
                   </dd>
@@ -201,10 +201,10 @@ export function DeliveryApp({
           {error}
         </p>
       )}
-      <section className="delivery-receipt-trail" aria-label="Receipt history">
+      <section className="delivery-receipt-trail" aria-label="Report history">
         <header>
           <div>
-            <h3>Receipt history</h3>
+            <h3>Report history</h3>
             <p>Most recently received first · UTC · retained for 30 days</p>
           </div>
           <span>{receipts.length} loaded</span>
@@ -215,7 +215,7 @@ export function DeliveryApp({
               <span>Reported stage</span>
               <span>Service received</span>
               <span>Version</span>
-              <span>Receipt</span>
+              <span>Report</span>
             </div>
             <ol>
               {receipts.map((item) => (
@@ -242,11 +242,11 @@ export function DeliveryApp({
             </ol>
             {report && (
               <Disclosure className="delivery-receipt-details">
-                <DisclosureTrigger>Selected receipt details</DisclosureTrigger>
+                <DisclosureTrigger>Selected report details</DisclosureTrigger>
                 <DisclosureContent>
                   <dl>
                     <div>
-                      <dt>Receipt ID</dt>
+                      <dt>Report ID</dt>
                       <dd>{report.eventId}</dd>
                     </div>
                     <div>
@@ -276,11 +276,11 @@ export function DeliveryApp({
             )}
           </>
         ) : (
-          <p className="p-4 text-sm text-muted-foreground">No retained receipts.</p>
+          <p className="p-4 text-sm text-muted-foreground">No retained reports.</p>
         )}
         {detail?.receipts.nextCursor && (
           <Button className="m-3" variant="outline" disabled={busy} onClick={() => void more()}>
-            {busy ? 'Loading…' : 'Load older receipts'}
+            {busy ? 'Loading…' : 'Load older reports'}
           </Button>
         )}
       </section>

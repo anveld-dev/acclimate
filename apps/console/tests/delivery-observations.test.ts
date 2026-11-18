@@ -33,12 +33,12 @@ test('workspace readers discover delivery without entering credential administra
       async (input, init) => {
         const url = String(input);
         requests.push({ url, method: init?.method ?? 'GET', headers: new Headers(init?.headers) });
-        if (url.includes('/v1/projects?'))
+        if (url.includes('/v1/workspaces?'))
           return Response.json({
             items: [{ id: 'project', name: 'Project', role }],
             nextCursor: null,
           });
-        assert.match(url, /\/integration-observations\?limit=50$/);
+        assert.match(url, /\/connection-observations\?limit=50$/);
         return Response.json({
           items: [
             {
@@ -66,7 +66,7 @@ test('workspace readers discover delivery without entering credential administra
           request.headers.get('x-acclimate-session') === consoleEnvironment.CONSOLE_SESSION_TOKEN,
       ),
     );
-    assert(requests.every((request) => !request.url.includes('/integrations?')));
+    assert(requests.every((request) => !request.url.includes('/connections?')));
   }
 });
 

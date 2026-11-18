@@ -79,7 +79,7 @@ test('discard recovery rejects unsupported paths and oversized requests before s
   );
   for (const path of [
     '/discard',
-    wire.operationPath.replace('/projects/p/', '/projects/other/'),
+    wire.operationPath.replace('/workspaces/p/', '/workspaces/other/'),
     wire.operationPath + '?x=1',
     wire.operationPath.replace('22222222-2222-4222-8222-222222222222', '..'),
   ]) {

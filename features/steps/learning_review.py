@@ -173,7 +173,7 @@ def released(context):
     w = context.world
     region = w.browser_fixture.page.get_by_role('region', name='Continuous learning')
     expect(region.get_by_role('button', name='Review rollout', exact=True)).to_have_count(0)
-    expect(region.get_by_text('Rolled out', exact=False)).to_be_visible()
+    expect(region.get_by_text('Released · outcome', exact=False)).to_be_visible()
     round_ = wait_for_round(w, 'promoted')
     release, *previous = w.call('GET', w.history_path)['items']
     assert previous == w.original_history
@@ -250,13 +250,13 @@ def expect_traced_outcome(w, *, triggered):
     version = restored['version']['id']
     lines = [
         f"Job failed · served version {served['version']['id']} · revision {served['revision']}",
-        f"Promotion {w.round['promotionId']} · revision {served['revision']} · withdrawn from field use",
-        f"Automatic rollback restored {version} · revision {restored['revision']} · promotion {w.rollback_id}",
-        f"Current delivery target {version} · revision {restored['revision']}",
+        f"Release {w.round['promotionId']} · revision {served['revision']} · withdrawn",
+        f"Automatic rollback restored {version} · revision {restored['revision']} · release {w.rollback_id}",
+        f"Current version {version} · revision {restored['revision']}",
     ]
     for line in lines:
         expect(region.get_by_text(line, exact=True)).to_be_visible()
-    verdict = f"Field verdict · loss against control {version}"
+    verdict = f"Outcome comparison · loss against control {version}"
     if triggered:
         verdict += ' · this verdict triggered automatic rollback'
     expect(region.get_by_text(verdict, exact=True)).to_be_visible()
@@ -272,7 +272,7 @@ def trace_trigger(context):
 @when('I follow its audit evidence')
 def follow_audit(context):
     region = context.world.browser_fixture.page.get_by_role('region', name='Continuous learning')
-    region.get_by_role('link', name='Audit evidence', exact=True).click()
+    region.get_by_role('link', name='Independent comparison', exact=True).click()
 
 
 @then('the console opens the independent audit for the exact served candidate')
@@ -331,16 +331,17 @@ def open_rejected(context):
 @then('I see the audit rejection reason and cannot approve that round')
 def visible_rejection(context):
     region = context.world.browser_fixture.page.get_by_role('region', name='Continuous learning')
-    expect(region.get_by_text('Maximum case regression exceeded', exact=True)).to_be_visible()
+    assert context.world.round['reason']
+    expect(region.get_by_text(context.world.round['reason'], exact=True)).to_be_visible()
     expect(region.get_by_role('button', name='Review rollout', exact=True)).to_have_count(0)
-    expect(region.get_by_role('link', name='View development evidence')).to_be_visible()
+    expect(region.get_by_role('link', name='View development comparison')).to_be_visible()
 
 
 @when("I follow the round's audit evidence to the regressed case")
 def open_regressed_case(context):
     w = context.world
     page = w.browser_fixture.page
-    link = page.get_by_role('link', name='View audit evidence', exact=True)
+    link = page.get_by_role('link', name='View independent comparison', exact=True)
     href = link.get_attribute('href')
     link.click()
     expect(page).to_have_url(w.browser_fixture.base + href)

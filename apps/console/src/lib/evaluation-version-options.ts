@@ -1,4 +1,4 @@
-/** Project only loaded requests into selector options; a direct selection is separate. */
+/** Workspace only loaded requests into selector options; a direct selection is separate. */
 export function evaluationVersionOptions(
   requests: ReadonlyArray<{ candidateVersionId: string }>,
   selectedCandidate: string,

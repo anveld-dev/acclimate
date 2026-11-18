@@ -19,7 +19,7 @@ The result shows the parent and candidate scores and how many pairs were graded.
 ## Deliver and improve content
 
 - Use **App setup** in the console to prepare pinned content for each new job. Coding agents can stage repository files, run a native harness and grade retained changes against frozen tests. [Native integration](examples/native-repository/README.md)
-- Enroll a connection for service-managed proposals from trusted outcomes and run development and held-out evaluations with an installed evaluator. Choose manual release or an automatic policy. [Connected learning](deploy/README.md#operate-connected-learning)
+- Use a connection to turn outcomes and approved corrections into proposals. Run comparisons before releasing a version and choose whether releases need human review. [Connected learning](deploy/README.md#operate-connected-learning)
 - Inspect comparisons, authorize a channel release or restore a reviewed version. [Review and release](tools/operator/README.md)
 
 ## Operate or develop Acclimate

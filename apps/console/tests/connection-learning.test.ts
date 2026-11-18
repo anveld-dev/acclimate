@@ -74,12 +74,12 @@ function fixture(
     const body = init?.body ? JSON.parse(String(init.body)) : null;
     requests.push({ url, method, body, headers: new Headers(init?.headers) });
 
-    if (url.includes('/v1/projects?'))
+    if (url.includes('/v1/workspaces?'))
       return Response.json({
         items: [{ id: target.projectId, name: 'Workspace', role: options.role ?? 'admin' }],
         nextCursor: null,
       });
-    if (/\/integrations\?/.test(url))
+    if (/\/connections\?/.test(url))
       return Response.json({
         items: [
           { id, projectId: target.projectId, bundleId: 'bundle', channel: 'stable', enabled: true },
@@ -114,7 +114,7 @@ function fixture(
       return Response.json(status);
     }
     if (url.endsWith('/policy-receipts') && method === 'GET')
-      return Response.json({items: options.policyReceipts ?? []});
+      return Response.json({ items: options.policyReceipts ?? [] });
     if (url.endsWith('/review') && options.staleOverride)
       return Response.json({ error: { code: 'policy_override_required' } }, { status: 409 });
     if (url.endsWith('/stop') && method === 'POST') {
@@ -360,7 +360,7 @@ test('renewal and review bind the current selected connection, operation identit
     true,
   );
   const [renew, review] = f.requests.filter((request) => request.method === 'POST');
-  assert(renew.url.endsWith(`/projects/workspace/integrations/${id}/learning/renew`));
+  assert(renew.url.endsWith(`/workspaces/workspace/connections/${id}/learning/renew`));
   assert.deepEqual(renew.body, {
     renewalId: roundId,
     expectedRevision: 1,
@@ -369,7 +369,7 @@ test('renewal and review bind the current selected connection, operation identit
   });
   assert.equal(renew.headers.get('idempotency-key'), roundId);
   assert(
-    review.url.endsWith(`/projects/workspace/integrations/${id}/learning/rounds/${roundId}/review`),
+    review.url.endsWith(`/workspaces/workspace/connections/${id}/learning/rounds/${roundId}/review`),
   );
   assert.deepEqual(review.body, { approve: false });
 });
@@ -549,13 +549,23 @@ test('operators can remove structural permissions while retaining enrolled selec
 
 test('a skill permission update submits explicitly reviewed future paths', async () => {
   const f = fixture();
-  const result = await connectionLearning(env, {
-    ...target, action: 'skills', createSkillNames: 'refunds', retireSkillNames: '',
-    permittedPaths: 'instructions.md\nskills/refunds/SKILL.md',
-  }, f.fetcher);
+  const result = await connectionLearning(
+    env,
+    {
+      ...target,
+      action: 'skills',
+      createSkillNames: 'refunds',
+      retireSkillNames: '',
+      permittedPaths: 'instructions.md\nskills/refunds/SKILL.md',
+    },
+    f.fetcher,
+  );
   assert(result.ok && result.status);
   assert.deepEqual(result.status.permittedPaths, ['instructions.md', 'skills/refunds/SKILL.md']);
-  assert.deepEqual(result.status.skillPackages, {createSkillNames: ['refunds'], retireSkillNames: []});
+  assert.deepEqual(result.status.skillPackages, {
+    createSkillNames: ['refunds'],
+    retireSkillNames: [],
+  });
 });
 
 test('reviewed restores bind the exact connection, current revision, selected target and reason even after stop', async () => {
@@ -580,7 +590,7 @@ test('reviewed restores bind the exact connection, current revision, selected ta
   assert.equal(result.status.deliveredVersionId, roundId);
   const write = f.requests.find((entry) => entry.method === 'POST');
   assert(write);
-  assert(write.url.endsWith(`/integrations/${id}/learning/restore`));
+  assert(write.url.endsWith(`/connections/${id}/learning/restore`));
   assert.equal(write.headers.get('idempotency-key'), id);
   assert.deepEqual(write.body, {
     restoreId: id,
@@ -646,7 +656,7 @@ test('read-only outcome lookup scopes the UUID and omits private data from the b
   assert.equal(requests.length, 1);
   assert.ok(
     requests[0]!.endsWith(
-      '/projects/workspace/integrations/' + id + '/learning/outcomes/' + roundId,
+      '/workspaces/workspace/connections/' + id + '/learning/outcomes/' + roundId,
     ),
   );
 });
@@ -654,15 +664,35 @@ test('read-only outcome lookup scopes the UUID and omits private data from the b
 test('connected review displays the candidate’s blocking policies, forwards only reviewed receipts and rejects a stale decision', async () => {
   const digest = 'sha256:' + 'a'.repeat(64);
   const candidate = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
-  const status: LearningEnrollmentStatus = {...enrollment, rounds:[{
-    id: roundId, outcomeId:id, state:'awaiting_review', reason:null, parentVersionId:id,
-    candidateVersionId:candidate, proposalId:null, developmentRequestId:id, auditRequestId:roundId,
-    developmentComparisonId:id, auditComparisonId:roundId, promotionId:null,
-  }]};
-  const receipt = {comparisonId:id, requestId:roundId, policy:{id:'cost', revision:'v2', sha256:digest},
-    verdict:'indeterminate', reportedBy:'private-machine-name', checks:[{code:'cost.unknown',result:'unknown'}]};
-  const f = fixture({status, policyReceipts:[{...receipt,verdict:'pass'}, receipt]});
-  const read = await connectionLearning(env, {...target, action:'read'}, f.fetcher);
+  const status: LearningEnrollmentStatus = {
+    ...enrollment,
+    rounds: [
+      {
+        id: roundId,
+        outcomeId: id,
+        state: 'awaiting_review',
+        reason: null,
+        parentVersionId: id,
+        candidateVersionId: candidate,
+        proposalId: null,
+        developmentRequestId: id,
+        auditRequestId: roundId,
+        developmentComparisonId: id,
+        auditComparisonId: roundId,
+        promotionId: null,
+      },
+    ],
+  };
+  const receipt = {
+    comparisonId: id,
+    requestId: roundId,
+    policy: { id: 'cost', revision: 'v2', sha256: digest },
+    verdict: 'indeterminate',
+    reportedBy: 'private-machine-name',
+    checks: [{ code: 'cost.unknown', result: 'unknown' }],
+  };
+  const f = fixture({ status, policyReceipts: [{ ...receipt, verdict: 'pass' }, receipt] });
+  const read = await connectionLearning(env, { ...target, action: 'read' }, f.fetcher);
   assert(read.ok);
   assert.deepEqual(read.status?.rounds[0].blockingPolicies, [
     {

@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'docs/site'
 ASSETS = ROOT / 'docs/site-src'
 PAGES = [
+    ('CONTEXT.md', 'glossary.html', 'Start here', 'Glossary', 'Acclimate’s public vocabulary and service terminology.'),
     ('docs/design/README.md', 'index.html', 'Start here', 'Design guide', 'A small service for improving and delivering harness files.'),
     ('docs/design/overview.md', 'overview.html', 'Start here', 'Overview and ownership', 'The service delivers content; the application runs its native agent SDK.'),
     ('docs/design/bundles-and-cache.md', 'bundles.html', 'Service design', 'Bundles and local cache', 'Immutable files, scoped caching, freshness, and job-local preparation.'),

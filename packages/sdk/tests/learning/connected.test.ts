@@ -56,7 +56,7 @@ test('terminal reporter binds outcomes to fresh delivery and sends only bounded 
   const request = requests[0]!;
   assert.equal(
     new URL(request.url).pathname,
-    '/v1/projects/' + projectId + '/integrations/' + integrationId + '/learning/outcomes',
+    '/v1/workspaces/' + projectId + '/connections/' + integrationId + '/learning/outcomes',
   );
   assert.equal(request.headers.get('idempotency-key'), outcomeId);
   assert.equal(request.headers.get('authorization'), 'Bearer outcome-principal');
@@ -280,7 +280,7 @@ test('corrections and rechecks use independent stable ids against their original
   };
   await client.reportLearningCorrection(projectId, integrationId, correction);
   await client.reportLearningRecheck(projectId, integrationId, recheck);
-  const prefix = '/v1/projects/' + projectId + '/integrations/' + integrationId + '/learning/';
+  const prefix = '/v1/workspaces/' + projectId + '/connections/' + integrationId + '/learning/';
   assert.deepEqual(
     requests.map((r) => new URL(r.url).pathname),
     [prefix + 'corrections', prefix + 'rechecks'],

@@ -1,3 +1,4 @@
+use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, db, err, path};
 use axum::{
     Json, Router,
@@ -81,11 +82,11 @@ fn receipt(row: PgRow) -> Value {
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route(
+        .workspace_route(
             "/v1/projects/{p}/bundles/{b}/comparisons/{id}/policy-receipts",
             get(list).post(record),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{p}/bundles/{b}/versions/{id}/policy-receipts",
             get(blockers),
         )

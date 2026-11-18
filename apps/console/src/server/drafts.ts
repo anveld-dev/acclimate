@@ -1,3 +1,4 @@
+import { canonicalOperationPath } from '../lib/operation-target';
 import { consoleClient } from './console-client';
 import { ApiError, DeliveryError, validatePayload } from '@acclimate/sdk';
 import type { BundlePayload, Draft, PublishDraftRequest } from '@acclimate/sdk';
@@ -83,8 +84,9 @@ export async function draftCommand(
         ),
       };
     if (input.action === 'retry') {
-      const root = `/v1/projects/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/channels/${encodeURIComponent(c)}/drafts`;
-      if (input.operationPath !== root && !input.operationPath.startsWith(root + '/'))
+      const root = `/v1/workspaces/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/channels/${encodeURIComponent(c)}/drafts`;
+      const target = canonicalOperationPath(input.operationPath);
+      if (target !== root && !target.startsWith(root + '/'))
         return failure('Operation scope changed.');
       return {
         ok: true as const,

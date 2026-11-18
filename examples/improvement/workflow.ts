@@ -6,14 +6,14 @@ import path from 'node:path';
 import { resolveAndCache } from '../../packages/sdk/src/index.js';
 import { compare, submitComparison } from '../../packages/sdk/src/compare.js';
 import type { AcclimateClient } from '../../packages/sdk/src/client.js';
-import type { VerifiedBundle } from '../../packages/sdk/src/types.js';
+import type { VerifiedVersion } from '../../packages/sdk/src/types.js';
 import { cases, datasetRevision } from './dataset.js';
 import { gradeFinding, graderRevision } from './grader.js';
 
 export interface Model {
-  draft(parent: VerifiedBundle, skillPath: string): Promise<string>;
+  draft(parent: VerifiedVersion, skillPath: string): Promise<string>;
   review(
-    bundle: VerifiedBundle,
+    bundle: VerifiedVersion,
     snapshot: { diff: string },
   ): Promise<{ text: string; usage: { inputTokens?: number; outputTokens?: number } | null }>;
 }

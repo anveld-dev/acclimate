@@ -8,7 +8,11 @@ import {
   ExecutionUncertainError,
   EvaluationError,
 } from '../../src/evaluation/index.js';
-import { assertEvaluationOutput, preflightEvaluation, runEvaluation } from '../../src/evaluation/index.js';
+import {
+  assertEvaluationOutput,
+  preflightEvaluation,
+  runEvaluation,
+} from '../../src/evaluation/index.js';
 import { createServer } from 'node:http';
 import { execFileSync, spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -269,7 +273,10 @@ test('installed runner isolates verified bundles and uses exact full-side callba
       assert.equal(index.entries.length, 8);
       assert.equal(index.comparisonId, result.comparison!.id);
       const entry = index.entries.find((e) => e.role === 'output')!;
-      assert.equal(result.comparison!.results[0].parent.outputRef, 'acclimate:artifact:' + entry.sha256);
+      assert.equal(
+        result.comparison!.results[0].parent.outputRef,
+        'acclimate:artifact:' + entry.sha256,
+      );
       assert.ok(!body.includes(s.root));
       const envelope = JSON.parse(await readFile(path.join(j.directory, entry.file), 'utf8'));
       assert.deepEqual(envelope.identity, {
@@ -1017,7 +1024,7 @@ test('public config/handoff preflight and run work through bounded authenticated
           writeEvaluation: true,
           retainedEvaluationOperations: true,
         };
-      } else if (req.method === 'GET' && pathname === `/v1/projects/${projectId}/bundles`) {
+      } else if (req.method === 'GET' && pathname === `/v1/workspaces/${projectId}/bundles`) {
         const cursor = new URL(req.url!, 'http://localhost').searchParams.get('cursor');
         value =
           inventoryMode === 'loop'
@@ -1182,7 +1189,7 @@ test('missing python3 blocks public preflight and run before claim or callbacks 
       res.end('{}');
       return;
     }
-    if (req.method === 'GET' && req.url === `/v1/projects/${projectId}/evaluation-capabilities`) {
+    if (req.method === 'GET' && req.url === `/v1/workspaces/${projectId}/evaluation-capabilities`) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(
         JSON.stringify({
@@ -1289,7 +1296,7 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
     path.join(await realpath(tmpdir()), 'acclimate-response-budget-'),
   );
   const token = 'response-budget-fixture-token',
-    base = `/v1/projects/${projectId}/bundles/${bundleId}`;
+    base = `/v1/workspaces/${projectId}/bundles/${bundleId}`;
   const submitted: Array<{ key: string; body: string }> = [],
     retained = new Map<string, { body: string; comparison: Comparison }>();
   const handlerErrors: unknown[] = [];
@@ -1304,7 +1311,7 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
     try {
       assert.equal(req.headers.authorization, `Bearer ${token}`);
       const route = new URL(req.url!, 'http://localhost').pathname;
-      if (req.method === 'GET' && route === `/v1/projects/${projectId}/evaluation-capabilities`)
+      if (req.method === 'GET' && route === `/v1/workspaces/${projectId}/evaluation-capabilities`)
         return send(200, await f.api.getEvaluationCapabilities(projectId));
       assert.ok(route.startsWith(base + '/'));
       if (req.method === 'GET' && route === `${base}/evaluation-requests/${requestId}`)

@@ -1,11 +1,11 @@
-import type { PreparedPiBundle } from './index.js';
+import type { PreparedPiVersion } from './index.js';
 
 /**
  * Build and load Pi's native resource loader for a fresh session. Memory is
  * appended only when the host explicitly selects source paths in memoryPaths.
  */
 export async function createPiResourceLoader(
-  prepared: PreparedPiBundle,
+  prepared: PreparedPiVersion,
   memoryPaths: readonly string[] = [],
 ): Promise<import('@earendil-works/pi-coding-agent').ResourceLoader> {
   const { DefaultResourceLoader, SettingsManager } = await import(

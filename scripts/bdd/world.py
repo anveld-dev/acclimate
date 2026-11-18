@@ -39,7 +39,7 @@ class World:
         if 'learning' in scenario.effective_tags:
             self.h.env['ACCLIMATE_LEARNING_DRIFT_CHECK_STEPS'] = '1'
         self.h.restart()
-        self.root = '/v1/projects/' + self.h.project
+        self.root = '/v1/workspaces/' + self.h.project
         if 'hosted' in scenario.effective_tags: self.hosted()
 
     def close_scenario(self):
@@ -89,7 +89,7 @@ class World:
 
     def manual_release(self, version=None, reason='Explicit manual test release.'):
         current = self.call('GET', self.channel)
-        return self.call('POST', self.channel + '/promotions', dict(
+        return self.call('POST', self.channel + '/releases', dict(
             versionId=(version or self.draft['snapshotVersion'])['id'],
             expectedRevision=current['revision'], unevaluatedReason=reason))
 
@@ -176,8 +176,8 @@ class World:
         return json.loads(process.stdout.strip().splitlines()[-1])
 
     def create_integration(self):
-        self.integration = self.call('POST', self.root + '/integrations', dict(displayName='BDD application', bundleId=self.setup['bundle']['id'], channel='stable'))
-        self.integration_path = self.root + '/integrations/' + self.integration['id']
+        self.integration = self.call('POST', self.root + '/connections', dict(displayName='BDD application', bundleId=self.setup['bundle']['id'], channel='stable'))
+        self.integration_path = self.root + '/connections/' + self.integration['id']
 
     def issue(self, kind, key=None):
         self.credential = self.call('POST', self.integration_path + '/credentials', dict(kind=kind), key=key)
@@ -219,7 +219,7 @@ class World:
         from urllib.parse import urlencode
         projects, cursor, seen = [], None, set()
         while True:
-            route = '/v1/projects?' + urlencode(dict(limit=100, **({'cursor': cursor} if cursor else {})))
+            route = '/v1/workspaces?' + urlencode(dict(limit=100, **({'cursor': cursor} if cursor else {})))
             page = self.call('GET', route, actor=actor)
             projects.extend(page['items'])
             cursor = page.get('nextCursor')
@@ -244,9 +244,9 @@ class World:
 
     def create_workspace(self):
         project = 'people-' + uuid.uuid4().hex
-        self.new_project = self.call('POST', '/v1/projects', dict(id=project,name='People workspace '+project), actor='admin')
+        self.new_project = self.call('POST', '/v1/workspaces', dict(id=project,name='People workspace '+project), actor='admin')
         self.h.project = project
-        self.root = '/v1/projects/' + project
+        self.root = '/v1/workspaces/' + project
         self.actor = 'admin'
 
     def browser(self):

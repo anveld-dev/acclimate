@@ -176,7 +176,7 @@ test('draft history includes closed drafts on every page for the console filter'
   for (const url of requested) {
     assert.equal(
       url.pathname,
-      '/v1/projects/p/bundles/' + env.CONSOLE_BUNDLE + '/channels/stable/drafts',
+      '/v1/workspaces/p/bundles/' + env.CONSOLE_BUNDLE + '/channels/stable/drafts',
     );
     assert.equal(url.searchParams.get('status'), 'all');
     assert.equal(url.searchParams.get('limit'), '20');

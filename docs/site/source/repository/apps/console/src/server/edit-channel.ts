@@ -37,7 +37,7 @@ export async function editChannel(
     return { ok: false, message: 'Invalid edit request.' };
   try {
     requireSession(env);
-    const operationPath = `/v1/projects/${encodeURIComponent(env.CONSOLE_PROJECT || '')}/bundles/${encodeURIComponent(env.CONSOLE_BUNDLE || '')}/channels/${encodeURIComponent(env.CONSOLE_CHANNEL || 'stable')}/promotions`;
+    const operationPath = `/v1/workspaces/${encodeURIComponent(env.CONSOLE_PROJECT || '')}/bundles/${encodeURIComponent(env.CONSOLE_BUNDLE || '')}/channels/${encodeURIComponent(env.CONSOLE_CHANNEL || 'stable')}/releases`;
     if (command.action !== 'save') {
       const prior = await lookupOperation(
         env,

@@ -1,3 +1,4 @@
+use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, auth, db, err};
 use axum::{
     Json, Router,
@@ -12,18 +13,18 @@ use uuid::Uuid;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/v1/projects/{project}/users/{user}", get(verified_user))
-        .route("/v1/projects/{project}/memberships", get(memberships))
-        .route("/v1/projects", get(projects).post(create_project))
-        .route("/v1/projects/{project}/bundles", get(bundles))
-        .route(
+        .workspace_route("/v1/projects/{project}/users/{user}", get(verified_user))
+        .workspace_route("/v1/projects/{project}/memberships", get(memberships))
+        .workspace_route("/v1/projects", get(projects).post(create_project))
+        .workspace_route("/v1/projects/{project}/bundles", get(bundles))
+        .workspace_route(
             "/v1/projects/{project}/bundles/{bundle}/channels",
             get(channels),
         )
         .route("/v1/auth/sessions", post(login))
         .route("/v1/auth/workspace-adoptions", post(adopt_workspace))
         .route("/v1/auth/session", get(session).delete(logout))
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/memberships/{user}",
             put(membership).delete(remove_membership),
         )

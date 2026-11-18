@@ -1,55 +1,45 @@
 # Acclimate
 
-Acclimate delivers versioned agent content and records proposed improvements, comparisons, and deliberate releases. An enrolled connection lets Acclimate schedule improvement from trusted outcomes. The integrating application owns agent execution and grading.
+Acclimate delivers the instructions, skills and approved memory your agent uses. Your application runs the agent and grades its work.
 
-## Language
+## Public glossary
 
-**Workspace**:
-A scope containing bundles and the memberships that determine who may read, edit, or release them.
+| Term | Meaning |
+| --- | --- |
+| Workspace | The scope for bundles, connections and the people who can access them. |
+| Bundle | A named collection of agent instructions, skills and approved memory. |
+| Version | An immutable snapshot of a bundle. Its digest identifies the exact bytes. A client can verify those bytes and prepare them for a job. |
+| Channel | A named reference, such as `stable`, to the version jobs should use. |
+| Proposal | A request for changes to a bundle, with a candidate version when the changes are ready. |
+| Comparison | The outcomes of running two versions on the same cases with the same grading rules. |
+| Release | A decision to make a version available on a channel or connection. Restoring an earlier version creates a new release. |
+| Connection | The link between an application and the workspace, bundle and channel it uses. |
+| Outcome | The application’s result for a task on a specific version. It may carry a correction the application approves for future proposals. |
 
-**Bundle**:
-A named collection of instructions, skills, and approved memory with immutable content versions.
+## Internal terms
 
-**Version**:
-An immutable bundle snapshot with its own identity and a declared digest of its exact content bytes.
+These names apply to service operations and contracts.
 
-**Verified bundle**:
-A version whose content bytes match its declared digest and whose payload satisfies the supported content rules. Verification does not establish whether an agent used the content.
-
-**Channel**:
-A named reference to a released version, with a revision that advances for each release decision.
-
-**Draft**:
-Editable proposed content based on a version and channel revision. Saved draft generations preserve snapshots without releasing them.
-
-**Proposal**:
-A bounded request to suggest changes to allowed bundle paths, with recorded attempts and an optional candidate version.
-
-**Comparison**:
-An application-reported evaluation pairing parent and candidate outcomes against a declared case inventory. A comparison can be incomplete and is not an execution attestation.
-
-**Release**:
-A deliberate decision to advance a channel to a version, supported by comparison evidence or an explicit unevaluated reason. Restoring an older version creates a new release decision.
-
-**Operation result**:
-The recorded outcome of a content mutation, associated with its original request identity and exact request bytes so that retries can recover the same outcome.
-_Avoid_: Delivery receipt
-
-**Prepared bundle**:
-Verified content materialized for an application-owned job, including the paths needed by its selected native harness. Preparation does not mean that the job started or that a skill was invoked.
-
-**Delivery receipt**:
-An optional application-reported observation of content delivery or job preparation and startup. It is distinct from an operation result and from proof of agent behavior.
-_Avoid_: Operation result
-
-**Connection**:
-A service-managed integration bound to a workspace, bundle, and source channel. A stable connection UUID identifies the installation for delivery, reporting, and learning scope.
-
-**Task outcome**:
-A terminal application report tied to the exact bundle version a logical task used. The app may include a bounded graded discrepancy or teaching instruction approved for proposer use.
-
-**Connected learning enrollment**:
-A workspace administrator's authorization for a connection to admit a bounded number of proposals, run paired development and independent audit evaluations through a registered app, and use the selected release mode. Each enrollment has a separate delivery target seeded from its source channel.
-
-**Audit cohort**:
-An independent evaluation case inventory registered before use. A managed learning round consumes an available cohort when it queues the audit.
+| Term | Meaning |
+| --- | --- |
+| Draft | Editable changes based on a version and channel revision. Saved generations preserve the edits before they become a version. |
+| Operation result | A stored mutation response used to recover a request by its original key and bytes. |
+| Delivery receipt | An application report of content preparation or job startup. |
+| Evaluation request | An assignment for an application to run and grade a comparison. |
+| Learning enrollment | The administrator’s authorization for a connection to accept outcomes, generate proposals, request comparisons and release versions under configured limits. |
+| Round | The service’s tracked work on an admitted improvement, from proposal through comparisons and any release decision. |
+| Policy epoch | A span of rounds using the same selection and evaluation policy. |
+| Admission decision | The service’s decision about whether an outcome or correction can start another round. |
+| Teaching view | The approved subset of outcome and correction data supplied to the proposer. |
+| Harness treatment | The agent configuration and bundle content assigned to one side of a comparison. |
+| Audit cohort | A held-out inventory of cases reserved for an independent comparison. |
+| Development incumbent | The version currently selected for comparison in private development. |
+| Renewal | An administrator’s update to enrollment limits, case inventories or policy. |
+| Recheck | A test of whether the current version still exhibits the issue described by a correction. |
+| Field audit | A comparison of sampled jobs on a released version against its assigned control. |
+| Field window | The interval in which the service gathers evidence about a release from sampled jobs. |
+| Requalification | Replay evidence required before withdrawn content can be restored against the current version. |
+| Incident replay | A private reproduction check tied to an outcome or correction. |
+| Restore target | The previously released or currently approved source version chosen for restoration. |
+| Delivery revision | The increasing reference for the version served by a connection. |
+| Policy override receipt | The recorded policy evidence and reason that authorize a release despite a blocking verdict. |

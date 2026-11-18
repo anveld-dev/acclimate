@@ -1,3 +1,4 @@
+use crate::WorkspaceRoutes;
 use crate::pagination::{ListQuery, Page};
 use crate::{ApiResult, AppState, CaseKey, ComparisonRequest, db, err, path};
 use axum::{
@@ -75,27 +76,27 @@ pub(crate) fn decode(r: PgRow) -> ApiResult<Evaluation> {
 }
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route(
+        .workspace_route(
             "/v1/projects/{p}/evaluation-capabilities",
             get(capabilities),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{p}/bundles/{b}/evaluation-requests",
             get(list).post(create),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}",
             get(detail),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/start",
             post(start),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/finish",
             post(finish),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/interrupt",
             post(interrupt),
         )

@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { Selection } from './cache.js';
-import type { VerifiedBundle } from './types.js';
+import type { VerifiedVersion } from './types.js';
 import type { AcclimateClient } from './client.js';
 import type { DeliveryReceiptRequest } from './types.js';
 
 export interface DeliveryObservation {
   selection: Selection;
-  bundle: VerifiedBundle;
+  bundle: VerifiedVersion;
   source: DeliveryReceiptRequest['source'];
   downloaded: boolean;
 }
@@ -31,11 +31,11 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
   let running: Promise<void> | undefined;
   let closed = false;
   const bindings = new WeakMap<
-    VerifiedBundle,
+    VerifiedVersion,
     Omit<DeliveryReceiptRequest, 'eventId' | 'stage' | 'occurredAt'>
   >();
   function createStageReceipt(
-    bundle: VerifiedBundle,
+    bundle: VerifiedVersion,
     stage: DeliveryReceiptRequest['stage'],
   ): Readonly<DeliveryReceiptRequest> {
     const binding = bindings.get(bundle);
@@ -52,7 +52,7 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
     void flush();
     return accepted ? receipt : null;
   }
-  function reportStage(bundle: VerifiedBundle, stage: DeliveryReceiptRequest['stage']) {
+  function reportStage(bundle: VerifiedVersion, stage: DeliveryReceiptRequest['stage']) {
     return queueReceipt(createStageReceipt(bundle, stage));
   }
   function observeDelivery({ selection, bundle, source, downloaded }: DeliveryObservation): void {
@@ -137,16 +137,16 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
     enqueue,
     flush,
     observeDelivery,
-    reportPrepared: (bundle: VerifiedBundle) => reportStage(bundle, 'prepared') !== null,
-    reportStarted: (bundle: VerifiedBundle) => reportStage(bundle, 'started') !== null,
+    reportPrepared: (bundle: VerifiedVersion) => reportStage(bundle, 'prepared') !== null,
+    reportStarted: (bundle: VerifiedVersion) => reportStage(bundle, 'started') !== null,
     /** Bind a single job's first observed start time and event ID across queue refusals. */
-    bindStartedReceipt(bundle: VerifiedBundle) {
+    bindStartedReceipt(bundle: VerifiedVersion) {
       const receipt = createStageReceipt(bundle, 'started');
       let queued: Readonly<DeliveryReceiptRequest> | null = null;
       return () => (queued ??= queueReceipt(receipt));
     },
     /** Queue a started receipt and return its exact body for a durable job handoff. */
-    reportStartedReceipt: (bundle: VerifiedBundle) => reportStage(bundle, 'started'),
+    reportStartedReceipt: (bundle: VerifiedVersion) => reportStage(bundle, 'started'),
     /** Stop claiming events. An already in-flight request may still finish. */
     close() {
       closed = true;

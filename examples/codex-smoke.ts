@@ -4,13 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { Codex } from '@openai/codex-sdk';
 import { prepare } from '../packages/codex-plugin/src/index.js';
-import type { VerifiedBundle } from '../packages/sdk/src/types.js';
+import type { VerifiedVersion } from '../packages/sdk/src/types.js';
 
 const model = 'gpt-6-luna';
 const instructionSecret = randomUUID();
 const skillSecret = randomUUID();
 const memorySecret = randomUUID();
-const payload: VerifiedBundle['payload'] = {
+const payload: VerifiedVersion['payload'] = {
   schemaVersion: 1,
   files: [
     {
@@ -29,7 +29,7 @@ const payload: VerifiedBundle['payload'] = {
 const digest = `sha256:${createHash('sha256')
   .update(`${JSON.stringify(payload)}\n`, 'utf8')
   .digest('hex')}`;
-const bundle: VerifiedBundle = {
+const bundle: VerifiedVersion = {
   version: {
     id: 'codex-smoke-v1',
     bundleId: 'codex-smoke',

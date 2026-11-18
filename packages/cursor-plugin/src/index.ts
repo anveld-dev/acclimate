@@ -1,8 +1,8 @@
-import type { VerifiedBundle } from '../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../sdk/src/types.js';
 import { DeliveryError, validatePayload } from '../../sdk/src/cache.js';
 import { prepareNativeFiles } from '../../sdk/src/internal/native-files.js';
 
-export interface PreparedCursorBundle {
+export interface PreparedCursorVersion {
   cwd: string;
   versionId: string;
   digest: string;
@@ -16,16 +16,16 @@ export interface PreparedCursorBundle {
 
 /** Prepare native project resources in a private, owned workspace for a fresh local agent. */
 export async function prepare(
-  bundle: VerifiedBundle,
+  bundle: VerifiedVersion,
   options: { approvedMemoryPaths?: string[] } = {},
-): Promise<PreparedCursorBundle> {
+): Promise<PreparedCursorVersion> {
   validatePayload(bundle.payload);
   const approved = new Set(options.approvedMemoryPaths ?? []);
   for (const selected of approved) {
     if (!bundle.payload.files.some((file) => file.kind === 'memory' && file.path === selected))
       throw new DeliveryError('invalid_payload', `Approved memory not found: ${selected}`);
   }
-  const selectedBundle: VerifiedBundle = {
+  const selectedBundle: VerifiedVersion = {
     ...bundle,
     payload: {
       ...bundle.payload,
@@ -55,3 +55,6 @@ export async function prepare(
     cleanup: staged.cleanup,
   };
 }
+
+/** @deprecated Use PreparedCursorVersion. */
+export type PreparedCursorBundle = PreparedCursorVersion;

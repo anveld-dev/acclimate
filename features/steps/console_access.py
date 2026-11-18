@@ -21,7 +21,7 @@ def rights(context,editing):
         expect(edit).to_have_count(0)
         expect(p.get_by_role('textbox', name='Content', exact=True)).to_have_count(0)
     # Observe delivery as an ordinary workspace member without granting credential administration.
-    connection=w.call('POST',w.root+'/integrations',dict(bundleId=w.setup['bundle']['id'],
+    connection=w.call('POST',w.root+'/connections',dict(bundleId=w.setup['bundle']['id'],
         channel='stable',displayName='Reader delivery fixture'),actor='admin')
     p.get_by_role('link',name='Delivery',exact=True).click()
     expect(p).to_have_url(w.browser_fixture.base+w.browser_fixture.workspace_path('delivery'))
@@ -31,7 +31,7 @@ def rights(context,editing):
     evaluations=row.get_by_role('link',name='View bundle evaluations for Reader delivery fixture')
     assert w.setup['bundle']['id'] in evaluations.get_attribute('href')
     expect(row).to_contain_text('Nothing reported within retention · delivery unknown.')
-    assert w.call('GET',w.root+'/integration-observations',actor='member')['items'][0]['id']==connection['id']
+    assert w.call('GET',w.root+'/connection-observations',actor='member')['items'][0]['id']==connection['id']
     expect(p.get_by_role('link',name='Connections',exact=True)).to_have_count(0)
     for name in ['Create read credential','Create reporting credential','Create replacement credential',
                  'Create connection','Revoke connection','Revoke credential']:
@@ -126,8 +126,8 @@ def existing_member(context):
 @given('the administrator has a scoped connection')
 def admin_connection(context):
     w=context.world
-    w.integration=w.call('POST',w.root+'/integrations',dict(bundleId=w.setup['bundle']['id'],channel='stable',displayName='Recovery fixture'),actor='admin')
-    w.integration_path=w.root+'/integrations/'+w.integration['id']
+    w.integration=w.call('POST',w.root+'/connections',dict(bundleId=w.setup['bundle']['id'],channel='stable',displayName='Recovery fixture'),actor='admin')
+    w.integration_path=w.root+'/connections/'+w.integration['id']
     w.browser().visit(w.browser().workspace_path('connections')+'?integration='+w.integration['id'])
 
 @when('the browser loses a successful credential issuance response')
@@ -188,7 +188,7 @@ def replace_credential(context):
 @then('exactly one active replacement remains and secrets were never stored')
 def replacement_evidence(context):
     w=context.world
-    listing=w.call('GET',w.root+'/integrations',actor='admin')['items']
+    listing=w.call('GET',w.root+'/connections',actor='admin')['items']
     entry=next(item for item in listing if item['id']==w.integration['id'])
     assert len(entry['credentials'])==2
     assert len([item for item in entry['credentials'] if not item['revokedAt']])==1

@@ -236,22 +236,21 @@ export function ConnectionLearning({
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            Field audits compare served jobs with an independent control. A sequential test of
-            wins and losses can trigger rollback or validate the release.
+            Comparisons after release can confirm the improvement or restore an earlier version.
           </p>
           <dl className="learning-capacity">
             <div>
-              <dt>Learning rounds</dt>
+              <dt>Proposal history</dt>
               <dd>{status.rounds.length}</dd>
             </div>
             <div>
-              <dt>Proposal admissions used</dt>
+              <dt>Proposals used</dt>
               <dd>
                 {status.proposalAdmissions} <small>of {status.maxProposalAdmissions}</small>
               </dd>
             </div>
             <div>
-              <dt>Audit cohorts available</dt>
+              <dt>Independent comparisons available</dt>
               <dd>
                 {status.remainingAudits} <small>of {status.auditCount}</small>
               </dd>
@@ -278,22 +277,20 @@ export function ConnectionLearning({
           )}
           {!status.developmentCommitted && (
             <p className="text-sm">
-              Automatic rollout requires a committed development descriptor and a fresh committed
-              audit cohort. Update these in the renewal form.
+              Automatic release requires saved settings for both comparisons and unused independent
+              cases. Update the connection settings.
             </p>
           )}
           {status.policySummary && (
             <p className="text-sm">
               Development policy · {status.policySummary.development}
               <br />
-              Audit policy · {status.policySummary.audit}
+              Independent comparison rules · {status.policySummary.audit}
             </p>
           )}
-          {active && proposalLimitReached && (
-            <p className="text-sm">Proposal admission limit reached.</p>
-          )}
+          {active && proposalLimitReached && <p className="text-sm">Proposal limit reached.</p>}
           {active && status.remainingAudits === 0 && (
-            <p className="text-sm">Independent audit cohorts exhausted.</p>
+            <p className="text-sm">No independent comparisons remain.</p>
           )}
           {editable && active && (
             <div className="flex flex-wrap gap-2">
@@ -342,7 +339,9 @@ export function ConnectionLearning({
           )}
           {editable && active && (
             <Disclosure>
-              <DisclosureTrigger>Renew admissions, cohorts or selection policies</DisclosureTrigger>
+              <DisclosureTrigger>
+                Update limits, comparison cases or release rules
+              </DisclosureTrigger>
               <DisclosureContent>
                 <RenewalForm
                   key={status.renewalRevision}
@@ -410,7 +409,7 @@ export function ConnectionLearning({
           )}
           <OutcomeLookup key={integrationId} target={target} />
           <div className="space-y-2">
-            <h4 className="text-sm font-semibold">Learning rounds</h4>
+            <h4 className="text-sm font-semibold">Proposal history</h4>
             {status.rounds.length ? (
               <ul className="divide-y divide-border">
                 {status.rounds.map((round, index) => (
@@ -440,7 +439,7 @@ export function ConnectionLearning({
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">No rounds recorded.</p>
+              <p className="text-sm text-muted-foreground">No proposals started.</p>
             )}
           </div>
         </>
@@ -491,7 +490,7 @@ export function ConnectionLearning({
             <DialogDescription>
               {decision?.approve
                 ? 'This changes the delivery target for future jobs using this connection.'
-                : 'Keep the current delivery target and record this decision for the learning round.'}
+                : 'Keep the current delivery target and record this decision for the proposal.'}
             </DialogDescription>
           </DialogHeader>
           {decision && (
@@ -514,7 +513,7 @@ export function ConnectionLearning({
           )}
           {decision?.approve && decision.policies === null && (
             <p role="status">
-              Policy receipts could not be loaded. Refresh learning status to review a blocking
+              Policy checks could not be loaded. Refresh learning status to review a blocking
               policy.
             </p>
           )}
@@ -545,7 +544,7 @@ export function ConnectionLearning({
                 maxLength={1024}
                 onChange={(e) => setOverrideReason(e.target.value)}
               />
-              <p>The release records your reason and the policy receipts you reviewed.</p>
+              <p>The release records your reason and the policy checks you reviewed.</p>
             </div>
           )}
           <DialogFooter>
@@ -637,7 +636,7 @@ function EnrollmentForm({
           </div>
         ))}
         <div className="space-y-1.5">
-          <Label htmlFor={`${prefix}-limit`}>Proposal admission limit</Label>
+          <Label htmlFor={`${prefix}-limit`}>Proposal limit</Label>
           <Input
             id={`${prefix}-limit`}
             name="maxProposalAdmissions"
@@ -656,7 +655,7 @@ function EnrollmentForm({
       </p>
       <p className="text-sm text-muted-foreground">
         Your app submits terminal task outcomes using this connection ID. Its installed evaluator
-        runs the cohorts declared below.
+        uses the comparison cases you configure below.
       </p>
       <div className="space-y-1.5">
         <Label htmlFor={`${prefix}-paths`}>Permitted bundle paths</Label>
@@ -708,7 +707,7 @@ function EnrollmentForm({
           disabled={busy}
         />
         <Label htmlFor={`${prefix}-rollout`}>
-          Automatically roll out candidates that pass the independent audit
+          Automatically release versions that pass the independent comparison
         </Label>
       </div>
       <div className="flex items-center gap-2">
@@ -782,7 +781,7 @@ function RenewalForm({
   return (
     <form onSubmit={(event) => void submit(event)} className="space-y-3 pt-2">
       <div className="space-y-1.5">
-        <Label htmlFor={`${prefix}-limit`}>Additional proposal admissions</Label>
+        <Label htmlFor={`${prefix}-limit`}>Additional proposals</Label>
         <Input
           id={`${prefix}-limit`}
           name="proposalAdmissions"
@@ -794,7 +793,7 @@ function RenewalForm({
         />
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor={`${prefix}-audits`}>Additional independent audit descriptors</Label>
+        <Label htmlFor={`${prefix}-audits`}>Additional settings for independent comparisons</Label>
         <Textarea
           id={`${prefix}-audits`}
           name="descriptors"
@@ -827,10 +826,10 @@ function RenewalForm({
       <SelectionPoliciesField busy={busy} />
       <p className="text-sm text-muted-foreground">
         Install replacement evaluators before saving. Development and policy changes take effect
-        between rounds.
+        between proposals.
       </p>
       <Button type="submit" disabled={busy}>
-        Save renewal
+        Save connection settings
       </Button>
     </form>
   );
@@ -853,7 +852,7 @@ function LearningRound({
   return (
     <Disclosure defaultOpen={latest} className="learning-round">
       <DisclosureTrigger className="text-sm">
-        {latest && <span className="learning-round-latest">Latest round · </span>}
+        {latest && <span className="learning-round-latest">Latest proposal · </span>}
         {fieldAudits?.rollbackPromotionId
           ? 'Rolled back'
           : (roundLabels[round.state] ?? round.state)}
@@ -864,7 +863,7 @@ function LearningRound({
         {round.reason && <p>{round.reason}</p>}
         {round.incidentReplay && (
           <p>
-            Triggering incident replay ·{' '}
+            Original issue check ·{' '}
             {round.state === 'rejected' && round.incidentReplay === 'pending'
               ? 'No verdict received'
               : round.incidentReplay}
@@ -876,12 +875,12 @@ function LearningRound({
             {round.attempt !== undefined && <> · attempt {round.attempt}</>}
           </p>
         )}
-        {round.policyEpoch !== undefined && <p>Policy epoch {round.policyEpoch}</p>}
+        {round.policyEpoch !== undefined && <p>Policy revision {round.policyEpoch}</p>}
         <div className="learning-round-links">
           {(
             [
               ['development', round.developmentRequestId, round.developmentComparisonId],
-              ['audit', round.auditRequestId, round.auditComparisonId],
+              ['independent', round.auditRequestId, round.auditComparisonId],
             ] as const
           ).map(
             ([phase, request, comparison]) =>
@@ -894,7 +893,7 @@ function LearningRound({
                     comparison: comparison ?? undefined,
                   })}
                 >
-                  {comparison ? `View ${phase} evidence` : `Watch ${phase} evaluation`}
+                  {comparison ? `View ${phase} comparison` : `Watch ${phase} comparison`}
                 </ConsoleLink>
               ),
           )}
@@ -902,21 +901,21 @@ function LearningRound({
         {fieldAudits && (
           <div className="space-y-1">
             <p>
-              Post-rollout paired audit · {fieldAudits.regressions}{' '}
+              Comparison after release · {fieldAudits.regressions}{' '}
               {fieldAudits.regressions === 1 ? 'regression' : 'regressions'} in{' '}
               {fieldAudits.windowSize} graded {fieldAudits.windowSize === 1 ? 'job' : 'jobs'}
             </p>
             {fieldAudits.rollbackPromotionId && (
               <>
                 <p className="break-all">
-                  Rollback promotion <code>{fieldAudits.rollbackPromotionId}</code>
+                  Rollback release <code>{fieldAudits.rollbackPromotionId}</code>
                 </p>
               </>
             )}
           </div>
         )}
         <Disclosure>
-          <DisclosureTrigger>Round identifiers</DisclosureTrigger>
+          <DisclosureTrigger>Version and outcome IDs</DisclosureTrigger>
           <DisclosureContent>
             <dl className="space-y-1 break-all">
               <div>

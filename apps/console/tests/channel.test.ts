@@ -37,13 +37,16 @@ function fixture(content = bytes, role = 'admin', versionDigest = resolution.ver
   const calls: string[] = [];
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input);
-    if (url.includes('/v1/projects?'))
+    if (url.includes('/v1/workspaces?'))
       return Response.json({
         items: [{ id: env.CONSOLE_PROJECT, name: 'Workspace', role }],
         nextCursor: null,
       });
     if (url.includes('/bundles?'))
-      return Response.json({ items: [{ id: 'bundle', origin: 'unknown', compatibilityTarget: 'codex' }], nextCursor: null });
+      return Response.json({
+        items: [{ id: 'bundle', origin: 'unknown', compatibilityTarget: 'codex' }],
+        nextCursor: null,
+      });
     calls.push(url);
     assert.equal(init?.method, 'GET');
     assert.equal(init?.redirect, 'manual');
@@ -51,9 +54,12 @@ function fixture(content = bytes, role = 'admin', versionDigest = resolution.ver
       (init?.headers as Record<string, string>).Authorization,
       `Bearer ${env.CONSOLE_SERVICE_TOKEN}`,
     );
-    if (url.includes('/promotions?')) return Response.json({ items: [], nextBeforeRevision: null });
+    if (url.includes('/releases?')) return Response.json({ items: [], nextBeforeRevision: null });
     if (url.endsWith('/payload')) return new Response(content);
-    return Response.json({ ...resolution, version: { ...resolution.version, digest: versionDigest } });
+    return Response.json({
+      ...resolution,
+      version: { ...resolution.version, digest: versionDigest },
+    });
   };
   return { calls, fetcher };
 }
@@ -100,7 +106,10 @@ test('authenticated malformed channel payloads keep the generic error and hide a
     const result = await readChannel(env, fixture(content, 'admin', versionDigest).fetcher);
     assert.equal(result.status, 'error');
     if (result.status === 'error')
-      assert.equal(result.message, 'Could not read the service. Check the connection and server configuration, then retry.');
+      assert.equal(
+        result.message,
+        'Could not read the service. Check the connection and server configuration, then retry.',
+      );
     assert.ok(!('payload' in result));
   }
 });
@@ -143,7 +152,9 @@ test('historical bundles keep their stored example origin and published content'
   const { fetcher } = fixture();
   const result = await readChannel(env, (input, init) =>
     String(input).includes('/bundles?')
-      ? Promise.resolve(Response.json({ items: [{ id: 'bundle', origin: 'example' }], nextCursor: null }))
+      ? Promise.resolve(
+          Response.json({ items: [{ id: 'bundle', origin: 'example' }], nextCursor: null }),
+        )
       : fetcher(input, init),
   );
   assert.equal(result.status, 'ready');

@@ -14,7 +14,7 @@ import {
 import { join, resolve } from 'node:path';
 import type { AcclimateClient } from './client.js';
 import { ApiError } from './client.js';
-import type { BundlePayload, ChannelResolution, VerifiedBundle, VersionMetadata } from './types.js';
+import type { BundlePayload, ChannelResolution, VerifiedVersion, VersionMetadata } from './types.js';
 import { DeliveryError } from './validation.js';
 import { verifyPayloadBytes } from './verification.js';
 export { DeliveryError, validatePayload } from './validation.js';
@@ -119,7 +119,7 @@ export async function resolveAndCache(
   client: AcclimateClient,
   selection: Selection,
   policy: CachePolicy,
-): Promise<VerifiedBundle> {
+): Promise<VerifiedVersion> {
   const now = Date.now(),
     maxAge = policy.maxResolutionAgeMs ?? 0,
     offline = policy.offline ?? false;

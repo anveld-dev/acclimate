@@ -270,7 +270,7 @@ def cross_tab(context):
 @then('the created connection remains bound to the first bundle and channel')
 def bound_connection(context):
     w=context.world
-    rows=w.call('GET',w.root+'/integrations')['items']
+    rows=w.call('GET',w.root+'/connections')['items']
     assert len(rows)==1
     assert rows[0]['bundleId']==w.setup['bundle']['id'] and rows[0]['channel']=='stable'
     expect(browser(context).page.get_by_role('heading',name='Cross-tab connection',exact=True)).to_be_visible()
@@ -420,7 +420,7 @@ def restored_search(context):
 @given('the operator can also access another workspace')
 def another_workspace(context):
     w=context.world
-    w.extra_workspace=w.call('POST','/v1/projects',dict(id='second-'+uuid.uuid4().hex,name='Second workspace'),actor='admin')
+    w.extra_workspace=w.call('POST','/v1/workspaces',dict(id='second-'+uuid.uuid4().hex,name='Second workspace'),actor='admin')
 
 
 @when('I edit content and try to switch workspace')

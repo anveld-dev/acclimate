@@ -1,5 +1,11 @@
 [
   {
+    "source": "CONTEXT.md",
+    "route": "glossary.html",
+    "group": "Start here",
+    "title": "Glossary"
+  },
+  {
     "source": "docs/design/README.md",
     "route": "index.html",
     "group": "Start here",

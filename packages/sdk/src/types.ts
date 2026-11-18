@@ -73,6 +73,12 @@ export interface Proposal {
   attempts: number;
   candidate: VersionMetadata | null;
   rationale: string | null;
+  screening?: Array<{
+    stage: 'initial' | 'repair';
+    result: { verdict: 'accept' | 'reject'; objections: string[] } | null;
+    rationale: string;
+    changes: Array<{ path: string; before: string | null; after: string | null }>;
+  }>;
   error: string | null;
   createdAt: string;
 }

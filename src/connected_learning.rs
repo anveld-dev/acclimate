@@ -536,6 +536,7 @@ async fn enroll(
         serde_json::from_slice(&current.get::<Vec<u8>, _>("payload")).map_err(db)?;
     if request.permitted_paths.iter().any(|path| {
         !payload.files.iter().any(|file| file.path == *path)
+            && !crate::proposal_edits::memory_path(path)
             && !request
                 .skill_packages
                 .as_ref()

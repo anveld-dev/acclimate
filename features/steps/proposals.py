@@ -1,5 +1,6 @@
 import time
 from behave import given, when, then
+from scripts.bdd.provider import proposal_prompt
 
 
 @given('a published bundle with instructions and approved reusable memory')
@@ -29,7 +30,7 @@ def disabled(context):
 def propose(context, path):
     w = context.world
     w.proposal_parent = w.call('GET', w.bundle + '/versions/' + w.original['version']['id'] + '/payload')
-    w.proposal = w.call('POST', w.bundle + '/proposals', dict(parentVersionId=w.original['version']['id'],allowedPaths=[path],hypothesis='Improve retry review.',evidence=['Explicit authorized fixture evidence.']))
+    w.proposal = w.call('POST', w.bundle + '/proposals', dict(parentVersionId=w.original['version']['id'],allowedPaths=path.split(", "),hypothesis='Improve retry review.',evidence=['Explicit authorized fixture evidence.']))
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         w.proposal = w.call('GET', w.bundle + '/proposals/' + w.proposal['id'])
@@ -86,3 +87,25 @@ def found(context):
     w = context.world
     items = w.call('GET', w.bundle + '/proposals')['items']
     assert any(item['id'] == w.proposal['id'] and item['status'] == 'succeeded' for item in items)
+
+@given('the provider fixture uses {mode} proposal output')
+def proposal_mode(context, mode):
+    context.world.provider.mode = mode
+
+
+@then('the candidate replaces the old memory note with the new note')
+def superseded(context):
+    w = context.world
+    candidate = w.proposal['candidate']
+    payload = w.call('GET', w.bundle + '/versions/' + candidate['id'] + '/payload')
+    files = {entry['path']: entry for entry in payload['files']}
+    assert 'memory/team.md' not in files
+    assert files['memory/team-v2.md']['text'] == 'Review retry safety.'
+    assert files['AGENTS.md']['text'] == 'Review code.'
+
+
+@then('the proposal was retried with the byte-growth error')
+def growth_retried(context):
+    first, second = context.world.provider.requests
+    assert proposal_prompt(first)['parserError'] is None
+    assert proposal_prompt(second)['parserError'] == 'Candidate exceeds proposal byte-growth limit'

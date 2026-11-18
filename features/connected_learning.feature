@@ -85,3 +85,15 @@ Feature: Learning from application feedback
     And its audited candidate is awaiting rollout with one blocking policy
     When the signed-in reviewer declines the rollout and repeats the decision after restart
     Then a competing reviewer sees who declined and the original delivery is still served
+
+  @LEARNING-09
+  Scenario Outline: Fenced feedback and bounded screening settle before evaluation
+    When the fixture screens a managed proposal in <mode> mode
+    Then the screened proposal settles as <result>
+
+    Examples:
+      | mode           | result                   |
+      | repair         | repaired                 |
+      | reject         | critic-rejected          |
+      | malformed-once | format-retried           |
+      | malformed      | proposal-format-rejected |

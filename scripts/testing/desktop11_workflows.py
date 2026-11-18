@@ -6,6 +6,7 @@ focus or storage. The existing localhost provider fixture exercises real proposa
 processing. One explicit UI creation and one authorized UI suggestion are allowed.
 """
 import argparse
+from scripts.bdd.provider import proposal_prompt
 import base64
 import json
 from pathlib import Path
@@ -186,7 +187,7 @@ def suggestions(w,b,e,f):
     submitted_id=parse_qs(urlsplit(p.url).query)['proposal'][0];assert submitted_id not in before
     submitted=terminal(w,w.call('GET',w.bundle+'/proposals/'+submitted_id));assert submitted['status']=='succeeded',submitted;f['uiProposal']=submitted
     visit(p,b,b.bundle_path('changes',proposal=submitted_id));expect(p.get_by_role('region',name='Saved change review',exact=True)).to_be_visible();capture(e,p,'1440-real-local-provider-suggestion-result')
-    prompt=json.loads(w.provider.requests[-1]['messages'][0]['content']);assert prompt['request']['allowedPaths']==['AGENTS.md'];assert {entry['path'] for entry in prompt['parent']['files']}=={entry['path'] for entry in FILES};assert any(entry['path']=='memory/team.md' for entry in prompt['parent']['files'])
+    prompt=proposal_prompt(w.provider.requests[-1]);assert prompt['request']['allowedPaths']==['AGENTS.md'];assert {entry['path'] for entry in prompt['parent']['files']}=={entry['path'] for entry in FILES};assert any(entry['path']=='memory/team.md' for entry in prompt['parent']['files'])
     long_route=b.bundle_path('changes',bundle_id=f['long']['bundle']['id'],proposal='new')
     for width in (1440,1024):
         p.set_viewport_size(dict(width=width,height=1000));form=proposal_form(w,b,e,p,long_route,str(width)+'-long-path');expect(form.get_by_role('checkbox',name=LONG_PATH,exact=True)).to_be_visible();expect(form).to_contain_text(f['long']['version']['id'])

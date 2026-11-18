@@ -1,5 +1,6 @@
 """Application-reported measurements and the resulting managed selection decisions."""
 from behave import given, when, then
+from scripts.bdd.provider import proposal_prompt
 
 from scripts.bdd.learning import install_enrollment, report_failed_job, wait_for_round
 
@@ -52,10 +53,13 @@ def partial_credit_feedback(context):
     assert rejected['reason'] == 'Maximum candidate task failures exceeded'
     wait_for_round(w, 'development', attempt=2)
     _, second = w.provider.requests
-    evidence = json.loads(second['messages'][0]['content'])['request']['evidence']
-    assert [line for line in evidence if line.startswith('Prior candidate ')] == [
-        f"Prior candidate {rejected['candidateVersionId']} failed development: "
-        '2 improved pairs and 0 regressed pairs across 2 scored pairs. Candidate task failures: 2.']
+    evidence = proposal_prompt(second)['request']['evidence']
+    entry, = [json.loads(line.removeprefix('Prior attempt: '))
+              for line in evidence if line.startswith('Prior attempt: ')]
+    assert entry['candidateVersionId'] == rejected['candidateVersionId']
+    assert entry['development']['improvedPairs'] == 2
+    assert entry['development']['regressedPairs'] == 0
+    assert entry['development']['taskFailures'] == 2
 
 
 @then('the failed development round consumes no audit or release')

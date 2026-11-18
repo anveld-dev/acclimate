@@ -2833,6 +2833,91 @@
               }
             ]
           },
+          "screening": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "stage",
+                "result",
+                "rationale",
+                "changes"
+              ],
+              "properties": {
+                "stage": {
+                  "enum": [
+                    "initial",
+                    "repair"
+                  ]
+                },
+                "result": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "verdict",
+                        "objections"
+                      ],
+                      "properties": {
+                        "verdict": {
+                          "enum": [
+                            "accept",
+                            "reject"
+                          ]
+                        },
+                        "objections": {
+                          "type": "array",
+                          "maxItems": 8,
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "rationale": {
+                  "type": "string"
+                },
+                "changes": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "path",
+                      "before",
+                      "after"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "before": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "after": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           "error": {
             "anyOf": [
               {

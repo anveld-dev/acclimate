@@ -103,7 +103,7 @@ try {
       }
       try {
         const outer = JSON.parse(raw),
-          prompt = JSON.parse(outer.messages[0].content);
+          prompt = JSON.parse(outer.messages[1].content.split('\n')[1]);
         const payload: BundlePayload = structuredClone(prompt.parent);
         const allowed = new Set(prompt.request.allowedPaths);
         const file = payload.files.find((f) => allowed.has(f.path));

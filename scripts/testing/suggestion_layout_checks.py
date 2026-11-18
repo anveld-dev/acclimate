@@ -1,5 +1,5 @@
 """Focused real-service checks for the suggestion brief and record inspection."""
-import json
+from scripts.bdd.provider import proposal_prompt
 from scripts.testing.compact_console import improvement_server_function_path
 from urllib.parse import parse_qs,urlsplit
 from playwright.sync_api import expect
@@ -85,7 +85,7 @@ def verify(w,b,p,out,checks):
     expect(p.get_by_role('region',name='Saved change review',exact=True)).to_contain_text('Suggestion ready',timeout=20000)
     record=w.call('GET',large_base+'/proposals/'+proposal_id)
     assert record['status']=='succeeded' and record['candidate']
-    prompt=json.loads(w.provider.requests[-1]['messages'][0]['content'])
+    prompt=proposal_prompt(w.provider.requests[-1])
     assert prompt['request']['allowedPaths']==[chosen,'AGENTS.md'],prompt['request']['allowedPaths']
     assert prompt['request']['hypothesis']==hypothesis_text
     assert prompt['request']['evidence']==evidence_text.split('\n')

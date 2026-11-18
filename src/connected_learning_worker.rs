@@ -233,7 +233,7 @@ impl Connection {
                 ),
                 None => (
                     self.permitted_paths.clone(),
-                    "Improve the bundle so future tasks satisfy the trusted expected outcome."
+                    "Improve the bundle so future tasks satisfy the reported expected outcome."
                         .into(),
                 ),
             };
@@ -256,7 +256,7 @@ impl Connection {
                 evidence.push(format!("Expected outcome: {expected}"));
                 evidence.push(format!("Observed outcome: {observed}"));
             }
-            self.add_development_history(tx, baseline, correction, &mut evidence)
+            self.add_proposal_history(tx, correction, &mut evidence)
                 .await?;
             let request = ProposalRequest {
                 parent_version_id: baseline.0.to_string(),
@@ -327,47 +327,103 @@ impl Connection {
         Ok(())
     }
 
-    async fn add_development_history(
+    async fn add_proposal_history(
         &self,
         tx: &mut Tx<'_>,
-        baseline: (Uuid, i64),
         correction: Uuid,
         evidence: &mut Vec<String>,
     ) -> ApiResult<()> {
         let history = sqlx::query(
-            "SELECT c.body,r.candidate_version_id FROM connected_learning_rounds r
-             JOIN comparisons c ON (c.project_id,c.bundle_id,c.id)=(r.project_id,r.bundle_id,r.development_comparison_id)
-             WHERE (r.project_id,r.integration_id,r.parent_version_id,r.parent_revision)=($1,$2,$3,$4)
-             AND r.policy_epoch=$6 AND r.state='rejected' AND r.audit_request_id IS NULL AND c.complete
-             ORDER BY (r.correction_id=$5) DESC,r.updated_at DESC,r.id DESC LIMIT 3",
+            "SELECT r.candidate_version_id,r.state,r.reason,r.decision,r.audit_request_id,
+                    p.request->>'hypothesis' AS hypothesis,p.rationale,p.screening,
+                    parent.payload AS before,candidate.payload AS after,c.body
+             FROM connected_learning_rounds r
+             JOIN proposals p ON p.id=r.proposal_id
+             JOIN versions parent ON parent.id=r.parent_version_id
+             LEFT JOIN versions candidate ON candidate.id=r.candidate_version_id
+             LEFT JOIN comparisons c
+               ON (c.project_id,c.bundle_id,c.id)=(r.project_id,r.bundle_id,r.development_comparison_id)
+               AND c.complete AND c.id IS DISTINCT FROM r.audit_comparison_id
+               AND r.development_request_id IS DISTINCT FROM r.audit_request_id
+               AND c.body #>> '{evaluation,requestId}'=r.development_request_id::text
+             WHERE (r.project_id,r.integration_id,r.bundle_id)=($1,$2,$3)
+               AND (r.state='promoted' OR (r.state='rejected'
+                 AND (r.candidate_version_id IS NOT NULL OR r.reason='critic-rejected')))
+             ORDER BY (r.correction_id=$4) DESC,r.updated_at DESC,r.id DESC LIMIT 12",
         )
-        .bind(&self.project).bind(self.integration).bind(baseline.0).bind(baseline.1).bind(correction).bind(self.policy_epoch)
+        .bind(&self.project).bind(self.integration).bind(self.bundle).bind(correction)
         .fetch_all(&mut **tx).await.map_err(db)?;
+        let mut remaining = 8192;
         for row in history {
-            let comparison: ComparisonRequest =
-                serde_json::from_value(row.get("body")).map_err(db)?;
-            let (mut gains, mut regressions, mut task_failures) = (0, 0, 0);
-            for pair in &comparison.results {
-                if pair.candidate.execution_status == "task_failed" {
-                    task_failures += 1;
-                }
-                if pair.candidate.reward != pair.parent.reward {
-                    if (pair.candidate.reward > pair.parent.reward) == self.higher_is_better {
-                        gains += 1;
-                    } else {
-                        regressions += 1;
+            let candidate = row.get::<Option<Uuid>, _>("candidate_version_id");
+            let outcome = if row.get::<String, _>("state") == "promoted" {
+                "accepted"
+            } else if row.get::<Option<String>, _>("decision").as_deref() == Some("review_declined")
+            {
+                "review-declined"
+            } else if row.get::<Option<String>, _>("reason").as_deref() == Some("critic-rejected") {
+                "critic-rejected"
+            } else if row.get::<Option<Uuid>, _>("audit_request_id").is_some() {
+                "audit-rejected"
+            } else {
+                "development-rejected"
+            };
+            let mut improved = std::collections::BTreeSet::new();
+            let mut regressed = std::collections::BTreeSet::new();
+            let (mut gains, mut losses, mut failures, mut scored) = (0, 0, 0, 0);
+            if let Some(body) = row.get::<Option<Value>, _>("body") {
+                let comparison: ComparisonRequest = serde_json::from_value(body).map_err(db)?;
+                for pair in comparison.results {
+                    if pair.candidate.execution_status == "task_failed" {
+                        failures += 1;
+                    }
+                    if let (Some(before), Some(after)) = (pair.parent.reward, pair.candidate.reward)
+                    {
+                        scored += 1;
+                        if before != after {
+                            if (after > before) == self.higher_is_better {
+                                gains += 1;
+                                improved.insert(pair.key.case_id);
+                            } else {
+                                losses += 1;
+                                regressed.insert(pair.key.case_id);
+                            }
+                        }
                     }
                 }
             }
-            let previous: Uuid = row.get("candidate_version_id");
-            let mut summary = format!(
-                "Prior candidate {previous} failed development: {gains} improved pairs and {regressions} regressed pairs across {} scored pairs.",
-                comparison.results.len()
-            );
-            if task_failures > 0 {
-                summary.push_str(&format!(" Candidate task failures: {task_failures}."));
+            let screening: Value = row.get("screening");
+            let last_screen = screening.as_array().and_then(|items| items.last());
+            let excerpts = if let Some(after) = row.get::<Option<Vec<u8>>, _>("after") {
+                let before =
+                    serde_json::from_slice(&row.get::<Vec<u8>, _>("before")).map_err(db)?;
+                let after = serde_json::from_slice(&after).map_err(db)?;
+                serde_json::json!(crate::proposal_edits::edit_excerpts(&before, &after))
+            } else {
+                last_screen.map_or(Value::Null, |record| record["changes"].clone())
+            };
+            let rationale = row.get::<Option<String>, _>("rationale").or_else(|| {
+                last_screen
+                    .and_then(|record| record["rationale"].as_str())
+                    .map(str::to_owned)
+            });
+            let entry = serde_json::json!({
+                "candidateVersionId": candidate,
+                "outcome": outcome,
+                "rationale": rationale.or_else(|| row.get("hypothesis")).map(|text| text.chars().take(160).collect::<String>()),
+                "edits": excerpts,
+                "development": (scored + failures > 0).then(|| serde_json::json!({
+                    "scoredPairs": scored, "improvedPairs": gains, "regressedPairs": losses,
+                    "improvedCaseIds": improved.into_iter().take(8).collect::<Vec<_>>(),
+                    "regressedCaseIds": regressed.into_iter().take(8).collect::<Vec<_>>(),
+                    "taskFailures": failures
+                })),
+            });
+            let summary = format!("Prior attempt: {entry}");
+            if summary.len() <= remaining.min(4096) {
+                remaining -= summary.len();
+                evidence.push(summary);
             }
-            evidence.push(summary);
         }
         Ok(())
     }
@@ -757,13 +813,36 @@ async fn advance(
     let state: String = round.get("state");
     match state.as_str() {
         "proposing" => {
-            let proposal = sqlx::query("SELECT status,candidate_version_id FROM proposals WHERE (project_id,bundle_id,id)=($1,$2,$3)")
+            let proposal = sqlx::query("SELECT status,candidate_version_id,error FROM proposals WHERE (project_id,bundle_id,id)=($1,$2,$3)")
                 .bind(&connection.project).bind(connection.bundle).bind(round.get::<Uuid, _>("proposal_id"))
                 .fetch_one(&mut **tx).await.map_err(db)?;
             match proposal.get::<String, _>("status").as_str() {
                 "queued" | "running" => return Ok(()),
                 "succeeded" => {}
-                _ => return close(tx, round, "Proposal did not generate a candidate").await,
+                _ => {
+                    match proposal.get::<Option<String>, _>("error").as_deref() {
+                        Some("critic-rejected") => {
+                            return close(tx, round, "critic-rejected").await;
+                        }
+                        Some("critic-unavailable") => {
+                            return close(tx, round, "critic-unavailable").await;
+                        }
+                        Some("proposal-format-rejected") => {
+                            close(tx, round, "proposal-format-rejected").await?;
+                            sqlx::query("UPDATE connected_learning_rounds SET proposal_admission_refunded=true WHERE id=$1")
+                                .bind(id).execute(&mut **tx).await.map_err(db)?;
+                            sqlx::query("UPDATE connected_learning_enrollments SET proposal_admissions=proposal_admissions-1 WHERE (project_id,integration_id)=($1,$2)")
+                                .bind(&connection.project).bind(connection.integration).execute(&mut **tx).await.map_err(db)?;
+                            // The correction keeps its remaining allowance for future submissions.
+                            sqlx::query("UPDATE connected_learning_corrections SET attempts=LEAST(attempts,$4-1) WHERE (project_id,integration_id,correction_id)=($1,$2,$3)")
+                                .bind(&connection.project).bind(connection.integration).bind(round.get::<Uuid,_>("correction_id")).bind(round.get::<i32,_>("attempt")).execute(&mut **tx).await.map_err(db)?;
+                            return Ok(());
+                        }
+                        _ => {
+                            return close(tx, round, "Proposal did not generate a candidate").await;
+                        }
+                    }
+                }
             }
             let Some(candidate) = proposal.get::<Option<Uuid>, _>("candidate_version_id") else {
                 return close(tx, round, "Successful proposal lacks a candidate").await;

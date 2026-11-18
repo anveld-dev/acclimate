@@ -203,15 +203,26 @@ pub(crate) fn validate_changes(
     let mut created = HashSet::new();
     let mut retired = HashSet::new();
     let mut changed = false;
+    let mut removed_notes = 0;
+    let mut new_notes = 0;
     for file in &parent.files {
         if let Some(next) = after.get(&file.path) {
             if file.kind != next.kind
-                || (file.text != next.text && !request.allowed_paths.contains(&file.path))
+                || (file.text != next.text
+                    && (!request.allowed_paths.contains(&file.path)
+                        || (file.kind == "memory" && super::memory_path(&file.path))))
             {
                 return Err("Edit outside allowed paths".into());
             }
             changed |= file.text != next.text;
         } else {
+            if file.kind == "memory"
+                && super::memory_path(&file.path)
+                && request.allowed_paths.contains(&file.path)
+            {
+                removed_notes += 1;
+                continue;
+            }
             let name = skill_name(&file.path).ok_or("File set changed")?;
             if file.kind != "skill"
                 || !policy.is_some_and(|p| p.retire_skill_names.iter().any(|s| s == name))
@@ -225,6 +236,15 @@ pub(crate) fn validate_changes(
         if before.contains_key(&file.path) {
             continue;
         }
+        if file.kind == "memory"
+            && super::memory_path(&file.path)
+            && request.allowed_paths.contains(&file.path)
+            && !file.text.trim().is_empty()
+            && file.text.len() <= 4096
+        {
+            new_notes += 1;
+            continue;
+        }
         let name = skill_name(&file.path).ok_or("File set changed")?;
         if file.kind != "skill"
             || !policy.is_some_and(|p| p.create_skill_names.iter().any(|s| s == name))
@@ -233,7 +253,10 @@ pub(crate) fn validate_changes(
         }
         created.insert(name);
     }
-    if !changed && created.is_empty() && retired.is_empty() {
+    if removed_notes > new_notes {
+        return Err("Memory notes may only be removed by supersession".into());
+    }
+    if !changed && new_notes == 0 && created.is_empty() && retired.is_empty() {
         return Err("Proposal did not change any file".into());
     }
     for name in retired {

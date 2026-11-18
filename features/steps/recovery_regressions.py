@@ -1,5 +1,6 @@
 """Faults at disposable browser boundaries, with exact committed-write assertions."""
 import json
+from scripts.bdd.provider import proposal_prompt
 import re
 import time
 from urllib.parse import quote
@@ -132,7 +133,7 @@ def later_proposal_retained(context):
     while not w.provider.requests and time.monotonic()<deadline:
         time.sleep(.05)
     assert len(w.provider.requests)==1
-    sent=json.loads(w.provider.requests[0]['messages'][0]['content'])['request']
+    sent=proposal_prompt(w.provider.requests[0])['request']
     assert sent['hypothesis']=='Submitted fixture hypothesis.'
     assert sent['evidence']==['Submitted fixture evidence.']
     assert w.call('GET',w.channel)['version']==w.original['version']

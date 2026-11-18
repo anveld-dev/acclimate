@@ -153,6 +153,7 @@ async fn native_save_reload_repair_publication_rollback_and_provider_gate() {
     assert_eq!(status, StatusCode::CREATED, "{version}");
     let (status,_)=call(&app,"POST",&promotions,json!({"versionId":version["id"],"expectedRevision":"3","unevaluatedReason":"reject incomplete rollback"})).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+    state.runtime.ownership_acquired();
     let worker = tokio::spawn(proposal_worker(state));
     for (bundle, parent_id, expected) in [
         (native["bundle"]["id"].as_str().unwrap(), initial, "failed"),

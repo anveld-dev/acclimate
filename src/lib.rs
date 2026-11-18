@@ -69,6 +69,19 @@ pub enum CriticVerdict {
     },
 }
 
+pub enum ProposalFailure {
+    Provider(String),
+    Format(String),
+}
+
+pub type ClassifiedProposalFuture<'a> = std::pin::Pin<
+    Box<
+        dyn std::future::Future<Output = Result<(BundlePayload, String), ProposalFailure>>
+            + Send
+            + 'a,
+    >,
+>;
+
 pub trait ProposalModel: Send + Sync {
     fn propose<'a>(&'a self, parent: BundlePayload, request: ProposalRequest)
     -> ProposalFuture<'a>;
@@ -80,6 +93,18 @@ pub trait ProposalModel: Send + Sync {
         _policy: Option<proposal_edits::SkillPackages>,
     ) -> ProposalFuture<'a> {
         self.propose(parent, request)
+    }
+    fn propose_classified<'a>(
+        &'a self,
+        parent: BundlePayload,
+        request: ProposalRequest,
+        policy: Option<proposal_edits::SkillPackages>,
+    ) -> ClassifiedProposalFuture<'a> {
+        Box::pin(async move {
+            self.propose_scoped(parent, request, policy)
+                .await
+                .map_err(ProposalFailure::Provider)
+        })
     }
     fn critique<'a>(&'a self, _data: Value) -> CriticFuture<'a> {
         Box::pin(async { Err("Critic unavailable".into()) })
@@ -337,6 +362,24 @@ impl ProposalModel for OpenAiModel {
         policy: Option<proposal_edits::SkillPackages>,
     ) -> ProposalFuture<'a> {
         Box::pin(async move {
+            self.propose_classified(parent, request, policy)
+                .await
+                .map_err(|error| match error {
+                    ProposalFailure::Provider(detail) => detail,
+                    ProposalFailure::Format(detail) => {
+                        format!("Proposal format rejected: {detail}")
+                    }
+                })
+        })
+    }
+
+    fn propose_classified<'a>(
+        &'a self,
+        parent: BundlePayload,
+        request: ProposalRequest,
+        policy: Option<proposal_edits::SkillPackages>,
+    ) -> ClassifiedProposalFuture<'a> {
+        Box::pin(async move {
             let instruction = if policy.is_some() {
                 proposal_edits::SKILL_INSTRUCTION
             } else {
@@ -363,7 +406,8 @@ impl ProposalModel for OpenAiModel {
                         &format!("{instruction} {}", proposal_edits::NOTE_INSTRUCTION),
                         &data,
                     )
-                    .await?;
+                    .await
+                    .map_err(ProposalFailure::Provider)?;
                 match proposal_edits::reconstruct_scoped(
                     &parent,
                     &request,
@@ -374,10 +418,7 @@ impl ProposalModel for OpenAiModel {
                     Err(error) => parser_error = Some(error),
                 }
             }
-            Err(format!(
-                "Proposal format rejected: {}",
-                parser_error.unwrap_or_default()
-            ))
+            Err(ProposalFailure::Format(parser_error.unwrap_or_default()))
         })
     }
 

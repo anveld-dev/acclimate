@@ -393,6 +393,7 @@ export interface LearningRound {
     | 'awaiting_review'
     | 'promoted'
     | 'rejected';
+  decision?: string | null;
   reason: string | null;
   parentVersionId: string;
   candidateVersionId: string | null;
@@ -440,7 +441,9 @@ export interface LearningEnrollmentStatus extends LearningEnrollment {
   remainingAudits: number;
   noiseCalibration?: {
     requestId: string | null;
-    status: 'queued' | 'requested' | 'running' | 'completed' | 'failed' | 'interrupted';
+    status: 'queued' | 'requested' | 'running' | 'completed' | 'failed' | 'interrupted' | 'stopped';
+    failedAttempts?: number;
+    stoppedReason?: string | null;
     caseCount?: number;
     flipRate?: number;
     pairedStandardDeviation?: number;
@@ -525,6 +528,7 @@ export interface LearningOutcomeStatus {
     correctionId: string;
     state: string;
     roundId: string | null;
+    decision?: string | null;
     reason: string | null;
     incidentReplay: LearningIncidentReplayStatus | null;
     release?: LearningReleaseEvidence | null;

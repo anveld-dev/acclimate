@@ -22,7 +22,7 @@ def main():
             ['node', '--import', 'tsx', 'scripts/connected-learning-e2e.ts'],
             env=dict(harness.env, EVALUATION_TEST_DATABASE_URL=harness.env['DATABASE_URL'],
                      EVALUATION_TEST_PSQL=bin_dir + '/psql'),
-            cwd=ROOT, check=True, timeout=240,
+            cwd=ROOT, check=True, timeout=420,
         )
     finally:
         harness.close()

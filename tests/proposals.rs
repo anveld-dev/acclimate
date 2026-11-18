@@ -174,6 +174,7 @@ async fn persisted_proposals_are_bounded_validated_and_recovered() {
                 .unwrap();
         }
         let before = calls.load(Ordering::SeqCst);
+        state.runtime.ownership_acquired();
         let worker = tokio::spawn(proposal_worker(state.clone()));
         let done = terminal(&app, &path).await;
         worker.abort();
@@ -232,6 +233,7 @@ async fn persisted_proposals_are_bounded_validated_and_recovered() {
     let app = router(state.clone());
     let (_, proposal) = call(&app, "POST", &format!("{base}/proposals"), json!({"parentVersionId":parent_id,"allowedPaths":["guide-3.md"],"hypothesis":"late result","evidence":[]})).await;
     let id = Uuid::parse_str(proposal["id"].as_str().unwrap()).unwrap();
+    state.runtime.ownership_acquired();
     let worker = tokio::spawn(proposal_worker(state));
     tokio::time::timeout(Duration::from_secs(5), delayed.started.notified())
         .await
@@ -325,6 +327,7 @@ async fn worker_preserves_mixed_bundle_for_instruction_and_memory_edits() {
         .await
         .unwrap();
     let original: Value = serde_json::from_slice(&original_bytes).unwrap();
+    state.runtime.ownership_acquired();
     let worker = tokio::spawn(proposal_worker(state));
     for selected in ["instructions.md", "memory.md"] {
         let (status, proposal) = call(&app, "POST", &format!("{base}/proposals"), json!({"parentVersionId":parent_id,"allowedPaths":[selected],"hypothesis":"improve selected file","evidence":["explicit evidence"]})).await;

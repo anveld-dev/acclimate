@@ -1,3 +1,4 @@
+pub(crate) mod parent_cache;
 use crate::{ApiErr, ApiResult, AppState, BundlePayload, CaseKey, PromoteRequest, db, err};
 use axum::{
     Json, Router,
@@ -123,6 +124,8 @@ struct Enrollment {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     skill_packages: Option<crate::proposal_edits::SkillPackages>,
     max_proposal_admissions: i32,
+    #[serde(default = "default_batch_size")]
+    max_corrections_per_round: i32,
     development: Descriptor,
     audits: Vec<Descriptor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -211,12 +214,17 @@ fn bounded(value: &str, limit: usize) -> bool {
     !value.trim().is_empty() && value.len() <= limit
 }
 
+fn default_batch_size() -> i32 {
+    5
+}
+
 fn validate(config: &Enrollment) -> ApiResult<()> {
     if !bounded(&config.installation_id, 128)
         || !bounded(&config.outcome_principal, 1024)
         || !bounded(&config.evaluator_principal, 1024)
         || config.outcome_principal == config.evaluator_principal
         || !(1..=100).contains(&config.max_proposal_admissions)
+        || !(1..=10).contains(&config.max_corrections_per_round)
         || !(1..=32).contains(&config.permitted_paths.len())
         || config.permitted_paths.iter().collect::<HashSet<_>>().len()
             != config.permitted_paths.len()
@@ -306,6 +314,7 @@ fn config(row: &PgRow) -> ApiResult<Enrollment> {
             .transpose()
             .map_err(db)?,
         max_proposal_admissions: row.get("max_proposal_admissions"),
+        max_corrections_per_round: row.get("max_corrections_per_round"),
         development: serde_json::from_value(row.get("development")).map_err(db)?,
         audits: serde_json::from_value(row.get("audits")).map_err(db)?,
         automatic_rollout: row.get("automatic_rollout"),
@@ -566,13 +575,14 @@ async fn enroll(
         Some(&source),
     )
     .await?;
-    let row = sqlx::query("INSERT INTO connected_learning_enrollments(project_id,integration_id,bundle_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,development,audits,automatic_rollout,outcome_principal,evaluator_principal,authorized_by,automatic_rollback,selection_policies,skill_packages) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *")
+    let row = sqlx::query("INSERT INTO connected_learning_enrollments(project_id,integration_id,bundle_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,development,audits,automatic_rollout,outcome_principal,evaluator_principal,authorized_by,automatic_rollback,selection_policies,skill_packages,max_corrections_per_round) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *")
         .bind(&project).bind(integration).bind(bundle).bind(&source).bind(current.get::<i64, _>("revision")).bind(delivery).bind(&request.installation_id)
         .bind(&request.permitted_paths).bind(request.max_proposal_admissions)
         .bind(serde_json::to_value(&request.development).map_err(db)?).bind(serde_json::to_value(&request.audits).map_err(db)?)
         .bind(request.automatic_rollout).bind(&request.outcome_principal).bind(&request.evaluator_principal).bind(&actor.principal).bind(request.automatic_rollback.unwrap_or(true))
         .bind(request.selection_policies.as_ref().map(serde_json::to_value).transpose().map_err(db)?)
         .bind(request.skill_packages.as_ref().map(serde_json::to_value).transpose().map_err(db)?)
+        .bind(request.max_corrections_per_round)
         .fetch_one(&mut *tx).await.map_err(epochs::registry_error)?;
     epochs::register_cohorts(
         &mut tx,
@@ -978,11 +988,21 @@ async fn work(
             UNION ALL
             SELECT jsonb_build_object('roundId',r.id,'evaluationRequestId',e.id,
                 'phase',CASE WHEN e.id=r.audit_request_id THEN 'audit' ELSE 'development' END,
-                'cumulative',r.release_candidate_id IS NOT NULL,'status',e.status)
+                'cumulative',r.release_candidate_id IS NOT NULL,'status',e.status,
+                'cachedParent',registration.payload)
             FROM connected_learning_rounds r JOIN evaluation_requests e
               ON (e.project_id,e.bundle_id)=(r.project_id,r.bundle_id)
               AND e.id=CASE r.state WHEN 'audit' THEN r.audit_request_id
                   WHEN 'development' THEN COALESCE(r.cumulative_request_id,r.development_request_id) END
+            LEFT JOIN LATERAL (
+                SELECT jsonb_build_object('comparisonId',c.id,'results',(
+                    SELECT jsonb_agg(jsonb_build_object('caseId',pair->'caseId','repetition',pair->'repetition',
+                        'parent',pair->e.parent_source_arm))
+                    FROM jsonb_array_elements(c.body->'results') pair
+                )) AS payload
+                FROM comparisons c WHERE c.id=e.parent_source_comparison_id
+                AND COALESCE(e.started_at,CURRENT_TIMESTAMP) < e.parent_source_expires_at
+            ) registration ON true
             WHERE (r.project_id,r.integration_id)=($1,$2) AND e.status IN ('requested','running')
   ) assigned LIMIT 100")
             .bind(project).bind(integration).fetch_all(&mut *tx).await.map_err(db)?

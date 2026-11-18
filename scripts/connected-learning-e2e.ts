@@ -161,6 +161,10 @@ interface Round {
   developmentCandidateVersionId: string | null;
   cumulativeDevelopmentRequestId: string | null;
   developmentComparisonId: string | null;
+  cumulativeDevelopmentComparisonId: string | null;
+  parentSourceComparisonId: string | null;
+  batchSize: number;
+  includedCorrections: { correctionId: string; outcomeId: string; attempt: number }[];
   proposalId: string;
   auditRequestId: string | null;
   auditComparisonId: string | null;
@@ -305,7 +309,7 @@ try {
       encoding: 'utf8',
     }),
   );
-  async function startService(checkSteps = 1) {
+  async function startService(checkSteps = 1, parentMaxReuses = 3) {
     child = spawn('target/debug/acclimate-service', [], {
       env: {
         ...environment,
@@ -313,6 +317,8 @@ try {
         ACCLIMATE_MODEL_TOKEN: modelToken,
         ACCLIMATE_LEARNING_DRIFT_CHECK_STEPS: String(checkSteps),
         ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS: '3',
+        ACCLIMATE_LEARNING_PARENT_MAX_AGE_SECONDS: '86400',
+        ACCLIMATE_LEARNING_PARENT_MAX_REUSES: String(parentMaxReuses),
         ACCLIMATE_MODEL: 'gpt-6.2-sol',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1643,8 +1649,10 @@ try {
   // The legacy cases use a one-step cadence. Exercise multi-step search through
   // the same service and installed evaluator, with isolated cohorts.
   await stopService();
-  await startService(2);
-  async function chainFixture(mode: 'pass' | 'drift' | 'audit-failure' | 'external') {
+  await startService(2, 1);
+  async function chainFixture(
+    mode: 'pass' | 'drift' | 'audit-failure' | 'external' | 'aged' | 'use-limit',
+  ) {
     const connection = await makeConnection(`Development chain ${mode}`);
     const installation = `chain-${mode}`;
     const tasks: Task[] = [{ kind: 'refund' }, { kind: 'refund-status' }];
@@ -1658,7 +1666,10 @@ try {
               0.8 -
               0.12 *
                 payload.files.flatMap((file) => file.text.match(/Drift exercise/g) ?? []).length
-          : undefined,
+          : mode === 'use-limit'
+            ? (payload) =>
+                payload.files.some((file) => file.text.includes('Deliberate regression.')) ? 0 : 0.8
+            : undefined,
       ),
       audits: [
         cohort(`${installation}-audit`, tasks, mode === 'audit-failure' ? () => 0 : undefined),
@@ -1669,6 +1680,7 @@ try {
       automaticRollout: true,
       permittedPaths: ['AGENTS.md'],
       maxProposalAdmissions: 4,
+      maxCorrectionsPerRound: 2,
       selectionPolicies: {
         development: qualificationDevelopment,
         audit: { ...qualificationPolicies.audit, nonInferiorityMargin: 0 },
@@ -1678,14 +1690,33 @@ try {
       evaluatorPrincipal: 'evaluator',
       outcomePrincipal: 'other',
     });
-    const stop = enableDriver(connection, installation, apps);
     const inspect = () => api<LearningEnrollmentStatus>('GET', learning(connection));
     const firstId = await submit(
       connection,
       baseline,
       mode === 'drift' ? 'Drift exercise one.' : alpha,
     );
+    const includedId =
+      mode === 'pass'
+        ? await submit(connection, baseline, 'Keep the guidance general.')
+        : undefined;
+    const overflowId = mode === 'pass' ? await submit(connection, baseline, beta) : undefined;
+    const stop = enableDriver(connection, installation, apps);
     const first = await observe(connection, firstId, 'developed');
+    if (includedId) {
+      assert.equal(first.batchSize, 2);
+      assert.deepEqual(
+        first.includedCorrections.map((member) => [member.outcomeId, member.attempt]),
+        [
+          [firstId, 1],
+          [includedId, 1],
+        ],
+      );
+      const lookup = await api('GET', learning(connection) + '/outcomes/' + includedId);
+      assert.equal(lookup.corrections[0].roundId, first.id);
+      assert.equal(lookup.corrections[0].state, 'developed');
+      assert(modelRequests.some(({ evidence }) => evidence.includes('Keep the guidance general.')));
+    }
     assert.equal(first.auditRequestId, null);
     const firstView = await inspect();
     assert.equal(firstView.developmentIncumbent?.versionId, first.candidateVersionId);
@@ -1698,15 +1729,74 @@ try {
       return { connection, first };
     }
 
-    const secondId = await submit(
-      connection,
-      baseline,
-      mode === 'drift' ? 'Drift exercise two.' : beta,
+    if (mode === 'aged') {
+      assert(database);
+      assert(process.env.EVALUATION_TEST_PSQL);
+      assert(
+        first.developmentComparisonId && /^[a-f0-9-]{36}$/.test(first.developmentComparisonId),
+      );
+      execFileSync(
+        process.env.EVALUATION_TEST_PSQL,
+        [
+          '-X',
+          '-v',
+          'ON_ERROR_STOP=1',
+          '--dbname',
+          database,
+          '-c',
+          "UPDATE comparisons SET created_at=now()-interval '25 hours' WHERE id='" +
+            first.developmentComparisonId +
+            "'",
+        ],
+        { stdio: 'ignore' },
+      );
+    }
+    if (mode === 'use-limit') {
+      const failingId = await submit(connection, baseline, 'Deliberate regression.');
+      const retries = await waitFor('two rejected steps on the same parent', async () => {
+        const rounds = (await inspect()).rounds.filter((round) => round.outcomeId === failingId);
+        return rounds.length === 2 && rounds.every((round) => round.state === 'rejected')
+          ? rounds
+          : undefined;
+      });
+      const [retry, initial] = retries;
+      assert.equal(initial.parentSourceComparisonId, first.developmentComparisonId);
+      assert.equal(retry.parentSourceComparisonId, null);
+      assert.equal(retry.developmentParentVersionId, first.developmentCandidateVersionId);
+      await stop();
+      return { connection, first };
+    }
+
+    const secondId =
+      overflowId ??
+      (await submit(connection, baseline, mode === 'drift' ? 'Drift exercise two.' : beta));
+    const passes = mode === 'pass' || mode === 'aged';
+    const second = await observe(connection, secondId, passes ? 'promoted' : 'rejected');
+    assert.equal(
+      second.parentSourceComparisonId,
+      mode === 'aged' ? null : first.developmentComparisonId,
     );
-    const second = await observe(connection, secondId, mode === 'pass' ? 'promoted' : 'rejected');
+    if (overflowId) {
+      assert.equal(second.batchSize, 1);
+      assert.equal(second.attempt, 1);
+      assert.equal((await inspect()).proposalAdmissions, 2);
+    }
+    const parentRuns = executions.filter(
+      ({ dataset, version }) =>
+        dataset === descriptor(apps.development).datasetRevision &&
+        version === first.developmentCandidateVersionId,
+    );
+    assert.equal(parentRuns.length, mode === 'aged' ? inventory.length * 2 : inventory.length);
     assert.equal(second.parentVersionId, baseline.id);
     assert.equal(second.developmentParentVersionId, first.developmentCandidateVersionId);
     assert(second.cumulativeDevelopmentRequestId);
+    assert(second.cumulativeDevelopmentComparisonId);
+    const cumulativeEvidence = await client('evaluator').getComparison(
+      project,
+      bundle.id,
+      second.cumulativeDevelopmentComparisonId,
+    );
+    assert.equal(cumulativeEvidence.parentSourceComparisonId, undefined);
     assert.notEqual(second.developmentCandidateVersionId, second.candidateVersionId);
     const cumulative = await client('evaluator').getEvaluation(
       project,
@@ -1724,6 +1814,12 @@ try {
     } else {
       assert(second.auditRequestId);
       assert(second.auditComparisonId);
+      const auditEvidence = await client('evaluator').getComparison(
+        project,
+        bundle.id,
+        second.auditComparisonId,
+      );
+      assert.equal(auditEvidence.parentSourceComparisonId, undefined);
       const audit = await client('evaluator').getEvaluation(
         project,
         bundle.id,
@@ -1734,10 +1830,7 @@ try {
       assert.equal(finished.rounds.filter((round) => round.auditRequestId).length, 1);
       assert.equal(finished.remainingAudits, 0);
     }
-    assert.equal(
-      (await fresh(connection)).id,
-      mode === 'pass' ? second.candidateVersionId : baseline.id,
-    );
+    assert.equal((await fresh(connection)).id, passes ? second.candidateVersionId : baseline.id);
     await stop();
     return { connection, first, second };
   }
@@ -1745,6 +1838,8 @@ try {
   const drifted = await chainFixture('drift');
   const failedAudit = await chainFixture('audit-failure');
   const external = await chainFixture('external');
+  const aged = await chainFixture('aged');
+  const useLimit = await chainFixture('use-limit');
 
   const sourceUpdate = await operator.createVersion(
     project,
@@ -1778,7 +1873,7 @@ try {
   assert(
     reset.rounds.some((round) => round.id === external.first.id && round.state === 'developed'),
   );
-  evidence.developmentChains = { compounded, drifted, failedAudit, external };
+  evidence.developmentChains = { compounded, drifted, failedAudit, external, aged, useLimit };
   const beforeRefresh = await installedBundle(automatic);
   const refresh = {
     restoreId: randomUUID(),

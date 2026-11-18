@@ -61,6 +61,20 @@ pub struct CreateVersionRequest {
     pub payload: BundlePayload,
 }
 
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PolicyReceiptReference {
+    pub comparison_id: uuid::Uuid,
+    pub policy_digest: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PolicyOverride {
+    pub reason: String,
+    pub receipts: Vec<PolicyReceiptReference>,
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PromoteRequest {
@@ -68,6 +82,7 @@ pub struct PromoteRequest {
     pub expected_revision: String,
     pub comparison_id: Option<String>,
     pub unevaluated_reason: Option<String>,
+    pub policy_override: Option<PolicyOverride>,
 }
 
 #[derive(Clone, Serialize)]
@@ -80,6 +95,10 @@ pub struct Promotion {
     pub previous_version_id: Option<String>,
     pub comparison_id: Option<String>,
     pub unevaluated_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_override: Option<PolicyOverride>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_approval_promotion_id: Option<uuid::Uuid>,
     pub reviewer: String,
     pub created_at: String,
 }

@@ -33,9 +33,9 @@ Changes needs precise scope: **Drafts · stable** owns its channel picker; **Sug
 
 ## 2. Make creation and release honest
 
-New bundle is one compact form with three source modes: **Write instructions**, **Import JSON**, or **Use example**. Render only the selected source. Keep the immutable target choice visible; channel can default to stable with an explicit editable option.
+New bundle is one compact form with three source modes for team content. Choose **Write instructions**, **Import files**, or **Import JSON**. Render only the selected source. Keep the immutable target choice visible; channel can default to stable with an explicit editable option.
 
-Always show a short review before submission: “Publishes 4 entries to stable. Target: Codex, fixed for this bundle. No evaluation.” Use **Create and publish** or **Import and publish**. Preview the actual example content. Mode changes cannot replace or conceal an unresolved submitted command.
+Always show a short review before submission: “Publishes 4 entries to stable. Target: Codex, fixed for this bundle. No evaluation.” Use **Create and publish** or **Import and publish**. Preview the supplied files or JSON before import. Mode changes cannot replace or conceal an unresolved submitted command.
 
 The normal editing path becomes **Content → Draft → Review release**. Save remains a distinct action. Review shows the saved generation, base/current revision, target and full diff, then two clear options:
 

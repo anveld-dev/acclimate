@@ -1,4 +1,4 @@
-export { defineEvaluation } from './definition.js';
+export { assertEvaluationOutput, defineEvaluation } from './definition.js';
 export { preflightEvaluation, runEvaluation } from './runner.js';
 export {
   EvaluationError,
@@ -17,6 +17,7 @@ export type {
   Json,
   EvaluationCase,
   EvaluationDefinition,
+  EvaluationExecutionResult,
   EvaluationCollection,
   EvaluationApp,
   EvaluationGradeResult,
@@ -31,3 +32,5 @@ export * from './analysis.js';
 export * from './manifest.js';
 export { createEvaluationProgressReporter } from './progress.js';
 export type { EvaluationProgressScope, EvaluationProgressUpdate } from './progress.js';
+
+export type { ApplicationAdapter } from './app-cli.js';

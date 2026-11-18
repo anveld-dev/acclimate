@@ -74,8 +74,11 @@ Each observation includes the exact final grader revision and outcome binding:
 The shown row illustrates the format. Add one row per side of every expected
 pair, including every selected component. `null`, absent components, missing
 outcomes, infrastructure failures and unscored grades remain missing. The
-affected metric returns `indeterminate`, coverage counts and no summary or
-interval; other complete metrics can still be analyzed. A component requires a
+affected metric returns `indeterminate` and coverage counts. Its `cases` contains
+means for cases with every planned repetition scored. Its suite summary and
+interval remain null. `evidenceGaps` identifies the case, repetition, side and
+stage for the first 32 missing observations and reports their full count.
+Other complete metrics can still be analyzed. A component requires a
 valid finite scalar score and cannot upgrade failed or incomplete scalar grading.
 A `task_failed` outcome with a valid
 score remains gradeable. Unknown component names, duplicate rows and stale
@@ -109,6 +112,73 @@ value. Adding components is part of your grader implementation and requires a
 new grader revision. Acclimate cannot detect a falsely unchanged revision label.
 The artifact export workflow can explicitly share a selected grader explanation;
 analysis does not read local output references or fetch URLs.
+
+## Collect balanced repetitions
+
+Pass `collection: { protocol: 'seeded-balanced-v1', seed: 'experiment-01' }` to
+`defineEvaluation`, or `collection={"protocol": "seeded-balanced-v1", "seed": "experiment-01"}`
+to `define_evaluation`. Choose the seed before the run. The descriptor binds the seed
+and schedule digest. Each pair runs both arms consecutively, and the number of
+parent-first and candidate-first pairs differs by at most one across the inventory.
+The callback's collection context includes its pair index, arm index, and first side.
+The private journal retains `collection.json` and a `collection-binding.json` for
+each started job. Give each arm a fresh isolated tool fixture, cache and conversation.
+The seed changes arm order. Application code controls model sampling and fixture reset.
+
+## Fit a larger suite into multiple requests
+
+At definition time the SDK reserves space for both outcomes of every pair.
+If it raises `definition.report_budget_exceeded`, its `reportBudget` diagnostic
+provides `estimatedBytes`, `limitBytes`, `expectedPairs` and
+`maxPairsPerPartition`. The last value uses the largest row in the submitted
+inventory. Keep all repetitions of a case together and group whole cases up to
+that limit. For example, a ceiling of 420 pairs permits 42 ten-repetition cases
+in a request. Validate each resulting definition again with its actual metadata.
+If one case alone exceeds the ceiling, reduce its repetitions before collecting
+any evidence or use an application-owned analysis of separately identified runs.
+
+Freeze a full case inventory, exact parent and candidate IDs/digests, grader,
+model/tool settings, collection protocol, and metric definitions before splitting
+the cases. Retain a private manifest and independent trusted binding for each
+partition. Select the same saved candidate for each request in the console, or
+call `client.create_evaluation(project_id, bundle_id, body, partition_key)`
+(`client.createEvaluation` in TypeScript). Construct `body` from the partition's
+public descriptor plus the four frozen version ID/digest fields and
+`requireBoundEvidence: true`. Keep an individual idempotency key for each
+partition. Run and analyze each request separately with its binding. Abort the
+aggregate if an immutable version, grader, metric, collection setting or expected
+case count differs from your plan. Each partition has its own request, attempt,
+comparison, inventory and schedule digest.
+
+To combine one descriptive metric from individually verified partitions, use the
+per-case rows in each analysis. `planned_repetitions` below is the complete frozen
+mapping from case ID to repetition count and `parts` contains that metric's
+result from each partition. Equal weighting across all cases also handles a
+smaller final partition.
+
+```python
+from statistics import fmean
+
+rows = {}
+for part in parts:
+    if part["status"] != "descriptive" or part["counts"]["missingPairs"]:
+        raise ValueError("incomplete partition")
+    if part["metric"] != expected_metric:
+        raise ValueError("metric definition changed")
+    for row in part["cases"]:
+        case_id = row["caseId"]
+        if case_id in rows or row["pairs"] != planned_repetitions.get(case_id):
+            raise ValueError("duplicate, unexpected or incomplete case")
+        rows[case_id] = row
+if rows.keys() != planned_repetitions.keys() or not rows:
+    raise ValueError("suite inventory is incomplete")
+suite_mean = {name: fmean(row[name] for row in rows.values())
+              for name in ("parentMean", "candidateMean", "orientedMeanImprovement")}
+```
+
+This calculation produces a descriptive suite summary. Evaluate any suite-wide
+policy from the combined cases and costs. Partition-level verdicts and interval
+endpoints apply only to their individual request.
 
 ## Optional fixed-task uncertainty
 

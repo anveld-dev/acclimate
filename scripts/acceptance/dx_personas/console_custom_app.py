@@ -18,7 +18,7 @@ sys.path[:0] = [str(ROOT), str(Path(__file__).resolve().parent)]
 
 from playwright.sync_api import expect
 from support import PersonaFixture
-from first_adopter import AGENT, CASES, BASELINE, CANDIDATE, add_continuous_console_evidence
+from first_adopter import install_routing_app, BASELINE, CANDIDATE, add_continuous_console_evidence
 from scripts.bdd.world import World
 from scripts.bdd.interactions import open_details
 from features.steps.console import ensure_editor, save_browser
@@ -52,26 +52,13 @@ def main():
         check('app staged outside repository', app.is_relative_to(ROOT), False)
         check('SDK resolves inside external consumer',
               f.installation_proofs['support-routing']['resolvedWithinConsumer'], True)
-        (app/'private-jobs').mkdir(mode=0o700)
-        (app/'agent.mjs').write_text(AGENT)
-        (app/'cases.mjs').write_text(CASES)
-        entry = (app/'acclimate-eval.mjs').read_text()
-        for before, after in [('installed-payment-starter','first-adopter-support-routing'),
-                              ('payment-response-fixtures-1','support-routing-tasks-1'),
-                              ('single-charge-result-1','independent-queue-label-1'),
-                              ('payment-starter-1','support-routing-1'),
-                              ('{ charges: value.charges, succeeded: value.succeeded }','{ queue: value.queue }'),
-                              ('{ singleCharge: value.singleCharge, succeeded: value.succeeded }',
-                               '{ queueMatches: value.queueMatches }')]:
-            entry = entry.replace(before, after)
-        (app/'acclimate-eval.mjs').write_text(entry)
+        install_routing_app(f, app)
         policy = {'schemaVersion':1, 'id':'support-routing-quality', 'revision':'1',
                   'metric':{'name':'correct queue','unit':'reward','direction':'higher'},
                   'aggregation':'equal-case-means','minimumMeanImprovement':0.5,
                   'maximumCaseRegression':0,'candidateThreshold':1,
                   'requiredCases':['compromised-account','ordinary-issue'],
                   'maximumCandidateTaskFailures':0,'cost':{'maximumCandidateUsd':0}}
-        (app/'quality-policy.json').unlink()
         f.write_json(app/'quality-policy.json', policy)
         cli = [shutil.which('node'), str(app/'acclimate-eval.mjs')]
         command_steps = []
@@ -120,12 +107,10 @@ def main():
             saved = w.call('GET',w.channel+'/drafts')['items'][0]
             p.get_by_role('link',name='Continue to evaluation',exact=True).click()
             open_details(p,'Set up evaluation request')
-            selection = p.get_by_label('Evaluation configuration',exact=True)
-            expect(selection).to_have_value('')
-            expect(p.get_by_role('button',name='Create evaluation request',exact=True)).to_be_disabled()
-            check('untouched console requires an evaluator choice', selection.input_value(), '')
-            selection.select_option('custom')
             public_config = p.get_by_label('Public evaluator configuration (JSON)',exact=True)
+            expect(public_config).to_have_value('')
+            expect(p.get_by_role('button',name='Create evaluation request',exact=True)).to_be_disabled()
+            check('untouched console requires an app descriptor', public_config.input_value(), '')
             public_config.fill(descriptor_text)
             expect(public_config).to_have_value(descriptor_text)
             expect(p.get_by_label('Selected evaluator summary',exact=True)).to_contain_text('first-adopter-support-routing')
@@ -159,7 +144,7 @@ def main():
 
             target = ['--config',evaluator_config,'--handoff',handoff_path]
             run('doctor',*target)
-            run('run',*target)
+            run('run','--live',*target)
             quality = run('check',*target,'--policy',app/'quality-policy.json')
             export_dir = f.root/'private/console-review-export'
             run('export',*target,'--out',export_dir)

@@ -9,15 +9,20 @@ import { randomUUID } from 'node:crypto';
 import { atomicPrivateWrite } from '../../scripts/private-state.js';
 import { parseEvaluatorArguments } from '../../scripts/evaluate-app.js';
 import { fixture, projectId, bundleId, requestId, evaluatorPrincipalId } from './fixture.js';
-import { localEvaluationDescriptor } from './descriptor.js';
-import { includedEvaluatorSetupCommand } from '../../apps/console/src/lib/evaluation-config.js';
+import { localEvaluationDescriptor } from './tests/descriptors.js';
 
 const identifiers = ['--bundleID', bundleId, '--requestID', requestId];
 const required = ['--config', '/absolute/private/evaluator.json', ...identifiers];
-const args = [...required, '--adapter', 'payment-retry'];
+const args = [...required, '--adapter', 'codex-luna-review', '--live'];
 test('command accepts identifiers and installed names, never a request-selected executable or URL', () => {
-  assert.equal(parseEvaluatorArguments(args).adapter, 'payment-retry');
-  for (const adapter of ['https://example.com/executor', '../evil.ts', 'node:child_process'])
+  assert.equal(parseEvaluatorArguments(args).adapter, 'codex-luna-review');
+  for (const adapter of [
+    'payment-retry',
+    'presence-contract',
+    'https://example.com/executor',
+    '../evil.ts',
+    'node:child_process',
+  ])
     assert.throws(
       () => parseEvaluatorArguments([...required, '--adapter', adapter]),
       /installed allowlisted/,
@@ -38,7 +43,7 @@ test('command accepts identifiers and installed names, never a request-selected 
   );
 });
 
-test('actual setup-required copied npm helper consumes explicit test-owned private configuration and stays on selected bundle', async () => {
+test('live checkout command refuses a request for a different evaluator before starting work', async () => {
   const stateRoot = await mkdtemp(path.join(await realpath(tmpdir()), 'acclimate-command-'));
   const f = fixture(localEvaluationDescriptor);
   const token = randomUUID();
@@ -117,17 +122,21 @@ test('actual setup-required copied npm helper consumes explicit test-owned priva
     );
     const env = { ...process.env };
     for (const key of Object.keys(env)) if (key.startsWith('ACCLIMATE_')) delete env[key];
-    // The public example has a placeholder, never access to this test's path or token.
-    const copied = includedEvaluatorSetupCommand(bundleId, requestId, localEvaluationDescriptor)!;
-    assert.ok(copied.includes('--config /absolute/private/evaluator.json'));
-    const [executable, ...command] = copied
-      .split(' ')
-      .map((value) =>
-        value === '/absolute/private/evaluator.json'
-          ? path.join(stateRoot, 'evaluator.json')
-          : value,
-      );
-    const child = spawn(executable, command, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(
+      process.execPath,
+      [
+        '--import',
+        import.meta.resolve('tsx'),
+        path.resolve('scripts/evaluate-app.ts'),
+        '--config',
+        path.join(stateRoot, 'evaluator.json'),
+        ...identifiers,
+        '--adapter',
+        'codex-luna-review',
+        '--live',
+      ],
+      { env, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
     let stdout = '',
       stderr = '';
     child.stdout.on('data', (data) => {
@@ -140,21 +149,11 @@ test('actual setup-required copied npm helper consumes explicit test-owned priva
       child.on('exit', resolve);
       child.on('error', reject);
     });
-    assert.equal(code, 0, stderr);
-    assert.ok(stdout.includes('"status":"completed"'), stdout);
+    assert.equal(code, 1);
+    assert.match(stderr, /mismatch|does not match/);
     assert.ok(!stdout.includes(token) && !stderr.includes(token));
-    assert.ok(requests.some((r) => r.endsWith('/comparisons')));
-    assert.ok(requests.includes(`/v1/projects/${projectId}/evaluation-capabilities`));
-    assert.ok(
-      requests.includes(
-        `/v1/projects/${projectId}/bundles/${bundleId}/comparisons/${f.request.comparisonId}`,
-      ),
-    );
-    assert.deepEqual(
-      f.events.map((event) => event.kind),
-      ['start', 'submit', 'finish'],
-    );
-    assert.equal(f.request.evaluatorPrincipal, evaluatorPrincipalId);
+    assert.ok(requests.some((route) => route.endsWith('/evaluation-requests/' + requestId)));
+    assert.deepEqual(f.events, []);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

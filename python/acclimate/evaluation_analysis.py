@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 from typing import Any, Literal, NotRequired, TypedDict
 
-from .evaluation_policy import check_comparison
+from .evaluation_policy import EvidenceGaps, _add_gap, _scalar_gap, check_comparison
 from .types import Comparison, EvaluationDescriptor
 
 
@@ -84,6 +84,7 @@ class MetricUncertainty(TypedDict):
 
 
 class MetricAnalysis(TypedDict):
+    evidenceGaps: NotRequired[EvidenceGaps]
     metric: AnalysisMetric
     status: Literal["descriptive", "indeterminate"]
     code: str
@@ -213,20 +214,19 @@ def analyze_comparison(*, comparison: Comparison, expected_descriptor: Evaluatio
     results: list[MetricAnalysis] = []
     for metric in metrics:
         groups: dict[str, list[dict[str, float]]] = {}
+        incomplete_cases = set()
+        gaps: EvidenceGaps = {"total": 0, "rows": []}
         comparable, nonfinite = 0, False
         for row in ordered:
             groups.setdefault(row["caseId"], [])
             pair = pairs.get((row["caseId"], row["repetition"]))
-            if pair is None:
-                continue
             values = []
             for side in ("parent", "candidate"):
-                outcome = pair[side]
-                if outcome["executionStatus"] == "infrastructure_failed" or outcome["gradingStatus"] != "scored":
-                    values.append(None)
-                    continue
-                if not _finite(outcome["reward"]):
-                    if type(outcome["reward"]) in (int, float):
+                outcome = pair[side] if pair else None
+                gap = _scalar_gap(outcome)
+                if gap:
+                    _add_gap(gaps, row["caseId"], row["repetition"], side, *gap)
+                    if gap[1] == "invalid_reward" and type(outcome["reward"]) in (int, float):
                         nonfinite = True
                     values.append(None)
                     continue
@@ -234,10 +234,14 @@ def analyze_comparison(*, comparison: Comparison, expected_descriptor: Evaluatio
                     (row["caseId"], row["repetition"], side), {}).get("values", {}).get(metric["id"])
                 if type(value) in (int, float) and not _finite(value):
                     nonfinite = True
+                if not _finite(value):
+                    _add_gap(gaps, row["caseId"], row["repetition"], side, "metric", "missing_component")
                 values.append(float(value) if _finite(value) else None)
             if values[0] is not None and values[1] is not None:
                 comparable += 1
                 groups[row["caseId"]].append({"parent": values[0], "candidate": values[1]})
+            else:
+                incomplete_cases.add(row["caseId"])
         result: MetricAnalysis = {"metric": dict(metric), "status": "indeterminate",
             "code": "analysis.nonfinite" if nonfinite else "evidence.incomplete",
             "counts": {"distinctCases": len(groups), "expectedPairs": len(ordered), "comparablePairs": comparable,
@@ -245,18 +249,22 @@ def analyze_comparison(*, comparison: Comparison, expected_descriptor: Evaluatio
             "uncertainty": {"status": "indeterminate" if protocol else "not_requested",
                             "code": "evidence.incomplete" if protocol else "uncertainty.not_requested", "interval": None}}
         results.append(result)
-        if comparable != len(ordered):
-            continue
+        if gaps["total"]:
+            result["evidenceGaps"] = gaps
         direction = 1 if metric["direction"] == "higher" else -1
         try:
             differences = []
             for case_id, rows in groups.items():
+                if case_id in incomplete_cases:
+                    continue
                 parent_mean = _mean([row["parent"] for row in rows])
                 candidate_mean = _mean([row["candidate"] for row in rows])
                 result["cases"].append({"caseId": case_id, "pairs": len(rows), "parentMean": parent_mean,
                     "candidateMean": candidate_mean,
                     "orientedMeanImprovement": _arithmetic(direction * _arithmetic(candidate_mean - parent_mean))})
                 differences.append([_arithmetic(direction * _arithmetic(row["candidate"] - row["parent"])) for row in rows])
+            if comparable != len(ordered):
+                continue
             result["summary"] = {"parentMean": _mean([row["parentMean"] for row in result["cases"]]),
                 "candidateMean": _mean([row["candidateMean"] for row in result["cases"]]),
                 "orientedMeanImprovement": _mean([row["orientedMeanImprovement"] for row in result["cases"]])}

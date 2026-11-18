@@ -12,17 +12,19 @@ import {
   Radio,
 } from 'lucide-react';
 import { EvaluationScorecard } from './evaluation-scorecard';
+import { PolicyReceiptList, usePolicyReceipts } from './evaluation-policy-receipts';
 import { EvaluationActivity } from './evaluation-activity';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
-import { EvaluationSetup } from './evaluation-setup';
+import { EvaluationSetup, EvaluatorLanguageSelect } from './evaluation-setup';
 import {
   evaluationConfiguration,
   evaluationHandoff,
-  includedEvaluatorSetupCommand,
-  selectedEvaluationConfiguration,
-  paymentSimulatorIssue,
-  applicationEvaluatorRunCommand,
-  type EvaluationChoice,
+  parseEvaluationConfiguration,
+  isCheckoutCodexEvaluator,
+  checkoutCodexRunCommand,
+  checkoutCodexCheckCommand,
+  applicationEvaluatorCommand,
+  type EvaluatorLanguage,
 } from '../lib/evaluation-config';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { compatibilityIssues, evaluationDescriptorDifferences } from '@acclimate/sdk/validation';
@@ -101,6 +103,10 @@ export function ImprovementWorkspace({
   const [requests, setRequests] = useState<Evaluation[]>([]);
   const [directRequest, setDirectRequest] = useState<Evaluation | null>(null);
   const [selectedProgress, setSelectedProgress] = useState<EvaluationProgressView | null>(null);
+  const [createdRequestId, setCreatedRequestId] = useState<string | null>(null);
+  const [activeProgress, setActiveProgress] = useState<
+    Record<string, EvaluationProgressView | null>
+  >({});
   const [requestError, setRequestError] = useState('');
   const [requestLoading, setRequestLoading] = useState(false);
   const [showAllRequests, setShowAllRequests] = useState(false);
@@ -159,9 +165,25 @@ export function ImprovementWorkspace({
   const comparisonRef = useRef(comparison);
   comparisonRef.current = comparison;
   const [interruptionReasons, setInterruptionReasons] = useState<Record<string, string>>({});
+  const {
+    receipts,
+    failed: receiptReadFailed,
+    refresh: refreshReceipts,
+  } = usePolicyReceipts(scope, state.actorScope, state.serviceIdentity, candidate, comparison?.id);
+  const blockers = receipts?.blockers ?? [];
+  const blockerRefs = blockers.map((row) => ({
+    comparisonId: row.comparisonId,
+    policyDigest: row.policy.sha256,
+  }));
+  const [overrideReason, setOverrideReason] = useState('');
+  const validOverrideReason =
+    !!overrideReason.trim() &&
+    new TextEncoder().encode(overrideReason.trim()).length <= 1024 &&
+    !/[\u0000-\u001f\u007f-\u009f]/.test(overrideReason.trim());
   const [releaseReview, setReleaseReview] = useState<{
     reason?: string;
     comparisonId?: string;
+    blocking?: typeof blockerRefs;
     versionId: string;
     revision: string;
     generation: number;
@@ -173,18 +195,43 @@ export function ImprovementWorkspace({
   };
   const [pending, setPending] = useState<PendingOperation | null>(null);
   const related = useRelatedPending(pendingScope, pending);
-  const [evaluationProfile, setEvaluationProfile] = useState<EvaluationChoice>('');
+  const [evaluatorLanguage, setEvaluatorLanguage] = useState<EvaluatorLanguage>('javascript');
+  const [requestLanguages, setRequestLanguages] = useState<Record<string, EvaluatorLanguage>>({});
+  const [consoleOrigin, setConsoleOrigin] = useState('');
+  const languageKey = `acclimate-evaluator-language:${state.serviceIdentity}:${state.actorScope}:${state.projectId}:${state.bundleId}`;
+  useEffect(() => {
+    setConsoleOrigin(window.location.origin);
+    try {
+      setRequestLanguages(JSON.parse(localStorage.getItem(languageKey) || '{}') ?? {});
+    } catch {
+      setRequestLanguages({});
+    }
+  }, [languageKey]);
+  function rememberLanguage(id: string, language: EvaluatorLanguage) {
+    setRequestLanguages((previous) => {
+      let next = { ...previous, [id]: language };
+      try {
+        next = { ...JSON.parse(localStorage.getItem(languageKey) || '{}'), [id]: language };
+        localStorage.setItem(languageKey, JSON.stringify(next));
+      } catch {
+        /* The selection still works for the current page. */
+      }
+      return next;
+    });
+  }
+  function languageFor(id: string) {
+    return requestLanguages[id] === 'python' || requestLanguages[id] === 'javascript'
+      ? requestLanguages[id]
+      : evaluatorLanguage;
+  }
   const [customConfiguration, setCustomConfiguration] = useState('');
-  const [savedEvaluationForm, setSavedEvaluationForm] = useState({
-    profile: '' as EvaluationChoice,
-    customConfiguration: '',
-  });
-  const evaluationForm = useRef({ profile: evaluationProfile, customConfiguration });
-  evaluationForm.current = { profile: evaluationProfile, customConfiguration };
+  const [savedEvaluationForm, setSavedEvaluationForm] = useState('');
+  const evaluationForm = useRef(customConfiguration);
+  evaluationForm.current = customConfiguration;
   function acceptEvaluationForm(request: Evaluation) {
     const form = evaluationForm.current;
     try {
-      const configured = selectedEvaluationConfiguration(form.profile, form.customConfiguration);
+      const configured = parseEvaluationConfiguration(form);
       const recorded = evaluationConfiguration({
         datasetRevision: request.datasetRevision,
         graderRevision: request.graderRevision,
@@ -200,7 +247,7 @@ export function ImprovementWorkspace({
   let configurationError = '';
   let evaluationConfig: ReturnType<typeof evaluationConfiguration> | undefined;
   try {
-    evaluationConfig = selectedEvaluationConfiguration(evaluationProfile, customConfiguration);
+    evaluationConfig = parseEvaluationConfiguration(customConfiguration);
   } catch (error) {
     configurationError =
       error instanceof Error ? error.message : 'Invalid evaluation configuration.';
@@ -234,6 +281,7 @@ export function ImprovementWorkspace({
   }, [requests]);
   useEffect(() => {
     scopeEpoch.current++;
+    setActiveProgress({});
     setRequests([]);
     setDirectRequest(null);
     directRequestRef.current = null;
@@ -259,7 +307,17 @@ export function ImprovementWorkspace({
     [message, setMessage] = useState('');
   async function invoke(data: Record<string, unknown>) {
     const result = await runImprovement({ data: { ...data, scope } });
-    if (!result.ok) throw new Error(result.message);
+    if (!result.ok) {
+      if (result.code === 'policy_override_required' && data.action === 'submitFrozen') {
+        if (loadPending(sessionStorage, pendingScope)?.key === data.key) {
+          resolvePending(sessionStorage, pendingScope);
+          setPending(null);
+        }
+        setReleaseReview(null);
+        refreshReceipts();
+      }
+      throw new Error(result.message);
+    }
     return result;
   }
   async function refresh(cursor?: string) {
@@ -286,15 +344,23 @@ export function ImprovementWorkspace({
       selectionRef.current.project === selection.project &&
       selectionRef.current.bundle === selection.bundle &&
       selectionRef.current.channel === selection.channel;
+    const progress: Record<string, EvaluationProgressView | null> = {};
     const updated = await refreshKnownActive(
       requestsRef.current.filter((row) => row.id !== selection.request),
       async (id) => {
-        const value = await invoke({ action: 'request', id });
-        return 'request' in value ? value.request : undefined;
+        try {
+          const value = await invoke({ action: 'request', id });
+          progress[id] = value.progress ?? null;
+          return value.request;
+        } catch {
+          progress[id] = null;
+          return undefined;
+        }
       },
       () => epoch === scopeEpoch.current && mounted.current,
     );
     if (epoch !== scopeEpoch.current || !mounted.current) return;
+    setActiveProgress(progress);
     setRequests((previous) =>
       previous.map((row) => updated.find((next) => next.id === row.id) || row),
     );
@@ -379,9 +445,7 @@ export function ImprovementWorkspace({
     const dirty =
       Boolean(reason) ||
       Object.values(interruptionReasons).some(Boolean) ||
-      (mode === 'review' &&
-        (evaluationProfile !== savedEvaluationForm.profile ||
-          customConfiguration !== savedEvaluationForm.customConfiguration)) ||
+      (mode === 'review' && customConfiguration !== savedEvaluationForm) ||
       (mode === 'proposal' && Boolean(hypothesis || evidence || paths.length || consent));
     setPendingChanges(dirty);
     return () => setPendingChanges(false);
@@ -393,7 +457,6 @@ export function ImprovementWorkspace({
     consent,
     reason,
     interruptionReasons,
-    evaluationProfile,
     customConfiguration,
     savedEvaluationForm,
     setPendingChanges,
@@ -408,9 +471,8 @@ export function ImprovementWorkspace({
     setReason('');
     setInterruptionReasons({});
     setReleaseReview(null);
-    setEvaluationProfile('');
     setCustomConfiguration('');
-    setSavedEvaluationForm({ profile: '', customConfiguration: '' });
+    setSavedEvaluationForm('');
   }, [discardVersion]);
   useEffect(() => {
     let stopped = false,
@@ -647,6 +709,8 @@ export function ImprovementWorkspace({
         if (data.action === 'evaluate') {
           acceptEvaluationForm(r.request);
           requestFocusId.current = r.request.id;
+          setCreatedRequestId(r.request.id);
+          rememberLanguage(r.request.id, evaluatorLanguage);
         }
         setRequests((previous) => [
           r.request!,
@@ -775,6 +839,12 @@ export function ImprovementWorkspace({
             comparison?.evaluation?.requestId === request.id,
         )
       : undefined);
+  const selectedCheckCommand =
+    selectedRequest && comparison && requestEvidence(selectedRequest, comparison).status === 'bound'
+      ? isCheckoutCodexEvaluator(selectedRequest)
+        ? checkoutCodexCheckCommand
+        : applicationEvaluatorCommand(languageFor(selectedRequest.id), 'check')
+      : undefined;
   const visibleRequests = showAllRequests
     ? candidateRequests
     : candidateRequests.filter(
@@ -826,29 +896,18 @@ export function ImprovementWorkspace({
       </Disclosure>
     </>
   );
-  const exampleIssue =
-    evaluationProfile === 'payment-retry' && detail
-      ? paymentSimulatorIssue(detail.candidate.payload)
-      : undefined;
   const evaluationSetup = detail?.candidate && !isCurrentRelease && (
     <EvaluationSetup
       key={candidateRequests.length === 0 ? 'first-request' : 'another-request'}
-      profile={evaluationProfile}
+      language={evaluatorLanguage}
       customConfiguration={customConfiguration}
       configuration={evaluationConfig}
       configurationError={configurationError}
-      exampleIssue={exampleIssue}
       savedGeneration={initial.draft && initial.generation > 0 ? initial.generation : undefined}
       hasRequests={candidateRequests.length > 0}
       fieldsDisabled={busy || !!pending || related.blocked}
       submitDisabled={
-        busy ||
-        !!pending ||
-        related.blocked ||
-        !state.canEdit ||
-        !currentBase ||
-        !evaluationConfig ||
-        !!exampleIssue
+        busy || !!pending || related.blocked || !state.canEdit || !currentBase || !evaluationConfig
       }
       blockedReason={[
         !state.canEdit &&
@@ -863,7 +922,7 @@ export function ImprovementWorkspace({
         .filter(Boolean)
         .join(' ')}
       createActionRef={createRequestAction}
-      onProfileChange={setEvaluationProfile}
+      onLanguageChange={setEvaluatorLanguage}
       onCustomConfigurationChange={setCustomConfiguration}
       onCreate={(event) => {
         requestOwnsFocus.current = document.activeElement === event.currentTarget;
@@ -1141,11 +1200,15 @@ export function ImprovementWorkspace({
                         comparison && requestEvidence(request, comparison).status === 'bound',
                       );
                       const labels = evaluationRequestLabels(request, selectedEvidence);
-                      const command = includedEvaluatorSetupCommand(
-                        state.bundleId,
-                        request.id,
-                        request,
-                      );
+                      const requestLanguage = languageFor(request.id);
+                      const nativeRunner = isCheckoutCodexEvaluator(request);
+                      const runCommand = nativeRunner
+                        ? checkoutCodexRunCommand(state.bundleId, request.id)
+                        : applicationEvaluatorCommand(
+                            requestLanguage,
+                            'compare',
+                            request.runtime.execution === 'live',
+                          );
                       const handoff = evaluationHandoff(
                         state.publicApiUrl,
                         state.projectId,
@@ -1157,6 +1220,7 @@ export function ImprovementWorkspace({
                         <Disclosure
                           key={`${request.id}-${initial.request === request.id}`}
                           defaultOpen={
+                            createdRequestId === request.id ||
                             initial.request === request.id ||
                             (candidateRequests.length === 1 && index === 0 && !request.comparisonId)
                           }
@@ -1253,22 +1317,80 @@ export function ImprovementWorkspace({
                                 charges.
                               </p>
                             )}
-                            {initial.request === request.id && (
-                              <EvaluationActivity request={request} progress={selectedProgress} />
+                            {(initial.request === request.id ||
+                              request.status === 'running' ||
+                              request.status === 'requested') && (
+                              <EvaluationActivity
+                                request={request}
+                                progress={
+                                  initial.request === request.id
+                                    ? selectedProgress
+                                    : activeProgress[request.id]
+                                }
+                              />
                             )}
-                            {!request.comparisonId && request.status === 'requested' && (
-                              <div className="space-y-2">
-                                <p>
-                                  Save the public JSON as <code>evaluation-request.json</code>, then
-                                  run your app-owned entry point. Add <code>--live</code> only when
-                                  its installed definition requires model execution.
-                                </p>
-                                <SyntaxCode
-                                  code={applicationEvaluatorRunCommand(request)}
-                                  language="bash"
-                                />
-                              </div>
-                            )}
+                            {!request.comparisonId &&
+                              request.status === 'requested' &&
+                              runCommand && (
+                                <div className="space-y-2">
+                                  <p>
+                                    Give the evaluator owner the downloaded request. Run the
+                                    commands on the evaluator machine with its private
+                                    configuration.
+                                  </p>
+                                  {nativeRunner ? (
+                                    <p>
+                                      Run the installed Codex evaluator from the Acclimate checkout
+                                      with your Codex credentials.
+                                    </p>
+                                  ) : (
+                                    <>
+                                      <EvaluatorLanguageSelect
+                                        language={requestLanguage}
+                                        onChange={(value) => rememberLanguage(request.id, value)}
+                                      />
+                                      <SyntaxCode
+                                        code={applicationEvaluatorCommand(
+                                          requestLanguage,
+                                          'doctor',
+                                        )}
+                                        language="bash"
+                                      />
+                                    </>
+                                  )}
+                                  {!nativeRunner && (
+                                    <p>
+                                      Compare prints the parent and candidate scores. Add{' '}
+                                      <code>--policy quality-policy.json</code> to check your
+                                      release criteria in the same command.
+                                    </p>
+                                  )}
+                                  <SyntaxCode code={runCommand} language="bash" />
+                                  <CopyButton
+                                    value={runCommand}
+                                    label="Copy evaluator run command"
+                                  />
+                                  <CopyButton
+                                    label="Copy instructions for evaluator owner"
+                                    value={[
+                                      `Evaluate request ${request.id}. Save the public JSON at the end of this message as evaluation-request.json.`,
+                                      ...(nativeRunner
+                                        ? [
+                                            'Run these commands from the native Codex reviewer checkout.',
+                                          ]
+                                        : [
+                                            `Application setup: ${consoleOrigin}/evaluator-setup.html#${requestLanguage}`,
+                                            'Run from the application directory. Replace /absolute/private/evaluator.json with your private evaluator configuration path.',
+                                            applicationEvaluatorCommand(requestLanguage, 'doctor'),
+                                          ]),
+                                      runCommand,
+                                      'Open the comparison in the console after completion. To report a policy verdict, run the matching policy check with your policy file.',
+                                      '',
+                                      handoff,
+                                    ].join('\n')}
+                                  />
+                                </div>
+                              )}
                             {request.comparisonId && (
                               <p>
                                 Paired evidence recorded. Completion is separate from your quality
@@ -1322,75 +1444,6 @@ export function ImprovementWorkspace({
                                 />
                               </DisclosureContent>
                             </Disclosure>
-                            {command && (
-                              <Disclosure>
-                                <DisclosureTrigger className="cursor-pointer">
-                                  {request.comparisonId
-                                    ? 'Checkout evaluator setup details'
-                                    : 'Included checkout setup (required)'}
-                                </DisclosureTrigger>
-                                <DisclosureContent>
-                                  <div className="my-3 space-y-3 text-muted-foreground">
-                                    <p>
-                                      Install this checkout on the machine that will run
-                                      evaluations. Ask your service operator for a dedicated
-                                      evaluator machine principal with read/write access to this
-                                      project; propose and promote access are not needed.
-                                    </p>
-                                    <p>
-                                      Connections issues content-read and receipt-write credentials
-                                      for published delivery. Those credentials cannot run
-                                      evaluations or read unpublished candidates. Use the dedicated
-                                      evaluator credential below.
-                                    </p>
-                                    <p>
-                                      Create a private directory (0700) and a JSON file (0600)
-                                      outside version control. Replace these placeholders privately
-                                      with your app’s settings. Keep credentials out of the console,
-                                      chat, logs and command arguments.
-                                    </p>
-                                    <SyntaxCode
-                                      tabIndex={0}
-                                      aria-label="Private evaluator configuration template"
-                                      className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs"
-                                      code={JSON.stringify(
-                                        {
-                                          schemaVersion: 1,
-                                          serviceUrl: 'https://api.example.com',
-                                          projectId: 'YOUR_PROJECT_ID',
-                                          evaluatorPrincipalId:
-                                            'YOUR_DEDICATED_EVALUATOR_PRINCIPAL',
-                                          evaluatorToken: 'YOUR_SCOPED_EVALUATOR_TOKEN',
-                                          journalRoot: '/absolute/private/evaluation-journals',
-                                        },
-                                        null,
-                                        2,
-                                      )}
-                                      language="json"
-                                    />
-                                    <p>
-                                      Use the same service and project as this request. Set
-                                      journalRoot to an absolute, owner-only directory. Replace the
-                                      --config path below with your private JSON file, then run the
-                                      command from your installed checkout. Matching public settings
-                                      do not mean the adapter is installed. The console does not
-                                      execute this command.
-                                    </p>
-                                    <p>
-                                      For recovery, retain the same service, project, evaluator
-                                      principal and original journal directory. Do not delete or
-                                      relocate journals to retry execution.
-                                    </p>
-                                  </div>
-                                  <CopyButton value={command} label="Copy setup-required command" />
-                                  <SyntaxCode
-                                    className="block overflow-auto whitespace-pre-wrap break-all"
-                                    code={command}
-                                    language="bash"
-                                  />
-                                </DisclosureContent>
-                              </Disclosure>
-                            )}
                             {['requested', 'running'].includes(request.status) && (
                               <Disclosure>
                                 <DisclosureTrigger className="cursor-pointer">
@@ -1518,8 +1571,63 @@ export function ImprovementWorkspace({
                           </p>
                         )}
                         <ComparisonEvidence comparison={comparison} compact />
+                        {selectedRequest && selectedCheckCommand && (
+                          <div className="space-y-2" aria-label="Application policy check">
+                            <h3>Check the application’s quality policy</h3>
+                            {receiptReadFailed ? (
+                              <p role="alert">Could not refresh policy receipts.</p>
+                            ) : !receipts ? (
+                              <p>Loading policy receipts…</p>
+                            ) : !receipts.comparison.length ? (
+                              <p>No policy verdict has been reported for this comparison.</p>
+                            ) : null}
+                            {receipts && receipts.comparison.length > 0 && (
+                              <PolicyReceiptList receipts={receipts.comparison} />
+                            )}
+                            <Button variant="outline" onClick={refreshReceipts}>
+                              Refresh policy receipts
+                            </Button>
+                            <p>
+                              Run the check on the evaluator machine with its private configuration
+                              and policy file. Its verdict and check names appear here.
+                            </p>
+                            <EvaluationHandoffDownload
+                              handoff={evaluationHandoff(
+                                state.publicApiUrl,
+                                state.projectId,
+                                state.bundleId,
+                                selectedRequest.id,
+                                selectedRequest,
+                              )}
+                            />
+                            {!isCheckoutCodexEvaluator(selectedRequest) && (
+                              <EvaluatorLanguageSelect
+                                language={languageFor(selectedRequest.id)}
+                                onChange={(value) => rememberLanguage(selectedRequest.id, value)}
+                              />
+                            )}
+                            <SyntaxCode code={selectedCheckCommand} language="bash" />
+                            <CopyButton
+                              value={selectedCheckCommand}
+                              label="Copy policy check command"
+                            />
+                          </div>
+                        )}
                         {!isCurrentRelease && (
                           <div className="review-evidence-action">
+                            {blockers.some((row) => row.comparisonId !== comparison.id) && (
+                              <section
+                                aria-label="Other blocking policy verdicts"
+                                className="space-y-2"
+                              >
+                                <h3>Other comparisons with blocking verdicts for this candidate</h3>
+                                <PolicyReceiptList
+                                  receipts={blockers.filter(
+                                    (row) => row.comparisonId !== comparison.id,
+                                  )}
+                                />
+                              </section>
+                            )}
                             <Button
                               aria-describedby={
                                 !comparison.complete ? 'reported-evidence-incomplete' : undefined
@@ -1538,7 +1646,9 @@ export function ImprovementWorkspace({
                               }
                               onClick={(event) => {
                                 releaseReturnRef.current = event.currentTarget;
+                                setOverrideReason('');
                                 setReleaseReview({
+                                  blocking: blockerRefs,
                                   comparisonId: comparison.id,
                                   versionId: candidate,
                                   revision: state.resolution.revision,
@@ -1657,6 +1767,7 @@ export function ImprovementWorkspace({
                           </Label>
                           <Button
                             disabled={
+                              blockers.length > 0 ||
                               busy ||
                               !!pending ||
                               related.blocked ||
@@ -1677,6 +1788,12 @@ export function ImprovementWorkspace({
                           >
                             Review manual release
                           </Button>
+                          {blockers.length > 0 && (
+                            <p>
+                              A reported policy requires an override. Review complete comparison
+                              evidence to publish this candidate.
+                            </p>
+                          )}
                         </div>
                       </DisclosureContent>
                     </Disclosure>
@@ -1735,6 +1852,30 @@ export function ImprovementWorkspace({
                         </p>
                       </>
                     )}
+                    {releaseReview?.comparisonId && blockers.length > 0 && (
+                      <section className="space-y-2" aria-label="Override policy">
+                        <h3>Override the policy verdicts for this candidate</h3>
+                        <PolicyReceiptList receipts={blockers} />
+                        <Label htmlFor="policy-override-reason">Reason for overriding policy</Label>
+                        <Input
+                          id="policy-override-reason"
+                          value={overrideReason}
+                          maxLength={1024}
+                          onChange={(e) => setOverrideReason(e.target.value)}
+                        />
+                        {overrideReason && !validOverrideReason && (
+                          <p role="alert">Enter a single-line reason of up to 1024 UTF-8 bytes.</p>
+                        )}
+                        <p>The release history records the reason and the policies you override.</p>
+                      </section>
+                    )}
+                    {releaseReview?.comparisonId &&
+                      JSON.stringify(releaseReview.blocking) !== JSON.stringify(blockerRefs) && (
+                        <p role="alert">
+                          The policy verdicts changed. Close this dialog and review the updated
+                          verdicts.
+                        </p>
+                      )}
                     <DialogFooter>
                       <Button
                         variant="outline"
@@ -1753,6 +1894,13 @@ export function ImprovementWorkspace({
                           isCurrentRelease ||
                           !currentBase ||
                           !releaseReview ||
+                          (releaseReview.comparisonId
+                            ? !receipts ||
+                              receiptReadFailed ||
+                              JSON.stringify(releaseReview.blocking) !==
+                                JSON.stringify(blockerRefs) ||
+                              (blockers.length > 0 && !validOverrideReason)
+                            : blockers.length > 0) ||
                           releaseReview.versionId !== candidate ||
                           releaseReview.revision !== state.resolution.revision ||
                           releaseReview.generation !== initial.generation ||
@@ -1768,13 +1916,25 @@ export function ImprovementWorkspace({
                               action: 'publish',
                               ...base,
                               ...(releaseReview.comparisonId
-                                ? { comparisonId: releaseReview.comparisonId }
+                                ? {
+                                    comparisonId: releaseReview.comparisonId,
+                                    ...(blockers.length
+                                      ? {
+                                          policyOverride: {
+                                            reason: overrideReason.trim(),
+                                            receipts: releaseReview.blocking,
+                                          },
+                                        }
+                                      : {}),
+                                  }
                                 : { reason: releaseReview.reason }),
                             });
                         }}
                       >
                         {releaseReview?.comparisonId
-                          ? 'Publish with selected evidence'
+                          ? releaseReview.blocking?.length
+                            ? 'Override policy and publish'
+                            : 'Publish with selected evidence'
                           : 'Publish without evaluation'}
                       </Button>
                     </DialogFooter>

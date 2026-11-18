@@ -35,7 +35,7 @@ function setup(role?: string) {
   );
 }
 
-test('app setup leads with language choice and one model-free recipe, keeping optional topics expandable', () => {
+test('app setup leads with language choice and a delivery check, keeping optional topics expandable', () => {
   const html = setup('viewer');
   assert.match(html, />App setup</);
   assert(html.indexOf('Recipe language') < html.indexOf('1. Install the SDK'));
@@ -56,7 +56,7 @@ test('app setup leads with language choice and one model-free recipe, keeping op
   );
   assert.match(
     html,
-    /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?<span[^>]*>Cache and offline delivery<\/span><\/button>/,
+    /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?<span[^>]*>Preparing job-local files<\/span><\/button>/,
   );
   assert.match(html, /Optional reporting failures do not block delivery or application start/);
   assert.match(html, /aria-label="Copy recipe"/);
@@ -105,17 +105,11 @@ test('required settings and expected check output precede their independent disc
     html.indexOf('aria-label="Required environment variables"'),
     html.indexOf('Environment variables and private directories'),
   );
-  for (const name of [
-    'ACCLIMATE_URL',
-    'ACCLIMATE_TOKEN',
-    'ACCLIMATE_SCOPE',
-    'ACCLIMATE_CACHE',
-    'ACCLIMATE_JOB_DIR',
-  ]) {
+  for (const name of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE']) {
     assert.match(summary, new RegExp(`<dt[^>]*>${name}</dt>`));
   }
   assert.match(summary, /Stable app identity for the cache; never a token/);
-  assert.match(summary, /Absolute, separate empty private job directory/);
+  assert.doesNotMatch(summary, /<dt[^>]*>ACCLIMATE_(CACHE|JOB_DIR)<\/dt>/);
   const directoryDetails = html.slice(
     html.indexOf('Environment variables and private directories'),
     html.indexOf('3. Run the delivery check'),
@@ -124,7 +118,8 @@ test('required settings and expected check output precede their independent disc
   assert.match(directoryDetails, /https:\/\/api\.example/);
   assert.match(directoryDetails, /aria-label="Copy API URL"/);
   assert.match(directoryDetails, /Give each identity its own scope; never use a token/);
-  assert.match(directoryDetails, /Use absolute paths for both directories/);
+  assert.match(directoryDetails, /ACCLIMATE_CACHE/);
+  assert.match(directoryDetails, /ACCLIMATE_JOB_DIR/);
   assert.match(
     directoryDetails,
     /Keep each job directory separate from the cache and empty before preparation/,
@@ -148,10 +143,12 @@ test('delivery leads into explicit agent context and evaluator access before a c
   assert.match(html, /4\. Connect your agent, then compare a change/);
   assert.match(html, /aria-label="Application runtime"/);
   assert.match(html, /aria-label="TypeScript agent connection recipe"/);
-  assert.match(html, /Replace only the fixture function with your existing agent loop/);
+  assert.match(html, /Connect your existing agent loop/);
   assert.match(html, /Delivery credentials cannot read unpublished candidates/);
   assert.match(html, /policy pass does not release a version/);
   assert.match(html, /\/w\/project-one\/delivery/);
   assert.match(html, /\/w\/project-one\/bundles\/bundle-two\/changes\?channel=preview/);
   assert.match(html, /SHA256SUMS/);
+  assert.match(html, /ACCLIMATE_EVALUATOR_CASES/);
+  assert.doesNotMatch(html, /trial\.mjs|demo\.mjs|model-free fixture|fake harness/);
 });

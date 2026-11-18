@@ -266,6 +266,11 @@ def _overlap(a: Path, b: Path):
     return a == b or a in b.parents or b in a.parents
 
 
+def _output_overlap():
+    raise EvaluationError("artifact.integrity", phase="export", execution_state="finished",
+                          next_action="fix_config", path_issue="exportOverlap")
+
+
 def _destination(output, roots):
     supplied = Path(output)
     if not supplied.is_absolute():
@@ -276,7 +281,7 @@ def _destination(output, roots):
     _no_symlinks(supplied.parent)
     destination = Path(os.path.abspath(supplied))
     if any(_overlap(destination, Path(os.path.abspath(root))) for root in roots):
-        _fail()
+        _output_overlap()
     _no_symlinks(destination.parent)
     info = destination.parent.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
@@ -296,7 +301,7 @@ def _destination(output, roots):
                 (control / "native-job-owner.json").lstat()
             except FileNotFoundError:
                 continue
-            _fail()
+            _output_overlap()
     return destination
 
 

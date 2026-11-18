@@ -166,8 +166,83 @@ class EvaluationCoreTests(unittest.TestCase):
         index=json.loads((attempt.parent/"artifact-index.json").read_bytes())
         self.assertEqual(index["comparisonId"],COMPARISON)
         self.assertEqual(len(index["entries"]),8)
+        self.assertEqual(service.comparison["results"][0]["parent"]["outputRef"],
+                         "acclimate:artifact:" + index["entries"][0]["sha256"])
         self.assertNotIn("private-canary-token",attempt.read_text())
         self.assertEqual(state["report"]["parentVersionId"],PARENT)
+
+    def test_non_json_output_writes_a_private_field_and_fix(self):
+        from datetime import datetime, timezone
+        app = self.app(lambda run: ExecutionResult({"events": [{"seenAt": datetime.now(timezone.utc)}]}))
+        service = FakeService(app)
+        self.run_app(app, service)
+        self.assertEqual(service.comparison["results"][0]["candidate"]["error"], "output_invalid")
+        for diagnostic in self.journal_root.rglob("output-validation.json"):
+            details = json.loads(diagnostic.read_bytes())
+            self.assertEqual(details["field"], 'output["events"][0]["seenAt"]')
+            self.assertIn("isoformat()", details["reason"])
+            self.assertEqual(diagnostic.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(len(list(self.journal_root.rglob("output-validation.json"))), 2)
+        self.assertNotIn("seenAt", json.dumps(service.comparison))
+
+    def test_callback_exception_diagnostics_are_private_opt_in(self):
+        def broken(run):
+            raise RuntimeError("sensitive provider message")
+        for phase in ("execute", "grade"):
+            for opted_in in (False, True):
+                self.config.write_bytes(json_bytes({**json.loads(self.config.read_bytes()),
+                    "captureCallbackErrors": opted_in, "journalRoot": str(self.root / (phase + str(opted_in)))}))
+                app = self.app(**{phase: broken})
+                service = FakeService(app)
+                self.run_app(app, service)
+                reports = list((self.root / (phase + str(opted_in))).rglob("callback-error.json"))
+                self.assertEqual(len(reports), 2 if opted_in else 0)
+                self.assertEqual(service.comparison["results"][0]["parent"]["error"], "execution_failed" if phase == "execute" else "grading_failed")
+                for report in reports:
+                    details = json.loads(report.read_bytes())
+                    self.assertEqual(details["phase"], phase)
+                    self.assertEqual(details["exceptionType"], "RuntimeError")
+                    self.assertEqual(details["frames"][-1]["function"], "broken")
+                    self.assertNotIn("sensitive provider message", report.read_text())
+                    self.assertEqual(report.stat().st_mode & 0o777, 0o600)
+                self.assertNotIn("RuntimeError", json.dumps(service.comparison))
+
+    def test_collection_schedule_matches_typescript_and_actual_callbacks(self):
+        seen = []
+        def execute(run):
+            ctx = run.context
+            binding = json.loads((Path(ctx.private_job_directory) / "collection-binding.json").read_bytes())
+            self.assertEqual((binding["pairIndex"], binding["armIndex"], binding["side"]),
+                             (ctx.collection.pair_index, ctx.collection.arm_index, ctx.side))
+            self.assertEqual(binding["scheduleDigest"], ctx.collection.schedule_digest)
+            seen.append(ctx.side)
+            return ExecutionResult(True)
+
+        config = dict(config_id="paired", config_revision="1", dataset_revision="1", grader_revision="1",
+                      runtime={}, execution="model-free", execute=execute, grade=lambda _: GradeResult(1),
+                      cases=[Case("one🍊", None, None, 4)])
+        app = define_evaluation(**config, collection={"protocol":"seeded-balanced-v1", "seed":"parity🍊"})
+        result = self.run_app(app, FakeService(app))
+        digest = "sha256:e4e68691c20042ee820793c8c9404ace8a7187ff21e75c63fe81e4f032e1dcaa"
+        self.assertEqual(result["comparison"]["runtime"]["acclimate.collection.schedule"], digest)
+        schedule = json.loads(next(self.journal_root.glob("*/collection.json")).read_bytes())
+        self.assertEqual(schedule["digest"], digest)
+        self.assertEqual(seen, ["parent","candidate", "candidate","parent", "candidate","parent", "parent","candidate"])
+        for key in ("protocol", "seed", "schedule"):
+            with self.assertRaises(EvaluationError) as caught:
+                define_evaluation(**{**config, "runtime": {"acclimate.collection." + key: "spoofed"}})
+            self.assertEqual(caught.exception.code, "config.schema")
+
+    def test_oversized_report_exposes_a_usable_partition_limit(self):
+        make_cases = lambda n: [Case("case" + str(i), {}, True, 10) for i in range(n)]
+        with self.assertRaises(EvaluationError) as caught:
+            self.app(cases=make_cases(50))
+        diagnostic = caught.exception.diagnostic["reportBudget"]
+        self.assertEqual(diagnostic["expectedPairs"], 500)
+        self.assertGreater(diagnostic["estimatedBytes"], diagnostic["limitBytes"])
+        limit = diagnostic["maxPairsPerPartition"] // 10
+        self.assertGreater(limit, 0)
+        self.app(cases=make_cases(limit))
 
     def test_saved_report_recovers_lost_submit_and_finish_without_callbacks(self):
         for operation in ("comparisons","finish"):
@@ -394,8 +469,10 @@ class EvaluationCoreTests(unittest.TestCase):
     def test_async_callback_and_future_outputs_are_not_ordinary_failure(self):
         async def async_execute(run):
             return ExecutionResult(True)
-        with self.assertRaises(EvaluationError):
+        with self.assertRaises(EvaluationError) as caught:
             self.app(async_execute)
+        self.assertEqual(caught.exception.code, "config.async_callback")
+        self.assertEqual(caught.exception.next_action, "use_async_callback_adapter")
         class AsyncCallable:
             async def __call__(self,run):
                 return ExecutionResult(True)
@@ -612,6 +689,26 @@ class EvaluationCoreTests(unittest.TestCase):
                 self.assertLessEqual(len(reads),100)
                 self.assertEqual(service.mutations,[])
 
+    def test_preflight_distinguishes_config_and_journal_path_aliases(self):
+        alias = self.root / "private-name-canary"
+        alias.symlink_to(self.root, target_is_directory=True)
+        config_link = self.root / "file-alias"
+        config_link.symlink_to(self.config)
+        config = json.loads(self.config.read_bytes())
+        config["journalRoot"] = str(alias / "missing" / "journals")
+        self.config.write_bytes(json_bytes(config))
+        for filename, field in ((config_link, "configPath"), (alias / self.config.name, "configPath"),
+                                (self.config, "journalRoot")):
+            with self.subTest(field=field, filename=filename):
+                result = preflight_evaluation(app=self.app(), config_path=str(filename), target={"bundleId": BUNDLE})
+                self.assertEqual(result["status"], "blocked")
+                failure = result["checks"][-1]
+                self.assertEqual((failure["code"], failure["field"]), ("config.permissions", field))
+                self.assertIn("realpath", failure["hint"])
+                self.assertNotIn("chmod", failure["hint"])
+                self.assertNotIn(str(self.root), json.dumps(result))
+        self.assertFalse((self.root / "missing").exists())
+
     def test_definition_bounds_and_private_config_do_not_echo_secrets(self):
         with self.assertRaises(EvaluationError):
             self.app(cases=[Case("bool",{},True,True)])
@@ -622,6 +719,8 @@ class EvaluationCoreTests(unittest.TestCase):
         self.config.chmod(0o644)
         with self.assertRaises(EvaluationError) as caught:
             read_evaluator_config(self.config)
+        self.assertEqual(caught.exception.diagnostic["pathIssue"], "configMode")
+        self.assertIn("chmod", caught.exception.diagnostic["hint"])
         self.assertNotIn("private-canary-token",repr(caught.exception))
         self.assertNotIn(str(self.root),str(caught.exception))
 

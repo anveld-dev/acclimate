@@ -2,9 +2,22 @@ import { consoleClient } from './console-client';
 import { allPages } from './listing';
 import { ApiError } from '@acclimate/sdk';
 import type { Integration, IntegrationCredential, DeliveryReceipt, Page } from '@acclimate/sdk';
-import type { LearningEnrollmentStatus, LearningRestoreTarget, LearningRound } from '@acclimate/sdk';
+import type {
+  LearningEnrollmentStatus,
+  LearningOutcomeStatus,
+  LearningReleaseEvidence,
+  LearningRestoreTarget,
+  LearningRound,
+  PolicyOverride,
+} from '@acclimate/sdk';
 import { requireSession, actorScope, type Environment } from './selection';
-import { learningPolicy, renewalSettings, skillPermissions, permittedBundlePaths, type LearningSetup } from './connection-learning-policy';
+import {
+  learningPolicy,
+  renewalSettings,
+  skillPermissions,
+  permittedBundlePaths,
+  type LearningSetup,
+} from './connection-learning-policy';
 import { randomUUID } from 'node:crypto';
 
 type Entry = { integration: Integration; receipts: Page<DeliveryReceipt> };
@@ -293,8 +306,13 @@ export type LearningRequest = LearningTarget &
         target: LearningRestoreTarget;
         reason: string;
       }
-    | { action: 'skills'; createSkillNames: string; retireSkillNames: string; permittedPaths?: string }
-    | { action: 'review'; roundId: string; approve: boolean }
+    | {
+        action: 'skills';
+        createSkillNames: string;
+        retireSkillNames: string;
+        permittedPaths?: string;
+      }
+    | { action: 'review'; roundId: string; approve: boolean; policyOverride?: PolicyOverride }
     | {
         action: 'renew';
         renewalId: string;
@@ -305,6 +323,14 @@ export type LearningRequest = LearningTarget &
         selectionPolicies?: string;
       }
   );
+export type BlockingLearningPolicy = {
+  comparisonId: string;
+  requestId: string;
+  policyId: string;
+  revision: string;
+  policyDigest: string;
+  verdict: 'fail' | 'indeterminate';
+};
 type LearningStatus = Pick<
   LearningEnrollmentStatus,
   | 'automaticRollout'
@@ -321,7 +347,7 @@ type LearningStatus = Pick<
   | 'skillPackages'
   | 'permittedPaths'
 > & {
-  rounds: LearningRound[];
+  rounds: (LearningRound & { blockingPolicies?: BlockingLearningPolicy[] | null })[];
   restoreTargets: LearningRestoreTarget[];
   policySummary?: { development: string; audit: string };
   developmentCommitted: boolean;
@@ -329,6 +355,125 @@ type LearningStatus = Pick<
 export type LearningResult =
   | { ok: true; status: LearningStatus | null }
   | { ok: false; message: string };
+
+export type OutcomeLookupResult =
+  | { ok: true; outcome: LearningOutcomeStatus }
+  | { ok: false; message: string };
+
+function releaseEvidence(
+  release: LearningReleaseEvidence | null | undefined,
+): LearningReleaseEvidence | null {
+  if (!release) return null;
+  const {
+    promotionId,
+    versionId,
+    revision,
+    withdrawn,
+    rollback,
+    developmentRequestId,
+    auditRequestId,
+  } = release;
+  return {
+    promotionId,
+    versionId,
+    revision,
+    withdrawn,
+    rollback: rollback && {
+      promotionId: rollback.promotionId,
+      versionId: rollback.versionId,
+      revision: rollback.revision,
+    },
+    developmentRequestId,
+    auditRequestId,
+  };
+}
+
+export async function lookupLearningOutcome(
+  env: Environment,
+  input: LearningTarget & { outcomeId: string },
+  fetcher: typeof fetch = fetch,
+): Promise<OutcomeLookupResult> {
+  if (
+    !input ||
+    !validScopePart(input.projectId) ||
+    !uuid.test(input.integrationId) ||
+    !uuid.test(input.outcomeId)
+  )
+    return { ok: false, message: 'Enter the outcome UUID your application reported.' };
+  try {
+    requireSession(env);
+    const result = await consoleClient(env, fetcher).getLearningOutcome(
+      input.projectId,
+      input.integrationId,
+      input.outcomeId,
+    );
+    if (result.outcomeId !== input.outcomeId.toLowerCase()) throw Error('Outcome mismatch');
+    const {
+      outcomeId,
+      status,
+      versionId,
+      deliveryRevision,
+      receivedAt,
+      corrections,
+      bundleId,
+      channel,
+      currentDelivery,
+      fieldAudit,
+    } = result;
+    return {
+      ok: true,
+      outcome: {
+        outcomeId,
+        status,
+        versionId,
+        deliveryRevision,
+        receivedAt,
+        bundleId,
+        channel,
+        currentDelivery: currentDelivery && {
+          versionId: currentDelivery.versionId,
+          revision: currentDelivery.revision,
+        },
+        servedRelease: releaseEvidence(result.servedRelease),
+        fieldAudit: fieldAudit && {
+          verdict: fieldAudit.verdict,
+          controlVersionId: fieldAudit.controlVersionId,
+          triggeredRollback: fieldAudit.triggeredRollback,
+        },
+        corrections: corrections.map(
+          ({
+            correctionId,
+            state,
+            roundId,
+            reason,
+            incidentReplay,
+            release,
+            candidateVersionId,
+            developmentRequestId,
+            auditRequestId,
+          }) => ({
+            correctionId,
+            state,
+            roundId,
+            reason,
+            incidentReplay,
+            release: releaseEvidence(release),
+            candidateVersionId,
+            developmentRequestId,
+            auditRequestId,
+          }),
+        ),
+      },
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404)
+      return { ok: false, message: 'No outcome with that ID was received on this connection.' };
+    return {
+      ok: false,
+      message: 'Could not read this outcome. Check workspace access and try again.',
+    };
+  }
+}
 
 export async function connectionLearning(
   env: Environment,
@@ -422,7 +567,8 @@ export async function connectionLearning(
         if (input.action === 'skills') {
           try {
             skills = skillPermissions(input.createSkillNames, input.retireSkillNames);
-            if (input.permittedPaths !== undefined) paths = permittedBundlePaths(input.permittedPaths);
+            if (input.permittedPaths !== undefined)
+              paths = permittedBundlePaths(input.permittedPaths);
           } catch (error) {
             return {
               ok: false,
@@ -488,15 +634,51 @@ export async function connectionLearning(
       case 'stop':
         await client.stopLearning(projectId, id, randomUUID());
         break;
-      case 'review':
+      case 'review': {
         if (
           typeof input.roundId !== 'string' ||
           !uuid.test(input.roundId) ||
           typeof input.approve !== 'boolean'
         )
           return { ok: false, message: 'Select a valid round and decision.' };
-        await client.reviewLearningRound(projectId, id, input.roundId, input.approve, randomUUID());
+        const decision = input.policyOverride;
+        if (
+          decision !== undefined &&
+          (!input.approve ||
+            !decision ||
+            typeof decision.reason !== 'string' ||
+            !decision.reason.trim() ||
+            Buffer.byteLength(decision.reason.trim()) > 1024 ||
+            /[\x00-\x1f\x7f-\x9f]/.test(decision.reason.trim()) ||
+            !Array.isArray(decision.receipts) ||
+            !decision.receipts.length ||
+            decision.receipts.some(
+              (ref) =>
+                !ref ||
+                !uuid.test(ref.comparisonId) ||
+                !/^sha256:[a-f0-9]{64}$/.test(ref.policyDigest),
+            ))
+        )
+          return {
+            ok: false,
+            message: 'Review the blocking policies and enter a reason of up to 1,024 bytes.',
+          };
+        await client.reviewLearningRound(
+          projectId,
+          id,
+          input.roundId,
+          input.approve,
+          randomUUID(),
+          decision && {
+            reason: decision.reason.trim(),
+            receipts: decision.receipts.map(({ comparisonId, policyDigest }) => ({
+              comparisonId,
+              policyDigest,
+            })),
+          },
+        );
         break;
+      }
       case 'renew': {
         if (
           typeof input.renewalId !== 'string' ||
@@ -528,6 +710,34 @@ export async function connectionLearning(
       }
     }
     const status = await inspect();
+    async function blockingPolicies(
+      round: LearningRound,
+    ): Promise<BlockingLearningPolicy[] | null | undefined> {
+      if (round.state !== 'awaiting_review' || !round.candidateVersionId) return;
+      try {
+        const receipts = await client.listCandidatePolicyReceipts(
+          projectId,
+          bundleId,
+          round.candidateVersionId,
+        );
+        return receipts.items.flatMap(({ comparisonId, requestId, policy, verdict }) =>
+          verdict === 'fail' || verdict === 'indeterminate'
+            ? [
+                {
+                  comparisonId,
+                  requestId,
+                  policyId: policy.id,
+                  revision: policy.revision,
+                  policyDigest: policy.sha256,
+                  verdict,
+                },
+              ]
+            : [],
+        );
+      } catch {
+        return null;
+      }
+    }
     return {
       ok: true,
       status: status && {
@@ -565,32 +775,47 @@ export async function connectionLearning(
               },
             }
           : {}),
-        rounds: status.rounds.map((round) => ({
-          id: round.id,
-          outcomeId: round.outcomeId,
-          state: round.state,
-          ...(round.policyEpoch === undefined ? {} : { policyEpoch: round.policyEpoch }),
-          ...(round.correctionId ? { correctionId: round.correctionId } : {}),
-          ...(round.attempt === undefined ? {} : { attempt: round.attempt }),
-          reason: round.reason,
-          parentVersionId: round.parentVersionId,
-          candidateVersionId: round.candidateVersionId,
-          proposalId: round.proposalId,
-          developmentRequestId: round.developmentRequestId,
-          developmentComparisonId: round.developmentComparisonId,
-          auditRequestId: round.auditRequestId,
-          auditComparisonId: round.auditComparisonId,
-          promotionId: round.promotionId,
-          fieldAudits: round.fieldAudits && {
-            windowSize: round.fieldAudits.windowSize,
-            regressions: round.fieldAudits.regressions,
-            rollbackPromotionId: round.fieldAudits.rollbackPromotionId,
-          },
-        })),
+        rounds: await Promise.all(
+          status.rounds.map(async (round) => ({
+            blockingPolicies: await blockingPolicies(round),
+            id: round.id,
+            outcomeId: round.outcomeId,
+            incidentReplay: round.incidentReplay,
+            state: round.state,
+            ...(round.policyEpoch === undefined ? {} : { policyEpoch: round.policyEpoch }),
+            ...(round.correctionId ? { correctionId: round.correctionId } : {}),
+            ...(round.attempt === undefined ? {} : { attempt: round.attempt }),
+            reason: round.reason,
+            parentVersionId: round.parentVersionId,
+            candidateVersionId: round.candidateVersionId,
+            proposalId: round.proposalId,
+            developmentRequestId: round.developmentRequestId,
+            developmentComparisonId: round.developmentComparisonId,
+            auditRequestId: round.auditRequestId,
+            auditComparisonId: round.auditComparisonId,
+            promotionId: round.promotionId,
+            fieldAudits: round.fieldAudits && {
+              windowSize: round.fieldAudits.windowSize,
+              regressions: round.fieldAudits.regressions,
+              rollbackPromotionId: round.fieldAudits.rollbackPromotionId,
+            },
+          })),
+        ),
       },
     };
   } catch (error) {
     if (error instanceof ApiError) {
+      if (input.action === 'review' && error.status === 403)
+        return {
+          ok: false,
+          message: 'Use an independent reviewer with permission to promote this candidate.',
+        };
+      if (error.code === 'policy_override_required')
+        return {
+          ok: false,
+          message:
+            'The candidate has blocking policy receipts. Refresh learning status and review the current receipts before approving.',
+        };
       if ([401, 403].includes(error.status))
         return { ok: false, message: 'Learning administration requires current workspace access.' };
       if (error.status === 400)

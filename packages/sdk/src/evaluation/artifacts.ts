@@ -328,11 +328,16 @@ async function writeFile(filename: string, data: Uint8Array): Promise<void> {
 }
 const overlaps = (a: string, b: string) =>
   a === b || a.startsWith(b + path.sep) || b.startsWith(a + path.sep);
+function outputOverlap(): never {
+  throw new EvaluationError('artifact.integrity', {
+    phase: 'export', executionState: 'finished', nextAction: 'fix_config', pathIssue: 'exportOverlap',
+  });
+}
 async function safeOutputDirectory(output: string, roots: string[]): Promise<string> {
   if (!path.isAbsolute(output)) fail();
   await noSymlinks(path.dirname(output));
   const destination = path.resolve(output);
-  if (roots.some((root) => overlaps(destination, path.resolve(root)))) fail();
+  if (roots.some((root) => overlaps(destination, path.resolve(root)))) outputOverlap();
   await noSymlinks(path.dirname(destination));
   const parent = await lstat(path.dirname(destination));
   if (
@@ -352,7 +357,7 @@ async function safeOutputDirectory(output: string, roots: string[]): Promise<str
       if (stat.isDirectory()) {
         try {
           await lstat(path.join(control, 'native-job-owner.json'));
-          fail();
+          outputOverlap();
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         }

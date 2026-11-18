@@ -5,12 +5,14 @@ from concurrent.futures import Future as ConcurrentFuture
 import copy
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import inspect
 import math
 import os
 from pathlib import Path
 import shutil
 import threading
+import traceback
 from typing import Any, Callable, Generic, TypeVar
 import uuid
 
@@ -19,7 +21,7 @@ from .client import ApiError
 from .types import VerifiedBundle
 from ._evaluation_shared import (
     MIB, DIGEST_RE, EvaluationError, ExecutionUncertainError, CallbackCancelled,
-    TaskExecutionError, _text, assert_descriptor, clone_json, descriptor_from,
+    PrivateJsonError, TaskExecutionError, _text, assert_descriptor, atomic_private_write, clone_json, descriptor_from,
     ensure_private_directory, guided_uuid, json_bytes, make_client, mutate,
     parse_json, read_evaluator_config, safe_error, scope_from, sha256,
     validate_descriptor, validate_handoff,
@@ -56,12 +58,22 @@ class CancellationContext:
 
 
 @dataclass(frozen=True)
+class CollectionContext:
+    protocol: str
+    schedule_digest: str
+    pair_index: int
+    arm_index: int
+    first_side: str
+
+
+@dataclass(frozen=True)
 class ExecutionContext:
     request_id: str
     attempt_id: str
     side: str
     job_id: str
     private_job_directory: str
+    collection: CollectionContext | None = None
 
 
 @dataclass(frozen=True)
@@ -101,12 +113,13 @@ class GradeResult:
 
 class EvaluationApp(Generic[I,E,O]):
     def __init__(self, descriptor: dict, cases: tuple[Case, ...], execute: Callable,
-                 grade: Callable, execution: str, *, _token=None):
+                 grade: Callable, execution: str, *, collection: dict | None = None, _token=None):
         if _token is not _APP_TOKEN:
             raise EvaluationError("config.schema")
         self._descriptor = clone_json(descriptor)
         self._cases, self._execute, self._grade = cases,execute,grade
         self._execution = execution
+        self._collection = collection
 
     @property
     def descriptor(self) -> dict:
@@ -121,16 +134,50 @@ def _async_function(callback: Callable) -> bool:
     return inspect.iscoroutinefunction(callback) or inspect.iscoroutinefunction(getattr(callback,"__call__",None))
 
 
+_COLLECTION_KEYS = {f"acclimate.collection.{key}" for key in ("protocol", "seed", "schedule")}
+
+
+def _collection_schedule(config: dict, inventory: list[dict]) -> dict:
+    if (type(config) is not dict or set(config) != {"protocol", "seed"}
+            or config["protocol"] != "seeded-balanced-v1"):
+        raise EvaluationError("config.schema")
+    seed = config["seed"]
+    if type(seed) is not str:
+        raise EvaluationError("config.schema")
+    clone_json(seed)
+    if not seed.strip() or len(seed.encode("utf-8")) > 256:
+        raise EvaluationError("config.schema")
+
+    # The ranking and wire manifest use the same UTF-8 JSON bytes as the TypeScript SDK.
+    def rank(index: int) -> bytes:
+        pair = inventory[index]
+        return hashlib.sha256(json_bytes([seed, pair["caseId"], pair["repetition"]])).digest()
+
+    ranked = sorted(range(len(inventory)), key=rank)
+    phase = hashlib.sha256(json_bytes([seed, "first-arm"])).digest()[0] % 2
+    pairs = [key.copy() for key in inventory]
+    for position, index in enumerate(ranked):
+        pairs[index]["firstSide"] = "candidate" if (position + phase) % 2 else "parent"
+    manifest = {"protocol": config["protocol"], "seed": seed, "pairs": pairs}
+    return {**manifest, "digest": sha256(json_bytes(manifest) + b"\n")}
+
+
 def define_evaluation(*, config_id: str, config_revision: str, dataset_revision: str,
                       grader_revision: str, runtime: dict[str,str], execution: str,
                       cases: list[Case[I,E]] | tuple[Case[I,E],...],
                       execute: Callable[[ExecuteInput[I]],ExecutionResult[O]],
-                      grade: Callable[[GradeInput[E,O]],GradeResult]) -> EvaluationApp[I,E,O]:
-    if not callable(execute) or not callable(grade) or _async_function(execute) or _async_function(grade):
+                      grade: Callable[[GradeInput[E,O]],GradeResult],
+                      collection: dict[str,str] | None = None) -> EvaluationApp[I,E,O]:
+    if _async_function(execute) or _async_function(grade):
+        error = EvaluationError("config.async_callback", next_action="use_async_callback_adapter")
+        error.add_note("The durable runner requires synchronous callbacks. Use the installed "
+                       "evaluation starter's coroutine adapter to await your agent to completion.")
+        raise error
+    if not callable(execute) or not callable(grade):
         raise EvaluationError("config.schema")
     if execution not in ("model-free","live") or type(runtime) is not dict or type(cases) not in (list,tuple):
         raise EvaluationError("config.schema")
-    reserved={"configId","configRevision","execution","concurrency","gradeRetries"}
+    reserved={"configId","configRevision","execution","concurrency","gradeRetries"} | _COLLECTION_KEYS
     if reserved.intersection(runtime):
         raise EvaluationError("config.schema")
     captured=[]
@@ -144,9 +191,15 @@ def define_evaluation(*, config_id: str, config_revision: str, dataset_revision:
         inventory.extend({"caseId":case.case_id,"repetition":r} for r in range(case.repetitions))
         if len(inventory)>1000:
             raise EvaluationError("config.schema")
+    schedule = _collection_schedule(collection, inventory) if collection is not None else None
+    collection_runtime = {} if schedule is None else {
+        "acclimate.collection.protocol": schedule["protocol"],
+        "acclimate.collection.seed": schedule["seed"],
+        "acclimate.collection.schedule": schedule["digest"],
+    }
     descriptor=validate_descriptor({"datasetRevision":dataset_revision,"graderRevision":grader_revision,
         "runtime":{**runtime,"configId":config_id,"configRevision":config_revision,"execution":execution,
-            "concurrency":"1","gradeRetries":"0"},"expectedCases":inventory})
+            "concurrency":"1","gradeRetries":"0",**collection_runtime},"expectedCases":inventory})
     if len(json_bytes([{"input":case.input,"expected":case.expected} for case in captured]))>16*MIB:
         raise EvaluationError("config.schema")
     # Bound the actual report envelope, including escaped refs, before paid work.
@@ -157,9 +210,20 @@ def define_evaluation(*, config_id: str, config_revision: str, dataset_revision:
         "parentDigest":"sha256:"+"0"*64,"candidateDigest":"sha256:"+"0"*64,
         "evaluation":{"requestId":"0"*36,"attemptId":"0"*36},
         "results":[{**key,"parent":worst,"candidate":worst} for key in inventory]}
-    if len(json_bytes(budget))>2*MIB:
-        raise EvaluationError("definition.report_budget_exceeded",phase="preflight")
-    return EvaluationApp(descriptor,tuple(captured),execute,grade,execution,_token=_APP_TOKEN)
+    limit = 2 * MIB
+    estimated = len(json_bytes(budget))
+    if estimated > limit:
+        fixed = len(json_bytes({**budget, "expectedCases": [], "results": []}))
+        largest_pair = max(len(json_bytes(key)) + len(json_bytes(row)) + 2
+                           for key, row in zip(inventory, budget["results"]))
+        max_pairs = (limit - fixed + 2) // largest_pair
+        error = EvaluationError("definition.report_budget_exceeded", phase="preflight")
+        error.diagnostic["reportBudget"] = {"estimatedBytes": estimated, "limitBytes": limit,
+            "expectedPairs": len(inventory), "maxPairsPerPartition": max_pairs}
+        error.args = (f"{error.code}: estimated {estimated} bytes for {len(inventory)} pairs, limit {limit}. "
+                      f"Partition the cases into groups of at most {max_pairs} pairs using this configuration.",)
+        raise error
+    return EvaluationApp(descriptor,tuple(captured),execute,grade,execution,collection=schedule,_token=_APP_TOKEN)
 
 
 def _request_snapshot(request: dict) -> dict:
@@ -258,7 +322,7 @@ def preflight_evaluation(*, app: EvaluationApp, config_path: str,
         elif not guided_uuid(target.get("bundleId")):
             raise EvaluationError("guided_target_unsupported")
         current_check="journalStorage"
-        root=ensure_private_directory(config["journalRoot"])
+        root=ensure_private_directory(config["journalRoot"], journal_root=True)
         probe=ensure_private_directory(root/(".probe-"+uuid.uuid4().hex))
         checks.append({"check":"journalStorage","status":"passed"})
         current_check="lock"
@@ -301,7 +365,8 @@ def preflight_evaluation(*, app: EvaluationApp, config_path: str,
             if isinstance(error,ApiError) and error.status==404 and missing else safe_error(error))
         if safe.code in ("auth.denied","auth.principal_mismatch"):
             authorization="denied"
-        checks.append({"check":current_check,"status":"unverified" if safe.code=="capabilities.unsupported" else "failed","code":safe.code})
+        checks.append({"check":current_check,"status":"unverified" if safe.code=="capabilities.unsupported" else "failed","code":safe.code,
+                       **{k: safe.diagnostic[k] for k in ("pathIssue","field","hint") if k in safe.diagnostic}})
         return {"schemaVersion":1,"status":"blocked","authorization":authorization,
             "checkedAt":datetime.now(timezone.utc).isoformat(),"checks":checks,"nextAction":safe.next_action}
     finally:
@@ -334,6 +399,33 @@ def _usage(value: Any):
     if any(type(v) not in (int,float) or not math.isfinite(v) or v<0 for v in value.values()):
         return None
     return copy.deepcopy(value)
+
+
+def _role_value(value, field):
+    result = clone_json(value, field=field)
+    if len(json_bytes(result)) > MIB:
+        raise PrivateJsonError(field, "Return at most 1 MiB of JSON. Store larger evidence privately and return a digest.")
+    return result
+
+
+def _record_diagnostic(journal, directory, phase, error, capture_callback_errors):
+    if isinstance(error, PrivateJsonError):
+        filename = "output-validation.json"
+        data = {"field": error.field, "reason": error.reason}
+    elif capture_callback_errors:
+        filename = "callback-error.json"
+        frames = [{"file": Path(frame.f_code.co_filename).name[:128], "line": line,
+                   "function": frame.f_code.co_name[:128]} for frame, line in traceback.walk_tb(error.__traceback__)]
+        data = {"phase": phase, "exceptionType": type(error).__name__[:128], "frames": frames[-8:]}
+    else:
+        return
+    journal.assert_owned()
+    try:
+        atomic_private_write(directory / filename, json_bytes(data))
+    except (OSError, EvaluationError):
+        # A diagnostic is optional. Keep the original callback outcome and let
+        # the durable report follow its normal journal/ownership checks.
+        journal.assert_owned()
 
 
 def _empty(error: str="cancelled",execution_status="infrastructure_failed") -> dict:
@@ -416,6 +508,7 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                    allow_live: bool=False, cancel_event: threading.Event | None=None) -> dict:
     """Run or reconcile one bound request. Never replay ambiguous callbacks."""
     state=None
+    callbacks_started=0
     phase="configure"
     request=None
     try:
@@ -432,7 +525,7 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
         check=preflight_evaluation(app=app,config_path=config_path,target={"handoff":handoff})
         if check["status"]!="ready":
             failed=next((x for x in reversed(check["checks"]) if x.get("code")),{})
-            raise EvaluationError(failed.get("code","config.schema"),phase="preflight",next_action=check["nextAction"])
+            raise EvaluationError(failed.get("code","config.schema"),phase="preflight",next_action=check["nextAction"],path_issue=failed.get("pathIssue"))
         client=make_client(config)
         phase="claim"
         with Journal(config["journalRoot"],scope) as journal:
@@ -446,9 +539,9 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                 if state.get("comparisonId") and request.get("comparisonId") and state["comparisonId"]!=request["comparisonId"]:
                     raise EvaluationError("evidence.identity_mismatch",phase="claim")
 
-            def terminal(current):
+            def terminal(current, reused_evidence):
                 if current["status"]=="interrupted":
-                    return {"schemaVersion":1,"evaluation":current,"comparison":None,"executionState":"interrupted"}
+                    return {"schemaVersion":1,"evaluation":current,"comparison":None,"executionState":"interrupted","callbacksStarted":callbacks_started,"reusedEvidence":False}
                 if current["status"] not in ("completed","failed"):
                     return None
                 if current.get("evaluatorPrincipal")!=config["evaluatorPrincipalId"] or not guided_uuid(current.get("attemptId")) or not guided_uuid(current.get("comparisonId")):
@@ -461,9 +554,9 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                     raise EvaluationError("evidence.identity_mismatch",phase="inspect")
                 if state and state.get("report") is not None:
                     _reconcile_artifact_index(journal,state,comparison["id"])
-                return {"schemaVersion":1,"evaluation":current,"comparison":comparison,"executionState":"finished"}
+                return {"schemaVersion":1,"evaluation":current,"comparison":comparison,"executionState":"finished","callbacksStarted":callbacks_started,"reusedEvidence":reused_evidence}
 
-            done=terminal(request)
+            done=terminal(request, True)
             if done:
                 return done
             if state is None:
@@ -501,10 +594,15 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
 
             try:
                 request=current_request()
-                if not state.get("report"):
+                reused_evidence = bool(state.get("report"))
+                if not reused_evidence:
                     phase="verify"
                     bundles=_bundles(client,config,handoff,request,journal.directory/"cache")
                     current_request()
+                    schedule = app._collection
+                    if schedule is not None:
+                        atomic_private_write(journal.directory / "collection.json",
+                            json_bytes({"schemaVersion": 1, **schedule}) + b"\n")
                     state["executionStarted"]=True
                     journal.save(state)
                     phase="execute"
@@ -514,14 +612,27 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                     for case in app._cases:
                         for repetition in range(case.repetitions):
                             pair={"caseId":case.case_id,"repetition":repetition}
-                            for side in ("parent","candidate"):
+                            pair_index = len(results)
+                            first = schedule["pairs"][pair_index]["firstSide"] if schedule is not None else "parent"
+                            order = ("parent", "candidate") if first == "parent" else ("candidate", "parent")
+                            for arm_index, side in enumerate(order):
                                 if cancellation.is_cancelled():
                                     pair[side]=_empty()
                                     continue
                                 current_request()
                                 version=bundles[side]["version"]
                                 job_id,job_dir=journal.job_directory(request["id"],state["attemptId"],case.case_id,repetition,side,version)
-                                context=ExecutionContext(request["id"],state["attemptId"],side,job_id,str(job_dir))
+                                collection_context = None
+                                if schedule is not None:
+                                    collection_context = CollectionContext(schedule["protocol"], schedule["digest"],
+                                        pair_index, arm_index, first)
+                                    atomic_private_write(job_dir / "collection-binding.json", json_bytes({
+                                        "schemaVersion": 1, "jobId": job_id, "caseId": case.case_id,
+                                        "repetition": repetition, "side": side, "protocol": schedule["protocol"],
+                                        "scheduleDigest": schedule["digest"], "pairIndex": pair_index,
+                                        "armIndex": arm_index, "firstSide": first,
+                                    }) + b"\n")
+                                context=ExecutionContext(request["id"],state["attemptId"],side,job_id,str(job_dir),collection_context)
                                 identity={"caseId":case.case_id,"repetition":repetition,"side":side,
                                     "versionId":version["id"],"digest":version["digest"]}
                                 execute_input=ExecuteInput(clone_json(bundles[side]),clone_json(case.input),case.case_id,repetition,cancellation,context)
@@ -530,20 +641,21 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                                     pair[side]=_empty()
                                     continue
                                 try:
+                                    callbacks_started += 1
                                     execution=app._execute(execute_input)
                                     if _async_value(execution) or (isinstance(execution,ExecutionResult) and _async_value(execution.output)):
                                         if inspect.iscoroutine(execution):
                                             execution.close()
                                         raise ExecutionUncertainError()
                                     if not isinstance(execution,ExecutionResult) or execution.execution_status not in ("completed","task_failed"):
-                                        raise ValueError()
-                                    output=clone_json(execution.output)
+                                        raise PrivateJsonError("output", "Return ExecutionResult with a completed or task_failed status.")
+                                    output=_role_value(execution.output, "output")
                                     entry=journal.write_artifact({**identity,"role":"output"},output)
                                     index["entries"].append(entry)
                                     journal.save_artifact_index(index)
                                     ref=execution.output_ref
                                     if ref is None:
-                                        ref=(journal.directory/entry["file"]).as_uri()
+                                        ref="acclimate:artifact:"+entry["sha256"]
                                     if not _text(ref,1024):
                                         raise ValueError()
                                     outcome={"executionStatus":execution.execution_status,"gradingStatus":"missing","reward":None,
@@ -557,8 +669,9 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                                 except TaskExecutionError:
                                     pair[side]=_empty("task_failed","task_failed")
                                     continue
-                                except Exception:
-                                    pair[side]=_empty("execution_failed")
+                                except Exception as error:
+                                    _record_diagnostic(journal, job_dir, "execute", error, config.get("captureCallbackErrors", False))
+                                    pair[side]=_empty("output_invalid" if isinstance(error, PrivateJsonError) else "execution_failed")
                                     continue
                                 if cancellation.is_cancelled():
                                     outcome["error"]="cancelled"
@@ -578,9 +691,9 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                                             grade.close()
                                         raise ExecutionUncertainError()
                                     if not isinstance(grade,GradeResult) or type(grade.reward) not in (int,float) or not math.isfinite(grade.reward):
-                                        raise ValueError()
+                                        raise PrivateJsonError("grade.reward", "Return GradeResult with a finite numeric reward.")
                                     if grade.explanation is not None:
-                                        explanation=journal.write_artifact({**identity,"role":"grader-explanation"},clone_json(grade.explanation))
+                                        explanation=journal.write_artifact({**identity,"role":"grader-explanation"},_role_value(grade.explanation, "grade.explanation"))
                                         index["entries"].append(explanation)
                                         journal.save_artifact_index(index)
                                     outcome.update(gradingStatus="scored",reward=float(grade.reward))
@@ -591,7 +704,8 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                                 except CallbackCancelled:
                                     cancellation._event.set()
                                     outcome.update(gradingStatus="missing",error="cancelled")
-                                except Exception:
+                                except Exception as error:
+                                    _record_diagnostic(journal, job_dir, "grade", error, config.get("captureCallbackErrors", False))
                                     outcome.update(gradingStatus="failed",error="grading_failed")
                                 pair[side]=outcome
                             results.append(pair)
@@ -624,14 +738,14 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                 mutate(client,"finish",scope,journal.read_body("finish",state),state["keys"]["finish"])
                 request=client.get_evaluation(config["projectId"],handoff["bundleId"],handoff["requestId"])
                 _assert_request(request,handoff,app,state["request"])
-                done=terminal(request)
+                done=terminal(request, reused_evidence)
                 if not done:
                     raise EvaluationError("submission.unconfirmed",phase="finish",execution_state="report_saved",next_action="retry_same_command")
                 state["completed"]=True
                 journal.save(state)
                 return done
             except _Interrupted as interrupted:
-                return {"schemaVersion":1,"evaluation":interrupted.request,"comparison":None,"executionState":"interrupted"}
+                return {"schemaVersion":1,"evaluation":interrupted.request,"comparison":None,"executionState":"interrupted","callbacksStarted":callbacks_started,"reusedEvidence":False}
     except EvaluationError:
         raise
     except Exception as error:
@@ -642,6 +756,6 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
         raise safe from None
 
 
-__all__=["Case","EvaluationCase","EvaluationApp","ExecutionContext","ExecuteInput","GradeInput",
+__all__=["Case","EvaluationCase","EvaluationApp","CollectionContext","ExecutionContext","ExecuteInput","GradeInput",
     "ExecutionResult","GradeResult","EvaluationError","ExecutionUncertainError","CallbackCancelled",
     "TaskExecutionError","CancellationContext","define_evaluation","preflight_evaluation","run_evaluation"]

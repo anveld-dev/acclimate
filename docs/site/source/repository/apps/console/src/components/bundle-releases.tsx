@@ -339,7 +339,11 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
                 <div className="release-decision min-w-0">
                   <div className="release-decision-heading">
                     <span className="release-evidence-kind">
-                      {item.comparisonId ? 'Evaluation recorded' : 'Manual release'}
+                      {item.policyOverride
+                        ? 'Policy overridden'
+                        : item.comparisonId
+                          ? 'Evaluation recorded'
+                          : 'Manual release'}
                     </span>
                     <span
                       className="release-content-version text-muted-foreground"
@@ -349,7 +353,8 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
                     </span>
                   </div>
                   <p className="release-reason">
-                    {item.unevaluatedReason ||
+                    {item.policyOverride?.reason ||
+                      item.unevaluatedReason ||
                       (item.comparisonId
                         ? 'Published with recorded evaluation evidence.'
                         : 'No release reason recorded.')}
@@ -375,11 +380,16 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
                         ['Reviewer', item.reviewer],
                         [
                           'Reason',
-                          item.unevaluatedReason ||
+                          item.policyOverride?.reason ||
+                            item.unevaluatedReason ||
                             (item.comparisonId
                               ? 'Recorded evaluation evidence.'
                               : 'No release reason recorded.'),
                         ],
+                        ...(item.policyOverride?.receipts.map((receipt): [string, string] => [
+                          'Overridden policy',
+                          `${receipt.policyDigest} · comparison ${receipt.comparisonId}`,
+                        ]) ?? []),
                         ['Release ID', item.id],
                         ['Version', item.version.id],
                         ['Digest', item.version.digest],

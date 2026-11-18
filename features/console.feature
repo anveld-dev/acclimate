@@ -5,13 +5,13 @@ Feature: Work with content through the console
   @UI-SETUP-01
   Scenario Outline: Create content only after an explicit action
     Given I opened an empty console workspace
-    When I explicitly create <origin> content in Bundles
+    When I create content from <source> in Bundles
     Then the bundle is selected and its stored origin is <origin>
     Examples:
-      | origin   |
-      | created  |
-      | imported |
-      | example  |
+      | source             | origin   |
+      | Write instructions | created  |
+      | Import JSON        | imported |
+      | Import files       | imported |
 
   @UI-SETUP-02
   Scenario: Correct a rejected setup without getting stuck on a pending operation
@@ -106,7 +106,7 @@ Feature: Work with content through the console
     Given a published bundle containing "Review code."
     And I opened its Content page
     When I save a browser draft and request its evaluation
-    And the application runs the displayed fixture evaluator
+    And the test application runs the downloaded handoff using the displayed command
     And I inspect the comparison and publish through the console
     Then the released version is exactly the evaluated saved snapshot
 
@@ -121,8 +121,8 @@ Feature: Work with content through the console
   Scenario: Select the native app evaluator without launching a model from the browser
     Given a published bundle with instructions, a skill and reusable memory
     And I opened its Content page
-    When I save a browser candidate and select the native Luna evaluation configuration
-    Then its strict frozen request and copied command select the native installed adapter without executing it
+    When I save a browser candidate and paste the installed Codex evaluator description
+    Then its strict frozen request and copied command match the installed Codex evaluator
 
   @UI-EVAL-04
   Scenario: Freeze an app supplied evaluator configuration after rejecting malformed intent

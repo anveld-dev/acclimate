@@ -749,8 +749,8 @@
         }
       },
       "expected": {
-        "verdict": "indeterminate",
-        "code": "cost.unknown"
+        "verdict": "fail",
+        "code": "policy.fail"
       }
     },
     {

@@ -11,7 +11,6 @@
     "typecheck": "npm run typecheck:packages && npm run typecheck --workspace @acclimate/console && npm run typecheck --workspace @acclimate/keycloak-theme",
     "test:codex": "tsx examples/codex-smoke.ts",
     "test:e2e": "python3 scripts/productization/service_e2e.py",
-    "example:compare": "tsx examples/compare-review.ts",
     "build": "npm run build:packages && npm run build:console",
     "example:publish": "tsx examples/publish.ts",
     "example:codex": "tsx examples/codex-agent.ts",
@@ -32,7 +31,6 @@
     "build:console": "npm run build --workspace @acclimate/console",
     "test:console": "npm test --workspace @acclimate/console",
     "start:console": "tsx scripts/start-production.ts console",
-    "demo": "tsx scripts/dev-console.ts --example",
     "local": "tsx scripts/dev-console.ts",
     "test:evaluator": "tsx --test examples/evaluate-request.test.ts examples/evaluation/*.test.ts",
     "qualify:productization": "python3 scripts/productization/qualify.py",
@@ -59,7 +57,6 @@
     "qualify:self-improvement:large": "python3 scripts/testing/self_improvement.py --live --large",
     "freeze:self-improvement:large": "tsx examples/self-improvement/large/freeze.ts",
     "qualify:self-improvement:repair": "python3 scripts/testing/self_improvement.py --live --repair-helper",
-    "example:learning": "tsx examples/continuous-learning/run.ts",
     "qualify:learning": "python3 scripts/testing/continuous_learning.py"
   },
   "devDependencies": {

@@ -35,9 +35,13 @@ export interface CreateVersionRequest {
   parentVersionId: string | null;
   payload: BundlePayload;
 }
+export interface PolicyOverride {
+  reason: string;
+  receipts: Array<{ comparisonId: string; policyDigest: string }>;
+}
 export type PromoteRequest = { versionId: string; expectedRevision: string } & (
-  | { comparisonId: string; unevaluatedReason?: never }
-  | { unevaluatedReason: string; comparisonId?: never }
+  | { comparisonId: string; unevaluatedReason?: never; policyOverride?: PolicyOverride }
+  | { unevaluatedReason: string; comparisonId?: never; policyOverride?: never }
 );
 export interface Promotion {
   id: string;
@@ -47,6 +51,8 @@ export interface Promotion {
   previousVersionId: string | null;
   comparisonId: string | null;
   unevaluatedReason: string | null;
+  policyOverride?: PolicyOverride;
+  policyApprovalPromotionId?: string;
   reviewer: string;
   createdAt: string;
 }
@@ -90,6 +96,20 @@ export interface EvaluationHandoff {
   configuration: EvaluationDescriptor;
 }
 /** Point-in-time machine authorization, never an execution reservation or provider probe. */
+export interface ComparisonPolicyReport {
+  requestId: string;
+  attemptId: string;
+  policy: { id: string; revision: string; sha256: string };
+  verdict: 'pass' | 'fail' | 'indeterminate';
+  checks: Array<{ code: string; result: 'pass' | 'fail' | 'unknown' }>;
+}
+
+export interface ComparisonPolicyReceipt extends ComparisonPolicyReport {
+  comparisonId: string;
+  reportedBy: string;
+  receivedAt: string;
+}
+
 export interface EvaluationCapabilities {
   schemaVersion: 1;
   projectId: string;
@@ -229,8 +249,8 @@ export interface DiscardDraftRequest {
   expectedGeneration: number;
 }
 export type PublishDraftRequest = { expectedGeneration: number; expectedRevision: string } & (
-  | { comparisonId: string; unevaluatedReason?: never }
-  | { unevaluatedReason: string; comparisonId?: never }
+  | { comparisonId: string; unevaluatedReason?: never; policyOverride?: PolicyOverride }
+  | { unevaluatedReason: string; comparisonId?: never; policyOverride?: never }
 );
 export interface DraftSnapshot {
   generation: number;
@@ -352,6 +372,7 @@ export interface LearningEnrollment
   enabled: boolean;
 }
 export interface LearningRound {
+  incidentReplay?: LearningIncidentReplayStatus | null;
   correctionId?: string;
   attempt?: number;
   policyEpoch?: number;
@@ -418,7 +439,55 @@ export interface LearningLesson {
   /** Application-approved teaching instruction. Keep transcripts, task data and secrets private. */
   instruction: string;
 }
+export type LearningIncidentReplayStatus = 'pending' | 'pass' | 'regression' | 'unavailable';
+export interface LearningIncidentReplay {
+  roundId: string;
+  outcomeId: string;
+  versionId: string;
+  digest: string;
+  baselineRevision: string;
+  verdict: Exclude<LearningIncidentReplayStatus, 'pending'>;
+}
+export interface LearningReleaseEvidence {
+  promotionId: string;
+  versionId: string;
+  revision: string;
+  withdrawn: boolean;
+  rollback: { promotionId: string; versionId: string; revision: string } | null;
+  developmentRequestId: string | null;
+  auditRequestId: string | null;
+}
+export interface LearningOutcomeStatus {
+  /** Release lineage is available on services that support field verdict lookup. */
+  bundleId?: string;
+  channel?: string;
+  currentDelivery?: { versionId: string; revision: string };
+  servedRelease?: LearningReleaseEvidence | null;
+  fieldAudit?: {
+    verdict: 'pass' | 'regression';
+    controlVersionId: string;
+    triggeredRollback: boolean;
+  } | null;
+  outcomeId: string;
+  status: 'completed' | 'failed';
+  versionId: string;
+  deliveryRevision: string | null;
+  receivedAt: string;
+  corrections: {
+    correctionId: string;
+    state: string;
+    roundId: string | null;
+    reason: string | null;
+    incidentReplay: LearningIncidentReplayStatus | null;
+    release?: LearningReleaseEvidence | null;
+    candidateVersionId?: string | null;
+    developmentRequestId?: string | null;
+    auditRequestId?: string | null;
+  }[];
+}
 export interface LearningOutcomeRequest {
+  /** Require this correction's private incident to pass on each proposed candidate. */
+  requireIncidentReplay?: boolean;
   outcomeId: string;
   versionId: string;
   digest: string;
@@ -431,6 +500,7 @@ export interface LearningOutcomeRequest {
   feedback?: { expected: string; observed: string };
 }
 export interface LearningCorrectionRequest {
+  requireIncidentReplay?: boolean;
   correctionId: string;
   outcomeId: string;
   lesson?: LearningLesson;
@@ -493,6 +563,7 @@ export interface LearningWorkItem {
   status: 'requested' | 'running';
 }
 export interface LearningWork {
+  incidentReplays?: Omit<LearningIncidentReplay, 'verdict'>[];
   fieldReplays?: Omit<LearningFieldReplay, 'verdict'>[];
   installationId: string;
   bundleId: string;

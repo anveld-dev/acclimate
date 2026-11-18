@@ -20,6 +20,14 @@ The validator reads only explicit stdin, checks the closed grant schema and emit
 
 No evaluator secret enters the browser. Console authors create requests through their own current memberships; the installed application claims/executes them with its separate evaluator identity.
 
+## Policy receipts
+
+Running `compare --policy` or `check` with the original evaluator's private configuration reports the policy verdict for the settled comparison. A check using read-only configuration evaluates the same evidence locally. The receipt contains the public policy ID, revision and SHA-256 digest, verdict, named checks and reporting principal. Inputs, outputs, grading explanations, policy thresholds and credentials stay on the evaluator machine.
+
+The evaluator submits `POST /v1/projects/{project}/bundles/{bundle}/comparisons/{comparison}/policy-receipts` with `requestId`, `attemptId`, `policy` (`id`, `revision`, `sha256`), `verdict`, and `checks` (`code`, `result`). The service checks the machine principal against the submitted comparison and settled attempt. Repeating the same receipt returns the original timestamp. A different report for the same policy digest and comparison returns a conflict. Authorized readers can `GET` that collection. The candidate-wide `GET /v1/projects/{project}/bundles/{bundle}/versions/{candidate}/policy-receipts` lists visible failed and indeterminate receipts across its comparisons.
+
+Release reviewers see the receipts, reported checks and any override in the console. A complete comparison can have no checked policy yet. A candidate with a failed or indeterminate policy needs a release reviewer to acknowledge every current blocking receipt and record a reason. A partial comparison still needs complete evidence for evidence-based publication.
+
 ## Stable worker storage and lifecycle
 
 Use a dedicated nonroot UID and a qualified POSIX local filesystem. Configuration parent and journal/cache/workspace roots are owner-only 0700; secret/state files are 0600. Reject symlink ancestors and use canonical absolute paths. TypeScript durable execution requires Node >=22.22 and `python3` with `fcntl`; Python requires >=3.11 and no Node runtime dependency.
@@ -60,7 +68,11 @@ Use the installed `status` and explicit `interrupt --reason ...` commands for he
 
 ## Diagnostics and retention
 
-Default command diagnostics contain fixed safe codes, phase, execution certainty, next action and validated correlation IDs. Configuration contents, arbitrary server/provider messages, raw runtime keys, private paths, expected answers and outputs stay out of logs. Read-only delivery observations remain separate from admin credential management and do not prove consumption. Remote evaluator heartbeat/progress is not stored in this release; running with no observed local progress means unknown, not stopped.
+Default command diagnostics contain fixed safe codes, phase, execution certainty, next action and validated correlation IDs. Configuration contents, arbitrary server/provider messages, raw runtime keys, private paths, expected answers and outputs stay out of logs. Read-only delivery observations remain separate from admin credential management and do not prove consumption. CLI `status` also reads the latest optional evaluator progress report. Its `progress` object shows the reported phase, completed/total arms, optional case and repetition, receipt time, and time checked. The service marks running reports fresh for 60 seconds and retains the latest observation for up to 24 hours. Missing reports and unavailable progress reads produce `activity: unknown`. Freshness describes when the service received the report. Only the application can confirm whether external work stopped.
+
+New comparison output references default to `acclimate:artifact:sha256:…`. The digest identifies the private journal artifact envelope. Use the case, repetition, side and role with the installed `export` command on the originating worker to retrieve a mapped copy. Older comparisons and caller-supplied references remain readable.
+
+TypeScript adapters can call `assertEvaluationOutput(value)` on an unknown provider result to check its JSON representation. For adapter output rejected by the runner, inspect `output-validation.json` in the corresponding private job directory for the field and suggested correction. For example, convert a Date with `toISOString()` before returning it. Python's `config.async_callback` means the durable runner received a coroutine function directly. Use the installed starter’s coroutine adapter to await the agent and its cleanup before returning the result.
 
 Export deliberately selected/redacted review artifacts through the app's mapper. Do not recursively upload a journal or its private parent. Retain completed exports under authorized artifact storage with an explicit expiry/ACL; protect original recovery journals independently. Local hashes establish consistency and online scalar checks establish binding, not execution attestation or quality confidence.
 
@@ -156,9 +168,11 @@ their own process lifecycle can call `serveConnectedLearning` with an `AbortSign
 ### Audit fresh jobs after rollout
 
 To measure a managed release in production, attach a fresh SDK delivery receipt to the same job's
-terminal outcome. Use `receiptReporter.reportStartedReceipt(bundle)` when the job starts. This
-replaces `reportStarted` for that job and returns the exact queued receipt or `null` if the local queue
-is full. Retain the returned receipt body alongside the durable job UUID. Ensure delivery of the
+terminal outcome. At the application’s actual start event, call `prepared.reportStarted()` (Python
+`prepared.report_started()`) and persist its returned receipt with the job UUID. Repeated calls
+for the prepared job return the same event. A missing reporter or full queue yields `null` in
+TypeScript or `None` in Python. If the reporter queue was full, retry on the same prepared job after it drains. The SDK keeps the original start timestamp and event ID. Apps using the lower-level bundle API can instead call
+`receiptReporter.reportStartedReceipt(bundle)` once at that event. Ensure delivery of the
 receipt before submitting the terminal outcome. A durable outbox can send the exact receipt again
 using its original UUID and the receipt credential.
 
@@ -211,3 +225,15 @@ Keep sending a completed grade if another release has shipped. The service recor
 The optional `requalifyFieldCase` callback above handles a previous field failure when a candidate reproduces withdrawn content. Implement `gradePriorFieldRegression` using the original private input from `assignment.outcomeId` and the supplied candidate. Return `'pass'` if the candidate now satisfies the original objective, otherwise `'regression'`. The worker saves intent before calling the grader, stores its verdict before posting it, and reuses the saved verdict after an interrupted delivery. Preserve the private grader's own evidence. An `execution.uncertain` diagnostic means the prior callback started without a saved verdict. Reconcile that private execution and submit its verified result with `reportLearningFieldReplay`. A failed required replay blocks release.
 
 An app that owns replay scheduling directly can call `evaluatorClient.getLearningFieldRequalification(projectId, integrationId, versionId)` to obtain the pinned version, digest, baseline revision and pending outcome IDs. Use `evaluatorClient.reportLearningFieldReplay(projectId, integrationId, body)` to submit the saved verdict. If the baseline changes, read the outstanding obligations for the new revision. [Wire fields and restore semantics](../contracts/learning.md#service-managed-connected-learning).
+
+### Replay the incident that prompted a change
+
+When a reported outcome includes teaching, set `requireIncidentReplay: true` on the outcome or on a later `reportLearningCorrection` request. Each candidate for that correction must pass a replay of its original private incident before it can advance to the independent audit. The original outcome ID identifies the application record. For example, an invoice agent can load the disputed invoice from its private job store and check whether the candidate now takes the reviewed action.
+
+Implement `apps.replayIncident({ assignment, candidate, signal })` in the connected evaluator. Resolve private inputs by `assignment.outcomeId`, execute the check with read-only effects on the verified candidate, and return `pass`, `regression`, or `unavailable`. A regression or unavailable verdict blocks this round. Set `replayIncidentExecution: 'model-free'` for deterministic callbacks, or explicitly authorize live execution as for other private replays. Only the verdict and binding identifiers go to the service. The evaluator journals the callback intent and verdict so it can retry delivery after an interruption. If a callback's completion is uncertain, reconcile the private execution before submitting its verified verdict with `reportLearningIncidentReplay`.
+
+Open **Delivery → Find a reported outcome** for the connection, or call `client.getLearningOutcome(projectId, integrationId, outcomeId)` with workspace read access. A lookup shows the terminal job version, each correction's admission or recheck state, its most recent round and any candidate replay verdict. A reported outcome with no corrections can receive reviewed teaching later. A worker diagnostic ending in `_callback_missing` includes the outcome UUID as its correlation ID. Install the named callback, or run the assignment with your separate evaluator. The same assignment can be recovered using the original journal.
+
+The outcome lookup also shows the version and revision currently delivered by the connection. For an audited job it shows the field verdict, its control version and whether that verdict triggered a rollback. A correction that reached rollout retains its original promotion, along with any subsequent withdrawal and the version and revision the rollback restored. The development and independent audit links open the candidate's recorded evidence.
+
+At worker startup, `learning.apps_module_missing` means the `--apps` path does not identify an installed file. For `learning.apps_module_load_failed`, check the module's imports in the worker's Node installation. For `learning.apps_invalid_export`, default-export `{ development, audit: [...] }` using evaluations built with `defineEvaluation` from the installed SDK. Optional replay callbacks must be functions. The worker checks the module before reading evaluator configuration or polling for work.

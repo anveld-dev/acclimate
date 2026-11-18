@@ -1,41 +1,43 @@
 import { useId, useRef, useState } from 'react';
 import type React from 'react';
-import type { EvaluationChoice, evaluationConfiguration } from '../lib/evaluation-config';
+import {
+  applicationEvaluatorCommand,
+  type EvaluatorLanguage,
+  type evaluationConfiguration,
+} from '../lib/evaluation-config';
 import { CodeEditor } from './code-editor';
 import { Button } from './ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from './ui/disclosure';
 import { NativeSelect } from './ui/native-select';
 
 export type EvaluationSetupProps = {
-  profile: EvaluationChoice;
+  language: EvaluatorLanguage;
   customConfiguration: string;
   configuration?: ReturnType<typeof evaluationConfiguration>;
   configurationError: string;
-  exampleIssue?: string;
   savedGeneration?: number;
   fieldsDisabled: boolean;
   submitDisabled: boolean;
   blockedReason?: string;
   hasRequests: boolean;
   createActionRef: React.RefObject<HTMLButtonElement | null>;
-  onProfileChange(profile: EvaluationChoice): void;
+  onLanguageChange(language: EvaluatorLanguage): void;
   onCustomConfigurationChange(value: string): void;
   onCreate(event: React.MouseEvent<HTMLButtonElement>): void;
 };
 
 export function EvaluationSetup({
-  profile,
+  language,
   customConfiguration,
   configuration,
   configurationError,
-  exampleIssue,
   savedGeneration,
   fieldsDisabled,
   submitDisabled,
   blockedReason,
   hasRequests,
   createActionRef,
-  onProfileChange,
+  onLanguageChange,
   onCustomConfigurationChange,
   onCreate,
 }: EvaluationSetupProps) {
@@ -68,8 +70,21 @@ export function EvaluationSetup({
             </p>
             <div className="rounded-md border p-3 space-y-2" aria-label="Evaluator prerequisites">
               <p>
-                Before creating a request, install your app’s evaluator starter and run its{' '}
-                <code>describe</code> command.
+                Install the Acclimate SDK alongside your agent and independent grader, then run its{' '}
+                <code>describe</code> command. Export your saved cases, execution callback and
+                grader from{' '}
+                <code>
+                  {language === 'python' ? 'application.py' : 'application.mjs or application.mts'}
+                </code>
+                .{' '}
+                <a
+                  className="underline"
+                  href={`/evaluator-setup.html#${language}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Set up the {language === 'python' ? 'Python' : 'Node.js'} evaluator
+                </a>
               </p>
               <p>
                 Evaluation needs a dedicated project read/write machine principal from your service
@@ -88,65 +103,32 @@ export function EvaluationSetup({
                 </p>
               )}
             </div>
-            <label className="evaluation-setup-profile">
-              Evaluation configuration
-              <NativeSelect
-                aria-label="Evaluation configuration"
-                value={profile}
-                disabled={fieldsDisabled}
-                onChange={(event) => onProfileChange(event.target.value as EvaluationChoice)}
-              >
-                <option value="">Choose an evaluator…</option>
-                <option value="custom">My app's installed evaluator</option>
-                <optgroup label="Examples from this checkout">
-                  <option value="payment-retry">
-                    Example: Payment retry simulator · model-free
-                  </option>
-                  <option value="presence-contract">
-                    Example: File presence contract · model-free
-                  </option>
-                  <option value="codex-luna-review">Example: Native Codex review · Luna</option>
-                </optgroup>
-              </NativeSelect>
-            </label>
+            <EvaluatorLanguageSelect language={language} onChange={onLanguageChange} />
             <div className="evaluation-setup-grid">
               <div className="evaluation-setup-author">
-                {profile === 'custom' && (
-                  <div className="evaluation-setup-editor">
-                    <div>Public evaluator configuration (JSON)</div>
-                    <CodeEditor
-                      language="json"
-                      aria-label="Public evaluator configuration (JSON)"
-                      aria-describedby={`${instructions}${configurationError ? ` ${error}` : ''}`}
-                      aria-invalid={!!configurationError}
-                      value={customConfiguration}
-                      disabled={fieldsDisabled}
-                      onChange={onCustomConfigurationChange}
-                    />
-                    <p id={instructions} className="text-muted-foreground">
-                      Run <code>node acclimate-eval.mjs describe</code> (or{' '}
-                      <code>python3 acclimate_eval.py describe</code>), then paste its public
-                      configuration: datasetRevision, graderRevision, runtime (including
-                      configId/configRevision), and expectedCases. Keep credentials and case
-                      contents in the app.
-                    </p>
-                  </div>
-                )}
-                <p id={prerequisites} className="text-muted-foreground">
-                  {profile === 'payment-retry'
-                    ? 'The simulator needs payment-policy.json data. Three scenarios × two repetitions, no model calls. This checks orchestration, not native agent quality.'
-                    : profile === 'presence-contract'
-                      ? 'Checks nonempty instruction and skill files. This is a delivery contract check, not a behavioral score.'
-                      : profile === 'codex-luna-review'
-                        ? 'The included checkout review and grader use Codex. After separate setup, that adapter requires --live and allows up to four bounded Luna turns. Creating a request makes no model call.'
-                        : 'Your app runs its installed adapter and grader. The service freezes these settings and records evidence; it never executes configuration as code.'}
-                </p>
-                {exampleIssue && (
-                  <p role="alert" className="text-destructive">
-                    {exampleIssue}
+                <div className="evaluation-setup-editor">
+                  <div>Public evaluator configuration (JSON)</div>
+                  <CodeEditor
+                    language="json"
+                    aria-label="Public evaluator configuration (JSON)"
+                    aria-describedby={`${instructions}${customConfiguration.trim() && configurationError ? ` ${error}` : ''}`}
+                    aria-invalid={!!customConfiguration.trim() && !!configurationError}
+                    value={customConfiguration}
+                    disabled={fieldsDisabled}
+                    onChange={onCustomConfigurationChange}
+                  />
+                  <p id={instructions} className="text-muted-foreground">
+                    Run <code>{applicationEvaluatorCommand(language, 'describe')}</code> on the
+                    evaluator machine with your application's saved cases loaded. Paste the public
+                    JSON here. Keep case contents and credentials on the evaluator machine. If you
+                    use the native Codex reviewer from the Acclimate checkout, run{' '}
+                    <code>npm run --silent evaluate:app -- describe</code> there instead.
                   </p>
-                )}
-                {configurationError && profile && (
+                </div>
+                <p id={prerequisites} className="text-muted-foreground">
+                  Your application runs its agent and independent grader on the saved versions.
+                </p>
+                {configurationError && customConfiguration.trim() && (
                   <p id={error} role="alert" aria-live="polite" className="text-destructive">
                     {configurationError}
                   </p>
@@ -187,18 +169,17 @@ export function EvaluationSetup({
                   </>
                 ) : (
                   <p>
-                    {profile
+                    {customConfiguration.trim()
                       ? 'Correct the configuration to see its preview.'
-                      : 'Choose an evaluator to see its preview.'}
+                      : 'Paste your evaluator’s public configuration to preview the request.'}
                   </p>
                 )}
               </div>
             </div>
             <div className="evaluation-setup-footer">
               <p>
-                Creating a request records public intent, makes no model call and does not publish.
-                Your app owns execution. Examples require separate setup and do not establish
-                installation.
+                Creating a request freezes the configuration and versions. Send its public handoff
+                to the person running the evaluator.
               </p>
               <Button
                 ref={createActionRef}
@@ -214,5 +195,27 @@ export function EvaluationSetup({
       </Disclosure>
       {blockedReason && <p className="evaluation-setup-blocked-reason">{blockedReason}</p>}
     </section>
+  );
+}
+
+export function EvaluatorLanguageSelect({
+  language,
+  onChange,
+}: {
+  language: EvaluatorLanguage;
+  onChange(language: EvaluatorLanguage): void;
+}) {
+  return (
+    <label className="evaluation-setup-profile">
+      Evaluator language
+      <NativeSelect
+        aria-label="Evaluator language"
+        value={language}
+        onChange={(event) => onChange(event.target.value as EvaluatorLanguage)}
+      >
+        <option value="javascript">Node.js</option>
+        <option value="python">Python</option>
+      </NativeSelect>
+    </label>
   );
 }

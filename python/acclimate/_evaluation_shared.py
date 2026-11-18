@@ -24,17 +24,29 @@ PROJECT_RE = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
 DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
 
+_PATH_DIAGNOSTICS = {
+    "configAlias": ("configPath", "Use the absolute realpath of the config file, including all parent directories. On macOS, /var is an alias for /private/var."),
+    "journalAlias": ("journalRoot", "Set journalRoot to the absolute realpath of the journal directory, including all parents. On macOS, /var is an alias for /private/var."),
+    "configMode": ("configPath", "Use a config owned by the current user with mode 0600 (chmod 600) in a private directory owned by that user with mode 0700 (chmod 700)."),
+    "journalMode": ("journalRoot", "Use a journal directory owned by the current user with mode 0700 (chmod 700)."),
+    "exportOverlap": ("outputDirectory", "Set --out to a new directory outside the config, journal and prepared workspace trees. Choose a separate private sibling of those trees."),
+}
+
+
 class EvaluationError(Exception):
     """A safe public category, never a wrapper around private exception prose."""
 
     def __init__(self, code: str, *, phase: str = "configure", next_action: str = "fix_config",
                  execution_state: str = "not_started", evaluation_request_id: str | None = None,
                  correlation_id: str | None = None, http_status: int | None = None,
-                 mismatch_fields: list[str] | None = None):
+                 mismatch_fields: list[str] | None = None, path_issue: str | None = None):
         super().__init__(code)
         self.code, self.phase, self.next_action, self.execution_state = code, phase, next_action, execution_state
         self.diagnostic: dict[str, Any] = {"code": code, "phase": phase,
             "nextAction": next_action, "executionState": execution_state}
+        if path_issue in _PATH_DIAGNOSTICS:
+            field, hint = _PATH_DIAGNOSTICS[path_issue]
+            self.diagnostic.update(pathIssue=path_issue, field=field, hint=hint)
         if type(evaluation_request_id) is str and UUID_RE.fullmatch(evaluation_request_id):
             self.diagnostic["evaluationRequestId"] = evaluation_request_id
         if type(correlation_id) is str and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", correlation_id):
@@ -91,44 +103,63 @@ def _text(value: Any, maximum: int, *, trimmed=False) -> bool:
         return False
 
 
-def validate_json(value: Any, _seen: set[int] | None = None, *, portable: bool = True) -> None:
+class PrivateJsonError(EvaluationError):
+    """Field diagnostics for the local job only. The public error contains no field names."""
+    def __init__(self, field: str, reason: str):
+        super().__init__("config.schema")
+        self.field = field
+        self.reason = reason
+
+
+def validate_json(value: Any, _seen: set[int] | None = None, *, portable: bool = True,
+                  field: str | None = None) -> None:
+    def invalid(reason):
+        if field is not None:
+            raise PrivateJsonError(field, reason)
+        raise EvaluationError("config.schema")
+
     if value is None or type(value) is bool:
         return
     if type(value) in (int, float):
         try:
-            finite=math.isfinite(value)
+            finite = math.isfinite(value)
         except OverflowError:
-            finite=False
-        if not finite or (portable and abs(value)>2**53-1 and (type(value) is int or value.is_integer())):
-            raise EvaluationError("config.schema")
+            finite = False
+        if not finite or (portable and abs(value) > 2**53-1 and (type(value) is int or value.is_integer())):
+            invalid("Use a finite JSON number or encode large integers as strings.")
         return
     if type(value) is str:
         try:
             value.encode("utf-8")
         except UnicodeError:
-            raise EvaluationError("config.schema") from None
+            invalid("Use a valid Unicode string.")
         return
     if type(value) not in (list, dict):
-        raise EvaluationError("config.schema")
+        from datetime import date
+        if isinstance(value, date):
+            invalid("Convert the date or datetime with isoformat() before returning it.")
+        invalid("Convert this value to a plain JSON value before returning it.")
     seen = _seen if _seen is not None else set()
     if id(value) in seen:
-        raise EvaluationError("config.schema")
+        invalid("Remove the circular reference.")
     seen.add(id(value))
     try:
-        children = value.values() if type(value) is dict else value
-        if type(value) is dict and any(type(key) is not str for key in value):
-            raise EvaluationError("config.schema")
-        for child in children:
-            validate_json(child, seen, portable=portable)
-        if type(value) is dict:
-            for key in value:
-                validate_json(key, seen, portable=portable)
+        for key, child in (value.items() if type(value) is dict else enumerate(value)):
+            if type(value) is dict:
+                if type(key) is not str:
+                    invalid("Use string object keys.")
+                validate_json(key, seen, portable=portable, field=field)
+            child_field = None
+            if field is not None:
+                label = json.dumps(key[:100], ensure_ascii=True) if type(key) is str else str(key)
+                child_field = (field + "[" + label + "]")[:512]
+            validate_json(child, seen, portable=portable, field=child_field)
     finally:
         seen.remove(id(value))
 
 
-def clone_json(value: Any) -> Any:
-    validate_json(value)
+def clone_json(value: Any, *, field: str | None = None) -> Any:
+    validate_json(value, field=field)
     return copy.deepcopy(value)
 
 
@@ -236,18 +267,20 @@ def validate_handoff(value: Any) -> dict:
     return clone_json(value)
 
 
-def _canonical_path(path: str | Path) -> Path:
+def _canonical_path(path: str | Path, *, alias_issue: str | None = None) -> Path:
     try:
         candidate = Path(path)
-        if not candidate.is_absolute() or str(candidate.resolve()) != str(candidate):
+        if not candidate.is_absolute():
             raise ValueError()
+        if candidate.resolve() != candidate:
+            raise EvaluationError("config.permissions", path_issue=alias_issue)
     except (OSError,ValueError,RuntimeError,TypeError):
         raise EvaluationError("config.permissions")
     return candidate
 
 
-def ensure_private_directory(path: str | Path) -> Path:
-    directory = _canonical_path(path)
+def ensure_private_directory(path: str | Path, *, journal_root=False) -> Path:
+    directory = _canonical_path(path, alias_issue="journalAlias" if journal_root else None)
     created: list[Path] = []
     try:
         # mkdir(parents=True) does not make the ancestors' directory entries
@@ -278,8 +311,10 @@ def ensure_private_directory(path: str | Path) -> Path:
             if candidate.resolve()!=candidate:
                 raise ValueError()
         info = directory.lstat()
-        if not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
+        if not stat.S_ISDIR(info.st_mode):
             raise ValueError()
+        if info.st_mode & 0o077 or info.st_uid != os.getuid():
+            raise EvaluationError("config.permissions", path_issue="journalMode" if journal_root else None)
         # Flush children before their newly created ancestors, including each
         # parent that contains a new entry. A file's later fsync is not enough
         # to persist an otherwise unflushed ancestor link.
@@ -301,13 +336,15 @@ def ensure_private_directory(path: str | Path) -> Path:
     return directory
 
 
-def read_private_bytes(path: str | Path, limit: int = 65536) -> bytes:
+def read_private_bytes(path: str | Path, limit: int = 65536, *, config_file=False) -> bytes:
     filename = _canonical_path(path)
     fd = None
     try:
         fd = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_size > limit:
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise EvaluationError("config.permissions", path_issue="configMode" if config_file else None)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
             raise ValueError()
         with os.fdopen(fd,"rb") as stream:
             fd = None
@@ -351,14 +388,19 @@ def atomic_private_write(path: str | Path, data: bytes) -> None:
 
 
 def _read_config(path: str | Path, reader: bool) -> dict:
-    filename = _canonical_path(path)
+    filename = _canonical_path(path, alias_issue="configAlias")
     # Config parent, not just the credential-bearing file, must be owner-only.
     parent = filename.parent.lstat()
-    if not stat.S_ISDIR(parent.st_mode) or parent.st_mode & 0o077 or parent.st_uid != os.getuid():
+    if not stat.S_ISDIR(parent.st_mode):
         raise EvaluationError("config.permissions")
-    value = parse_json(read_private_bytes(filename))
+    if parent.st_mode & 0o077 or parent.st_uid != os.getuid():
+        raise EvaluationError("config.permissions", path_issue="configMode")
+    value = parse_json(read_private_bytes(filename, config_file=True))
     fields = {"schemaVersion","serviceUrl","projectId","readToken"} if reader else {"schemaVersion","serviceUrl","projectId","evaluatorPrincipalId","evaluatorToken","journalRoot"}
-    if type(value) is not dict or set(value) != fields or type(value.get("schemaVersion")) is not int or value["schemaVersion"] != 1:
+    optional = set() if reader else {"captureCallbackErrors"}
+    if (type(value) is not dict or not fields.issubset(value) or set(value) - fields - optional
+            or type(value.get("schemaVersion")) is not int or value["schemaVersion"] != 1
+            or type(value.get("captureCallbackErrors", False)) is not bool):
         raise EvaluationError("config.schema")
     validate_service_url(value["serviceUrl"])
     if not guided_project(value["projectId"]):

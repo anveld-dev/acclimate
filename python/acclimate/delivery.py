@@ -1,4 +1,6 @@
 import base64
+import errno
+from contextlib import AbstractContextManager
 import hashlib
 import json
 import os
@@ -6,11 +8,13 @@ import re
 import shutil
 import stat
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
 from .client import AcclimateClient, ApiError, TransportError
 from .types import BundlePayload, VerifiedBundle
+from .receipts import BoundDeliveryReporter
 
 
 class DeliveryError(Exception):
@@ -386,6 +390,9 @@ class PreparedFiles:
                     os.unlink(name, dir_fd=fd)
             except FileNotFoundError:
                 pass
+            except OSError as error:
+                if not is_dir or error.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                    raise
             finally:
                 os.close(fd)
         os.close(self._root_fd)
@@ -396,6 +403,64 @@ class PreparedFiles:
 
     def __exit__(self, *args):
         self.cleanup()
+
+
+class PreparedDelivery(AbstractContextManager["PreparedDelivery"]):
+    """Pinned instructions, staged skills and the complete file inventory for one job."""
+
+    def __init__(self, bundle: VerifiedBundle, staged: PreparedFiles, directory: str, owned: bool):
+        self.bundle = bundle
+        self.version = bundle["version"]
+        self.files = staged.files
+        self.directory = directory
+        self.instructions = "\n\n".join(f["text"] for f in bundle["payload"]["files"] if f["kind"] == "instruction")
+        self.skill_files = [f for f in self.files if f["kind"] == "skill"]
+        self._staged = staged
+        self._owned = owned
+        self._started = False
+        self._started_receipt: dict[str, Any] | None = None
+        self._refused_start: dict[str, Any] | None = None
+        self._start_lock = threading.Lock()
+
+    def report_started(self) -> dict[str, Any] | None:
+        """Queue this job's start once and return a copy of its exact audit receipt."""
+        with self._start_lock:
+            if not self._started:
+                self._started = True
+                binding = self.bundle.get("reporter")
+                if binding is not None:
+                    try:
+                        if isinstance(binding, BoundDeliveryReporter):
+                            receipt, queued = binding._queue_prepared_start(self._refused_start)
+                            if not queued:
+                                self._refused_start = receipt
+                                self._started = False
+                                return None
+                            self._refused_start = None
+                        else:
+                            receipt = binding.report_started()
+                        if isinstance(receipt, dict):
+                            self._started_receipt = receipt.copy()
+                    except Exception:
+                        pass
+            return self._started_receipt.copy() if self._started_receipt is not None else None
+
+    def cleanup(self) -> None:
+        self._staged.cleanup()
+        if self._owned:
+            _remove_job_directory(self.directory)
+            self._owned = False
+
+    def __exit__(self, *args) -> None:
+        self.cleanup()
+
+
+def _remove_job_directory(directory: str) -> None:
+    try:
+        os.rmdir(directory)
+    except OSError as error:
+        if error.errno not in (errno.ENOENT, errno.ENOTEMPTY, errno.EEXIST):
+            raise
 
 
 def prepare_files(bundle: VerifiedBundle, destination: str) -> PreparedFiles:

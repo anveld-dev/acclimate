@@ -22,7 +22,7 @@ const version = {
 };
 
 for (const reporting of ['disabled', 'healthy', 'denied', 'stalled'] as const) {
-  test(`model-free TS recipe delivers and observes real app start with ${reporting} optional reporting`, async () => {
+  test(`TS delivery check reads staged files with ${reporting} optional reporting`, async () => {
     const events: any[] = [];
     const identities: string[] = [];
     const server = createServer((req, res) => {
@@ -81,10 +81,17 @@ for (const reporting of ['disabled', 'healthy', 'denied', 'stalled'] as const) {
       child.stdout.on('data', (chunk) => (output += chunk));
       child.stderr.on('data', (chunk) => (errors += chunk));
       const code = await new Promise<number | null>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          child.kill();
-          reject(new Error('Recipe exceeded deadline'));
-        }, 5000);
+        const deadline = (message: string, ms: number) =>
+          setTimeout(() => {
+            child.kill();
+            reject(new Error(message));
+          }, ms);
+        let timer = deadline('Recipe did not finish preparing files', 30000);
+        // Measure optional-reporting shutdown after delivery, independently of tsx startup.
+        child.stdout.once('data', () => {
+          clearTimeout(timer);
+          timer = deadline('Recipe exceeded its optional reporting deadline', 5000);
+        });
         child.once('error', (error) => {
           clearTimeout(timer);
           reject(error);
@@ -95,13 +102,14 @@ for (const reporting of ['disabled', 'healthy', 'denied', 'stalled'] as const) {
         });
       });
       assert.equal(code, 0, errors);
-      assert.equal(JSON.parse(output).started, true);
+      assert.equal(JSON.parse(output).checkedFiles, 1);
+      assert.equal(JSON.parse(output).started, undefined);
       assert.equal(JSON.parse(output).digest, version.digest);
       assert.deepEqual(await readdir(join(dir, 'job')), []);
       if (reporting === 'healthy') {
         assert.deepEqual(
           events.map((e) => e.stage),
-          ['resolved', 'downloaded', 'verified', 'prepared', 'started'],
+          ['resolved', 'downloaded', 'verified', 'prepared'],
         );
         assert(events.every((e) => e.versionId === 'v' && !('content' in e)));
       } else assert.deepEqual(events, []);

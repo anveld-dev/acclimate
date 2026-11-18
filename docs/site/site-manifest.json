@@ -1105,6 +1105,21 @@
     "kind": "source"
   },
   {
+    "source": "docs/research/evals-and-integration-dx.md",
+    "route": "source/research/evals-and-integration-dx.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/installed-sdk-dx-retest.md",
+    "route": "source/research/installed-sdk-dx-retest.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/luna-real-app-integration.md",
+    "route": "source/research/luna-real-app-integration.md",
+    "kind": "source"
+  },
+  {
     "source": "docs/research/self-improvement-qualification.md",
     "route": "source/research/self-improvement-qualification.md",
     "kind": "source"

@@ -178,6 +178,7 @@ struct Change {
     expected_revision: Option<String>,
     comparison_id: Option<String>,
     unevaluated_reason: Option<String>,
+    policy_override: Option<crate::PolicyOverride>,
 }
 async fn save(
     s: State<AppState>,
@@ -229,7 +230,8 @@ async fn change(
         || (kind != "publish"
             && (req.expected_revision.is_some()
                 || req.comparison_id.is_some()
-                || req.unevaluated_reason.is_some()))
+                || req.unevaluated_reason.is_some()
+                || req.policy_override.is_some()))
     {
         return Err(invalid());
     }
@@ -298,7 +300,9 @@ async fn change(
                     expected_revision: revision,
                     comparison_id: req.comparison_id,
                     unevaluated_reason: req.unevaluated_reason,
+                    policy_override: req.policy_override,
                 },
+                None,
             )
             .await?;
             out.status = "published".into();
@@ -481,7 +485,9 @@ async fn setup(
             expected_revision: "0".into(),
             comparison_id: None,
             unevaluated_reason: Some(req.reason),
+            policy_override: None,
         },
+        None,
     )
     .await?;
     let out = serde_json::json!({"bundle":{"id":b.to_string(),"projectId":p,"name":req.name.trim(),"origin":req.origin,"sourceLabel":source,"compatibilityTarget":req.compatibility_target,"createdAt":row.get::<DateTime<Utc>,_>("created_at").to_rfc3339()},"version":v,"resolution":{"channel":req.channel,"revision":"1","version":v},"promotion":promotion});

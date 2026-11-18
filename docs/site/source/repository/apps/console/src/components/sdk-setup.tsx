@@ -163,8 +163,8 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
               </p>
             )}
             <p>
-              Set these five required variables in your app’s private environment. Keep credentials
-              out of browser code and source control.
+              Set these required delivery variables in your app’s private environment. Keep
+              credentials out of browser code and source control.
             </p>
             <div
               className="space-y-2 rounded-md border p-3"
@@ -187,7 +187,7 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
               <p>
                 Evaluator execution needs a private configuration file, a stable principal, and
                 durable owner-only local journals. TypeScript durable execution also needs python3
-                with fcntl; Python needs 3.11+. Run the installed starter’s doctor command before a
+                with fcntl; Python needs 3.11+. Run the installed SDK’s doctor command before a
                 first comparison.
               </p>
               <Disclosure>
@@ -234,14 +234,6 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
                 <dt>ACCLIMATE_SCOPE</dt>
                 <dd>Stable app identity for the cache; never a token.</dd>
               </div>
-              <div>
-                <dt>ACCLIMATE_CACHE</dt>
-                <dd>Absolute private cache directory.</dd>
-              </div>
-              <div>
-                <dt>ACCLIMATE_JOB_DIR</dt>
-                <dd>Absolute, separate empty private job directory.</dd>
-              </div>
             </dl>
             <Disclosure className="sdk-disclosure">
               <DisclosureTrigger>Environment variables and private directories</DisclosureTrigger>
@@ -253,8 +245,10 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
                 </div>
                 <p>Give each identity its own scope; never use a token.</p>
                 <p>
-                  Use absolute paths for both directories. Keep each job directory separate from the
-                  cache and empty before preparation.
+                  The delivery check uses a private cache and a new job directory by default. To
+                  choose their locations, set <code>ACCLIMATE_CACHE</code> and{' '}
+                  <code>ACCLIMATE_JOB_DIR</code> to absolute paths. Keep each job directory separate
+                  from the cache and empty before preparation.
                 </p>
                 <p>
                   Existing directories must be owned by the current user and private (mode 0700),
@@ -336,11 +330,15 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
         {runtime === 'custom' ? (
           <>
             <p>
-              This runnable model-free fixture shows the context seam. Save it as{' '}
-              <code>{isTypeScript ? 'agent-connection.mjs' : 'agent_connection.py'}</code> and run
-              it using the same private delivery settings. Replace only the fixture function with
-              your existing agent loop, expose skill files through your app’s tools, and select
-              memory explicitly. Each run retains its output privately in{' '}
+              Connect your existing agent loop in{' '}
+              <code>{isTypeScript ? 'application.mjs' : 'application.py'}</code>. Export{' '}
+              <code>{isTypeScript ? 'runExistingAgent' : 'run_existing_agent'}</code> with the
+              arguments below. Set <code>ACCLIMATE_JOB_DIR</code> to an empty, private, persistent
+              directory for this run. Supply the real task in <code>AGENT_TASK</code>, expose the
+              supplied skill files through your tools, and return the result after the agent stops.
+              Save the recipe beside the module as{' '}
+              <code>{isTypeScript ? 'agent-connection.mjs' : 'agent_connection.py'}</code>. Run it
+              with your private delivery settings. It retains the result in{' '}
               <code>ACCLIMATE_JOB_DIR/acclimate-agent-result.json</code> with its version and
               digest; use a new empty job directory for another run. Return stopped only after
               actual termination; a rejected call retains the private job directory for inspection
@@ -362,51 +360,27 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
               <code>
                 {releaseMetadata.starters.find((item) => item.name === 'native-repository')!.file}
               </code>{' '}
-              from your release and run its complete repository fixture:
-            </p>
-            <p>
-              Your actual agent integration also needs the compatible native peer{' '}
+              from your release. Use its <code>runRepositoryJob</code> function inside your
+              application to stage the repository and approved context. Install the compatible peer{' '}
               <code>
                 {nativePeer[runtime]}@{releaseMetadata.nativePeers[nativePeer[runtime]]}
               </code>
-              . The deterministic repository fixture uses a fake harness and needs no native peer,
-              provider credentials or model calls.
-            </p>
-            <SyntaxCode
-              code={`node demo.mjs --state-root /absolute/private/new-native-demo --harness ${runtime}`}
-              language="bash"
-            />
-            <p>
-              The included README shows the actual-agent seam <code>runRepositoryJob</code> /{' '}
-              <code>runHarness</code>. Your app retains SDK authentication, tools, budgets,
-              confirmed termination and output retention. Use the explicit source inventory and
-              memory/context policy; do not overlay a live repository or clean a possibly running
-              job.
-            </p>
-            <p>
-              The fixture establishes wiring only. Native consumption and quality require separately
-              authorized live qualification; an SDK import or file-read result does not establish
-              either.
+              . In <code>runHarness</code>, start your installed agent in the provided working
+              directory, await its actual termination, and retain its output before cleanup.
             </p>
           </>
         )}
         <p>
-          For evaluation, extract{' '}
-          <code>{releaseMetadata.starters.find((item) => item.name === 'evaluation')!.file}</code>.
-          Implement one saved task and independent grader, run{' '}
+          In your agent’s application directory, export your cases, agent callback and independent
+          grader from{' '}
+          <code>{isTypeScript ? 'application.mjs or application.mts' : 'application.py'}</code>. For
+          a separate private case file, set <code>ACCLIMATE_EVALUATOR_CASES</code>. Run{' '}
           <code>
             {isTypeScript
-              ? 'node acclimate-eval.mjs describe'
-              : 'python3 acclimate_eval.py describe'}
+              ? 'npx --no-install acclimate-eval describe'
+              : 'python -m acclimate describe'}
           </code>
-          , then create a request using that public configuration.
-        </p>
-        <p>
-          From the extracted evaluation starter, run{' '}
-          <code>{isTypeScript ? 'node trial.mjs' : 'python3.11 trial.py'}</code> for a model-free
-          trial needing no service or provider. It is simulated wiring evidence and cannot authorize
-          a release. Your actual-agent evaluator uses a separate definition and explicit live
-          authorization.
+          . Use that public configuration to request a comparison of the saved versions.
         </p>
         <ConsoleLink
           href={bundleHref(selection, 'changes')}
@@ -426,8 +400,8 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
           <DisclosureContent className="sdk-detail-content">
             <p>
               Set <code>ACCLIMATE_INTEGRATION</code> to your connection ID to scope the TypeScript
-              recipe&apos;s delivery to that connection. The recipe sends reports only when you also
-              set <code>ACCLIMATE_RECEIPT_TOKEN</code> to a separate receipt-write credential.
+              client’s delivery to that connection. To report observations, set{' '}
+              <code>ACCLIMATE_RECEIPT_TOKEN</code> to a separate receipt-write credential.
             </p>
             <p>
               {canManage ? (
@@ -448,18 +422,15 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
               retries. Optional reporting failures do not block delivery or application start.
             </p>
             <p>
-              Replace the model-free child process with your app and observe its actual start before
-              reporting started. Report only what the application observed. Missing reports mean
-              unknown delivery; a report does not prove model consumption.
+              Connect the receipt reporter to your application’s actual start event. Call{' '}
+              <code>
+                {isTypeScript
+                  ? 'reporter.reportStarted(bundle)'
+                  : "bundle['reporter'].report_started()"}
+              </code>{' '}
+              after you observe the job start. Keep missing observations as unknown.
             </p>
-            <div className="sdk-reporting-recipe-heading">
-              <h4>Delivery check with optional reports</h4>
-              <CopyButton value={reportingRecipe} label="Copy reporting recipe" />
-            </div>
-            <p>
-              This longer example observes a model-free child process starting. Reporting still
-              needs both optional variables above.
-            </p>
+            <CopyButton value={reportingRecipe} label="Copy reporting recipe" />
             <SyntaxCode
               code={reportingRecipe}
               language={language}
@@ -470,18 +441,12 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
           </DisclosureContent>
         </Disclosure>
         <Disclosure className="sdk-disclosure">
-          <DisclosureTrigger>Cache and offline delivery</DisclosureTrigger>
+          <DisclosureTrigger>Preparing job-local files</DisclosureTrigger>
           <DisclosureContent className="sdk-detail-content">
             <p>
-              New jobs resolve online by default. Offline delivery requires explicit bounded
-              permission or an explicitly pinned cached version. The cache is verified before use;
-              denied access and integrity failures do not become offline success.
-            </p>
-            <p>
-              Use <code>{isTypeScript ? 'prepareFiles' : 'prepare_files'}</code> or your app&apos;s
-              native preparation plugin to stage a separate job-local copy. Approve reusable memory
-              paths explicitly where the plugin requires it, and keep the resolved version pinned
-              throughout that job.
+              Use <code>client.prepare</code> or your app&apos;s native preparation plugin to stage
+              a separate job-local copy. Approve reusable memory paths explicitly where the plugin
+              requires it, and keep the resolved version pinned throughout that job.
             </p>
           </DisclosureContent>
         </Disclosure>

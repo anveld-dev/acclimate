@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { execFileSync, spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -174,16 +174,6 @@ void [defineEvaluation, preflightEvaluation, runEvaluation, evaluationMain, chec
 `,
   );
   run(process.execPath, ['consumer.mjs'], temp);
-  await cp(join(root, 'examples/evaluation-starter'), join(temp, 'evaluation-starter'), {
-    recursive: true, filter: source => !source.includes('/node_modules') && !source.includes('/__pycache__'),
-  });
-  run(process.execPath, ['trial.mjs'], join(temp, 'evaluation-starter'));
-  run(process.execPath, ['acclimate-eval.mjs', 'describe'], join(temp, 'evaluation-starter'));
-  await cp(join(root, 'examples/native-repository'), join(temp, 'native-repository'), {
-    recursive: true, filter: source => !source.includes('/node_modules') && !source.includes('/__pycache__'),
-  });
-  for (const harness of ['codex', 'claude', 'pi', 'cursor'])
-    run(process.execPath, ['demo.mjs', '--state-root', join(temp, `native-job-${harness}`), '--harness', harness], join(temp, 'native-repository'));
   run(
     process.execPath,
     [
@@ -210,10 +200,6 @@ void [defineEvaluation, preflightEvaluation, runEvaluation, evaluationMain, chec
     filter: (source) =>
       !source.startsWith(join(root, 'node_modules/@acclimate')) && !source.includes('/.bin'),
   });
-  await cp(join(temp, 'evaluation-starter/typescript/acclimate-eval.ts.template'), join(temp, 'evaluation-starter/typescript/acclimate-eval.ts'));
-  await cp(join(temp, 'evaluation-starter/typescript/agent.ts.template'), join(temp, 'evaluation-starter/typescript/agent.ts'));
-  run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'), '-p', 'typescript/tsconfig.json'], join(temp, 'evaluation-starter'));
-  run(process.execPath, ['typescript/dist/acclimate-eval.js', 'describe'], join(temp, 'evaluation-starter'));
   await writeFile(
     join(temp, 'native.mjs'),
     `
@@ -278,18 +264,59 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
     ], root, { ...process.env, SOURCE_DATE_EPOCH: '315532800' });
     const wheelName = (await readdir(stage)).find(name => name.endsWith('.whl'));
     if (!wheelName) throw new Error('Verified wheel artifact missing');
-    run(pythonExecutable, [
-      'scripts/packaging/verify-wheel.py', '--wheel', join(stage, wheelName),
-      '--starter', join(root, 'examples/evaluation-starter'),
-      '--analysis-fixtures', join(root, 'contracts/fixtures/evaluation-analysis/vectors.json'),
-    ]);
     const starters = await archiveStarters(root, stage, publicMetadata);
     const extractedStarters = join(temp, 'distributed-starters');
     await mkdir(extractedStarters, { mode: 0o700 });
     for (const starter of starters)
       run('tar', ['-xzf', join(stage, starter.file), '-C', extractedStarters]);
-    run(process.execPath, ['trial.mjs'], join(extractedStarters, 'evaluation-starter'));
-    run(process.execPath, ['acclimate-eval.mjs', 'describe'], join(extractedStarters, 'evaluation-starter'));
+    const app = join(extractedStarters, 'evaluation-starter');
+    run(pythonExecutable, [
+      'scripts/packaging/verify-wheel.py', '--wheel', join(stage, wheelName), '--starter', app,
+      '--analysis-fixtures', join(root, 'contracts/fixtures/evaluation-analysis/vectors.json'),
+    ]);
+    // Supply the external application's own adapter and cases after extraction.
+    const testApplication = join(root, 'scripts/packaging/fixtures/evaluator');
+    for (const name of ['application.mjs', 'agent.mjs', 'cases.json'])
+      await cp(join(testApplication, name), join(app, name), { errorOnExist: true, force: false });
+    await chmod(join(app, 'cases.json'), 0o600);
+    const appEnv = { ...process.env, ACCLIMATE_EVALUATOR_CASES: join(app, 'cases.json') };
+    const describe = entry => JSON.parse(execFileSync(process.execPath, [entry, 'describe'], {
+      cwd: app, env: appEnv, encoding: 'utf8',
+    }));
+    const descriptor = describe('acclimate-eval.mjs');
+    const bin = join(temp, 'node_modules/.bin/acclimate-eval');
+    run(bin, ['--help'], app);
+    const installedDescriptor = JSON.parse(execFileSync(bin, ['describe'], { cwd: app, env: appEnv, encoding: 'utf8' }));
+    if (!isDeepStrictEqual(installedDescriptor, descriptor))
+      throw new Error('SDK binary and starter describe different installed applications');
+
+    if (descriptor.runtime.execution !== 'live' || descriptor.runtime.configId !== 'installed-qualification-worker'
+        || descriptor.expectedCases.length !== 2)
+      throw new Error('Distributed evaluator did not describe its installed application');
+    // Node loads the adopter's TypeScript adapter directly. Check the shipped
+    // declaration and run that same source through the installed CLI.
+    await rename(join(app, 'application.mjs'), join(app, 'qualification-app.mjs'));
+    await writeFile(join(app, 'application.mts'), `
+import type { ApplicationAdapter } from '@acclimate/sdk/evaluation';
+import { configId, runtime, grader, execute as executePayment, grade as gradePayment } from './qualification-app.mjs';
+type Task = { scenario: string };
+type Result = { charges: number; succeeded: boolean };
+const adapter: ApplicationAdapter<Task, Result, Result> = {
+  configId, runtime, grader,
+  execute: run => executePayment(run),
+  grade: run => gradePayment(run),
+};
+export { configId, runtime, grader };
+export const { execute, grade } = adapter;
+`);
+    run(process.execPath, [
+      join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--allowJs',
+      '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', 'application.mts',
+    ], app);
+    const typed = describe('acclimate-eval.mjs');
+    if (typed.runtime.configId !== descriptor.runtime.configId ||
+        !isDeepStrictEqual(typed.expectedCases, descriptor.expectedCases))
+      throw new Error('Native TypeScript adapter lost application identity or case inventory');
     const analysisFixture = JSON.parse(await readFile(join(root, 'contracts/fixtures/evaluation-analysis/vectors.json'), 'utf8'));
     const analysisInput = join(temp, 'analysis-input');
     await mkdir(analysisInput, { mode: 0o700 });
@@ -307,9 +334,10 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
       throw new Error('Installed distributed analysis recipe differs from its algorithm vector');
 
     run('sh', ['-n', 'ci.sh'], join(extractedStarters, 'ci-starter'));
-    run(process.execPath, ['evaluation/acclimate-eval.mjs', 'describe'], join(extractedStarters, 'ci-starter'));
-    for (const harness of ['codex', 'claude', 'pi', 'cursor'])
-      run(process.execPath, ['demo.mjs', '--state-root', join(temp, `archived-native-${harness}`), '--harness', harness], join(extractedStarters, 'native-repository-starter'));
+    run(pythonExecutable, ['ci.py', '--help'], join(extractedStarters, 'ci-starter'));
+    const native = join(extractedStarters, 'native-repository-starter');
+    await cp(join(root, 'examples/native-repository/test'), join(native, 'test'), { recursive: true });
+    run(process.execPath, ['--test', 'test/installed.test.mjs'], native);
     await writeFile(join(stage, 'release-metadata.json'), JSON.stringify(publicMetadata, null, 2) + '\n');
     await writeFile(join(stage, 'SOURCE.json'), JSON.stringify(sourceFingerprint, null, 2) + '\n');
     const artifacts = [];
@@ -350,12 +378,11 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
             nativeOptionalPeers: 'passed',
             pythonIsolatedWheel: 'passed',
             installedEvaluatorImports: 'passed',
-            installedEvaluatorTrial: 'passed',
             installedEvaluatorDescriptor: 'passed',
             typescriptStarterBuild: 'passed',
             pythonEvaluatorImports: 'passed',
-            pythonEvaluatorTrialAndDescriptor: 'passed',
-            installedNativeRepositoryFakeTasks: 'passed: codex, claude, pi, cursor',
+            pythonInstalledApplicationDescriptor: 'passed',
+            installedNativeRepositoryHelpers: 'passed with external test inputs',
             distributedStarterArchives: 'passed: extracted evaluation/ci/native consumers',
             headlessServiceEvaluation: 'not run; use qualify:dx',
             standaloneConsoleRuntime: process.argv.includes('--console-runtime') ? 'passed' : 'not run',

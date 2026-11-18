@@ -567,11 +567,18 @@ test('tampering, traversal, symlinks, duplicate roles and output-root overlap ca
     );
     await assert.rejects(
       exportReviewEvidence({
-        configPath: f.configPath,
+        readConfigPath: f.readConfigPath,
         handoff: f.handoff,
         outputDirectory: path.join(f.configs, 'bad'),
       }),
-      { code: 'artifact.integrity' },
+      (error: any) => {
+        assert.equal(error.code, 'artifact.integrity');
+        assert.equal(error.diagnostic.field, 'outputDirectory');
+        assert.equal(error.diagnostic.nextAction, 'fix_config');
+        assert.match(error.diagnostic.hint, /private sibling/);
+        assert.ok(!JSON.stringify(error.diagnostic).includes(f.root));
+        return true;
+      },
     );
     const result = await exportReviewEvidence({
       readConfigPath: f.readConfigPath,

@@ -1,11 +1,15 @@
 import json
+import os
 import re
 import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+import tempfile
+from pathlib import Path
 from typing import Any
 from .types import *
+from .receipts import DeliveryReporter
 
 
 class ApiError(Exception):
@@ -68,6 +72,43 @@ class AcclimateClient:
         )
         self._opener = urllib.request.build_opener(_NoRedirect())
         self.max_json_response_bytes = max_json_response_bytes
+
+    def prepare(
+        self,
+        project_id: str,
+        bundle_id: str,
+        *,
+        channel: str | None = None,
+        version_id: str | None = None,
+        cache_dir: str | Path | None = None,
+        destination: str | Path | None = None,
+        offline_max_age: float | None = None,
+        offline_pinned_version: str | None = None,
+        max_cache_bytes: int = 20 * 1024 * 1024,
+        reporter: DeliveryReporter | None = None,
+    ) -> "PreparedDelivery":
+        """Resolve and stage verified content for one job. Use as a context manager or call cleanup."""
+        from .delivery import prepare_files, resolve_and_cache, _remove_job_directory
+
+        if cache_dir is None:
+            cache_dir = Path.home().resolve() / ".cache" / "acclimate" / "python"
+        bundle = resolve_and_cache(
+            self, project_id, bundle_id, channel=channel, version_id=version_id,
+            cache_dir=str(cache_dir),
+            offline_max_age=offline_max_age, offline_pinned_version=offline_pinned_version,
+            max_cache_bytes=max_cache_bytes, reporter=reporter,
+        )
+        if destination is None:
+            directory = tempfile.mkdtemp(prefix="acclimate-job-", dir=os.path.realpath(tempfile.gettempdir()))
+        else:
+            directory = os.path.abspath(destination)
+        try:
+            staged = prepare_files(bundle, directory)
+        except BaseException:
+            if destination is None:
+                _remove_job_directory(directory)
+            raise
+        return PreparedDelivery(bundle, staged, directory, destination is None)
 
     def _request(
         self,
@@ -282,6 +323,20 @@ class AcclimateClient:
             + self._part(comparison_id),
         )
 
+    def _comparison_policy_path(self, project_id: str, bundle_id: str, comparison_id: str) -> str:
+        return self._base(project_id, bundle_id) + "/comparisons/" + self._part(comparison_id) + "/policy-receipts"
+
+    def list_comparison_policy_receipts(self, project_id: str, bundle_id: str, comparison_id: str) -> ComparisonPolicyReceipts:
+        return self._request("GET", self._comparison_policy_path(project_id, bundle_id, comparison_id))
+
+    def list_candidate_policy_receipts(self, project_id: str, bundle_id: str, version_id: str) -> ComparisonPolicyReceipts:
+        return self._request("GET", self._base(project_id, bundle_id) + "/versions/" + self._part(version_id) + "/policy-receipts")
+
+    def report_comparison_policy_receipt(self, project_id: str, bundle_id: str, comparison_id: str,
+                                         report: ComparisonPolicyReport) -> ComparisonPolicyReceipt:
+        key = "policy:" + comparison_id + ":" + report["policy"]["sha256"]
+        return self._request("POST", self._comparison_policy_path(project_id, bundle_id, comparison_id), report, key)
+
     def create_integration(self, project_id: str, request: dict, key: str) -> dict:
         return self._request("POST", "/v1/projects/" + self._part(project_id) + "/integrations", request, key)
 
@@ -380,3 +435,7 @@ class AcclimateClient:
 
     def close_operation(self, project_id: str, operation_id: str, *, operation_path: str) -> Operation:
         return self._request("POST", "/v1/projects/" + self._part(project_id) + "/operations/" + self._part(operation_id) + "/close", {"operationPath": operation_path}, operation_id)
+
+
+# Delivery uses this client for service reads. Load its public return type once the client exists.
+from .delivery import PreparedDelivery

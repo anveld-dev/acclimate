@@ -6,9 +6,21 @@ import type {
   VerifiedBundle,
 } from '../types.js';
 import type { ExecutionResult, GradeResult } from '../compare.js';
-import type { SafeCode, SafeNextAction } from './errors.js';
+import type { SafeCode, SafeDiagnostic, SafeNextAction } from './errors.js';
 export type { EvaluationDescriptor, EvaluationHandoff } from '../types.js';
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+/** Keep the application's named object types while rejecting non-JSON members
+ * such as Date, bigint, functions and undefined array elements. */
+type JsonMembers<T> = T extends null | boolean | number | string
+  ? T
+  : T extends (...args: never[]) => unknown
+    ? never
+    : T extends object
+      ? { [K in keyof T]: K extends symbol ? never : JsonMembers<T[K]> }
+      : never;
+export type EvaluationExecutionResult<O = Json> = ExecutionResult<
+  O & (unknown extends O ? Json : [O] extends [Json] ? O : JsonMembers<O>)
+>;
 export interface EvaluationCase<I = Json, E = Json> {
   caseId: string;
   input: I;
@@ -53,7 +65,7 @@ export interface EvaluationDefinition<I = Json, E = Json, O = Json> {
     input: I;
     signal: AbortSignal;
     context: ExecutionContext;
-  }): Promise<ExecutionResult<O>>;
+  }): Promise<EvaluationExecutionResult<O>>;
   grade(input: {
     output: O;
     expected: E;
@@ -68,6 +80,7 @@ export interface EvaluationApp<I = Json, E = Json, O = Json> {
   readonly [appBrand]: [I, E, O];
 }
 export interface EvaluatorConfig {
+  captureCallbackErrors?: boolean;
   schemaVersion: 1;
   serviceUrl: string;
   projectId: string;
@@ -100,10 +113,13 @@ export interface PreflightResult {
       | 'versions';
     status: 'passed' | 'failed' | 'not_applicable' | 'unverified';
     code?: SafeCode;
-  }>;
+  } & Pick<SafeDiagnostic, 'pathIssue' | 'field' | 'hint'>>;
   nextAction: SafeNextAction;
 }
 export interface EvaluationRunResult {
+  /** Number of application execution callbacks started by this invocation. */
+  callbacksStarted: number;
+  reusedEvidence: boolean;
   schemaVersion: 1;
   evaluation: Evaluation;
   comparison: Comparison | null;

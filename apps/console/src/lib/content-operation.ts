@@ -56,32 +56,16 @@ export function restoreRequest(
 export function setupRequest(input: {
   name: string;
   channel: string;
-  origin: 'created' | 'imported' | 'example';
+  origin: 'created' | 'imported';
   payload?: unknown;
   compatibilityTarget?: string;
 }) {
-  const payload =
-    input.origin === 'example'
-      ? {
-          schemaVersion: 1,
-          files: [
-            {
-              path: 'AGENTS.md',
-              kind: 'instruction',
-              text: '# Example instructions\n\nReview changes carefully and explain your validation.\n',
-            },
-          ],
-        }
-      : (input.payload ?? { schemaVersion: 1, files: [] });
   return {
     name: input.name,
     channel: input.channel,
     origin: input.origin,
-    payload,
+    payload: input.payload,
     compatibilityTarget: input.compatibilityTarget || 'generic',
-    reason:
-      input.origin === 'example'
-        ? 'Explicit example creation; no model evaluation was run.'
-        : 'Initial content setup; no model evaluation was run.',
+    reason: 'Initial content setup; no model evaluation was run.',
   };
 }

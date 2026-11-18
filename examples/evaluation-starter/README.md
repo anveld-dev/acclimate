@@ -1,111 +1,128 @@
-# Evaluate a change in your application
+# Evaluate your installed agent
 
-This is an installed-app starter. It imports the published SDK interfaces; no file imports Acclimate's checkout. Its default agent is an in-memory payment-retry simulator. The grader independently checks the task result (one charge and a successful response). This verifies deterministic application wiring, not native agent quality.
+This entry point calls your application's agent and independent grader on the parent and candidate bundles in an Acclimate evaluation request. Add one application module with three exports: the cases to run, the agent call, and the grader.
 
-## Install and try without a service
+## Install and bind the application
 
-Obtain the versioned release and checksums from your operator. Install its SDK tarball in this directory:
-
-```sh
-npm install --offline --ignore-scripts /your/release/acclimate-sdk-0.1.0.tgz
-node trial.mjs
-node acclimate-eval.mjs describe
-```
-
-Node >=22.22 is required. The offline trial records no service data, requires no identity provider/model credentials, and produces no promotable evidence. It prints simulated parent reward 0.5 and candidate reward 1. The `describe` command prints only the installed evaluator's public configuration; task inputs and expected answers remain local.
-
-For Python >=3.11, install the matching wheel:
+Install the SDK into your existing application or evaluator image. The package includes the CLI. JavaScript needs Node 22.22+ and Python 3 with fcntl for durable worker locks. Python needs 3.11+. Both runners use POSIX and persistent local journal storage.
 
 ```sh
-python3.11 -m pip install --no-index --no-deps /your/release/acclimate_sdk-0.1.0-py3-none-any.whl
-python3.11 trial.py
-python3.11 acclimate_eval.py describe
+npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
+# Or for Python
+python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
 ```
 
-The Python SDK requires no Node or third-party runtime dependencies. Durable execution in either language requires POSIX and private local persistent storage. The TypeScript evaluator additionally uses `python3` with `fcntl` for kernel ownership locks.
+Put `application.mjs` or `application.mts` in your Node app directory, or `application.py` in your Python app directory. Run the CLI there. Import your existing agent, scorer and cases. Use modules that only start work when their callbacks are called.
 
-`async_eval.py` supplies a complete asyncio integration with the same explicit config/handoff flags. It offloads the whole synchronous lifetime, signals a threading cancellation event, and shields/drains its private worker through repeated caller cancellation. The caller receives CancelledError only after the actual worker settles. A forced process/event-loop teardown leaves uncertain work for inspection; it does not authorize cleanup. The included two-cancellation test keeps a real file and kernel lock until the worker confirms completion.
+```js
+// application.mjs
+import { runAgent, scoreResult, savedCases } from './dist/support-agent.mjs';
 
-To use the optional TypeScript source, copy `typescript/acclimate-eval.ts.template` to `typescript/acclimate-eval.ts` and `typescript/agent.ts.template` to `typescript/agent.ts`, use TypeScript **5.9.3** and `@types/node` **22.20.5** in your existing build, and compile with `tsc -p typescript/tsconfig.json`. Its emitted entry point is `typescript/dist/acclimate-eval.js`. Plain JavaScript above needs neither compiler nor an implicit `npx` download.
+export const cases = savedCases;
+export const revisionFiles = ['package-lock.json'];
 
-## Connect your actual agent
+export async function execute({ bundle, input, signal, context }) {
+  const result = await runAgent({ bundle, task: input, signal, job: context });
+  return { output: result.answer, usage: result.measuredUsage };
+}
 
-Replace `runExistingAgent` in `agent.mjs`/`agent.py` with your existing agent call. It receives the verified immutable version, task input and cancellation notification. Attach the instruction and approved memory explicitly; expose skill/reference paths through the app's own tools or selected native plugin. Await actual quiescence and retain outputs before prepared-file cleanup. If external work may still be running, signal `ExecutionUncertainError` and preserve its workspace; canceling a promise or thread await is not proof of stopped execution.
+export async function grade({ output, expected }) {
+  return scoreResult(output, expected); // { reward, explanation? }
+}
+```
 
-Change the definition's config/build, dataset and grader revisions for your app and mark `execution:'live'` when paid/model work is possible. Your application owns model credentials, tools, network policy, budgets and runtime. Live definitions require the explicit `--live` flag. Keep expected answers out of agent inputs; the independent grader receives them only after execution. For a coding repository, use the separately distributed native-repository starter and its persistent-workspace/context rules.
+```python
+# application.py
+from acclimate.evaluation import ExecutionResult, GradeResult
+from support_agent import run_agent, score_result, saved_cases
 
-## First console-created evaluation
+cases = saved_cases
+revision_files = ["support_agent.py", "requirements.lock"]
 
-You need an existing workspace/bundle/channel, a saved immutable candidate, and a separate evaluator principal with project read/write access. Connections' content-read credential cannot read unpublished candidates or execute evaluations. Your service operator provisions the evaluator; broad project write is currently required, and static grant changes require a coordinated restart. No promote right is required.
+async def execute(run):
+    result = await run_agent(bundle=run.bundle, task=run.input, cancellation=run.cancellation)
+    return ExecutionResult(output=result.answer, usage=result.measured_usage)
 
-Create an owner-only config file (0600) in a private canonical directory (0700), outside version control. It contains schemaVersion 1, serviceUrl, projectId, evaluatorPrincipalId, evaluatorToken and an absolute fixed journalRoot. Receive the token through your secret manager; never paste it into a command, console, log or this starter. The evaluator reads only the explicitly selected file. Public HTTPS is required; explicit same-host loopback HTTP is supported for private fixture/development hops.
+def grade(run):
+    verdict = score_result(run.output, run.expected)
+    return GradeResult(reward=verdict.reward, explanation=verdict.explanation)
+```
+
+Each saved case has a unique public `caseId`, private `input` and private `expected`, plus optional `repetitions`. The application decides how the pinned instructions, skills and approved memory reach its own loop. Use a fresh isolated workspace for each arm when tools have side effects.
+
+The SDK hashes your cases, application module and local source imports reached at startup. Run `acclimate-eval coverage` or `python -m acclimate coverage` to inspect that inventory locally. Node reports `packageImports` separately so you can identify package builds that need explicit revisions. Add package builds, deferred imports, lockfiles and runtime-read assets in `revisionFiles` (Python `revision_files`). These paths resolve relative to the application module. Their names and contents contribute to the build and default grader revisions. Changing any declared file invalidates an older handoff. For external services, you can also export `runtime` with `settings` (model deployment or tool configuration) and `artifacts` (named build digests), or `grader = {artifactDigest: graderDigest}` for a separately versioned grader. Only the revision hashes and case IDs appear in the public descriptor.
+
+Supply plain bounded JSON as the gradeable output. Map SDK response objects to the fields your grader needs. `usage` accepts measured `inputTokens`, `outputTokens` and `costUsd`. Omit fields you cannot measure. The cost policy reports unknown when it requires a missing measurement. Return `executionStatus: 'task_failed'` (Python `execution_status="task_failed"`) for a failed task with gradeable output. Await the actual tool, stream or background job through termination and preserve its inputs if termination is uncertain. The SDK provides `ExecutionUncertainError` for that case.
+
+Python accepts synchronous and coroutine callbacks. The worker keeps one asyncio loop for all coroutine callbacks during a CLI invocation. Create loop-bound clients on that loop and await their work. To embed the synchronous evaluator lifetime in an existing async application, await `async_eval.run_evaluation_async(config_path=..., handoff=..., allow_live=True)`. Caller cancellation signals the worker and waits for it to finish. Your callback can observe `run.cancellation` while waiting on external work.
+
+TypeScript apps can implement `application.mts` with erasable types and run the same Node CLI directly. Import `ApplicationAdapter` from `@acclimate/sdk/evaluation` as a type for the callback signatures. The source loader resolves relative NodeNext imports such as `./agent.js` to `agent.ts` when the emitted file is absent. To run a compiled build or select a module outside the current directory, use `acclimate-eval describe --app dist/application.mjs` and pass the same `--app` to compare. Revision files resolve relative to that module. When both files exist, the CLI uses `application.mjs`. Run a fresh CLI process after rebuilding an imported dependency so the language runtime loads the new code.
+
+## Describe and run
+
+Invoke `acclimate-eval` from an npm script, or use `npm exec --offline -- acclimate-eval` from the shell. The optional starter archive provides adjacent-file entry points, an asyncio embedding helper and analysis scripts.
 
 ```sh
-node acclimate-eval.mjs doctor --config /absolute/private/config/evaluator.json --bundle YOUR_BUNDLE_UUID --policy quality-policy.json
+acclimate-eval describe
+acclimate-eval doctor --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --policy "$QUALITY_POLICY"
 ```
 
-Paste `describe` output into the console's “My app's evaluator” configuration, create the request for your saved candidate, and download its public handoff as `evaluation-request.json`. Then:
+To keep cases in a separate JSON file, set `ACCLIMATE_EVALUATOR_CASES` to its absolute path and give it mode 0600. This array overrides the module's cases. Only the grader receives the expected answer.
+
+Use `python -m acclimate` in your Python environment. Ask the service operator for the evaluator's project read/write principal and private configuration file. Keep its service URL, principal and canonical journal root stable across retries. Copy [quality-policy.example.json](quality-policy.example.json) to `quality-policy.json` and edit it for your application. The example checks that both the equal-case mean and each case reward hold steady or improve. List release-critical case IDs in `requiredCases`. Add a measured cost ceiling with `"cost": {"maximumCandidateUsd": 1}` if that is your budget. Pass the edited file explicitly with `--policy`.
+
+From the console, select your saved immutable candidate, paste the public `describe` output and download its handoff. Run the comparison and apply your policy with one command:
 
 ```sh
-node acclimate-eval.mjs doctor --config /absolute/private/config/evaluator.json --handoff evaluation-request.json
-node acclimate-eval.mjs run --config /absolute/private/config/evaluator.json --handoff evaluation-request.json
-node acclimate-eval.mjs check --config /absolute/private/config/evaluator.json --handoff evaluation-request.json --policy quality-policy.json
+acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff "$HANDOFF" --policy "$QUALITY_POLICY" --live
 ```
 
-Python uses the same arguments with `python3.11 acclimate_eval.py`. Preflight may create a private probe directory but never starts callbacks, mutates service data or calls a model. A capability snapshot is not a reservation or proof of provider readiness.
-
-## Headless candidate and request creation
-
-The `request` command freezes a fresh channel baseline, creates a durable draft/candidate, and creates its bound evaluation request. Keep the private intent at a stable canonical location for retries:
+To compare a full candidate bundle payload directly from your repository, give the change a stable name. Repeat the same command and name when recovering this run. Choose a new name for a different change.
 
 ```sh
-node acclimate-eval.mjs request --config /absolute/private/config/evaluator.json --bundle YOUR_BUNDLE_UUID --channel stable --payload candidate.json --intent /absolute/private/ci-intent.json --out evaluation-request.json
+acclimate-eval compare --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --channel "$CHANNEL" --payload "$CANDIDATE_PAYLOAD" --name "$RUN_NAME" --policy "$QUALITY_POLICY" --live
 ```
 
-Retry the identical command to recover original creation outcomes. Changed payload, app definition or target requires explicit new intent. A channel conflict never silently rebases. Already committed requests remain pinned to their original baseline. No command automatically releases a channel. An unused draft can later be reviewed/discarded using the existing workspace/operator workflow.
-
-## Review and share one failed case
-
-The checked-in mapper shares only deliberate task-result fields. The selection requests candidate output and grader explanation for `lost-response`; change it consciously for your app. Original reports and journal files never move into the export.
+The terminal prints `--name RUN_NAME` and whether callbacks ran this time. The JSON fields `runName`, `invocation.callbacksStarted` and `invocation.reusedEvidence` expose the same facts. Use the name with your private evaluator config for follow-up commands:
 
 ```sh
-node acclimate-eval.mjs export --config /absolute/private/config/evaluator.json --handoff evaluation-request.json --selection share-selection.json --out /absolute/private/new-review-export
-node acclimate-eval.mjs verify-export --manifest /absolute/private/new-review-export/manifest.json
+acclimate-eval status --config "$EVALUATOR_CONFIG" --name "$RUN_NAME"
+acclimate-eval check --config "$EVALUATOR_CONFIG" --name "$RUN_NAME" --policy "$QUALITY_POLICY"
+acclimate-eval export --config "$EVALUATOR_CONFIG" --name "$RUN_NAME" --out "$NEW_REVIEW_DIRECTORY"
 ```
 
-Omit `--selection` for scalar-only evidence with no raw outputs. A missing required role prevents a complete manifest. Upload only the final export directory through your organization's authenticated artifact storage with explicit retention. Never upload its parent, evaluator config, journal, expected answers or provider credentials.
+For another machine or a read-only reviewer, share the public handoff at `comparisons/RUN_NAME/request.json` inside the evaluator's configured journal root. Copy that one JSON file and use `--handoff` with the reviewer's credentials.
 
-A teammate with project-read access can verify scalar binding using their own private reader file `{schemaVersion:1,serviceUrl,projectId,readToken}` and an independently selected expected request:
+Omit `--policy` when you only need paired evidence. `--live` authorizes both evaluation arms and their graders, including provider costs and tool side effects. For separately scheduled stages, the same CLI provides `request`, `run` and `check`. A complete comparison can contain a losing candidate. An authorized release reviewer decides whether to promote the change.
+
+## Review evidence and recover
+
+With a policy, `compare` and `check` exit 0 for pass, 2 for a known violation,
+and 3 for an indeterminate decision. A known threshold violation still fails
+when required cost measurements are missing. Inspect the individual checks for
+both conditions. In JSON output, `evidenceGaps` identifies each affected case,
+repetition, arm and stage, up to 32 entries with the total count. Complete cases
+retain their scores when another case is incomplete.
+
+A policy check with `--config` computes the verdict locally and records a receipt for release review. A passing policy returns exit 0 only when the service confirms that receipt. If `policyReceipt.status` is `unconfirmed`, retry `check` with the same evaluator config and policy. A reviewer can use `--read-config` with a public handoff to compute an independent verdict. Its receipt status is `read_only`.
+
+To debug an unexpected agent or grader exception, set `"captureCallbackErrors": true`
+in the private evaluator configuration before execution. Inspect `callback-error.json`
+in the affected arm's private job directory for the phase, exception type, and up to
+eight stack frame locations. The public comparison identifies the stage and reason
+through `evidenceGaps`. Private diagnostics omit exception messages and local variables.
+
+To deliberately rerun the same candidate after a completed or failed comparison, substitute `--retry-after "$RUN_NAME"` for `--name "$RUN_NAME"` in the headless compare command. The SDK verifies the original target, candidate payload and channel base, then creates one new run under a name derived from the prior request ID. The new attempt can use a repaired adapter, different case set or different policy. Repeat the same command to recover that successor. For policy-only changes, `check` can score the retained evidence without any new execution. Requests still marked requested, running or interrupted cannot serve as predecessors.
+
+Keep the service request ID, app build, private case inventory and journal for the attempt. Use the same version of the application and journal to recover a sealed report after transport failure. If execution might still be running, inspect the original worker before interrupting or starting new work.
+
+Export scalar evidence to a fresh private directory. To share selected outputs or grader explanations, implement a field-allowlisting `toReviewArtifact` (Python `to_review_artifact`) in your own adapter and pass a `--selection` file naming the desired case, repetition, side and role.
 
 ```sh
-node acclimate-eval.mjs verify-export --manifest /downloaded/review/manifest.json --read-config /absolute/private/reader.json --handoff independently-selected-request.json
+acclimate-eval export --config "$EVALUATOR_CONFIG" --handoff "$HANDOFF" --out "$NEW_REVIEW_DIRECTORY"
+acclimate-eval verify-export --manifest "$NEW_REVIEW_DIRECTORY/manifest.json"
 ```
 
-Local hash consistency is not provenance; online verification matches authoritative scalars, not proof that redacted outputs are true execution traces.
+A teammate can run `acclimate-eval verify-export --manifest review/manifest.json` in the directory containing the downloaded review. The installed CLI also supports `status --read-config READER --handoff HANDOFF` independently of the agent module.
 
-## Analyze named metrics and repeated executions
-
-The archive includes `analyze.mjs`, `analyze.py` and the complete
-[analysis guide](ANALYSIS.md). After installing the matching SDK, analyze saved
-comparison evidence with a separately retained trusted binding:
-
-```sh
-node analyze.mjs comparison.json descriptor.json trusted-binding.json analysis-config.json
-python3.11 analyze.py comparison.json descriptor.json trusted-binding.json analysis-config.json
-```
-
-Omit `analysis-config.json` for descriptive scalar reward. The optional config
-supplies named component metrics, explicit units/direction and app-retained
-observations bound to the exact case/version/grader. Each case receives equal
-weight regardless of repetition count. The guide explains missingness and the
-opt-in paired bootstrap for independently collected stochastic repetitions on
-fixed tasks. This starter's deterministic simulator uses descriptive mode; its
-repeats do not support stochastic confidence or automatic release.
-
-## CI and recovery meanings
-
-`run` returns 0 for completed evidence (including a losing candidate), 2 for failed/incomplete evidence and 3 for interruption/uncertain recovery. `check` returns 0 for policy pass, 2 for a complete quality violation and 3 for incomplete/unknown evidence; invalid input/policy/access returns 1. A policy pass is descriptive and never release authorization. The policy labels its direction and equal weighting across distinct cases; it makes no statistical-confidence claim.
-
-Keep journal root, exact service URL, principal and originating language/release stable. Saved reports recover with the same bytes/keys and no callback rerun. Execution marked started without a sealed report is uncertain: inspect the original worker, explicitly interrupt when appropriate, then create new work only after safe app review. Never delete a journal, move it, switch languages or infer stopped execution from age. Private journals require their own backup/retention policy; PostgreSQL backups alone do not preserve worker files.
-
-The CI starter archive provides a provider-neutral script and workflow integration guidance. The release manifest records exactly which installed-consumer checks actually ran; no live/native-quality claim follows from this fixture.
+The companion [analysis guide](ANALYSIS.md) covers saved comparison evidence, named metrics, binding verification and repeated executions.

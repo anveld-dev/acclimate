@@ -240,7 +240,7 @@ test('frozen runtime commitments and exact evaluation identities survive report 
     assert.deepEqual(Object.keys(input.handoff).sort(), ['bundleId','configuration','projectId','requestId','schemaVersion','serviceUrl'].sort());
     for (const [key, value] of Object.entries(operationRuntime(op))) assert.equal(input.handoff.configuration.runtime[key], value);
     const comparison = report(op, input.app.descriptor);
-    return { schemaVersion: 1, evaluation: evaluatedRequest(comparison), comparison, executionState: 'finished' };
+    return { schemaVersion: 1, evaluation: evaluatedRequest(comparison), comparison, callbacksStarted: callbacks === 1 ? 2 : 0, reusedEvidence: callbacks > 1, executionState: 'finished' };
   };
   const adapter = createAcclimateLearningAdapter(f.options);
   const policyDigest = hashArtifact(policy).sha256;
@@ -275,7 +275,7 @@ test('missing runtime commitments fail before evaluation creation and uncertaint
 test('wrong runner report binding is rejected instead of becoming accepted evidence', async () => {
   const f = fixture(), op = operation('development');
   f.options.runner = async input => { const comparison = report(op, input.app.descriptor); comparison.candidateDigest = sha('foreign');
-    return { schemaVersion: 1, comparison, evaluation: evaluatedRequest(comparison), executionState: 'finished' }; };
+    return { schemaVersion: 1, comparison, evaluation: evaluatedRequest(comparison), callbacksStarted: 2, reusedEvidence: false, executionState: 'finished' }; };
   await assert.rejects(createAcclimateLearningAdapter(f.options).dispatch(op, context), (e: unknown) =>
     e instanceof AcclimateLearningAdapterError && e.code === 'learning.adapter.evaluation_binding');
 });
@@ -288,7 +288,7 @@ test('a comparison cannot conceal a foreign returned evaluation or evaluator', a
       const evaluation = evaluatedRequest(comparison);
       if (changed === 'request') evaluation.id = 'unrelated-request';
       else evaluation.evaluatorPrincipal = 'unrelated-evaluator';
-      return { schemaVersion: 1, comparison, evaluation, executionState: 'finished' };
+      return { schemaVersion: 1, comparison, evaluation, callbacksStarted: 2, reusedEvidence: false, executionState: 'finished' };
     };
     await assert.rejects(createAcclimateLearningAdapter(f.options).dispatch(op, context), (e: unknown) =>
       e instanceof AcclimateLearningAdapterError && e.code === 'learning.adapter.evaluation_binding');

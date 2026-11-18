@@ -97,6 +97,19 @@ test('collection is captured privately, committed into descriptor, and drift is 
   );
 });
 
+test('Unicode schedule digest matches the Python evaluator', () => {
+  const pairs = Array.from({ length: 4 }, (_, repetition) => ({ caseId: 'one🍊', repetition }));
+  const schedule = collectionSchedule({ protocol: 'seeded-balanced-v1', seed: 'parity🍊' }, pairs);
+  assert.equal(
+    schedule.digest,
+    'sha256:e4e68691c20042ee820793c8c9404ace8a7187ff21e75c63fe81e4f032e1dcaa',
+  );
+  assert.deepEqual(
+    schedule.pairs.map((pair) => pair.firstSide),
+    ['parent', 'candidate', 'candidate', 'parent'],
+  );
+});
+
 for (const optedIn of [false, true]) {
   test(`${optedIn ? 'balanced' : 'default'} runner preserves pair identity and retains observed collection order`, async () => {
     const root = await mkdtemp(path.join(await realpath(tmpdir()), 'acclimate-collection-'));

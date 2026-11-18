@@ -69,3 +69,29 @@ export function codexRuntimeInputs(effectiveContext, { env, model, config = {}, 
     memoryFiles: effectiveContext.memoryFiles,
   };
 }
+
+/** Run one real turn with the installed Codex SDK. Drain the stream before confirming stop. */
+export async function runCodexTask({ context, signal, acknowledge, prompt, policy }) {
+  if (typeof prompt !== 'string' || !prompt.trim()) throw new Error('codex.task_prompt_required');
+  const inputs = codexRuntimeInputs(context, policy);
+  const { Codex } = await import('@openai/codex-sdk');
+  const thread = new Codex(inputs.constructorOptions).startThread(inputs.threadOptions);
+  const memory = inputs.memoryFiles.map(file => file.absolutePath);
+  const instructions = memory.length ? prompt + '\nApproved memory files:\n' + memory.join('\n') : prompt;
+  const turn = await thread.runStreamed(instructions, { signal });
+  let terminalEvent;
+  let output = '';
+  let usage = null;
+  for await (const event of turn.events) {
+    if (event.type === 'thread.started')
+      await acknowledge({ kind: 'codex-thread', value: event.thread_id });
+    if (event.type === 'item.completed' && event.item.type === 'agent_message') output = event.item.text;
+    if (event.type === 'turn.completed') {
+      terminalEvent = event.type;
+      usage = { inputTokens: event.usage.input_tokens, outputTokens: event.usage.output_tokens };
+    }
+    if (event.type === 'turn.failed') terminalEvent = event.type;
+    if (event.type === 'error') throw new Error('codex.stream_error');
+  }
+  return { stopped: terminalEvent !== undefined, infrastructureFailure: terminalEvent === 'turn.failed', output, usage };
+}

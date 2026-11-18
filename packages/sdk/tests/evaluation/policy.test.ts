@@ -157,9 +157,32 @@ test('equal-case aggregate is not pair-weighted and unknown does not hide known 
     expectedBinding: uncertain.binding,
     policy: uncertain.policy,
   });
-  assert.equal(incomplete.verdict, 'indeterminate');
+  assert.equal(incomplete.verdict, 'fail');
+  assert.equal(incomplete.evidenceGaps?.rows[0].reason, 'missing_cost');
   assert.ok(incomplete.checks.some((item) => item.result === 'fail'));
   assert.ok(incomplete.checks.some((item) => item.result === 'unknown'));
+});
+
+test('missing pairs report bounded public arm diagnostics', () => {
+  const source = structuredClone(fixtures.vectors[0]);
+  const keys = Array.from({ length: 20 }, (_, repetition) => ({ caseId: 'ordinary', repetition }));
+  source.descriptor.expectedCases = source.comparison.expectedCases = keys;
+  source.comparison.results = [];
+  const result = checkComparison({
+    comparison: source.comparison,
+    expectedDescriptor: source.descriptor,
+    expectedBinding: source.binding,
+    policy: source.policy,
+  });
+  assert.equal(result.evidenceGaps?.total, 40);
+  assert.equal(result.evidenceGaps?.rows.length, 32);
+  assert.deepEqual(result.evidenceGaps?.rows[0], {
+    caseId: 'ordinary',
+    repetition: 0,
+    side: 'parent',
+    stage: 'collection',
+    reason: 'missing_pair',
+  });
 });
 
 test('nonfinite reward and scored missing output are never converted to quality zero', () => {

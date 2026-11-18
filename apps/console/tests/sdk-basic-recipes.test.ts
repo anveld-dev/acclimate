@@ -105,3 +105,15 @@ test('all generated JavaScript recipes run with Node syntax and context recipes 
   });
   assert.equal(python.status, 0, python.stderr);
 });
+
+test('optional observation recipes bind the project and leave start reporting to a real app event', () => {
+  const code = deliveryRecipes({ projectId: 'private-project', bundleId: 'b', channel: 'stable' });
+  for (const recipe of Object.values(code)) {
+    assert.match(recipe, /private-project/);
+    assert.match(recipe, /ACCLIMATE_RECEIPT_TOKEN/);
+    assert.match(recipe, /client\.prepare/);
+    assert.doesNotMatch(recipe, /spawn|subprocess/);
+  }
+  assert.match(code.typescript, /prepared\.reportStarted\(\)/);
+  assert.match(code.python, /prepared\.report_started\(\)/);
+});

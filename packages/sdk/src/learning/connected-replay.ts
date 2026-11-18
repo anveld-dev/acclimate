@@ -13,7 +13,7 @@ export type ReplayExecution = 'live' | 'model-free';
 
 interface ReplayOptions<Verdict extends string> {
   root: string;
-  kind: 'learning-rechecks' | 'learning-field-replays';
+  kind: 'learning-rechecks' | 'learning-field-replays' | 'learning-incident-replays';
   identity: readonly string[];
   execution?: ReplayExecution;
   allowLive?: boolean;

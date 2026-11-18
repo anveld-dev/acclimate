@@ -47,11 +47,22 @@ class CreateVersionRequest(TypedDict):
     payload: BundlePayload
 
 
+class PolicyReceiptReference(TypedDict):
+    comparisonId: str
+    policyDigest: str
+
+
+class PolicyOverride(TypedDict):
+    reason: str
+    receipts: list[PolicyReceiptReference]
+
+
 class PromoteRequest(TypedDict):
     versionId: str
     expectedRevision: str
     comparisonId: NotRequired[str]
     unevaluatedReason: NotRequired[str]
+    policyOverride: NotRequired[PolicyOverride]
 
 
 class Promotion(TypedDict):
@@ -62,6 +73,8 @@ class Promotion(TypedDict):
     previousVersionId: str | None
     comparisonId: str | None
     unevaluatedReason: str | None
+    policyOverride: NotRequired[PolicyOverride]
+    policyApprovalPromotionId: NotRequired[str]
     reviewer: str
     createdAt: str
 
@@ -200,6 +213,35 @@ class InterruptEvaluationRequest(TypedDict):
     reason: str
 
 
+class ComparisonPolicyIdentity(TypedDict):
+    id: str
+    revision: str
+    sha256: str
+
+
+class ComparisonPolicyCheck(TypedDict):
+    code: str
+    result: Literal["pass", "fail", "unknown"]
+
+
+class ComparisonPolicyReport(TypedDict):
+    requestId: str
+    attemptId: str
+    policy: ComparisonPolicyIdentity
+    verdict: Literal["pass", "fail", "indeterminate"]
+    checks: list[ComparisonPolicyCheck]
+
+
+class ComparisonPolicyReceipt(ComparisonPolicyReport):
+    comparisonId: str
+    reportedBy: str
+    receivedAt: str
+
+
+class ComparisonPolicyReceipts(TypedDict):
+    items: list[ComparisonPolicyReceipt]
+
+
 class EvaluationCapabilities(TypedDict):
     schemaVersion: Literal[1]
     projectId: str
@@ -291,6 +333,7 @@ class PublishDraftRequest(TypedDict):
     expectedRevision: str
     comparisonId: NotRequired[str]
     unevaluatedReason: NotRequired[str]
+    policyOverride: NotRequired[PolicyOverride]
 
 
 class DraftSnapshot(TypedDict):

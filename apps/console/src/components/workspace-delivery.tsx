@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { OutcomeLookup } from './outcome-lookup';
 import { PageTitle } from './shared';
 import { readDeliveryObservations } from '../server/delivery-observations-actions';
 import type { DeliveryObservationsResult } from '../server/delivery-observations-core';
@@ -110,6 +111,7 @@ export function WorkspaceDelivery({
                     Latest is selected by service receipt time. A delayed observation can refer to
                     an older version.
                   </p>
+                  <OutcomeLookup target={{ projectId, integrationId: connection.id }} />
                 </article>
               );
             })}

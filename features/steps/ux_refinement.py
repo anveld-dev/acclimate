@@ -181,9 +181,7 @@ def custom_evaluator_navigation(context):
     w.ux_evaluation_draft = saved_draft(w)
     p.get_by_role('link', name='Continue to evaluation', exact=True).click()
     open_details(p, 'Set up evaluation request')
-    expect(p.get_by_label('Evaluation configuration', exact=True)).to_have_value('')
     expect(p.get_by_role('button', name='Create evaluation request', exact=True)).to_be_disabled()
-    p.get_by_label('Evaluation configuration', exact=True).select_option('custom')
     configuration = dict(datasetRevision='ux-fixture-data-v1', graderRevision='ux-fixture-grader-v1',
         runtime=dict(configId='ux-installed-fixture', configRevision='1', app='ux-app', model='none'),
         expectedCases=[dict(caseId='ux-case', repetition=0)])
@@ -213,7 +211,6 @@ def exact_custom_evaluator(context):
     p = page(context)
     expect(p).to_have_url(w.ux_evaluation_url)
     expect(p.get_by_role('heading', name='Leave current edits?', exact=True)).to_have_count(0)
-    expect(p.get_by_label('Evaluation configuration', exact=True)).to_have_value('custom')
     expect_editor_value(p.get_by_label('Public evaluator configuration (JSON)', exact=True).filter(visible=True), w.ux_configuration_text)
     expect(p.get_by_role('button', name='Create evaluation request', exact=True)).to_be_enabled()
     assert w.call('GET', w.bundle + '/evaluation-requests')['items'] == []

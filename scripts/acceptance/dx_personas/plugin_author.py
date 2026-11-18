@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import secrets
+import shutil
 import subprocess
 import tarfile
 
@@ -356,6 +357,12 @@ def main():
         credential = fixture.h.call('POST', root + '/integrations/' + integration['id'] + '/credentials', dict(kind='content-read'))
         starter_proof = verify_starter_helpers(fixture)
         app = fixture.install_js(starter='native-repository', plugin='codex')
+        test_repository = checkout / 'examples/native-repository/test/fixture'
+        shutil.copytree(test_repository, app / 'fixture')
+        starter_proof['consumerRepositoryFiles'] = {
+            str(path.relative_to(test_repository)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(test_repository.rglob('*')) if path.is_file()
+        }
         for entry in starter_proof['files']:
             # npm deliberately adds dependency declarations to the archive's own manifest.
             if entry['path'] != 'package.json' and hashlib.sha256((app / entry['path']).read_bytes()).hexdigest() != entry['sha256']:

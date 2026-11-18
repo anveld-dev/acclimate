@@ -107,9 +107,6 @@ def keyboard_workflow(w, b):
     # removing the hidden form from keyboard navigation and accessible controls.
     setup=p.get_by_role('button',name='Set up evaluation request',exact=True)
     expect(setup).to_have_attribute('aria-expanded','true')
-    profile=p.get_by_label('Evaluation configuration',exact=True)
-    original_profile=profile.input_value()
-    profile.select_option('custom')
     config=p.get_by_label('Public evaluator configuration (JSON)',exact=True).filter(visible=True)
     original_config=editor_value(config)
     edited_config=original_config+'\n '
@@ -128,7 +125,6 @@ def keyboard_workflow(w, b):
     expect(setup).to_have_attribute('aria-expanded','true')
     expect_editor_value(config, edited_config)
     config.fill(original_config)
-    profile.select_option(original_profile)
     assert w.call('GET',w.channel)['version']==w.original['version']
     assert w.call('GET',w.bundle+'/evaluation-requests')['items']==before_requests, 'Keyboard review unexpectedly ran an evaluation'
     return dict(fileSelection=True,publishedActions=published,entryActions=True,renaming=True,editing=True,save=True,evaluationNavigation=True,disclosureKeyboard=True,collapsedEditsPreserved=True,releaseUnchanged=True)
@@ -236,7 +232,7 @@ def sdk_acceptance(page, failures, output, prefix, *, coarse=False, cdp=None):
     expect(install).to_be_visible()
     expect(install).to_contain_text('npm install /absolute/path/to/acclimate-sdk.tgz')
     expect(page.get_by_label('SDK build commands',exact=True)).not_to_be_visible()
-    for name in ('ACCLIMATE_URL','ACCLIMATE_TOKEN','ACCLIMATE_SCOPE','ACCLIMATE_CACHE','ACCLIMATE_JOB_DIR'):
+    for name in ('ACCLIMATE_URL','ACCLIMATE_TOKEN','ACCLIMATE_SCOPE'):
         expect(environment.get_by_text(name,exact=True)).to_be_visible()
     recipe=page.get_by_label('SDK delivery recipe',exact=True)
     expected=recipe.get_by_text('Expected: the resolved version stays pinned for this job.',exact=False)
@@ -347,13 +343,11 @@ def evaluation_acceptance(w, b, failures, output):
             setup=page.get_by_role('button',name='Set up evaluation request',exact=True)
             expect(setup).to_have_attribute('aria-expanded','true')
             create=page.get_by_role('button',name='Create evaluation request',exact=True)
-            expect(create).to_have_attribute('aria-describedby','evaluation-prerequisites')
-            help=page.locator('#evaluation-prerequisites')
+            help=page.locator('[id="'+create.get_attribute('aria-describedby')+'"]')
             expect(help).to_be_visible()
-            assert help.evaluate('(el) => el.compareDocumentPosition(document.querySelector("button[aria-describedby=evaluation-prerequisites]")) & Node.DOCUMENT_POSITION_FOLLOWING'), 'Prerequisites must precede Create'
             checked_capture(failures,page,output,prefix+'-saved-review-first-request',coarse=coarse)
-            profile=page.get_by_label('Evaluation configuration',exact=True)
-            expect(profile).to_have_value('')
+            language=page.get_by_label('Evaluator language',exact=True)
+            expect(language).to_have_value('javascript')
             expect(create).to_be_disabled()
             # Profile changes and disclosure controls may update local form state,
             # but must never submit a request or alter the published release.
@@ -373,19 +367,11 @@ def evaluation_acceptance(w, b, failures, output):
                 if not read:writes.append(dict(method=request.method,url=request.url,action=action))
             page.on('request',record)
             try:
-                for value,fragments in (
-                    ('payment-retry',('payment-policy.json','Three scenarios × two repetitions','no model calls','not native agent quality')),
-                    ('presence-contract',('nonempty instruction and skill files','delivery contract check','not a behavioral score')),
-                    ('codex-luna-review',('use Codex','--live','four bounded Luna turns','Creating a request makes no model call')),
-                    ('custom',('installed adapter and grader','freezes these settings','never executes configuration as code')),
-                ):
-                    profile.select_option(value)
-                    for fragment in fragments:expect(help).to_contain_text(fragment)
-                    expect(create).to_have_attribute('aria-describedby','evaluation-prerequisites')
-                    assert w.call('GET',w.bundle+'/evaluation-requests')['items']==before, 'Selecting a profile created an evaluation request'
+                for value in ('python','javascript'):
+                    language.select_option(value)
+                    assert w.call('GET',w.bundle+'/evaluation-requests')['items']==before
                 config=page.get_by_label('Public evaluator configuration (JSON)',exact=True).filter(visible=True)
                 expect(config).to_be_visible()
-                expect(page.get_by_text('Paste the configuration your installed app describes:',exact=False)).to_be_visible()
                 edited_config=json.dumps(dict(datasetRevision='layout-public-v1',graderRevision='layout-grader-v1',runtime=dict(configId='layout-app',configRevision='1'),expectedCases=[dict(caseId='review',repetition=0)]),indent=2)
                 config.fill(edited_config)
                 expect(create).to_be_enabled()
@@ -393,7 +379,6 @@ def evaluation_acceptance(w, b, failures, output):
                 checked_capture(failures,page,output,prefix+'-saved-review-custom-setup',coarse=coarse)
                 setup.click();expect(config).not_to_be_visible()
                 setup.click();expect_editor_value(config, edited_config)
-                profile.select_option('presence-contract')
                 assert not writes, 'Selecting or collapsing setup sent a mutation: '+str(writes)
                 assert w.call('GET',w.bundle+'/evaluation-requests')['items']==before
                 assert w.call('GET',w.channel)['version']==w.original['version']
@@ -409,7 +394,7 @@ def evaluation_acceptance(w, b, failures, output):
         assert len(new)==1, 'Create must persist exactly one evaluation request'
         request=new[0]
         assert request['candidateVersionId']==draft['snapshotVersion']['id'] and request['status']=='requested'
-        assert request['runtime']['configId']=='presence-contract'
+        assert request['runtime']['configId']=='layout-app'
         created_trigger=b.page.locator('#evaluation-request-'+request['id'])
         expect(created_trigger).to_be_focused()
         for page,prefix,coarse in surfaces:
@@ -422,12 +407,16 @@ def evaluation_acceptance(w, b, failures, output):
             handoff.scroll_into_view_if_needed()
             checked_capture(failures,page,output,prefix+'-evaluation-requested-handoff',coarse=coarse)
         w.call('POST',w.bundle+'/evaluation-requests/'+request['id']+'/start',dict(attemptId='compact-layout-v3-attempt'),actor='evaluator')
+        total=len(request['expectedCases'])*2
+        w.call('POST',w.bundle+'/evaluation-requests/'+request['id']+'/progress',
+               dict(attemptId='compact-layout-v3-attempt',sequence=1,phase='grading',completed=1,total=total),actor='evaluator')
         for page,prefix,coarse in surfaces:
             visit(page,b,path)
             expect(page.get_by_label('Saved change review',exact=True)).to_contain_text('Your app last reported work running. Check the app for its current status.')
             handoff=page.get_by_label('Evaluation request '+request['id'],exact=True)
             expect(handoff).to_contain_text('App reported running')
-            expect(handoff).to_contain_text('Check your app for current execution status.')
+            expect(handoff.get_by_role('region',name='Evaluator activity')).to_contain_text(f'grading · 1 / {total}', timeout=25000)
+            expect(handoff).to_contain_text('Check the original worker before retrying.')
             expect(handoff).not_to_contain_text('Run in your app with the request ID and frozen public configuration.')
             expect(handoff.get_by_role('button',name='Copy request JSON',exact=True)).to_be_visible()
             expect(page.get_by_role('button',name='Create another evaluation request',exact=True)).to_have_attribute('aria-expanded','false')
@@ -435,7 +424,7 @@ def evaluation_acceptance(w, b, failures, output):
             checked_capture(failures,page,output,prefix+'-evaluation-running-handoff',coarse=coarse)
         assert w.call('GET',w.channel)['version']==w.original['version']
         assert len(w.call('GET',w.bundle+'/evaluation-requests')['items'])==len(before)+1
-        return dict(firstRequestPrerequisites=True,profiles=['payment-retry','presence-contract','codex-luna-review','custom'],profileAndDisclosureWrites=0,observedReadTransports=transport,createdRequests=1,createFocusHandoff=True,requestedAndRunningHandoff=True,releaseUnchanged=True)
+        return dict(firstRequestPrerequisites=True,languages=['javascript','python'],configurationAndDisclosureWrites=0,observedReadTransports=transport,createdRequests=1,createFocusHandoff=True,requestedAndRunningHandoff=True,releaseUnchanged=True)
     finally:touch.close()
 
 

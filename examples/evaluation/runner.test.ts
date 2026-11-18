@@ -12,8 +12,8 @@ const safeCode =
   (error: unknown) =>
     error instanceof EvaluationError && codes.includes(error.code);
 import { openJournal, EvaluationBusyError } from './journal.js';
-import { paymentAdapter } from './payment.js';
-import { localEvaluationDescriptor } from './descriptor.js';
+import { paymentAdapter } from './tests/payment.js';
+import { localEvaluationDescriptor } from './tests/descriptors.js';
 import {
   fixture,
   projectId,
@@ -219,8 +219,8 @@ test('actual process death after execution marker never reruns callbacks and rel
   const { f, options, cleanup } = await disposable();
   const fixtureUrl = pathToFileURL(path.resolve('examples/evaluation/fixture.ts')).href;
   const runnerUrl = pathToFileURL(path.resolve('examples/evaluation/runner.ts')).href;
-  const paymentUrl = pathToFileURL(path.resolve('examples/evaluation/payment.ts')).href;
-  const descriptorUrl = pathToFileURL(path.resolve('examples/evaluation/descriptor.ts')).href;
+  const paymentUrl = pathToFileURL(path.resolve('examples/evaluation/tests/payment.ts')).href;
+  const descriptorUrl = pathToFileURL(path.resolve('examples/evaluation/tests/descriptors.ts')).href;
   const code = `import { fixture } from ${JSON.stringify(fixtureUrl)};
 import {runEvaluation} from ${JSON.stringify(runnerUrl)};
 import {paymentAdapter} from ${JSON.stringify(paymentUrl)};

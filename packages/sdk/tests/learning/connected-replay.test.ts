@@ -10,7 +10,7 @@ import {
   type ConnectedLearningDriverOptions,
 } from '../../src/learning/connected.js';
 
-async function fixture(t: TestContext, kind: 'recheck' | 'field') {
+async function fixture(t: TestContext, kind: 'recheck' | 'field' | 'incident') {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'connected-replays-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const configPath = join(root, 'config.json');
@@ -37,8 +37,18 @@ async function fixture(t: TestContext, kind: 'recheck' | 'field') {
   const assignment =
     kind === 'recheck'
       ? { correctionId: randomUUID(), versionId, digest, revision: '2', outcomeId }
-      : { versionId, digest, baselineRevision: '2', outcomeId };
-  const path = kind === 'recheck' ? '/rechecks' : '/field-requalifications';
+      : {
+          versionId,
+          digest,
+          baselineRevision: '2',
+          outcomeId,
+          ...(kind === 'incident' ? { roundId: randomUUID() } : {}),
+        };
+  const path = {
+    recheck: '/rechecks',
+    field: '/field-requalifications',
+    incident: '/incident-replays',
+  }[kind];
   const record = {
     active: true,
     requested: true,
@@ -59,7 +69,8 @@ async function fixture(t: TestContext, kind: 'recheck' | 'field') {
         installationId: 'test',
         bundleId,
         items: [],
-        [kind === 'field' ? 'fieldReplays' : 'rechecks']: record.requested ? [assignment] : [],
+        [{ field: 'fieldReplays', incident: 'incidentReplays', recheck: 'rechecks' }[kind]]:
+          record.requested ? [assignment] : [],
       });
     }
     if (url.endsWith('/payload')) return new Response(payload);
@@ -104,6 +115,11 @@ async function fixture(t: TestContext, kind: 'recheck' | 'field') {
       await record.run(signal!);
       return 'reproduced';
     },
+    replayIncident: async ({ signal }) => {
+      record.callbacks++;
+      await record.run(signal!);
+      return 'pass';
+    },
     requalifyFieldCase: async ({ signal }) => {
       record.callbacks++;
       await record.run(signal!);
@@ -117,8 +133,13 @@ async function fixture(t: TestContext, kind: 'recheck' | 'field') {
       integrationId,
       installationId: 'test',
       configPath,
-      apps: { ...apps, recheckExecution: mode, requalifyFieldCaseExecution: mode },
-      signal: AbortSignal.any([stop.signal, AbortSignal.timeout(5000)]),
+      apps: {
+        ...apps,
+        recheckExecution: mode,
+        requalifyFieldCaseExecution: mode,
+        replayIncidentExecution: mode,
+      },
+      signal: AbortSignal.any([stop.signal, AbortSignal.timeout(30_000)]),
       allowLive,
       pollIntervalMs: 25,
       onDiagnostic(diagnostic) {
@@ -128,10 +149,10 @@ async function fixture(t: TestContext, kind: 'recheck' | 'field') {
     });
     return codes;
   }
-  return { record, run };
+  return { record, run, apps };
 }
 
-for (const kind of ['recheck', 'field'] as const) {
+for (const kind of ['recheck', 'field', 'incident'] as const) {
   test(
     kind + ' requires live opt-in and reposts its saved verdict after a driver restart',
     async (t) => {
@@ -201,4 +222,18 @@ for (const kind of ['recheck', 'field'] as const) {
       assert.deepEqual(record.posts, []);
     },
   );
+}
+
+for (const [kind, callback, code] of [
+  ['recheck', 'recheck', 'learning.recheck_callback_missing'],
+  ['field', 'requalifyFieldCase', 'learning.field_replay_callback_missing'],
+  ['incident', 'replayIncident', 'learning.incident_replay_callback_missing'],
+] as const) {
+  test(kind + ' exposes assigned work without a private callback', async (t) => {
+    const { apps, record, run } = await fixture(t, kind);
+    delete apps[callback];
+    assert.deepEqual(await run('model-free'), [code]);
+    assert.equal(record.callbacks, 0);
+    assert.deepEqual(record.posts, []);
+  });
 }

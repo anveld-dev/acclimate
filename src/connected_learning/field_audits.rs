@@ -159,11 +159,11 @@ pub(super) async fn submit(
     {
         restore = Some(target);
     }
-    let promotion = if let Some(target) = restore {
+    let attempted = if let Some(target) = restore {
         let reason = format!(
             "Automatic rollback after {regressions} regressions in {window_size} independently graded served jobs"
         );
-        let promotion = crate::channels::promote_in_tx(
+        match crate::channels::promote_in_tx(
             &mut tx,
             &connection.project,
             connection.bundle,
@@ -174,9 +174,22 @@ pub(super) async fn submit(
                 expected_revision: verdict.revision,
                 comparison_id: None,
                 unevaluated_reason: Some(reason),
+                policy_override: None,
             },
+            Some(&connection.channel),
         )
-        .await?;
+        .await
+        {
+            Ok(promotion) => Some(promotion),
+            // The served job's field verdict remains valid even when a newer
+            // application policy blocks the proposed rollback target.
+            Err(error) if error.1 == "policy_override_required" => None,
+            Err(error) => return Err(error),
+        }
+    } else {
+        None
+    };
+    let promotion = if let Some(promotion) = attempted {
         let stale_rounds = sqlx::query(
             "SELECT * FROM connected_learning_rounds
              WHERE (project_id,bundle_id,integration_id,parent_version_id,parent_revision)=($1,$2,$3,$4,$5)

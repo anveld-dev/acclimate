@@ -51,3 +51,12 @@ export const runConnectionLearning = createServerFn({ method: 'POST' })
     const { connectionLearning } = await import('./integration-core');
     return connectionLearning(await requestEnvironment(), data);
   });
+
+export const readLearningOutcome = createServerFn({ method: 'GET' })
+  .validator((input: { projectId: string; integrationId: string; outcomeId: string }) => input)
+  .handler(async ({ data }) => {
+    setResponseHeader('Cache-Control', 'private, no-store');
+    const { requestEnvironment } = await import('./selection');
+    const { lookupLearningOutcome } = await import('./integration-core');
+    return lookupLearningOutcome(await requestEnvironment(), data);
+  });

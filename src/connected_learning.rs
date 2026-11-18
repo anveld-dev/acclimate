@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 mod corrections;
 pub(crate) mod epochs;
+mod incident;
 mod restore;
 pub(crate) mod selection;
 
@@ -54,6 +55,14 @@ pub(crate) fn routes() -> Router<AppState> {
         .route(
             "/v1/projects/{project}/integrations/{integration}/learning/outcomes",
             post(submit_outcome),
+        )
+        .route(
+            "/v1/projects/{project}/integrations/{integration}/learning/outcomes/{outcome}",
+            get(incident::inspect),
+        )
+        .route(
+            "/v1/projects/{project}/integrations/{integration}/learning/incident-replays",
+            post(incident::submit),
         )
         .route(
             "/v1/projects/{project}/integrations/{integration}/learning/work",
@@ -159,6 +168,8 @@ struct TaskOutcome {
     started_receipt_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     delivery_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    require_incident_replay: bool,
 }
 
 fn invalid(message: &str) -> ApiErr {
@@ -547,7 +558,9 @@ async fn enroll(
             unevaluated_reason: Some(
                 "Connection delivery seeded from enrolled source channel".into(),
             ),
+            policy_override: None,
         },
+        Some(&source),
     )
     .await?;
     let row = sqlx::query("INSERT INTO connected_learning_enrollments(project_id,integration_id,bundle_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,development,audits,automatic_rollout,outcome_principal,evaluator_principal,authorized_by,automatic_rollback,selection_policies,skill_packages) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *")
@@ -604,7 +617,7 @@ async fn inspect(
     } else {
         json!([])
     };
-    let rounds: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'policyEpoch',policy_epoch,'outcomeId',outcome_id,'correctionId',correction_id,'attempt',attempt,'state',state,'reason',reason,'parentVersionId',parent_version_id,'candidateVersionId',candidate_version_id,'proposalId',proposal_id,'developmentRequestId',development_request_id,'developmentComparisonId',development_comparison_id,'auditRequestId',audit_request_id,'auditComparisonId',audit_comparison_id,'promotionId',promotion_id,'fieldAudits',jsonb_build_object('windowSize',field_audit_window_size,'regressions',field_audit_regressions,'rollbackPromotionId',rollback_promotion_id)) FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100")
+    let rounds: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'policyEpoch',policy_epoch,'outcomeId',outcome_id,'correctionId',correction_id,'attempt',attempt,'incidentReplay',incident_replay,'state',state,'reason',reason,'parentVersionId',parent_version_id,'candidateVersionId',candidate_version_id,'proposalId',proposal_id,'developmentRequestId',development_request_id,'developmentComparisonId',development_comparison_id,'auditRequestId',audit_request_id,'auditComparisonId',audit_comparison_id,'promotionId',promotion_id,'fieldAudits',jsonb_build_object('windowSize',field_audit_window_size,'regressions',field_audit_regressions,'rollbackPromotionId',rollback_promotion_id)) FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100")
         .bind(&project).bind(integration).fetch_all(&mut *tx).await.map_err(db)?;
     if include_audits {
         let mut epochs: Vec<i64> = rounds
@@ -686,6 +699,11 @@ async fn submit_outcome(
         return Err(denied());
     }
     corrections::validate_teaching(&row, outcome.lesson.as_ref(), outcome.feedback.as_ref())?;
+    if outcome.require_incident_replay && outcome.lesson.is_none() && outcome.feedback.is_none() {
+        return Err(invalid(
+            "An incident replay requires a lesson or graded discrepancy",
+        ));
+    }
     let bundle: Uuid = row.get("bundle_id");
     let body = serde_json::to_value(&outcome).map_err(db)?;
     let fingerprint = crate::digest(&serde_json::to_vec(&body).map_err(db)?);
@@ -818,19 +836,10 @@ async fn submit_outcome(
             "Delivery receipt already binds a different outcome",
         ));
     }
-    if outcome.lesson.is_some() || outcome.feedback.is_some() {
-        corrections::append(
-            &mut tx,
-            &row,
-            outcome.outcome_id,
-            outcome.outcome_id,
-            outcome.lesson.as_ref(),
-            outcome.feedback.as_ref(),
-            &actor.principal,
-        )
-        .await?;
-    }
     let response = outcome_response(&mut tx, &project, bundle, &outcome, field_parent).await?;
+    if outcome.lesson.is_some() || outcome.feedback.is_some() {
+        corrections::append(&mut tx, &row, &outcome.into(), &actor.principal).await?;
+    }
     tx.commit().await.map_err(db)?;
     Ok(response)
 }
@@ -857,6 +866,11 @@ async fn work(
     } else {
         vec![]
     };
+    let incident_replays = if active {
+        incident::work(&mut tx, &project, integration).await?
+    } else {
+        vec![]
+    };
     let field_replays: Vec<Value> = if active {
         sqlx::query_scalar(
             "SELECT jsonb_build_object('versionId',v.id,'digest',v.digest,
@@ -878,7 +892,7 @@ async fn work(
         vec![]
     };
     Ok(Json(
-        json!({"installationId":row.get::<String,_>("installation_id"),"bundleId":row.get::<Uuid,_>("bundle_id"),"active":active,"items":items,"rechecks":rechecks,"fieldReplays":field_replays}),
+        json!({"installationId":row.get::<String,_>("installation_id"),"bundleId":row.get::<Uuid,_>("bundle_id"),"active":active,"items":items,"rechecks":rechecks,"fieldReplays":field_replays,"incidentReplays":incident_replays}),
     ))
 }
 

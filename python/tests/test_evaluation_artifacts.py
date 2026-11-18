@@ -223,7 +223,15 @@ class ArtifactTests(unittest.TestCase):
         selection = self.selection()
         selection["entries"] *= 2
         self.assert_code("artifact.selection_invalid", lambda: parse_artifact_selection(selection))
-        self.assert_code("artifact.integrity", lambda: export_review_evidence(config_path=self.config_path, handoff=self.handoff, output_directory=self.configs / "bad"))
+        with self.assertRaises(EvaluationError) as caught:
+            export_review_evidence(read_config_path=self.read_config_path, handoff=self.handoff,
+                                   output_directory=self.configs / "bad")
+        diagnostic = caught.exception.diagnostic
+        self.assertEqual((diagnostic["code"], diagnostic["field"], diagnostic["nextAction"]),
+                         ("artifact.integrity", "outputDirectory", "fix_config"))
+        self.assertIn("private sibling", diagnostic["hint"])
+        self.assertNotIn(str(self.root), json.dumps(diagnostic))
+        self.assertFalse((self.configs / "bad").exists())
         result = export_review_evidence(read_config_path=self.read_config_path, handoff=self.handoff, output_directory=self.root / "export")
         manifest = json.loads(Path(result["manifestPath"]).read_text())
         manifest["projection"]["file"] = "../config/reader.json"

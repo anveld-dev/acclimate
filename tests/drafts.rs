@@ -164,3 +164,191 @@ async fn immutable_siblings_generation_publish_and_expired_replay() {
     assert_eq!(status, 409);
     assert_eq!(closed["error"]["code"], "draft_closed");
 }
+
+#[tokio::test]
+async fn publication_observes_concurrent_policy_checks_and_records_an_exact_override() {
+    let Ok(url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
+        return;
+    };
+    let db = sqlx::PgPool::connect(&url).await.unwrap();
+    sqlx::migrate!("./migrations").run(&db).await.unwrap();
+    let project = format!("policy-publish-{}", uuid::Uuid::new_v4());
+    let app = router(AppState {
+        access: common::access(),
+        runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+        db: db.clone(),
+        grants: Arc::new(vec![Grant {
+            token: "draft-test".into(),
+            principal_id: project.clone(),
+            project_id: project.clone(),
+            rights: vec!["read".into(), "write".into(), "promote".into()],
+        }]),
+        provider: None,
+    });
+    let payload = |text| json!({"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":text}]});
+    let (status,setup) = call(&app,"POST",&format!("/v1/projects/{project}/bundle-setups"),"setup",json!({"name":"test","origin":"created","channel":"stable","payload":payload("parent"),"reason":"first release"})).await;
+    assert_eq!(status, 201, "{setup}");
+    let root = format!(
+        "/v1/projects/{project}/bundles/{}",
+        setup["bundle"]["id"].as_str().unwrap()
+    );
+    let drafts = format!("{root}/channels/stable/drafts");
+    let promotions = format!("{root}/channels/stable/promotions");
+    let parent = &setup["version"];
+    let (status, draft) = call(
+        &app,
+        "POST",
+        &drafts,
+        "create",
+        json!({"baseVersionId":parent["id"],"baseRevision":"1","payload":payload("candidate")}),
+    )
+    .await;
+    assert_eq!(status, 201, "{draft}");
+    let candidate = &draft["snapshotVersion"];
+    let bid: uuid::Uuid = setup["bundle"]["id"].as_str().unwrap().parse().unwrap();
+    let vid: uuid::Uuid = candidate["id"].as_str().unwrap().parse().unwrap();
+    let publish = format!("{drafts}/{}/publish", draft["id"].as_str().unwrap());
+    let initial = json!({"expectedGeneration":1,"expectedRevision":"1"});
+    let score = json!({"executionStatus":"completed","gradingStatus":"scored","reward":1});
+    let evidence = json!({"parentVersionId":parent["id"],"candidateVersionId":candidate["id"],
+        "parentDigest":parent["digest"],"candidateDigest":candidate["digest"],"datasetRevision":"dataset","graderRevision":"grade",
+        "runtime":{"model":"local"},"expectedCases":[{"caseId":"task","repetition":0}],
+        "results":[{"caseId":"task","repetition":0,"parent":score,"candidate":score}]});
+    let (status, first) = call(
+        &app,
+        "POST",
+        &format!("{root}/comparisons"),
+        "first",
+        evidence.clone(),
+    )
+    .await;
+    assert_eq!(status, 201, "{first}");
+    let (status, second) = call(
+        &app,
+        "POST",
+        &format!("{root}/comparisons"),
+        "alternative",
+        evidence,
+    )
+    .await;
+    assert_eq!(status, 201, "{second}");
+    let mut publish_body = initial.clone();
+    publish_body["comparisonId"] = second["id"].clone();
+
+    // Hold the same transaction lock the reporting endpoint takes and insert
+    // a verdict before commit. A concurrent publication must wait for it.
+    let mut tx = db.begin().await.unwrap();
+    let lock_owner: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("policy-receipt:{project}:{bid}:{vid}"))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let digest = format!("sha256:{}", "a".repeat(64));
+    let comparison: uuid::Uuid = first["id"].as_str().unwrap().parse().unwrap();
+    let add_blocker = "INSERT INTO evaluation_policy_receipts(project_id,bundle_id,candidate_version_id,comparison_id,policy_digest,reported_by,body) VALUES($1,$2,$3,$4,$5,'evaluator',$6)";
+    sqlx::query(add_blocker)
+        .bind(&project)
+        .bind(bid)
+        .bind(vid)
+        .bind(comparison)
+        .bind(&digest)
+        .bind(json!({"verdict":"fail"}))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let waiting = tokio::spawn({
+        let app = app.clone();
+        let path = publish.clone();
+        let body = publish_body.clone();
+        async move { call(&app, "POST", &path, "racing", body).await }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(15),async {
+        loop {
+            let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))")
+                .bind(lock_owner).fetch_one(&db).await.unwrap();
+            if blocked { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }).await.expect("publication should be waiting for the policy receipt transaction");
+    tx.commit().await.unwrap();
+    let (status, conflict) = waiting.await.unwrap();
+    assert_eq!(status, 409, "{conflict}");
+    assert_eq!(conflict["error"]["code"], "policy_override_required");
+    assert!(conflict["error"]["details"].is_null());
+    for bypass in [
+        json!({"versionId":vid,"expectedRevision":"1","comparisonId":second["id"]}),
+        json!({"versionId":vid,"expectedRevision":"1","unevaluatedReason":"manual"}),
+    ] {
+        let (status, err) = call(&app, "POST", &promotions, "bypass", bypass).await;
+        assert_eq!(status, 409, "{err}");
+        assert_eq!(err["error"]["code"], "policy_override_required");
+    }
+    let decision = json!({"reason":"Known limitation reviewed","receipts":[{"comparisonId":comparison,"policyDigest":digest}]});
+    let mut stale = publish_body.clone();
+    stale["policyOverride"] = decision.clone();
+    stale["policyOverride"]["receipts"][0]["comparisonId"] = second["id"].clone();
+    assert_eq!(call(&app, "POST", &publish, "stale", stale).await.0, 409);
+    publish_body["policyOverride"] = decision.clone();
+    let (status, approved) = call(&app, "POST", &publish, "approved", publish_body.clone()).await;
+    assert_eq!(status, 200, "{approved}");
+    assert_eq!(
+        call(&app, "POST", &publish, "approved", publish_body)
+            .await
+            .1,
+        approved
+    );
+    let (_, history) = call(&app, "GET", &promotions, "", Value::Null).await;
+    assert_eq!(history["items"][0]["policyOverride"], decision);
+    let original_approval = history["items"][0]["id"].clone();
+
+    // A later release can roll back to this exact, previously approved revision.
+    let (status, next) = call(
+        &app,
+        "POST",
+        &format!("{root}/versions"),
+        "next",
+        json!({"parentVersionId":vid,"payload":payload("later")}),
+    )
+    .await;
+    assert_eq!(status, 201, "{next}");
+    let forward = |revision| json!({"versionId":next["id"],"expectedRevision":revision,"unevaluatedReason":"reviewed"});
+    assert_eq!(
+        call(&app, "POST", &promotions, "forward", forward("2"))
+            .await
+            .0,
+        201
+    );
+    let rollback = |revision| json!({"versionId":vid,"expectedRevision":revision,"unevaluatedReason":"Restore the approved release"});
+    let (status, restored) = call(&app, "POST", &promotions, "restore", rollback("3")).await;
+    assert_eq!(status, 201, "{restored}");
+    assert!(restored["policyOverride"].is_null());
+    let (_, historical) = call(&app, "GET", &promotions, "", Value::Null).await;
+    assert_eq!(historical["items"][0]["policyOverride"], decision);
+    assert_eq!(restored["policyApprovalPromotionId"], original_approval);
+    assert_eq!(
+        call(&app, "POST", &promotions, "forward-again", forward("4"))
+            .await
+            .0,
+        201
+    );
+    sqlx::query(add_blocker)
+        .bind(&project)
+        .bind(bid)
+        .bind(vid)
+        .bind(comparison)
+        .bind(format!("sha256:{}", "b".repeat(64)))
+        .bind(json!({"verdict":"indeterminate"}))
+        .execute(&db)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(&app, "POST", &promotions, "stale-approval", rollback("5"))
+            .await
+            .0,
+        409
+    );
+}

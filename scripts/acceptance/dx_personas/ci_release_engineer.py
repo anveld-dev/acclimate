@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts.acceptance.dx_personas.support import PersonaFixture
 from scripts.packaging.qualify_dx import ResponseLossProxy
+from scripts.packaging.fixture_application import install_test_application, commit_candidate
 
 CRITERIA = [
     'C1 distributed archive, installed SDK, headless candidate/request/run/check/export',
@@ -38,7 +39,8 @@ def acceptance(output):
         channel = route + '/channels/stable'
         initial = f.h.call('GET', channel)
         ci = f.install_js(name='ci-app', starter='ci')
-        app = ci / 'evaluation'
+        app = f.install_js(name='evaluator-app')
+        f.clean_env['ACCLIMATE_EVALUATOR_CASES'] = install_test_application(app, 'javascript')
         command = ['node', str(app / 'acclimate-eval.mjs')]
         # Private application-owned executor: make a concrete infrastructure failure
         # reachable through payload bytes while instrumenting execution count.
@@ -47,8 +49,12 @@ def acceptance(output):
         source = "import { appendFileSync } from 'node:fs';\n" + source
         source = source.replace("  const reuseKey =", "  appendFileSync(new URL('./execution-count.log', import.meta.url), 'execute\\n', {mode:0o600});\n  if (instruction.includes('CI_INCOMPLETE')) throw new Error('Controlled private fixture infrastructure failure');\n  const reuseKey =")
         agent.write_text(source)
-        entry = app / 'acclimate-eval.mjs'
-        entry.write_text("import {existsSync} from 'node:fs';\n" + entry.read_text().replace("configRevision: '1'", "configRevision: 'ci-persona-1'").replace("app: 'payment-starter-1'", "app: 'ci-persona-instrumented-1'").replace('toReviewArtifact: async ({ identity, value }) => ({', "toReviewArtifact: async ({ identity, value }) => existsSync(new URL('./deny-review.flag',import.meta.url)) ? null : ({"))
+        entry = app / 'application.mjs'
+        adapter = entry.read_text().replace(
+            'export async function toReviewArtifact({ identity, value }) {',
+            "export async function toReviewArtifact({ identity, value }) {\n"
+            "  if (existsSync(new URL('./deny-review.flag', import.meta.url))) return null;")
+        entry.write_text("import {existsSync} from 'node:fs';\n" + adapter)
         proxy = ResponseLossProxy(f.h)
         try:
             config = json.loads(f.evaluator_config.read_text())
@@ -62,8 +68,13 @@ def acceptance(output):
             def pipeline(name, payload, expected, target_bundle=bundle):
                 result_dir = f.root / 'jobs' / name
                 intent = f.root / 'private/intents' / (name + '.json')
-                cmd = ['sh', str(ci / 'ci.sh'), '--config', str(config_path), '--bundle', target_bundle,
-                       '--intent', str(intent), '--output-dir', str(result_dir), '--payload', str(payload)]
+                repo = f.root / ('checkout-' + name)
+                revision = commit_candidate(repo, payload)
+                cmd = ['sh', str(ci / 'ci.sh'), '--language', 'javascript', '--app', str(app / 'acclimate-eval.mjs'),
+                       '--config', str(config_path), '--bundle', target_bundle, '--channel', 'stable',
+                       '--intent', str(intent), '--output-dir', str(result_dir), '--live',
+                       '--repo', str(repo), '--commit', revision, '--payload', 'candidate.json',
+                       '--policy', str(app / 'quality-policy.json'), '--selection', str(app / 'share-selection.json')]
                 f._execute(cmd, ci, expected, parse_json=False)
                 handoff = json.loads((result_dir / 'evaluation-request.json').read_text())
                 request = f.h.call('GET', '/v1/projects/' + f.project + '/bundles/' + target_bundle + '/evaluation-requests/' + handoff['requestId'], actor='evaluator')
@@ -121,9 +132,7 @@ def acceptance(output):
             # This deterministic fixture deliberately supplies no stochastic protocol.
             analysis_files = ['ANALYSIS.md', 'analyze.mjs', 'analyze.py']
             assert all((app / filename).is_file() for filename in analysis_files)
-            descriptor_script = app / 'descriptor.mjs'
-            descriptor_script.write_text("import {app} from './acclimate-eval.mjs'; console.log(JSON.stringify(app.descriptor));\n")
-            descriptor = f.run(['node', str(descriptor_script)], cwd=app)
+            descriptor = f.run(command + ['describe'], cwd=app)
             analysis_comparison = f.write_json('private/analysis/comparison.json', comparison)
             analysis_descriptor = f.write_json('private/analysis/descriptor.json', descriptor)
             analysis_binding = f.write_json('private/analysis/trusted-binding.json', verdict['expectedBinding'])
@@ -162,6 +171,7 @@ def acceptance(output):
             # then independently verify using a distinct read-only principal.
             export = sorted(passed_dir.glob('review-*/manifest.json'))[0].parent
             reader_app = f.install_js(name='separate-reviewer', starter='evaluation')
+            f.clean_env['ACCLIMATE_EVALUATOR_CASES'] = install_test_application(reader_app, 'javascript')
             assert not reader_app.is_relative_to(ci) and reader_app != app
             download = reader_app / 'downloaded-review'
             shutil.copytree(export, download)

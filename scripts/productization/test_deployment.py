@@ -2,7 +2,6 @@
 import importlib.util
 import json
 import os
-import re
 import shlex
 from pathlib import Path
 import subprocess
@@ -97,29 +96,47 @@ class DeploymentTests(unittest.TestCase):
         def copied(path):
             return any(path==source or source.is_dir() and source in path.parents for source in sources)
         pending=list((ROOT/'packages').glob('*/src/**/*.ts'))+list((ROOT/'apps/console/src').rglob('*.ts'))+list((ROOT/'apps/console/src').rglob('*.tsx'))+[ROOT/'apps/console/vite.config.ts', ROOT/'scripts/build-packages.mjs', ROOT/'python/pyproject.toml']
-        visited=set()
-        while pending:
-            source=pending.pop().resolve()
-            if source in visited or source.name=='routeTree.gen.ts': continue
-            visited.add(source)
-            self.assertTrue(copied(source), 'Builder does not COPY '+str(source.relative_to(ROOT)))
-            if source.suffix not in ('.ts','.tsx','.js','.mjs'): continue
-            text=source.read_text()
-            for name in re.findall(r"(?:from\s*|import\s*\()\s*['\"]([^'\"]+)['\"]",text):
-                name=name.split('?',1)[0]
-                if name.startswith('.'):
-                    target=source.parent/name
-                elif name.startswith('@/'):
-                    target=ROOT/'apps/console/src'/name[2:]
-                elif name=='@acclimate/sdk' or name.startswith('@acclimate/sdk/'):
-                    target=ROOT/'packages/sdk/src'/('index' if name=='@acclimate/sdk' else name[len('@acclimate/sdk/'):])
-                else: continue
-                candidates=[target]
-                if target.suffix in ('.js','.mjs'): candidates.extend([target.with_suffix('.ts'),target.with_suffix('.tsx')])
-                else: candidates.extend([Path(str(target)+'.ts'),Path(str(target)+'.tsx'),target/'index.ts'])
-                target=next((candidate.resolve() for candidate in candidates if candidate.is_file()),None)
-                self.assertIsNotNone(target, 'Unresolved local builder import from '+str(source.relative_to(ROOT))+': '+name)
-                pending.append(target)
+        # The console renders application import examples inside template literals.
+        # Ask TypeScript which imports belong to the builder itself.
+        parse_imports = """
+            const ts = require('typescript');
+            const fs = require('node:fs');
+            const input = require('node:readline').createInterface({input: process.stdin});
+            input.on('line', line => {
+                const source = fs.readFileSync(JSON.parse(line), 'utf8');
+                const imports = ts.preProcessFile(source, true, true).importedFiles;
+                console.log(JSON.stringify(imports.map(entry => entry.fileName)));
+            });
+        """
+        with subprocess.Popen(['node', '-e', parse_imports], cwd=ROOT,
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as scanner:
+            try:
+                visited=set()
+                while pending:
+                    source=pending.pop().resolve()
+                    if source in visited or source.name=='routeTree.gen.ts': continue
+                    visited.add(source)
+                    self.assertTrue(copied(source), 'Builder does not COPY '+str(source.relative_to(ROOT)))
+                    if source.suffix not in ('.ts','.tsx','.js','.mjs'): continue
+                    scanner.stdin.write(json.dumps(str(source)) + '\n')
+                    scanner.stdin.flush()
+                    for name in json.loads(scanner.stdout.readline()):
+                        name=name.split('?',1)[0]
+                        if name.startswith('.'):
+                            target=source.parent/name
+                        elif name.startswith('@/'):
+                            target=ROOT/'apps/console/src'/name[2:]
+                        elif name=='@acclimate/sdk' or name.startswith('@acclimate/sdk/'):
+                            target=ROOT/'packages/sdk/src'/('index' if name=='@acclimate/sdk' else name[len('@acclimate/sdk/'):])
+                        else: continue
+                        candidates=[target]
+                        if target.suffix in ('.js','.mjs'): candidates.extend([target.with_suffix('.ts'),target.with_suffix('.tsx')])
+                        else: candidates.extend([Path(str(target)+'.ts'),Path(str(target)+'.tsx'),target/'index.ts'])
+                        target=next((candidate.resolve() for candidate in candidates if candidate.is_file()),None)
+                        self.assertIsNotNone(target, 'Unresolved local builder import from '+str(source.relative_to(ROOT))+': '+name)
+                        pending.append(target)
+            finally:
+                scanner.stdin.close()
         # The context's positive allowlist must admit the new cross-root files;
         # its final secret exclusions still apply independently.
         ignore=(ROOT/'.dockerignore').read_text().splitlines()

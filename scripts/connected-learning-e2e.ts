@@ -12,6 +12,7 @@ import {
   createReceiptReporter,
   resolveAndCache,
 } from '../packages/sdk/src/index.js';
+import { checkComparison, parseEvaluationPolicy } from '../packages/sdk/src/evaluation/policy.js';
 import { defineEvaluation } from '../packages/sdk/src/evaluation/index.js';
 import {
   type ConnectedLearningDriverOptions,
@@ -146,6 +147,7 @@ interface Round {
   outcomeId: string;
   correctionId: string;
   attempt: number;
+  incidentReplay?: string | null;
   state: string;
   reason: string | null;
   parentVersionId: string;
@@ -334,7 +336,10 @@ try {
     integrationId: string,
     installationId: string,
     apps: ReturnType<typeof evaluationApps>,
-    hooks: Pick<ConnectedLearningDriverOptions['apps'], 'recheck' | 'requalifyFieldCase'> = {},
+    hooks: Pick<
+      ConnectedLearningDriverOptions['apps'],
+      'recheck' | 'requalifyFieldCase' | 'replayIncident'
+    > = {},
   ) {
     const installed = new AbortController();
     const signal = AbortSignal.any([controller.signal, installed.signal]);
@@ -345,6 +350,7 @@ try {
       apps: {
         development: apps.development,
         audit: apps.audits,
+        ...(hooks.replayIncident ? { replayIncidentExecution: 'model-free' as const } : {}),
         ...(hooks.recheck ? { recheckExecution: 'model-free' as const } : {}),
         ...(hooks.requalifyFieldCase ? { requalifyFieldCaseExecution: 'model-free' as const } : {}),
         ...hooks,
@@ -648,6 +654,7 @@ try {
   const correction = {
     correctionId: randomUUID(),
     outcomeId: delayedJob,
+    requireIncidentReplay: true,
     feedback: gradedOutcome(delayedTask, initialTaskBundle).feedback,
   };
   const corrected = await client('other', automatic).reportLearningCorrection(
@@ -663,6 +670,9 @@ try {
     'other',
     409,
   );
+  const lookup = () => operator.getLearningOutcome(project, automatic, delayedJob);
+  assert.equal((await lookup()).corrections[0]?.state, 'awaiting_baseline_recheck');
+  await api('GET', learning(sibling) + '/outcomes/' + delayedJob, undefined, 'operator', 404);
   const recheck = await waitFor('recheck stale observation', async () => {
     const work = await api('GET', `${learning(automatic)}/work`, undefined, 'evaluator');
     return work.rechecks.find(
@@ -686,7 +696,7 @@ try {
   await api('POST', rechecksPath, replay, 'other', 403);
   await pauseAutoDriver();
   let rechecksPerformed = 0;
-  enableDriver(automatic, 'auto-refund-fixture', autoApps, {
+  const stopRecheckDriver = enableDriver(automatic, 'auto-refund-fixture', autoApps, {
     async recheck({ assignment, baseline: installed }) {
       assert.equal(assignment.outcomeId, delayedJob);
       assert.equal(assignment.correctionId, correction.correctionId);
@@ -697,7 +707,40 @@ try {
         : 'reproduced';
     },
   });
+  await waitFor('install incident replay callback diagnostic', async () =>
+    logs.includes('learning.incident_replay_callback_missing') ? true : undefined,
+  );
+  const pendingIncident = (await lookup()).corrections[0]!;
+  assert.equal(pendingIncident.incidentReplay, 'pending');
+  assert.equal(pendingIncident.state, 'development');
+  assert.equal((await fresh(automatic)).id, nowDelivered.version.id);
+  await stopRecheckDriver();
+  const [incident] = (await client('evaluator', automatic).getLearningWork(project, automatic))
+    .incidentReplays!;
+  assert(incident);
+  const passedIncident = { ...incident, verdict: 'pass' as const };
+  const incidentPath = learning(automatic) + '/incident-replays';
+  await api('POST', incidentPath, passedIncident, 'other', 403);
+  await api(
+    'POST',
+    incidentPath,
+    { ...passedIncident, versionId: nowDelivered.version.id },
+    'evaluator',
+    409,
+  );
+  enableDriver(automatic, 'auto-refund-fixture', autoApps, {
+    async replayIncident({ assignment, candidate }) {
+      assert.equal(assignment.outcomeId, delayedJob);
+      return runRefundTask(candidate.payload, delayedTask) === expectedResponse[delayedTask.kind]
+        ? 'pass'
+        : 'regression';
+    },
+  });
   const second = await observe(automatic, delayedJob, 'promoted');
+  assert.equal(second.incidentReplay, 'pass');
+  assert.equal((await lookup()).corrections[0]?.incidentReplay, 'pass');
+  await api('POST', incidentPath, passedIncident, 'evaluator');
+  await api('POST', incidentPath, { ...passedIncident, verdict: 'regression' }, 'evaluator', 409);
   assert.equal(rechecksPerformed, 1);
   const replayed = await client('evaluator', automatic).reportLearningRecheck(
     project,
@@ -766,6 +809,10 @@ try {
   assert.equal(exhausted.proposalAdmissions, exhausted.maxProposalAdmissions);
   assert.equal(exhausted.remainingAudits, 0);
   assert(!exhausted.rounds.some((round: Round) => round.outcomeId === exhaustedOutcome));
+  assert.equal(
+    (await operator.getLearningOutcome(project, manual, exhaustedOutcome)).corrections[0]?.state,
+    'admissions_exhausted',
+  );
   const renewPath = `${learning(manual)}/renew`;
   const oldAudit = descriptor(manualApps.audits[0]!);
   const renewal = {
@@ -857,11 +904,12 @@ try {
     outcomePrincipal: 'other',
   };
   await api('PUT', learning(rollbackConnection), rollbackEnrollment);
-  const pauseRollbackDriver = enableDriver(
-    rollbackConnection,
-    rollbackInstallation,
-    rollbackEvaluation,
-  );
+  // Run development first so its real, stricter policy can reach the reviewer
+  // before the automatic worker receives the held-out audit result.
+  const stopDevelopmentDriver = enableDriver(rollbackConnection, rollbackInstallation, {
+    ...rollbackEvaluation,
+    audits: [],
+  });
   const credentialPath = `/integrations/${rollbackConnection}/credentials`;
   const receiptCredential = await api<{ secret: string }>('POST', credentialPath, {
     kind: 'receipt-write',
@@ -906,20 +954,21 @@ try {
     },
   });
   async function startServedTask(task: Task, externalFailure = false) {
-    const installed = await resolveAndCache(
-      servedClient,
-      {
-        projectId: project,
-        bundleId: bundle.id,
-        channel: 'stable',
-      },
-      { cacheDir: path.join(dir, 'rollback-delivery-cache'), reporter: receiptReporter },
-    );
-    const started = receiptReporter.reportStartedReceipt(installed);
+    const job = await servedClient.prepare({
+      projectId: project,
+      bundleId: bundle.id,
+      channel: 'stable',
+      cacheDir: path.join(dir, 'rollback-delivery-cache'),
+      reporter: receiptReporter,
+    });
+    const installed = job.bundle;
+    const started = job.reportStarted();
+    assert.strictEqual(job.reportStarted(), started);
     assert(started && started.revision);
     await receiptReporter.flush();
     assert.equal(receiptReporter.pendingCount, 0);
     const output = runRefundTask(installed.payload, task);
+    await job.cleanup();
     const outcomeId = randomUUID();
     return async () => {
       const receipt = await reportServedOutcome(installed, {
@@ -946,6 +995,83 @@ try {
     auditClient.reportLearningFieldAudit(project, rollbackConnection, body);
 
   const healthyOutcome = await submit(rollbackConnection, baseline, alpha);
+  const awaitingAudit = await observe(rollbackConnection, healthyOutcome, 'audit');
+  await stopDevelopmentDriver();
+  assert(awaitingAudit.developmentComparisonId && awaitingAudit.developmentRequestId);
+  const request = await auditClient.getEvaluation(
+    project,
+    bundle.id,
+    awaitingAudit.developmentRequestId,
+  );
+  const comparison = await auditClient.getComparison(
+    project,
+    bundle.id,
+    awaitingAudit.developmentComparisonId,
+  );
+  const expectedDescriptor = {
+    datasetRevision: request.datasetRevision,
+    graderRevision: request.graderRevision,
+    runtime: request.runtime,
+    expectedCases: request.expectedCases,
+  };
+  const policy = parseEvaluationPolicy(
+    JSON.stringify({
+      schemaVersion: 1,
+      id: 'refund-quality',
+      revision: '2',
+      metric: { name: 'correct refund', unit: 'reward', direction: 'higher' },
+      aggregation: 'equal-case-means',
+      minimumMeanImprovement: 1,
+      maximumCaseRegression: 0,
+      requiredCases: [],
+    }),
+    expectedDescriptor,
+  );
+  assert(request.attemptId && request.evaluatorPrincipal);
+  const result = checkComparison({
+    comparison,
+    expectedDescriptor,
+    policy: policy.policy,
+    policyDigest: policy.sha256,
+    expectedBinding: {
+      parentVersionId: request.parentVersionId,
+      candidateVersionId: request.candidateVersionId,
+      parentDigest: request.parentDigest,
+      candidateDigest: request.candidateDigest,
+      requestId: request.id,
+      attemptId: request.attemptId,
+      submitter: request.evaluatorPrincipal,
+      comparisonId: comparison.id,
+    },
+  });
+  assert.equal(result.verdict, 'fail');
+  const receipt = await auditClient.reportComparisonPolicyReceipt(
+    project,
+    bundle.id,
+    comparison.id,
+    {
+      requestId: request.id,
+      attemptId: request.attemptId,
+      policy: { ...result.policy, sha256: policy.sha256 },
+      checks: result.checks,
+      verdict: result.verdict,
+    },
+  );
+  const pauseRollbackDriver = enableDriver(
+    rollbackConnection,
+    rollbackInstallation,
+    rollbackEvaluation,
+  );
+  const blocked = await observe(rollbackConnection, healthyOutcome, 'awaiting_review');
+  assert.equal((await fresh(rollbackConnection)).id, baseline.id);
+  const blockedReview = learning(rollbackConnection) + '/rounds/' + blocked.id + '/review';
+  await api('POST', blockedReview, { approve: true }, 'admin', 409);
+  const policyOverride = {
+    reason: 'Review accepts measured incremental improvement',
+    receipts: [{ comparisonId: receipt.comparisonId, policyDigest: receipt.policy.sha256 }],
+  };
+  await api('POST', blockedReview, { approve: true, policyOverride }, 'evaluator', 403);
+  await api('POST', blockedReview, { approve: true, policyOverride }, 'admin');
   const healthyRound = await observe(rollbackConnection, healthyOutcome, 'promoted');
   const healthy = await installedBundle(rollbackConnection);
   assert.equal(healthy.version.id, healthyRound.candidateVersionId);
@@ -1085,6 +1211,16 @@ try {
   );
   const rolledBack = await installedBundle(rollbackConnection);
   assert.equal(rolledBack.version.id, healthy.version.id);
+  const approvals = await operator.listPromotions(
+    project,
+    bundle.id,
+    'learn-' + rollbackConnection,
+  );
+  const restoredApproval = approvals.items.find(
+    (promotion) => promotion.id === rollback.rollbackPromotionId,
+  );
+  assert.deepEqual(restoredApproval?.policyOverride, policyOverride);
+  assert.equal(restoredApproval?.policyApprovalPromotionId, healthyRound.promotionId);
   assert.equal(BigInt(rolledBack.resolution!.revision), BigInt(bad.resolution!.revision) + 1n);
   assert.equal((await fresh(automatic)).id, second.candidateVersionId);
   assert.equal((await fresh(sibling)).id, baseline.id);
@@ -1123,6 +1259,38 @@ try {
   assert.equal(rolledBackRound.state, 'promoted');
   assert.equal(rolledBackRound.fieldAudits.rollbackPromotionId, rollback.rollbackPromotionId);
   assert.equal((await fresh(rollbackConnection)).id, healthy.version.id);
+  const withdrawnTicket = await operator.getLearningOutcome(
+    project,
+    rollbackConnection,
+    badRound.outcomeId,
+  );
+  const releasedCorrection = withdrawnTicket.corrections.find((c) => c.roundId === badRound.id)!;
+  assert.equal(releasedCorrection.state, 'promoted');
+  assert.equal(releasedCorrection.release?.withdrawn, true);
+  assert.equal(releasedCorrection.release?.rollback?.promotionId, rollback.rollbackPromotionId);
+  assert.equal(releasedCorrection.release?.rollback?.versionId, healthy.version.id);
+  assert.equal(releasedCorrection.auditRequestId, badRound.auditRequestId);
+  assert.equal(withdrawnTicket.currentDelivery?.versionId, healthy.version.id);
+  const triggeringTicket = await operator.getLearningOutcome(
+    project,
+    rollbackConnection,
+    fourthRegression.outcomeId,
+  );
+  assert.equal(triggeringTicket.corrections.length, 0);
+  assert.equal(triggeringTicket.servedRelease?.versionId, bad.version.id);
+  assert.equal(triggeringTicket.servedRelease?.withdrawn, true);
+  assert.equal(triggeringTicket.servedRelease?.rollback?.revision, rolledBack.resolution!.revision);
+  assert.deepEqual(triggeringTicket.fieldAudit, {
+    verdict: 'regression',
+    controlVersionId: fourthRegression.parentVersionId,
+    triggeredRollback: true,
+  });
+  const lateTicket = await operator.getLearningOutcome(
+    project,
+    rollbackConnection,
+    tooLate.outcomeId,
+  );
+  assert.equal(lateTicket.fieldAudit?.triggeredRollback, false);
   assert.equal(proposalCountBeforeRollback, 9, 'each teaching admission calls the proposer once');
   assert.equal(
     modelRequests.length,
@@ -1295,6 +1463,36 @@ try {
   const finalRounds = (await api('GET', learning(structural))).rounds;
   assert.equal(finalRounds.find((r: Round) => r.id === retiredRound.id).policyEpoch, 1);
   assert.equal(finalRounds.find((r: Round) => r.id === attempts[1].id).policyEpoch, 0);
+
+  // The general development suite improves, while the private incident still fails.
+  const incidentConnection = await makeConnection('Private incident gate');
+  const incidentApps = await enroll(incidentConnection, 'incident-fixture', true);
+  const incidentJob = randomUUID();
+  const incidentReporter = createLearningOutcomeReporter({
+    client: client('other', incidentConnection),
+    projectId: project,
+    integrationId: incidentConnection,
+  });
+  const incidentBundle = await installedBundle(incidentConnection);
+  await incidentReporter(incidentBundle, {
+    outcomeId: incidentJob,
+    status: 'failed',
+    lesson: { path: 'AGENTS.md', instruction: alpha },
+    requireIncidentReplay: true,
+  });
+  enableDriver(incidentConnection, 'incident-fixture', incidentApps, {
+    async replayIncident({ assignment, candidate }) {
+      assert.equal(assignment.outcomeId, incidentJob);
+      return runRefundTask(candidate.payload, { kind: 'exchange' }) === expectedResponse.exchange
+        ? 'pass'
+        : 'regression';
+    },
+  });
+  const incidentFailure = await observe(incidentConnection, incidentJob, 'rejected');
+  assert.equal(incidentFailure.incidentReplay, 'regression');
+  assert.equal(incidentFailure.auditRequestId, null);
+  assert.equal(incidentFailure.promotionId, null);
+  assert.equal((await fresh(incidentConnection)).id, incidentBundle.version.id);
 
   const sourceUpdate = await operator.createVersion(
     project,

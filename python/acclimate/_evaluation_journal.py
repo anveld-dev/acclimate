@@ -23,7 +23,7 @@ class Journal:
     def __init__(self, root: str | Path, scope: dict):
         if os.name != "posix":
             raise EvaluationError("runtime.unsupported")
-        self.root = ensure_private_directory(root)
+        self.root = ensure_private_directory(root, journal_root=True)
         self.scope = parse_json(serialize_scope(scope))
         self.directory = ensure_private_directory(self.root/hashlib.sha256(serialize_scope(scope)).hexdigest())
         self._fd: int | None = None

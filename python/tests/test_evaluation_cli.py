@@ -32,6 +32,8 @@ def encoded(value):
 
 class CommandTests(unittest.TestCase):
     def setUp(self):
+        self.traffic = []
+        self.policy_receipts = {}
         self.temporary = tempfile.TemporaryDirectory(prefix="acclimate-cli-")
         self.root = Path(self.temporary.name).resolve()
         self.configuration = self.root / "configuration"
@@ -55,8 +57,11 @@ class CommandTests(unittest.TestCase):
                 self.end_headers()
                 self.wfile.write(body)
             def do_GET(self):
+                owner.traffic.append(("GET", self.path))
                 route = urlsplit(self.path).path
                 state = owner.state
+                if route.endswith("/policy-receipts"):
+                    return self.reply({"items": list(owner.policy_receipts.values())})
                 if route.endswith("/evaluation-capabilities"):
                     return self.reply({"schemaVersion": 1, "projectId": "project", "principalId": "evaluator", "checkedAt": NOW, "readUnpublished": True, "writeEvaluation": True, "retainedEvaluationOperations": True})
                 if route=="/v1/projects/project/bundles":
@@ -73,15 +78,22 @@ class CommandTests(unittest.TestCase):
                         return self.reply(version)
                 if route.endswith("/evaluation-requests/" + REQUEST) and state["request"]:
                     return self.reply(state["request"])
+                if route.endswith("/evaluation-requests/" + REQUEST + "/progress") and "progress" in state:
+                    return self.reply(state["progress"])
                 if route.endswith("/comparisons/" + COMPARISON) and state["comparison"]:
                     return self.reply(state["comparison"])
                 self.reply({"error": {"code": "not_found", "message": "fixture missing", "requestId": "fixture"}}, 404)
             def do_POST(self):
+                owner.traffic.append(("POST", self.path))
                 try:
                     route = urlsplit(self.path).path
                     state = owner.state
                     raw = self.rfile.read(int(self.headers["Content-Length"]))
                     body = json.loads(raw)
+                    if route.endswith("/policy-receipts"):
+                        receipt = {**body, "comparisonId": COMPARISON, "reportedBy": "evaluator", "receivedAt": NOW}
+                        owner.policy_receipts[body["policy"]["sha256"]] = receipt
+                        return self.reply(receipt)
                     key = self.headers["Idempotency-Key"]
                     owner.assertEqual(self.headers["X-Acclimate-Durable-Operation"], "true")
                     fingerprint = "sha256:" + hashlib.sha256(b"POST\0" + route.encode() + b"\0" + raw).hexdigest()
@@ -165,6 +177,50 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(error["error"]["code"], "config.schema")
         self.assertNotIn("PRIVATE_CANARY", json.dumps(error))
 
+    def test_named_compare_exposes_reuse_and_resolves_for_followups(self):
+        handle = ["--config", str(self.config), "--name", "first-run"]
+        compare = ["compare", *handle, "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
+        code, first, error = self.invoke(compare)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(first["runName"], "first-run")
+        self.assertEqual(first["invocation"], {"callbacksStarted": 2, "reusedEvidence": False})
+        _, again, _ = self.invoke(compare)
+        self.assertEqual(again["invocation"], {"callbacksStarted": 0, "reusedEvidence": True})
+        self.assertEqual(again["requestId"], first["requestId"])
+        self.assertEqual(self.invoke(["status", *handle])[1]["requestId"], first["requestId"])
+        self.assertEqual(self.invoke(["check", *handle, "--policy", str(self.policy)])[1]["verdict"], "pass")
+        destination = self.root / "named-export"
+        self.assertEqual(self.invoke(["export", *handle, "--out", str(destination)])[0], 0)
+        self.assertEqual(self.invoke(["verify-export", "--manifest", str(destination / "manifest.json")])[0], 0)
+        self.assertEqual(self.state["executions"], 2)
+
+    def test_fresh_attempt_requires_settled_predecessor_and_matching_target(self):
+        inputs = ["compare", "--config", str(self.config), "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
+        self.assertEqual(self.invoke([*inputs, "--name", "original"])[0], 0)
+        retry = [*inputs, "--retry-after", "original"]
+        for status in ("requested", "running", "interrupted"):
+            self.state["request"]["status"] = status
+            code, _, error = self.invoke(retry)
+            self.assertEqual(code, 3)
+            self.assertEqual(error["error"]["code"], "evidence.not_terminal")
+        self.state["request"]["status"] = "completed"
+        self.state["revision"] = "2"
+        self.assertEqual(self.invoke(retry)[2]["error"]["code"], "request.base_conflict")
+        self.payload_file.write_bytes(encoded(self.original))
+        self.assertEqual(self.invoke(retry)[2]["error"]["code"], "request.intent_mismatch")
+        self.assertEqual(self.state["drafts"], 1)
+        self.assertEqual(self.state["executions"], 2)
+
+    def test_first_policy_error_names_only_known_missing_fields(self):
+        value = {**self.quality, "metric": {"name": "PRIVATE_CANARY"}, "PRIVATE_CANARY": "x"}
+        del value["requiredCases"], value["id"]
+        self.policy.write_bytes(encoded(value))
+        _, _, error = self.invoke(["compare", "--config", str(self.config), "--handoff", str(self.handoff), "--policy", str(self.policy)])
+        self.assertEqual(error["error"]["code"], "policy.invalid")
+        self.assertEqual(sorted(error["error"]["missingFields"]), ["id", "metric.direction", "metric.unit", "requiredCases"])
+        self.assertNotIn("PRIVATE_CANARY", json.dumps(error))
+        self.assertFalse(self.traffic)
+
     def test_headless_full_workflow_and_policy_separation(self):
         self.assertEqual(self.invoke(self.request_args)[0], 0)
         check = ["check", "--read-config", str(self.reader), "--handoff", str(self.handoff), "--policy", str(self.policy)]
@@ -181,6 +237,102 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(value["provenance"], "online_scalar_binding")
         self.assertEqual(self.invoke(["run", "--config", str(self.config), "--handoff", str(self.handoff)])[0], 0)
         self.assertEqual(self.state["executions"], 2)
+
+    def test_compare_terminal_policy_and_machine_output_use_the_existing_result(self):
+        args = ["compare", "--config", str(self.config), "--handoff", str(self.handoff), "--policy", str(self.policy)]
+        def run(args, terminal):
+            output, errors = io.StringIO(), io.StringIO()
+            with patch.object(output, "isatty", return_value=terminal), redirect_stdout(output), redirect_stderr(errors):
+                code = evaluation_main(self.app, args)
+            return code, output.getvalue(), errors.getvalue()
+        with patch.object(type(self.app), "execution", new=property(lambda self: "live")):
+            code, _, usage = run(args, True)
+            self.assertEqual(code, 1)
+            self.assertIn("requires --live", usage)
+            self.assertIn("--bundle ID --channel CHANNEL", usage)
+            self.assertNotIn(str(self.config), usage)
+        code, _, usage = run(args + ["--name", "PRIVATE_CANARY"], True)
+        self.assertIn("--handoff cannot be combined", usage)
+        self.assertNotIn("PRIVATE_CANARY", usage)
+        self.assertEqual(self.traffic, [])
+        self.assertEqual(self.invoke(self.request_args)[0], 0)
+        self.policy.write_bytes(encoded({**self.quality, "minimumMeanImprovement": 2}))
+        code, text, _ = run(args, True)
+        self.assertEqual(code, 2)
+        self.assertIn(REQUEST, text)
+        self.assertRegex(text, r"Equal-case means\s+parent 0.0\s+candidate 1.0")
+        self.assertRegex(text, r"Pair coverage\s+1/1")
+        self.assertRegex(text, r'"case"\s+parent 0.0\s+candidate 1.0')
+        self.assertRegex(text, r"Policy\s+fail")
+        self.assertIn("policy.minimum_mean_improvement", text)
+        before = len(self.traffic)
+        piped = run(args, False)
+        reads = self.traffic[before:]
+        before = len(self.traffic)
+        explicit = run(args + ["--json"], True)
+        self.assertEqual(explicit, piped)
+        self.assertEqual(reads, self.traffic[before:])
+        before = len(self.traffic)
+        self.assertIn("Execution callbacks started this time: 2", text)
+        self.assertIn("Reused saved evidence", run(args, True)[1])
+        self.assertEqual(self.traffic[before:], reads)
+        self.assertTrue(all(method == "GET" for method, _ in reads))
+        self.assertEqual(self.state["executions"], 2)
+
+    def test_compare_terminal_reports_partial_grades(self):
+        self.assertEqual(self.invoke(self.request_args)[0], 0)
+        self.state["failGrade"] = True
+        output = io.StringIO()
+        with patch.object(output, "isatty", return_value=True), redirect_stdout(output):
+            code = evaluation_main(self.app, ["compare", "--config", str(self.config), "--handoff", str(self.handoff), "--policy", str(self.policy)])
+        self.assertEqual(code, 3)
+        self.assertIn("candidate · grade · grading_failed", output.getvalue())
+        self.assertRegex(output.getvalue(), r'0/1 \(partial\)')
+        self.assertRegex(output.getvalue(), r'"case" \[0\]\s+parent unknown\s+candidate unknown')
+        self.assertRegex(output.getvalue(), r'Policy\s+indeterminate')
+        self.assertIn("evidence.incomplete", output.getvalue())
+        code, result, _ = self.invoke(["compare", "--config", str(self.config),
+            "--handoff", str(self.handoff), "--policy", str(self.policy), "--json"])
+        self.assertEqual(code, 3)
+        self.assertEqual(result["scores"]["evidenceGaps"]["rows"],
+            [{"caseId":"case", "repetition":0, "side":side, "stage":"grade", "reason":"grading_failed"}
+             for side in ("parent", "candidate")])
+
+    def test_private_policy_result_and_recorded_release_receipt_are_distinct(self):
+        self.assertEqual(self.invoke(self.request_args)[0], 0)
+        args = ["compare", "--config", str(self.config), "--handoff", str(self.handoff), "--policy", str(self.policy)]
+        from acclimate.client import AcclimateClient, TransportError
+        with patch.object(AcclimateClient, "report_comparison_policy_receipt", side_effect=TransportError()):
+            code, result, _ = self.invoke(args)
+        self.assertEqual((code, result["policy"]["verdict"], result["policyReceipt"]["status"]),
+                         (1, "pass", "unconfirmed"))
+        self.assertEqual(len(self.policy_receipts), 0)
+        code, result, _ = self.invoke(["check", "--read-config", str(self.reader), "--handoff",
+                                      str(self.handoff), "--policy", str(self.policy)])
+        self.assertEqual((code, result["policyReceipt"]["status"]), (0, "read_only"))
+        self.assertEqual(len(self.policy_receipts), 0)
+        code, result, _ = self.invoke(args)
+        self.assertEqual((code, result["policyReceipt"]["status"], len(self.policy_receipts)), (0, "recorded", 1))
+        self.assertEqual(self.state["executions"], 2)
+
+    def test_status_projects_bound_optional_progress(self):
+        self.assertEqual(self.invoke(self.request_args)[0], 0)
+        args = ["status", "--read-config", str(self.reader), "--handoff", str(self.handoff)]
+        self.assertEqual(self.invoke(args)[1]["progress"]["reason"], "unavailable")
+        view = {"schemaVersion": 1, "requestId": REQUEST, "attemptId": None, "status": "requested",
+                "activity": "absent", "checkedAt": NOW, "observation": None}
+        self.state["progress"] = view
+        self.assertEqual(self.invoke(args)[1]["progress"]["reason"], "no_report")
+        attempt = "88888888-8888-4888-8888-888888888888"
+        self.state["request"].update(status="running", attemptId=attempt)
+        current = self.state["request"]["expectedCases"][0]
+        view.update(status="running", attemptId=attempt, activity="fresh",
+                    observation={"attemptId": attempt, "phase": "grading", "completed": 1, "total": 2,
+                                 "receivedAt": NOW, "case": current})
+        self.assertEqual(self.invoke(args)[1]["progress"], {"activity": "fresh", "phase": "grading",
+                         "completed": 1, "total": 2, "case": current, "receivedAt": NOW, "checkedAt": NOW})
+        view["observation"]["attemptId"] = PARENT
+        self.assertEqual(self.invoke(args)[1]["progress"]["reason"], "unavailable")
 
     def test_lost_creation_recovers_original_before_drift_and_changed_payload_rejected(self):
         self.state["loseRequests"] = 3

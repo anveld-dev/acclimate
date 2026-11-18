@@ -26,8 +26,10 @@ from urllib.request import Request, urlopen
 import venv
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'scripts' / 'productization'))
 from qualify import Harness
+from scripts.packaging.fixture_application import FIXTURE, commit_candidate, install_test_application
 
 
 class ResponseLossProxy:
@@ -251,9 +253,7 @@ def qualify(release, pg_bin):
         h.start()
         proxy = ResponseLossProxy(h)
         base = '/v1/projects/' + h.project
-        starter = next(item for item in manifest['starters'] if item['name'] == 'evaluation')
-        extracted = extract_starter(release, starter, h.dir / 'distributed-evaluation')
-        payload = json.loads((extracted / 'baseline.json').read_text())
+        payload = json.loads((FIXTURE / 'baseline.json').read_text())
         setup = h.call('POST', base + '/bundle-setups', {
             'name': 'Installed evaluator qualification', 'origin': 'example',
             'sourceLabel': 'Disposable model-free installed application', 'channel': 'stable',
@@ -268,28 +268,27 @@ def qualify(release, pg_bin):
             raise RuntimeError('Node >=22.22 is required')
         sdk = next(release / item['name'] for item in manifest['artifacts'] if item['name'].startswith('acclimate-sdk-') and item['name'].endswith('.tgz'))
         wheel = next(release / item['name'] for item in manifest['artifacts'] if item['name'].endswith('.whl'))
+        starter = next(item for item in manifest['starters'] if item['name'] == 'evaluation')
+        default_policy = extract_starter(release, starter, h.dir / 'evaluation-starter') / 'quality-policy.example.json'
         for language in ('javascript', 'python'):
             proxy.reset()
             app = h.dir / language / 'app'
-            shutil.copytree(extracted, app,
-                            ignore=shutil.ignore_patterns('node_modules', '__pycache__', '*.pyc', 'dist'))
+            app.mkdir(parents=True, mode=0o700)
             if language == 'javascript':
+                private_json(app / 'package.json', {'private': True, 'type': 'module'})
                 subprocess.run(['npm', 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', str(sdk)],
                                cwd=app, env=clean_env, check=True, stdout=subprocess.DEVNULL)
-                command = [node, str(app / 'acclimate-eval.mjs')]
-                trial_command = [node, str(app / 'trial.mjs')]
+                command = [str(app / 'node_modules/.bin/acclimate-eval')]
             else:
                 environment = h.dir / language / 'venv'
                 venv.EnvBuilder(with_pip=True).create(environment)
                 python = environment / 'bin' / 'python'
                 subprocess.run([str(python), '-m', 'pip', 'install', '--no-index', '--no-deps', str(wheel)],
                                cwd=app, env=clean_env, check=True, stdout=subprocess.DEVNULL)
-                command = [str(python), str(app / 'acclimate_eval.py')]
-                trial_command = [str(python), str(app / 'trial.py')]
-            trial = run(trial_command, cwd=app, env=clean_env)
-            assert trial['simulated'] and not trial['serviceMutation'] and not trial['releaseEvidence']
-            assert trial['parentMean'] == 0.5 and trial['candidateMean'] == 1
-            descriptor = run(command + ['describe'], cwd=app, env=clean_env)
+                command = [str(python), '-m', 'acclimate']
+            app_env = dict(clean_env, ACCLIMATE_EVALUATOR_CASES=install_test_application(app, language))
+            descriptor = run(command + ['describe'], cwd=app, env=app_env)
+            assert descriptor['runtime']['execution'] == 'live'
             assert len(descriptor['expectedCases']) == 2
             private = h.dir / language / 'private'
             private.mkdir(mode=0o700)
@@ -298,17 +297,17 @@ def qualify(release, pg_bin):
                                  'evaluatorPrincipalId': 'evaluator', 'evaluatorToken': h.tokens['evaluator'],
                                  'journalRoot': str(private / 'journals')})
             private_json(reader, {'schemaVersion': 1, 'serviceUrl': proxy.base, 'projectId': h.project, 'readToken': h.tokens['viewer']})
-            run(command + ['doctor', '--config', str(config), '--bundle', bundle, '--policy', str(app / 'quality-policy.json')], cwd=app, env=clean_env)
+            run(command + ['doctor', '--config', str(config), '--bundle', bundle, '--policy', str(app / 'quality-policy.json')], cwd=app, env=app_env)
             creation = ['request', '--config', str(config), '--bundle', bundle, '--channel', 'stable',
                         '--payload', str(app / 'candidate.json'), '--intent', str(intent), '--out', str(handoff)]
-            run(command + creation, cwd=app, env=clean_env)
+            run(command + creation, cwd=app, env=app_env)
             first_handoff = handoff.read_bytes()
             frozen = json.loads(first_handoff)
             h.sql("UPDATE idempotency SET expires_at=now()-interval '25 hours'")
-            run(command + creation, cwd=app, env=clean_env)
+            run(command + creation, cwd=app, env=app_env)
             assert handoff.read_bytes() == first_handoff
             target = ['--config', str(config), '--handoff', str(handoff)]
-            run(command + ['run', *target], cwd=app, env=clean_env)
+            run(command + ['run', '--live', *target], cwd=app, env=app_env)
             evaluation_route = base + '/bundles/' + bundle + '/evaluation-requests/' + frozen['requestId']
             first_request = h.call('GET', evaluation_route, actor='evaluator')
             assert first_request['status'] == 'completed' and first_request['comparisonId']
@@ -323,34 +322,51 @@ def qualify(release, pg_bin):
             index = json.loads(index_files[0].read_text())
             assert len([entry for entry in index['entries'] if entry['role'] == 'output']) == 4
             assert len([entry for entry in index['entries'] if entry['role'] == 'grader-explanation']) == 4
-            run(command + ['check', *target, '--policy', str(app / 'quality-policy.json')], cwd=app, env=clean_env)
+            run(command + ['check', *target, '--policy', str(app / 'quality-policy.json')], cwd=app, env=app_env)
+            executed = (app / 'executions.log').read_bytes()
+            assert len(executed.splitlines()) == 4
+            summary = run(command + ['compare', *target, '--live', '--policy', str(app / 'quality-policy.json')],
+                          cwd=app, env=app_env)
+            assert summary['requestId'] == frozen['requestId'] and summary['comparisonId'] == first_request['comparisonId']
+            assert summary['scores']['summary']['parentMean'] == 0.5
+            assert summary['scores']['summary']['candidateMean'] == 1
+            assert {case['caseId']: (case['parentMean'], case['candidateMean']) for case in summary['scores']['cases']} == {
+                'clean': (1, 1), 'lost-response': (0, 1)}
+            assert summary['policy']['verdict'] == 'pass' and summary['policyReceipt']['status'] == 'recorded'
+            receipt_path = f"{base}/bundles/{bundle}/comparisons/{first_request['comparisonId']}/policy-receipts"
+            receipts = h.call('GET', receipt_path, actor='viewer')['items']
+            assert len(receipts) == 1
+            assert receipts[0]['requestId'] == frozen['requestId']
+            assert receipts[0]['policy'] == summary['policy']['policy'] and receipts[0]['verdict'] == 'pass'
+            assert (app / 'executions.log').read_bytes() == executed
+
             failing = json.loads((app / 'quality-policy.json').read_text())
             failing['minimumMeanImprovement'] = 2
             private_json(private / 'failing-policy.json', failing)
-            run(command + ['check', *target, '--policy', str(private / 'failing-policy.json')], cwd=app, expected=2, env=clean_env)
+            run(command + ['check', *target, '--policy', str(private / 'failing-policy.json')], cwd=app, expected=2, env=app_env)
             incompatible = dict(failing, requiredCases=['undeclared-critical-task'])
             private_json(private / 'incompatible-policy.json', incompatible)
-            run(command + ['check', *target, '--policy', str(private / 'incompatible-policy.json')], cwd=app, expected=1, env=clean_env)
+            run(command + ['check', *target, '--policy', str(private / 'incompatible-policy.json')], cwd=app, expected=1, env=app_env)
             h.sql("UPDATE idempotency SET expires_at=now()-interval '25 hours'")
-            run(command + ['run', *target], cwd=app, env=clean_env)
+            run(command + ['run', '--live', *target], cwd=app, env=app_env)
             recovered = h.call('GET', evaluation_route, actor='evaluator')
             assert recovered['comparisonId'] == first_request['comparisonId']
             scalar_export, selected_export = private / 'scalar-export', private / 'selected-export'
-            run(command + ['export', *target, '--out', str(scalar_export)], cwd=app, env=clean_env)
-            run(command + ['verify-export', '--manifest', str(scalar_export / 'manifest.json')], cwd=app, env=clean_env)
-            run(command + ['export', *target, '--selection', str(app / 'share-selection.json'), '--out', str(selected_export)], cwd=app, env=clean_env)
-            run(command + ['verify-export', '--manifest', str(selected_export / 'manifest.json'), '--read-config', str(reader), '--handoff', str(handoff)], cwd=app, env=clean_env)
+            run(command + ['export', *target, '--out', str(scalar_export)], cwd=app, env=app_env)
+            run(command + ['verify-export', '--manifest', str(scalar_export / 'manifest.json')], cwd=app, env=app_env)
+            run(command + ['export', *target, '--selection', str(app / 'share-selection.json'), '--out', str(selected_export)], cwd=app, env=app_env)
+            run(command + ['verify-export', '--manifest', str(selected_export / 'manifest.json'), '--read-config', str(reader), '--handoff', str(handoff)], cwd=app, env=app_env)
             for export in (scalar_export, selected_export):
                 for file in export.rglob('*'):
                     if file.is_file():
                         data = file.read_bytes()
                         for secret in (h.tokens['evaluator'], h.tokens['viewer'], str(config), str(private / 'journals')):
                             assert secret.encode() not in data
-            consumers.append({'command': command, 'cwd': app, 'reader': reader, 'config': config,
+            consumers.append({'command': command, 'cwd': app, 'env': app_env, 'reader': reader, 'config': config,
                               'handoff': handoff, 'export': selected_export,
                               'evaluationRoute': evaluation_route,
                               'comparisonId': first_request['comparisonId']})
-            checks.append({'language': language, 'installedImports': 'passed', 'offlineTrial': 'passed',
+            checks.append({'language': language, 'installedImports': 'passed', 'installedApplicationDescriptor': 'passed',
                            'headlessCandidateAndRequest': 'passed', 'creationReplayBeyond24h': 'passed',
                            'lostCommittedResponseBeyond24h': 'passed: draft/request/start/submit/finish',
                            'pairedRun': 'passed', 'policyPassFailInvalid': 'passed', 'terminalReplay': 'passed',
@@ -359,7 +375,7 @@ def qualify(release, pg_bin):
         for verifier, source in ((consumers[0], consumers[1]), (consumers[1], consumers[0])):
             verified = run(verifier['command'] + ['verify-export', '--manifest', str(source['export'] / 'manifest.json'),
                                                  '--read-config', str(verifier['reader']), '--handoff', str(source['handoff'])],
-                           cwd=verifier['cwd'], env=clean_env)
+                           cwd=verifier['cwd'], env=verifier['env'])
             assert verified['provenance'] == 'online_scalar_binding'
             assert verified['executionAttested'] is False
         # Rehearse the documented static-grant overlap rotation on this private
@@ -381,16 +397,16 @@ def qualify(release, pg_bin):
         h.restart()
         for consumer in consumers:
             target = ['--config', str(consumer['config']), '--handoff', str(consumer['handoff'])]
-            run(consumer['command'] + ['status', *target], cwd=consumer['cwd'], env=clean_env)
-            run(consumer['command'] + ['run', *target], cwd=consumer['cwd'], env=clean_env)
+            run(consumer['command'] + ['status', *target], cwd=consumer['cwd'], env=consumer['env'])
+            run(consumer['command'] + ['run', '--live', *target], cwd=consumer['cwd'], env=consumer['env'])
             original_config = json.loads(consumer['config'].read_text())
             rotated_config = dict(original_config, evaluatorToken=replacement_token)
             assert {key: value for key, value in original_config.items() if key != 'evaluatorToken'} == {
                 key: value for key, value in rotated_config.items() if key != 'evaluatorToken'}
             replace_private_json(consumer['config'], rotated_config)
-            run(consumer['command'] + ['doctor', *target], cwd=consumer['cwd'], env=clean_env)
-            run(consumer['command'] + ['status', *target], cwd=consumer['cwd'], env=clean_env)
-            run(consumer['command'] + ['run', *target], cwd=consumer['cwd'], env=clean_env)
+            run(consumer['command'] + ['doctor', *target], cwd=consumer['cwd'], env=consumer['env'])
+            run(consumer['command'] + ['status', *target], cwd=consumer['cwd'], env=consumer['env'])
+            run(consumer['command'] + ['run', '--live', *target], cwd=consumer['cwd'], env=consumer['env'])
             assert h.call('GET', consumer['evaluationRoute'], actor='replacement')['comparisonId'] == consumer['comparisonId']
         revoked = [grant for grant in overlapping if grant['token'] != h.tokens['evaluator']]
         validate_grants(revoked)
@@ -399,32 +415,95 @@ def qualify(release, pg_bin):
         for consumer in consumers:
             h.call('GET', consumer['evaluationRoute'], actor='evaluator', status=401)
             target = ['--config', str(consumer['config']), '--handoff', str(consumer['handoff'])]
-            run(consumer['command'] + ['run', *target], cwd=consumer['cwd'], env=clean_env)
+            run(consumer['command'] + ['run', '--live', *target], cwd=consumer['cwd'], env=consumer['env'])
             assert h.call('GET', consumer['evaluationRoute'], actor='replacement')['comparisonId'] == consumer['comparisonId']
             journal = json.loads(consumer['config'].read_text())['journalRoot']
             index = json.loads(next(Path(journal).glob('*/artifact-index.json')).read_text())
             assert len([entry for entry in index['entries'] if entry['role'] == 'output']) == 4
+        for consumer in consumers:
+            app = consumer['cwd']
+            comparison = [*consumer['command'], 'compare', '--config', str(consumer['config']),
+                          '--bundle', bundle, '--channel', 'stable', '--payload', str(app / 'candidate.json'),
+                          '--name', 'qualification-comparison', '--live', '--policy', str(app / 'quality-policy.json')]
+            first = run(comparison, cwd=app, env=consumer['env'])
+            assert first['status'] == 'completed' and first['policy']['verdict'] == 'pass'
+            executed = (app / 'executions.log').read_bytes()
+            assert len(executed.splitlines()) == 8
+            replay = run(comparison, cwd=app, env=consumer['env'])
+            assert replay['requestId'] == first['requestId'] and replay['comparisonId'] == first['comparisonId']
+            assert replay['scores'] == first['scores']
+            assert (app / 'executions.log').read_bytes() == executed
+            assert first['runName'] == 'qualification-comparison'
+            assert first['invocation'] == {'callbacksStarted': 4, 'reusedEvidence': False}
+            assert replay['invocation'] == {'callbacksStarted': 0, 'reusedEvidence': True}
+            handle = ['--config', str(consumer['config']), '--name', first['runName']]
+            def followup(command, *args):
+                return run([*consumer['command'], command, *args], cwd=app, env=consumer['env'])
+            assert followup('status', *handle)['requestId'] == first['requestId']
+            gate = followup('check', *handle, '--policy', str(default_policy))
+            assert gate['verdict'] == 'pass' and gate['policyReceipt']['status'] == 'recorded'
+            journal = Path(json.loads(consumer['config'].read_bytes())['journalRoot'])
+            reviewed = followup('check', '--read-config', str(consumer['reader']), '--handoff',
+                                str(journal / 'comparisons' / first['runName'] / 'request.json'),
+                                '--policy', str(default_policy))
+            assert reviewed['verdict'] == 'pass' and reviewed['policyReceipt']['status'] == 'read_only'
+            destination = app / 'named-review'
+            followup('export', *handle, '--out', str(destination))
+            followup('verify-export', '--manifest', str(destination / 'manifest.json'))
+            assert (app / 'executions.log').read_bytes() == executed
+            source = app / ('application.py' if consumer['command'][-1] == 'acclimate' else 'application.mjs')
+            old_source = source.read_bytes()
+            try:
+                # A corrected application is eligible only through explicit creation of a fresh attempt.
+                source.write_bytes(old_source + b'\n')
+                run(comparison, cwd=app, env=consumer['env'], expected=1)
+                successor = comparison.copy()
+                successor[successor.index('--name')] = '--retry-after'
+                fresh = run(successor, cwd=app, env=consumer['env'])
+                assert fresh['requestId'] != first['requestId'] and fresh['runName'] == 'after-' + first['requestId']
+                assert fresh['invocation'] == {'callbacksStarted': 4, 'reusedEvidence': False}
+                repeated = run(successor, cwd=app, env=consumer['env'])
+                assert repeated['requestId'] == fresh['requestId'] and repeated['comparisonId'] == fresh['comparisonId']
+                assert repeated['invocation'] == {'callbacksStarted': 0, 'reusedEvidence': True}
+            finally:
+                source.write_bytes(old_source)
+            assert len((app / 'executions.log').read_bytes().splitlines()) == 12
         # Exercise the actual provider-neutral CI archive, not a reconstructed
         # sequence alone, with both installed runtimes and rotated credentials.
         ci_metadata = next(item for item in manifest['starters'] if item['name'] == 'ci')
         ci = extract_starter(release, ci_metadata, h.dir / 'distributed-ci')
-        subprocess.run(['npm', 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', str(sdk)],
-                       cwd=ci / 'evaluation', env=clean_env, check=True, stdout=subprocess.DEVNULL)
         ci_intents = h.dir / 'ci-intents'
         ci_intents.mkdir(mode=0o700)
         for language, consumer in zip(('javascript', 'python'), consumers):
             ci_output = h.dir / 'ci-results' / language
-            ci_env = dict(clean_env, ACCLIMATE_CI_PYTHON=consumers[1]['command'][0])
-            executed = subprocess.run(['sh', str(ci / 'ci.sh'), '--language', language,
-                                       '--config', str(consumer['config']), '--bundle', bundle,
-                                       '--intent', str(ci_intents / (language + '.json')),
+            app = consumer['cwd']
+            repo = h.dir / ('ci-checkout-' + language)
+            commit = commit_candidate(repo, app / 'candidate.json')
+            ci_env = dict(consumer['env'], ACCLIMATE_CI_PYTHON=consumers[1]['command'][0])
+            retained_request = (['--language', language, '--intent', str(ci_intents / 'javascript.json')]
+                                if language == 'javascript' else [])
+            executed = subprocess.run(['sh', str(ci / 'ci.sh'), *retained_request,
+                                       '--app', str(app), '--config', str(consumer['config']),
+                                       '--bundle', bundle, '--channel', 'stable', '--repo', str(repo),
+                                       '--commit', commit, '--payload', 'candidate.json', '--live',
+                                       '--policy', str(app / 'quality-policy.json'),
+                                       '--selection', str(app / 'share-selection.json'),
                                        '--output-dir', str(ci_output)],
                                       cwd=ci, env=ci_env, capture_output=True, text=True)
-            assert executed.returncode == 0, 'Distributed provider-neutral CI script did not complete; private output suppressed'
+            summary = json.loads(executed.stdout)
+            assert executed.returncode == 0, ('CI qualification failed', summary.get('result'), summary.get('phaseExitCodes'))
+            assert summary['commit'] == commit and summary['qualityVerdict'] == 'pass'
+            assert all(status == 0 for status in summary['phaseExitCodes'].values())
+            handoff = ci_output / summary['handoff']
+            assert json.loads(handoff.read_bytes())['requestId'] == summary['requestId']
+            if language == 'python':
+                assert handoff.is_relative_to(ci_output / 'requests')
+                assert (handoff.parent / 'request-intent.json').is_file()
+
             committed = list(ci_output.glob('review-*/manifest.json'))
             assert len(committed) == 1
             run(consumer['command'] + ['verify-export', '--manifest', str(committed[0])],
-                cwd=consumer['cwd'], env=clean_env)
+                cwd=consumer['cwd'], env=consumer['env'])
         downloads = h.dir / 'review-downloads'
         downloads.mkdir(mode=0o700)
         for index, consumer in enumerate(consumers):
@@ -441,7 +520,7 @@ def qualify(release, pg_bin):
         for verifier, source in ((consumers[0], consumers[1]), (consumers[1], consumers[0])):
             run(verifier['command'] + ['verify-export', '--manifest', str(source['download'] / 'manifest.json'),
                                        '--read-config', str(verifier['reader']), '--handoff', str(source['handoff'])],
-                cwd=verifier['cwd'], env=clean_env)
+                cwd=verifier['cwd'], env=verifier['env'])
         assert all(not journal.exists() for journal in removed_roots)
         if hashlib.sha256(service_binary.read_bytes()).hexdigest() != service_digest:
             raise ValueError('Service binary changed during qualification')
@@ -451,6 +530,7 @@ def qualify(release, pg_bin):
                 'sourceFingerprintScope': 'Verified release artifact inventory; does not attest the separately built service binary source',
                 'serviceBinary': {'sha256': service_digest, 'sourceAttestation': 'not claimed'},
                 'crossLanguageReviewVerification': 'passed in both directions',
+                'compare': 'JS and Python verified named status, policy receipt and export, callback counts on replay, and a single fresh successor after a changed build',
                 'operatorGrantValidation': 'passed: stdin validator, no listener/runtime config',
                 'samePrincipalOverlapRotation': 'passed: old+new overlap, original token then401, new token retained original comparison',
                 'fixedRootWorkerRecovery': 'passed: fresh CLI/service processes and same local physical journal roots; containers not tested',

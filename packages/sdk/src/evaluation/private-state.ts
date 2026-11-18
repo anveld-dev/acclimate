@@ -2,7 +2,7 @@ import { constants, type Stats } from 'node:fs';
 import { lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
-import { EvaluationError } from './errors.js';
+import { EvaluationError, type PathIssue } from './errors.js';
 
 function safe(info: Stats, directory: boolean): boolean {
   return (
@@ -13,8 +13,27 @@ function safe(info: Stats, directory: boolean): boolean {
   );
 }
 
-export async function privateDirectory(path: string): Promise<void> {
-  await privateDirectoryWithSync(path, syncDirectory);
+/** Check existing components, including parents of a yet-to-be-created journal. */
+export async function assertUnaliasedPath(path: string, issue: 'configAlias' | 'journalAlias') {
+  let current = path;
+  while (true) {
+    try {
+      if ((await lstat(current)).isSymbolicLink() || (await realpath(current)) !== resolve(current))
+        throw new EvaluationError('config.permissions', { pathIssue: issue });
+      return;
+    } catch (error) {
+      if (error instanceof EvaluationError) throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new EvaluationError('config.permissions');
+      const parent = dirname(current);
+      if (parent === current) return;
+      current = parent;
+    }
+  }
+}
+
+export async function privateDirectory(path: string, journalRoot = false): Promise<void> {
+  if (journalRoot) await assertUnaliasedPath(path, 'journalAlias');
+  await privateDirectoryWithSync(path, syncDirectory, journalRoot ? 'journalMode' : undefined);
 }
 
 async function syncDirectory(path: string): Promise<void> {
@@ -31,6 +50,7 @@ async function syncDirectory(path: string): Promise<void> {
 export async function privateDirectoryWithSync(
   path: string,
   sync: (directory: string) => Promise<void>,
+  modeIssue?: PathIssue,
 ): Promise<void> {
   try {
     const destination = resolve(path),
@@ -57,14 +77,17 @@ export async function privateDirectoryWithSync(
       if (!safe(await lstat(directory), true) || (await realpath(directory)) !== directory)
         throw new Error();
     }
-    if (!safe(await lstat(destination), true) || (await realpath(destination)) !== destination)
-      throw new Error();
+    const destinationStat = await lstat(destination);
+    if ((await realpath(destination)) !== destination) throw new Error();
+    if (!safe(destinationStat, true))
+      throw new EvaluationError('config.permissions', { pathIssue: destinationStat.isDirectory() ? modeIssue : undefined });
     // With all links present, deepest-first syncing covers each new directory's
     // metadata and child entries; the existing immediate ancestor persists the
     // topmost new link. Existing unrelated ancestors are not touched.
     for (const directory of missing) await sync(directory);
     if (missing.length) await sync(ancestor);
-  } catch {
+  } catch (error) {
+    if (error instanceof EvaluationError) throw error;
     throw new EvaluationError('config.permissions');
   }
 }

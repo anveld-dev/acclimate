@@ -16,24 +16,32 @@ async function fixture() {
       await writeFile(path, file === 'package.json' ? '{}' : 'Public fixture\n');
     }
   }
-  await writeFile(join(root, 'examples/evaluation-starter/agent.mjs'), 'export const fixture = true;\n');
   await writeFile(join(root, 'examples/evaluation-starter/package.json'), JSON.stringify({ private: true, version: '0.0.0', dependencies: { '@acclimate/sdk': '0.0.0' } }));
   const metadata = { version: '1.2.3', starters: ['evaluation', 'ci', 'native-repository'].map(name => ({ name, file: `acclimate-${name}-starter-1.2.3.tgz` })) };
   return { root, metadata, output: join(root, 'release') };
 }
 
-test('release archives contain installed-app source and nested CI app, excluding caches', async () => {
+test('release archives contain installed-app source and independent CI runner, excluding caches', async () => {
   const { root, metadata, output } = await fixture();
   try {
     await mkdir(join(root, 'examples/evaluation-starter/node_modules'), { recursive: true });
     await writeFile(join(root, 'examples/evaluation-starter/node_modules/private-cache.txt'), 'not distributable');
+    await mkdir(join(root, 'examples/native-repository/test/fixture'), { recursive: true });
+    await writeFile(join(root, 'examples/native-repository/test/fixture/input.txt'), 'test repository');
+    await writeFile(join(root, 'examples/native-repository/QUALIFICATION.md'), 'internal evidence');
     const artifacts = await archiveStarters(root, output, metadata);
     assert.equal(artifacts.length, 3);
-    const archive = join(output, metadata.starters[1].file);
+    const archive = join(output, metadata.starters[0].file);
     const listing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' });
-    assert.ok(listing.includes('ci-starter/evaluation/agent.mjs'));
+    assert.ok(listing.includes('evaluation-starter/acclimate-eval.mjs'));
+    const ci = execFileSync('tar', ['-tzf', join(output, metadata.starters[1].file)], { encoding: 'utf8' });
+    assert.ok(ci.includes('ci-starter/ci.py'));
+    assert.ok(!ci.includes('evaluation/'));
+    const native = execFileSync('tar', ['-tzf', join(output, metadata.starters[2].file)], { encoding: 'utf8' });
+    assert.ok(!native.includes('/test/'));
+    assert.ok(!native.includes('QUALIFICATION.md'));
     assert.equal(listing.includes('node_modules'), false);
-    const manifest = JSON.parse(execFileSync('tar', ['-xOzf', archive, 'ci-starter/evaluation/package.json'], { encoding: 'utf8' }));
+    const manifest = JSON.parse(execFileSync('tar', ['-xOzf', archive, 'evaluation-starter/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.version, '1.2.3');
     assert.equal(manifest.dependencies['@acclimate/sdk'], '1.2.3');
     assert.equal(JSON.parse(await readFile(join(root, 'examples/evaluation-starter/package.json'), 'utf8')).version, '0.0.0');
@@ -52,7 +60,7 @@ test('starter bytes are reproducible across source timestamps and output locatio
   const { root, metadata, output } = await fixture();
   try {
     await archiveStarters(root, output, metadata);
-    await utimes(join(root, 'examples/evaluation-starter/agent.mjs'), 123456789, 123456789);
+    await utimes(join(root, 'examples/evaluation-starter/acclimate-eval.mjs'), 123456789, 123456789);
     const other = join(root, 'other-release');
     await archiveStarters(root, other, metadata);
     for (const starter of metadata.starters)

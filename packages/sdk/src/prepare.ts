@@ -1,7 +1,12 @@
-import { lstat, mkdir, open, realpath, rm, rmdir, chmod, readdir } from 'node:fs/promises';
+/// <reference lib="esnext.disposable" preserve="true" />
+import { lstat, mkdir, mkdtemp, open, realpath, rm, rmdir, chmod, readdir } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import type { VerifiedBundle, FileKind } from './types.js';
-import { validatePayload, DeliveryError } from './cache.js';
+import type { VerifiedBundle, FileKind, DeliveryReceiptRequest } from './types.js';
+import { validatePayload, DeliveryError, resolveAndCache } from './cache.js';
+import type { Selection, CachePolicy } from './cache.js';
+import type { AcclimateClient } from './client.js';
+import type { DeliveryObserver } from './reporting.js';
 
 export interface PreparedFile {
   path: string;
@@ -14,6 +19,125 @@ export interface PreparedFiles {
 }
 export interface PrepareOptions {
   collision?: 'error';
+}
+
+export type PrepareDeliveryOptions = Selection &
+  Omit<CachePolicy, 'cacheDir' | 'reporter'> & {
+    cacheDir?: string;
+    destination?: string;
+    reporter?: DeliveryObserver & {
+      reportPrepared?(bundle: VerifiedBundle): unknown;
+      reportStarted?(bundle: VerifiedBundle): unknown;
+      bindStartedReceipt?(bundle: VerifiedBundle): () => Readonly<DeliveryReceiptRequest> | null;
+      reportStartedReceipt?(bundle: VerifiedBundle): Readonly<DeliveryReceiptRequest> | null;
+    };
+  };
+export interface PreparedDelivery extends PreparedFiles {
+  directory: string;
+  bundle: VerifiedBundle;
+  version: VerifiedBundle['version'];
+  instructions: string;
+  skillFiles: PreparedFile[];
+  /** Queue this job's start once. Retain its receipt with the job for field auditing. */
+  reportStarted(): Readonly<DeliveryReceiptRequest> | null;
+  [Symbol.asyncDispose](): Promise<void>;
+}
+
+export async function prepareDelivery(
+  client: AcclimateClient,
+  options: PrepareDeliveryOptions,
+): Promise<PreparedDelivery> {
+  const {
+    projectId,
+    bundleId,
+    destination,
+    cacheDir,
+    reporter,
+    offline,
+    maxCacheBytes,
+    maxResolutionAgeMs,
+  } = options;
+  const hasChannel = 'channel' in options;
+  if (hasChannel === 'versionId' in options)
+    throw new TypeError('Select exactly one channel or versionId');
+  const selection = hasChannel
+    ? { projectId, bundleId, channel: options.channel }
+    : { projectId, bundleId, versionId: options.versionId };
+  const bundle = await resolveAndCache(client, selection, {
+    cacheDir: cacheDir ?? join(await realpath(homedir()), '.cache', 'acclimate', 'typescript'),
+    reporter,
+    offline,
+    maxCacheBytes,
+    maxResolutionAgeMs,
+  });
+  const directory =
+    destination === undefined
+      ? await mkdtemp(join(await realpath(tmpdir()), 'acclimate-job-'))
+      : resolve(destination);
+  async function removeOwnedDirectory() {
+    if (destination !== undefined) return;
+    try {
+      await rmdir(directory);
+    } catch (error: any) {
+      if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error;
+    }
+  }
+  let staged: PreparedFiles;
+  try {
+    staged = await prepareFiles(bundle, directory);
+  } catch (error) {
+    await removeOwnedDirectory();
+    throw error;
+  }
+  function observed(stage: 'reportPrepared' | 'reportStarted') {
+    try {
+      Promise.resolve(reporter?.[stage]?.(bundle)).catch(() => {});
+    } catch {}
+  }
+  observed('reportPrepared');
+  let started = false;
+  let queueBoundStart: (() => Readonly<DeliveryReceiptRequest> | null) | undefined;
+  let startedReceipt: Readonly<DeliveryReceiptRequest> | null = null;
+  let cleaned = false;
+  async function cleanup() {
+    if (cleaned) return;
+    await staged.cleanup();
+    await removeOwnedDirectory();
+    cleaned = true;
+  }
+  return {
+    directory,
+    bundle,
+    version: bundle.version,
+    files: staged.files,
+    instructions: bundle.payload.files
+      .filter((file) => file.kind === 'instruction')
+      .map((file) => file.text)
+      .join('\n\n'),
+    skillFiles: staged.files.filter((file) => file.kind === 'skill'),
+    reportStarted() {
+      if (!started) {
+        started = true;
+        try {
+          queueBoundStart ??= reporter?.bindStartedReceipt?.(bundle);
+          if (queueBoundStart) {
+            startedReceipt = queueBoundStart();
+            // An explicit queue refusal can be retried. A thrown callback may have sent the event.
+            started = startedReceipt !== null;
+          } else if (reporter?.reportStartedReceipt) {
+            startedReceipt = reporter.reportStartedReceipt(bundle);
+          } else {
+            observed('reportStarted');
+          }
+        } catch {
+          /* Optional reporting must not interrupt the job or duplicate an uncertain start. */
+        }
+      }
+      return startedReceipt;
+    },
+    cleanup,
+    [Symbol.asyncDispose]: cleanup,
+  };
 }
 
 async function ensureSafeRoot(input: string): Promise<string> {

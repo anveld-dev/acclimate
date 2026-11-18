@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { AcclimateClient, ApiError } from '../client.js';
 import { resolveAndCache } from '../cache.js';
 import { TaskExecutionError } from '../compare.js';
@@ -26,6 +25,8 @@ import {
 } from '../internal/evaluation-transport.js';
 import {
   assertJson,
+  assertEvaluationOutput,
+  OutputValidationError,
   captureDefinition,
   deepFreeze,
   MAX_ARTIFACT,
@@ -63,6 +64,42 @@ const frozen = (request: Evaluation): AttemptJournal['request'] =>
     runtime: request.runtime,
     expectedCases: request.expectedCases,
   });
+
+async function saveCallbackError(directory: string, phase: 'execute' | 'grade', error: unknown) {
+  let exceptionType = 'ThrownValue';
+  const frames: Array<{ file: string; line: number; function: string }> = [];
+  // Custom errors may override stack/name accessors. Diagnostics are optional and
+  // only retain structured local frame locations, never the message or source.
+  try {
+    if (error instanceof Error) {
+      const name = error.constructor.name;
+      exceptionType = /^[A-Za-z_$][\w$]{0,127}$/.test(name) ? name : 'Error';
+      const stack = error.stack;
+      const heading = String(error);
+      if (typeof stack === 'string' && stack.startsWith(heading + '\n')) {
+        for (const frame of stack.slice(heading.length + 1, heading.length + 16385).split('\n')) {
+          const match =
+            /^\s*at (?:async )?(?:(.+?) \()?((?:file:\/\/\/|\/|[A-Za-z]:[\\/]).+?):(\d+):\d+\)?$/.exec(
+              frame,
+            );
+          if (match)
+            frames.push({
+              file: match[2].slice(0, 1024),
+              line: Number(match[3]),
+              function: (match[1] ?? '<anonymous>').slice(0, 128),
+            });
+          if (frames.length === 8) break;
+        }
+      }
+    }
+  } catch {
+    /* Still retain the stage when application metadata is unreadable. */
+  }
+  await atomicPrivateWrite(
+    path.join(directory, 'callback-error.json'),
+    JSON.stringify({ phase, exceptionType, frames }) + '\n',
+  );
+}
 class ObservedInterruption extends Error {
   readonly request: Evaluation;
   constructor(request: Evaluation) {
@@ -295,7 +332,7 @@ export async function preflightEvaluation<I, E, O>(
     pass('runtime');
     pass('privateConfig');
     currentCheck = 'journalStorage';
-    await privateDirectory(config.journalRoot);
+    await privateDirectory(config.journalRoot, true);
     probe = await mkdtemp(path.join(config.journalRoot, '.preflight-'));
     pass('journalStorage');
     currentCheck = 'lock';
@@ -347,6 +384,7 @@ export async function preflightEvaluation<I, E, O>(
       check: currentCheck,
       status: diagnostic.code === 'capabilities.unsupported' ? 'unverified' : 'failed',
       code: diagnostic.code,
+      ...(diagnostic.pathIssue && { pathIssue: diagnostic.pathIssue, field: diagnostic.field, hint: diagnostic.hint }),
     });
   } finally {
     if (probe) await rm(probe, { recursive: true, force: true });
@@ -414,6 +452,7 @@ export async function runCapturedEvaluation(options: {
     certainty: ExecutionState = 'not_started';
   const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), journal.signal]);
   let cancelled = false;
+  let callbacksStarted = 0;
   try {
     // Recovery diagnostics must reflect durable work even if the first
     // authoritative read fails before we can reconcile the remote lifecycle.
@@ -447,9 +486,11 @@ export async function runCapturedEvaluation(options: {
         evaluation: request,
         comparison: null,
         executionState: 'interrupted',
+        callbacksStarted,
+        reusedEvidence: false,
       };
     if (['completed', 'failed'].includes(request.status)) {
-      const result = await terminal(api, scope, request, state);
+      const result = await terminal(api, scope, request, callbacksStarted, true, state);
       if (state?.report) {
         state.comparisonId = request.comparisonId!;
         await journal.save(state);
@@ -505,6 +546,7 @@ export async function runCapturedEvaluation(options: {
       return latest;
     };
     request = await check();
+    const reusedEvidence = !!state.report;
     if (!state.report) {
       signal.throwIfAborted();
       phase = 'verify';
@@ -627,8 +669,17 @@ export async function runCapturedEvaluation(options: {
               pair[side] = unavailable();
               continue;
             }
+            const recordOutputError = async (error: OutputValidationError) => {
+              journal.assertOwned();
+              // Keep field names inside the application's private job.
+              await atomicPrivateWrite(
+                path.join(privateJobDirectory, 'output-validation.json'),
+                JSON.stringify({ field: error.field, reason: error.reason }),
+              );
+            };
             let execution;
             try {
+              callbacksStarted++;
               execution = await captured.execute({
                 bundle: structuredClone(bundle),
                 caseId: item.caseId,
@@ -647,6 +698,13 @@ export async function runCapturedEvaluation(options: {
               }
               if (error instanceof EvaluationError && error.code === 'journal.ownership_lost')
                 throw error;
+              if (error instanceof OutputValidationError) {
+                await recordOutputError(error);
+                pair[side] = unavailable('output_invalid');
+                continue;
+              }
+              if (config.captureCallbackErrors)
+                await saveCallbackError(privateJobDirectory, 'execute', error);
               pair[side] =
                 error instanceof TaskExecutionError
                   ? { ...unavailable('task_failed'), executionStatus: 'task_failed' }
@@ -660,7 +718,7 @@ export async function runCapturedEvaluation(options: {
             let capturedUsage: Outcome['usage'] = null;
             try {
               const returnedOutput = execution.output;
-              assertJson(returnedOutput, MAX_ARTIFACT);
+              assertEvaluationOutput(returnedOutput);
               capturedOutput = structuredClone(returnedOutput);
               const returnedStatus = execution.executionStatus;
               if (!['completed', 'task_failed', undefined].includes(returnedStatus))
@@ -691,12 +749,14 @@ export async function runCapturedEvaluation(options: {
               artifactBytes += entry.bytes;
               index.entries.push(entry);
               await journal.saveArtifactIndex(index);
-            } catch {
+            } catch (error) {
+              if (error instanceof OutputValidationError) {
+                await recordOutputError(error);
+              }
               pair[side] = unavailable('output_invalid');
               continue;
             }
-            const reference =
-              capturedReference ?? pathToFileURL(path.join(journal.directory, entry.file)).href;
+            const reference = capturedReference ?? `acclimate:artifact:${entry.sha256}`;
             if (
               typeof reference !== 'string' ||
               Buffer.byteLength(reference) > 1024 ||
@@ -723,6 +783,7 @@ export async function runCapturedEvaluation(options: {
               pair[side] = { ...outcome, error: 'cancelled' };
               continue;
             }
+            let gradeReturned = false;
             try {
               const grade = await captured.grade({
                 output: structuredClone(capturedOutput),
@@ -731,6 +792,7 @@ export async function runCapturedEvaluation(options: {
                 repetition,
                 signal,
               });
+              gradeReturned = true;
               journal.assertOwned();
               const reward = grade.reward;
               if (typeof reward !== 'number' || !Number.isFinite(reward)) throw new Error();
@@ -771,6 +833,8 @@ export async function runCapturedEvaluation(options: {
               if (error instanceof EvaluationError && error.code === 'journal.ownership_lost')
                 throw error;
               if (error instanceof CallbackCancelled) cancelled = true;
+              else if (!gradeReturned && config.captureCallbackErrors)
+                await saveCallbackError(privateJobDirectory, 'grade', error);
               pair[side] = {
                 ...outcome,
                 gradingStatus: 'failed',
@@ -859,8 +923,10 @@ export async function runCapturedEvaluation(options: {
         evaluation: request,
         comparison: null,
         executionState: 'interrupted',
+        callbacksStarted,
+        reusedEvidence: false,
       };
-    const result = await terminal(api, scope, request, state);
+    const result = await terminal(api, scope, request, callbacksStarted, reusedEvidence, state);
     state.completed = true;
     await journal.save(state);
     return result;
@@ -871,6 +937,8 @@ export async function runCapturedEvaluation(options: {
         evaluation: error.request,
         comparison: null,
         executionState: 'interrupted',
+        callbacksStarted,
+        reusedEvidence: false,
       };
     }
     const diagnostic = toSafeDiagnostic(error, phase, certainty);
@@ -927,6 +995,8 @@ async function terminal(
   api: AcclimateClient,
   scope: JournalScope,
   request: Evaluation,
+  callbacksStarted: number,
+  reusedEvidence: boolean,
   state?: AttemptJournal,
 ): Promise<EvaluationRunResult> {
   if (
@@ -951,5 +1021,5 @@ async function terminal(
     if (!reportsEqual(state.report, comparison))
       throw new EvaluationError('evidence.identity_mismatch');
   }
-  return { schemaVersion: 1, evaluation: request, comparison, executionState: 'finished' };
+  return { schemaVersion: 1, evaluation: request, comparison, callbacksStarted, reusedEvidence, executionState: 'finished' };
 }

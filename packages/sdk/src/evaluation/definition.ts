@@ -17,58 +17,86 @@ export interface CapturedDefinition<I = unknown, E = unknown, O = unknown> {
   collection?: CollectionSchedule;
 }
 const definitions = new WeakMap<object, CapturedDefinition<any, any, any>>();
-export function assertJson(value: unknown, maximum = MAX_ARTIFACT): asserts value is Json {
+/** Local adapter diagnostic. Field names are private and must stay off the wire. */
+export class OutputValidationError extends TypeError {
+  constructor(
+    readonly field: string,
+    readonly reason: string,
+  ) {
+    super(`${field}: ${reason}`);
+  }
+}
+function validateJson(value: unknown, maximum: number): asserts value is Json {
   const active = new Set<object>();
-  const visit = (x: unknown): void => {
+  const visit = (x: unknown, field: string): void => {
+    const invalid = (reason: string): never => {
+      throw new OutputValidationError(field, reason);
+    };
     if (x === null || typeof x === 'boolean') return;
     if (typeof x === 'string') {
-      if (/[\ud800-\udfff]/u.test(x)) throw new Error();
+      if (/[\ud800-\udfff]/u.test(x)) invalid('Use a valid Unicode string.');
       return;
     }
     if (typeof x === 'number') {
       if (!Number.isFinite(x) || (Number.isInteger(x) && !Number.isSafeInteger(x)))
-        throw new Error();
+        invalid('Use a finite JSON number or encode large integers as strings.');
       return;
     }
-    if (!x || typeof x !== 'object' || active.has(x) || nodeTypes.isProxy(x)) throw new Error();
+    if (!x || typeof x !== 'object') return invalid('Use a JSON value or omit this object field.');
+    if (nodeTypes.isProxy(x)) invalid('Return a plain JSON object instead of a proxy.');
+    if (active.has(x)) invalid('Remove the circular reference.');
+    if (nodeTypes.isDate(x)) invalid('Convert Date to an ISO string with toISOString().');
     if (
       !Array.isArray(x) &&
       Object.getPrototypeOf(x) !== Object.prototype &&
       Object.getPrototypeOf(x) !== null
     )
-      throw new Error();
+      invalid('Convert class instances and collections to plain JSON objects or arrays.');
     if (Reflect.ownKeys(x).some((k) => typeof k !== 'string' || /[\ud800-\udfff]/u.test(k)))
-      throw new Error();
+      invalid('Use Unicode string property names.');
     active.add(x);
     if (Array.isArray(x)) {
-      if (Object.getPrototypeOf(x) !== Array.prototype) throw new Error();
+      if (Object.getPrototypeOf(x) !== Array.prototype) invalid('Use a plain array.');
       const entries = Object.getOwnPropertyDescriptors(x) as unknown as Record<
-          string,
-          PropertyDescriptor
-        >,
-        length = entries.length?.value;
-      if (
-        typeof length !== 'number' ||
-        !Number.isSafeInteger(length) ||
-        length < 0 ||
-        Object.keys(entries).length !== length + 1
-      )
-        throw new Error();
+        string,
+        PropertyDescriptor
+      >;
+      const length = entries.length?.value;
+      if (!Number.isSafeInteger(length) || length < 0 || Object.keys(entries).length !== length + 1)
+        invalid('Use a dense array without extra properties.');
       for (let i = 0; i < length; i++) {
         const item = entries[String(i)];
-        if (!item || !('value' in item) || !item.enumerable) throw new Error();
-        visit(item.value);
+        if (!item || !('value' in item) || !item.enumerable)
+          invalid('Use ordinary array elements.');
+        visit(item.value, `${field}[${i}]`.slice(0, 512));
       }
-    } else
-      for (const d of Object.values(Object.getOwnPropertyDescriptors(x))) {
-        if (!('value' in d) || !d.enumerable) throw new Error();
-        visit(d.value);
+    } else {
+      for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(x))) {
+        const child = (field + '[' + JSON.stringify(key.slice(0, 100)) + ']').slice(0, 512);
+        if (!('value' in descriptor) || !descriptor.enumerable)
+          throw new OutputValidationError(
+            child,
+            'Use an enumerable data field instead of an accessor.',
+          );
+        visit(descriptor.value, child);
       }
+    }
     active.delete(x);
   };
+  visit(value, 'output');
+  if (Buffer.byteLength(JSON.stringify(value), 'utf8') > maximum)
+    throw new OutputValidationError(
+      'output',
+      `Return at most ${maximum} bytes of JSON. Store larger evidence privately and return a digest.`,
+    );
+}
+/** Check a real adapter result locally before returning it to the durable runner. */
+export function assertEvaluationOutput(value: unknown): asserts value is Json {
+  validateJson(value, MAX_ARTIFACT);
+}
+export function assertJson(value: unknown, maximum = MAX_ARTIFACT): asserts value is Json {
   try {
-    visit(value);
-    if (Buffer.byteLength(JSON.stringify(value), 'utf8') > maximum) throw new Error();
+    validateJson(value, maximum);
   } catch {
     throw new EvaluationError('config.schema');
   }
@@ -221,6 +249,22 @@ export function assertReportBudget(descriptor: EvaluationDescriptor): void {
     evaluation: { requestId: '0'.repeat(36), attemptId: '0'.repeat(36) },
     results: descriptor.expectedCases.map((k) => ({ ...k, parent: worst, candidate: worst })),
   };
-  if (Buffer.byteLength(JSON.stringify(report)) > MAX_REQUEST)
-    throw new EvaluationError('definition.report_budget_exceeded');
+  const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
+  const estimatedBytes = bytes(report);
+  if (estimatedBytes <= MAX_REQUEST) return;
+  const fixedBytes = bytes({ ...report, expectedCases: [], results: [] });
+  // Reserve the largest pair in both arrays so the suggested size fits even after regrouping.
+  const largestPairBytes = Math.max(
+    ...report.results.map((row, i) => bytes(descriptor.expectedCases[i]) + bytes(row) + 2),
+  );
+  const maxPairsPerPartition = Math.floor((MAX_REQUEST - fixedBytes + 2) / largestPairBytes);
+  const error = new EvaluationError('definition.report_budget_exceeded', { phase: 'preflight' });
+  error.diagnostic.reportBudget = {
+    estimatedBytes,
+    limitBytes: MAX_REQUEST,
+    expectedPairs: report.results.length,
+    maxPairsPerPartition,
+  };
+  error.message = `definition.report_budget_exceeded: estimated ${estimatedBytes} bytes for ${report.results.length} pairs, limit ${MAX_REQUEST}. Partition the cases into groups of at most ${maxPairsPerPartition} pairs using this configuration.`;
+  throw error;
 }

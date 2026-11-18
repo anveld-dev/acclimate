@@ -12,7 +12,7 @@ import unittest
 
 
 class RecipeTests(unittest.TestCase):
-    def test_model_free_recipe_and_optional_receipt_failure(self):
+    def test_delivery_check_and_optional_receipt_failure(self):
         payload = json.dumps(dict(schemaVersion=1, files=[dict(path='AGENTS.md', kind='instruction', text='Pinned guidance')])).encode()
         version = dict(id='v', bundleId='b', parentVersionId=None, digest='sha256:' + hashlib.sha256(payload).hexdigest(), createdAt='2026-11-14')
         root = Path(__file__).resolve().parents[2]
@@ -54,11 +54,12 @@ class RecipeTests(unittest.TestCase):
                                                 env=env, capture_output=True, text=True, timeout=5)
                         self.assertEqual(result.returncode, 0, result.stderr)
                         output = json.loads(result.stdout)
-                        self.assertTrue(output['started'])
+                        self.assertEqual(output['checkedFiles'], 1)
+                        self.assertNotIn('started', output)
                         self.assertEqual(output['digest'], version['digest'])
                         self.assertEqual(list(Path(directory + '/job').iterdir()), [])
                         if reporting == 'healthy':
-                            self.assertEqual([e['stage'] for e in events], ['resolved', 'downloaded', 'verified', 'prepared', 'started'])
+                            self.assertEqual([e['stage'] for e in events], ['resolved', 'downloaded', 'verified', 'prepared'])
                             self.assertTrue(all(e['versionId'] == 'v' and 'content' not in e for e in events))
                         else:
                             self.assertEqual(events, [])

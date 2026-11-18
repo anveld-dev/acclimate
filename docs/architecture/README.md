@@ -44,7 +44,7 @@ examples/
   publish.ts                  publish and seed fixture content
   codex-agent.ts              fetch from service, then app calls Codex SDK
   codex-smoke.ts              live Luna-only resource-access check
-  compare-review.ts           deterministic comparison wiring example
+  evaluation-starter/         installed application evaluator
 scripts/service-e2e.ts         real process/database flow with a local fixture model
 ```
 

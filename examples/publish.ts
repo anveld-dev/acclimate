@@ -2,44 +2,34 @@ import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { AcclimateClient } from '../packages/sdk/src/index.js';
 import type { BundlePayload } from '../packages/sdk/src/types.js';
-const token = process.env.ACCLIMATE_TOKEN;
-if (!token) throw new Error('Set ACCLIMATE_TOKEN to an operator-configured service token.');
-const projectId = process.env.ACCLIMATE_PROJECT ?? 'demo';
+
+const [file, name, reason] = process.argv.slice(2);
+if (!file || !name?.trim() || !reason?.trim()) {
+  throw new Error('Usage: npm run example:publish -- PATH BUNDLE_NAME INITIAL_RELEASE_REASON');
+}
+
+function setting(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Set ${name} for the target workspace.`);
+  return value;
+}
+
+const projectId = setting('ACCLIMATE_PROJECT');
+const channel = process.env.ACCLIMATE_CHANNEL ?? 'stable';
 const client = new AcclimateClient({
-  baseUrl: process.env.ACCLIMATE_URL ?? 'http://127.0.0.1:3000',
-  token,
-  scope: process.env.ACCLIMATE_SCOPE ?? 'demo-app',
+  baseUrl: setting('ACCLIMATE_URL'),
+  token: setting('ACCLIMATE_TOKEN'),
+  scope: setting('ACCLIMATE_SCOPE'),
 });
-const payload = JSON.parse(
-  await readFile('contracts/fixtures/bundle-v1.json', 'utf8'),
-) as BundlePayload;
-const bundle = await client.createBundle(projectId, { name: 'Review assistant' }, randomUUID());
-const version = await client.createVersion(
+const payload: BundlePayload = JSON.parse(await readFile(file, 'utf8'));
+const { bundle, version } = await client.createBundleSetup(
   projectId,
-  bundle.id,
-  { parentVersionId: null, payload },
-  randomUUID(),
-);
-await client.promote(
-  projectId,
-  bundle.id,
-  'stable',
-  {
-    versionId: version.id,
-    expectedRevision: '0',
-    unevaluatedReason: 'Initial example content; not an evaluated improvement.',
-  },
-  randomUUID(),
+  { name, origin: 'imported', channel, payload, reason },
+  process.env.ACCLIMATE_OPERATION_ID ?? randomUUID(),
 );
 console.log(
   JSON.stringify(
-    {
-      projectId,
-      bundleId: bundle.id,
-      versionId: version.id,
-      digest: version.digest,
-      channel: 'stable',
-    },
+    { projectId, bundleId: bundle.id, versionId: version.id, digest: version.digest, channel },
     null,
     2,
   ),

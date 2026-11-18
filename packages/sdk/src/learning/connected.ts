@@ -16,6 +16,7 @@ import type {
   DeliveryReceiptRequest,
   LearningFieldAuditRequest,
   LearningFieldReplay,
+  LearningIncidentReplay,
   LearningFieldAuditReceipt,
   LearningOutcomeRequest,
   LearningOutcomeReceipt,
@@ -117,6 +118,11 @@ export function createLearningOutcomeReporter(options: LearningOutcomeReporterOp
       status: outcome.status,
       deliveryRevision: resolution.revision,
     };
+    if (outcome.requireIncidentReplay) {
+      if (!outcome.feedback && !outcome.lesson)
+        throw new TypeError('An incident replay requires a lesson or graded discrepancy');
+      body.requireIncidentReplay = true;
+    }
     if (outcome.startedReceipt)
       Object.assign(body, startedBinding(bundle, projectId, integrationId, outcome.startedReceipt));
     if (outcome.lesson) {
@@ -281,6 +287,13 @@ export interface ConnectedLearningDriverOptions {
       baseline: VerifiedBundle;
       signal?: AbortSignal;
     }): Promise<LearningRecheckVerdict>;
+    /** Re-run the triggering incident on a verified candidate using the original private evidence. */
+    replayIncidentExecution?: ReplayExecution;
+    replayIncident?(input: {
+      assignment: Readonly<Omit<LearningIncidentReplay, 'verdict'>>;
+      candidate: VerifiedBundle;
+      signal?: AbortSignal;
+    }): Promise<LearningIncidentReplay['verdict']>;
     /** Opaque replay callbacks default to live. Mark deterministic callbacks model-free. */
     requalifyFieldCaseExecution?: ReplayExecution;
     /** Grade the original private field job using the supplied candidate. */
@@ -295,6 +308,26 @@ export interface ConnectedLearningDriverOptions {
   pollIntervalMs?: number;
   signal?: AbortSignal;
   onDiagnostic?: (diagnostic: SafeDiagnostic) => void;
+}
+
+function validateInstalledApps(value: ConnectedLearningDriverOptions['apps']) {
+  const invalid = () => new EvaluationError('learning.apps_invalid_export');
+  if (!value || typeof value !== 'object' || !Array.isArray(value.audit)) throw invalid();
+  for (const callback of [value.recheck, value.requalifyFieldCase, value.replayIncident]) {
+    if (callback !== undefined && typeof callback !== 'function') throw invalid();
+  }
+  for (const mode of [
+    value.recheckExecution,
+    value.requalifyFieldCaseExecution,
+    value.replayIncidentExecution,
+  ]) {
+    if (mode !== undefined && mode !== 'live' && mode !== 'model-free') throw invalid();
+  }
+  try {
+    for (const app of [value.development, ...value.audit]) captureDefinition(app);
+  } catch {
+    throw invalid();
+  }
 }
 
 /**
@@ -318,8 +351,8 @@ export async function serveConnectedLearning(
     throw new EvaluationError('config.schema');
   }
   const integrationId = options.integrationId.toLowerCase();
+  validateInstalledApps(options.apps);
   const apps = { development: [options.apps.development], audit: [...options.apps.audit] };
-  for (const app of [...apps.development, ...apps.audit]) captureDefinition(app);
   const installed = {
     development: connectedFixtureBindings(apps.development),
     audit: connectedFixtureBindings(apps.audit),
@@ -341,6 +374,8 @@ export async function serveConnectedLearning(
       !Array.isArray(result.items) ||
       (result.rechecks !== undefined &&
         (!Array.isArray(result.rechecks) || result.rechecks.length > 100)) ||
+      (result.incidentReplays !== undefined &&
+        (!Array.isArray(result.incidentReplays) || result.incidentReplays.length > 100)) ||
       (result.fieldReplays !== undefined &&
         (!Array.isArray(result.fieldReplays) || result.fieldReplays.length > 50))
     ) {
@@ -448,17 +483,20 @@ export async function serveConnectedLearning(
   }
 
   type FieldReplay = Omit<LearningFieldReplay, 'verdict'>;
+  type IncidentReplay = Omit<LearningIncidentReplay, 'verdict'>;
   async function replay(
     bundleId: string,
-    assignment: LearningRecheck | FieldReplay,
+    assignment: LearningRecheck | FieldReplay | IncidentReplay,
   ): Promise<void> {
     const field = 'baselineRevision' in assignment;
+    const incident = 'roundId' in assignment;
     const revision = field ? assignment.baselineRevision : assignment.revision;
     if (
       !uuid.test(assignment.outcomeId) ||
       !uuid.test(assignment.versionId) ||
       !digest.test(assignment.digest) ||
       !/^[1-9][0-9]*$/.test(revision) ||
+      (incident && !uuid.test(assignment.roundId)) ||
       (!field && !uuid.test(assignment.correctionId))
     )
       throw new EvaluationError('evidence.identity_mismatch');
@@ -466,6 +504,7 @@ export async function serveConnectedLearning(
     const scope = [client.baseUrl, projectId, integrationId, bundleId, installationId];
     const identity = [
       ...scope,
+      ...(incident ? [assignment.roundId] : []),
       ...(!field ? [assignment.correctionId] : []),
       outcomeId,
       versionId,
@@ -477,6 +516,15 @@ export async function serveConnectedLearning(
         item.outcomeId === outcomeId &&
         item.versionId === versionId &&
         item.digest === contentDigest;
+      if (incident)
+        return (
+          current.incidentReplays?.some(
+            (item) =>
+              same(item) &&
+              item.roundId === assignment.roundId &&
+              item.baselineRevision === revision,
+          ) === true
+        );
       return field
         ? current.fieldReplays?.some((item) => same(item) && item.baselineRevision === revision) ===
             true
@@ -502,7 +550,22 @@ export async function serveConnectedLearning(
       )
         throw new EvaluationError('evidence.identity_mismatch');
       const common = { root: config.journalRoot, identity, allowLive, signal: running, assigned };
-      if (field && options.apps.requalifyFieldCase) {
+      if (incident && options.apps.replayIncident) {
+        const callback = options.apps.replayIncident;
+        const verdict = await replayVerdict({
+          ...common,
+          kind: 'learning-incident-replays',
+          verdicts: ['pass', 'regression', 'unavailable'] as const,
+          execution: options.apps.replayIncidentExecution,
+          execute: (signal) =>
+            callback({ assignment: Object.freeze({ ...assignment }), candidate: bundle, signal }),
+        });
+        if (verdict !== undefined && (await assigned()))
+          await client.reportLearningIncidentReplay(projectId, integrationId, {
+            ...assignment,
+            verdict,
+          });
+      } else if (!incident && field && options.apps.requalifyFieldCase) {
         const callback = options.apps.requalifyFieldCase;
         const verdict = await replayVerdict({
           ...common,
@@ -539,6 +602,7 @@ export async function serveConnectedLearning(
     });
   }
 
+  let previouslyMissing = new Set<string>();
   while (!signal?.aborted) {
     let assigned: LearningWork;
     try {
@@ -551,6 +615,30 @@ export async function serveConnectedLearning(
       continue;
     }
     if (!assigned.active) return;
+    const missing = new Set<string>();
+    for (const [callback, assignments, code] of [
+      [
+        options.apps.replayIncident,
+        assigned.incidentReplays,
+        'learning.incident_replay_callback_missing',
+      ],
+      [
+        options.apps.requalifyFieldCase,
+        assigned.fieldReplays,
+        'learning.field_replay_callback_missing',
+      ],
+      [options.apps.recheck, assigned.rechecks, 'learning.recheck_callback_missing'],
+    ] as const) {
+      if (callback) continue;
+      for (const { outcomeId } of assignments ?? []) {
+        if (!uuid.test(outcomeId)) throw new EvaluationError('evidence.identity_mismatch');
+        const key = code + ':' + outcomeId;
+        missing.add(key);
+        if (!previouslyMissing.has(key))
+          report(new EvaluationError(code, { correlationId: outcomeId }));
+      }
+    }
+    previouslyMissing = missing;
     for (const item of assigned.items) {
       if (signal?.aborted) return;
       try {
@@ -562,6 +650,7 @@ export async function serveConnectedLearning(
       }
     }
     const replays = [
+      ...(options.apps.replayIncident ? (assigned.incidentReplays ?? []) : []),
       ...(options.apps.requalifyFieldCase ? (assigned.fieldReplays ?? []) : []),
       ...(options.apps.recheck ? (assigned.rechecks ?? []) : []),
     ];

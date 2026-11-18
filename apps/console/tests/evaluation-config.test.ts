@@ -2,40 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   evaluationConfiguration,
-  evaluationPresets,
   evaluationHandoff,
-  includedEvaluatorSetupCommand,
-  selectedEvaluationConfiguration,
-  paymentSimulatorIssue,
-  applicationEvaluatorRunCommand,
+  applicationEvaluatorCommand,
+  parseEvaluationConfiguration,
+  isCheckoutCodexEvaluator,
+  checkoutCodexRunCommand,
 } from '../src/lib/evaluation-config';
+import { appDescriptor } from './fixtures/app-evaluator';
+import { nativeReviewDescriptor } from '../../../examples/evaluation/descriptor';
 
 const bundle = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const request = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-test('compatible included profiles offer only explicit setup-required examples with a private config placeholder', () => {
-  const native = evaluationConfiguration(evaluationPresets['codex-luna-review']);
-  assert.equal(native.runtime.model, 'gpt-6-luna');
-  assert.equal(native.expectedCases.length, 2);
-  assert.match(
-    includedEvaluatorSetupCommand(bundle, request, native)!,
-    /^npm run evaluate:app -- --config \/absolute\/private\/evaluator.json /,
-  );
-  assert.match(
-    includedEvaluatorSetupCommand(bundle, request, native)!,
-    /--adapter codex-luna-review --live$/,
-  );
-  assert.match(
-    includedEvaluatorSetupCommand(bundle, request, evaluationPresets['presence-contract'])!,
-    /--adapter presence-contract$/,
-  );
-  native.runtime.maxTurns = '400';
-  assert.equal(includedEvaluatorSetupCommand(bundle, request, native), null);
-  assert.equal(
-    includedEvaluatorSetupCommand('invalid; command', request, evaluationPresets['payment-retry']),
-    null,
-  );
-});
-
 test('custom public configuration is cloned without granting executable adapter loading', () => {
   const input = {
     datasetRevision: 'mine-v1',
@@ -48,7 +25,7 @@ test('custom public configuration is cloned without granting executable adapter 
   input.expectedCases[0].caseId = 'changed';
   assert.equal(frozen.runtime.configRevision, '1');
   assert.equal(frozen.expectedCases[0].caseId, 'checkout');
-  assert.equal(includedEvaluatorSetupCommand(bundle, request, frozen), null);
+  assert.equal(isCheckoutCodexEvaluator(frozen), false);
   for (const bad of [
     null,
     [],
@@ -63,13 +40,7 @@ test('custom public configuration is cloned without granting executable adapter 
 
 test('default public handoff identifies the actual public API and exact request without runner authority', () => {
   const handoff = JSON.parse(
-    evaluationHandoff(
-      'https://api.example.test',
-      'project',
-      bundle,
-      request,
-      evaluationPresets['payment-retry'],
-    ),
+    evaluationHandoff('https://api.example.test', 'project', bundle, request, appDescriptor),
   );
   assert.deepEqual(handoff, {
     schemaVersion: 1,
@@ -77,7 +48,7 @@ test('default public handoff identifies the actual public API and exact request 
     projectId: 'project',
     bundleId: bundle,
     requestId: request,
-    configuration: evaluationPresets['payment-retry'],
+    configuration: appDescriptor,
   });
   assert.equal('adapter' in handoff, false);
   assert.equal('evaluatorToken' in handoff, false);
@@ -87,9 +58,7 @@ test('default public handoff identifies the actual public API and exact request 
     'https://user:secret@api.example.test',
     'https://api.example.test?token=secret',
   ])
-    assert.throws(() =>
-      evaluationHandoff(url, 'project', bundle, request, evaluationPresets['payment-retry']),
-    );
+    assert.throws(() => evaluationHandoff(url, 'project', bundle, request, appDescriptor));
 });
 
 test('historical public configuration remains inspectable without inventing new adapter settings', () => {
@@ -103,58 +72,32 @@ test('historical public configuration remains inspectable without inventing new 
     evaluationHandoff('https://api.example.test', 'project', bundle, request, legacy),
   );
   assert.deepEqual(handoff.configuration, legacy);
-  assert.equal(includedEvaluatorSetupCommand(bundle, request, legacy), null);
 });
 
-test('new authoring starts with an explicit evaluator choice and actionable example prerequisites', () => {
-  assert.throws(() => selectedEvaluationConfiguration('', ''), /Choose/);
-  assert.throws(() => selectedEvaluationConfiguration('custom', '{bad'), /describe/);
+test('handoff commands follow the installed evaluator and require live opt-in where declared', () => {
+  assert.throws(() => parseEvaluationConfiguration('{bad'), /describe/);
+  assert.deepEqual(parseEvaluationConfiguration(JSON.stringify(appDescriptor)), appDescriptor);
+  for (const [language, entry] of [
+    ['javascript', 'npx --no-install acclimate-eval'],
+    ['python', 'python -m acclimate'],
+  ] as const) {
+    assert.equal(applicationEvaluatorCommand(language, 'describe'), entry + ' describe');
+    assert.equal(
+      applicationEvaluatorCommand(language, 'compare', true),
+      entry +
+        ' compare --config /absolute/private/evaluator.json --handoff evaluation-request.json --live',
+    );
+    assert.doesNotMatch(applicationEvaluatorCommand(language, 'compare'), /--live/);
+    assert.match(
+      applicationEvaluatorCommand(language, 'check'),
+      /check .* --policy quality-policy.json$/,
+    );
+  }
+  assert.equal(isCheckoutCodexEvaluator(nativeReviewDescriptor), true);
   assert.equal(
-    selectedEvaluationConfiguration('presence-contract', '').runtime.configId,
-    'presence-contract',
+    isCheckoutCodexEvaluator({ ...nativeReviewDescriptor, graderRevision: 'different' }),
+    false,
   );
-  assert.match(
-    paymentSimulatorIssue({
-      schemaVersion: 1,
-      files: [{ path: 'AGENTS.md', kind: 'instruction', text: 'Review' }],
-    })!,
-    /payment-policy\.json/,
-  );
-  assert.equal(
-    paymentSimulatorIssue({
-      schemaVersion: 1,
-      files: [
-        {
-          path: 'payment-policy.json',
-          kind: 'memory',
-          text: '{"maxAttempts":2,"idempotency":"request"}',
-        },
-      ],
-    }),
-    undefined,
-  );
-  assert.match(
-    paymentSimulatorIssue({
-      schemaVersion: 1,
-      files: [
-        {
-          path: 'payment-policy.json',
-          kind: 'memory',
-          text: '{"maxAttempts":99,"idempotency":"request"}',
-        },
-      ],
-    })!,
-    /valid/,
-  );
-  assert.equal(
-    applicationEvaluatorRunCommand(evaluationPresets['presence-contract']),
-    'node acclimate-eval.mjs run --config /absolute/private/evaluator.json --handoff evaluation-request.json',
-  );
-  assert.match(
-    applicationEvaluatorRunCommand({
-      ...evaluationPresets['presence-contract'],
-      runtime: { ...evaluationPresets['presence-contract'].runtime, execution: 'live' },
-    }),
-    / --live$/,
-  );
+  assert.match(checkoutCodexRunCommand(bundle, request)!, /--adapter codex-luna-review --live$/);
+  assert.equal(checkoutCodexRunCommand(bundle, 'bad id'), undefined);
 });

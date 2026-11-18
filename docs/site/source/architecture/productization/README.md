@@ -14,7 +14,7 @@ The product stays a Rust content service, a TanStack console and SDKs. Applicati
 | [Improvement and evaluation](improvement-and-evaluation.md) | Request a proposal, hand exact versions to an app evaluator, inspect honest evidence and deliberately release. |
 | [Workspaces and access](workspaces-and-access.md) | Select real scoped bundles/channels; add person-specific access before hosted use. |
 | [Integrations and delivery](integrations-and-delivery.md) | Install an SDK, prepare native content and see optional app-reported delivery facts. |
-| [Onboarding and status](onboarding-and-status.md) | Start empty, create examples explicitly, retain provenance and show observed status. |
+| [Onboarding and status](onboarding-and-status.md) | Start empty, publish team content, retain provenance and show observed status. |
 | [Implementation work](remediation/README.md) | Reviewed fixes, independent objections and eight parallel implementation paths. |
 | [Current product audit](current-audit.md) | Five reviewers separate real defects, unfinished workflows and disclosed shipping limits. |
 | [Review findings](review.md) | Four Sol reviewers checked the Terra findings against code and trimmed unnecessary scope. |

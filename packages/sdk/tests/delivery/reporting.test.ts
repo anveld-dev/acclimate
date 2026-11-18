@@ -193,3 +193,68 @@ test('started receipts return exact event identity and refuse observation from a
   );
   assert(events.every((event) => event.integrationId === integrationId));
 });
+
+test('a prepared job retries a refused start at its original time and queues it once', async () => {
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'reporting-pressure-')));
+  const reader = new AcclimateClient({
+    baseUrl: 'https://service.test',
+    token: 'read',
+    scope: 'p',
+    fetch: async (url) =>
+      String(url).endsWith('/payload')
+        ? new Response(bytes)
+        : Response.json({ channel: 'main', revision: '1', version }),
+  });
+  let unblock!: () => void;
+  const slowDelivery = new Promise<void>((resolve) => {
+    unblock = resolve;
+  });
+  const events: DeliveryReceiptRequest[] = [];
+  const writer = new AcclimateClient({
+    baseUrl: 'https://service.test',
+    token: 'write',
+    scope: 'p',
+    fetch: async (_url, init) => {
+      await slowDelivery;
+      events.push(JSON.parse(String(init?.body)));
+      return Response.json({});
+    },
+  });
+  let clock = Date.now();
+  const reporter = createReceiptReporter({
+    client: writer,
+    projectId: 'p',
+    integrationId: 'i',
+    maxPending: 1,
+    now: () => clock,
+  });
+  try {
+    await using job = await reader.prepare({
+      projectId: 'p',
+      bundleId: 'b',
+      channel: 'main',
+      cacheDir: dir,
+      reporter,
+    });
+    const startTime = new Date(clock).toISOString();
+    assert.equal(job.reportStarted(), null);
+    clock += 60_000;
+    assert.equal(job.reportStarted(), null);
+    unblock();
+    await reporter.flush();
+    const accepted = job.reportStarted();
+    assert.ok(accepted);
+    assert.equal(accepted.occurredAt, startTime);
+    assert.equal(job.reportStarted(), accepted);
+    await reporter.flush();
+    assert.equal(job.reportStarted(), accepted);
+    assert.deepEqual(
+      events.filter((event) => event.stage === 'started'),
+      [accepted],
+    );
+  } finally {
+    unblock();
+    reporter.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

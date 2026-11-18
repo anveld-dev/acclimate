@@ -49,6 +49,41 @@ class PolicyCheck(TypedDict):
     result: Literal["pass", "fail", "unknown"]
 
 
+class EvidenceGap(TypedDict):
+    caseId: str
+    repetition: int
+    side: str
+    stage: str
+    reason: str
+
+
+class EvidenceGaps(TypedDict):
+    total: int
+    rows: list[EvidenceGap]
+
+
+def _add_gap(gaps: EvidenceGaps, case_id: str, repetition: int, side: str, stage: str, reason: str) -> None:
+    gaps["total"] += 1
+    if len(gaps["rows"]) < 32:
+        gaps["rows"].append({"caseId": case_id, "repetition": repetition, "side": side,
+                             "stage": stage, "reason": reason})
+
+
+def _scalar_gap(outcome):
+    if outcome is None:
+        return "collection", "missing_pair"
+    if outcome["executionStatus"] == "infrastructure_failed":
+        code = outcome["error"]
+        return "execute", code if code in ("output_invalid", "output_reference_invalid", "cancelled", "execution_failed") else "infrastructure_failed"
+    if outcome["gradingStatus"] == "failed":
+        return "grade", "grading_failed"
+    if outcome["gradingStatus"] == "missing":
+        return ("execute", "task_failed") if outcome["executionStatus"] == "task_failed" else ("grade", "missing_grade")
+    if not _finite(outcome["reward"]):
+        return "grade", "invalid_reward"
+    return None
+
+
 class PolicyCounts(TypedDict):
     distinctCases: int
     expectedPairs: int
@@ -75,6 +110,7 @@ class PolicyIdentity(TypedDict):
 
 
 class PolicyVerdict(TypedDict):
+    evidenceGaps: NotRequired[EvidenceGaps]
     schemaVersion: Literal[1]
     verdict: Literal["pass", "fail", "indeterminate"]
     code: str
@@ -92,6 +128,12 @@ class ParsedEvaluationPolicy(TypedDict):
     sha256: str
 
 
+_REQUIRED_POLICY_FIELDS = ("schemaVersion", "id", "revision", "metric", "aggregation", "minimumMeanImprovement",
+                           "maximumCaseRegression", "requiredCases")
+_REQUIRED_METRIC_FIELDS = ("name", "unit", "direction")
+_PUBLIC_POLICY_FIELDS = {*_REQUIRED_POLICY_FIELDS, *("metric." + key for key in _REQUIRED_METRIC_FIELDS)}
+
+
 class PolicyError(ValueError):
     """A fixed safe category; never carries a source value, path or raw parser error."""
 
@@ -99,10 +141,12 @@ class PolicyError(ValueError):
     executionState = "finished"
     nextAction = "fix_config"
 
-    def __init__(self, code: str):
+    def __init__(self, code: str, missing_fields=()):
         self.code = code
         self.diagnostic = {"code": code, "phase": self.phase,
                            "executionState": self.executionState, "nextAction": self.nextAction}
+        if missing_fields:
+            self.diagnostic["missingFields"] = [key for key in missing_fields if key in _PUBLIC_POLICY_FIELDS]
         super().__init__({
             "policy.invalid": "The evaluation policy or trusted inventory is invalid.",
             "policy.inventory_incompatible": "The policy requires cases absent from the trusted evaluation inventory.",
@@ -170,12 +214,15 @@ def _descriptor(value: Any) -> dict:
 
 
 def validate_evaluation_policy(value: Any, expected_descriptor: dict | None = None) -> EvaluationPolicyV1:
-    allowed = ["schemaVersion", "id", "revision", "metric", "aggregation", "minimumMeanImprovement",
-               "maximumCaseRegression", "candidateThreshold", "requiredCases", "maximumCandidateTaskFailures", "cost"]
-    required = ["schemaVersion", "id", "revision", "metric", "aggregation", "minimumMeanImprovement",
-                "maximumCaseRegression", "requiredCases"]
-    if (not _record(value) or not _fields(value, allowed, required)
-        or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1
+    if not _record(value):
+        raise PolicyError("policy.invalid")
+    missing = [key for key in _REQUIRED_POLICY_FIELDS if key not in value]
+    if _record(value.get("metric")):
+        missing.extend("metric." + key for key in _REQUIRED_METRIC_FIELDS if key not in value["metric"])
+    if missing:
+        raise PolicyError("policy.invalid", missing)
+    allowed = [*_REQUIRED_POLICY_FIELDS, "candidateThreshold", "maximumCandidateTaskFailures", "cost"]
+    if (not _fields(value, allowed, []) or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1
         or not _string(value["id"], 128) or not _string(value["revision"])
         or value["aggregation"] != "equal-case-means"
         or not _finite(value["minimumMeanImprovement"]) or not _nonnegative(value["maximumCaseRegression"])
@@ -329,6 +376,19 @@ def check_comparison(*, comparison: dict, expected_descriptor: dict,
               "summary": {"parentMean": None, "candidateMean": None, "orientedMeanImprovement": None, "worstCaseRegression": None,
                           "candidateTaskFailures": 0, "parentCostUsd": None, "candidateCostUsd": None, "costIncreaseUsd": None,
                           "parentUnknownCosts": 0, "candidateUnknownCosts": 0}, "interpretation": "descriptive-policy-check"}
+    gaps: EvidenceGaps = {"total": 0, "rows": []}
+    for key in ordered:
+        for side in ("parent", "candidate"):
+            outcome = pairs.get(key, {}).get(side)
+            gap = _scalar_gap(outcome)
+            if gap:
+                _add_gap(gaps, *key, side, *gap)
+            cost_policy = policy.get("cost", {})
+            if (outcome and "costUsd" not in (outcome["usage"] or {}) and
+                ("maximumIncreaseUsd" in cost_policy or (side == "candidate" and "maximumCandidateUsd" in cost_policy))):
+                _add_gap(gaps, *key, side, "usage", "missing_cost")
+    if gaps["total"]:
+        result["evidenceGaps"] = gaps
     summary = result["summary"]
     for side in ("parent", "candidate"):
         summary[side + "UnknownCosts"] = len([key for key in ordered if key not in pairs or pairs[key][side]["usage"] is None
@@ -402,7 +462,7 @@ def check_comparison(*, comparison: dict, expected_descriptor: dict,
         result["code"] = "analysis.nonfinite"
         result["checks"].append({"code": "analysis.nonfinite", "result": "unknown"})
         return result
-    if any(item["result"] == "unknown" for item in result["checks"]):
+    if not any(item["result"] == "fail" for item in result["checks"]) and any(item["result"] == "unknown" for item in result["checks"]):
         result["code"] = "cost.unknown"
         return result
     result["verdict"] = "fail" if any(item["result"] == "fail" for item in result["checks"]) else "pass"

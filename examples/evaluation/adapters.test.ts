@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { nativeReviewAdapter } from '../service-proposer/evaluation-adapter.js';
 import { runEvaluation } from './runner.js';
-import { simulatePayment } from './payment.js';
+import { simulatePayment } from './tests/payment.js';
 import { fixture, projectId, bundleId, requestId, evaluatorPrincipalId, serviceUrl } from './fixture.js';
 import type { BundlePayload, ComparisonRequest } from '../../packages/sdk/src/types.js';
 

@@ -1,6 +1,10 @@
 use super::{
     Descriptor, absent, app_principal, config, conflict, denied, enrollment_view, invalid,
-    learning_admin, selection::Policies, validate_descriptors,
+    learning_admin,
+    repetitions::Plan,
+    selection::{Policies, Stage},
+    statistics::{AUDIT_Z, Calibration},
+    validate_descriptors,
 };
 use crate::{ApiErr, ApiResult, AppState, db};
 use axum::{
@@ -314,6 +318,18 @@ pub(super) async fn renew(
     if rotate {
         save_policy_epoch(&mut tx, &project, integration).await?;
     }
+    if !rotate && !request.audits.is_empty() {
+        extend_repetition_plan(
+            &mut tx,
+            &project,
+            integration,
+            epoch,
+            settings.audits.len(),
+            &request.audits,
+            policies,
+        )
+        .await?;
+    }
     register_cohorts(
         &mut tx,
         &project,
@@ -327,6 +343,71 @@ pub(super) async fn renew(
     let mut view = enrollment_view(&updated, true, true)?;
     view["appliedRenewalRevision"] = json!(revision);
     command.finish(tx, view).await
+}
+
+async fn extend_repetition_plan(
+    tx: &mut Transaction<'_, Postgres>,
+    project: &str,
+    integration: Uuid,
+    epoch: i64,
+    previous_count: usize,
+    audits: &[Descriptor],
+    policies: Option<&Policies>,
+) -> ApiResult<()> {
+    let stored: Option<(Value, Value)> = sqlx::query_as(
+        "SELECT noise_calibration,repetition_plan
+         FROM connected_learning_policy_epochs
+         WHERE (project_id,integration_id,epoch)=($1,$2,$3) AND repetition_plan IS NOT NULL",
+    )
+    .bind(project)
+    .bind(integration)
+    .bind(epoch)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(db)?;
+    let Some((calibration, mut view)) = stored else {
+        return Ok(());
+    };
+    let calibration: Calibration = serde_json::from_value(calibration).map_err(db)?;
+    let mut plan: Plan = serde_json::from_value(view["plan"].take()).map_err(db)?;
+    let defaults = Policies::default();
+    let policies = policies.unwrap_or(&defaults);
+    let target = policies
+        .audit
+        .target_effect
+        .or(policies.development.target_effect);
+    plan.extend_audits(audits, target.is_some());
+    let projections = view["auditProjections"]
+        .as_array_mut()
+        .ok_or_else(|| db("Missing audit power projections"))?;
+    let mut stopped = None;
+    for (offset, audit) in audits.iter().enumerate() {
+        let projection = plan.project(
+            audit,
+            Some(previous_count + offset),
+            &calibration,
+            policies.audit.threshold(Stage::Audit),
+            AUDIT_Z,
+            target,
+        );
+        stopped = stopped.or_else(|| projection.stop_reason(target, "Audit"));
+        projections.push(json!(projection));
+    }
+    view["plan"] = json!(plan);
+    sqlx::query(
+        "UPDATE connected_learning_policy_epochs
+         SET repetition_plan=$4,calibration_stopped_reason=COALESCE(calibration_stopped_reason,$5)
+         WHERE (project_id,integration_id,epoch)=($1,$2,$3)",
+    )
+    .bind(project)
+    .bind(integration)
+    .bind(epoch)
+    .bind(view)
+    .bind(stopped)
+    .execute(&mut **tx)
+    .await
+    .map_err(db)?;
+    Ok(())
 }
 
 pub(super) async fn remaining_audits(

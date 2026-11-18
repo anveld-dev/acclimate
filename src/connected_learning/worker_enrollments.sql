@@ -53,7 +53,7 @@ WHERE active_round.next_tick_at <= now()
                     AND EXISTS (
                         SELECT 1 FROM connected_learning_policy_epochs p
                         WHERE (p.project_id,p.integration_id,p.epoch)=(e.project_id,e.integration_id,e.policy_epoch)
-                        AND p.noise_calibration IS NOT NULL
+                        AND p.noise_calibration IS NOT NULL AND p.calibration_stopped_reason IS NULL
                     )
                     AND EXISTS (
                         SELECT 1 FROM connected_learning_correction_work f

@@ -7472,6 +7472,55 @@
       }
     },
     "schemas": {
+      "LearningPowerProjection": {
+        "type": "object",
+        "properties": {
+          "caseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "effectiveRepetitions": {
+            "type": "number"
+          },
+          "projectedMde": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "powerAtEffect": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "effect": {
+            "type": "number"
+          },
+          "casesNeededAtTarget": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "pairedTrials": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "caseCount",
+          "effectiveRepetitions",
+          "projectedMde",
+          "powerAtEffect",
+          "effect",
+          "casesNeededAtTarget",
+          "pairedTrials"
+        ]
+      },
       "LearningEnrollmentInspection": {
         "type": "object",
         "required": [
@@ -7481,6 +7530,129 @@
           "rounds"
         ],
         "properties": {
+          "noiseCalibration": {
+            "type": "object",
+            "required": [
+              "requestId",
+              "status"
+            ],
+            "properties": {
+              "requestId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "status": {
+                "enum": [
+                  "queued",
+                  "requested",
+                  "running",
+                  "completed",
+                  "failed",
+                  "interrupted",
+                  "stopped"
+                ]
+              },
+              "failedAttempts": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "stoppedReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "caseCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "flipRate": {
+                "type": "number"
+              },
+              "pairedStandardDeviation": {
+                "type": "number"
+              },
+              "effectiveRepetitions": {
+                "type": "number"
+              },
+              "standardError": {
+                "type": "number"
+              },
+              "minimumDetectableEffect": {
+                "type": "number"
+              },
+              "warning": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "caseVariability": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              "plan": {
+                "type": "object",
+                "properties": {
+                  "developmentRepetitions": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "auditRepetitions": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "flakyCaseCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "pairBudget": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "trialBudget": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "maxRepetitions": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "developmentRepetitions",
+                  "auditRepetitions",
+                  "flakyCaseCount",
+                  "pairBudget",
+                  "trialBudget",
+                  "maxRepetitions"
+                ]
+              },
+              "developmentProjection": {
+                "$ref": "#/components/schemas/LearningPowerProjection"
+              },
+              "cumulativeProjection": {
+                "$ref": "#/components/schemas/LearningPowerProjection"
+              },
+              "auditProjections": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LearningPowerProjection"
+                }
+              }
+            }
+          },
           "deliveredVersionId": {
             "type": "string",
             "format": "uuid"

@@ -10,6 +10,7 @@ dependencies = [
  "chrono",
  "hex",
  "lettre",
+ "libm",
  "regex",
  "reqwest",
  "serde",

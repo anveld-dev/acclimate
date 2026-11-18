@@ -1,7 +1,7 @@
 //! Inference uses independent cases, with repetitions averaged within each case.
 
-pub(super) const DEVELOPMENT_Z: f64 = 1.2815515655446004;
-pub(super) const AUDIT_Z: f64 = 1.6448536269514722;
+pub(crate) const DEVELOPMENT_Z: f64 = 1.2815515655446004;
+pub(crate) const AUDIT_Z: f64 = 1.6448536269514722;
 pub(crate) const MAX_MISSING_PERCENT: usize = 15;
 
 // Exact tabulated quantiles through 30 df, then a third-order expansion.
@@ -98,17 +98,18 @@ pub(crate) fn scored_reward(outcome: &crate::Outcome) -> Option<f64> {
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Calibration {
     case_count: usize,
     flip_rate: f64,
-    paired_standard_deviation: f64,
+    pub(crate) paired_standard_deviation: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     standard_error: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) minimum_detectable_effect: Option<f64>,
-    effective_repetitions: f64,
+    pub(crate) effective_repetitions: f64,
+    pub(crate) case_variability: std::collections::BTreeMap<String, f64>,
 }
 
 pub(crate) fn calibrate(
@@ -118,28 +119,31 @@ pub(crate) fn calibrate(
 ) -> Calibration {
     let mut cases = std::collections::BTreeMap::new();
     for pair in &comparison.results {
-        let (sum, repetitions) = cases.entry(&pair.key.case_id).or_insert((0.0, 0usize));
+        let (sum, squared, repetitions) =
+            cases.entry(&pair.key.case_id).or_insert((0.0, 0.0, 0usize));
         if let (Some(parent), Some(candidate)) = (reward(&pair.parent), reward(&pair.candidate)) {
             *sum += candidate - parent;
+            *squared += (candidate - parent).powi(2);
             *repetitions += 1;
         }
     }
     let differences: Vec<_> = cases
         .values()
-        .filter(|(_, count)| *count > 0)
-        .map(|(sum, count)| sum / *count as f64)
+        .filter(|(_, _, count)| *count > 0)
+        .map(|(sum, _, count)| sum / *count as f64)
         .collect();
     let flips = differences
         .iter()
         .filter(|difference| **difference != 0.0)
         .count();
-    // One unit-scale pseudo-observation protects a calibration that sees no flips.
-    let sd = ((1.0 + differences.iter().map(|d| d * d).sum::<f64>())
+    let effective_repetitions = harmonic_repetitions(cases.values().map(|(_, _, count)| *count));
+    // Express one unit-scale paired-trial pseudo-observation at case-mean precision.
+    let pseudo_variance = 1.0 / effective_repetitions.max(1.0);
+    let sd = ((pseudo_variance + differences.iter().map(|d| d * d).sum::<f64>())
         / (differences.len() + 1) as f64)
         .sqrt();
     let n = differences.len();
     let se = (n > 1).then(|| sd / (n as f64).sqrt());
-    let effective_repetitions = harmonic_repetitions(cases.values().map(|(_, count)| *count));
     Calibration {
         case_count: n,
         flip_rate: flips as f64 / differences.len().max(1) as f64,
@@ -150,6 +154,11 @@ pub(crate) fn calibrate(
                 + (critical_value(n, DEVELOPMENT_Z) + critical_value(n, 0.8416212335729143)) * se
         }),
         effective_repetitions,
+        case_variability: cases
+            .into_iter()
+            .filter(|(_, (_, _, count))| *count > 0)
+            .map(|(id, (_, squared, count))| (id.to_owned(), squared / count as f64))
+            .collect(),
     }
 }
 

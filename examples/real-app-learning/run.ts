@@ -79,11 +79,13 @@ const fixtures = JSON.parse(
   execFileSync(python, [grader, '--cases'], { encoding: 'utf8' }),
 ) as Record<'development' | 'audit' | 'field', Case[]>;
 const codex = new Codex();
-const limit = AbortSignal.timeout(6 * 3600_000 - 120_000);
+const priorAttempts = Number(process.env.LLM_PRIOR_ATTEMPTS ?? '1');
+const remainingMs = Number(process.env.LLM_REMAINING_MS ?? 6 * 3600_000 - 120_000);
+assert(Number.isInteger(priorAttempts) && priorAttempts >= 1 && priorAttempts < 600);
+assert(remainingMs > 0 && remainingMs <= 6 * 3600_000);
+const limit = AbortSignal.timeout(remainingMs);
 const signal = AbortSignal.any([controller.signal, limit]);
-const usage: { label: string; input: number | null; output: number | null }[] = [
-  { label: 'preflight', input: null, output: null },
-];
+const usage: { label: string; input: number | null; output: number | null }[] = [];
 async function turn(
   cwd: string,
   prompt: string,
@@ -91,10 +93,10 @@ async function turn(
   outputSchema?: unknown,
   caseSignal?: AbortSignal,
 ) {
-  assert(usage.length < 600 && !signal.aborted, 'Experiment budget exhausted');
+  assert(priorAttempts + usage.length < 600 && !signal.aborted, 'Experiment budget exhausted');
   const row = { label, input: null as number | null, output: null as number | null };
   usage.push(row);
-  console.log(JSON.stringify({ attempt: usage.length, label }));
+  console.log(JSON.stringify({ attempt: priorAttempts + usage.length, label }));
   const result = await codex
     .startThread({
       model: modelId,
@@ -148,10 +150,15 @@ async function answer(
 }
 function score(output: string[], expected: string) {
   return Number(
-    execFileSync(python, [grader], {
-      input: JSON.stringify({ output, expected }),
-      encoding: 'utf8',
-    }),
+    execFileSync(
+      '/usr/bin/sandbox-exec',
+      ['-p', '(version 1) (allow default) (deny network*)', python, grader],
+      {
+        timeout: 20_000,
+        input: JSON.stringify({ output, expected }),
+        encoding: 'utf8',
+      },
+    ),
   );
 }
 function cohort(split: 'development' | 'audit') {
@@ -395,6 +402,19 @@ try {
       : undefined;
   });
   console.log(JSON.stringify({ calibration, baseline }));
+  if (calibration.requestId) {
+    const request = await operator.getEvaluation(project, bundle.id, calibration.requestId);
+    if (request.comparisonId)
+      console.log(
+        JSON.stringify({
+          calibrationComparison: await operator.getComparison(
+            project,
+            bundle.id,
+            request.comparisonId,
+          ),
+        }),
+      );
+  }
   assert.equal(calibration.status, 'completed');
   const reporter = createLearningOutcomeReporter({
     client: client('other', connection),
@@ -458,13 +478,24 @@ try {
         }),
       );
     if (round.state === 'awaiting_review') {
-      // Keep manual review pending until the operator checks the bound and diff.
-      console.log(
-        JSON.stringify({
-          review:
-            serviceUrl + projectPath + learning(connection) + '/rounds/' + round.id + '/review',
-        }),
-      );
+      const decisionPath = path.join(scratch, 'operator-decision.json');
+      console.log(JSON.stringify({ reviewDecisionFile: decisionPath, roundId: round.id }));
+      const decision = await waitFor('operator review', async () => {
+        signal.throwIfAborted();
+        const data = await readFile(decisionPath, 'utf8').catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return undefined;
+          throw error;
+        });
+        if (!data) return undefined;
+        const value = JSON.parse(data);
+        assert.equal(value.roundId, round.id);
+        assert.equal(typeof value.approve, 'boolean');
+        return value as { roundId: string; approve: boolean };
+      });
+      await api('POST', learning(connection) + '/rounds/' + round.id + '/review', {
+        approve: decision.approve,
+      });
+      console.log(JSON.stringify({ operatorDecision: decision }));
       break;
     }
     if (!(await view()).remainingAudits) break;
@@ -473,7 +504,7 @@ try {
 } finally {
   console.log(
     JSON.stringify({
-      attempts: usage.length,
+      attempts: priorAttempts + usage.length,
       input: usage.reduce((n, r) => n + (r.input ?? 0), 0),
       output: usage.reduce((n, r) => n + (r.output ?? 0), 0),
     }),

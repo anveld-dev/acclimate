@@ -166,7 +166,7 @@ function cohort(split: 'development' | 'audit') {
     configId: 'llm-cli-support',
     configRevision: '1',
     datasetRevision: split + '-1',
-    graderRevision: 'click-argv-v1',
+    graderRevision: 'click-argv-v2',
     runtime: { app: 'llm-0.38', model: modelId, effort: 'low' },
     execution: 'live',
     cases: fixtures[split],

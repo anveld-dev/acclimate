@@ -1,4 +1,6 @@
-"""Grade one argv answer with the pinned LLM Click parser. Never invoke callbacks."""
+"""Grade one argv answer with the pinned LLM Click parser. Never invoke command handlers."""
+from contextlib import redirect_stdout
+from io import StringIO
 import json
 import shlex
 import sys
@@ -34,11 +36,14 @@ def parse(argv):
 
 
 def grade(output, expected):
-    reference = parse(shlex.split(expected))
-    try:
-        return int(parse(output) == reference)
-    except (click.ClickException, click.exceptions.Exit, ValueError, TypeError):
-        return 0
+    # Click eagerly prints help and version text before exiting. Keep the
+    # subprocess stdout reserved for the score protocol.
+    with redirect_stdout(StringIO()):
+        reference = parse(shlex.split(expected))
+        try:
+            return int(parse(output) == reference)
+        except (click.ClickException, click.exceptions.Exit, ValueError, TypeError):
+            return 0
 
 
 def main():
@@ -50,6 +55,7 @@ def main():
                 expected = case["expected"]
                 assert grade(shlex.split(expected), expected) == 1
                 assert grade(["llm", "this-is-not-a-real-command"], expected) == 0
+        assert grade(["llm", "--help"], "llm logs path") == 0
         print("Verified 70 references and negative controls")
     else:
         payload = json.load(sys.stdin)

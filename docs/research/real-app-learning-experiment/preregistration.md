@@ -17,3 +17,9 @@ SHA-256 digests of frozen files follow.
 7d2b7347c5fb9c471235bbb448f8948a0e836bf4faccdf860abb4ab1b2838172  examples/real-app-learning/grade.py
 1a760943b79185b7cff38cea52e06f67b8fe32cd090f560dd4453e0019db103b  examples/real-app-learning/baseline.json
 ```
+
+## Recorded grader protocol correction
+
+Calibration attempt 2 exposed Click's eager help text on the score subprocess stdout. The TypeScript reader interpreted text followed by a valid zero as a missing observation. Reserve stdout for the numeric score and add an eager-help negative control. Restart calibration on a fresh service database. No completed comparison was available. The Click command and parameter equality rule, task set, split and baseline are unchanged.
+
+Original grader SHA-256: `7d2b7347c5fb9c471235bbb448f8948a0e836bf4faccdf860abb4ab1b2838172`. Corrected grader SHA-256: `6b65e6c8afe07d8a923ab5710c1693441a77a098a295cf436cde457de4b97f65`.

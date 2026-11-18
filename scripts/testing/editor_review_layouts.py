@@ -14,7 +14,6 @@ from scripts.bdd.editor import editor_value, expect_editor_value
 from scripts.bdd.run import pg_bin
 from scripts.bdd.world import World
 from scripts.bdd.layout import capture_layout
-from scripts.bdd.editor import expect_editor_value
 from scripts.testing.compact_console import FILES, visit, keyboard_workflow, reset_editor_view
 from scripts.testing.desktop_layouts import build_fingerprint
 

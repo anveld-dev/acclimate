@@ -16,8 +16,7 @@
       "@acclimate/sdk/evaluation/policy": ["../../packages/sdk/src/evaluation/policy.ts"],
       "@acclimate/sdk/validation": ["../../packages/sdk/src/validation.ts"],
       "@/*": ["./src/*"]
-    },
-    "baseUrl": "."
+    }
   },
   "include": ["src", "tests", "vite.config.ts"]
 }

@@ -555,11 +555,16 @@ try {
     );
     return body.outcomeId;
   }
-  async function observe(connection: string, outcomeId: string, state: string) {
+  async function observe(
+    connection: string,
+    outcomeId: string,
+    state: string,
+    ready: (round: Round) => boolean = () => true,
+  ) {
     return waitFor(`${state} round for ${outcomeId}`, async () => {
       const view = await api<{ rounds: Round[] }>('GET', learning(connection));
       const round = view.rounds.find((item) => item.outcomeId === outcomeId);
-      if (round?.state === state) return round;
+      if (round?.state === state && ready(round)) return round;
       if (round && ['promoted', 'rejected'].includes(round.state))
         assert.fail(`Unexpected terminal round: ${JSON.stringify(round)}`);
       return undefined;
@@ -728,6 +733,8 @@ try {
   await waitFor('install incident replay callback diagnostic', async () =>
     logs.includes('learning.incident_replay_callback_missing') ? true : undefined,
   );
+  // The diagnostic can arrive before the evaluator finishes its development assignment.
+  await observe(automatic, delayedJob, 'development', (round) => !!round.developmentComparisonId);
   const pendingIncident = (await lookup()).corrections[0]!;
   assert.equal(pendingIncident.incidentReplay, 'pending');
   assert.equal(pendingIncident.state, 'development');

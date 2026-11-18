@@ -59,8 +59,9 @@ pub fn validate_comparison(q: &ComparisonRequest) -> Result<bool, String> {
 }
 
 // Only fixed local edit-validation errors are public. Never reflect arbitrary provider details.
-fn public_proposal_failure(reason: &str) -> &'static str {
-    match reason {
+fn public_edit_error(reason: &str) -> Option<&'static str> {
+    Some(match reason {
+        "Edit outside allowed paths" => "provider edit is outside allowed paths",
         "Anchor does not match original text" => {
             "provider edit anchor does not match original text"
         }
@@ -69,8 +70,8 @@ fn public_proposal_failure(reason: &str) -> &'static str {
         }
         "Original edit ranges overlap" => "provider edit ranges overlap in original text",
         "Proposal did not change any file" => "proposal did not change any file",
-        _ => "provider request failed",
-    }
+        _ => return None,
+    })
 }
 
 use crate::{
@@ -458,7 +459,7 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
         Ok(Err(reason)) => {
             let _ = sqlx::query("UPDATE proposals SET status='failed',error=$2 WHERE id=$1 AND status='running' AND attempts=$3")
                 .bind(id)
-                .bind(public_proposal_failure(&reason))
+                .bind(public_edit_error(&reason).unwrap_or("provider request failed"))
                 .bind(attempt)
                 .execute(&s.db)
                 .await;
@@ -476,11 +477,13 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
         }
     };
     let (candidate, rationale) = output;
-    if crate::bundles::validate_payload(&candidate).is_err()
-        || crate::proposal_edits::validate_changes(&parent_payload, &candidate, &q, policy.as_ref())
-            .is_err()
-    {
-        let _=sqlx::query("UPDATE proposals SET status='failed',error='provider returned invalid edits' WHERE id=$1 AND status='running' AND attempts=$2").bind(id).bind(attempt).execute(&s.db).await;
+    let validation = crate::bundles::validate_payload(&candidate).and_then(|()| {
+        crate::proposal_edits::validate_changes(&parent_payload, &candidate, &q, policy.as_ref())
+    });
+    if let Err(reason) = validation {
+        let _ = sqlx::query("UPDATE proposals SET status='failed',error=$3 WHERE id=$1 AND status='running' AND attempts=$2")
+            .bind(id).bind(attempt).bind(public_edit_error(&reason).unwrap_or("provider returned invalid edits"))
+            .execute(&s.db).await;
         return;
     }
     let bytes = match crate::encode_payload(&candidate) {
@@ -617,28 +620,25 @@ pub async fn list_proposals(
 
 #[cfg(test)]
 mod proposal_failure_tests {
-    use super::public_proposal_failure;
+    use super::public_edit_error;
     #[test]
     fn edit_rejections_are_actionable_without_reflecting_provider_details() {
         assert_eq!(
-            public_proposal_failure("Anchor does not match original text"),
-            "provider edit anchor does not match original text"
+            public_edit_error("Anchor does not match original text"),
+            Some("provider edit anchor does not match original text")
         );
         assert_eq!(
-            public_proposal_failure("Anchor is ambiguous in original text"),
-            "provider edit anchor is ambiguous in original text"
+            public_edit_error("Anchor is ambiguous in original text"),
+            Some("provider edit anchor is ambiguous in original text")
         );
         assert_eq!(
-            public_proposal_failure("Original edit ranges overlap"),
-            "provider edit ranges overlap in original text"
+            public_edit_error("Original edit ranges overlap"),
+            Some("provider edit ranges overlap in original text")
         );
+        assert_eq!(public_edit_error("secret provider details"), None);
         assert_eq!(
-            public_proposal_failure("secret provider details"),
-            "provider request failed"
-        );
-        assert_eq!(
-            public_proposal_failure("Anchor does not match original text: private contents"),
-            "provider request failed"
+            public_edit_error("Anchor does not match original text: private contents"),
+            None
         );
     }
 }

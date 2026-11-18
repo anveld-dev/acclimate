@@ -113,7 +113,12 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
-  const [target, setTarget] = useState<(typeof page.items)[number] | null>(null);
+  const [target, setTarget] = useState<{
+    sourceRevision: string;
+    versionId: string;
+    reviewedRevision: string;
+  } | null>(null);
+  const [staleReview, setStaleReview] = useState('');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const recoveryScope: PendingScope = {
@@ -199,7 +204,8 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
   }
   async function restore() {
     if (related.blocked) return;
-    if (!state.canEdit || submitting || (!operation && (!target || !reason.trim()))) return;
+    if (!state.canEdit || submitting || (!operation && (!target || staleReview || !reason.trim())))
+      return;
     setSubmitting(true);
     setError('');
     setStatus('');
@@ -213,7 +219,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
       }
       if (!frozen) {
         const wire = restoreRequest(
-          { versionId: target!.version.id, expectedRevision: state.resolution.revision, reason },
+          { versionId: target!.versionId, expectedRevision: target!.reviewedRevision, reason },
           scope,
         );
         frozen = freezePending(
@@ -238,6 +244,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
         if (!replayingUncertain && !result.uncertain) {
           resolvePending(sessionStorage, recoveryScope);
           setOperation(null);
+          if ('revisionChanged' in result && result.revisionChanged) setStaleReview(result.message);
         }
       } else {
         toast.success(`Restored as revision ${result.promotion.revision}`);
@@ -260,6 +267,22 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
       setError(
         'The restore could not be confirmed. Resolve this operation before another restore.',
       );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function reviewCurrentRelease() {
+    setSubmitting(true);
+    try {
+      await router.navigate({
+        ...consoleDestination(bundleHref(scope, 'releases')),
+        replace: true,
+        resetScroll: false,
+      });
+      await router.invalidate();
+    } catch {
+      setError('Could not load the current release. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -531,7 +554,11 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
                             setError('');
                             setStatus('');
                             setReason('');
-                            setTarget(selected);
+                            setTarget({
+                              sourceRevision: selected.revision,
+                              versionId: selected.version.id,
+                              reviewedRevision: state.resolution.revision,
+                            });
                           }}
                         >
                           Restore
@@ -598,9 +625,9 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
           className="max-h-[90dvh] overflow-y-auto"
         >
           <DialogHeader>
-            <DialogTitle>Restore revision {target?.revision}?</DialogTitle>
+            <DialogTitle>Restore revision {target?.sourceRevision}?</DialogTitle>
             <DialogDescription>
-              Replace the current {state.channel} release (revision {state.resolution.revision})
+              Replace the current {state.channel} release (revision {target?.reviewedRevision})
               with this content version. This creates a new manual revision and retains the existing
               history, without inheriting evaluation support.
             </DialogDescription>
@@ -616,11 +643,11 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
             </div>
             <div>
               <dt>Current revision</dt>
-              <dd>{state.resolution.revision}</dd>
+              <dd>{target?.reviewedRevision}</dd>
             </div>
             <div>
               <dt>Restore content from</dt>
-              <dd>Revision {target?.revision}</dd>
+              <dd>Revision {target?.sourceRevision}</dd>
             </div>
           </dl>
           <Disclosure className="text-sm text-muted-foreground">
@@ -628,7 +655,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
               Selected version details
             </DisclosureTrigger>
             <DisclosureContent>
-              <p className="break-all">Version: {target?.version.id}</p>
+              <p className="break-all">Version: {target?.versionId}</p>
               <p>Compatibility target: {state.compatibilityTarget}</p>
             </DisclosureContent>
           </Disclosure>
@@ -638,7 +665,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
               Reason for restoring
             </Label>
             <Textarea
-              disabled={submitting || Boolean(operation) || related.blocked}
+              disabled={submitting || Boolean(staleReview) || Boolean(operation) || related.blocked}
               id="restore-reason"
               value={reason}
               maxLength={1000}
@@ -647,27 +674,33 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
               className="text-sm"
             />
           </div>
-          {error && (
+          {(error || staleReview) && (
             <p role="alert" className="text-sm text-destructive">
-              {error}
+              {error || staleReview}
             </p>
           )}
           <DialogFooter>
             <Button variant="outline" disabled={submitting} onClick={() => setTarget(null)}>
               {operation ? 'Close dialog' : 'Cancel'}
             </Button>
-            <Button
-              disabled={
-                !state.canEdit ||
-                !reason.trim() ||
-                submitting ||
-                Boolean(operation) ||
-                related.blocked
-              }
-              onClick={() => void restore()}
-            >
-              {submitting ? 'Restoring…' : 'Restore version'}
-            </Button>
+            {staleReview ? (
+              <Button disabled={submitting} onClick={() => void reviewCurrentRelease()}>
+                {submitting ? 'Loading current release…' : 'Review current release'}
+              </Button>
+            ) : (
+              <Button
+                disabled={
+                  !state.canEdit ||
+                  !reason.trim() ||
+                  submitting ||
+                  Boolean(operation) ||
+                  related.blocked
+                }
+                onClick={() => void restore()}
+              >
+                {submitting ? 'Restoring…' : 'Restore version'}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -170,6 +170,7 @@ export function EvaluationCaseWorkbench({
   const inspector = useRef<HTMLElement>(null);
   const keyboard = useRef(false);
   const id = useId();
+  const searchId = useId();
   useLayoutEffect(() => {
     const target = linkedPair ? inspector.current : heading.current;
     if (linkedPair) target?.scrollIntoView({ block: 'start' });
@@ -224,10 +225,11 @@ export function EvaluationCaseWorkbench({
           </ConsoleLink>
         ) : (
           <div className="case-browser-controls">
-            <label className="case-browser-search">
+            <label className="case-browser-search" htmlFor={searchId}>
+              <span className="sr-only">Search evaluation cases</span>
               <Search aria-hidden="true" />
               <Input
-                aria-label="Search evaluation cases"
+                id={searchId}
                 placeholder="Find a case…"
                 value={query}
                 onChange={(e) => {

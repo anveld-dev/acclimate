@@ -13,7 +13,6 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT))
 from playwright.sync_api import expect
 from scripts.bdd.editor import editor_value, expect_editor_value
-from scripts.bdd.editor import editor_value, expect_editor_value
 from scripts.bdd.run import pg_bin
 from scripts.bdd.world import World
 from scripts.bdd.interactions import open_files, draft_action, open_details

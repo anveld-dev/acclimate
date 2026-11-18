@@ -819,6 +819,8 @@ export async function connectionLearning(
     };
   } catch (error) {
     if (error instanceof ApiError) {
+      if (input.action === 'review' && error.code === 'review_already_decided')
+        return { ok: false, message: error.message };
       if (input.action === 'review' && error.status === 403)
         return {
           ok: false,

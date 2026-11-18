@@ -21,3 +21,8 @@ lettre = { version = "0.11", default-features = false, features = ["builder", "s
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"

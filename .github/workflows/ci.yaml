@@ -11,13 +11,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install PostgreSQL test binaries
-        run: |
-          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
-            sudo apt-get update
-            sudo apt-get install -y postgresql-16
-          fi
-          /usr/lib/postgresql/16/bin/initdb --version
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -31,8 +24,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Install lint tools
+        run: |
+          python -m pip install -r scripts/lint-requirements.txt
+          GOBIN="$RUNNER_TEMP/acclimate-lint-bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          printf '%s\n' "$RUNNER_TEMP/acclimate-lint-bin" >> "$GITHUB_PATH"
       - run: npm ci --ignore-scripts
+      - run: npm run lint
       - run: npm run typecheck
+      - name: Install PostgreSQL test binaries
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-16
+          fi
+          /usr/lib/postgresql/16/bin/initdb --version
       - run: npm test
       - run: npm run build
       - name: Test built console entrypoints
@@ -45,15 +55,12 @@ jobs:
       - run: npm audit --audit-level=high
       - run: PYTHONPATH=python python -m unittest discover -s python/tests -v
       - run: python -m unittest discover -s scripts/operations -p 'test_*.py' -v
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
       - run: python scripts/productization/rust_tests.py --pg-bin /usr/lib/postgresql/16/bin
       - run: cargo build
       - name: Qualify connected learning against PostgreSQL
         run: python scripts/productization/connected_learning.py --skip-build --pg-bin /usr/lib/postgresql/16/bin
       - run: npm run test:e2e -- --skip-build --pg-bin /usr/lib/postgresql/16/bin
       - run: npm run qualify:full-roadmap -- --skip-build --pg-bin /usr/lib/postgresql/16/bin
-      - run: python scripts/check_docs.py
       - run: python -m unittest discover -s scripts/productization -p 'test_external.py' -v
       - run: npm run test:identity:contracts
       - uses: actions/upload-artifact@v4

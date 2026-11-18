@@ -1,0 +1,17 @@
+target-version = "py311"
+extend-exclude = ["docs/site", "packages/vendor"]
+
+[lint]
+select = [
+    "E9",                       # Syntax and I/O problems
+    "F403", "F405", "F632", "F634", "F7",
+    "F811", "F821", "F822", "F823", "F901",
+    "B006", "B012", "B015", "B017", "B018", "B019", "B020", "B024", "B025",
+    "B026", "B029", "B032", "B033", "B034", "B039",
+    "RUF100",                    # Stale noqa comments
+]
+
+[lint.per-file-ignores]
+# Keep the SDK's historical wildcard exports and type imports.
+"python/acclimate/__init__.py" = ["F403"]
+"python/acclimate/client.py" = ["F403", "F405"]

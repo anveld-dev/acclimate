@@ -67,11 +67,19 @@ pub struct PolicyReceiptReference {
     pub policy_digest: String,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PolicyOverride {
     pub reason: String,
     pub receipts: Vec<PolicyReceiptReference>,
+}
+
+impl PolicyOverride {
+    pub(crate) fn normalized(mut self) -> Self {
+        self.reason = self.reason.trim().to_owned();
+        self.receipts.sort();
+        self
+    }
 }
 
 #[derive(Clone, Deserialize)]

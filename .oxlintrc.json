@@ -1,0 +1,84 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "jsx-a11y"],
+  "categories": { "correctness": "off" },
+  "options": { "typeAware": true },
+  "ignorePatterns": [
+    "docs/site/**",
+    "docs/design/**/experiments/**",
+    "packages/vendor/**",
+    "apps/console/src/routeTree.gen.ts",
+    "apps/keycloak-theme/src/kc.gen.tsx"
+  ],
+  "settings": { "jsx-a11y": { "components": { "NativeSelect": "select" } } },
+  "rules": {
+    "no-async-promise-executor": "error",
+    "no-constant-binary-expression": "error",
+    "no-debugger": "error",
+    "no-dupe-keys": "error",
+    "no-fallthrough": "error",
+    "no-unreachable": "error",
+    "no-unsafe-finally": "error",
+    "no-unused-expressions": ["error", { "allowShortCircuit": true, "allowTernary": true }],
+    "typescript/ban-ts-comment": "error",
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        "allowForKnownSafeCalls": [{ "from": "package", "name": "test", "package": "@types/node" }]
+      }
+    ],
+    "typescript/await-thenable": "error",
+    "react/exhaustive-deps": "warn",
+    "react/rules-of-hooks": "error",
+    "jsx-a11y/alt-text": "error",
+    "jsx-a11y/aria-props": "error",
+    "jsx-a11y/aria-proptypes": "error",
+    "jsx-a11y/label-has-associated-control": "error",
+    "jsx-a11y/role-has-required-aria-props": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.{test,spec,integration}.{js,mjs,cjs,ts,mts,cts,tsx,jsx}"],
+      "rules": {
+        "no-restricted-properties": [
+          "error",
+          { "object": "test", "property": "only", "message": "Run the full test suite in CI." },
+          { "object": "describe", "property": "only", "message": "Run the full test suite in CI." },
+          { "object": "it", "property": "only", "message": "Run the full test suite in CI." }
+        ]
+      }
+    },
+    {
+      "files": ["apps/*/src/**", "examples/evaluation-starter/**", "examples/native-repository/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(?:(?:\\.\\.?/)+packages/[^/]+/src(?:/|$)|@acclimate/[^/]+/src(?:/|$))",
+                "message": "Import from a published @acclimate package entry point."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/*-plugin/src/index.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(?:\\./native(?:[./]|$)|(?:@anthropic-ai/claude-agent-sdk|@cursor/sdk|@earendil-works/pi-coding-agent|@openai/codex-sdk)(?:/|$))",
+                "message": "Keep optional provider SDKs behind the native entry point."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

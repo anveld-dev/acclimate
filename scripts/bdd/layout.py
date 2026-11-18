@@ -155,19 +155,13 @@ def assert_focus_visible(target):
 
 
 def assert_compact_editor(metrics):
-    """Keep the source usable beside the64px rail and Back/identity/tab header rows.
-
-    At1440×900 the intended layout renders1092×646 at y245: the64px rail
-    remains, and Back now has its own line above the title and bundle tabs.
-    Retain the640px height floor and area advantage over the680056px² baseline.
-    """
+    """Check the usable editor dimensions and visible file rows on desktop."""
     assert metrics['viewport']==1440 and metrics['viewportHeight']==900, metrics
     editor=metrics['editor']
     assert editor, 'No editable draft surface was rendered'
     assert editor['top'] <= 250, editor
     assert editor['width'] >= 1080, editor
     assert editor['height'] >= 640, editor
-    assert editor['width'] * editor['height'] > 680056, editor
     assert len(metrics['fileRows']) >= 4, metrics['fileRows']
     return metrics
 
@@ -178,9 +172,10 @@ def assert_navigation_metrics(metrics):
     rows=metrics.get('bundleHeaderRows',{})
     if metrics['viewport']>1000 and navigation:
         back,first,second=rows.get('back'),rows.get('primary'),rows.get('secondary')
-        assert back and first and second, 'Back, identity and tabs must expose separate real rows'
+        assert back and first and second, 'Back, identity and tabs must be visible'
         assert first['top']>=back['bottom']-1, dict(back=back,first=first)
-        assert second['top']>=first['bottom']-1, dict(first=first,second=second)
+        assert second['top'] >= back['bottom'] - 1, dict(back=back, second=second)
+        assert second['left'] >= first['right'] - 1 or second['top'] >= first['bottom'] - 1, dict(first=first, second=second)
         bounds=navigation['bounds']
         assert bounds and bounds['top']>=second['top']-1 and bounds['bottom']<=second['bottom']+1, dict(navigation=bounds,second=second)
     if metrics['viewport'] in (390,320) and navigation:

@@ -11,6 +11,10 @@ import {
   FlaskConical,
   Radio,
 } from 'lucide-react';
+import { EvaluationCaseWorkbench } from './evaluation-case-workbench';
+import { evaluationEvidenceSummary } from '../lib/evaluation-history';
+import { evaluationScoreSummary } from '../lib/evaluation-score-summary';
+import { formatReward } from '../lib/evaluation-pairs';
 import { EvaluationScorecard } from './evaluation-scorecard';
 import { PolicyReceiptList, usePolicyReceipts } from './evaluation-policy-receipts';
 import { EvaluationActivity } from './evaluation-activity';
@@ -21,7 +25,6 @@ import {
   evaluationHandoff,
   parseEvaluationConfiguration,
   isCheckoutCodexEvaluator,
-  checkoutCodexRunCommand,
   checkoutCodexCheckCommand,
   applicationEvaluatorCommand,
   type EvaluatorLanguage,
@@ -38,6 +41,7 @@ import type {
 } from '@acclimate/sdk';
 import { Button } from './ui/button';
 import { EvaluationHandoffDownload } from './evaluation-handoff-download';
+import { EvaluationRequestInspector } from './evaluation-request-inspector';
 import { CopyButton } from './copy-button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
@@ -84,6 +88,8 @@ export function ImprovementWorkspace({
     generation: number;
     proposal?: string;
     comparison?: string;
+    pair?: string;
+    fromRevision?: number | string;
     request?: string;
   };
   mode?: 'proposal' | 'review';
@@ -100,6 +106,7 @@ export function ImprovementWorkspace({
   const lastDiscardVersion = useRef(discardVersion);
   const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  const [proposalReadError, setProposalReadError] = useState(false);
   const [requests, setRequests] = useState<Evaluation[]>([]);
   const [directRequest, setDirectRequest] = useState<Evaluation | null>(null);
   const [selectedProgress, setSelectedProgress] = useState<EvaluationProgressView | null>(null);
@@ -137,6 +144,8 @@ export function ImprovementWorkspace({
       candidate: { version: VersionMetadata; payload: BundlePayload };
       parentPayload: BundlePayload;
     } | null>(null);
+  const [candidateReadError, setCandidateReadError] = useState('');
+  const [candidateReadAttempt, setCandidateReadAttempt] = useState(0);
   const [hypothesis, setHypothesis] = useState(''),
     [paths, setPaths] = useState<string[]>([]),
     [evidence, setEvidence] = useState(''),
@@ -189,6 +198,7 @@ export function ImprovementWorkspace({
     generation: number;
   } | null>(null);
   const pendingScope = {
+    owner: 'improvement' as const,
     actorScope: state.actorScope,
     ...scope,
     serviceIdentity: state.serviceIdentity,
@@ -291,6 +301,7 @@ export function ImprovementWorkspace({
     loadedMoreRequests.current = false;
     setRequestCursor(null);
     setSelectedProposal(null);
+    setProposalReadError(false);
     setReason('');
     setInterruptionReasons({});
     setReleaseReview(null);
@@ -426,11 +437,16 @@ export function ImprovementWorkspace({
       }
     }
     if (initial.proposal && initial.proposal !== 'new') {
-      const proposal = await invoke({ action: 'proposal', id: initial.proposal });
-      if (epoch !== scopeEpoch.current || !mounted.current) return;
-      if ('proposal' in proposal && proposal.proposal) {
-        setSelectedProposal(proposal.proposal);
-        if (proposal.proposal.candidate) setCandidate(proposal.proposal.candidate.id);
+      try {
+        const proposal = await invoke({ action: 'proposal', id: initial.proposal });
+        if (epoch !== scopeEpoch.current || !mounted.current) return;
+        if ('proposal' in proposal && proposal.proposal) {
+          setProposalReadError(false);
+          setSelectedProposal(proposal.proposal);
+          if (proposal.proposal.candidate) setCandidate(proposal.proposal.candidate.id);
+        } else setProposalReadError(true);
+      } catch {
+        if (epoch === scopeEpoch.current && mounted.current) setProposalReadError(true);
       }
     }
   }
@@ -440,6 +456,7 @@ export function ImprovementWorkspace({
     loadedMoreRequests.current = false;
     setRequestCursor(null);
     setSelectedProposal(null);
+    setProposalReadError(false);
   }, [initial.candidate, initial.proposal]);
   useEffect(() => {
     const dirty =
@@ -497,10 +514,13 @@ export function ImprovementWorkspace({
     };
   }, [initial.proposal, state.actorScope, state.projectId, state.bundleId, state.channel]);
   useEffect(() => {
-    let stale = false;
-    setDetail(null);
     setComparison(null);
     setComparisonId(initial.comparison || '');
+  }, [candidate, state.actorScope, state.projectId, state.bundleId, state.channel]);
+  useEffect(() => {
+    let stale = false;
+    setDetail(null);
+    setCandidateReadError('');
     if (candidate)
       void invoke({ action: 'candidate', versionId: candidate })
         .then((r) => {
@@ -508,12 +528,19 @@ export function ImprovementWorkspace({
             setDetail({ candidate: r.candidate, parentPayload: r.parentPayload });
         })
         .catch((e) => {
-          if (!stale) setMessage(e.message);
+          if (!stale) setCandidateReadError(e.message || 'Could not read this version.');
         });
     return () => {
       stale = true;
     };
-  }, [candidate, state.actorScope, state.projectId, state.bundleId, state.channel]);
+  }, [
+    candidateReadAttempt,
+    candidate,
+    state.actorScope,
+    state.projectId,
+    state.bundleId,
+    state.channel,
+  ]);
   useEffect(() => {
     let stale = false;
     setComparison(null);
@@ -896,9 +923,44 @@ export function ImprovementWorkspace({
       </Disclosure>
     </>
   );
+  const highlightedResult =
+    comparison &&
+    comparison.candidateVersionId === candidate &&
+    (directRequest
+      ? requestEvidence(directRequest, comparison).status === 'bound'
+      : !initial.request && initial.comparison === comparison.id && comparison.evaluation)
+      ? comparison
+      : null;
+  const scoreSummary = highlightedResult ? evaluationScoreSummary(highlightedResult) : null;
+  const evidenceSummary = highlightedResult ? evaluationEvidenceSummary(highlightedResult) : null;
+  const reviewHref =
+    comparison &&
+    bundleHref(scope, 'changes', {
+      candidate: comparison.candidateVersionId,
+      comparison: comparison.id,
+      request: comparison.evaluation?.requestId,
+      fromRevision: initial.fromRevision,
+    });
+  const caseWorkbench = comparison && reviewHref && (
+    <EvaluationCaseWorkbench
+      key={comparison.id}
+      comparison={comparison}
+      reviewHref={reviewHref}
+      linkedPair={initial.comparison === comparison.id ? initial.pair : undefined}
+    />
+  );
+  const pendingRun =
+    directRequest && (directRequest.status === 'requested' || directRequest.status === 'running')
+      ? directRequest
+      : null;
   const evaluationSetup = detail?.candidate && !isCurrentRelease && (
     <EvaluationSetup
       key={candidateRequests.length === 0 ? 'first-request' : 'another-request'}
+      scopeIdentity={{
+        channel: state.channel,
+        parent: detail.candidate.version.parentVersionId ?? undefined,
+        candidate: detail.candidate.version.id,
+      }}
       language={evaluatorLanguage}
       customConfiguration={customConfiguration}
       configuration={evaluationConfig}
@@ -930,6 +992,9 @@ export function ImprovementWorkspace({
       }}
     />
   );
+  const showReview =
+    mode === 'review' &&
+    (!candidateReadError || initial.comparison || initial.request || initial.proposal);
   return (
     <div className={`min-w-0 space-y-4 text-sm${mode === 'proposal' ? ' proposal-page' : ''}`}>
       <RelatedPendingNotice recovery={related} scope={scope} canEdit={state.canEdit} />
@@ -1042,17 +1107,40 @@ export function ImprovementWorkspace({
           }
         />
       )}
-      {mode === 'review' && (
+      {mode === 'review' && candidateReadError && (
+        <section className="workspace-panel space-y-3 p-4" aria-label="Saved change unavailable">
+          <h2 className="evaluation-page-title">Saved change unavailable</h2>
+          <p role="alert">{candidateReadError}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCandidateReadAttempt((attempt) => attempt + 1)}
+            >
+              Retry opening change
+            </Button>
+            <Button variant="outline" asChild>
+              <ConsoleLink href={bundleHref(scope, 'changes')}>View changes</ConsoleLink>
+            </Button>
+          </div>
+        </section>
+      )}
+      {showReview && (
         <div className="review-workspace evaluation-workspace min-w-0">
           <section className="review-summary space-y-3 px-4 py-3" aria-label="Saved change review">
             <div className="workflow-status-row flex flex-wrap items-center gap-x-4 gap-y-2">
               <div className="review-identity flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                 <h2 className="evaluation-page-title">
-                  {isCurrentRelease
-                    ? 'Published change'
-                    : candidate
-                      ? 'Evaluate saved change'
-                      : 'Suggestion'}
+                  {initial.comparison || highlightedResult
+                    ? 'Review comparison'
+                    : initial.request
+                      ? 'Evaluation request'
+                      : initial.proposal
+                        ? 'Review suggestion'
+                        : isCurrentRelease
+                          ? 'Published change'
+                          : candidate
+                            ? 'Evaluate saved change'
+                            : 'Suggestion'}
                 </h2>
                 {!state.canEdit && <span className="text-muted-foreground">Read only</span>}
                 {initial.draft && (
@@ -1060,7 +1148,9 @@ export function ImprovementWorkspace({
                     Generation {initial.generation} saved
                   </span>
                 )}
-                {!candidate && !selectedProposal && <span>Preparing suggestion</span>}
+                {initial.proposal && !selectedProposal && !proposalReadError && (
+                  <span role="status">Loading saved suggestion…</span>
+                )}
               </div>
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 {initial.draft && (
@@ -1082,10 +1172,23 @@ export function ImprovementWorkspace({
                 )}
               </div>
             </div>
-            {candidate && !isCurrentRelease && (
+            {candidate && !isCurrentRelease && !initial.comparison && !initial.request && (
               <p className="review-boundary text-muted-foreground">
                 {reviewNextStep(candidateRequests, Boolean(comparison), Boolean(requestCursor))}
               </p>
+            )}
+            {proposalReadError && (
+              <div role="alert" className="suggestion-result space-y-2">
+                <p>
+                  {selectedProposal
+                    ? 'Could not refresh this suggestion. Showing its last known state.'
+                    : 'This suggestion could not be opened in this bundle.'}{' '}
+                  Retrying automatically.
+                </p>
+                <ConsoleLink className="underline" href={bundleHref(scope, 'changes')}>
+                  View changes
+                </ConsoleLink>
+              </div>
             )}
             {selectedProposal && (
               <div className="suggestion-result space-y-2" data-status={selectedProposal.status}>
@@ -1095,14 +1198,15 @@ export function ImprovementWorkspace({
                     : selectedProposal.status === 'running'
                       ? 'Provider is preparing a suggestion'
                       : selectedProposal.status === 'succeeded'
-                        ? 'Suggestion ready'
+                        ? selectedProposal.candidate
+                          ? 'Suggestion ready'
+                          : 'No change proposed'
                         : 'Suggestion failed'}
                 </p>
                 {selectedProposal.rationale && <p>{selectedProposal.rationale}</p>}
                 {selectedProposal.error && <p role="alert">{selectedProposal.error}</p>}
                 {!selectedProposal.candidate && (
                   <p>
-                    No candidate is available yet.{' '}
                     {['queued', 'running'].includes(selectedProposal.status)
                       ? 'The configured provider is processing this request.'
                       : 'This request did not produce a candidate.'}
@@ -1149,6 +1253,89 @@ export function ImprovementWorkspace({
               </>
             )}
           </section>
+          {highlightedResult && scoreSummary && evidenceSummary && (
+            <div className="evaluation-run-highlight case-run-summary">
+              <p className="evaluation-run-dataset">{highlightedResult.datasetRevision}</p>
+              {highlightedResult.runtime.source === 'simulated-example' && (
+                <p className="evaluation-example-note">
+                  <FlaskConical aria-hidden="true" />
+                  Simulated example · no model run
+                </p>
+              )}
+              <dl className="case-run-stats">
+                <div>
+                  <dt>Parent mean reward</dt>
+                  <dd>
+                    {scoreSummary.parentMean === null ? '—' : formatReward(scoreSummary.parentMean)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Candidate mean reward</dt>
+                  <dd>
+                    {scoreSummary.candidateMean === null
+                      ? '—'
+                      : formatReward(scoreSummary.candidateMean)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Scored pairs</dt>
+                  <dd>
+                    {scoreSummary.pairedCount} / {scoreSummary.expectedCount}
+                  </dd>
+                </div>
+              </dl>
+              <div className="case-run-quality">
+                <strong>
+                  {evidenceSummary.partial ? 'Partial evidence' : 'Complete evidence'}
+                </strong>
+                <span>Missing grades {evidenceSummary.expectedMissingGrades}</span>
+                <span>Execution failures {evidenceSummary.expectedExecutionFailures}</span>
+                <span>
+                  Reported cost{' '}
+                  {evidenceSummary.expectedCostUsd === null
+                    ? 'unknown'
+                    : '$' + formatReward(evidenceSummary.expectedCostUsd)}
+                </span>
+              </div>
+              <Disclosure>
+                <DisclosureTrigger>Score breakdown</DisclosureTrigger>
+                <DisclosureContent>
+                  <EvaluationScorecard comparison={highlightedResult} />
+                </DisclosureContent>
+              </Disclosure>
+              <a
+                href="#case-evidence"
+                className="evaluation-highlight-link sr-only focus:not-sr-only"
+              >
+                Inspect case results <ArrowRight aria-hidden="true" />
+              </a>
+            </div>
+          )}
+          {highlightedResult && caseWorkbench}
+          {pendingRun && (
+            <div className="evaluation-run-highlight">
+              <p className="evaluation-run-dataset">{pendingRun.datasetRevision}</p>
+              <h3 className="evaluation-run-phase">
+                {pendingRun.status === 'requested'
+                  ? 'Waiting for the evaluator'
+                  : 'Evaluation in progress'}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Parent {pendingRun.parentVersionId.slice(0, 8)} → candidate{' '}
+                {pendingRun.candidateVersionId.slice(0, 8)} · {pendingRun.expectedCases.length}{' '}
+                expected {pendingRun.expectedCases.length === 1 ? 'pair' : 'pairs'}
+              </p>
+              {pendingRun.status === 'running' && (
+                <EvaluationActivity request={pendingRun} progress={selectedProgress} />
+              )}
+              <a
+                href={`#evaluation-request-${pendingRun.id}`}
+                className="evaluation-highlight-link"
+              >
+                View request details <ArrowRight aria-hidden="true" />
+              </a>
+            </div>
+          )}
           {evaluationSetup}
           {candidate && (
             <div
@@ -1200,22 +1387,6 @@ export function ImprovementWorkspace({
                         comparison && requestEvidence(request, comparison).status === 'bound',
                       );
                       const labels = evaluationRequestLabels(request, selectedEvidence);
-                      const requestLanguage = languageFor(request.id);
-                      const nativeRunner = isCheckoutCodexEvaluator(request);
-                      const runCommand = nativeRunner
-                        ? checkoutCodexRunCommand(state.bundleId, request.id)
-                        : applicationEvaluatorCommand(
-                            requestLanguage,
-                            'compare',
-                            request.runtime.execution === 'live',
-                          );
-                      const handoff = evaluationHandoff(
-                        state.publicApiUrl,
-                        state.projectId,
-                        state.bundleId,
-                        request.id,
-                        request,
-                      );
                       return (
                         <Disclosure
                           key={`${request.id}-${initial.request === request.id}`}
@@ -1230,7 +1401,7 @@ export function ImprovementWorkspace({
                           <div className="evaluation-request-row flex flex-wrap items-center justify-between gap-2">
                             <DisclosureTrigger
                               id={`evaluation-request-${request.id}`}
-                              aria-label={labels.details}
+                              aria-description={labels.details}
                               className="cursor-pointer font-medium"
                             >
                               <span className="evaluation-run-summary">
@@ -1266,7 +1437,8 @@ export function ImprovementWorkspace({
                                   <span className={`evaluation-run-status is-${request.status}`}>
                                     {labels.status}
                                   </span>{' '}
-                                  · {request.expectedCases.length} pairs
+                                  · {request.expectedCases.length}{' '}
+                                  {request.expectedCases.length === 1 ? 'pair' : 'pairs'}
                                 </span>
                                 <span className="evaluation-run-meta" title={request.id}>
                                   Request {request.id.slice(0, 8)}
@@ -1295,155 +1467,19 @@ export function ImprovementWorkspace({
                             )}
                           </div>
                           <DisclosureContent className="space-y-2">
-                            {request.error && <p role="alert">{request.error}</p>}
-                            <p className="text-muted-foreground">
-                              {request.status === 'requested'
-                                ? 'Request created · run in your app'
-                                : request.status === 'interrupted'
-                                  ? 'Recorded interruption'
-                                  : `App reported ${request.status}`}
-                            </p>
-                            {!request.comparisonId && (
-                              <div className="flex flex-wrap gap-2">
-                                <CopyButton value={request.id} label="Copy request ID" />
-                                <CopyButton value={handoff} label="Copy request JSON" />
-                                <EvaluationHandoffDownload handoff={handoff} />
-                              </div>
-                            )}
-                            {request.status === 'running' && (
-                              <p>
-                                App reported execution started. Check the original worker before
-                                retrying. Request interruption does not stop an external job or its
-                                charges.
-                              </p>
-                            )}
-                            {(initial.request === request.id ||
-                              request.status === 'running' ||
-                              request.status === 'requested') && (
-                              <EvaluationActivity
-                                request={request}
-                                progress={
-                                  initial.request === request.id
-                                    ? selectedProgress
-                                    : activeProgress[request.id]
-                                }
-                              />
-                            )}
-                            {!request.comparisonId &&
-                              request.status === 'requested' &&
-                              runCommand && (
-                                <div className="space-y-2">
-                                  <p>
-                                    Give the evaluator owner the downloaded request. Run the
-                                    commands on the evaluator machine with its private
-                                    configuration.
-                                  </p>
-                                  {nativeRunner ? (
-                                    <p>
-                                      Run the installed Codex evaluator from the Acclimate checkout
-                                      with your Codex credentials.
-                                    </p>
-                                  ) : (
-                                    <>
-                                      <EvaluatorLanguageSelect
-                                        language={requestLanguage}
-                                        onChange={(value) => rememberLanguage(request.id, value)}
-                                      />
-                                      <SyntaxCode
-                                        code={applicationEvaluatorCommand(
-                                          requestLanguage,
-                                          'doctor',
-                                        )}
-                                        language="bash"
-                                      />
-                                    </>
-                                  )}
-                                  {!nativeRunner && (
-                                    <p>
-                                      Compare prints the parent and candidate scores. Add{' '}
-                                      <code>--policy quality-policy.json</code> to check your
-                                      release criteria in the same command.
-                                    </p>
-                                  )}
-                                  <SyntaxCode code={runCommand} language="bash" />
-                                  <CopyButton
-                                    value={runCommand}
-                                    label="Copy evaluator run command"
-                                  />
-                                  <CopyButton
-                                    label="Copy instructions for evaluator owner"
-                                    value={[
-                                      `Evaluate request ${request.id}. Save the public JSON at the end of this message as evaluation-request.json.`,
-                                      ...(nativeRunner
-                                        ? [
-                                            'Run these commands from the native Codex reviewer checkout.',
-                                          ]
-                                        : [
-                                            `Application setup: ${consoleOrigin}/evaluator-setup.html#${requestLanguage}`,
-                                            'Run from the application directory. Replace /absolute/private/evaluator.json with your private evaluator configuration path.',
-                                            applicationEvaluatorCommand(requestLanguage, 'doctor'),
-                                          ]),
-                                      runCommand,
-                                      'Open the comparison in the console after completion. To report a policy verdict, run the matching policy check with your policy file.',
-                                      '',
-                                      handoff,
-                                    ].join('\n')}
-                                  />
-                                </div>
+                            <EvaluationRequestInspector
+                              consoleOrigin={consoleOrigin}
+                              language={languageFor(request.id)}
+                              onLanguageChange={(value) => rememberLanguage(request.id, value)}
+                              request={request}
+                              publicApiUrl={state.publicApiUrl}
+                              projectId={state.projectId}
+                              bundleId={state.bundleId}
+                            >
+                              {initial.request === request.id && !pendingRun && (
+                                <EvaluationActivity request={request} progress={selectedProgress} />
                               )}
-                            {request.comparisonId && (
-                              <p>
-                                Paired evidence recorded. Completion is separate from your quality
-                                policy and release approval. Outputs remain private/local unless
-                                deliberately exported; use your app’s export and verify-export
-                                commands to share reviewed evidence.
-                              </p>
-                            )}
-                            {!request.comparisonId && request.status !== 'running' && (
-                              <p className="text-muted-foreground">
-                                {request.status === 'requested'
-                                  ? 'Run in your app with the request ID and frozen public configuration.'
-                                  : 'No comparison was reported. Check the app logs before creating another request.'}
-                              </p>
-                            )}
-                            <Disclosure>
-                              <DisclosureTrigger className="cursor-pointer">
-                                Request details
-                              </DisclosureTrigger>
-                              <DisclosureContent>
-                                {request.comparisonId && (
-                                  <div className="mt-3 flex flex-wrap gap-2">
-                                    <CopyButton value={request.id} label="Copy request ID" />
-                                    <CopyButton value={handoff} label="Copy request JSON" />
-                                    <EvaluationHandoffDownload handoff={handoff} />
-                                  </div>
-                                )}
-                                <p className="mt-2 break-all">Dataset: {request.datasetRevision}</p>
-                                <p className="text-muted-foreground">
-                                  Updated{' '}
-                                  <time dateTime={request.updatedAt}>
-                                    {new Date(request.updatedAt).toLocaleString()}
-                                  </time>
-                                </p>
-                                <p className="mt-2 text-muted-foreground">
-                                  {request.requireBoundEvidence
-                                    ? 'Bound evidence required'
-                                    : 'Legacy completion allowed'}
-                                </p>
-                                <p className="break-all">Request ID: {request.id}</p>
-                                <p className="break-all">Public API: {state.publicApiUrl}</p>
-                                <SyntaxCode
-                                  className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs"
-                                  code={handoff}
-                                  language="json"
-                                />
-                                <SyntaxCode
-                                  className="max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs"
-                                  code={JSON.stringify(request, null, 2)}
-                                  language="json"
-                                />
-                              </DisclosureContent>
-                            </Disclosure>
+                            </EvaluationRequestInspector>
                             {['requested', 'running'].includes(request.status) && (
                               <Disclosure>
                                 <DisclosureTrigger className="cursor-pointer">
@@ -1548,8 +1584,7 @@ export function ImprovementWorkspace({
                       <>
                         {!initial.request && !comparison.evaluation && (
                           <p>
-                            Legacy unbound evidence: this comparison is not attached to an
-                            evaluation request.
+                            This comparison was submitted independently of an evaluation request.
                           </p>
                         )}
                         {(comparison.candidateVersionId !== candidate ||
@@ -1561,7 +1596,7 @@ export function ImprovementWorkspace({
                               : 'This evidence does not match the saved candidate and current release target. Release with this evidence is unavailable.'}
                           </p>
                         )}
-                        {comparison.candidateVersionId === candidate && (
+                        {comparison.candidateVersionId === candidate && !highlightedResult && (
                           <EvaluationScorecard comparison={comparison} />
                         )}
                         {comparison.runtime.source === 'simulated-example' && (
@@ -1570,7 +1605,17 @@ export function ImprovementWorkspace({
                             Simulated example evidence. No agent or model ran for these results.
                           </p>
                         )}
-                        <ComparisonEvidence comparison={comparison} compact />
+                        {!highlightedResult && caseWorkbench}
+                        <Disclosure>
+                          <DisclosureTrigger>Case map and all outcomes</DisclosureTrigger>
+                          <DisclosureContent>
+                            <ComparisonEvidence
+                              comparison={comparison}
+                              comparisonUrl={reviewHref || undefined}
+                              compact
+                            />
+                          </DisclosureContent>
+                        </Disclosure>
                         {selectedRequest && selectedCheckCommand && (
                           <div className="space-y-2" aria-label="Application policy check">
                             <h3>Check the application’s quality policy</h3>

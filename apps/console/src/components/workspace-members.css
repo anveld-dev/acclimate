@@ -7,7 +7,9 @@
 }
 .members-section-heading {
   padding: 0.75rem 1rem;
-  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  background: var(--muted);
+  font-weight: 600;
 }
 .member-id,
 .member-details {
@@ -48,6 +50,9 @@
     overflow: hidden;
     clip-path: inset(50%);
   }
+  .workspace-members .workspace-member-row .workspace-member-identity {
+    width: 100%;
+  }
   .workspace-members tr {
     padding: 0.75rem 1rem;
   }
@@ -77,7 +82,6 @@
   display: contents;
 }
 .member-identity-meta [data-slot='disclosure-trigger'] {
-  margin-left: auto;
   font-weight: 400;
 }
 .member-identity-meta .member-details[data-state='open'] {
@@ -86,4 +90,210 @@
 }
 .workspace-members-panel .workspace-member-row [data-slot='table-cell'] {
   padding-block: 10px;
+}
+
+@container members (max-width: 600px) {
+  .workspace-members .workspace-member-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 8px;
+  }
+  .workspace-member-row .workspace-member-identity {
+    grid-column: 1 / -1;
+  }
+  .workspace-members-panel .workspace-member-row [data-slot='table-cell'] {
+    padding: 0;
+  }
+  .workspace-member-row td:not(.workspace-member-identity) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .workspace-member-row td:last-child .members-cell-label {
+    display: none;
+  }
+}
+
+@container members (min-width: 720px) {
+  .members-section-heading {
+    font-family: var(--font-editorial);
+    font-size: 21px;
+    font-weight: 550;
+    line-height: 1.2;
+    background: var(--card);
+  }
+  .members-invitations:has(> .members-empty) {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    padding: 11px 16px;
+  }
+  .members-invitations:has(> .members-empty) > :is(h2, p) {
+    background: transparent;
+    border: 0;
+    padding: 0;
+  }
+}
+
+.members-directory-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.members-directory-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.members-directory-title > svg {
+  width: 17px;
+  height: 17px;
+  color: var(--muted-foreground);
+}
+.members-directory-title .members-section-heading {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: 650 16px/1.35 var(--font-sans, system-ui, sans-serif);
+}
+.members-directory-count,
+.member-own-badge {
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.members-directory-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.members-directory-toolbar > :first-child {
+  flex: 1;
+  max-width: 400px;
+  min-width: 0;
+}
+.members-directory-toolbar > :last-child {
+  flex: 0 1 auto;
+  min-width: 100px;
+}
+.members-role-guide {
+  display: contents;
+}
+.members-role-guide > [data-slot='disclosure-trigger'] {
+  min-height: 28px;
+  font-size: 13px;
+}
+.members-role-guide > [data-slot='disclosure-content'] {
+  grid-column: 1/-1;
+}
+.members-role-guide dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  border-radius: 4px;
+}
+.members-role-guide :is(dt, dd) {
+  margin: 0;
+  font-size: 13px;
+}
+.members-role-guide dt {
+  font-weight: 650;
+}
+.members-role-guide dd {
+  color: var(--muted-foreground);
+}
+.member-account-line {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.member-monogram {
+  display: grid;
+  flex: 0 0 32px;
+  place-items: center;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: 13px;
+  font-weight: 650;
+}
+.member-own-badge {
+  font-size: 11px;
+}
+.member-role-trigger[data-slot='button'] {
+  background: var(--muted);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+}
+.member-role-trigger[data-role='admin'] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.member-role-trigger[data-slot='button']:hover {
+  border-color: var(--ring);
+}
+.members-filter-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 16px;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+.members-invitations-title {
+  padding: 12px 16px;
+}
+.members-invitations:has(> .members-empty) .members-invitations-title {
+  padding: 0;
+}
+.member-role-description {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 5px;
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.member-role-description svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+@container members (max-width:719px) {
+  .members-invitations:has(> .members-empty) .members-invitations-title {
+    padding: 12px 16px 0;
+  }
+}
+@container members (max-width:490px) {
+  .members-directory-head {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .members-role-guide > [data-slot='disclosure-trigger'] {
+    justify-self: start;
+  }
+  .members-directory-toolbar {
+    flex-wrap: wrap;
+  }
+  .members-directory-toolbar > :first-child {
+    flex-basis: 180px;
+  }
 }

@@ -47,11 +47,9 @@ async fn call(
     )
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn observations_bind_live_owner_preserve_order_expire_and_never_control_lifecycle() {
-    let Ok(url) = std::env::var("EVALUATION_TEST_DATABASE_URL") else {
-        eprintln!("set EVALUATION_TEST_DATABASE_URL to isolated PostgreSQL");
-        return;
-    };
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let project = format!("progress-{}", Uuid::new_v4());

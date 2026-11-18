@@ -111,6 +111,13 @@ test('delivery screen keeps one receipt identity and separates application and s
     }),
   );
   assert.match(html, /App observation time/);
+  assert(html.includes(observation.latestObservation!.eventId));
+  assert(
+    html.includes(
+      `Inspect reported files for Agent service · reported version ${observation.latestObservation!.versionId}`,
+    ),
+  );
+  assert(!html.includes('Inspect reported files for Silent app'));
   assert.match(html, /Service received time/);
   assert.match(html, /2026-11-15T10:00:00Z/);
   assert.match(html, /2026-11-16T10:00:00Z/);
@@ -122,4 +129,27 @@ test('delivery screen keeps one receipt identity and separates application and s
     projectId: 'project',
     view: 'delivery',
   });
+});
+
+test('delivery links administrators to the exact connection and gives readers bundle navigation', () => {
+  function screen(canManage: boolean, items: IntegrationObservation[]) {
+    return renderToStaticMarkup(
+      createElement(WorkspaceDelivery, {
+        projectId: 'team',
+        canManage,
+        initial: {
+          ok: true,
+          projectId: 'team',
+          projectName: 'Team',
+          page: { items, nextCursor: null },
+        },
+      }),
+    );
+  }
+
+  const settings = '/w/team/connections?integration=' + observation.id;
+  assert.ok(screen(true, [observation]).includes(settings));
+  assert.ok(!screen(false, [observation]).includes(settings));
+  assert.match(screen(true, []), /href="\/w\/team\/connections"/);
+  assert.match(screen(false, []), /href="\/w\/team\/bundles"/);
 });

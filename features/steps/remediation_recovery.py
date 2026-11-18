@@ -117,8 +117,8 @@ def lose_operation(context, operation):
     b = w.browser()
     b.visit('/releases')
     p = b.page
-    row = p.get_by_role('article').filter(has=p.get_by_role('heading', name='Revision 1', exact=True))
-    row.get_by_role('button', name=re.compile(r'^Restore revision ')).click()
+    p.get_by_role('button', name=re.compile(r'^Compare Revision 1\b', re.I)).click()
+    p.get_by_role('region', name='Comparison for revision 1', exact=True).get_by_role('button', name='Restore revision 1', exact=True).click()
     p.get_by_label('Reason for restoring', exact=True).fill('Explicit recovery fixture rollback.')
     lose_response(p, lambda: p.get_by_role('button', name='Restore version', exact=True).click())
     w.recovery_records = records(p)

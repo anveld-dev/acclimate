@@ -63,6 +63,10 @@ export function createEvaluationTransport(config: EvaluationTransportConfig) {
     maxJsonResponseBytes: 4 * 1024 * 1024,
     ...(config.fetch ? { fetch: config.fetch } : {}),
   });
+  return evaluationTransportForClient(client, config.projectId);
+}
+
+export function evaluationTransportForClient(client: AcclimateClient, projectId: string) {
   return {
     client,
     mutate<T>(
@@ -71,7 +75,7 @@ export function createEvaluationTransport(config: EvaluationTransportConfig) {
       body: string,
       key: string,
     ): Promise<T> {
-      if (scope.projectId !== config.projectId) throw new TypeError('Evaluation target mismatch');
+      if (scope.projectId !== projectId) throw new TypeError('Evaluation target mismatch');
       if (typeof body !== 'string' || new TextEncoder().encode(body).length > 2 * 1024 * 1024)
         throw new TypeError('Evaluation request exceeds its byte budget');
       return evaluationMutationFor(client)(

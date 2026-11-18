@@ -31,8 +31,6 @@ Configure the same private local `auditLineageDirectory` for all campaigns that 
 
 To install a new policy and roster in an enrolled campaign, call `openLearner` with the same lineage, a previously unused policy epoch and `startEpoch: { previousDefinitionDigest }` from the retained view. First settle existing work, reviews and inbox commands. Migration is available while waiting or when audit refresh is required. It keeps the ledger, cumulative budget, audit exposures, operation and decision history, command cursor and stop state. It discards queued teaching from the previous policy and starts a new per-epoch round allowance. Old handles are fenced by the new definition digest.
 
-Legacy journals with unchanged custom adapters that omit selection policies can continue with campaign-local audit history. Already-dispatched work uses its original operation identity. On advance the controller applies retained admission replacements and binds provenance to prepared work. The current Acclimate adapter fails closed with `definition-conflict` for legacy journals whose selection thresholds were never bound. Preserve the checkpoint and evidence and settle or reconcile outstanding work under the original installation. Epoch migration requires preexisting shared lineage enrollment.
-
 ## Qualification
 
 The qualification uses a disposable Rust service and PostgreSQL cluster. The runner creates its own scoped credentials and fresh workspace. It writes a `summary.json` and detailed evidence to the requested output directory.

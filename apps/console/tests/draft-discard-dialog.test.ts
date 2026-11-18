@@ -27,6 +27,7 @@ class MemoryStorage implements PendingStorage {
   }
 }
 const scope = {
+  owner: 'draft' as const,
   actorScope: 'actor',
   serviceIdentity: 'actor',
   projectId: 'p',

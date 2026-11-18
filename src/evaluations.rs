@@ -27,9 +27,13 @@ pub struct CreateEvaluationRequest {
     pub expected_cases: Vec<CaseKey>,
     #[serde(default)]
     pub proposal_id: Option<String>,
-    #[serde(default)]
+    #[serde(default = "bound_evidence")]
     pub require_bound_evidence: bool,
 }
+fn bound_evidence() -> bool {
+    true
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Evaluation {
@@ -189,6 +193,9 @@ pub(crate) async fn enqueue_evaluation(
     principal: &str,
     q: &CreateEvaluationRequest,
 ) -> ApiResult<Evaluation> {
+    if !q.require_bound_evidence {
+        return Err(invalid("Evaluation requests require bound evidence"));
+    }
     if !bounded(q) {
         return Err(invalid(
             "Evaluation request exceeds limits or has duplicate cases",
@@ -255,9 +262,7 @@ async fn list(
     let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
     let n = q.bounds()?;
     let bid = path(&b)?;
-    let c =
-        crate::pagination::resolve(&mut tx, "evaluation_requests", &p, bid, q.cursor.as_deref())
-            .await?;
+    let c = crate::pagination::decode("evaluation_requests", &p, bid, q.cursor.as_deref())?;
     let (principal, reviewer) =
         crate::connected_learning::audit_reader(&s, &h, &mut tx, &p).await?;
     let visible = crate::connected_learning::audit_visible("r.audit_request_id=e.id", 6, 7);
@@ -432,16 +437,12 @@ pub(crate) fn validate_report(
             "Comparison submitter or declared evaluation settings do not match",
         ));
     }
-    if let Some(binding) = &c.evaluation {
-        if binding.request_id != e.id
-            || Some(binding.attempt_id.as_str()) != e.attempt_id.as_deref()
-        {
-            return Err(conflict());
-        }
-    } else if x.require_bound_evidence {
-        return Err(invalid(
-            "This evaluation requires request and attempt bound evidence",
-        ));
+    let binding = c
+        .evaluation
+        .as_ref()
+        .ok_or_else(|| invalid("This evaluation requires request and attempt bound evidence"))?;
+    if binding.request_id != e.id || Some(binding.attempt_id.as_str()) != e.attempt_id.as_deref() {
+        return Err(conflict());
     }
     if c.parent_version_id != x.parent_version_id
         || c.parent_digest != x.parent_digest

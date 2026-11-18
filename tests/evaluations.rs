@@ -37,13 +37,9 @@ async fn call(
     (s, serde_json::from_slice(&b).unwrap())
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn evaluation_attempts_bind_principal_settings_inventory_and_terminal_state() {
-    let Ok(url) = std::env::var("EVALUATION_TEST_DATABASE_URL") else {
-        eprintln!(
-            "set EVALUATION_TEST_DATABASE_URL to isolated PostgreSQL to run evaluation lifecycle checks"
-        );
-        return;
-    };
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let p = format!("eval-{}", Uuid::new_v4());
@@ -65,7 +61,7 @@ async fn evaluation_attempts_bind_principal_settings_inventory_and_terminal_stat
         (parent, None, "parent"),
         (candidate, Some(parent), "candidate"),
     ] {
-        sqlx::query("INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload) VALUES($1,$2,$3,$4,$5,$6)").bind(id).bind(&p).bind(b).bind(base).bind(digest).bind(b"{}".to_vec()).execute(&db).await.unwrap();
+        sqlx::query("INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload,created_by) VALUES($1,$2,$3,$4,$5,$6,'fixture-author')").bind(id).bind(&p).bind(b).bind(base).bind(digest).bind(b"{}".to_vec()).execute(&db).await.unwrap();
     }
     let grants = [("one", "evaluator-one"), ("two", "evaluator-two")]
         .into_iter()
@@ -140,6 +136,7 @@ async fn evaluation_attempts_bind_principal_settings_inventory_and_terminal_stat
         .0,
         StatusCode::BAD_REQUEST
     );
+    comparison["evaluation"] = json!({"requestId":e["id"],"attemptId":"attempt"});
     let mut mismatch = comparison.clone();
     mismatch["runtime"] = json!({"model":"wrong"});
     let (s, c) = call(
@@ -150,19 +147,7 @@ async fn evaluation_attempts_bind_principal_settings_inventory_and_terminal_stat
         mismatch,
     )
     .await;
-    assert_eq!(s, StatusCode::CREATED, "{c}");
-    assert_eq!(
-        call(
-            &app,
-            "POST",
-            &format!("{path}/finish"),
-            "one",
-            json!({"attemptId":"attempt","comparisonId":c["id"]})
-        )
-        .await
-        .0,
-        StatusCode::BAD_REQUEST
-    );
+    assert_eq!(s, StatusCode::BAD_REQUEST, "{c}");
     let (s, c) = call(
         &app,
         "POST",
@@ -268,6 +253,7 @@ async fn evaluation_attempts_bind_principal_settings_inventory_and_terminal_stat
         json!({"attemptId":"partial"}),
     )
     .await;
+    identity2["evaluation"] = json!({"requestId":e["id"],"attemptId":"partial"});
     identity2["results"] = json!([]);
     let (s, c) = call(
         &app,
@@ -298,7 +284,7 @@ async fn evaluation_attempts_bind_principal_settings_inventory_and_terminal_stat
     )
     .await;
     assert_eq!(s, StatusCode::OK, "{v}");
-    assert!(v["items"].as_array().unwrap().len() >= 4);
+    assert!(v["items"].as_array().unwrap().len() >= 3);
     let (s, v) = call(
         &app,
         "GET",

@@ -1,6 +1,6 @@
 # Parallel implementation paths
 
-> Earlier implementation record. Production startup, identity and evaluator setup now follow the [production-only plan](../../production-only/plan.md). Old local-launcher commands below are retired.
+> Earlier implementation record. Evaluation completion now requires evidence bound to the exact request and attempt. Production startup, identity and evaluator setup now follow the [production-only plan](../../production-only/plan.md). Old local-launcher commands below are retired.
 
 [Reviewed plan](plan.md) · [Review decisions](review.md) · [Audit](../current-audit.md)
 
@@ -41,7 +41,7 @@ C0 writes these choices into the wire contract and typed DTOs, with the affected
 | Issuance | Existing 409/code retained; additive typed error details identify `credentialId`, kind and revocation state, never secret. Confirm scoped revocation before a distinct replacement key. C0 supplies optional error-detail plumbing; A implements/consumes it. |
 | Evidence | Optional all-or-none `{requestId,attemptId}` on comparison. Request `requireBoundEvidence` defaults false for old/omitted legacy inputs; new console requests set true. Bound create/finish lock and validate the same request row as interrupt. Direct promotion retains its existing independent evidence/revision policy. |
 | Evaluator configuration | Existing dataset/runtime/grader/inventory fields. Runtime includes `configId`, `configRevision`, app/model/settings/write policy and limits. Structural installed-config match; no service canonical hash, source loader or retry-lineage field. |
-| Pagination | Versioned collection/project/bundle/UTC-microsecond/UUID cursor, chronological `(created_at,id)` order, scoped old-UUID resolution. Never round cursor timestamps through JS Date. Migration 0012 adds covering indexes. |
+| Pagination | Versioned collection/project/bundle/UTC-microsecond/UUID cursor, chronological `(created_at,id)` order. Never round cursor timestamps through JS Date. The database baseline includes covering indexes. |
 | Helper/private state | One `evaluate:local` command, `scripts/evaluate-local.ts`, explicit `--bundleID`/`--requestID`, dedicated read/write evaluator principal. S owns atomic private state helpers and provisioning; H owns exclusive journal execution and recovery. Test-owned state root is mandatory for fixtures. |
 | Member access | 409 `last_admin`; admin-only bounded member page; identity lookup adds nullable current role. Current browser authority remains decisive. No new machine-admin bypass. |
 

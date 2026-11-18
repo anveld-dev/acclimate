@@ -39,7 +39,7 @@ test('Pi preparation creates resource-loader inputs without selecting a made-up 
   } finally {
     await prepared.cleanup();
   }
-  await assert.rejects(access(prepared.cwd));
+  await assert.rejects(access(prepared.cwd), { code: 'ENOENT' });
 });
 
 test('Pi rejects malformed skill paths and duplicate payload paths before staging', async () => {

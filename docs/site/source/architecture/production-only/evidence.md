@@ -6,7 +6,7 @@ Updated 2026-11-14. Implementation and isolated acceptance are complete. The [pl
 
 The app has one identity path: PostgreSQL plus verified OIDC browser sessions and current memberships. Distinct machine grants still serve background applications. Local/demo provisioning and old private-state evaluator lookup are retired. Nothing resets, adopts or migrates the running user's database during development.
 
-Operators can explicitly adopt a memberless project after reviewing its exact ID, their verified identity and a reason. Adoption is serialized and audited; historical retries never restore a removed role. Migration 0013 preserves business rows and revokes previous browser sessions once. Coordinate that upgrade and require fresh sign-in.
+Operators can explicitly adopt a memberless project after reviewing its exact ID, their verified identity and a reason. Adoption is serialized and audited; historical retries never restore a removed role. The November 14 release used migration 0013 to revoke previous browser sessions during the OIDC cutover. The current release uses a fresh schema baseline. See the [current deployment instructions](../../../deploy/README.md#upgrades-and-recovery).
 
 The production recipe includes PostgreSQL 16, Rust, a built Node console and a TLS proxy, with private backend listeners and explicit secret inputs. Readiness checks usable storage, singleton ownership and a live initialized worker. Shutdown withdraws readiness and releases ownership after work stops or its bounded deadline cancels it.
 

@@ -33,11 +33,10 @@ async fn call(
     (status, serde_json::from_slice(&body).unwrap())
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn immutable_siblings_generation_publish_and_expired_replay() {
     // Explicit fixture URL prevents accidentally migrating or mutating the demo database.
-    let Ok(url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
-        return;
-    };
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let project = format!("draft-test-{}", uuid::Uuid::new_v4());
@@ -166,10 +165,9 @@ async fn immutable_siblings_generation_publish_and_expired_replay() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn publication_observes_concurrent_policy_checks_and_records_an_exact_override() {
-    let Ok(url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
-        return;
-    };
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let project = format!("policy-publish-{}", uuid::Uuid::new_v4());

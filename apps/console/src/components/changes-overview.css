@@ -252,7 +252,7 @@
   inset: auto;
   padding-top: 0;
 }
-.history-files-grid .file-navigator-toggle[data-slot='button'] {
+.history-files-grid > .file-navigator[data-compact='true'] .file-navigator-toggle[data-slot='button'] {
   position: static;
   width: 100%;
 }
@@ -275,14 +275,15 @@
   max-height: 500px;
   overflow: auto;
 }
-@media (max-width: 899px) {
-  .history-files-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .history-files-grid .file-navigator {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
+.history-files-grid:has(> .file-navigator[data-compact='true']) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.history-files-grid > .file-navigator[data-compact='true'] {
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+}
+.history-files-grid > .file-navigator[data-compact='false'] {
+  align-self: stretch;
 }
 @media (pointer: coarse) {
   .changes-main [role='tablist'],
@@ -301,4 +302,134 @@
     animation-duration: 0s !important;
     transition-duration: 0s !important;
   }
+}
+
+.changes-overview {
+  --changes-paper: #f7f5ed;
+  --changes-surface: #fffdf7;
+  --changes-ink: #23372c;
+  --changes-muted: #586357;
+  --changes-line: #cccbbd;
+  --changes-green: #29503e;
+  --changes-copper: #945732;
+  --changes-serif: Baskerville, 'Iowan Old Style', Georgia, serif;
+  background: var(--changes-paper);
+  color: var(--changes-ink);
+  padding: clamp(12px, 2.3vw, 36px);
+  border: 1px solid var(--changes-line);
+}
+.changes-overview .changes-overview-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(12px, 3vw, 44px);
+  padding: 0 0 20px;
+  margin: 0 0 22px;
+  border-bottom: 1px solid var(--changes-line);
+}
+.changes-overview-toolbar h2 {
+  color: var(--changes-ink);
+  font: 500 clamp(46px, 5.8vw, 82px) / 0.99 var(--changes-serif);
+  letter-spacing: -0.055em;
+}
+.changes-overview-toolbar p {
+  color: var(--changes-muted);
+  font-size: 13px;
+}
+.changes-masthead-art {
+  width: 100%;
+  max-width: 560px;
+  justify-self: center;
+  height: clamp(48px, 7vw, 105px);
+  object-fit: contain;
+  mix-blend-mode: multiply;
+}
+.changes-overview-actions a:first-child {
+  background: var(--changes-green);
+  color: var(--changes-paper);
+  border-color: transparent;
+}
+.changes-overview-actions a:nth-child(2) {
+  color: var(--changes-ink);
+  background: transparent;
+  border-color: var(--changes-line);
+}
+.changes-frontpage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: clamp(12px, 2vw, 28px);
+  align-items: start;
+  margin-bottom: 26px;
+}
+.changes-frontpage .changes-overview-queues {
+  margin: 0;
+  min-width: 0;
+}
+.changes-frontpage .change-queues {
+  grid-template-columns: minmax(0, 1fr);
+}
+@container changes-overview (max-width: 780px) {
+  .changes-overview .changes-overview-toolbar {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px 18px;
+  }
+  .changes-overview-actions {
+    grid-column: 1 / -1;
+  }
+  .changes-frontpage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .changes-masthead-art {
+    justify-self: end;
+  }
+}
+@container changes-overview (max-width: 440px) {
+  .changes-overview .changes-overview-toolbar {
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+  }
+  .changes-frontpage {
+    margin-bottom: 18px;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .changes-overview {
+    --changes-paper: #1d2721;
+    --changes-surface: #222e26;
+    --changes-ink: #f0efdf;
+    --changes-muted: #b5bdae;
+    --changes-line: #455248;
+    --changes-green: #c1d3b6;
+    --changes-copper: #dfad84;
+  }
+  .changes-masthead-art {
+    filter: brightness(1.75) saturate(0.78);
+    mix-blend-mode: screen;
+  }
+}
+
+.changes-overview[data-version-selected] .changes-overview-toolbar {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+.changes-overview[data-version-selected] .changes-overview-toolbar h2 {
+  font-size: 30px;
+  letter-spacing: -0.035em;
+}
+.changes-overview[data-version-selected] .changes-overview-queues {
+  margin: 18px 0 0;
+}
+
+.changes-history-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-block-end: 8px;
+  font-size: 14px;
+  color: var(--muted-foreground);
 }

@@ -9,8 +9,8 @@ use std::{sync::Arc, time::Duration};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-async fn fixture(max_connections: u32) -> Option<(AppState, String, Vec<(Uuid, String)>)> {
-    let url = std::env::var("ACCLIMATE_TEST_DATABASE_URL").ok()?;
+async fn fixture(max_connections: u32) -> (AppState, String, Vec<(Uuid, String)>) {
+    let url = common::database_url();
     let db = sqlx::postgres::PgPoolOptions::new()
         .max_connections(max_connections)
         .acquire_timeout(Duration::from_secs(2))
@@ -57,7 +57,7 @@ async fn fixture(max_connections: u32) -> Option<(AppState, String, Vec<(Uuid, S
         }]),
         provider: None,
     };
-    Some((state, project, people))
+    (state, project, people)
 }
 fn request(method: &str, path: &str, session: Option<&str>, body: &str) -> Request<Body> {
     let mut r = Request::builder()
@@ -76,10 +76,9 @@ fn request(method: &str, path: &str, session: Option<&str>, body: &str) -> Reque
     r.body(Body::from(body.to_owned())).unwrap()
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn browser_reads_work_with_one_pool_connection_and_machine_prefix_still_works() {
-    let Some((state, project, people)) = fixture(1).await else {
-        return;
-    };
+    let (state, project, people) = fixture(1).await;
     let app = router(state.clone());
     for path in [
         format!("/v1/projects/{project}/bundles"),
@@ -118,10 +117,9 @@ async fn browser_reads_work_with_one_pool_connection_and_machine_prefix_still_wo
     state.db.close().await;
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn crossed_admin_updates_do_not_deadlock() {
-    let Some((state, project, people)) = fixture(6).await else {
-        return;
-    };
+    let (state, project, people) = fixture(6).await;
     let app = router(state.clone());
     for _ in 0..5 {
         let a = app.clone().oneshot(request(
@@ -146,10 +144,9 @@ async fn crossed_admin_updates_do_not_deadlock() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn integration_replay_rechecks_current_administrator_membership() {
-    let Some((state, project, people)) = fixture(3).await else {
-        return;
-    };
+    let (state, project, people) = fixture(3).await;
     let bundle = Uuid::new_v4();
     let version = Uuid::new_v4();
     sqlx::query("INSERT INTO bundles(id,project_id,name) VALUES($1,$2,'integration replay')")
@@ -159,7 +156,7 @@ async fn integration_replay_rechecks_current_administrator_membership() {
         .await
         .unwrap();
     sqlx::query(
-        "INSERT INTO versions(id,project_id,bundle_id,digest,payload) VALUES($1,$2,$3,$4,$5)",
+        "INSERT INTO versions(id,project_id,bundle_id,digest,payload,created_by) VALUES($1,$2,$3,$4,$5,'fixture-author')",
     )
     .bind(version)
     .bind(&project)

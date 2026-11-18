@@ -57,6 +57,8 @@ function ScopedFileTree({
   const pendingFocus = useRef<string | undefined>(undefined);
   const pendingReveal = useRef<string | undefined>(undefined);
   const nodes = useMemo(() => buildFileTree(items), [items]);
+  const selectedPath = items.find((item) => item.id === selectedId)?.path;
+  const ancestors = useMemo(() => selectedId === undefined ? [] : fileTreeAncestors(nodes, selectedId), [nodes, selectedId]);
   const itemSignature = JSON.stringify(items.map((item) => [item.id, item.path, item.kind]));
   const filterSignature = JSON.stringify([filterKey, itemSignature]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -78,7 +80,7 @@ function ScopedFileTree({
   const previousUnfilteredSelection = useRef<string | undefined>(undefined);
   const previousUnfiltered = useRef(new Map<string, string>());
   const selectedNodeId = selectedId === undefined ? undefined : fileTreeLeafId(selectedId);
-  const selectionSignature = JSON.stringify([selectedId, items.find((item) => item.id === selectedId)?.path]);
+  const selectionSignature = JSON.stringify([selectedId, selectedPath]);
   const selectedNode = useRef(selectedNodeId);
   selectedNode.current = selectedNodeId;
   const typeahead = useRef({ text: '', at: 0 });
@@ -146,7 +148,7 @@ function ScopedFileTree({
     if (enteredFilters) setFilterFolds({ key: filterSignature, ids: new Set() });
     const revealIds = new Set<string>();
     if (changedSelection && selectedId !== undefined) {
-      fileTreeAncestors(nodes, selectedId).forEach((id) => revealIds.add(id));
+      ancestors.forEach((id) => revealIds.add(id));
       setPreferredId(fileTreeLeafId(selectedId));
       pendingReveal.current = fileTreeLeafId(selectedId);
       if (root.current?.contains(document.activeElement)) pendingFocus.current = fileTreeLeafId(selectedId);
@@ -281,6 +283,9 @@ function ScopedFileTree({
     return siblings.map((node, index) => {
       const expanded = node.type === 'folder' && !effectiveFolds.has(node.id);
       const selected = node.type === 'file' && node.item.id === selectedId;
+      const change = node.type === 'file' ? node.item.changeDescription : undefined;
+      const changeLabel = change ? `${change} in working copy` : undefined;
+      const containsSelection = node.type === 'folder' && !expanded && ancestors.includes(node.id);
       const groupId = `${treeId}-group-${encodeURIComponent(node.id)}`;
       const common = {
         role: 'treeitem' as const,
@@ -297,7 +302,12 @@ function ScopedFileTree({
         onFocus: () => { setPreferredId(node.id); },
         onKeyDown: (event: KeyboardEvent<HTMLElement>) => onKeyDown(event, node),
       };
-      const label = <span className="file-tree-label">{node.name}</span>;
+      const label = (
+        <>
+          <span className="file-tree-label">{node.name}</span>
+          {change && <span className="file-tree-change" aria-hidden="true">{change === 'Added' ? 'A' : 'M'}</span>}
+        </>
+      );
       return (
         <li key={node.id} role="none" className="file-tree-branch">
           <Tooltip>
@@ -309,6 +319,7 @@ function ScopedFileTree({
                   variant="ghost"
                   className="file-tree-row file-tree-folder"
                   aria-label={`Folder ${node.path}`}
+                  aria-description={containsSelection ? `Contains selected file ${selectedPath}` : undefined}
                   aria-expanded={expanded}
                   aria-owns={expanded ? groupId : undefined}
                   disabled={disabled}
@@ -317,6 +328,12 @@ function ScopedFileTree({
                   <ChevronRight className={`file-tree-chevron size-4${expanded ? ' rotate-90' : ''}`} aria-hidden="true" />
                   {expanded ? <FolderOpen className="file-tree-icon size-4" aria-hidden="true" /> : <Folder className="file-tree-icon size-4" aria-hidden="true" />}
                   {label}
+                  {!expanded && (
+                    <span aria-hidden="true" className="file-folder-summary">
+                      {containsSelection && <span className="file-folder-selected" />}
+                      {node.fileCount}
+                    </span>
+                  )}
                 </Button>
               ) : hrefForItem ? (
                 <Button asChild variant="ghost" className={`file-tree-row content-file-button${selected ? ' is-selected' : ''}`}>
@@ -325,6 +342,7 @@ function ScopedFileTree({
                     href={hrefForItem(node.item)}
                     aria-label={`Open ${node.path || 'unnamed entry'}`}
                     aria-selected={selected}
+                    aria-description={changeLabel}
                     aria-current={selected ? 'true' : undefined}
                     aria-disabled={disabled || undefined}
                     data-file-path={node.path}
@@ -345,6 +363,7 @@ function ScopedFileTree({
                   className={`file-tree-row content-file-button${selected ? ' is-selected' : ''}`}
                   aria-label={`Open ${node.path || 'unnamed entry'}`}
                   aria-selected={selected}
+                  aria-description={changeLabel}
                   data-file-path={node.path}
                   disabled={disabled}
                   onClick={() => onSelectItem?.(node.item)}
@@ -354,8 +373,15 @@ function ScopedFileTree({
                 </Button>
               )}
             </TooltipTrigger>
-            <TooltipContent side="right" className="file-tree-tooltip max-w-[min(28rem,calc(100vw-2rem))] break-all text-sm">
-              {node.path || 'Unnamed entry'}
+            <TooltipContent side="right" className="file-tree-tooltip max-w-[min(28rem,calc(100vw-2rem))] flex-col items-start break-all text-sm">
+              <span>{node.path || 'Unnamed entry'}</span>
+              {changeLabel && <span>{changeLabel}</span>}
+              {node.type === 'folder' && !expanded && (
+                <span>
+                  {node.fileCount} {node.fileCount === 1 ? 'file' : 'files'}
+                  {containsSelection && ` · Selected: ${selectedPath}`}
+                </span>
+              )}
             </TooltipContent>
           </Tooltip>
           {node.type === 'folder' && expanded && (

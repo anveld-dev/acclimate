@@ -914,41 +914,29 @@ test('terminal recovery refuses a different local assertion with the same reques
   }
 });
 
-for (const committed of [false, true])
-  test(`legacy report ${committed ? 'known committed' : 'without a receipt'} never guesses submission or repeats callbacks`, async () => {
-    const s = await setup(),
-      mutate = s.options.transport.mutate;
-    let first = true;
-    s.options.transport.mutate = async <T>(...args: Parameters<typeof mutate>) => {
-      if (args[0] === 'submit' && first) {
-        first = false;
-        if (committed) await mutate<T>(...args);
-        throw new TypeError('lost response');
-      }
-      return mutate<T>(...args);
-    };
-    try {
-      await assert.rejects(runCapturedEvaluation(s.options));
-      const filename = path.join(s.directory, 'attempt.json'),
-        state = JSON.parse(await readFile(filename, 'utf8')) as AttemptJournal;
-      delete state.retainedOperations;
-      delete state.wireBodies;
-      await writeFile(filename, JSON.stringify(state), { mode: 0o600 });
-      if (committed) {
-        assert.equal((await runCapturedEvaluation(s.options)).evaluation.status, 'completed');
-        assert.equal(s.submitted.length, 1);
-      } else {
-        await assert.rejects(
-          runCapturedEvaluation(s.options),
-          (error) =>
-            error instanceof EvaluationError && error.code === 'legacy.submission_unconfirmed',
-        );
-        assert.equal(s.submitted.length, 0);
-      }
-    } finally {
-      await s.cleanup();
-    }
-  });
+test('a saved report without the original submission body cannot be replayed', async () => {
+  const s = await setup();
+  const mutate = s.options.transport.mutate;
+  s.options.transport.mutate = async <T>(...args: Parameters<typeof mutate>) => {
+    if (args[0] === 'submit') throw new TypeError('lost response');
+    return mutate<T>(...args);
+  };
+  try {
+    await assert.rejects(runCapturedEvaluation(s.options));
+    const filename = path.join(s.directory, 'attempt.json');
+    const state = JSON.parse(await readFile(filename, 'utf8')) as AttemptJournal;
+    delete state.wireBodies.submit;
+    await writeFile(filename, JSON.stringify(state), { mode: 0o600 });
+    s.options.transport.mutate = mutate;
+    await assert.rejects(
+      runCapturedEvaluation(s.options),
+      (error) => error instanceof EvaluationError && error.code === 'journal.invalid',
+    );
+    assert.equal(s.submitted.length, 0);
+  } finally {
+    await s.cleanup();
+  }
+});
 
 test('foreign Python journal refuses ownership and scope serialization is explicit', async () => {
   const s = await setup();

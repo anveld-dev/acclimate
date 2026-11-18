@@ -30,6 +30,8 @@ import workspacePageStyles from '../components/workspace-pages.css?url';
 import workspaceMemberStyles from '../components/workspace-members.css?url';
 import bundleLibraryStyles from '../components/bundle-library.css?url';
 import changesReleasesStyles from '../components/changes-releases.css?url';
+import evaluationCaseWorkbenchStyles from '../components/evaluation-case-workbench.css?url';
+import changesCaseTriageStyles from '../components/changes-case-triage.css?url';
 import changesOverviewStyles from '../components/changes-overview.css?url';
 import evaluationHistoryStyles from '../components/evaluation-history-view.css?url';
 import versionInspectorStyles from '../components/version-inspector.css?url';
@@ -72,6 +74,8 @@ export const Route = createRootRoute({
       { rel: 'stylesheet', href: sdkSetupStyles },
       { rel: 'stylesheet', href: changesReleasesStyles },
       { rel: 'stylesheet', href: changesOverviewStyles },
+      { rel: 'stylesheet', href: changesCaseTriageStyles },
+      { rel: 'stylesheet', href: evaluationCaseWorkbenchStyles },
       { rel: 'stylesheet', href: evaluationHistoryStyles },
       { rel: 'stylesheet', href: versionInspectorStyles },
       { rel: 'stylesheet', href: pageHeaderStyles },
@@ -117,7 +121,7 @@ function Root() {
             </Shell>
           </PendingChangesProvider>
         </TooltipProvider>
-        <Toaster theme="light" position="bottom-right" richColors />
+        <Toaster theme="system" position="bottom-right" richColors />
         <Scripts />
       </body>
     </html>

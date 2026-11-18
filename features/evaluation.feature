@@ -18,7 +18,7 @@ Feature: App-owned evaluation
     When the application compares both versions using the SDK
     And the same evaluator finishes the request
     Then the request is completed with the submitted comparison
-    And the comparison preserves both exact version digests
+    And both retry-review repetitions score the exact parent 0 and the exact candidate 1
 
   @EVAL-03
   Scenario: Starting the same attempt again does not create another run
@@ -49,45 +49,59 @@ Feature: App-owned evaluation
     Given I request evaluation of the saved snapshot
     And the evaluator starts an attempt
     When the evaluator submits evidence with a changed <setting>
-    Then completion is rejected
+    Then the evidence submission is rejected as invalid
+    And the original attempt remains running
+    When the same evaluator submits corrected evidence
+    And the same evaluator finishes the request
+    Then the request is completed with the submitted comparison
     Examples:
-      | setting |
-      | dataset |
-      | runtime |
-      | grader  |
-      | cases   |
+      | setting        |
+      | dataset        |
+      | runtime        |
+      | grader         |
+      | case inventory |
+      | result case    |
 
   @EVAL-07
-  Scenario Outline: Missing or failed evidence remains incomplete
+  Scenario Outline: Partial grades survive a failed evaluation and block measured publication
     Given I request evaluation of the saved snapshot
     And the evaluator starts an attempt
-    When the evaluator submits <outcome> evidence
+    When the evaluator submits these paired grades
+      | case         | repetition | parent reward | candidate execution | candidate grading | candidate reward |
+      | retry-review | 0          | 0.25          | completed           | scored            | 0.75             |
+      | retry-review | 1          | 0.5           | <execution>         | <grading>         | unknown          |
     And the same evaluator finishes the request
-    Then the request is failed with its incomplete evidence still inspectable
+    Then the failed request retains the submitted grades and the ungraded candidate arm
+    When I try to publish that draft using its incomplete evidence
+    Then publication is rejected
+    And applications still resolve the original release
     Examples:
-      | outcome              |
-      | missing grades       |
-      | grader failures      |
-      | infrastructure errors|
+      | execution             | grading |
+      | completed             | missing |
+      | completed             | failed  |
+      | infrastructure_failed | missing |
 
   @EVAL-08
   Scenario: Unknown usage is preserved instead of inventing a zero cost
     Given I request evaluation of the saved snapshot
     And the evaluator starts an attempt
     When the evaluator submits evidence without usage
-    Then the comparison retains unknown usage
+    Then both arms of every requested case and repetition retain unknown usage
 
   @EVAL-09
   Scenario Outline: An operator can interrupt pending or running work
     Given I request evaluation of the saved snapshot
     And the request is <state>
     When I interrupt the request with a reason
-    Then it stays interrupted after restart
-    And late start or completion is rejected
+    And the service restarts
+    Then the evaluator cannot start the interrupted request
+    And <outcome>
+    And new evidence for the interrupted request is rejected
+    And the request is still interrupted with its reason and no linked comparison
     Examples:
-      | state     |
-      | requested |
-      | running   |
+      | state                           | outcome                                                          |
+      | waiting for an evaluator        | no attempt or evaluator has been assigned                        |
+      | running with submitted evidence | the original evaluator cannot finish with its submitted evidence |
 
   @EVAL-10
   Scenario: A service restart does not invent evaluator completion

@@ -47,11 +47,8 @@ struct Fixture {
     root: String,
     identity: Value,
 }
-async fn fixture() -> Option<Fixture> {
-    let Ok(url) = std::env::var("EVALUATION_TEST_DATABASE_URL") else {
-        eprintln!("EVALUATION_TEST_DATABASE_URL required for isolated database evidence checks");
-        return None;
-    };
+async fn fixture() -> Fixture {
+    let url = common::database_url();
     let db = PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let project = format!("evidence-{}", Uuid::new_v4());
@@ -73,7 +70,7 @@ async fn fixture() -> Option<Fixture> {
         (parent, None, "parent"),
         (candidate, Some(parent), "candidate"),
     ] {
-        sqlx::query("INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload) VALUES($1,$2,$3,$4,$5,$6)").bind(id).bind(&project).bind(bundle).bind(base).bind(digest).bind(b"{}".to_vec()).execute(&db).await.unwrap();
+        sqlx::query("INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload,created_by) VALUES($1,$2,$3,$4,$5,$6,'fixture-author')").bind(id).bind(&project).bind(bundle).bind(base).bind(digest).bind(b"{}".to_vec()).execute(&db).await.unwrap();
     }
     let grants = [("one", "evaluator-one"), ("two", "evaluator-two")]
         .into_iter()
@@ -93,20 +90,17 @@ async fn fixture() -> Option<Fixture> {
     });
     let root = format!("/v1/projects/{project}/bundles/{bundle}");
     let identity = json!({"parentVersionId":parent,"parentDigest":"parent","candidateVersionId":candidate,"candidateDigest":"candidate","datasetRevision":"dataset-v1","runtime":{"configId":"app","configRevision":"opaque-1","model":"none"},"graderRevision":"grader-v1","expectedCases":[{"caseId":"a","repetition":0}]});
-    Some(Fixture {
+    Fixture {
         db,
         app,
         project,
         bundle,
         root,
         identity,
-    })
-}
-async fn request(f: &Fixture, strict: bool) -> Value {
-    let mut identity = f.identity.clone();
-    if strict {
-        identity["requireBoundEvidence"] = json!(true);
     }
+}
+async fn request(f: &Fixture) -> Value {
+    let identity = f.identity.clone();
     let (s, e) = call(
         &f.app,
         "POST",
@@ -141,10 +135,11 @@ fn report(f: &Fixture, e: Option<&Value>) -> Value {
     body
 }
 #[tokio::test]
-async fn strict_binding_rejects_cross_attempt_principal_settings_and_legacy_stays_explicit() {
-    let Some(f) = fixture().await else { return };
-    let e = request(&f, true).await;
-    let e2 = request(&f, true).await;
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
+async fn evaluation_completion_requires_matching_bound_evidence() {
+    let f = fixture().await;
+    let e = request(&f).await;
+    let e2 = request(&f).await;
     let reports = format!("{}/comparisons", f.root);
     let finish = format!(
         "{}/evaluation-requests/{}/finish",
@@ -218,27 +213,23 @@ async fn strict_binding_rejects_cross_attempt_principal_settings_and_legacy_stay
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["status"], "completed");
     assert_eq!(v["requireBoundEvidence"], true);
-    let legacy = request(&f, false).await;
-    assert_eq!(legacy["requireBoundEvidence"], false);
-    let (s, v) = call(
+    let mut disabled = f.identity.clone();
+    disabled["requireBoundEvidence"] = json!(false);
+    let (status, error) = call(
         &f.app,
         "POST",
-        &format!(
-            "{}/evaluation-requests/{}/finish",
-            f.root,
-            legacy["id"].as_str().unwrap()
-        ),
+        &format!("{}/evaluation-requests", f.root),
         "one",
-        json!({"attemptId":"attempt-1","comparisonId":unbound["id"]}),
+        disabled,
     )
     .await;
-    assert_eq!(s, StatusCode::OK, "{v}");
-    assert_eq!(v["status"], "completed");
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{error}");
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn bound_submission_and_interrupt_share_the_request_lock() {
-    let Some(f) = fixture().await else { return };
-    let e = request(&f, true).await;
+    let f = fixture().await;
+    let e = request(&f).await;
     let id = Uuid::parse_str(e["id"].as_str().unwrap()).unwrap();
     let mut tx = f.db.begin().await.unwrap();
     sqlx::query("SELECT id FROM evaluation_requests WHERE id=$1 FOR UPDATE")
@@ -309,8 +300,9 @@ async fn bound_submission_and_interrupt_share_the_request_lock() {
     );
 }
 #[tokio::test]
-async fn chronological_pages_cover_thirty_rows_ties_microseconds_and_scoped_old_cursors() {
-    let Some(f) = fixture().await else { return };
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
+async fn chronological_pages_cover_thirty_rows_ties_microseconds_and_scoped_cursors() {
+    let f = fixture().await;
     for index in 0..31 {
         let id = Uuid::new_v4();
         let micros = index / 3;
@@ -391,16 +383,6 @@ async fn chronological_pages_cover_thirty_rows_ties_microseconds_and_scoped_old_
         }
         assert_eq!(observed, expected);
         assert_eq!(observed.iter().collect::<HashSet<_>>().len(), 31);
-        let (_, old) = call(
-            &f.app,
-            "GET",
-            &format!("{}/{}?limit=100&cursor={}", f.root, route, expected[6]),
-            "one",
-            Value::Null,
-        )
-        .await;
-        assert_eq!(old["items"].as_array().unwrap().len(), 24);
-        assert_eq!(old["items"][0]["id"], expected[7]);
         let other_bundle = f
             .root
             .replace(&f.bundle.to_string(), &Uuid::new_v4().to_string());
@@ -440,7 +422,7 @@ async fn chronological_pages_cover_thirty_rows_ties_microseconds_and_scoped_old_
             call(
                 &f.app,
                 "GET",
-                &format!("{}/{}?cursor={}", f.root, route, Uuid::new_v4()),
+                &format!("{}/{}?cursor={}", f.root, route, expected[6]),
                 "one",
                 Value::Null
             )

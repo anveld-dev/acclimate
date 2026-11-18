@@ -10,14 +10,8 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AccessRouteImport } from './routes/access'
-import { Route as ContentRouteImport } from './routes/content'
 import { Route as HealthRouteImport } from './routes/health'
-import { Route as ImprovementRouteImport } from './routes/improvement'
-import { Route as IntegrationsRouteImport } from './routes/integrations'
 import { Route as ReadyRouteImport } from './routes/ready'
-import { Route as ReleasesRouteImport } from './routes/releases'
-import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AuthActionRouteImport } from './routes/auth.$action'
 import { Route as InvitationsInviteIdRouteImport } from './routes/invitations.$inviteId'
 import { Route as WSplatRouteImport } from './routes/w.$'
@@ -27,44 +21,14 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AccessRoute = AccessRouteImport.update({
-  id: '/access',
-  path: '/access',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ContentRoute = ContentRouteImport.update({
-  id: '/content',
-  path: '/content',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const HealthRoute = HealthRouteImport.update({
   id: '/health',
   path: '/health',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ImprovementRoute = ImprovementRouteImport.update({
-  id: '/improvement',
-  path: '/improvement',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IntegrationsRoute = IntegrationsRouteImport.update({
-  id: '/integrations',
-  path: '/integrations',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ReadyRoute = ReadyRouteImport.update({
   id: '/ready',
   path: '/ready',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReleasesRoute = ReleasesRouteImport.update({
-  id: '/releases',
-  path: '/releases',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SetupRoute = SetupRouteImport.update({
-  id: '/setup',
-  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthActionRoute = AuthActionRouteImport.update({
@@ -85,28 +49,16 @@ const WSplatRoute = WSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/access': typeof AccessRoute
-  '/content': typeof ContentRoute
   '/health': typeof HealthRoute
-  '/improvement': typeof ImprovementRoute
-  '/integrations': typeof IntegrationsRoute
   '/ready': typeof ReadyRoute
-  '/releases': typeof ReleasesRoute
-  '/setup': typeof SetupRoute
   '/auth/$action': typeof AuthActionRoute
   '/invitations/$inviteId': typeof InvitationsInviteIdRoute
   '/w/$': typeof WSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/access': typeof AccessRoute
-  '/content': typeof ContentRoute
   '/health': typeof HealthRoute
-  '/improvement': typeof ImprovementRoute
-  '/integrations': typeof IntegrationsRoute
   '/ready': typeof ReadyRoute
-  '/releases': typeof ReleasesRoute
-  '/setup': typeof SetupRoute
   '/auth/$action': typeof AuthActionRoute
   '/invitations/$inviteId': typeof InvitationsInviteIdRoute
   '/w/$': typeof WSplatRoute
@@ -114,14 +66,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/access': typeof AccessRoute
-  '/content': typeof ContentRoute
   '/health': typeof HealthRoute
-  '/improvement': typeof ImprovementRoute
-  '/integrations': typeof IntegrationsRoute
   '/ready': typeof ReadyRoute
-  '/releases': typeof ReleasesRoute
-  '/setup': typeof SetupRoute
   '/auth/$action': typeof AuthActionRoute
   '/invitations/$inviteId': typeof InvitationsInviteIdRoute
   '/w/$': typeof WSplatRoute
@@ -130,42 +76,24 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/access'
-    | '/content'
     | '/health'
-    | '/improvement'
-    | '/integrations'
     | '/ready'
-    | '/releases'
-    | '/setup'
     | '/auth/$action'
     | '/invitations/$inviteId'
     | '/w/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/access'
-    | '/content'
     | '/health'
-    | '/improvement'
-    | '/integrations'
     | '/ready'
-    | '/releases'
-    | '/setup'
     | '/auth/$action'
     | '/invitations/$inviteId'
     | '/w/$'
   id:
     | '__root__'
     | '/'
-    | '/access'
-    | '/content'
     | '/health'
-    | '/improvement'
-    | '/integrations'
     | '/ready'
-    | '/releases'
-    | '/setup'
     | '/auth/$action'
     | '/invitations/$inviteId'
     | '/w/$'
@@ -173,14 +101,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AccessRoute: typeof AccessRoute
-  ContentRoute: typeof ContentRoute
   HealthRoute: typeof HealthRoute
-  ImprovementRoute: typeof ImprovementRoute
-  IntegrationsRoute: typeof IntegrationsRoute
   ReadyRoute: typeof ReadyRoute
-  ReleasesRoute: typeof ReleasesRoute
-  SetupRoute: typeof SetupRoute
   AuthActionRoute: typeof AuthActionRoute
   InvitationsInviteIdRoute: typeof InvitationsInviteIdRoute
   WSplatRoute: typeof WSplatRoute
@@ -195,20 +117,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/access': {
-      id: '/access'
-      path: '/access'
-      fullPath: '/access'
-      preLoaderRoute: typeof AccessRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/content': {
-      id: '/content'
-      path: '/content'
-      fullPath: '/content'
-      preLoaderRoute: typeof ContentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/health': {
       id: '/health'
       path: '/health'
@@ -216,39 +124,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HealthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/improvement': {
-      id: '/improvement'
-      path: '/improvement'
-      fullPath: '/improvement'
-      preLoaderRoute: typeof ImprovementRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/integrations': {
-      id: '/integrations'
-      path: '/integrations'
-      fullPath: '/integrations'
-      preLoaderRoute: typeof IntegrationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/ready': {
       id: '/ready'
       path: '/ready'
       fullPath: '/ready'
       preLoaderRoute: typeof ReadyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/releases': {
-      id: '/releases'
-      path: '/releases'
-      fullPath: '/releases'
-      preLoaderRoute: typeof ReleasesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/setup': {
-      id: '/setup'
-      path: '/setup'
-      fullPath: '/setup'
-      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/$action': {
@@ -277,14 +157,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AccessRoute: AccessRoute,
-  ContentRoute: ContentRoute,
   HealthRoute: HealthRoute,
-  ImprovementRoute: ImprovementRoute,
-  IntegrationsRoute: IntegrationsRoute,
   ReadyRoute: ReadyRoute,
-  ReleasesRoute: ReleasesRoute,
-  SetupRoute: SetupRoute,
   AuthActionRoute: AuthActionRoute,
   InvitationsInviteIdRoute: InvitationsInviteIdRoute,
   WSplatRoute: WSplatRoute,

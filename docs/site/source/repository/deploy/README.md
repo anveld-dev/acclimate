@@ -2,7 +2,7 @@
 
 `compose.yaml` is the application stack for an existing Keycloak deployment: PostgreSQL 16 with a persistent volume, one Rust service, one built Node console and Caddy terminating public HTTPS. Only Caddy publishes host ports (80 and 443). The API, console and PostgreSQL are private Docker-network listeners. Keep the Docker bridge inaccessible to untrusted processes and firewall backend ports. The application containers require outbound access to the configured OIDC issuer and any explicitly configured model endpoint. Do not run multiple Rust processes against one database.
 
-Supply real identity, domain and secret settings before startup. No command infers a PostgreSQL role from the OS account, creates machine/human credentials, adopts existing private state, seeds example content or provisions a database from a developer account. `local`, `demo`, `console-bridge.ts` and `compose-config.ts` are retired explanatory failures. Existing `.local` and environment files are preserved and must be reviewed privately during cutover.
+Supply real identity, domain and secret settings before startup. No command infers a PostgreSQL role from the OS account, creates machine/human credentials, adopts existing private state, seeds example content or provisions a database from a developer account.
 
 ## Configuration
 
@@ -39,7 +39,7 @@ Caddy obtains and stores certificates in its persistent volume. It pins the upst
 
 PostgreSQL, Rust, console and proxy use restart policies and 90-second stop grace. Rust drains within 35 seconds plus bounded lock release; its singleton guard is held until work stops. `/health` is process liveness. `/ready` checks database usability, singleton ownership, initialized/live worker and non-draining state within a bounded probe. It does not prove queue progress, model/provider availability or evaluation quality. Console `/ready` validates configuration and upstream readiness without a provider discovery call on each probe.
 
-A service startup applies embedded migrations while holding the singleton ownership lock, then registers only explicitly configured machine-grant project rows. Registration creates no human memberships. Migration failure prevents listening. Human operators create workspaces through verified sign-in; existing memberless workspaces require explicit audited adoption by exact ID and reason. Operator capability alone does not grant existing workspace access.
+On first startup, the service applies its embedded schema baseline to an empty database under the singleton ownership lock. Subsequent starts verify the recorded migration. The service then registers the projects named in explicit machine grants. Registration creates no human memberships. Migration failure prevents listening. Human operators create workspaces through verified sign-in; existing memberless workspaces require explicit audited adoption by exact ID and reason. Operator capability alone does not grant existing workspace access.
 
 ## Operate connected learning
 
@@ -54,8 +54,6 @@ By default the proposer edits existing permitted files. To authorize structural 
 
 Inspect recent rounds, remaining proposal admissions and unused audit cohorts on the connection. Install fresh audit evaluators before adding them to the service. An audit is consumed when assigned, including interrupted audits. To adopt a different grader, dataset or acceptance policy, finish the current round, install the replacement evaluators, then renew with the new development descriptor or policies. Preserve the installed app and private journal for unsettled evaluations. Renewal uses the current renewal revision, which is separate from the connection's delivery revision.
 
-**Upgrading an existing enrollment.** Legacy automatic enrollments without installed fixture commitments require manual review after migration. Finish pending reviews, install the upgraded SDK and regenerate the development descriptor and genuinely fresh audit descriptors. Rotate development at a round boundary, append the new audits, and verify the new worker before re-enabling automatic rollout. Historical comparisons and consumed audit exposures retain their identities.
-
 ### Monitor and roll back a release
 
 Attach the exact started receipt and revision to a served job's terminal outcome. The receipt must come from a fresh verified channel resolution and have reached the service within the previous 30 days. The app retains the original job and grades the served answer against a read-only replay on the same private input with the assigned control version. The SDK samples ten percent of eligible jobs by default. [Wire field evidence and replay](../docs/evaluator-operations.md#audit-fresh-jobs-after-rollout).
@@ -68,9 +66,9 @@ To restore manually, open **Restore or refresh the delivery target** on the conn
 
 ## Upgrades and recovery
 
-Use a coordinated stop, verified backup, upgraded start, readiness verification, then route traffic. There is no rolling or multi-process deployment guarantee. Stop traffic and both application containers before upgrading, preserve the PostgreSQL volume, and rehearse migration and restoration against disposable copies first. Never use `down --volumes` for retained data. Normal `docker compose down` preserves volumes.
+This release starts from a fresh schema baseline. For an installation made with the former migration chain, keep the existing database and its matching service build together. To try this release alongside it, provision a separate empty PostgreSQL database and point the new service at it. The baseline has no in-place upgrade path for the former schema.
 
-The security cutover revokes old browser sessions once and requires fresh OIDC login. It preserves business records, machine credentials, memberships and exact content/version/history identities. Do not rewrite pending operation principals or replay old writes as the new human identity. Retain old metadata and inspect/resume only under the original service, project and principal with matching journal identity. Old launcher credentials do not grant a browser session. The explicit `evaluate:app -- --config /absolute/private/config.json ...` runner replaces launcher-state lookup; see the evaluator documentation for its private schema and app-owned handoff.
+For deployments already on this baseline, stop traffic and both application containers before changing service versions. Take a backup and rehearse restoration on a separate database with the matching service build. Verify readiness and an authenticated read before routing traffic. Normal `docker compose down` preserves volumes. The `--volumes` option deletes them.
 
 Supervisors restart failed processes with policy; investigate repeated failures. Exit code 75 identifies lost database ownership. The standalone service wrapper does not invent credentials or silently recover against another database. On SIGTERM readiness is withdrawn before HTTP/work draining and lock release. Backups include sensitive content and must be protected and restored on a schedule.
 
@@ -105,4 +103,4 @@ For a repeatable local qualification, set `DATABASE_URL` to a disposable Postgre
 python3 scripts/operations/qualify.py --pg-bin /path/to/postgresql-16/bin
 ```
 
-It creates three randomly named databases, applies migrations and fixture records, compares all restored table data including exact binary payloads and history, tests refusal of a populated target and transactional failure, and drops only the databases it created. It does not alter the database named by `DATABASE_URL`. A process kill or database outage can interrupt cleanup; remove only the randomly named `acclimate_ops_…` databases after identifying them. This synthetic qualification does not prove any particular production backup is restorable; perform and verify a restore of each operational backup on an appropriate schedule.
+It creates three randomly named databases, installs the schema and inserts fixture records, compares all restored table data including exact binary payloads and history, tests refusal of a populated target and transactional failure, and drops only the databases it created. It does not alter the database named by `DATABASE_URL`. A process kill or database outage can interrupt cleanup; remove only the randomly named `acclimate_ops_…` databases after identifying them. This synthetic qualification does not prove any particular production backup is restorable; perform and verify a restore of each operational backup on an appropriate schedule.

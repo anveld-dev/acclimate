@@ -71,11 +71,11 @@ export async function readChannel(
     const [bytes, history, bundles] = await Promise.all([
       client.getPayload(projectId, bundleId, resolution.version.id),
       client.listPromotions(projectId, bundleId, channel, { limit: 20 }),
-      allPages((cursor) =>
-        client.listBundles(projectId, { limit: 100, cursor }),
-      ).then((items) => ({ items })),
+      allPages((cursor) => client.listBundles(projectId, { limit: 100, cursor })),
     ]);
     const payload = verifyPayloadBytes(bytes, resolution.version.digest);
+    const bundle = bundles.find((entry) => entry.id === bundleId);
+    if (!bundle) throw new Error('Missing bundle');
     const observedAt = new Date().toISOString();
     if (observations.size > 1000) observations.clear();
     observations.set(observationKey, observedAt);
@@ -87,32 +87,20 @@ export async function readChannel(
         .update(env.CONSOLE_SERVICE_URL || '')
         .digest('hex')
         .slice(0, 32),
-      compatibilityTarget:
-        bundles.items.find((bundle) => bundle.id === bundleId)?.compatibilityTarget || 'generic',
+      compatibilityTarget: bundle.compatibilityTarget,
       lastSuccessfulRead: observedAt,
       canEdit:
         env.CONSOLE_ALLOW_EDITS === 'true' && (membership === 'editor' || membership === 'admin'),
       source: {
-        kind:
-          (
-            bundles.items.find((bundle) => bundle.id === bundleId) as
-              | { origin?: string }
-              | undefined
-          )?.origin === 'example'
-            ? 'seeded-example'
-            : (
-                  bundles.items.find((bundle) => bundle.id === bundleId) as
-                    | { origin?: string }
-                    | undefined
-                )?.origin === 'imported'
-              ? 'imported'
-              : 'configured-bundle',
+        kind: bundle.origin === 'example'
+          ? 'seeded-example'
+          : bundle.origin === 'imported' ? 'imported' : 'configured-bundle',
         storage: 'postgresql',
         isWorkingTree: false,
       },
       projectId,
       bundleId,
-      bundleName: bundles.items.find((bundle) => bundle.id === bundleId)?.name,
+      bundleName: bundle.name,
       channel,
       resolution,
       payload,

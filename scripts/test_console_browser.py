@@ -44,6 +44,8 @@ def main():
         page=b.page
         secrets=[*w.h.tokens.values(),w.h.login_token,w.h.console_token,b.identity.client_secret]
         original=business_snapshot(w.h)
+        page.goto(b.base+'/',wait_until='networkidle')
+        expect(page).to_have_url(b.base+b.workspace_path())
         layouts=0
         for width in (1440,1024,768,390,320):
             page.set_viewport_size(dict(width=width,height=1000))
@@ -75,10 +77,12 @@ def main():
         w.manual_release(w.original['version'],reason='Explicit refresh fixture.')
         after_release=business_snapshot(w.h)
         page.reload(wait_until='networkidle')
-        expect(page.get_by_role('heading',name='Revision 23',exact=True)).to_be_visible()
+        expect(page.get_by_role('article',name='Revision 23 · Current',exact=True)).to_be_visible()
         assert business_snapshot(w.h)==after_release,'Refresh wrote business state'
-        response=page.goto(b.base+'/not-a-page',wait_until='networkidle')
-        expect(page.get_by_role('heading',name='Page not found',exact=True)).to_be_visible()
+        for path in ['/setup','/access','/content','/improvement','/integrations','/releases','/not-a-page']:
+            response=page.goto(b.base+path,wait_until='networkidle')
+            assert response.status==404, (path,response.status)
+            expect(page.get_by_role('heading',name='Page not found',exact=True)).to_be_visible()
         # Revoke the actual callback-issued browser session through the valid transport.
         cookie=next(row for row in b.context.cookies(b.base) if row['name']=='acclimate_session')
         w.sessions['_qa-browser']=dict(secret=cookie['value'])

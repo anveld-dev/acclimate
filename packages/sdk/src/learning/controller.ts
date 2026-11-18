@@ -36,7 +36,7 @@ interface Checkpoint {
   queue: QueuedTeaching[];
   active: QueuedTeaching | null;
   activeSupersededBy?: Ref<AdmissionDecisionV1>;
-  supersessionInitialized?: true;
+  supersessionInitialized: true;
   seen: Record<string, string>;
   decisions: LearningDecision[];
   operation: LearningOperation | null;
@@ -76,7 +76,7 @@ function validateDefinition(definition: LearnerDefinition, options: OpenLearnerO
 function validateCheckpoint(value: Checkpoint, definition: LearnerDefinition, definitionDigest: string): void {
   if (value.schemaVersion !== 1 || value.campaignId !== definition.campaignId || value.definitionDigest !== definitionDigest)
     throw new LearningError('definition-conflict');
-  if (!integer(value.revision) || !integer(value.appliedSequence) || !integer(value.round) ||
+  if (value.supersessionInitialized !== true || !integer(value.revision) || !integer(value.appliedSequence) || !integer(value.round) ||
       (value.developmentAttempts !== undefined && (!integer(value.developmentAttempts) ||
         value.developmentAttempts > (definition.limits.maximumDevelopmentAttempts ?? 1))) ||
       (value.developmentHistory !== undefined && !validDevelopmentHistory(value.developmentHistory)) ||
@@ -197,6 +197,7 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
       audit: await store.putArtifact(policies.audit),
     };
     if (existing && startEpoch) {
+      if (existing.supersessionInitialized !== true) throw new LearningError('checkpoint-invalid');
       validateLineage(existing);
       const previousEpoch = existing.policyEpoch;
       const history = existing.priorEpochs ?? [];
@@ -419,20 +420,6 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
         const combined = AbortSignal.any([lock.signal, signal ?? new AbortController().signal,
           AbortSignal.timeout(Math.max(0, Math.min(deadline - Date.now(), 2_147_483_647)))]);
         const state = await read();
-        const migrateSupersession = !state.supersessionInitialized;
-        const initialRevision = state.revision;
-        if (migrateSupersession) {
-          // Older checkpoints retained replacement decisions without applying
-          // them to lessons still queued or active.
-          for (const entry of state.decisions.slice()) {
-            if (entry.stage !== 'admission' || entry.verdict !== 'admitted' || !entry.reference) continue;
-            const ref = entry.reference as Ref<AdmissionDecisionV1>;
-            const record = await store.readArtifact(ref);
-            validateAdmissionDecision(record);
-            if (record.admitted) await supersede(state, ref, record.admitted);
-          }
-          state.supersessionInitialized = true;
-        }
         for (const entry of await store.readInbox<LearnerCommand>(state.appliedSequence)) {
           const command = entry.command;
           let settlingResolution = false;
@@ -486,7 +473,6 @@ export async function openLearner(options: OpenLearnerOptions): Promise<Learner>
           state.appliedSequence = entry.sequence;
           await save(state);
         }
-        if (migrateSupersession && state.revision === initialRevision) await save(state);
         lock.assertOwned();
         if (state.operation) {
           if (state.operation.state === 'result-saved' && state.operation.receipt) {

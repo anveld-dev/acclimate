@@ -422,7 +422,7 @@ def evaluation_main(app, argv=None, *, review=None) -> int:
             sys.stderr.write(hint + "\n" + _COMPARE_USAGE + "\n")
         else:
             sys.stderr.write(json_bytes({"schemaVersion": 1, "command": command, "error": diagnostic}).decode() + "\n")
-        if diagnostic["code"] in {"execution.uncertain", "submission.unconfirmed", "legacy.submission_unconfirmed", "journal.busy", "journal.foreign", "journal.missing", "journal.relocated", "journal.ownership_lost", "request.interrupted", "request.base_conflict", "evidence.not_terminal"} or diagnostic.get("executionState") in {"may_have_started", "report_saved"}:
+        if diagnostic["code"] in {"execution.uncertain", "submission.unconfirmed", "journal.busy", "journal.foreign", "journal.missing", "journal.relocated", "journal.ownership_lost", "request.interrupted", "request.base_conflict", "evidence.not_terminal"} or diagnostic.get("executionState") in {"may_have_started", "report_saved"}:
             return 3
         if command == "export" and diagnostic["code"] == "artifact.missing":
             return 3

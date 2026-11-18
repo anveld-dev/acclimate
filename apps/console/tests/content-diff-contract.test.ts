@@ -17,10 +17,9 @@ for (const lines of [500, 501]) {
     const text =
       'shared\n' + Array.from({ length: lines }, (_, i) => `line ${i}`).join('\n') + '\n';
     const html = render(payload('shared\n'), payload(text), 'workspace');
-    assert.equal(html.includes('Preview limited to 500 changed lines.'), lines > 500);
-    const pre = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/)![1];
-    assert.match(pre, /\+ line 499/);
-    assert.doesNotMatch(pre, /\+ line 500/);
+    assert.match(html, /Changed lines in AGENTS.md/);
+    assert.match(html, new RegExp(lines + ' added lines'));
+    assert.doesNotMatch(html, /Preview limited/);
     if (lines > 500) {
       const href = html.match(/href="(data:text\/plain[^\"]+)"/s)![1];
       assert.equal(decodeURIComponent(href.split(',')[1]).split('\n').length, lines);
@@ -42,4 +41,10 @@ test('JSON entry downloads preserve exact Unicode and newline content in both va
     assert.match(html, /Download current entry JSON/);
     assert.equal(html.includes('source-review-container'), variant === 'workspace');
   }
+});
+
+test('separated edits exclude unchanged lines from changed-line totals', () => {
+  const html = render(payload('old one\ncontext\nold two'), payload('new one\ncontext\nnew two'));
+  assert.match(html, /2 added lines/);
+  assert.match(html, /2 removed lines/);
 });

@@ -2,7 +2,11 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { LearningRound } from '@acclimate/sdk';
 import { readConnectionLearning, runConnectionLearning } from '../server/integration-actions';
-import type { BlockingLearningPolicy, LearningRequest, LearningResult } from '../server/integration-core';
+import type {
+  BlockingLearningPolicy,
+  LearningRequest,
+  LearningResult,
+} from '../server/integration-core';
 import type { LearningSetup } from '../server/connection-learning-policy';
 import { bundleHref } from '../navigation';
 import { OutcomeLookup, roundLabels } from './outcome-lookup';
@@ -34,6 +38,7 @@ export function ConnectionLearning({
   target,
   bundleId,
   channel,
+  connectionName,
   currentVersionId,
   currentRevision,
   canManage,
@@ -42,6 +47,7 @@ export function ConnectionLearning({
   target: Target;
   bundleId: string;
   channel: string;
+  connectionName: string;
   currentVersionId: string;
   currentRevision: string;
   canManage: boolean;
@@ -53,6 +59,7 @@ export function ConnectionLearning({
   const [error, setError] = useState('');
   const [confirmStop, setConfirmStop] = useState(false);
   const [decision, setDecision] = useState<{
+    parentVersionId: string;
     roundId: string;
     candidateVersionId: string | null;
     approve: boolean;
@@ -62,26 +69,65 @@ export function ConnectionLearning({
   const decisionTrigger = useRef<HTMLElement | null>(null);
   const stopTrigger = useRef<HTMLElement | null>(null);
   const titleId = useId();
+  const refreshEpoch = useRef(0);
+  const sectionRef = useRef<HTMLElement>(null);
+  const alignOnLoad = useRef(false);
+  const [refreshError, setRefreshError] = useState('');
   const status = result?.ok ? result.status : null;
   const editable = canManage && enabled;
   const active = status?.enabled && !status.stoppedAt;
   const proposalLimitReached = status && status.proposalAdmissions >= status.maxProposalAdmissions;
 
   useEffect(() => {
-    let current = true;
-    void readConnectionLearning({ data: { projectId, integrationId } })
-      .then((next) => {
-        if (current) setResult(next);
-      })
-      .catch(() => {
-        if (current) setResult({ ok: false, message: 'Could not read learning status.' });
-      });
-    return () => {
-      current = false;
+    if (window.location.hash !== '#continuous-learning') return;
+    alignOnLoad.current = true;
+    const cancel = () => {
+      alignOnLoad.current = false;
     };
-  }, [projectId, integrationId]);
+    const listeners = new AbortController();
+    for (const event of ['wheel', 'touchstart', 'pointerdown', 'keydown', 'hashchange']) {
+      window.addEventListener(event, cancel, { passive: true, signal: listeners.signal });
+    }
+    return () => listeners.abort();
+  }, []);
+
+  const settled = Boolean(result || refreshError);
+  useEffect(() => {
+    if (!settled || !alignOnLoad.current) return;
+    const frame = requestAnimationFrame(() => {
+      if (alignOnLoad.current && window.location.hash === '#continuous-learning') {
+        sectionRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+        alignOnLoad.current = false;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [settled]);
+
+  useEffect(() => {
+    if (busy) return;
+    const epoch = ++refreshEpoch.current;
+    let timer: ReturnType<typeof setTimeout>;
+    async function refresh() {
+      try {
+        const next = await readConnectionLearning({ data: { projectId, integrationId } });
+        if (epoch !== refreshEpoch.current) return;
+        setResult(next);
+        setRefreshError('');
+      } catch {
+        if (epoch !== refreshEpoch.current) return;
+        setRefreshError('Learning status could not be refreshed. Retrying automatically.');
+      }
+      timer = setTimeout(refresh, 15000);
+    }
+    void refresh();
+    return () => {
+      refreshEpoch.current++;
+      clearTimeout(timer);
+    };
+  }, [projectId, integrationId, busy]);
 
   async function request(action: () => Promise<LearningResult>) {
+    refreshEpoch.current++;
     setBusy(true);
     setError('');
     try {
@@ -104,7 +150,12 @@ export function ConnectionLearning({
   }
 
   return (
-    <section aria-labelledby={titleId} className="workspace-panel space-y-4 p-4">
+    <section
+      ref={sectionRef}
+      id="continuous-learning"
+      aria-labelledby={titleId}
+      className="workspace-panel space-y-4 p-4"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 id={titleId} className="font-semibold">
@@ -117,13 +168,18 @@ export function ConnectionLearning({
         <Button
           size="sm"
           variant="outline"
-          disabled={!result || busy}
+          disabled={busy}
           onClick={() => void request(() => readConnectionLearning({ data: target }))}
         >
           Refresh learning status
         </Button>
       </div>
-      {!result && (
+      {refreshError && (
+        <p role="status" className="text-sm text-destructive">
+          {refreshError}
+        </p>
+      )}
+      {!result && !refreshError && (
         <p role="status" className="text-sm">
           Loading learning status…
         </p>
@@ -155,12 +211,16 @@ export function ConnectionLearning({
         </>
       )}
       {result?.ok && (
-        <p className="break-all text-sm">
-          <strong>{enabled ? 'Delivery target' : 'Last delivery target'}</strong>{' '}
-          <code>{status?.deliveredVersionId ?? currentVersionId}</code>
-          {' · revision '}
-          {status?.deliveredRevision ?? currentRevision}
-        </p>
+        <Disclosure>
+          <DisclosureTrigger>
+            {enabled ? 'Delivery target' : 'Last delivery target'} · revision{' '}
+            {status?.deliveredRevision ?? currentRevision} ·{' '}
+            <code>{(status?.deliveredVersionId ?? currentVersionId).slice(0, 8)}</code>
+          </DisclosureTrigger>
+          <DisclosureContent className="break-all text-sm">
+            Full version ID <code>{status?.deliveredVersionId ?? currentVersionId}</code>
+          </DisclosureContent>
+        </Disclosure>
       )}
       {status && (
         <>
@@ -180,10 +240,24 @@ export function ConnectionLearning({
             regressions in the latest ten eligible verdicts can restore that version on the current
             rollout.
           </p>
-          <p className="text-sm">
-            {status.proposalAdmissions} of {status.maxProposalAdmissions} proposal admissions used ·{' '}
-            {status.remainingAudits} of {status.auditCount} audit cohorts available
-          </p>
+          <dl className="learning-capacity">
+            <div>
+              <dt>Learning rounds</dt>
+              <dd>{status.rounds.length}</dd>
+            </div>
+            <div>
+              <dt>Proposal admissions used</dt>
+              <dd>
+                {status.proposalAdmissions} <small>of {status.maxProposalAdmissions}</small>
+              </dd>
+            </div>
+            <div>
+              <dt>Audit cohorts available</dt>
+              <dd>
+                {status.remainingAudits} <small>of {status.auditCount}</small>
+              </dd>
+            </div>
+          </dl>
           {!status.developmentCommitted && (
             <p className="text-sm">
               Automatic rollout requires a committed development descriptor and a fresh committed
@@ -321,9 +395,10 @@ export function ConnectionLearning({
             <h4 className="text-sm font-semibold">Learning rounds</h4>
             {status.rounds.length ? (
               <ul className="divide-y divide-border">
-                {status.rounds.map((round) => (
+                {status.rounds.map((round, index) => (
                   <li key={round.id} className="py-2">
                     <LearningRound
+                      latest={index === 0}
                       round={round}
                       scope={{ projectId, bundleId, channel }}
                       busy={busy}
@@ -333,6 +408,7 @@ export function ConnectionLearning({
                               decisionTrigger.current = trigger;
                               setOverrideReason('');
                               setDecision({
+                                parentVersionId: round.parentVersionId,
                                 roundId: round.id,
                                 candidateVersionId: round.candidateVersionId,
                                 approve,
@@ -400,6 +476,24 @@ export function ConnectionLearning({
                 : 'Keep the current delivery target and record this decision for the learning round.'}
             </DialogDescription>
           </DialogHeader>
+          {decision && (
+            <dl className="grid gap-2 text-sm">
+              <div>
+                <dt className="text-muted-foreground">Connection</dt>
+                <dd className="break-words">
+                  {connectionName} / {channel}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Baseline version</dt>
+                <dd className="break-all font-mono">{decision.parentVersionId}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Candidate version</dt>
+                <dd className="break-all font-mono">{decision.candidateVersionId}</dd>
+              </div>
+            </dl>
+          )}
           {decision?.approve && decision.policies === null && (
             <p role="status">
               Policy receipts could not be loaded. Refresh learning status to review a blocking
@@ -726,19 +820,22 @@ function RenewalForm({
 
 function LearningRound({
   round,
+  latest,
   scope,
   busy,
   onDecision,
 }: {
   round: LearningRound;
+  latest: boolean;
   scope: { projectId: string; bundleId: string; channel: string };
   busy: boolean;
   onDecision?(approve: boolean, trigger: HTMLButtonElement): void;
 }) {
   const fieldAudits = round.promotionId ? round.fieldAudits : undefined;
   return (
-    <Disclosure>
+    <Disclosure defaultOpen={latest} className="learning-round">
       <DisclosureTrigger className="text-sm">
+        {latest && <span className="learning-round-latest">Latest round · </span>}
         {fieldAudits?.rollbackPromotionId
           ? 'Rolled back'
           : (roundLabels[round.state] ?? round.state)}
@@ -762,27 +859,34 @@ function LearningRound({
           </p>
         )}
         {round.policyEpoch !== undefined && <p>Policy epoch {round.policyEpoch}</p>}
-        <dl className="space-y-1 break-all">
-          <div>
-            <dt className="inline font-medium">Outcome </dt>
-            <dd className="inline font-mono">{round.outcomeId}</dd>
-          </div>
-          <div>
-            <dt className="inline font-medium">Baseline version </dt>
-            <dd className="inline font-mono">{round.parentVersionId}</dd>
-          </div>
-          {round.candidateVersionId && (
-            <div>
-              <dt className="inline font-medium">Candidate version </dt>
-              <dd className="inline font-mono">{round.candidateVersionId}</dd>
-            </div>
+        <div className="learning-round-links">
+          {(
+            [
+              ['development', round.developmentRequestId, round.developmentComparisonId],
+              ['audit', round.auditRequestId, round.auditComparisonId],
+            ] as const
+          ).map(
+            ([phase, request, comparison]) =>
+              (request || comparison) && (
+                <ConsoleLink
+                  key={phase}
+                  href={bundleHref(scope, 'changes', {
+                    candidate: round.candidateVersionId ?? undefined,
+                    request: request ?? undefined,
+                    comparison: comparison ?? undefined,
+                  })}
+                >
+                  {comparison ? `View ${phase} evidence` : `Watch ${phase} evaluation`}
+                </ConsoleLink>
+              ),
           )}
-        </dl>
+        </div>
         {fieldAudits && (
           <div className="space-y-1">
             <p>
-              Post-rollout audit window · {fieldAudits.regressions} regressions in{' '}
-              {fieldAudits.windowSize} graded jobs
+              Post-rollout audit window · {fieldAudits.regressions}{' '}
+              {fieldAudits.regressions === 1 ? 'regression' : 'regressions'} in{' '}
+              {fieldAudits.windowSize} graded {fieldAudits.windowSize === 1 ? 'job' : 'jobs'}
             </p>
             {fieldAudits.rollbackPromotionId && (
               <>
@@ -793,30 +897,27 @@ function LearningRound({
             )}
           </div>
         )}
-        {round.developmentComparisonId && (
-          <ConsoleLink
-            className="block underline"
-            href={bundleHref(scope, 'changes', {
-              candidate: round.candidateVersionId ?? undefined,
-              request: round.developmentRequestId ?? undefined,
-              comparison: round.developmentComparisonId,
-            })}
-          >
-            View development evidence
-          </ConsoleLink>
-        )}
-        {round.auditComparisonId && (
-          <ConsoleLink
-            className="block underline"
-            href={bundleHref(scope, 'changes', {
-              candidate: round.candidateVersionId ?? undefined,
-              request: round.auditRequestId ?? undefined,
-              comparison: round.auditComparisonId,
-            })}
-          >
-            View audit evidence
-          </ConsoleLink>
-        )}
+        <Disclosure>
+          <DisclosureTrigger>Round identifiers</DisclosureTrigger>
+          <DisclosureContent>
+            <dl className="space-y-1 break-all">
+              <div>
+                <dt className="inline font-medium">Outcome </dt>
+                <dd className="inline font-mono">{round.outcomeId}</dd>
+              </div>
+              <div>
+                <dt className="inline font-medium">Baseline version </dt>
+                <dd className="inline font-mono">{round.parentVersionId}</dd>
+              </div>
+              {round.candidateVersionId && (
+                <div>
+                  <dt className="inline font-medium">Candidate version </dt>
+                  <dd className="inline font-mono">{round.candidateVersionId}</dd>
+                </div>
+              )}
+            </dl>
+          </DisclosureContent>
+        </Disclosure>
         {onDecision && (
           <div className="flex flex-wrap gap-2">
             <Button

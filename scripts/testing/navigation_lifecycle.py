@@ -64,7 +64,7 @@ def run(args):
         checks.append('Mobile account dialog closes to visible focus after resizing to desktop')
 
         visit(page, browser, browser.workspace_path())
-        trigger = page.get_by_role('button', name='Workspaces', exact=True)
+        trigger = page.get_by_role('button', name='Workspaces')
         trigger.click()
         menu = page.get_by_role('menu')
         expect(menu).to_be_visible()
@@ -78,7 +78,7 @@ def run(args):
 
         page.set_viewport_size({'width': 1440, 'height': 900})
         visit(page, browser, browser.workspace_path())
-        trigger = page.get_by_role('button', name='Workspaces', exact=True)
+        trigger = page.get_by_role('button', name='Workspaces')
         trigger.click()
         page.get_by_role('menu').get_by_role('menuitem', name='New workspace').click()
         creation = page.get_by_role('dialog', name='Create a workspace', exact=True)
@@ -98,7 +98,7 @@ def run(args):
 
         page.set_viewport_size({'width': 1440, 'height': 900})
         visit(page, browser, browser.workspace_path())
-        page.get_by_role('button', name='Workspaces', exact=True).click()
+        page.get_by_role('button', name='Workspaces').click()
         page.get_by_role('menuitem', name='New workspace', exact=True).click()
         creation=page.get_by_role('dialog',name='Create a workspace',exact=True)
         creation.get_by_label('Workspace name',exact=True).fill('Held request fixture')
@@ -130,7 +130,7 @@ def run(args):
         visit(page, browser, browser.workspace_path())
         other = page.context.new_page()
         visit(other, browser, browser.workspace_path())
-        scope = {'actorScope': 'synthetic-actor', 'projectId': world.h.project,
+        scope = {'owner': 'improvement', 'actorScope': 'synthetic-actor', 'projectId': world.h.project,
                  'serviceIdentity': 'synthetic-service'}
         record = {'version': 1, 'scope': scope,
                   'action': '/v1/projects/' + world.h.project + '/proposals',
@@ -138,7 +138,7 @@ def run(args):
                   'body': '{"synthetic":"private"}',
                   'disclosure': {'consent': True, 'wholeParentBundle': True,
                                  'authorizedEvidence': ['synthetic']}}
-        key = 'acclimate:operation:v1:' + json.dumps(scope, separators=(',', ':'))
+        key = 'acclimate:operation:v1:' + json.dumps([scope['actorScope'],scope['serviceIdentity'],scope['projectId'],None,None,scope['owner']], separators=(',', ':'))
         for tab in (page, other):
             tab.evaluate('([k,v]) => sessionStorage.setItem(k, JSON.stringify(v))', [key, record])
         page.get_by_role('button', name='Account', exact=True).filter(visible=True).first.click()

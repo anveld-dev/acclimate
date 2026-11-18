@@ -1,21 +1,30 @@
 import { useEffect, useState } from 'react';
+import { useRouter } from '@tanstack/react-router';
+import { ArrowUpRight, ChevronRight, Radio, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { OutcomeLookup } from './outcome-lookup';
 import { PageTitle } from './shared';
+import { workspaceHref } from '../navigation';
 import { readDeliveryObservations } from '../server/delivery-observations-actions';
 import type { DeliveryObservationsResult } from '../server/delivery-observations-core';
+import { DeliveryApp } from './delivery-app';
 
 export function WorkspaceDelivery({
   projectId,
   initial,
+  initialAppId,
+  canManage = false,
 }: {
   projectId: string;
+  initialAppId?: string;
+  canManage?: boolean;
   initial: DeliveryObservationsResult;
 }) {
+  const router = useRouter({ warn: false });
   const [result, setResult] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0);
   useEffect(() => {
     setResult(initial);
     setError('');
@@ -24,108 +33,131 @@ export function WorkspaceDelivery({
     setBusy(true);
     setError('');
     try {
-      const next = await readDeliveryObservations({ data: { projectId, cursor } });
-      if (!next.ok) {
-        setError(next.message);
-        return;
-      }
+      const next = await readDeliveryObservations({
+        data: { projectId, cursor, integrationId: cursor ? undefined : initialAppId },
+      });
       setResult((previous) => {
-        if (!cursor || !previous.ok || previous.projectId !== next.projectId) return next;
+        if (!cursor || !previous.ok || !next.ok || previous.projectId !== next.projectId)
+          return next;
         const items = new Map(previous.page.items.map((item) => [item.id, item]));
         for (const item of next.page.items) items.set(item.id, item);
         return { ...next, page: { ...next.page, items: [...items.values()] } };
       });
+      if (!cursor) setRefresh((value) => value + 1);
     } catch {
       setError('Delivery observations could not be refreshed. Current delivery is unknown.');
     } finally {
       setBusy(false);
     }
   }
+  const apps = result.ok ? result.page.items : [];
+  const selected = initialAppId ? apps.find((app) => app.id === initialAppId) : apps[0];
+  const home = workspaceHref(projectId, 'delivery');
   return (
-    <section className="workspace-delivery space-y-4">
+    <section className="workspace-delivery delivery-console space-y-4">
       <PageTitle
         title="Delivery"
-        description="App-reported observations of published content, available to workspace readers."
+        description="Compare the version an app reported with its current channel release."
+        actions={
+          <Button type="button" variant="outline" onClick={() => void load()} disabled={busy}>
+            <RefreshCw />
+            {busy ? 'Loading observations…' : 'Refresh observations'}
+          </Button>
+        }
       />
-      <div className="workspace-panel space-y-3 p-4">
-        <p>
-          These observations do not prove model consumption, skill invocation, evaluator progress,
-          or agent quality. No observation means unknown; retained observations expire after 30
-          days.
-        </p>
-        <Button type="button" variant="outline" disabled={busy} onClick={() => void load()}>
-          Refresh observations
-        </Button>
-      </div>
       {error && <p role="alert">{error}</p>}
       {!result.ok ? (
         <p role="alert">{result.message}</p>
+      ) : !apps.length ? (
+        <div className="workspace-panel space-y-3 p-4">
+          <p>No connected app observations are available. Delivery is unknown.</p>
+          <a
+            href={workspaceHref(projectId, canManage ? 'connections' : 'bundles')}
+            className="inline-flex items-center gap-1 underline"
+          >
+            {canManage ? 'Open connections' : 'Browse bundles'}
+            <ArrowUpRight size={14} />
+          </a>
+        </div>
       ) : (
         <>
-          {!result.page.items.length && (
-            <p>No connected app observations are available. Delivery is unknown.</p>
-          )}
-          <div className="space-y-3">
-            {result.page.items.map((connection) => {
-              const observation = connection.latestObservation;
-              return (
-                <article key={connection.id} className="workspace-panel space-y-2 p-4">
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-semibold">{connection.displayName}</h2>
-                    <Badge variant="outline">{connection.enabled ? 'Enabled' : 'Disabled'}</Badge>
-                  </div>
-                  <p className="text-sm break-all">
-                    Bundle {connection.bundleId} · channel {connection.channel}
-                  </p>
-                  {observation ? (
-                    <dl className="space-y-1 text-sm">
-                      <div>
-                        <dt className="font-medium">Latest reported stage</dt>
-                        <dd>{observation.stage}</dd>
-                      </div>
-                      <div>
-                        <dt className="font-medium">Reported version</dt>
-                        <dd className="break-all">{observation.versionId}</dd>
-                      </div>
-                      <div>
-                        <dt className="font-medium">Digest</dt>
-                        <dd className="break-all">{observation.digest}</dd>
-                      </div>
-                      <div>
-                        <dt className="font-medium">App observation time</dt>
-                        <dd>
-                          <time dateTime={observation.occurredAt}>{observation.occurredAt}</time>
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="font-medium">Service received time</dt>
-                        <dd>
-                          <time dateTime={observation.receivedAt}>{observation.receivedAt}</time>
-                        </dd>
-                      </div>
-                    </dl>
-                  ) : (
-                    <p>Nothing reported within retention · delivery unknown.</p>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Latest is selected by service receipt time. A delayed observation can refer to
-                    an older version.
-                  </p>
-                  <OutcomeLookup target={{ projectId, integrationId: connection.id }} />
-                </article>
-              );
-            })}
+          <div className="delivery-station">
+            <nav aria-label="Connected apps" className="delivery-app-directory">
+              <h2>
+                Connected apps <span>{apps.length}</span>
+              </h2>
+              <ul>
+                {apps.map((app) => {
+                  const href =
+                    home + '?integration=' + encodeURIComponent(app.id) + '#delivery-app';
+                  return (
+                    <li key={app.id}>
+                      <a
+                        className="delivery-app-select"
+                        href={href}
+                        aria-current={selected?.id === app.id ? 'true' : undefined}
+                        onClick={(e) => {
+                          if (
+                            !router ||
+                            e.ctrlKey ||
+                            e.metaKey ||
+                            e.shiftKey ||
+                            e.altKey ||
+                            e.button !== 0
+                          )
+                            return;
+                          e.preventDefault();
+                          void router.navigate({ href });
+                        }}
+                      >
+                        <Radio size={15} aria-hidden="true" />
+                        <span>
+                          <strong>{app.displayName}</strong>
+                          <small>
+                            {app.latestObservation
+                              ? app.latestObservation.stage
+                              : 'Nothing reported within retention'}{' '}
+                            · {app.channel}
+                          </small>
+                        </span>
+                        <ChevronRight size={14} aria-hidden="true" />
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+              {result.page.nextCursor && (
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void load(result.page.nextCursor!)}
+                >
+                  Load more connections
+                </Button>
+              )}
+            </nav>
+            {selected ? (
+              <div key={selected.id}>
+                <DeliveryApp
+                  key={selected.id + ':' + refresh}
+                  app={selected}
+                  projectId={projectId}
+                  canManage={canManage}
+                />
+                <OutcomeLookup target={{ projectId, integrationId: selected.id }} />
+              </div>
+            ) : (
+              <div className="p-4">
+                <p role="alert">This app is unavailable in the workspace.</p>
+                <a href={home} className="underline">
+                  View connected apps
+                </a>
+              </div>
+            )}
           </div>
-          {result.page.nextCursor && (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => void load(result.page.nextCursor!)}
-            >
-              Load more connections
-            </Button>
-          )}
+          <p className="text-xs text-muted-foreground">
+            A delayed observation can refer to an older version. Evaluations measure agent quality.
+          </p>
         </>
       )}
     </section>

@@ -9,10 +9,9 @@ use std::sync::Arc;
 use tower::ServiceExt;
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn postgres_bundle_scope_and_immutable_payload() {
-    let Ok(url) = std::env::var("DATABASE_URL") else {
-        return;
-    };
+    let url = common::database_url();
     let db = sqlx::postgres::PgPoolOptions::new()
         .max_connections(4)
         .connect(&url)

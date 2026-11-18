@@ -1,3 +1,5 @@
+import { DirectorySearch } from './ui/directory-search';
+import { CopyButton } from './copy-button';
 import { SyntaxCode } from './syntax-code';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { ArrowRight, BookOpen, Files, FileText, Layers3, Plus, Upload } from 'lucide-react';
@@ -32,6 +34,19 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PageTitle } from './shared';
 import { ImportContent } from './import-content';
 import type { BundlePayload } from '@acclimate/sdk';
+const targetLabels: Record<CompatibilityTarget, string> = {
+  generic: 'Generic',
+  codex: 'Codex',
+  claude: 'Claude',
+  pi: 'Pi',
+  cursor: 'Cursor',
+};
+const sourceLabels = {
+  created: 'Created',
+  imported: 'Imported',
+  example: 'Example',
+  unknown: 'Stored content',
+};
 const EMPTY_IMPORT: BundlePayload = { schemaVersion: 1, files: [] };
 import {
   createWorkspaceContent,
@@ -57,8 +72,19 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
   const [name, setName] = useState('');
   const [bundleQuery, setBundleQuery] = useState('');
   const entries = state.ok ? state.entries.filter((entry) => entry.projectId === projectId) : [];
-  const visibleEntries = entries.filter(({ bundle }) =>
-    bundle.name.toLowerCase().includes(bundleQuery.toLowerCase()),
+  const [targetFilter, setTargetFilter] = useState('');
+  const targets = Array.from(
+    new Set(entries.map(({ bundle }) => bundle.compatibilityTarget)),
+  ).sort();
+  const query = bundleQuery.trim().toLowerCase();
+  const visibleEntries = entries.filter(
+    ({ bundle, channels }) =>
+      (!targetFilter || bundle.compatibilityTarget === targetFilter) &&
+      [
+        bundle.name,
+        bundle.id,
+        ...channels.flatMap((channel) => [channel.name, channel.versionId]),
+      ].some((value) => value.toLowerCase().includes(query)),
   );
   const [channel, setChannel] = useState('stable');
   const [compatibilityTarget, setCompatibilityTarget] = useState<CompatibilityTarget>('generic');
@@ -107,9 +133,9 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
     clearBrowserText();
     setShowCreate(false);
   }, [discardVersion]);
-  const storageKey = `acclimate-pending-setup:${state.ok ? state.actorScope : 'unauthenticated'}:${projectId}`;
-  type Pending = { key: string; projectId: string; fingerprint?: string; body?: string };
+  type Pending = { key: string; projectId: string; body?: string };
   const recoveryScope: PendingScope = {
+    owner: 'library',
     actorScope: state.ok ? state.actorScope : 'unauthenticated',
     serviceIdentity: state.ok ? state.serviceIdentity : '',
     projectId,
@@ -120,28 +146,14 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
     setStorageReady(false);
     try {
       const frozen = loadPending(sessionStorage, recoveryScope);
-      let stored = frozen
-        ? JSON.stringify({ key: frozen.key, projectId, body: frozen.body })
-        : localStorage.getItem(storageKey);
-      // Preserve a pre-upgrade unknown outcome before enabling a new creation.
-      const legacyKey = `acclimate-pending-setup:${state.ok ? state.actorScope : 'unauthenticated'}`;
-      const legacy = localStorage.getItem(legacyKey);
-      if (!stored && legacy) {
-        const operation = JSON.parse(legacy) as Pending;
-        if (operation.projectId === projectId) {
-          localStorage.setItem(storageKey, legacy);
-          localStorage.removeItem(legacyKey);
-          stored = legacy;
-        }
-      }
-      setOperation(stored ? JSON.parse(stored) : undefined);
+      setOperation(frozen ? { key: frozen.key, projectId, body: frozen.body } : undefined);
       setStorageReady(true);
     } catch {
       setMessage(
         'Creation recovery data could not be read. Enable browser storage before creating content.',
       );
     }
-  }, [storageKey]);
+  }, [recoveryScope.actorScope, recoveryScope.serviceIdentity, projectId]);
   let preview: { path: string; kind: string; text: string }[] | undefined;
   let validationError = '';
   let importIssues: CompatibilityIssue[] = [];
@@ -187,7 +199,6 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
       if (!result.ok) setMessage(result.message);
       else if (result.committed || result.closed) {
         resolvePending(sessionStorage, recoveryScope);
-        localStorage.removeItem(storageKey);
         setOperation(undefined);
         setMessage(
           result.closed
@@ -251,7 +262,6 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
         }
         if (prior.committed || prior.closed) {
           resolvePending(sessionStorage, recoveryScope);
-          localStorage.removeItem(storageKey);
           setOperation(undefined);
           await router.invalidate();
           setMessage(
@@ -268,12 +278,10 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
         setMessage(result.message);
         if (!result.uncertain) {
           resolvePending(sessionStorage, recoveryScope);
-          localStorage.removeItem(storageKey);
           setOperation(undefined);
         }
       } else {
         resolvePending(sessionStorage, recoveryScope);
-        localStorage.removeItem(storageKey);
         setOperation(undefined);
         setMessage('Content created. No model evaluation was run.');
         openCreated(result.selection);
@@ -343,11 +351,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                     code={operation.body}
                     language="json"
                   />
-                  <Button
-                    variant="outline"
-                    disabled={pending}
-                    onClick={() => void create()}
-                  >
+                  <Button variant="outline" disabled={pending} onClick={() => void create()}>
                     Retry exact submitted creation
                   </Button>
                   <p className="text-sm text-muted-foreground">
@@ -374,8 +378,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                 </p>
               )}
               <p className="text-sm text-muted-foreground">
-                Forgetting text does not cancel submission. Closing preserves any committed result;
-                older expired legacy writes may remain unprovable.
+                Forgetting text does not cancel submission. Closing preserves any committed result.
               </p>
               <Button
                 variant="outline"
@@ -386,11 +389,8 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                     const result = await closeSetup({ data: { projectId, key: operation.key } });
                     if (result.ok && result.operation.status === 'closed') {
                       resolvePending(sessionStorage, recoveryScope);
-                      localStorage.removeItem(storageKey);
                       setOperation(undefined);
-                      setMessage(
-                        'Creation operation closed. Older expired legacy writes may remain unprovable.',
-                      );
+                      setMessage('Creation operation closed.');
                     } else if (result.ok) await reconcile();
                     else setMessage(result.message);
                   } catch {
@@ -454,96 +454,225 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                 </div>
               )
             ) : (
-              <div className="space-y-4">
-                {entries.length > 3 && (
-                  <div className="max-w-sm space-y-2">
-                    <Label htmlFor="bundle-search">Find a bundle</Label>
-                    <Input
-                      id="bundle-search"
-                      type="search"
-                      placeholder="Search bundles…"
-                      value={bundleQuery}
-                      onChange={(event) => setBundleQuery(event.target.value)}
-                    />
-                  </div>
-                )}
-                <div className="bundle-directory">
-                  <div className="bundle-directory-heading" aria-hidden="true">
-                    <span>Bundle</span>
-                    <span>Published channels</span>
-                  </div>
-                  <ul className="divide-y overflow-hidden rounded-md border bg-card">
-                    {visibleEntries.map(({ bundle, channels }) => (
-                      <li className="bundle-library-row px-4 py-3" key={bundle.id}>
-                        <div className="bundle-directory-name flex min-w-0 flex-1 items-center gap-3">
-                          <BookOpen
-                            className="size-4 shrink-0 text-muted-foreground"
-                            aria-hidden="true"
-                          />
-                          <div className="min-w-0">
-                            <h3 className="break-words font-medium">
-                              {channels[0] ? (
-                                <ConsoleLink
-                                  className="underline-offset-4 hover:underline"
-                                  aria-description={`Opens the ${channels[0].name} channel`}
-                                  href={bundleHref(
-                                    { projectId, bundleId: bundle.id, channel: channels[0].name },
-                                    'content',
-                                  )}
-                                >
-                                  {bundle.name}
-                                </ConsoleLink>
-                              ) : (
-                                bundle.name
-                              )}
-                            </h3>
-                            <p className="bundle-directory-meta text-sm text-muted-foreground">
-                              {(
-                                {
-                                  created: 'Created content',
-                                  imported: 'Imported content',
-                                  example: 'Example content',
-                                } as Record<string, string>
-                              )[bundle.origin] || 'Stored content'}{' '}
-                              {bundle.compatibilityTarget &&
-                              bundle.compatibilityTarget !== 'generic'
-                                ? ` · ${bundle.compatibilityTarget}`
-                                : ''}
-                              {channels[0] && <> · Opens {channels[0].name}</>}
-                            </p>
-                          </div>
-                        </div>
-                        <div
-                          className="bundle-directory-channels"
-                          aria-label={`Published channels for ${bundle.name}`}
-                        >
-                          <span className="bundle-directory-channel-label">Published channels</span>
-                          {channels.map((item) => (
-                            <Button key={item.name} size="sm" variant="ghost" asChild>
-                              <ConsoleLink
-                                href={bundleHref(
-                                  { projectId, bundleId: bundle.id, channel: item.name },
-                                  'content',
-                                )}
-                              >
-                                {item.name} <ArrowRight className="size-3.5" aria-hidden="true" />
-                              </ConsoleLink>
-                            </Button>
-                          ))}
-                          {!channels.length && (
-                            <span className="text-sm text-muted-foreground">
-                              No published channels
-                            </span>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+              <div className="bundle-directory overflow-hidden rounded-lg border bg-card">
+                <div className="bundle-directory-toolbar">
+                  <DirectorySearch
+                    id="bundle-search"
+                    label="Find a bundle"
+                    placeholder="Search by name, ID, or channel"
+                    value={bundleQuery}
+                    onValueChange={setBundleQuery}
+                  />
+                  {targets.length > 1 && (
+                    <div className="bundle-target-filter">
+                      <Label htmlFor="bundle-target-filter">Target</Label>
+                      <NativeSelect
+                        id="bundle-target-filter"
+                        value={targetFilter}
+                        onChange={(event) => setTargetFilter(event.target.value)}
+                      >
+                        <option value="">All targets</option>
+                        {targets.map((target) => (
+                          <option key={target} value={target}>
+                            {targetLabels[target]}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                  )}
+                  <span className="bundle-result-count" role="status">
+                    {query || targetFilter
+                      ? `${visibleEntries.length} of ${entries.length} bundles`
+                      : `${entries.length} ${entries.length === 1 ? 'bundle' : 'bundles'}`}
+                  </span>
                 </div>
+                <div className="bundle-directory-heading" aria-hidden="true">
+                  <span>Bundle</span>
+                  <span>Source</span>
+                  <span>Target</span>
+                  <span>Published channels</span>
+                  <span>Developer tools</span>
+                </div>
+                <ul className="divide-y">
+                  {visibleEntries.map(({ bundle, channels }) => {
+                    const primary =
+                      channels.find((channel) => channel.name === 'stable') ?? channels[0];
+                    const matchingChannels = channels.filter(
+                      (channel) =>
+                        channel !== primary &&
+                        query &&
+                        [channel.name, channel.versionId].some((value) =>
+                          value.toLowerCase().includes(query),
+                        ),
+                    );
+                    const otherChannels = channels.filter(
+                      (channel) => channel !== primary && !matchingChannels.includes(channel),
+                    );
+                    const channelLink = ({ name, revision }: (typeof channels)[number]) => {
+                      const scope = { projectId, bundleId: bundle.id, channel: name };
+                      return (
+                        <span key={name} className="bundle-published-channel">
+                          <ConsoleLink
+                            aria-description={`Open content on ${name}`}
+                            href={bundleHref(scope, 'content')}
+                          >
+                            {name}
+                          </ConsoleLink>
+                          <ConsoleLink
+                            aria-label={`Revision ${revision} on ${name} for ${bundle.name}`}
+                            href={bundleHref(scope, 'releases') + '#revision-' + revision}
+                          >
+                            Revision {revision}
+                          </ConsoleLink>
+                        </span>
+                      );
+                    };
+                    return (
+                      <Disclosure key={bundle.id} asChild>
+                        <li className="bundle-library-row px-4 py-4">
+                          <div className="bundle-directory-name flex min-w-0 flex-1 items-center gap-3">
+                            <BookOpen
+                              className="size-4 shrink-0 text-muted-foreground"
+                              aria-hidden="true"
+                            />
+                            <div className="min-w-0">
+                              <h3 className="break-words font-medium">
+                                {primary ? (
+                                  <ConsoleLink
+                                    className="underline-offset-4 hover:underline"
+                                    aria-description={`Opens the ${primary.name} channel`}
+                                    href={bundleHref(
+                                      { projectId, bundleId: bundle.id, channel: primary.name },
+                                      'content',
+                                    )}
+                                  >
+                                    {bundle.name}
+                                  </ConsoleLink>
+                                ) : (
+                                  bundle.name
+                                )}
+                              </h3>
+                            </div>
+                          </div>
+                          <span className="bundle-directory-meta">
+                            {sourceLabels[bundle.origin] || 'Stored content'}
+                          </span>
+                          <span className="bundle-directory-target">
+                            <span className="bundle-target-label">Target </span>
+                            {targetLabels[bundle.compatibilityTarget]}
+                          </span>
+                          <div
+                            className="bundle-directory-channels"
+                            aria-label={`Published channels for ${bundle.name}`}
+                          >
+                            <span className="bundle-directory-channel-label">
+                              Published channels
+                            </span>
+                            {primary && channelLink(primary)}
+                            {matchingChannels.map(channelLink)}
+                            {otherChannels.length > 0 && (
+                              <Disclosure className="bundle-channel-disclosure">
+                                <DisclosureTrigger>
+                                  Other channels ({otherChannels.length})
+                                </DisclosureTrigger>
+                                <DisclosureContent>
+                                  {otherChannels.map(channelLink)}
+                                </DisclosureContent>
+                              </Disclosure>
+                            )}
+                            {!channels.length && (
+                              <span className="text-sm text-muted-foreground">
+                                No published channels
+                              </span>
+                            )}
+                          </div>
+                          <DisclosureTrigger
+                            className="bundle-reference-trigger"
+                            aria-label={`SDK reference for ${bundle.name}`}
+                          >
+                            SDK reference
+                          </DisclosureTrigger>
+                          <DisclosureContent className="bundle-reference-details">
+                            <dl className="grid gap-4 sm:grid-cols-2">
+                              {[
+                                ['Workspace ID', projectId, 'Copy workspace ID'],
+                                ['Bundle ID', bundle.id, 'Copy bundle ID'],
+                              ].map(([label, value, copyLabel]) => (
+                                <div key={label} className="min-w-0">
+                                  <dt className="text-sm text-muted-foreground">{label}</dt>
+                                  <dd className="flex items-center gap-2">
+                                    <code className="min-w-0 break-all text-sm select-all">
+                                      {value}
+                                    </code>
+                                    <CopyButton value={value} label={copyLabel} iconOnly />
+                                  </dd>
+                                </div>
+                              ))}
+                            </dl>
+                            {channels.length > 0 && (
+                              <div className="bundle-version-references">
+                                {channels.map((channel) => (
+                                  <div className="bundle-version-reference" key={channel.name}>
+                                    <div>
+                                      <span className="font-medium">{channel.name}</span>
+                                      <span className="text-muted-foreground">
+                                        {' '}
+                                        · Revision {channel.revision}
+                                      </span>
+                                    </div>
+                                    <div className="bundle-version-id">
+                                      <span className="text-muted-foreground">Version ID</span>
+                                      <code className="break-all select-all">
+                                        {channel.versionId}
+                                      </code>
+                                      <CopyButton
+                                        iconOnly
+                                        value={channel.versionId}
+                                        label={`Copy version ID for ${channel.name}`}
+                                      />
+                                    </div>
+                                    <Button size="sm" variant="outline" asChild>
+                                      <ConsoleLink
+                                        aria-label={`App setup for ${channel.name}`}
+                                        href={bundleHref(
+                                          { projectId, bundleId: bundle.id, channel: channel.name },
+                                          'connect',
+                                        )}
+                                      >
+                                        App setup <ArrowRight aria-hidden="true" />
+                                      </ConsoleLink>
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </DisclosureContent>
+                        </li>
+                      </Disclosure>
+                    );
+                  })}
+                </ul>
                 {!visibleEntries.length && (
-                  <p className="py-6 text-sm text-muted-foreground">
-                    No bundles match “{bundleQuery}”.
-                  </p>
+                  <div className="grid justify-items-start gap-3 p-5">
+                    <p className="break-all text-sm text-muted-foreground">
+                      {query
+                        ? `No bundles match “${bundleQuery}”.`
+                        : 'No bundles match this target.'}
+                    </p>
+                    {targetFilter && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setTargetFilter('');
+                          setBundleQuery('');
+                          document.getElementById('bundle-search')?.focus();
+                        }}
+                      >
+                        Reset filters
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
             )}

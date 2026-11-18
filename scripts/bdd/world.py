@@ -120,19 +120,26 @@ class World:
     def start_attempt(self):
         self.started = self.call('POST', self.evaluation_path + '/start', dict(attemptId=self.attempt), actor='evaluator')
 
-    def comparison(self, outcome='complete', changed=None, expected=None):
+    def comparison(self, outcome='complete', changed=None, expected=None, results=None):
         import copy
         report = copy.deepcopy(self.settings)
         report['evaluation'] = dict(requestId=self.evaluation['id'], attemptId=self.attempt)
         if changed == 'dataset': report['datasetRevision'] = 'different-dataset'
         elif changed == 'runtime': report['runtime']['executor'] = 'different-executor'
         elif changed == 'grader': report['graderRevision'] = 'different-grader'
-        elif changed == 'cases': report['expectedCases'] = [dict(caseId='different-case', repetition=0)]
-        good = dict(executionStatus='completed', gradingStatus='scored', reward=1, usage={'costUsd': 0})
-        if outcome == 'grader failures': good = dict(executionStatus='completed', gradingStatus='failed', reward=None)
-        elif outcome == 'infrastructure errors': good = dict(executionStatus='infrastructure_failed', gradingStatus='missing', reward=None)
-        elif outcome == 'without usage': good.pop('usage')
-        report['results'] = [] if outcome == 'missing grades' else [dict(**case, parent=copy.deepcopy(good), candidate=copy.deepcopy(good)) for case in report['expectedCases']]
+        if results is None:
+            good = dict(executionStatus='completed', gradingStatus='scored', reward=1, usage={'costUsd': 0})
+            if outcome == 'without usage': good.pop('usage')
+            results = [] if outcome == 'missing grades' else [
+                dict(**case, parent=copy.deepcopy(good), candidate=copy.deepcopy(good))
+                for case in report['expectedCases']
+            ]
+        report['results'] = results
+        if changed == 'case inventory':
+            # The original result rows are still valid for this larger declaration.
+            report['expectedCases'].append(dict(caseId='unrequested-case', repetition=0))
+        elif changed == 'result case':
+            report['results'][0]['caseId'] = 'unrequested-case'
         self.report = self.call('POST', self.bundle + '/comparisons', report, actor='evaluator', expected=expected)
 
     def finish(self, actor='evaluator', expected=None):

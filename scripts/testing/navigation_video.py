@@ -72,7 +72,7 @@ def main(args):
         run('wait', '1000')
         click('Sign-in details')
         action('press', 'Escape')
-        click('Workspaces')
+        action('find', 'role', 'button', 'click', '--name', 'Workspaces')
         run('wait', '1800')
         action('press', 'End')
         action('press', 'Enter')
@@ -81,7 +81,7 @@ def main(args):
         run('wait', '1200')
         # Escape dismisses the unsent form and restores focus; no creation request.
         action('press', 'Escape')
-        click('Workspaces')
+        action('find', 'role', 'button', 'click', '--name', 'Workspaces')
         run('wait', '1200')
         action('press', 'Escape')
         run('record', 'stop')

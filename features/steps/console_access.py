@@ -26,9 +26,10 @@ def rights(context,editing):
     p.get_by_role('link',name='Delivery',exact=True).click()
     expect(p).to_have_url(w.browser_fixture.base+w.browser_fixture.workspace_path('delivery'))
     expect(p.get_by_role('heading',name='Delivery',exact=True)).to_be_visible()
-    row=p.get_by_role('article').filter(has=p.get_by_role('heading',name='Reader delivery fixture',exact=True))
+    row=p.get_by_role('region',name='Delivery for Reader delivery fixture',exact=True)
     expect(row).to_be_visible()
-    expect(row).to_contain_text(w.setup['bundle']['id'])
+    evaluations=row.get_by_role('link',name='View bundle evaluations for Reader delivery fixture')
+    assert w.setup['bundle']['id'] in evaluations.get_attribute('href')
     expect(row).to_contain_text('Nothing reported within retention · delivery unknown.')
     assert w.call('GET',w.root+'/integration-observations',actor='member')['items'][0]['id']==connection['id']
     expect(p.get_by_role('link',name='Connections',exact=True)).to_have_count(0)

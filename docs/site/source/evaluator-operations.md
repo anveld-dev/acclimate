@@ -62,8 +62,6 @@ Emergency revocation may skip overlap, but can leave external work and submissio
 
 New retained evaluator operations outlive the transient 24-hour idempotency cache and recheck current authorization on execution, replay, lookup and close. Retained responses are historical mutation results, not current running-state proof. The runner re-reads current lifecycle before callbacks. A check racing with a later interruption cannot cancel already started external work.
 
-Historical unmarked attempts may lack retained receipts. `not_observed` after transient retention does not prove that a submission never committed. If no trustworthy receipt or bound current state identifies the outcome, preserve it as `legacy.submission_unconfirmed` for inspection; do not invent a new key or automatically resubmit an ambiguous old comparison.
-
 Use the installed `status` and explicit `interrupt --reason ...` commands for headless inspection/intent. Interruption uses a separate short-held command lock so an active execution lock does not prevent recording intent. A fresh CI worker without the original journal cannot resume the running request. Before creating replacement work, establish whether its original external effects can safely be repeated.
 
 ## Diagnostics and retention

@@ -201,8 +201,7 @@ test('new requests freeze the selected app configuration and immutable content i
 test('a historical candidate stays inspectable against its actual parent without becoming releasable', async () => {
   const { env, fetcher } = historyFixture();
   const result = await improvement(env, { action: 'candidate', versionId: 'candidate' }, fetcher);
-  assert.equal(result.ok, true);
-  if (!result.ok || !('parent' in result)) return;
+  assert.ok(result.ok && 'parent' in result);
   assert.equal(result.parent!.id, 'parent');
   assert.equal(result.parentPayload!.files[0].text, 'Older base.');
   const publication = await improvement(
@@ -279,9 +278,8 @@ test('reviewing a current candidate freezes the explicitly selected public descr
       return response;
     },
   );
-  assert.equal(prepared.ok, true);
+  assert.ok(prepared.ok && prepared.command);
   assert.equal(writes, 0);
-  if (!prepared.ok || !prepared.command) return;
   const body = JSON.parse(prepared.command.body);
   assert.equal(body.requireBoundEvidence, true);
   assert.equal(body.runtime.configId, 'app-agent');

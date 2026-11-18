@@ -286,12 +286,12 @@ def run(args):
         expect(drafts_trigger).to_contain_text('0 open in 2 loaded', timeout=15000)
         drafts_trigger.click()
         expect(drafts_queue).to_contain_text('No open drafts.')
-        drafts_queue.get_by_role('button', name='Include published and discarded drafts').click()
+        drafts_queue.get_by_role('button', name='Include closed drafts').click()
         expect(drafts_trigger).to_contain_text('2 loaded')
         expect(drafts_trigger).not_to_contain_text('open in')
         expect(drafts_queue.locator('.change-record-row')).to_have_count(2)
         capture_layout(page, output, 'closed-drafts-count-and-filter')
-        drafts_queue.get_by_role('button', name='Show open drafts').click()
+        drafts_queue.get_by_role('button', name='Include closed drafts').click()
         expect(drafts_trigger).to_contain_text('0 open in 2 loaded')
         # Restore a new open draft for the later discard-dialog workflow.
         replacement = world.call('POST', world.channel + '/drafts', dict(
@@ -307,7 +307,7 @@ def run(args):
             overview = page.locator('.changes-overview')
             expect(ledger).to_be_visible()
             geometry = overview.evaluate('e => ({width:e.getBoundingClientRect().width, queueColumns:getComputedStyle(e.querySelector(".change-queues")).gridTemplateColumns.split(" ").length})')
-            assert geometry['queueColumns'] == (2 if geometry['width'] >= 740 else 1), geometry
+            assert geometry['queueColumns'] == 1, geometry
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), width
             widths.append(dict(viewport=width, **geometry))
             capture_layout(page, output, f'changes-overview-{width}')

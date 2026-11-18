@@ -9,13 +9,13 @@ use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-async fn fixture() -> Option<(AppState, String)> {
+async fn fixture() -> (AppState, String) {
     // Only the isolated runner's explicit URL is accepted; never fall back to DATABASE_URL.
-    let url = std::env::var("ACCLIMATE_TEST_DATABASE_URL").ok()?;
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let p = format!("recovery-{}", Uuid::new_v4());
-    Some((
+    (
         AppState {
             access: common::access(),
             runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
@@ -34,7 +34,7 @@ async fn fixture() -> Option<(AppState, String)> {
             provider: None,
         },
         p,
-    ))
+    )
 }
 async fn call(
     app: &axum::Router,
@@ -81,10 +81,9 @@ fn lookup(p: &str, key: &str, path: &str) -> String {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn close_serializes_with_marked_and_unmarked_setup_and_never_reverses_a_commit() {
-    let Some((state, p)) = fixture().await else {
-        return;
-    };
+    let (state, p) = fixture().await;
     let app = router(state.clone());
     for marked in [false, true, false, true, false, true] {
         let key = Uuid::new_v4().to_string();
@@ -131,10 +130,9 @@ async fn close_serializes_with_marked_and_unmarked_setup_and_never_reverses_a_co
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_namespaces_separate() {
-    let Some((state, p)) = fixture().await else {
-        return;
-    };
+    let (state, p) = fixture().await;
     let app = router(state.clone());
     let setup = format!("/v1/projects/{p}/bundle-setups");
     let (status, seed) = call(&app, "POST", &setup, "seed", &setup_body(), false, None).await;
@@ -285,10 +283,9 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn receipt_lookup_close_and_replay_require_current_effective_action_rights() {
-    let Some((state, p)) = fixture().await else {
-        return;
-    };
+    let (state, p) = fixture().await;
     let app = router(state.clone());
     let path = format!("/v1/projects/{p}/bundle-setups");
     let key = Uuid::new_v4().to_string();
@@ -405,11 +402,10 @@ async fn receipt_lookup_close_and_replay_require_current_effective_action_rights
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn legacy_key_only_close_uses_the_committed_draft_action_and_drafts_channel_is_route_scoped()
 {
-    let Some((state, p)) = fixture().await else {
-        return;
-    };
+    let (state, p) = fixture().await;
     let app = router(state.clone());
     let setup_path = format!("/v1/projects/{p}/bundle-setups");
     let (status, seed) = call(

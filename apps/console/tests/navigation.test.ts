@@ -1,4 +1,3 @@
-import { consoleEnvironment } from './console-fixture';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { bundleEnvironment, scopedEnvironment } from '../src/server/selection';
@@ -61,31 +60,4 @@ test('published views identify their channel while bundle changes do not pretend
     '/w/acme%00/bundles',
   ])
     assert.equal(parseConsoleLocation(path), null);
-});
-
-test('legacy Access never sends local operators or hosted viewers into a Members dead end', async () => {
-  const { landingState } = await import('../src/server/navigation-core');
-  for (const role of ['viewer', 'editor']) {
-    const result = await landingState(
-      {
-        ...consoleEnvironment,
-        CONSOLE_SERVICE_TOKEN: 'fixture',
-        CONSOLE_SESSION_TOKEN: 'fixture-session',
-        CONSOLE_PROJECT: 'acme',
-      },
-      { legacy: 'access' },
-      async (input) =>
-        String(input).endsWith('/auth/session')
-          ? Response.json({
-              userId: '12345678-1234-4234-8234-123456789012',
-              issuer: 'https://fixture.invalid',
-              subject: 'person',
-            })
-          : Response.json({
-              items: [{ id: 'acme', name: 'Acme', role: role }],
-              nextCursor: null,
-            }),
-    );
-    assert.equal(result.href, '/w/acme/bundles');
-  }
 });

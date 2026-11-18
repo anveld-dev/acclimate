@@ -17,6 +17,7 @@ Feature: Bounded service proposals
     Given the provider fixture tries to edit unselected memory
     When I request a proposal that may edit only "AGENTS.md"
     Then the proposal fails without a candidate
+    And the service rejects the returned memory edit as outside the allowed paths
     And applications still resolve the original release
 
   @PROPOSAL-03
@@ -24,6 +25,7 @@ Feature: Bounded service proposals
     Given the provider fixture is unavailable
     When I request a proposal that may edit only "AGENTS.md"
     Then the proposal fails without a candidate
+    And the service reports a provider request failure
     And applications still resolve the original release
 
   @PROPOSAL-04

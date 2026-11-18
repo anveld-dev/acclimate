@@ -44,8 +44,7 @@ pub(super) async fn approve(
             "Review the candidate's current blocking policy receipts and acknowledge each with a reason.",
         )
     };
-    if let Some(mut decision) = reviewed {
-        decision.reason = decision.reason.trim().to_owned();
+    if let Some(decision) = reviewed.map(PolicyOverride::normalized) {
         if decision.reason.is_empty()
             || decision.reason.len() > 1024
             || decision.reason.chars().any(char::is_control)
@@ -56,7 +55,6 @@ pub(super) async fn approve(
                 "Provide a policy override reason of 1 to 1024 bytes.",
             ));
         }
-        decision.receipts.sort();
         if blockers.is_empty() || decision.receipts != blockers {
             return Err(blocked());
         }

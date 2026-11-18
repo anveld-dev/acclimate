@@ -102,11 +102,9 @@ async fn terminal(app: &axum::Router, path: &str) -> Value {
     .expect("worker did not finish within 5s")
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn persisted_proposals_are_bounded_validated_and_recovered() {
-    let Ok(url) = std::env::var("DATABASE_URL") else {
-        eprintln!("skipping PostgreSQL proposal checks: DATABASE_URL unset");
-        return;
-    };
+    let url = common::database_url();
     let db = sqlx::postgres::PgPoolOptions::new()
         .max_connections(6)
         .connect(&url)
@@ -210,6 +208,9 @@ async fn persisted_proposals_are_bounded_validated_and_recovered() {
             if mode == "failure" {
                 assert_eq!(done["error"], "provider request failed");
             }
+            if mode == "outside" {
+                assert_eq!(done["error"], "provider edit is outside allowed paths");
+            }
             if mode == "anchor" {
                 assert_eq!(
                     done["error"],
@@ -276,11 +277,9 @@ impl ProposalModel for SelectedEditModel {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn worker_preserves_mixed_bundle_for_instruction_and_memory_edits() {
-    let Ok(url) = std::env::var("DATABASE_URL") else {
-        eprintln!("skipping PostgreSQL proposal checks: DATABASE_URL unset");
-        return;
-    };
+    let url = common::database_url();
     let db = sqlx::postgres::PgPoolOptions::new()
         .max_connections(6)
         .connect(&url)

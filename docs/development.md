@@ -16,15 +16,15 @@ npm run build
 cargo build --release
 ```
 
-Inject runtime environment from your secret manager. `npm start` starts the built Rust service, `npm run start:console` starts the built console, and `npm run dev` runs Vite with the same required production configuration. No command provisions a database, invents a user, loads old `.local` state or supplies credentials. `npm run local` and the old bridge commands fail with migration guidance. Existing private files are left alone.
+Inject runtime environment from your secret manager. `npm start` starts the built Rust service, `npm run start:console` starts the built console, and `npm run dev` runs Vite with the same required production configuration. Supply an explicitly provisioned PostgreSQL database and credentials for both processes.
 
-Rust validates PostgreSQL/access/issuer configuration before listening, holds exclusive queue ownership, applies migrations and registers project rows named in explicit machine grants. That registration never grants human membership. The console validates its own required settings before built or development listening. Use the public console URL through the configured TLS proxy, not its private listener.
+Rust validates PostgreSQL/access/issuer configuration before listening, holds exclusive queue ownership, initializes the schema and registers project rows named in explicit machine grants. That registration never grants human membership. The console validates its own required settings before built or development listening. Use the public console URL through the configured TLS proxy, not its private listener.
 
 ## Access and startup
 
 The exact operator identities configured for the pinned issuer may create workspaces. To recover an existing machine-created project with no human memberships, an operator reviews its exact ID, their verified identity and a reason, then explicitly adopts it. The immutable audit never silently restores access on retry. Other access changes use current workspace admins and verified user IDs.
 
-Migration 0013 revokes existing browser sessions once so everyone signs in through verified OIDC. It preserves users, memberships, bundle/version IDs, history, machine credentials and receipt owners. Back up first and coordinate the cutover; do not run old and new identity paths together. See the [review decisions](architecture/production-only/review.md).
+For a fresh install, point the service at an empty database. Subsequent starts reuse the database initialized by this build. Keep any database created by the former migration chain with its matching service build. See the [deployment and recovery instructions](../deploy/README.md#upgrades-and-recovery).
 
 Run one Rust process per database and one console process. `/health` is liveness; `/ready` requires database access, ownership, initialization and a live worker. Readiness is not a promise of provider availability or queue progress. SIGTERM withdraws readiness, stops new claims and drains within 35 seconds before releasing ownership. A lost ownership connection exits75. Your deployment supervisor restarts it with the same explicit configuration; there is no local launcher recovery mode.
 
@@ -116,6 +116,8 @@ python3 scripts/productization/rust_tests.py --pg-bin /path/to/postgresql/bin
 cargo build
 npm run test:e2e -- --pg-bin /path/to/postgresql/bin
 ```
+
+Plain `cargo test` reports tests that need PostgreSQL as ignored. The Rust test runner above provisions an isolated database and executes the full suite, including those tests.
 
 The process-level test uses a local fixture model server. It checks publish/cache/prepare, bounded proposal edits, comparison recording, promotion, denial, rollback, and restart persistence without paid calls. `npm run test:codex` is the separate live Luna-only check: it asks for random values stored only in prepared resources. It does not claim a direct SDK discovery event or cover resumed sessions.
 

@@ -63,7 +63,7 @@ export function AccountMenu({
       >
         <a href={signInHref(returnTo)} aria-label="Sign in">
           {iconOnly && <UserRound aria-hidden="true" className="size-[18px]" />}
-          <span className={iconOnly ? 'sr-only' : undefined}>Sign in</span>
+          <span className={iconOnly ? 'sr-only workspace-rail-label' : undefined}>Sign in</span>
         </a>
       </Button>
     );
@@ -72,7 +72,7 @@ export function AccountMenu({
         <TooltipTrigger asChild data-slot="button">
           {signIn}
         </TooltipTrigger>
-        <TooltipContent side="right" sideOffset={10}>
+        <TooltipContent side="right" sideOffset={10} hidden={suppressTooltip}>
           Sign in
         </TooltipContent>
       </Tooltip>
@@ -104,7 +104,7 @@ export function AccountMenu({
         >
           <UserRound aria-hidden="true" className={iconOnly ? 'size-[18px]' : 'size-4'} />
         </span>
-        <span className={iconOnly ? 'sr-only' : undefined}>Account</span>
+        <span className={iconOnly ? 'sr-only workspace-rail-label' : undefined}>Account</span>
         {!iconOnly &&
           (compact ? (
             <ChevronDown aria-hidden="true" className="size-3.5 text-muted-foreground" />

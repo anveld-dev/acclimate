@@ -1,6 +1,6 @@
 import { SyntaxCode } from './syntax-code';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -11,6 +11,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { readStoredVersion } from '../server/read-console';
+import { ShieldCheck } from 'lucide-react';
+import { Badge } from './ui/badge';
 import { CopyButton } from './copy-button';
 import { Input } from './ui/input';
 import { fileTitle, KindBadge } from './shared';
@@ -97,6 +99,21 @@ function ScopedVersionInspector({
       )
     : [];
   const selected = matchingFiles.find((file) => file.path === selectedPath) ?? matchingFiles[0];
+  const sourceBytes = useMemo(() => (selected ? new Blob([selected.text]).size : 0), [selected]);
+  const fileReference =
+    result?.ok && selected
+      ? JSON.stringify(
+          {
+            projectId: scope.projectId,
+            bundleId: scope.bundleId,
+            versionId: result.version.id,
+            versionDigest: result.version.digest,
+            path: selected.path,
+          },
+          null,
+          2,
+        )
+      : '';
   function download() {
     if (!selected) return;
     const url = URL.createObjectURL(
@@ -131,7 +148,15 @@ function ScopedVersionInspector({
       </DialogTrigger>
       <DialogContent className="version-inspector-dialog">
         <DialogHeader className="version-inspector-header">
-          <DialogTitle>Version content</DialogTitle>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <DialogTitle>Version content</DialogTitle>
+            {result?.ok && !loading && (
+              <Badge variant="secondary">
+                <ShieldCheck aria-hidden="true" />
+                Bundle digest verified
+              </Badge>
+            )}
+          </div>
           <DialogDescription>
             {contextLabel && <>{contextLabel}. </>}Read-only snapshot.
             {result?.ok && !loading && (
@@ -175,7 +200,7 @@ function ScopedVersionInspector({
                         <dd>{result.version.id}</dd>
                       </div>
                       <div>
-                        <dt>Digest</dt>
+                        <dt>Bundle payload digest</dt>
                         <dd>{result.version.digest}</dd>
                       </div>
                       <div>
@@ -245,9 +270,15 @@ function ScopedVersionInspector({
                         <div>
                           <h3>{fileTitle(selected)}</h3>
                           <KindBadge kind={selected.kind} />
-                          <p className="break-all">{selected.path}</p>
+                          <span className="text-xs text-muted-foreground">
+                            {sourceBytes.toLocaleString()} {sourceBytes === 1 ? 'byte' : 'bytes'}
+                          </span>
+                          {fileTitle(selected) !== selected.path && (
+                            <p className="break-all">{selected.path}</p>
+                          )}
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="version-file-actions flex flex-wrap gap-2">
+                          <CopyButton value={fileReference} label="Copy file reference" />
                           <CopyButton value={selected.text} label="Copy content" iconOnly />
                           <Button variant="outline" size="sm" onClick={download}>
                             Download
@@ -256,6 +287,7 @@ function ScopedVersionInspector({
                       </header>
                       <SyntaxCode
                         aria-label={`Content of ${selected.path}`}
+                        lineNumbers
                         className="version-inspector-source"
                         code={selected.text}
                         path={selected.path}

@@ -36,7 +36,7 @@ test('Claude preparation selects project resources and maps content into native 
   } finally {
     await prepared.cleanup();
   }
-  await assert.rejects(access(prepared.cwd));
+  await assert.rejects(access(prepared.cwd), { code: 'ENOENT' });
 });
 
 test('Claude rejects skill metadata mismatch and case-insensitive duplicate names', async () => {

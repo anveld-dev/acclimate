@@ -20,9 +20,7 @@ Keep machine SDK authentication and bound content-read/receipt-write credentials
 
 ## 2. Preserve data and establish ownership deliberately
 
-Do not reset databases, recreate workspaces, replace IDs or reassign machine principal strings to human users. Existing versions, drafts, evidence, releases, memberships, credentials and prepared jobs remain valid.
-
-Add migration 0013 for a narrow adoption audit record and the one-time revocation of pre-cutover browser sessions. Fresh OIDC login is required after the security cutover; business data and memberships remain intact. Keep old migration checksums.
+Initialize new installations with the [current PostgreSQL baseline](../../../migrations/0001_init.sql). It includes the adoption audit table. Databases created by earlier migration chains require the matching service build. See the [deployment guide](../../../deploy/README.md) for fresh installation and restore procedures.
 
 Add one explicit operator action, proposed as `POST /v1/auth/workspace-adoptions` with `{projectId, reason}`. It requires the current signed-in allowlisted operator and dedicated console transport, verifies an existing project, serializes with membership writers and only adopts a project with no memberships. It gives the acting verified operator admin access and records who/when/why. Use one immutable audit row per project. A repeated adoption by its recorded operator returns that history without regranting a later-demoted/removed membership or changing the reason. Recheck the live session and exact operator pair in the transaction. Another operator or an already-owned project without that adoption record is refused. Place it outside membership-gated project routing so an orphan can actually be adopted. No arbitrary target identity or global admin shortcut.
 

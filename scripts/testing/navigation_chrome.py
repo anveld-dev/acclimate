@@ -73,7 +73,7 @@ def verify(w,b,extra,out,checks):
             p.keyboard.press('Escape');expect(sheet).to_have_count(0)
             expect(p.get_by_role('button',name='Open navigation',exact=True)).to_be_focused()
         else:
-            trigger=p.get_by_role('button',name='Workspaces',exact=True);trigger.click()
+            trigger=p.get_by_role('button',name='Workspaces');trigger.click()
             menu=p.get_by_role('menu');expect(menu).to_be_visible()
             for project_id in duplicates:
                 item=menu.locator('[data-workspace-id="'+project_id+'"]')
@@ -137,7 +137,7 @@ def verify(w,b,extra,out,checks):
     p.keyboard.press('Escape')
 
     # Selecting the current item does not add history; switching does and Back restores it.
-    trigger=p.get_by_role('button',name='Workspaces',exact=True);trigger.click()
+    trigger=p.get_by_role('button',name='Workspaces');trigger.click()
     menu=p.get_by_role('menu');current=menu.locator('[data-workspace-id="'+w.h.project+'"]')
     original=p.url;history=p.evaluate('history.length');current.click()
     assert p.url==original and p.evaluate('history.length')==history
@@ -193,7 +193,7 @@ def run(a):
               p.keyboard.press('Escape');expect(account).to_be_focused()
               if width<=1000:p.keyboard.press('Escape')
               else:
-                  p.get_by_role('button',name='Workspaces',exact=True).click();expect(p.get_by_role('menu')).to_be_visible();p.screenshot(path=str(out/f'workspaces-{width}.png'),full_page=True);p.keyboard.press('Escape')
+                  p.get_by_role('button',name='Workspaces').click();expect(p.get_by_role('menu')).to_be_visible();p.screenshot(path=str(out/f'workspaces-{width}.png'),full_page=True);p.keyboard.press('Escape')
               checks.append(f'Account and workspace baseline at {width}px')
         assert before==build_fingerprint();assert not b.errors,b.errors
         (out/'summary.json').write_text(json.dumps(dict(passed=True,checks=checks,sourceBuildSha256=before,modelCalls=0,limits=(['Desktop dirty navigation and operator/member gates are in the targeted BDD; logout/account change, creation pending/failure and resize are in navigation_lifecycle.py. Native screen readers and arbitrary identity lengths are untested.'] if a.verify else ['Baseline captures only; final behavior qualification not yet implemented.'])),indent=2)+'\n')

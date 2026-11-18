@@ -25,6 +25,8 @@ mod field_requalification;
 
 type Tx<'a> = Transaction<'a, Postgres>;
 const WORKER: &str = "service:connected-learning";
+const AUTOMATIC_ROLLOUT: &str = "Automatic rollout after a passing audit";
+const REVIEW_DECLINED: &str = "Reviewer declined promotion";
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
@@ -317,31 +319,28 @@ impl Connection {
         for row in history {
             let comparison: ComparisonRequest =
                 serde_json::from_value(row.get("body")).map_err(db)?;
-            let regressions = comparison
-                .results
-                .iter()
-                .filter(|pair| {
-                    (if self.higher_is_better {
-                        pair.candidate.reward < pair.parent.reward
+            let (mut gains, mut regressions, mut task_failures) = (0, 0, 0);
+            for pair in &comparison.results {
+                if pair.candidate.execution_status == "task_failed" {
+                    task_failures += 1;
+                }
+                if pair.candidate.reward != pair.parent.reward {
+                    if (pair.candidate.reward > pair.parent.reward) == self.higher_is_better {
+                        gains += 1;
                     } else {
-                        pair.candidate.reward > pair.parent.reward
-                    }) || (pair.parent.execution_status == "completed"
-                        && pair.candidate.execution_status != "completed")
-                })
-                .count();
-            let gains = comparison
-                .results
-                .iter()
-                .filter(|pair| {
-                    if self.higher_is_better {
-                        pair.candidate.reward > pair.parent.reward
-                    } else {
-                        pair.candidate.reward < pair.parent.reward
+                        regressions += 1;
                     }
-                })
-                .count();
+                }
+            }
             let previous: Uuid = row.get("candidate_version_id");
-            evidence.push(format!("Prior candidate {previous} failed development: {gains} improved pairs and {regressions} regressed pairs across {} scored pairs.", comparison.results.len()));
+            let mut summary = format!(
+                "Prior candidate {previous} failed development: {gains} improved pairs and {regressions} regressed pairs across {} scored pairs.",
+                comparison.results.len()
+            );
+            if task_failures > 0 {
+                summary.push_str(&format!(" Candidate task failures: {task_failures}."));
+            }
+            evidence.push(summary);
         }
         Ok(())
     }
@@ -821,7 +820,14 @@ async fn advance(
                             .await
                         {
                             Ok(promotion) => {
-                                record_promotion(tx, id, comparison, promotion).await?
+                                record_promotion(
+                                    tx,
+                                    id,
+                                    comparison,
+                                    promotion,
+                                    Some(AUTOMATIC_ROLLOUT),
+                                )
+                                .await?
                             }
                             Err(error) if error.1 == "policy_override_required" => {
                                 sqlx::query("UPDATE connected_learning_rounds SET state='awaiting_review',audit_comparison_id=$2,reason='Application policy requires explicit review',updated_at=now() WHERE id=$1")
@@ -851,9 +857,10 @@ async fn record_promotion(
     round: Uuid,
     comparison: Uuid,
     promotion: Uuid,
+    reason: Option<&str>,
 ) -> ApiResult<()> {
-    sqlx::query("UPDATE connected_learning_rounds SET state='promoted',reason=NULL,audit_comparison_id=$2,promotion_id=$3,updated_at=now() WHERE id=$1")
-        .bind(round).bind(comparison).bind(promotion).execute(&mut **tx).await.map_err(db)?;
+    sqlx::query("UPDATE connected_learning_rounds SET state='promoted',reason=$4,audit_comparison_id=$2,promotion_id=$3,updated_at=now() WHERE id=$1")
+        .bind(round).bind(comparison).bind(promotion).bind(reason).execute(&mut **tx).await.map_err(db)?;
     Ok(())
 }
 
@@ -1016,24 +1023,83 @@ async fn review(
     })?;
     let state: String = round.get("state");
     let reason: Option<String> = round.get("reason");
-    if review.approve && state == "promoted" {
-        return Ok(Json(
-            json!({"roundId":round_id,"state":state,"promotionId":round.get::<Uuid,_>("promotion_id")}),
-        ));
+    if state == "promoted" {
+        let promotion: Uuid = round.get("promotion_id");
+        let can_read = match crate::auth::actor(&headers, &s, &connection.project, "read") {
+            Ok(reader) => {
+                crate::auth::authorize_transaction(&mut tx, &reader, &connection.project, "read")
+                    .await
+                    .is_ok()
+            }
+            Err(_) => false,
+        };
+        let visible = crate::channels::visible_policy_override(4, 5);
+        let decision = sqlx::query(&format!(
+            "SELECT reviewer,p.policy_override,CASE WHEN $5 THEN ({visible})->>'reason' END AS visible_reason
+             FROM promotions p WHERE (p.project_id,p.bundle_id,p.id)=($1,$2,$3)"
+        )).bind(&connection.project).bind(connection.bundle).bind(promotion)
+            .bind(&actor.principal).bind(can_read).fetch_one(&mut *tx).await.map_err(db)?;
+        let recorded = decision
+            .get::<Option<sqlx::types::Json<crate::PolicyOverride>>, _>("policy_override")
+            .map(|v| v.0);
+        let reviewer: String = decision.get("reviewer");
+        let automatic = reason.as_deref() == Some(AUTOMATIC_ROLLOUT);
+        if review.approve
+            && !automatic
+            && reviewer == actor.principal
+            && review
+                .policy_override
+                .map(crate::PolicyOverride::normalized)
+                == recorded
+        {
+            return Ok(Json(
+                json!({"roundId":round_id,"state":state,"promotionId":promotion}),
+            ));
+        }
+        let mut message = if automatic {
+            "Automatic rollout already released this candidate.".to_owned()
+        } else {
+            format!("This rollout was already approved by {reviewer}.")
+        };
+        if let Some(reason) = decision.get::<Option<String>, _>("visible_reason") {
+            message.push_str(&format!(" Recorded reason: {reason}"));
+        }
+        return Err(err(StatusCode::CONFLICT, "review_already_decided", message)
+            .with_details(json!({"roundId":round_id,"state":state,"promotionId":promotion,"reviewer":reviewer})));
     }
     if !review.approve && review.policy_override.is_some() {
         return Err(conflict(
             "A declined review cannot override an application policy",
         ));
     }
-    if !review.approve && reason.as_deref() == Some("Reviewer declined promotion") {
-        return Ok(Json(json!({"roundId":round_id,"state":state})));
+    let route = format!(
+        "/v1/projects/{}/integrations/{integration}/learning/rounds/{round_id}/review",
+        connection.project
+    );
+    if state == "rejected" && reason.as_deref() == Some(REVIEW_DECLINED) {
+        let reviewer: Option<String> = sqlx::query_scalar(
+            "SELECT principal_id FROM mutation_audit WHERE project_id=$1 AND path=$2 AND operation_key=$3 ORDER BY id DESC LIMIT 1"
+        ).bind(&connection.project).bind(&route).bind(round_id.to_string()).fetch_optional(&mut *tx).await.map_err(db)?;
+        if !review.approve && reviewer.as_deref() == Some(&actor.principal) {
+            return Ok(Json(json!({"roundId":round_id,"state":state})));
+        }
+        let message = reviewer.as_ref().map_or_else(
+            || "This rollout was already declined.".to_owned(),
+            |principal| format!("This rollout was already declined by {principal}."),
+        );
+        return Err(err(StatusCode::CONFLICT, "review_already_decided", message)
+            .with_details(json!({"roundId":round_id,"state":state,"reviewer":reviewer})));
     }
     if state != "awaiting_review" {
         return Err(conflict("Round is not awaiting review"));
     }
     if !review.approve {
-        close(&mut tx, &round, "Reviewer declined promotion").await?;
+        close(&mut tx, &round, REVIEW_DECLINED).await?;
+        // A decline has no promotion. Keep the deciding identity in the mutation audit.
+        sqlx::query("INSERT INTO mutation_audit(project_id,actor_user_id,service_principal,principal_id,path,operation_key)
+            VALUES($1,$2,$3,$4,$5,$6)")
+            .bind(&connection.project).bind(actor.user_id).bind(&actor.service_principal)
+            .bind(&actor.principal).bind(route).bind(round_id.to_string()).execute(&mut *tx).await.map_err(db)?;
         tx.commit().await.map_err(db)?;
         return Ok(Json(json!({"roundId":round_id,"state":"rejected"})));
     }
@@ -1066,7 +1132,7 @@ async fn review(
             review.policy_override,
         )
         .await?;
-    record_promotion(&mut tx, round_id, comparison, promotion).await?;
+    record_promotion(&mut tx, round_id, comparison, promotion, None).await?;
     tx.commit().await.map_err(db)?;
     Ok(Json(
         json!({"roundId":round_id,"state":"promoted","promotionId":promotion}),

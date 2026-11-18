@@ -267,10 +267,10 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
     async fn rollback_window_expires_old_verdicts_and_partitions_releases() {
-        let Ok(url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
-            return;
-        };
+        let url =
+            std::env::var("ACCLIMATE_TEST_DATABASE_URL").expect("requires isolated PostgreSQL");
         let pool = sqlx::PgPool::connect(&url).await.unwrap();
         let mut tx = pool.begin().await.unwrap();
         sqlx::query(

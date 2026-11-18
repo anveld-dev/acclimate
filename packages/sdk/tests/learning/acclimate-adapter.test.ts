@@ -153,7 +153,7 @@ function report(op: LearningOperation, descriptor: Readonly<EvaluationDescriptor
     results: [{ caseId: 'case', repetition: 0, parent: arm(0), candidate: arm(1) }] };
 }
 function evaluatedRequest(cmp: Comparison): Evaluation {
-  return { ...cmp, id: 'request', proposalId: null, status: 'completed', evaluatorPrincipal: 'evaluator',
+  return { ...cmp, requireBoundEvidence: true, id: 'request', proposalId: null, status: 'completed', evaluatorPrincipal: 'evaluator',
     attemptId: 'evaluation-attempt', comparisonId: cmp.id, error: null, createdAt: now, updatedAt: now };
 }
 

@@ -1,3 +1,4 @@
+@import './file-merge.css';
 .syntax-code {
   min-width: 0;
   max-width: 100%;
@@ -19,9 +20,6 @@
 }
 .syntax-token {
   color: var(--shiki-light, inherit);
-}
-.dark .syntax-token {
-  color: var(--shiki-dark, inherit);
 }
 .syntax-code:focus-visible {
   outline: 2px solid var(--ring);
@@ -113,22 +111,52 @@
 .cm-syntax-name {
   color: #865513;
 }
-.dark .cm-syntax-keyword {
-  color: #d4a0ec;
+@media (prefers-color-scheme: dark) {
+  .syntax-token {
+    color: var(--shiki-dark, inherit);
+  }
+  .cm-syntax-keyword {
+    color: #d4a0ec;
+  }
+  .cm-syntax-string {
+    color: #9bd0a8;
+  }
+  .cm-syntax-number {
+    color: #edbc8d;
+  }
+  .cm-syntax-comment {
+    color: #a3abb5;
+  }
+  .cm-syntax-heading,
+  .cm-syntax-link {
+    color: #91c9ec;
+  }
+  .cm-syntax-name {
+    color: #e2c18d;
+  }
 }
-.dark .cm-syntax-string {
-  color: #9bd0a8;
+
+/* Keep the original text node sequence intact when copying numbered, wrapped source. */
+.syntax-code[data-line-numbers] > code {
+  display: block;
+  position: relative;
+  padding-left: calc(var(--source-gutter) + 1ch);
+  box-sizing: content-box;
 }
-.dark .cm-syntax-number {
-  color: #edbc8d;
+.syntax-code .source-line-marker::before {
+  content: attr(data-line);
+  position: absolute;
+  left: 0;
+  width: var(--source-gutter);
+  text-align: right;
+  color: var(--muted-foreground);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
 }
-.dark .cm-syntax-comment {
-  color: #a3abb5;
-}
-.dark .cm-syntax-heading,
-.dark .cm-syntax-link {
-  color: #91c9ec;
-}
-.dark .cm-syntax-name {
-  color: #e2c18d;
+.syntax-code .source-line-marker {
+  display: inline-block;
+  width: 0;
+  height: 1em;
+  vertical-align: text-bottom;
 }

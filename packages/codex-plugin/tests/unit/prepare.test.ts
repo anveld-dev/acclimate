@@ -46,7 +46,7 @@ test('prepares native Codex instruction and skill files, returns memory explicit
   } finally {
     await result.cleanup();
   }
-  await assert.rejects(access(result.cwd));
+  await assert.rejects(access(result.cwd), { code: 'ENOENT' });
 });
 
 test('rejects duplicate skill names and orphan skill reference trees', async () => {

@@ -26,7 +26,7 @@ export function EditablePaths({
   return (
     <fieldset className="suggestion-scope min-w-0">
       <legend>Editable paths</legend>
-      <p>Editable paths restrict changes, not reading.</p>
+      <p>Choose the files the provider may edit.</p>
       {files.length > 8 && (
         <div className="suggestion-path-search">
           <Label htmlFor={searchId}>Search editable paths</Label>
@@ -76,7 +76,7 @@ export function EditablePaths({
         )}
       </div>
       <p className="suggestion-path-summary">
-        {paths.length} selected · {files.length} files
+        {paths.length} selected · {files.length} {files.length === 1 ? 'file' : 'files'}
         {search && hiddenCount > 0 && ` · ${hiddenCount} selected outside search`}
       </p>
     </fieldset>

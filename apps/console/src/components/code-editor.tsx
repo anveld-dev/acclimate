@@ -19,6 +19,7 @@ type CodeEditorProps = {
   path?: string;
   language?: string;
   disabled?: boolean;
+  lineNumbers?: boolean;
   id?: string;
   className?: string;
   'aria-label'?: string;
@@ -34,6 +35,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     path,
     language,
     disabled = false,
+    lineNumbers = false,
     id,
     className = '',
     'aria-label': label = 'Content',
@@ -46,8 +48,28 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   const surface = useRef<HTMLDivElement>(null);
   const fallback = useRef<HTMLTextAreaElement>(null);
   const engine = useRef<ReturnType<typeof createCodeEditor> | undefined>(undefined);
-  const latest = useRef({ value, onChange, path, language, disabled, label, describedBy, invalid });
-  latest.current = { value, onChange, path, language, disabled, label, describedBy, invalid };
+  const latest = useRef({
+    value,
+    onChange,
+    path,
+    language,
+    disabled,
+    lineNumbers,
+    label,
+    describedBy,
+    invalid,
+  });
+  latest.current = {
+    value,
+    onChange,
+    path,
+    language,
+    disabled,
+    lineNumbers,
+    label,
+    describedBy,
+    invalid,
+  };
   const focusRequest = useRef<Element | null | undefined>(undefined);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'fallback'>('loading');
   const handle = useMemo<CodeEditorHandle>(
@@ -84,9 +106,18 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     };
   }, [handle]);
   useLayoutEffect(() => {
-    const options: EditorOptions = { value, path, language, disabled, label, describedBy, invalid };
+    const options: EditorOptions = {
+      value,
+      path,
+      language,
+      disabled,
+      lineNumbers,
+      label,
+      describedBy,
+      invalid,
+    };
     engine.current?.update(options);
-  }, [value, path, language, disabled, label, describedBy, invalid]);
+  }, [value, path, language, disabled, lineNumbers, label, describedBy, invalid]);
   useEffect(() => {
     let active = true;
     void import('./code-editor-engine')

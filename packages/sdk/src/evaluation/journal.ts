@@ -71,8 +71,8 @@ export interface AttemptJournal {
   report?: ComparisonRequest;
   comparisonId?: string;
   completed?: true;
-  retainedOperations?: true;
-  wireBodies?: Partial<Record<'start' | 'submit' | 'finish', BodyReference>>;
+  retainedOperations: true;
+  wireBodies: Partial<Record<'start' | 'submit' | 'finish', BodyReference>>;
 }
 export const sha256 = (value: string | Uint8Array) =>
   'sha256:' + createHash('sha256').update(value).digest('hex');
@@ -189,7 +189,11 @@ export async function openJournal(root: string, scope: JournalScope) {
       !value.keys?.start ||
       !value.keys.submit ||
       !value.keys.finish ||
-      !value.request
+      !value.request ||
+      value.retainedOperations !== true ||
+      !value.wireBodies ||
+      typeof value.wireBodies !== 'object' ||
+      Array.isArray(value.wireBodies)
     )
       throw new EvaluationError('journal.invalid');
     if (value.journalRoot !== undefined && value.journalRoot !== journalRoot) {
@@ -212,6 +216,7 @@ export async function openJournal(root: string, scope: JournalScope) {
         throw error;
       }
       const value = (await readPrivateJson(filename, 4 * 1024 * 1024)) as unknown as AttemptJournal;
+      if (!value?.journalRoot) throw new EvaluationError('journal.invalid');
       check(value);
       return value;
     },
@@ -234,11 +239,8 @@ export async function openJournal(root: string, scope: JournalScope) {
     },
     async readBody(kind: 'start' | 'submit' | 'finish', state: AttemptJournal): Promise<string> {
       lock.assertOwned();
-      const ref = state.wireBodies?.[kind];
-      if (!ref) {
-        if (kind === 'submit' && state.report) return JSON.stringify(state.report);
-        throw new EvaluationError('journal.invalid');
-      }
+      const ref = state.wireBodies[kind];
+      if (!ref) throw new EvaluationError('journal.invalid');
       if (ref.file !== bodyFile(kind) || ref.bytes > 2 * 1024 * 1024)
         throw new EvaluationError('journal.invalid');
       const body = await readPrivateText(path.join(directory, ref.file), 2 * 1024 * 1024);

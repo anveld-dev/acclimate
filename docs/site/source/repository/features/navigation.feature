@@ -10,7 +10,7 @@ Feature: Navigate by workspace and bundle ownership
     And the bundle tabs contain Content, Changes, Releases and App setup
     And the old seven-peer navigation and inert footer are absent
     And desktop navigation uses labelled icons with hover and keyboard tooltips
-    And workspace switching sits above the account at the bottom of the rail
+    And workspace switching precedes navigation and the account remains at the bottom of the rail
     And bundle identity and tabs occupy separate header rows
 
   @NAV-02

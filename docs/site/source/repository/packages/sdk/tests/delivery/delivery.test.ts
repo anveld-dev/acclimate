@@ -171,7 +171,7 @@ test('preparation refuses collisions and cleans only its own files', async () =>
     assert.equal(await readFile(prepared.files[0]!.absolutePath, 'utf8'), 'hello');
     await assert.rejects(prepareFiles(verified, dest));
     await prepared.cleanup();
-    await assert.rejects(readFile(prepared.files[0]!.absolutePath, 'utf8'));
+    await assert.rejects(readFile(prepared.files[0]!.absolutePath, 'utf8'), { code: 'ENOENT' });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

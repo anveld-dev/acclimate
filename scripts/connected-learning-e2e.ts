@@ -46,7 +46,8 @@ const consoleToken = randomUUID() + randomUUID();
 const issuer = 'https://identity.example.invalid';
 const dir = await mkdtemp(path.join(await realpath(os.tmpdir()), 'acclimate-connected-'));
 const controller = new AbortController();
-const modelRequests: { instruction: string; allowedPaths: string[] }[] = [];
+const modelRequests: { instruction: string; evidence: string[] }[] = [];
+let rejectedAuditCaseId: string | undefined;
 const executions: { dataset: string; caseId: string; version: string }[] = [];
 const evidence: Record<string, unknown> = {};
 const drivers: Promise<unknown>[] = [];
@@ -168,6 +169,12 @@ try {
         assert.equal(req.method, 'POST');
         assert.equal(req.url, '/v1/chat/completions');
         assert.equal(req.headers.authorization, `Bearer ${modelToken}`);
+        if (rejectedAuditCaseId) {
+          assert(
+            !body.includes(rejectedAuditCaseId),
+            'A later proposal received the held-out audit case',
+          );
+        }
         const request = JSON.parse(JSON.parse(body).messages[0].content) as {
           parent: BundlePayload;
           packageDigests?: Record<string, string>;
@@ -183,7 +190,7 @@ try {
           expectedOutcome?.slice('Expected outcome: '.length) ?? request.request.hypothesis;
         modelRequests.push({
           instruction,
-          allowedPaths: request.request.allowedPaths,
+          evidence: request.request.evidence,
         });
         const applyRules = (rules: string) => [
           { path: file.path, oldText: file.text, newText: `${file.text.trimEnd()}\n${rules}` },
@@ -192,10 +199,12 @@ try {
         let skillOperations: object[] | undefined;
         if (instruction === 'Keep current behavior exactly.') edits = [];
         if (instruction === 'Create a reusable refund skill.') {
-          const earlierAttempt =
-            modelRequests.filter((call) => call.instruction === instruction).length > 1;
-          if (earlierAttempt) {
-            assert(request.request.evidence.some((entry) => entry.includes('failed development')));
+          const repairRegression = request.request.evidence.some((line) =>
+            /failed development: 1 improved pairs? and 1 regressed pairs? across 2 scored pairs\.$/.test(
+              line,
+            ),
+          );
+          if (repairRegression) {
             edits = [];
             skillOperations = [
               {
@@ -210,8 +219,7 @@ try {
               },
             ];
           } else {
-            // This honest candidate changes the instructions but does not solve the task.
-            edits = applyRules('Read the refund policy.');
+            edits = applyRules('refund = Quote the refund window.\nrefund-escalation = Give up.');
           }
         }
         if (instruction === 'Consolidate both rules in the root instructions.') {
@@ -652,6 +660,16 @@ try {
   const negative = await submit(automatic, firstVersion, `${beta}\nrefund-escalation = Give up.`);
   const rejected = await observe(automatic, negative, 'rejected');
   assert(rejected.developmentComparisonId && rejected.auditComparisonId);
+  const rejectedAudit = await operator.getComparison(
+    project,
+    bundle.id,
+    rejected.auditComparisonId,
+  );
+  const lostCase = rejectedAudit.results.find(
+    ({ parent, candidate }) => parent.reward === 1 && candidate.reward === 0,
+  );
+  assert(lostCase, 'The independent audit must actually contain a regressed case');
+  rejectedAuditCaseId = lostCase.caseId;
   assert.equal(rejected.promotionId, null);
   assert.equal((await fresh(automatic)).id, firstVersion.id);
 
@@ -745,6 +763,11 @@ try {
   });
   const second = await observe(automatic, delayedJob, 'promoted');
   assert.equal(second.incidentReplay, 'pass');
+  const lateApproval = await api(
+    'POST', `${learning(automatic)}/rounds/${second.id}/review`, { approve: true }, 'admin', 409,
+  );
+  assert.equal(lateApproval.error.code, 'review_already_decided');
+  assert.equal(lateApproval.error.details.promotionId, second.promotionId);
   assert.equal((await lookup()).corrections[0]?.incidentReplay, 'pass');
   await api('POST', incidentPath, passedIncident, 'evaluator');
   await api('POST', incidentPath, { ...passedIncident, verdict: 'regression' }, 'evaluator', 409);
@@ -1360,7 +1383,10 @@ try {
   // Exercise an enrolled package policy, a bounded development retry, distinct release policy, and policy rotation.
   const structural = await makeConnection('Authorized skill packages');
   const structuralInstallation = 'skill-package-fixture';
-  const initialDevelopment = cohort('skill-dev-v1', [{ kind: 'refund' }]);
+  const initialDevelopment = cohort('skill-dev-v1', [
+    { kind: 'refund' },
+    { kind: 'refund-escalation' },
+  ]);
   const updatedDevelopment = cohort('skill-dev-v2', [
     { kind: 'refund' },
     { kind: 'refund-status' },
@@ -1447,6 +1473,27 @@ try {
     ],
   );
   assert.equal(attempts[1].policyEpoch, 0);
+  const [firstAttempt, repair] = attempts;
+  assert.deepEqual(
+    await scores(firstAttempt.developmentComparisonId, firstAttempt.developmentRequestId),
+    [1, -1],
+  );
+  assert.deepEqual(
+    await scores(repair.developmentComparisonId, repair.developmentRequestId),
+    [1, 0],
+  );
+  const skillHistory = modelRequests
+    .filter(({ instruction }) => instruction === 'Create a reusable refund skill.')
+    .map(({ evidence }) => evidence.filter((item) => item.startsWith('Prior candidate ')));
+  assert.deepEqual(
+    skillHistory.map((entries) => entries.length),
+    [0, 1],
+  );
+  assert(
+    skillHistory[1][0].startsWith(
+      `Prior candidate ${firstAttempt.candidateVersionId} failed development:`,
+    ),
+  );
   assert.deepEqual(await scores(attempts[1].auditComparisonId, attempts[1].auditRequestId), [0]);
   const withSkill = await installedBundle(structural);
   assert(withSkill.payload.files.some((f) => f.path === 'skills/refunds/SKILL.md'));

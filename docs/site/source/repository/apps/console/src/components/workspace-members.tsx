@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
-import { ChevronDown, MoreHorizontal } from 'lucide-react';
+import {
+  ChevronDown,
+  MoreHorizontal,
+  UserRoundPlus,
+  UsersRound,
+  Mail,
+  ShieldCheck,
+} from 'lucide-react';
 import { PageTitle } from './shared';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { Button } from './ui/button';
+import { DirectorySearch } from './ui/directory-search';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { NativeSelect } from './ui/native-select';
@@ -65,6 +73,8 @@ export function WorkspaceMembers({
 }) {
   const router = useRouter();
   const [access, setAccess] = useState(initial);
+  const [query, setQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
   const [adding, setAdding] = useState(false);
   const [email, setEmail] = useState('');
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -109,6 +119,10 @@ export function WorkspaceMembers({
       if (loadedPages.current === 1) setAccess(initial);
       return;
     }
+    if (!sameIdentity) {
+      setQuery('');
+      setRoleFilter('all');
+    }
     feedbackScope.current = { projectId, identityId };
     generation.current += 1;
     loadedPages.current = 1;
@@ -149,8 +163,12 @@ export function WorkspaceMembers({
       setMessage(ACCESS_UPDATED);
       const next = await readMemberWindow(scope);
       if (scope !== currentProject.current || version !== generation.current) return;
+      const roleEditLeavesFilter =
+        command.kind === 'setMembership' && roleFilter !== 'all' && command.role !== roleFilter;
       setAccess(next);
       await router.invalidate();
+      if (roleEditLeavesFilter && document.activeElement === document.body)
+        document.getElementById('member-search')?.focus();
       setAdding(false);
       setRemoving(undefined);
     } catch {
@@ -355,6 +373,26 @@ export function WorkspaceMembers({
       if (version === generation.current) setPending(false);
     }
   }
+  const members = (access?.ok && access.members) || [];
+  const workspaceName = access?.ok
+    ? (access.projects.find((project) => project.id === projectId)?.name ?? projectId)
+    : projectId;
+  const search = query.trim().toLowerCase();
+  const matchingMembers = members.filter(
+    (member) =>
+      (roleFilter === 'all' || member.role === roleFilter) &&
+      (!search ||
+        [memberName(member), member.id, member.subject, member.issuer].some((value) =>
+          value.toLowerCase().includes(search),
+        )),
+  );
+  const seenNames = new Set<string>();
+  const duplicateNames = new Set<string>();
+  for (const member of members) {
+    const name = memberName(member);
+    if (seenNames.has(name)) duplicateNames.add(name);
+    seenNames.add(name);
+  }
   return (
     <div className="workspace-members space-y-4">
       <PageTitle
@@ -364,6 +402,7 @@ export function WorkspaceMembers({
           allowed && (
             <Button
               ref={addTrigger}
+              className="transition-colors"
               disabled={pending || !mailAvailable}
               onClick={() => {
                 setEmail('');
@@ -372,7 +411,7 @@ export function WorkspaceMembers({
                 setAdding(true);
               }}
             >
-              Invite member
+              <UserRoundPlus aria-hidden="true" /> Invite member
             </Button>
           )
         }
@@ -390,9 +429,58 @@ export function WorkspaceMembers({
           aria-labelledby="current-members-heading"
           className="workspace-members-panel workspace-panel overflow-hidden"
         >
-          <h2 id="current-members-heading" className="members-section-heading">
-            Current members
-          </h2>
+          <div className="members-directory-head">
+            <div className="members-directory-title">
+              <UsersRound aria-hidden="true" />
+              <h2 id="current-members-heading" className="members-section-heading">
+                Current members
+              </h2>
+              <span className="members-directory-count" aria-live="polite">
+                {search || roleFilter !== 'all'
+                  ? `${matchingMembers.length} of ${members.length}`
+                  : members.length}
+                {access.ok && access.nextMemberCursor ? ' loaded' : ''}
+              </span>
+            </div>
+            <Disclosure className="members-role-guide">
+              <DisclosureTrigger>Role permissions</DisclosureTrigger>
+              <DisclosureContent>
+                <dl>
+                  {ROLES.map((option) => (
+                    <div key={option.value}>
+                      <dt>{option.label}</dt>
+                      <dd>{option.description}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </DisclosureContent>
+            </Disclosure>
+          </div>
+          <div className="members-directory-toolbar">
+            <DirectorySearch
+              id="member-search"
+              label="Search members"
+              placeholder={
+                access.ok && access.nextMemberCursor
+                  ? 'Search loaded members…'
+                  : 'Name or ID'
+              }
+              value={query}
+              onValueChange={setQuery}
+            />
+            <NativeSelect
+              aria-label="Filter by role"
+              value={roleFilter}
+              onChange={(event) => setRoleFilter(event.target.value)}
+            >
+              <option value="all">All roles</option>
+              {ROLES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
           <Table>
             <TableHeader>
               <TableRow>
@@ -405,29 +493,47 @@ export function WorkspaceMembers({
             </TableHeader>
             <TableBody>
               {access.ok &&
-                access.members?.map((member) => (
+                matchingMembers.map((member) => (
                   <TableRow key={member.id} className="workspace-member-row">
                     <TableCell className="workspace-member-identity">
-                      <div className="member-identity-heading flex flex-wrap items-center gap-2">
-                        <span className="font-medium break-words">{memberName(member)}</span>
-                        {member.id === access.identity.userId && (
-                          <span className="text-muted-foreground">You</span>
-                        )}
-                      </div>
-                      <div className="member-identity-meta">
-                        <div className="member-id">User ID: {member.id}</div>
-                        <Disclosure>
-                          <DisclosureTrigger>Identity details</DisclosureTrigger>
-                          <DisclosureContent className="member-details">
-                            <div>Issuer: {member.issuer}</div>
-                            <div>Subject: {member.subject}</div>
-                          </DisclosureContent>
-                        </Disclosure>
+                      <div className="member-account-line">
+                        <span className="member-monogram" aria-hidden="true">
+                          {memberName(member)
+                            .trim()
+                            .split(/\s+/u)
+                            .slice(0, 2)
+                            .map((part) => Array.from(part)[0])
+                            .join('')
+                            .toUpperCase()}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="member-identity-heading flex flex-wrap items-center gap-2">
+                            <span className="font-medium break-words">{memberName(member)}</span>
+                            {member.id === access.identity.userId && (
+                              <span className="member-own-badge">You</span>
+                            )}
+                          </div>
+                          <div className="member-identity-meta">
+                            {duplicateNames.has(memberName(member)) && (
+                              <div className="member-id">User ID: {member.id}</div>
+                            )}
+                            <Disclosure>
+                              <DisclosureTrigger>Identity details</DisclosureTrigger>
+                              <DisclosureContent className="member-details">
+                                {!duplicateNames.has(memberName(member)) && (
+                                  <div className="member-id">User ID: {member.id}</div>
+                                )}
+                                <div>Issuer: {member.issuer}</div>
+                                <div>Subject: {member.subject}</div>
+                              </DisclosureContent>
+                            </Disclosure>
+                          </div>
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>
                       <span className="members-cell-label">Role</span>
-                      <DropdownMenu>
+                      <DropdownMenu modal={false}>
                         <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
@@ -444,6 +550,7 @@ export function WorkspaceMembers({
                               )
                                 event.preventDefault();
                             }}
+                            data-role={member.role}
                             className="member-role-trigger"
                             aria-label={`Role for ${memberName(member)}, user ID ${member.id}: ${roleName(member.role)}`}
                           >
@@ -455,6 +562,8 @@ export function WorkspaceMembers({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" className="member-role-menu">
+                          <DropdownMenuLabel>{memberName(member)}</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
                           <DropdownMenuRadioGroup
                             value={member.role ?? ''}
                             onValueChange={(value) => {
@@ -491,7 +600,7 @@ export function WorkspaceMembers({
                     </TableCell>
                     <TableCell className="text-right">
                       <span className="members-cell-label">Actions</span>
-                      <DropdownMenu>
+                      <DropdownMenu modal={false}>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <DropdownMenuTrigger asChild>
@@ -538,8 +647,23 @@ export function WorkspaceMembers({
                 ))}
             </TableBody>
           </Table>
-          {access.ok && !access.members?.length && (
-            <p className="p-4 text-muted-foreground">No members to show.</p>
+          {!matchingMembers.length && (
+            <div className="members-filter-empty">
+              <p>{members.length ? 'No members match these filters.' : 'No members to show.'}</p>
+              {(search || roleFilter !== 'all') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setQuery('');
+                    setRoleFilter('all');
+                    document.getElementById('member-search')?.focus();
+                  }}
+                >
+                  Clear filters
+                </Button>
+              )}
+            </div>
           )}
           {access.ok && access.nextMemberCursor && (
             <div className="border-t p-3">
@@ -557,8 +681,17 @@ export function WorkspaceMembers({
         </p>
       )}
       {allowed && (
-        <section className="workspace-panel overflow-hidden" aria-label="Pending invitations">
-          <h2 className="members-section-heading">Pending invitations</h2>
+        <section
+          className="members-invitations workspace-panel overflow-hidden"
+          aria-label="Pending invitations"
+        >
+          <div className="members-directory-title members-invitations-title">
+            <Mail aria-hidden="true" />
+            <h2 className="members-section-heading">Pending invitations</h2>
+            {mailAvailable !== undefined && !invitationError && (
+              <span className="members-directory-count">{invitations.length}</span>
+            )}
+          </div>
           {mailAvailable !== undefined && !invitationError && invitations.length === 0 && (
             <p className="members-empty">No pending invitations.</p>
           )}
@@ -599,7 +732,7 @@ export function WorkspaceMembers({
                     </TableCell>
                     <TableCell className="text-right">
                       <span className="members-cell-label">Actions</span>
-                      <DropdownMenu>
+                      <DropdownMenu modal={false}>
                         <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
@@ -657,7 +790,8 @@ export function WorkspaceMembers({
           <DialogHeader>
             <DialogTitle>Invite member</DialogTitle>
             <DialogDescription>
-              They’ll get a link to join using their verified email.
+              Invite someone to <strong>{workspaceName}</strong>. They’ll get a link to join using
+              their verified email.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -690,6 +824,7 @@ export function WorkspaceMembers({
               <Label htmlFor="membership-role">Workspace role</Label>
               <NativeSelect
                 id="membership-role"
+                aria-describedby="invitation-role-description"
                 value={role}
                 disabled={pending}
                 onChange={(event) => setRole(event.target.value as Role)}
@@ -700,7 +835,11 @@ export function WorkspaceMembers({
                   </option>
                 ))}
               </NativeSelect>
-              <p className="text-sm text-muted-foreground">
+              <p
+                id="invitation-role-description"
+                className="member-role-description text-sm text-muted-foreground"
+              >
+                <ShieldCheck aria-hidden="true" />
                 {ROLES.find((option) => option.value === role)?.description}
               </p>
             </div>

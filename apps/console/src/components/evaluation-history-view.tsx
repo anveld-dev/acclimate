@@ -1,9 +1,12 @@
-import { Fragment, useId, useLayoutEffect, useRef } from 'react';
+import { Fragment, useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { Comparison, Evaluation, EvaluationProgressView, Outcome } from '@acclimate/sdk';
 import type { EvaluationHistoryViewProps, RequestEvidence } from '../lib/changes-workspace';
 import { evaluationEvidenceSummary, notComparableReasons } from '../lib/evaluation-history';
 import { evaluationPairs, formatReward, pairCounts, pairLabels } from '../lib/evaluation-pairs';
+import { evaluationRunName } from '../lib/evaluation-run-name';
 import { Button } from './ui/button';
+import { DirectorySearch } from './ui/directory-search';
+import { NativeSelect, NativeSelectOption } from './ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from './ui/disclosure';
 import { CopyButton } from './copy-button';
@@ -13,6 +16,44 @@ const value = (text: string | null | undefined) => text || 'Unavailable';
 const reward = (number: number | null | undefined) =>
   number == null || !Number.isFinite(number) ? '—' : formatReward(number);
 
+function RunScores({ parent, candidate }: { parent: number | null; candidate: number | null }) {
+  // Scale each experiment separately. Normalize first to avoid an overflow for opposite extremes.
+  const scale = Math.max(Math.abs(parent ?? 0), Math.abs(candidate ?? 0)) || 1;
+  const low = Math.min(0, (parent ?? 0) / scale, (candidate ?? 0) / scale);
+  const high = Math.max(0, (parent ?? 0) / scale, (candidate ?? 0) / scale);
+  const position = (number: number) => (100 * (number / scale - low)) / (high - low || 1);
+  return (
+    <div className="ledger-paired-scores">
+      {(
+        [
+          ['Parent', parent],
+          ['Candidate', candidate],
+        ] as const
+      ).map(([label, number]) => (
+        <div className="ledger-score-line" key={label}>
+          <span className="ledger-score-value" title={`${label} ${number ?? '—'}`}>
+            {label} <b>{reward(number)}</b>
+          </span>
+          {number !== null && (
+            <span className="ledger-score-track" aria-hidden="true">
+              <i
+                style={{
+                  left: `${Math.min(position(0), position(number))}%`,
+                  width: `${Math.abs(position(number) - position(0))}%`,
+                }}
+              />
+              <i
+                className="ledger-score-origin"
+                style={{ left: `clamp(0px, ${position(0)}%, calc(100% - 1px))` }}
+              />
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function EvidenceState({ evidence }: { evidence: RequestEvidence }) {
   switch (evidence.status) {
     case 'none':
@@ -20,16 +61,11 @@ function EvidenceState({ evidence }: { evidence: RequestEvidence }) {
     case 'loading':
       return <span>Loading evidence…</span>;
     case 'unavailable':
-      return (
-        <span>
-          Evidence unavailable · retrying automatically
-          {evidence.message ? `: ${evidence.message}` : ''}
-        </span>
-      );
+      return <span>{evidence.message || 'Evidence unavailable. Retrying automatically.'}</span>;
     case 'mismatch':
       return <span>Evidence binding mismatch: {evidence.message}</span>;
     case 'unbound':
-      return <span>Legacy unbound evidence: {evidence.message}</span>;
+      return <span>{evidence.message}</span>;
     case 'bound':
       return null;
   }
@@ -167,27 +203,33 @@ function BoundEvidence({ comparison }: { comparison: Comparison }) {
         {summary.unexpectedCount === 1 ? 'record' : 'records'}; excluded from expected coverage and
         means.
       </p>
-      <h4>Expected case preview</h4>
-      <p>
-        Showing {preview.length} of {summary.expectedCount} expected case / repetition pairs.
-      </p>
-      <div className="evaluation-ledger-case-list">
-        {preview.map((row) => (
-          <div className="evaluation-ledger-case" key={row.id}>
-            <div className="evaluation-ledger-case-heading">
-              <strong>
-                {row.key.caseId} / {row.key.repetition}
-              </strong>{' '}
-              · {pairLabels[row.change]}
-              {row.change === 'unscored' && <> · {notComparableReasons(row).join('; ')}</>}
-            </div>
-            <div className="evaluation-ledger-case-sides">
-              <OutcomeView label="Parent" outcome={row.pair?.parent} />
-              <OutcomeView label="Candidate" outcome={row.pair?.candidate} />
-            </div>
+      <Disclosure className="ledger-case-preview">
+        <DisclosureTrigger>
+          Expected case preview ({preview.length} of {summary.expectedCount})
+        </DisclosureTrigger>
+        <DisclosureContent>
+          <p>
+            Showing {preview.length} of {summary.expectedCount} expected case / repetition pairs.
+          </p>
+          <div className="evaluation-ledger-case-list">
+            {preview.map((row) => (
+              <div className="evaluation-ledger-case" key={row.id}>
+                <div className="evaluation-ledger-case-heading">
+                  <strong>
+                    {row.key.caseId} / {row.key.repetition}
+                  </strong>{' '}
+                  · {pairLabels[row.change]}
+                  {row.change === 'unscored' && <> · {notComparableReasons(row).join('; ')}</>}
+                </div>
+                <div className="evaluation-ledger-case-sides">
+                  <OutcomeView label="Parent" outcome={row.pair?.parent} />
+                  <OutcomeView label="Candidate" outcome={row.pair?.candidate} />
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </DisclosureContent>
+      </Disclosure>
     </div>
   );
 }
@@ -214,33 +256,23 @@ function Detail({
   }
   return (
     <div ref={detailRef} className="evaluation-ledger-detail">
-      {request.error && <p>Request error: {request.error}</p>}
-      <EvaluationActivity request={request} progress={progress} />
-      {evidence.status === 'bound' ? (
-        <BoundEvidence comparison={evidence.comparison} />
-      ) : (
-        <p>
-          <EvidenceState evidence={evidence} />
-        </p>
-      )}
-      <Disclosure>
-        <DisclosureTrigger>Run details</DisclosureTrigger>
-        <DisclosureContent className="space-y-3 pt-3">
-          <Provenance
-            request={request}
-            comparison={'comparison' in evidence ? evidence.comparison : undefined}
-          />
-          <CopyButton
-            label="Copy run details"
-            value={JSON.stringify(
-              { request, comparisonId: 'comparison' in evidence ? evidence.comparison.id : null },
-              null,
-              2,
-            )}
-          />
-        </DisclosureContent>
-      </Disclosure>
       <div className="evaluation-ledger-actions">
+        <dl className="ledger-selected-identity">
+          <div>
+            <dt>Candidate version</dt>
+            <dd>
+              <code>{request.candidateVersionId}</code>
+            </dd>
+          </div>
+          {request.comparisonId && (
+            <div>
+              <dt>Reported comparison</dt>
+              <dd>
+                <code>{request.comparisonId}</code>
+              </dd>
+            </div>
+          )}
+        </dl>
         {independent && (evidence.status === 'unbound' || evidence.status === 'mismatch') && (
           <Button asChild variant="outline" size="sm">
             <a href={independent.pathname + independent.search + independent.hash}>
@@ -255,9 +287,45 @@ function Detail({
           Close evaluation details
         </Button>
       </div>
+      {request.error && (
+        <p role="alert" className="ledger-request-error">
+          Request error: {request.error}
+        </p>
+      )}
+      <div className="ledger-detail-context">
+        <EvaluationActivity request={request} progress={progress} />
+        <Disclosure>
+          <DisclosureTrigger>Run details</DisclosureTrigger>
+          <DisclosureContent className="space-y-3 pt-3">
+            <Provenance
+              request={request}
+              comparison={'comparison' in evidence ? evidence.comparison : undefined}
+            />
+            <CopyButton
+              label="Copy run details"
+              value={JSON.stringify(
+                { request, comparisonId: 'comparison' in evidence ? evidence.comparison.id : null },
+                null,
+                2,
+              )}
+            />
+          </DisclosureContent>
+        </Disclosure>
+      </div>
+      <div className="ledger-detail-results">
+        {evidence.status === 'bound' ? (
+          <BoundEvidence comparison={evidence.comparison} />
+        ) : (
+          <p>
+            <EvidenceState evidence={evidence} />
+          </p>
+        )}
+      </div>
     </div>
   );
 }
+
+export type HistoryFilters = { query: string; status: string };
 
 export function EvaluationHistoryView({
   model,
@@ -265,12 +333,21 @@ export function EvaluationHistoryView({
   selectedRequestId,
   onSelectRequest,
   reviewHref,
-}: EvaluationHistoryViewProps) {
+  versionSelector,
+  filters: { query, status },
+  onFiltersChange,
+}: EvaluationHistoryViewProps & {
+  versionSelector?: ReactNode;
+  filters: HistoryFilters;
+  onFiltersChange: (filters: HistoryFilters) => void;
+}) {
   const id = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   const triggers = useRef(new Map<string, HTMLButtonElement>());
   const detail = useRef<HTMLDivElement | null>(null);
   const selected = selectedRequestId;
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const filtering = Boolean(terms.length || status);
   const loaded = model.requests.filter(
     (request) => !selectedCandidateId || request.candidateVersionId === selectedCandidateId,
   );
@@ -281,7 +358,37 @@ export function EvaluationHistoryView({
     (!selectedCandidateId || model.selectedRequest.candidateVersionId === selectedCandidateId)
       ? model.selectedRequest
       : null;
-  const rows = pinned ? [pinned, ...loaded] : loaded;
+  const matches = loaded.filter((run) => {
+    if (status && run.status !== status) return false;
+    if (!terms.length) return true;
+    const text = [
+      evaluationRunName(run.datasetRevision),
+      run.datasetRevision,
+      run.graderRevision,
+      run.id,
+      run.attemptId,
+      run.comparisonId,
+      run.parentVersionId,
+      run.candidateVersionId,
+      ...Object.values(run.runtime ?? {}),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return terms.every((term) => text.includes(term));
+  });
+  const outsideFilter =
+    filtering &&
+    loaded.find((run) => run.id === selected && !matches.some((match) => match.id === run.id));
+  const retained = pinned || outsideFilter;
+  const rows = retained ? [retained, ...matches] : matches;
+  const statuses: Evaluation['status'][] = [
+    'requested',
+    'running',
+    'completed',
+    'failed',
+    'interrupted',
+  ];
   const visibleIds = useRef(new Set<string>());
   visibleIds.current = new Set(rows.map((row) => row.id));
 
@@ -298,24 +405,72 @@ export function EvaluationHistoryView({
 
   return (
     <section
+      id="evaluation-history"
+      tabIndex={-1}
       className="evaluation-ledger"
       data-version-context={Boolean(selectedCandidateId)}
       aria-labelledby={`${id}-heading`}
     >
       <div className="evaluation-ledger-heading">
-        <h3 id={`${id}-heading`} ref={heading} tabIndex={-1}>
-          Evaluation history
-        </h3>
-        <span>
-          {loaded.length} loaded {loaded.length === 1 ? 'request' : 'requests'}
-          {selectedCandidateId ? ' for this version' : ' across bundle channels'}
-        </span>
+        <div className="ledger-heading-title">
+          <h3 id={`${id}-heading`} ref={heading} tabIndex={-1}>
+            Evaluation history
+          </h3>
+          <span>
+            {!model.requests.length && (model.error || model.loading) ? (
+              model.error ? (
+                'History list unavailable'
+              ) : (
+                'Loading bundle history…'
+              )
+            ) : (
+              <>
+                {loaded.length} loaded {loaded.length === 1 ? 'request' : 'requests'}
+                {selectedCandidateId ? ' for this version' : ' across bundle channels'}
+              </>
+            )}
+          </span>
+        </div>
+        {versionSelector}
       </div>
+      {(loaded.length > 0 || filtering || model.cursor) && (
+        <div className="ledger-run-filters" role="group" aria-label="Filter loaded evaluations">
+          <DirectorySearch
+            id={`${id}-run-search`}
+            label="Search loaded evaluations"
+            placeholder="Search runs, harnesses or IDs"
+            value={query}
+            onValueChange={(query) => onFiltersChange({ query, status })}
+          />
+          <NativeSelect
+            aria-label="Evaluation status"
+            value={status}
+            onChange={(event) => onFiltersChange({ query, status: event.target.value })}
+          >
+            <NativeSelectOption value="">All statuses</NativeSelectOption>
+            {statuses.map((item) => (
+              <NativeSelectOption key={item} value={item}>
+                {item[0].toUpperCase() + item.slice(1)} (
+                {loaded.filter((run) => run.status === item).length})
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          {filtering && (
+            <span className="ledger-match-count" role="status">
+              {matches.length} matching {matches.length === 1 ? 'request' : 'requests'}
+            </span>
+          )}
+        </div>
+      )}
       <p className="evaluation-ledger-note">
-        Each request is a separate experiment; datasets, graders and runtimes may differ.
+        Compare parent and candidate within each run. Reward scales, datasets and graders can differ
+        between runs.
       </p>
       {model.error && (
-        <p role="alert">{model.error} Displayed history may be stale. Retrying automatically.</p>
+        <p role="alert">
+          {model.error}
+          {model.requests.length > 0 && ' Showing previously loaded requests.'}
+        </p>
       )}
       {selected && model.selectedState === 'loading' && (
         <p role="status">Loading selected evaluation…</p>
@@ -329,15 +484,28 @@ export function EvaluationHistoryView({
             {model.selectedError}
           </p>
         )}
-      {!rows.length && (
+      {filtering && !matches.length && (
+        <div className="ledger-search-empty">
+          <p>No loaded requests match these filters.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              onFiltersChange({ status: '', query: '' });
+              document.getElementById(`${id}-run-search`)?.focus();
+            }}
+          >
+            Clear filters
+          </Button>
+        </div>
+      )}
+      {!filtering && !rows.length && !model.error && (
         <p role="status">
           {model.loading && !model.requests.length
             ? 'Loading evaluations…'
-            : model.error && !model.requests.length
-              ? 'Evaluation history is unavailable.'
-              : selectedCandidateId
-                ? 'No loaded evaluations for this version.'
-                : 'No evaluations yet.'}
+            : selectedCandidateId
+              ? 'No loaded evaluations for this version.'
+              : 'No evaluations yet.'}
         </p>
       )}
       {!!rows.length && (
@@ -347,18 +515,24 @@ export function EvaluationHistoryView({
           aria-label="Evaluation history table"
           tabIndex={0}
         >
-          <Table className="evaluation-ledger-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead scope="col">Evaluation</TableHead>
-                <TableHead scope="col">State</TableHead>
-                <TableHead scope="col" id={`${id}-coverage`}>
-                  Gradeable paired / expected
+          <Table role="table" className="evaluation-ledger-table">
+            <TableHeader role="rowgroup">
+              <TableRow role="row">
+                <TableHead role="columnheader" scope="col">
+                  Evaluation
                 </TableHead>
-                <TableHead scope="col">Observed equal-case mean</TableHead>
+                <TableHead role="columnheader" scope="col">
+                  Status
+                </TableHead>
+                <TableHead role="columnheader" scope="col" id={`${id}-coverage`}>
+                  Scored pairs
+                </TableHead>
+                <TableHead role="columnheader" scope="col">
+                  Observed equal-case mean
+                </TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody role="rowgroup">
               {rows.map((request) => {
                 const open = selected === request.id;
                 const evidence =
@@ -368,18 +542,29 @@ export function EvaluationHistoryView({
                   evidence.status === 'bound'
                     ? evaluationEvidenceSummary(evidence.comparison)
                     : null;
+                const name = evaluationRunName(request.datasetRevision);
+                const observation =
+                  open &&
+                  request.status === 'running' &&
+                  model.selectedProgress?.requestId === request.id &&
+                  model.selectedProgress.attemptId === request.attemptId &&
+                  model.selectedProgress.observation?.attemptId === request.attemptId
+                    ? model.selectedProgress.observation
+                    : null;
+                const created = new Date(request.createdAt);
                 const detailId = `${id}-detail-${encodeURIComponent(request.id)}`;
                 const coverageId = `${id}-coverage-${encodeURIComponent(request.id)}`;
                 return (
                   <Fragment key={request.id}>
-                    <TableRow className={open ? 'evaluation-ledger-selected' : ''}>
-                      <TableCell>
+                    <TableRow role="row" className={open ? 'evaluation-ledger-selected' : ''}>
+                      <TableCell role="cell">
                         <Button
                           ref={(node) => {
                             if (node) triggers.current.set(request.id, node);
                             else triggers.current.delete(request.id);
                           }}
                           variant="ghost"
+                          id={`ledger-request-${request.id}`}
                           className="evaluation-ledger-trigger"
                           aria-expanded={open}
                           aria-controls={detailId}
@@ -387,24 +572,53 @@ export function EvaluationHistoryView({
                         >
                           <span aria-hidden="true">{open ? '▾' : '▸'}</span>
                           <span>
-                            <strong>{value(request.datasetRevision)}</strong>
+                            <strong>{name}</strong>
+                            {name !== request.datasetRevision && (
+                              <span className="sr-only">Dataset {request.datasetRevision}</span>
+                            )}
                             <small>
-                              Request {request.id.slice(0, 8)} ·{' '}
+                              {request.runtime?.harness ? `${request.runtime.harness} · ` : ''}
+                              <span className="ledger-request-id">
+                                Request {request.id.slice(0, 8)} ·{' '}
+                              </span>
                               <time dateTime={request.createdAt} title={request.createdAt}>
-                                {Number.isNaN(Date.parse(request.createdAt))
-                                  ? 'Date unavailable'
-                                  : new Date(request.createdAt).toLocaleString(undefined, {
-                                      dateStyle: 'short',
-                                      timeStyle: 'short',
-                                    })}
+                                {Number.isNaN(created.getTime()) ? (
+                                  'Date unavailable'
+                                ) : (
+                                  <>
+                                    {created.toLocaleDateString(undefined, { dateStyle: 'short' })}
+                                    {', '}
+                                    <span className="whitespace-nowrap">
+                                      {created.toLocaleTimeString(undefined, {
+                                        timeStyle: 'short',
+                                      })}
+                                    </span>
+                                  </>
+                                )}
                               </time>
                               {pinned?.id === request.id && ' · Selected outside loaded history'}
+                              {outsideFilter &&
+                                outsideFilter.id === request.id &&
+                                ' · Selected outside filters'}
                             </small>
                           </span>
                         </Button>
                       </TableCell>
-                      <TableCell>{request.status}</TableCell>
-                      <TableCell id={coverageId}>
+                      <TableCell role="cell">
+                        <span className="ledger-request-status" data-state={request.status}>
+                          {request.status}
+                        </span>
+                        {observation && (
+                          <small>
+                            {observation.completed} / {observation.total} outcomes reported
+                            {model.selectedProgress?.activity === 'stale' && ' · stale'}
+                          </small>
+                        )}
+                      </TableCell>
+                      <TableCell role="cell" id={coverageId}>
+                        <span className="evaluation-compact-label" aria-hidden="true">
+                          Scored pairs
+                        </span>
                         {summary ? (
                           <>
                             {summary.pairedCount} / {summary.expectedCount}
@@ -415,23 +629,37 @@ export function EvaluationHistoryView({
                         )}
                       </TableCell>
                       <TableCell
+                        role="cell"
                         aria-describedby={summary ? `${id}-coverage ${coverageId}` : undefined}
                       >
+                        <span className="evaluation-compact-label" aria-hidden="true">
+                          Observed equal-case mean
+                        </span>
                         {summary ? (
-                          <>
-                            <span>
-                              Parent {reward(summary.parentMean)} · Candidate{' '}
-                              {reward(summary.candidateMean)}
-                            </span>
-                          </>
+                          <RunScores
+                            parent={summary.parentMean}
+                            candidate={summary.candidateMean}
+                          />
                         ) : (
-                          <EvidenceState evidence={evidence} />
+                          <span className="ledger-evidence-state">
+                            {evidence.status === 'none' &&
+                            !evidence.message &&
+                            request.status === 'requested' ? (
+                              'Awaiting evaluator'
+                            ) : evidence.status === 'none' &&
+                              !evidence.message &&
+                              request.status === 'running' ? (
+                              'Awaiting grades'
+                            ) : (
+                              <EvidenceState evidence={evidence} />
+                            )}
+                          </span>
                         )}
                       </TableCell>
                     </TableRow>
                     {open && (
-                      <TableRow className="evaluation-ledger-detail-row">
-                        <TableCell colSpan={4} id={detailId}>
+                      <TableRow role="row" className="evaluation-ledger-detail-row">
+                        <TableCell role="cell" colSpan={4} id={detailId}>
                           <Detail
                             request={request}
                             evidence={evidence}

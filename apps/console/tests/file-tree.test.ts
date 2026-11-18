@@ -31,6 +31,7 @@ test('hierarchy puts folders first without reordering entries within their sibli
   const skills = tree[0];
   assert.equal(skills.type, 'folder');
   if (skills.type !== 'folder') throw Error('Expected skills folder');
+  assert.equal(skills.fileCount, 3, 'A folded folder includes all its nested files');
   assert.deepEqual(skills.children.map(label), ['folder:references', 'file:z.md', 'file:a.md']);
   assert.deepEqual(input, before, 'Building navigation must not normalize or reorder source entries');
   assert.deepEqual(buildFileTree(input), tree, 'The same inventory must produce stable navigation');

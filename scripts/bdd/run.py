@@ -56,7 +56,7 @@ def main():
         for command in [['cargo','build','--locked'],['npm','run','build:packages']]+([['npm','run','build:console']] if args.lane in ['all','browser','runtime'] else []):
             subprocess.run(command,check=True)
     subprocess.run([sys.executable,'-m','unittest','scripts.bdd.test_coverage'],check=True)
-    command=[sys.executable,'-m','behave','features','-D','pg_bin='+pg,'-D','artifact_dir='+str(out),'--format','progress','--outfile','-','--format','json','--outfile',str(out/'results.json'),'--junit','--junit-directory',str(out/'junit')]
+    command=[sys.executable,'-m','behave','features','-D','pg_bin='+pg,'-D','artifact_dir='+str(out),'--format','progress','--outfile','-','--format','scripts.bdd.formatter:BehaviorJSONFormatter','--outfile',str(out/'results.json'),'--junit','--junit-directory',str(out/'junit')]
     if args.dev_console: command+=['-D','console_mode=dev']
     lanes={'service':'not @browser and not @sdk and not @adapter and not @runtime','sdk':'@sdk','browser':'@browser','identity':'@adapter','runtime':'@runtime'}
     if args.lane!='all': command+=['--tags',lanes[args.lane]]

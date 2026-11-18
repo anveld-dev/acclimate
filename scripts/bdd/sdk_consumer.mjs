@@ -10,6 +10,8 @@ import {
   prepareFiles,
   createReceiptReporter,
 } from '@acclimate/sdk';
+import { defineEvaluation } from '@acclimate/sdk/evaluation';
+import { connectedEvaluationDescriptor } from '@acclimate/sdk/learning';
 const input = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const client = new AcclimateClient({
   baseUrl: input.baseUrl,
@@ -26,7 +28,34 @@ const policy = {
 const selection = input.versionId
   ? { ...base, versionId: input.versionId }
   : { ...base, channel: 'stable' };
+
+function reviewDefinition(datasetRevision, reviewCases) {
+  return {
+    configId: 'review-fixture',
+    configRevision: '1',
+    datasetRevision,
+    graderRevision: 'instruction-coverage-v2',
+    runtime: {},
+    execution: 'model-free',
+    cases: Object.entries(reviewCases).map(([caseId, requiredText]) => ({
+      caseId, input: { path: 'AGENTS.md', requiredText }, expected: true, repetitions: 2,
+    })),
+    execute: async ({ bundle, input: task }) => ({
+      output: bundle.payload.files.some((file) => file.path === task.path && file.text.includes(task.requiredText)),
+      usage: { costUsd: 0 },
+    }),
+    grade: async ({ output, expected }) => ({ reward: Number(output === expected) }),
+  };
+}
+
+function reviewDescriptors() {
+  return Object.fromEntries(Object.entries(input.cohorts).map(([phase, cases]) => [
+    phase, connectedEvaluationDescriptor(defineEvaluation(reviewDefinition(phase + '-v1', cases))),
+  ]));
+}
+
 async function evaluate() {
+  const reviewCases = input.reviewCases ?? { 'retry-review': 'retries' };
   const parent = await resolveAndCache(
     client,
     { ...base, versionId: input.settings.parentVersionId },
@@ -42,6 +71,12 @@ async function evaluate() {
     [candidate.version.id, candidate],
   ]);
   const { datasetRevision, runtime, graderRevision, expectedCases } = input.settings;
+  const definition = reviewDefinition(datasetRevision, reviewCases);
+  const answers = new Map(definition.cases.map(({ caseId, expected }) => [caseId, expected]));
+  if (input.reviewCases) {
+    const registered = connectedEvaluationDescriptor(defineEvaluation(definition));
+    assert.equal(runtime['acclimate.fixtures.v1.dataset'], registered.datasetDigest);
+  }
   const report = await compare({
     parent: { version: parent.version },
     candidate: { version: candidate.version },
@@ -49,31 +84,132 @@ async function evaluate() {
     evaluation: input.settings.evaluation,
     runtime,
     graderRevision,
-    cases: [{ caseId: 'retry-review', repetitions: 2, snapshot: null, settings: null }],
-    execute: async ({ version }) => ({
-      output: bundles
-        .get(version.version.id)
-        .payload.files.map((f) => f.text)
-        .join('\n'),
-      usage: { costUsd: 0 },
-    }),
-    grade: async ({ output }) => ({ reward: output.includes('retries') ? 1 : 0 }),
+    cases: definition.cases.map(({ caseId, repetitions, input }) => ({
+      caseId, repetitions, snapshot: input, settings: null,
+    })),
+    execute: ({ version, snapshot }) => definition.execute({ bundle: bundles.get(version.version.id), input: snapshot }),
+    grade: ({ output, caseId }) => definition.grade({ output, expected: answers.get(caseId) }),
   });
   assert.deepEqual(report.expectedCases, expectedCases);
   return client.createComparison(base.projectId, base.bundleId, report, crypto.randomUUID());
 }
+
+async function reportPolicy() {
+  const { checkComparison, parseEvaluationPolicy } = await import('@acclimate/sdk/evaluation/policy');
+  const request = await client.getEvaluation(base.projectId, base.bundleId, input.requestId);
+  const comparison = await client.getComparison(base.projectId, base.bundleId, request.comparisonId);
+  const { datasetRevision, graderRevision, runtime, expectedCases } = request;
+  const descriptor = { datasetRevision, graderRevision, runtime, expectedCases };
+  const parsed = parseEvaluationPolicy(JSON.stringify(input.policy), descriptor);
+  const { policy, checks, verdict } = checkComparison({
+    comparison,
+    expectedDescriptor: descriptor,
+    expectedBinding: {
+      parentVersionId: request.parentVersionId,
+      parentDigest: request.parentDigest,
+      candidateVersionId: request.candidateVersionId,
+      candidateDigest: request.candidateDigest,
+      requestId: request.id,
+      attemptId: request.attemptId,
+      comparisonId: request.comparisonId,
+      submitter: request.evaluatorPrincipal,
+    },
+    policy: parsed.policy,
+    policyDigest: parsed.sha256,
+  });
+  return client.reportComparisonPolicyReceipt(base.projectId, base.bundleId, comparison.id, {
+    requestId: request.id, attemptId: request.attemptId, policy, checks, verdict,
+  });
+}
+
+function fieldJobPasses(instructions, job, defaultChecks = []) {
+  const extensions = instructions.includes('Review code.') ? [...defaultChecks, '.ts'] : defaultChecks;
+  const reviewed = job.changedPaths.filter((path) => extensions.some((suffix) => path.endsWith(suffix)));
+  return reviewed.length === job.expectedPaths.length && job.expectedPaths.every((path) => reviewed.includes(path));
+}
+
+async function gradeFieldJob() {
+  const { createLearningFieldAuditor, createLearningOutcomeReporter } = await import(
+    '@acclimate/sdk/learning'
+  );
+  const target = { projectId: base.projectId, integrationId: input.integrationId };
+  const scopedClient = (token, role) =>
+    new AcclimateClient({
+      baseUrl: input.baseUrl,
+      token,
+      scope: input.integrationId + ':' + role,
+      integrationId: input.integrationId,
+      retries: 0,
+    });
+  const reporter = createReceiptReporter({
+    ...target,
+    client: scopedClient(input.receiptToken, 'receipt'),
+  });
+  const reportOutcome = createLearningOutcomeReporter({
+    ...target,
+    client: scopedClient(input.outcomeToken, 'outcome'),
+  });
+  const grade = (text) => fieldJobPasses(text, input.fieldJob) ? 'correct' : 'incorrect';
+  const audit = createLearningFieldAuditor({
+    ...target,
+    client,
+    cacheDir: policy.cacheDir,
+    samplePercent: 100,
+    evaluate: async ({ job, predecessor }) => ({
+      served: grade(job),
+      predecessor: grade(predecessor.payload.files.find((file) => file.path === 'AGENTS.md').text),
+    }),
+  });
+  const job = await scopedClient(input.readerToken, 'delivery').prepare({
+    ...base,
+    channel: 'stable',
+    cacheDir: policy.cacheDir,
+    reporter,
+  });
+  try {
+    const startedReceipt = job.reportStarted();
+    assert(startedReceipt);
+    await reporter.flush();
+    assert.equal(reporter.pendingCount, 0);
+    const instructions = await readFile(join(job.directory, 'AGENTS.md'), 'utf8');
+    const outcome = await reportOutcome(job.bundle, {
+      outcomeId: crypto.randomUUID(),
+      startedReceipt,
+      status: grade(instructions) === 'correct' ? 'completed' : 'failed',
+    });
+    const verdict = await audit(job.bundle, { job: instructions, outcome, startedReceipt });
+    assert(verdict, 'Expected a grade against the served release’s control');
+    return verdict;
+  } finally {
+    await job.cleanup();
+  }
+}
+
+async function replayFieldJob() {
+  const candidate = await resolveAndCache(client, selection, policy);
+  assert.equal(candidate.version.digest, input.digest);
+  const instructions = candidate.payload.files.find((file) => file.path === 'AGENTS.md').text;
+  assert.equal(fieldJobPasses(instructions, input.fieldJob), false, 'Original application must reproduce the loss');
+  const verdict = fieldJobPasses(instructions, input.fieldJob, input.defaultChecks) ? 'pass' : 'regression';
+  const receipt = await client.reportLearningFieldReplay(base.projectId, input.integrationId, {
+    versionId: candidate.version.id, digest: candidate.version.digest, baselineRevision: input.baselineRevision,
+    outcomeId: input.outcomeId, verdict,
+  });
+  return { ...receipt, verdict };
+}
+
 async function delivery() {
   const reporter = input.reporting
     ? createReceiptReporter({
         client: new AcclimateClient({
           baseUrl: input.baseUrl,
-          token: input.receiptToken || 'fixture-invalid-report-token',
+          token: input.receiptToken,
           scope: 'receipt-fixture',
           retries: 0,
           timeoutMs: 1000,
         }),
         projectId: base.projectId,
-        integrationId: input.integrationId || crypto.randomUUID(),
+        integrationId: input.integrationId,
       })
     : undefined;
   const bundle = await resolveAndCache(client, selection, { ...policy, reporter });
@@ -110,6 +246,7 @@ async function delivery() {
   }
   return {
     version: bundle.version,
+    revision: bundle.resolution?.revision,
     stale: bundle.stale,
     instruction: await readFile(join(destination, 'AGENTS.md'), 'utf8'),
     destination,
@@ -170,13 +307,36 @@ async function native() {
     await prepared.cleanup();
   }
 }
-async function queueExpiry() {
+async function recoverReporting() {
+  const { createServer } = await import('node:http');
+  const { once } = await import('node:events');
+  const unavailable = createServer((request, response) => {
+    request.resume();
+    response.writeHead(503).end();
+  });
+  unavailable.listen(0, '127.0.0.1');
+  await once(unavailable, 'listening');
+  const outageUrl = 'http://127.0.0.1:' + unavailable.address().port;
+  const originalEvents = new Map();
+  const sentAfter = [];
+  let recovered = false;
   let now = Date.now();
   const reportClient = new AcclimateClient({
     baseUrl: input.baseUrl,
-    token: 'fixture-invalid-report-token',
-    scope: 'expired-receipt',
+    token: input.receiptToken,
+    scope: 'receipt-fixture',
     retries: 0,
+    fetch: (url, init) => {
+      const raw = String(init.body);
+      if (recovered) {
+        sentAfter.push(raw);
+        return fetch(url, init);
+      }
+      const { eventId } = JSON.parse(raw);
+      if (originalEvents.has(eventId)) assert.equal(originalEvents.get(eventId), raw);
+      originalEvents.set(eventId, raw);
+      return fetch(outageUrl, init);
+    },
   });
   const reporter = createReceiptReporter({
     client: reportClient,
@@ -184,24 +344,27 @@ async function queueExpiry() {
     integrationId: input.integrationId,
     now: () => now,
   });
-  const version = (await client.resolveChannel(base.projectId, base.bundleId, 'stable')).resolution
-    .version;
-  reporter.enqueue({
-    eventId: crypto.randomUUID(),
-    integrationId: input.integrationId,
-    projectId: base.projectId,
-    bundleId: base.bundleId,
-    versionId: version.id,
-    digest: version.digest,
-    stage: 'verified',
-    source: 'cache',
-    occurredAt: new Date(now).toISOString(),
-  });
-  await reporter.flush();
-  const before = reporter.pendingCount;
-  now += 24 * 60 * 60 * 1000 + 1;
-  await reporter.flush();
-  return { before, after: reporter.pendingCount };
+  try {
+    const reader = new AcclimateClient({ baseUrl: input.baseUrl, token: input.readerToken, scope: 'delivery-fixture' });
+    const bundle = await resolveAndCache(reader, selection, { ...policy, reporter });
+    const destination = join(input.directory, 'reporting-outage');
+    await prepareFiles(bundle, destination);
+    const instruction = await readFile(join(destination, 'AGENTS.md'), 'utf8');
+    reporter.reportPrepared(bundle);
+    await reporter.flush();
+    const pendingBefore = reporter.pendingCount;
+    const receivedBefore = (await client.listDeliveryReceipts(base.projectId, input.integrationId)).items;
+    const originals = [...originalEvents.values()];
+    const preparedEvent = originals.map((raw) => JSON.parse(raw)).find((event) => event.stage === 'prepared');
+    now += input.expired ? 24 * 60 * 60 * 1000 + 1 : 1000;
+    recovered = true;
+    await reporter.flush();
+    await reporter.flush();
+    return { instruction, pendingBefore, receivedBefore, preparedEvent, originalEvents: originals.sort(),
+      sentAfter: sentAfter.sort(), pendingAfter: reporter.pendingCount };
+  } finally {
+    await new Promise((resolve) => unavailable.close(resolve));
+  }
 }
 async function compareMutation() {
   const parent = {
@@ -258,13 +421,17 @@ async function compareMutation() {
   return { original, report, executions, observed };
 }
 const actions = {
+  reviewDescriptors,
   evaluate,
+  reportPolicy,
+  gradeFieldJob,
+  replayFieldJob,
   delivery,
   editJob,
   collision,
   cleanup,
   native,
-  queueExpiry,
+  recoverReporting,
   compareMutation,
 };
 if (!actions[input.action]) throw Error('Unknown SDK fixture action');

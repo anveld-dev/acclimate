@@ -49,11 +49,9 @@ impl ProposalModel for IncompleteModel {
     }
 }
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn native_save_reload_repair_publication_rollback_and_provider_gate() {
-    let Ok(url) = std::env::var("ACCLIMATE_TEST_DATABASE_URL") else {
-        eprintln!("native publication requires isolated ACCLIMATE_TEST_DATABASE_URL");
-        return;
-    };
+    let url = common::database_url();
     let db = sqlx::postgres::PgPoolOptions::new()
         .max_connections(5)
         .connect(&url)

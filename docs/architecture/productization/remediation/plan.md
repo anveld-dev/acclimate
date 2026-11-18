@@ -1,6 +1,6 @@
 # Productization fixes
 
-> Earlier implementation record. Production startup, identity and evaluator setup now follow the [production-only plan](../../production-only/plan.md). Old local-launcher commands below are retired.
+> Earlier implementation record. Evaluation completion now requires evidence bound to the exact request and attempt. Production startup, identity and evaluator setup now follow the [production-only plan](../../production-only/plan.md). Old local-launcher commands below are retired.
 
 Reviewed implementation plan, 2026-11-14. This fixes local failures from the [current audit](../current-audit.md) without turning Acclimate into an agent runtime. Apps still execute agents and grade outputs. The service owns content, permissions, frozen evaluation intent, reported evidence and deliberate releases.
 
@@ -50,7 +50,7 @@ Provide an explicit installed adapter seam (`describe` plus app execution/gradin
 
 Standardize on `npm run evaluate:local -- --bundleID UUID --requestID UUID`, implemented by `scripts/evaluate-local.ts`. A private local helper accepts explicit bundle/request IDs, reads this launcher's private configuration, uses a dedicated evaluator principal with read/write but no promote/propose, and never prints tokens. The copied command works for any selected local bundle. A private attempt journal is scoped to service/project/bundle/request/evaluator, uses atomic owner-only writes, and has exclusive per-request process ownership held through recovery/execution/finish. Concurrent invocation inspects/exits without executing. Persist an execution-started marker before callbacks and the exact report before submission. Recover a saved report; a started attempt with no saved complete report requires explicit interruption/new request, never automatic reexecution. Do not use a PID file as proof that execution never happened.
 
-List requests/proposals/comparisons chronologically with `(created_at,id)` cursors. Support old UUID cursors by resolving their scoped row. Console discovers the head page, inserts created records immediately and directly polls known active IDs across later pages, with bounded concurrency and stale-scope guards. Explicit reruns have a new request/key; omit retry lineage fields until a real consumer needs them.
+List requests/proposals/comparisons chronologically with `(created_at,id)` cursors. Console discovers the head page, inserts created records immediately and directly polls known active IDs across later pages, with bounded concurrency and stale-scope guards. Explicit reruns have a new request/key; omit retry lineage fields until a real consumer needs them.
 
 ## 4. Access, delivery and operations
 

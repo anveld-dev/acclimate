@@ -1,6 +1,4 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router';
-import { readLanding } from '../server/navigation-state';
-import { LegacyPage } from '../components/legacy-page';
+import { createFileRoute, Navigate, useRouter } from '@tanstack/react-router';
 import { WorkspaceCreate } from '../components/workspace-create';
 import { useNavigation } from '../components/use-navigation';
 import { consoleDestination } from '../components/console-link';
@@ -8,15 +6,14 @@ import { workspaceHref } from '../navigation';
 import { PageTitle } from '../components/shared';
 
 export const Route = createFileRoute('/')({
-  loader: () => readLanding({ data: {} }),
   component: Landing,
 });
 function Landing() {
-  const landing = Route.useLoaderData();
   const nav = useNavigation();
   const router = useRouter();
-  if (landing.href !== '/') return <LegacyPage landing={landing} />;
   const access = nav?.access;
+  const project = nav?.projectId ?? (access?.ok ? access.projects[0]?.id : undefined);
+  if (project) return <Navigate {...consoleDestination(workspaceHref(project))} replace />;
   if (!access?.ok)
     return (
       <div className="space-y-4">
@@ -28,12 +25,12 @@ function Landing() {
       </div>
     );
   return (
-    <div className="workspace-onboarding space-y-5">
+    <div className="workspace-onboarding w-full max-w-xl space-y-5 rounded-xl border bg-card p-5 sm:p-8">
       <PageTitle
         title={access.canCreateWorkspace ? 'Create a workspace' : 'No workspace access yet'}
         description={
           access.canCreateWorkspace
-            ? 'Choose a name to get started.'
+            ? 'Choose a name for the workspace where your team will manage bundles.'
             : 'Ask a workspace administrator to add your account.'
         }
       />

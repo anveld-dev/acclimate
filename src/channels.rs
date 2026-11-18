@@ -111,17 +111,12 @@ pub(crate) async fn list_promotions(
     let limit = limit.unwrap_or(20);
     let (principal, reviewer) =
         crate::connected_learning::audit_reader(&s, &h, &mut tx, &p).await?;
-    let visible =
-        crate::connected_learning::audit_visible(crate::improvement::AUDIT_COMPARISON_MATCH, 6, 7);
+    let visible_override = visible_policy_override(6, 7);
     let rows = sqlx::query(&format!(
         "SELECT p.id AS promotion_id,p.channel,p.revision,p.previous_version_id,p.comparison_id,
                 p.unevaluated_reason,p.reviewer,p.created_at AS promotion_created,
                 v.id,v.bundle_id,v.parent_version_id,v.digest,v.created_at,
-                CASE WHEN NOT EXISTS (
-                    SELECT 1 FROM jsonb_array_elements(p.policy_override->'receipts') ref
-                    JOIN comparisons c ON c.id=(ref->>'comparisonId')::uuid
-                    WHERE NOT ({visible})
-                ) THEN p.policy_override END AS policy_override,p.policy_approval_promotion_id
+                {visible_override} AS policy_override,p.policy_approval_promotion_id
          FROM promotions p JOIN versions v ON (v.project_id,v.bundle_id,v.id)=(p.project_id,p.bundle_id,p.version_id)
          WHERE (p.project_id,p.bundle_id,p.channel)=($1,$2,$3)
            AND ($4::bigint IS NULL OR p.revision<$4) ORDER BY p.revision DESC LIMIT $5"))
@@ -165,6 +160,21 @@ pub(crate) async fn list_promotions(
         items,
         next_before_revision,
     }))
+}
+
+pub(crate) fn visible_policy_override(principal: usize, reviewer: usize) -> String {
+    let visible = crate::connected_learning::audit_visible(
+        crate::improvement::AUDIT_COMPARISON_MATCH,
+        principal,
+        reviewer,
+    );
+    format!(
+        "CASE WHEN NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(p.policy_override->'receipts') ref
+        JOIN comparisons c ON c.id=(ref->>'comparisonId')::uuid
+        WHERE NOT ({visible})
+    ) THEN p.policy_override END"
+    )
 }
 pub(crate) async fn promote(
     State(s): State<AppState>,

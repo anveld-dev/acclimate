@@ -31,7 +31,6 @@ export type SafeCode =
   | 'journal.ownership_lost'
   | 'execution.uncertain'
   | 'submission.unconfirmed'
-  | 'legacy.submission_unconfirmed'
   | 'request.interrupted'
   | 'request.base_conflict'
   | 'request.intent_mismatch'
@@ -108,7 +107,6 @@ const nextAction = (code: SafeCode): SafeNextAction => {
       'journal.missing',
       'journal.foreign',
       'journal.ownership_lost',
-      'legacy.submission_unconfirmed',
     ].includes(code)
   )
     return 'inspect_external_app';

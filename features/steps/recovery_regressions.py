@@ -174,10 +174,11 @@ def foreign_result(context):
         expect(p.get_by_role('button',name='Review manual release',exact=True)).to_be_disabled()
     else:
         assert w.foreign_destination=='Releases'
-        row=p.get_by_role('article').filter(has=p.get_by_role('heading',name='Revision 1',exact=True))
+        p.get_by_role('button',name=re.compile(r'^Compare Revision 1\b',re.I)).click()
+        row=p.get_by_role('region',name='Comparison for revision 1',exact=True)
         # Revision 1 is a real historical release, so its restoration would be
         # available without the unrelated pending save.
-        expect(p.get_by_role('heading',name='Revision 2',exact=True)).to_be_visible()
+        expect(p.get_by_role('article',name='Revision 2 · Current',exact=True)).to_be_visible()
         expect(row.get_by_role('button',name=re.compile(r'^Restore revision '))).to_be_disabled()
     record=json.loads(w.recovery_records[0][1])
     lookup=w.root+'/operations/'+record['key']+'?operationPath='+quote(record['action'],safe='')

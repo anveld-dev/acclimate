@@ -20,8 +20,8 @@ struct Fixture {
     candidate: Uuid,
 }
 
-async fn fixture() -> Option<Fixture> {
-    let url = std::env::var("ACCLIMATE_DX_TEST_DATABASE_URL").ok()?;
+async fn fixture() -> Fixture {
+    let url = common::database_url();
     let db = sqlx::PgPool::connect(&url).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let project = format!("dx-{}", Uuid::new_v4());
@@ -40,7 +40,7 @@ async fn fixture() -> Option<Fixture> {
         .await
         .unwrap();
     for (id, base, marker) in [(parent, None, "a"), (candidate, Some(parent), "b")] {
-        sqlx::query("INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload) VALUES($1,$2,$3,$4,$5,$6)")
+        sqlx::query("INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload,created_by) VALUES($1,$2,$3,$4,$5,$6,'fixture-author')")
             .bind(id).bind(&project).bind(bundle).bind(base)
             .bind(format!("sha256:{}",marker.repeat(64))).bind(b"{}".as_slice())
             .execute(&db).await.unwrap();
@@ -59,7 +59,7 @@ async fn fixture() -> Option<Fixture> {
         rights: rights.into_iter().map(String::from).collect(),
     })
     .collect();
-    Some(Fixture {
+    Fixture {
         state: AppState {
             access: common::access(),
             runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
@@ -71,7 +71,7 @@ async fn fixture() -> Option<Fixture> {
         bundle,
         parent,
         candidate,
-    })
+    }
 }
 
 async fn call(
@@ -157,8 +157,9 @@ fn report(f: &Fixture, request_id: &str, attempt: &str) -> Value {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn capabilities_are_machine_scoped_and_never_overstate_retention() {
-    let Some(mut f) = fixture().await else { return };
+    let mut f = fixture().await;
     let endpoint = format!("/v1/projects/{}/evaluation-capabilities", f.project);
     let app = router(f.state.clone());
     for (token, expected_write) in [("writer", true), ("reader", false), ("rotated", true)] {
@@ -341,8 +342,9 @@ async fn capabilities_are_machine_scoped_and_never_overstate_retention() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn retained_evaluator_results_survive_expiry_and_require_current_authority() {
-    let Some(f) = fixture().await else { return };
+    let f = fixture().await;
     let app = router(f.state.clone());
     let (path, id) = request(&f, &app).await;
     let attempt = Uuid::new_v4().to_string();
@@ -538,8 +540,9 @@ async fn retained_evaluator_results_survive_expiry_and_require_current_authority
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn retained_start_is_historical_and_interruption_blocks_new_evidence() {
-    let Some(f) = fixture().await else { return };
+    let f = fixture().await;
     let app = router(f.state.clone());
     let (path, id) = request(&f, &app).await;
     let attempt = Uuid::new_v4().to_string();
@@ -638,8 +641,9 @@ async fn retained_start_is_historical_and_interruption_blocks_new_evidence() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn maximum_report_and_retained_response_wrappers_fit_the_response_budget() {
-    let Some(f) = fixture().await else { return };
+    let f = fixture().await;
     let app = router(f.state.clone());
     let (path, id) = request(&f, &app).await;
     let attempt = Uuid::new_v4().to_string();
@@ -718,8 +722,9 @@ async fn maximum_report_and_retained_response_wrappers_fit_the_response_budget()
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn finish_interrupt_race_has_one_current_terminal_state() {
-    let Some(f) = fixture().await else { return };
+    let f = fixture().await;
     let app = router(f.state.clone());
     for _ in 0..4 {
         let (path, id) = request(&f, &app).await;
@@ -799,8 +804,9 @@ async fn finish_interrupt_race_has_one_current_terminal_state() {
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn observations_expose_one_latest_retained_receipt_without_admin_metadata() {
-    let Some(f) = fixture().await else { return };
+    let f = fixture().await;
     let app = router(f.state.clone());
     sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'stable',1,$3)").bind(&f.project).bind(f.bundle).bind(f.parent).execute(&f.state.db).await.unwrap();
     let integration = Uuid::new_v4();
@@ -918,8 +924,9 @@ async fn observations_expose_one_latest_retained_receipt_without_admin_metadata(
 }
 
 #[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn marked_evaluator_mutations_require_canonical_body_identities() {
-    let Some(f) = fixture().await else { return };
+    let f = fixture().await;
     let app = router(f.state.clone());
     let collection = format!(
         "/v1/projects/{}/bundles/{}/evaluation-requests",

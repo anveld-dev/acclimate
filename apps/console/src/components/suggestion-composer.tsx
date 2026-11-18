@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { GitBranch, ShieldCheck } from 'lucide-react';
 import type { BundlePayload, ChannelResolution } from '@acclimate/sdk';
 import { EditablePaths } from './editable-paths';
 import { Button } from './ui/button';
@@ -50,10 +51,12 @@ export function SuggestionComposer(props: SuggestionComposerProps) {
   const disabled = props.busy || !props.canEdit;
   return (
     <section className="proposal-workspace suggestion-composer" aria-label="Suggest a change">
-      <h2>Suggest a change</h2>
-      <p>
-        Based on {props.channel} · revision {props.revision}
-      </p>
+      <header className="suggestion-composer-header">
+        <h2>Suggest a change</h2>
+        <span className="suggestion-release">
+          <GitBranch aria-hidden="true" /> Based on {props.channel} · revision {props.revision}
+        </span>
+      </header>
       <p>
         Describe the change and choose which files the provider may edit. You’ll review its
         suggestion before publishing.
@@ -72,15 +75,20 @@ export function SuggestionComposer(props: SuggestionComposerProps) {
             <Label htmlFor="proposal-hypothesis">Hypothesis</Label>
             <Textarea
               id="proposal-hypothesis"
+              placeholder="What change would improve the result?"
               disabled={disabled}
               value={props.hypothesis}
               onChange={(event) => props.onHypothesisChange(event.target.value)}
             />
           </div>
           <div>
-            <Label htmlFor="proposal-evidence">Authorized evidence (one item per line)</Label>
+            <div className="suggestion-field-heading">
+              <Label htmlFor="proposal-evidence">Authorized evidence (one item per line)</Label>
+              <span id="proposal-evidence-hint">Optional</span>
+            </div>
             <Textarea
               id="proposal-evidence"
+              aria-describedby="proposal-evidence-hint"
               disabled={disabled}
               value={props.evidence}
               onChange={(event) => props.onEvidenceChange(event.target.value)}
@@ -95,6 +103,9 @@ export function SuggestionComposer(props: SuggestionComposerProps) {
         />
       </div>
       <div className="suggestion-consent">
+        <h3>
+          <ShieldCheck aria-hidden="true" /> Provider access
+        </h3>
         <p>
           The operator-configured provider receives the whole parent bundle, including reusable
           memory, and this evidence. Editable paths restrict changes, not reading. Private session

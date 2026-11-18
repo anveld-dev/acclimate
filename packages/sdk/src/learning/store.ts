@@ -15,8 +15,6 @@ const MAXIMUM_BYTES = 16 * 1024 * 1024;
 const MAXIMUM_COMMANDS = 10_000;
 const CONTROL_COMMANDS = 64;
 const CONTROL_BYTES = 1024 * 1024;
-// A legacy inbox may have used its entire byte budget for control commands.
-const INBOX_BYTES = 2 * MAXIMUM_BYTES + 3 * CONTROL_BYTES + 1024;
 const controlKinds = ['request-stop', 'resolve-uncertainty', 'resume'] as const;
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
@@ -157,6 +155,8 @@ export async function openLearningStore(directory: string): Promise<LearningStor
   await privateDirectory(artifacts);
   const checkpointFile = path.join(directory, 'checkpoint.json');
   const inboxFile = path.join(directory, 'inbox.json');
+  const inboxByteLimit = MAXIMUM_BYTES + controlKinds.length * CONTROL_BYTES +
+    Buffer.byteLength(canonicalJson(directory)) + 1024;
 
   async function locked<T>(
     name: string,
@@ -215,26 +215,22 @@ export async function openLearningStore(directory: string): Promise<LearningStor
         compactedThrough: 0,
         entries: [],
       };
-    const bytes = await readPrivateText(inboxFile, INBOX_BYTES);
+    const bytes = await readPrivateText(inboxFile, inboxByteLimit);
     let value: Record<string, unknown>;
     try {
       value = record(JSON.parse(bytes));
     } catch {
       throw new LearningStoreError('corrupt');
     }
-    const keys = ['schemaVersion', 'directory', 'admissionClosed', 'entries'];
-    const compactedThrough = value.schemaVersion === 1 ? 0 : value.compactedThrough;
-    exactKeys(value, value.schemaVersion === 1 ? keys : [...keys, 'compactedThrough']);
+    exactKeys(value, ['schemaVersion', 'directory', 'admissionClosed', 'compactedThrough', 'entries']);
+    const compactedThrough = value.compactedThrough;
     if (
-      (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
+      value.schemaVersion !== 2 ||
       value.directory !== directory ||
       typeof value.admissionClosed !== 'boolean' ||
       !revision(compactedThrough) ||
       !Array.isArray(value.entries) ||
-      value.entries.length >
-        (value.schemaVersion === 1
-          ? MAXIMUM_COMMANDS
-          : 2 * MAXIMUM_COMMANDS + 3 * CONTROL_COMMANDS) ||
+      value.entries.length > MAXIMUM_COMMANDS + controlKinds.length * CONTROL_COMMANDS ||
       !revision(compactedThrough + value.entries.length)
     )
       throw new LearningStoreError('corrupt');
@@ -259,13 +255,13 @@ export async function openLearningStore(directory: string): Promise<LearningStor
       compactedThrough,
       entries: value.entries as InboxEntry[],
     };
-    if ((value.schemaVersion === 1 ? canonicalJson(value) : encodeInbox(inbox)) !== bytes)
+    if (encodeInbox(inbox) !== bytes)
       throw new LearningStoreError('corrupt');
     return inbox;
   }
   async function saveInbox(inbox: Inbox): Promise<void> {
     const bytes = encodeInbox(inbox);
-    if (Buffer.byteLength(bytes) > INBOX_BYTES) throw new LearningStoreError('inbox-full');
+    if (Buffer.byteLength(bytes) > inboxByteLimit) throw new LearningStoreError('inbox-full');
     await atomicPrivateWrite(inboxFile, bytes);
   }
 

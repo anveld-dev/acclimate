@@ -1,9 +1,11 @@
 import './source-editor.css';
+import './draft-studio.css';
+import { artifactChanges } from '../lib/artifact-changes';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { NativeSelect } from './ui/native-select';
-import { Info, Plus } from 'lucide-react';
+import { Info, Plus, GitCompareArrows, GitBranch } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import { CodeEditor } from './code-editor';
+import { CodeEditor, type CodeEditorHandle } from './code-editor';
 import { SyntaxCode } from './syntax-code';
 import { FileNavigator } from './file-navigator';
 import { FileTree } from './file-tree';
@@ -23,7 +25,7 @@ import {
   DropdownMenuItem,
 } from './ui/dropdown-menu';
 import { renameSkillPackage } from '../lib/rename-skill-package';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { compatibilityIssues, DeliveryError, validatePayload } from '@acclimate/sdk/validation';
 import {
@@ -50,6 +52,10 @@ import { ContentDiff } from './diff-content';
 import { ImportContent } from './import-content';
 import { RelatedPendingNotice, useRelatedPending } from './related-pending';
 import { DraftDiscardDialog } from './draft-discard-dialog';
+function draftEntryIndex(payload: BundlePayload, path?: string) {
+  return path ? payload.files.findIndex((file) => file.path === path) : 0;
+}
+
 export function DraftWorkspace({
   published,
   compatibilityTarget = 'generic',
@@ -57,6 +63,8 @@ export function DraftWorkspace({
   versionId,
   scope,
   commandScope,
+  actorScope,
+  serviceIdentity,
   initialDraftId,
   initialPath,
   canEdit = true,
@@ -71,7 +79,9 @@ export function DraftWorkspace({
   revision: string;
   versionId: string;
   scope: string;
-  commandScope?: BundleScope;
+  commandScope: BundleScope;
+  actorScope: string;
+  serviceIdentity: string;
   initialDraftId?: string;
   initialPath?: string;
   canEdit?: boolean;
@@ -83,11 +93,10 @@ export function DraftWorkspace({
 }) {
   const router = useRouter();
   const recoveryScope: PendingScope = {
-    actorScope: scope.split(':')[0],
-    serviceIdentity: scope.split(':')[0],
-    projectId: commandScope?.projectId || '',
-    bundleId: commandScope?.bundleId,
-    channel: commandScope?.channel,
+    ...commandScope,
+    owner: 'draft',
+    actorScope,
+    serviceIdentity,
   };
 
   const mounted = useRef(true);
@@ -98,7 +107,6 @@ export function DraftWorkspace({
     };
   }, []);
   async function invoke(data: DraftCommand) {
-    if (!commandScope) throw new Error('Explicit draft scope is required.');
     return runDraftCommand({ data: { ...data, scope: commandScope } });
   }
   const { setPendingChanges, confirmDiscard, discardVersion } = usePendingChanges();
@@ -107,12 +115,9 @@ export function DraftWorkspace({
     [payload, setPayload] = useState(published),
     [saved, setSaved] = useState(published),
     [base, setBase] = useState(published);
-  const [index, setIndex] = useState(
-      Math.max(
-        0,
-        published.files.findIndex((file) => file.path === initialPath),
-      ),
-    ),
+  const requestedPath = useRef(initialPath);
+  requestedPath.current = initialPath;
+  const [index, setIndex] = useState(() => draftEntryIndex(published, initialPath)),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(''),
     [reason, setReason] = useState(''),
@@ -120,6 +125,13 @@ export function DraftWorkspace({
     [diff, setDiff] = useState(false),
     [history, setHistory] = useState<string[]>([]);
   const [entryQuery, setEntryQuery] = useState('');
+  const [reviewBase, setReviewBase] = useState<'creation' | 'saved'>('creation');
+  const reviewScope = useRef<HTMLSelectElement>(null);
+  const reviewHeading = useRef<HTMLHeadingElement>(null);
+  const searchField = useRef<HTMLInputElement>(null);
+  const editorHandle = useRef<CodeEditorHandle>(null);
+  const returnToEditor = useRef(false);
+  const [reviewPath, setReviewPath] = useState<string | null>(null);
   const [packageName, setPackageName] = useState('');
   const [entryError, setEntryError] = useState('');
   const [historyCursor, setHistoryCursor] = useState<string | null>(null);
@@ -204,12 +216,7 @@ export function DraftWorkspace({
       setSaved(published);
       setBase(published);
       setNewBase({ versionId, revision });
-      setIndex(
-        Math.max(
-          0,
-          published.files.findIndex((file) => file.path === initialPath),
-        ),
-      );
+      setIndex(draftEntryIndex(published, requestedPath.current));
     }
   }, [published, versionId, revision, draft, dirty, pending]);
   const active = canEdit && !related.blocked && (!draft || draft.status === 'open');
@@ -233,7 +240,7 @@ export function DraftWorkspace({
         request.current = stored.body
           ? { action: 'retry', key: stored.key, operationPath: stored.action, body: stored.body }
           : null;
-      } else setPending(localStorage.getItem('acclimate:pending:' + scope));
+      } else setPending(null);
     } catch {}
   }, [scope, refresh]);
   useEffect(() => {
@@ -249,12 +256,7 @@ export function DraftWorkspace({
         hydratePayload(r.payload);
         setSaved(r.payload);
         setBase(r.base);
-        setIndex(
-          Math.max(
-            0,
-            r.payload.files.findIndex((file) => file.path === initialPath),
-          ),
-        );
+        setIndex(draftEntryIndex(r.payload, requestedPath.current));
         setMessage('Opened verified saved snapshot.');
         const h = await invoke({ action: 'history', id });
         if (h.ok && h.history) {
@@ -276,10 +278,7 @@ export function DraftWorkspace({
     }
   }, [initialDraftId]);
   useEffect(() => {
-    if (initialPath) {
-      const selected = payload.files.findIndex((file) => file.path === initialPath);
-      if (selected >= 0) setIndex(selected);
-    }
+    setIndex(draftEntryIndex(payload, initialPath));
   }, [initialPath]);
   async function savedNavigation(savedDraft: Draft, path?: string): Promise<boolean> {
     if (!onSaved || !mounted.current) return false;
@@ -348,7 +347,6 @@ export function DraftWorkspace({
     }
     if ('key' in data) {
       try {
-        if (!commandScope) throw Error('Explicit scope required.');
         const wire = data.action === 'retry' ? data : draftRequest(data, commandScope);
         const frozen = freezePendingExact(
           sessionStorage,
@@ -382,7 +380,6 @@ export function DraftWorkspace({
         if (r.draft.status === 'discarded') {
           discarded(r.draft, data.action === 'retry' && hasLocalPayloadEdits.current);
           resolvePending(sessionStorage, recoveryScope);
-          localStorage.removeItem('acclimate:pending:' + scope);
           setPending(null);
           request.current = null;
           if (!detailOnly) await refresh();
@@ -418,7 +415,6 @@ export function DraftWorkspace({
           `Confirmed ${data.action}. Generation ${r.draft.generation}, snapshot ${r.draft.snapshotVersion.id}.`,
         );
         resolvePending(sessionStorage, recoveryScope);
-        localStorage.removeItem('acclimate:pending:' + scope);
         setPending(null);
         request.current = null;
         if (!detailOnly) await refresh();
@@ -436,7 +432,6 @@ export function DraftWorkspace({
         if (data.action === 'discard') setDiscardError(r.message);
         if (!replayingUncertain && !('uncertain' in r && r.uncertain)) {
           resolvePending(sessionStorage, recoveryScope);
-          localStorage.removeItem('acclimate:pending:' + scope);
           setPending(null);
           request.current = null;
         }
@@ -472,14 +467,12 @@ export function DraftWorkspace({
         );
         if (r.operation.status === 'closed') {
           resolvePending(sessionStorage, recoveryScope);
-          localStorage.removeItem('acclimate:pending:' + scope);
           setPending(null);
           request.current = null;
           setMessage('Operation closed. Review your current edits before a new save.');
         }
         if (r.operation.status === 'committed') {
           resolvePending(sessionStorage, recoveryScope);
-          localStorage.removeItem('acclimate:pending:' + scope);
           setPending(null);
           request.current = null;
           if (!detailOnly) await refresh();
@@ -543,16 +536,68 @@ export function DraftWorkspace({
     setIndex(payload.files.length);
   }
   const file = payload.files[index];
+  const workingChanges = useMemo(() => artifactChanges(saved, payload), [saved, payload]);
+  const draftChanges = useMemo(() => artifactChanges(base, payload), [base, payload]);
+  const savedBaseline = Boolean(draft) && reviewBase === 'saved';
+  const reviewChanges = savedBaseline ? workingChanges : draftChanges;
+  const reviewChange =
+    reviewPath === null ? undefined : reviewChanges.find((change) => change.path === reviewPath);
+  const baselineName = savedBaseline
+    ? `Generation ${draft!.generation}`
+    : `Revision ${draft?.baseRevision ?? newBase.revision}`;
+  const currentChange = file && workingChanges.find((change) => change.path === file.path);
+  const workingOperations = useMemo(
+    () => new Map(workingChanges.map((change) => [change.path, change.operation])),
+    [workingChanges],
+  );
+  useLayoutEffect(() => {
+    if (diff) reviewHeading.current?.focus();
+    else if (returnToEditor.current) {
+      returnToEditor.current = false;
+      editorHandle.current?.focus();
+    }
+  }, [diff]);
+
+  function toggleReview() {
+    if (!diff) {
+      setReviewPath(null);
+      setReviewBase('creation');
+    } else {
+      if (reviewChange?.after && reviewChange.path !== file?.path) {
+        setIndex(draftEntryIndex(payload, reviewChange.path));
+        onSelectPath?.(reviewChange.path);
+      }
+      returnToEditor.current = active;
+    }
+    setDiff(!diff);
+  }
+
   const visibleFiles = payload.files
     .map((entry, entryIndex) => ({ entry, entryIndex }))
     .filter(({ entry }) => entry.path.toLowerCase().includes(entryQuery.toLowerCase()));
   useEffect(() => setPackageName(''), [index, file?.path]);
   if (initialDraftId && !draft)
     return (
-      <section className="workspace-panel p-4" role="status">
-        {opening
-          ? 'Opening saved draft…'
-          : message || 'Draft unavailable. Return to Changes to try again.'}
+      <section className="workspace-panel space-y-3 p-4">
+        <p role="status">
+          {opening ? 'Opening saved draft…' : message || 'This saved draft is unavailable.'}
+        </p>
+        {!opening && (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setOpening(true);
+                void open(initialDraftId);
+              }}
+            >
+              Retry opening draft
+            </Button>
+            <Button asChild variant="ghost">
+              <ConsoleLink href={bundleHref(commandScope, 'changes')}>View changes</ConsoleLink>
+            </Button>
+          </div>
+        )}
       </section>
     );
   return (
@@ -577,9 +622,7 @@ export function DraftWorkspace({
           if (success) setDiscardTarget(null);
         }}
       />
-      {commandScope && (
-        <RelatedPendingNotice recovery={related} scope={commandScope} canEdit={canEdit} />
-      )}
+      <RelatedPendingNotice recovery={related} scope={commandScope} canEdit={canEdit} />
       {!detailOnly && (
         <>
           <div className="flex flex-wrap items-center gap-3">
@@ -679,12 +722,9 @@ export function DraftWorkspace({
                       handoff = await recover();
                     } else if (result.ok && result.operation?.status === 'closed') {
                       resolvePending(sessionStorage, recoveryScope);
-                      localStorage.removeItem('acclimate:pending:' + scope);
                       setPending(null);
                       request.current = null;
-                      setMessage(
-                        'Operation closed. Older expired legacy writes may remain unprovable. Review a new request.',
-                      );
+                      setMessage('Operation closed. Review a new request.');
                     } else if (!result.ok) setMessage(result.message);
                   } catch {
                     setMessage(
@@ -725,7 +765,7 @@ export function DraftWorkspace({
           </Disclosure>
         </div>
       )}
-      <div className="draft-workbench file-editor-workbench">
+      <div className="draft-workbench file-editor-workbench draft-studio">
         <header className="draft-toolbar" data-dirty={dirty} data-new={!draft}>
           <div className="draft-status">
             <h2 ref={draftHeading} tabIndex={-1} className="text-sm font-semibold">
@@ -841,11 +881,7 @@ export function DraftWorkspace({
                 )}
               </DialogContent>
             </Dialog>
-            <Button
-              className="draft-review-action"
-              variant="outline"
-              onClick={() => setDiff(!diff)}
-            >
+            <Button className="draft-review-action" variant="outline" onClick={toggleReview}>
               {diff ? 'Edit entries' : 'Review changes'}
             </Button>
             <Button
@@ -879,7 +915,7 @@ export function DraftWorkspace({
             >
               {busy ? 'Working…' : 'Save draft'}
             </Button>
-            {draft && commandScope && (
+            {draft && (
               <Button
                 asChild
                 className="draft-evaluation-action"
@@ -907,17 +943,17 @@ export function DraftWorkspace({
                 </ConsoleLink>
               </Button>
             )}
-            <DropdownMenu>
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="draft-mobile-actions">
                   Draft actions
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="draft-actions-menu">
-                <DropdownMenuItem className="min-h-11 text-sm" onSelect={() => setDiff(!diff)}>
+                <DropdownMenuItem className="min-h-11 text-sm" onSelect={toggleReview}>
                   {diff ? 'Edit entries' : 'Review changes'}
                 </DropdownMenuItem>
-                {draft && commandScope && dirty && (
+                {draft && dirty && (
                   <DropdownMenuItem asChild className="min-h-11 text-sm">
                     <ConsoleLink
                       href={bundleHref(commandScope, 'changes', {
@@ -937,6 +973,17 @@ export function DraftWorkspace({
             </DropdownMenu>
           </div>
         </header>
+        <div className="studio-context">
+          <span>
+            <GitBranch aria-hidden="true" />
+            {commandScope.channel} · Revision {draft?.baseRevision ?? newBase.revision}
+          </span>
+          <span>
+            {workingChanges.length} {workingChanges.length === 1 ? 'file' : 'files'} with unsaved
+            edits
+          </span>
+          {active && <span>Save creates a draft snapshot for evaluation.</span>}
+        </div>
         {message && (
           <p
             role="status"
@@ -977,332 +1024,444 @@ export function DraftWorkspace({
             its old base.
           </p>
         )}
-        {diff ? (
-          <section className="draft-review" aria-label="Review changes from the creation base">
-            <p className="draft-review-baseline text-sm text-muted-foreground">
-              Creation base{' '}
-              <code title={draft?.baseVersionId || newBase.versionId}>
-                {(draft?.baseVersionId || newBase.versionId).slice(0, 8)}
-              </code>{' '}
-              compared with current browser content{dirty ? ' · unsaved edits' : ''}. This is the
-              whole draft; evaluation evidence identifies its own comparison parent.
-            </p>
-            <ContentDiff base={base} current={payload} variant="workspace" />
-          </section>
-        ) : (
-          <div
-            className="content-workspace file-explorer-workspace"
-            data-testid="draft-file-browser"
+        {diff && (
+          <section
+            className="draft-review"
+            aria-label={
+              savedBaseline
+                ? 'Review changes since the last save'
+                : 'Review changes from the creation base'
+            }
           >
-            <FileNavigator
-              count={visibleFiles.length}
-              totalCount={payload.files.length}
-              filtered={Boolean(entryQuery)}
-              selectedPath={file?.path}
-            >
-              <div className="file-navigator-controls">
-                <div className="file-navigator-heading">
-                  <span className="file-navigator-desktop-label text-sm font-medium">Files</span>
-                  <div className="file-navigator-actions">
-                    <DropdownMenu>
-                      <Tooltip>
-                        <TooltipTrigger asChild data-slot="button">
-                          <DropdownMenuTrigger asChild data-slot="button">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="file-icon-action"
-                              aria-label="Add entry"
-                              disabled={busy || !active}
-                            >
-                              <Plus aria-hidden="true" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent>Add entry</TooltipContent>
-                      </Tooltip>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem
-                          className="min-h-8 text-sm"
-                          onSelect={() => {
-                            setEntryQuery('');
-                            add('instruction');
-                          }}
-                        >
-                          Add instruction
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="min-h-8 text-sm"
-                          onSelect={() => {
-                            setEntryQuery('');
-                            add('skill');
-                          }}
-                        >
-                          Add skill package
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="min-h-8 text-sm"
-                          onSelect={() => {
-                            setEntryQuery('');
-                            add('memory');
-                          }}
-                        >
-                          Add shared memory
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <ImportContent
-                      presentation="dialog"
-                      iconOnly
-                      compatibilityTarget={compatibilityTarget}
-                      payload={payload}
-                      onApply={(next) => {
-                        setEntryQuery('');
-                        editPayload(next);
-                      }}
-                      disabled={busy || !active}
-                      commandScope={commandScope}
-                    />
-                  </div>
-                </div>
-
-                <Label htmlFor="draft-search" className="sr-only">
-                  Find an entry
-                </Label>
-                <Input
-                  id="draft-search"
-                  type="search"
-                  value={entryQuery}
-                  onChange={(e) => setEntryQuery(e.target.value)}
-                  placeholder="Search files…"
-                />
-                {entryQuery && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setEntryQuery('');
-                    }}
-                  >
-                    Clear filters
-                  </Button>
-                )}
+            <header className="studio-review-controls">
+              <div>
+                <h3 ref={reviewHeading} tabIndex={-1}>
+                  Change review
+                </h3>
+                <p className="draft-review-baseline">
+                  {baselineName} compared with current browser content
+                  {dirty ? ' · unsaved edits' : ''}.
+                </p>
               </div>
-              <FileTree
-                items={visibleFiles.map(({ entry, entryIndex }) => ({
+              {draft && (
+                <label>
+                  Compare against
+                  <NativeSelect
+                    value={reviewBase}
+                    aria-label="Compare against"
+                    onChange={(e) => setReviewBase(e.target.value as 'creation' | 'saved')}
+                  >
+                    <option value="creation">Creation base · revision {draft.baseRevision}</option>
+                    <option value="saved">Last save · generation {draft.generation}</option>
+                  </NativeSelect>
+                </label>
+              )}
+              <label>
+                Review scope
+                <NativeSelect
+                  ref={reviewScope}
+                  aria-label="Review scope"
+                  value={reviewChange ? 'path:' + reviewChange.path : 'all'}
+                  onChange={(e) =>
+                    setReviewPath(e.target.value === 'all' ? null : e.target.value.slice(5))
+                  }
+                >
+                  <option value="all">All changed files ({reviewChanges.length})</option>
+                  {reviewChanges.map((change) => (
+                    <option key={change.path} value={'path:' + change.path}>
+                      {change.operation} · {change.path || '(unnamed)'}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+              {reviewChange && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setReviewPath(null);
+                    reviewScope.current?.focus();
+                  }}
+                >
+                  Show all file changes
+                </Button>
+              )}
+            </header>
+            <ContentDiff
+              key={reviewBase}
+              labels={[baselineName, 'Working copy']}
+              selectedPath={reviewChange?.path}
+              hideMap={Boolean(reviewChange)}
+              onSelectPath={(path) => {
+                setReviewPath(path);
+                reviewScope.current?.focus();
+              }}
+              base={savedBaseline ? saved : base}
+              current={payload}
+              variant="workspace"
+            />
+          </section>
+        )}
+        <div
+          className="content-workspace file-explorer-workspace"
+          hidden={diff}
+          data-testid="draft-file-browser"
+        >
+          <FileNavigator
+            collapsible
+            count={visibleFiles.length}
+            totalCount={payload.files.length}
+            filtered={Boolean(entryQuery)}
+            selectedPath={file?.path}
+          >
+            <div className="file-navigator-controls">
+              <div className="file-navigator-heading">
+                <span className="file-navigator-desktop-label text-sm font-medium">Files</span>
+                <div className="file-navigator-actions">
+                  <DropdownMenu modal={false}>
+                    <Tooltip>
+                      <TooltipTrigger asChild data-slot="button">
+                        <DropdownMenuTrigger asChild data-slot="button">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="file-icon-action"
+                            aria-label="Add entry"
+                            disabled={busy || !active}
+                          >
+                            <Plus aria-hidden="true" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>Add entry</TooltipContent>
+                    </Tooltip>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem
+                        className="min-h-8 text-sm"
+                        onSelect={() => {
+                          setEntryQuery('');
+                          add('instruction');
+                        }}
+                      >
+                        Add instruction
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="min-h-8 text-sm"
+                        onSelect={() => {
+                          setEntryQuery('');
+                          add('skill');
+                        }}
+                      >
+                        Add skill package
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="min-h-8 text-sm"
+                        onSelect={() => {
+                          setEntryQuery('');
+                          add('memory');
+                        }}
+                      >
+                        Add shared memory
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <ImportContent
+                    presentation="dialog"
+                    iconOnly
+                    compatibilityTarget={compatibilityTarget}
+                    payload={payload}
+                    onApply={(next) => {
+                      setEntryQuery('');
+                      editPayload(next);
+                    }}
+                    disabled={busy || !active}
+                    commandScope={commandScope}
+                  />
+                </div>
+              </div>
+
+              <Label htmlFor="draft-search" className="sr-only">
+                Find an entry
+              </Label>
+              <Input
+                id="draft-search"
+                ref={searchField}
+                type="search"
+                value={entryQuery}
+                onChange={(e) => setEntryQuery(e.target.value)}
+                placeholder="Search files…"
+              />
+              {entryQuery && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setEntryQuery('');
+                    searchField.current?.focus();
+                  }}
+                >
+                  Clear filters
+                </Button>
+              )}
+            </div>
+            <FileTree
+              items={visibleFiles.map(({ entry, entryIndex }) => {
+                const operation = workingOperations.get(entry.path);
+                return {
+                  changeDescription: operation === 'Removed' ? undefined : operation,
                   id: String(entryIndex),
                   path: entry.path,
                   kind: entry.kind,
-                }))}
-                selectedId={file ? String(index) : undefined}
-                scopeKey={`${scope}:${draft?.id ?? initialDraftId ?? 'new'}`}
-                filtered={Boolean(entryQuery)}
-                filterKey={entryQuery}
-                disabled={busy}
-                onSelectItem={(item) => {
-                  setIndex(Number(item.id));
-                  onSelectPath?.(item.path);
-                }}
-              />
-              {!visibleFiles.length && (
-                <p className="p-4 text-sm text-muted-foreground">
-                  {payload.files.length
-                    ? 'No matching entries. Clear filters to see all entries.'
-                    : active
-                      ? 'No entries yet. Use Add entry to begin.'
-                      : 'This saved draft has no entries.'}
-                </p>
-              )}
-            </FileNavigator>
-            <div className="content-detail">
-              {file ? (
-                <>
-                  <header className="content-entry-heading compact-selected-file">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <FileGlyph kind={file.kind} />
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="break-words text-sm font-semibold">
-                            {fileTitle(file) || '(unnamed)'}
-                          </h3>
-                          <KindBadge kind={file.kind} />
-                        </div>
-                        {file.path !== fileTitle(file) && (
-                          <p
-                            tabIndex={0}
-                            className="selected-file-path break-all font-mono text-sm text-muted-foreground"
-                          >
-                            <PathText value={file.path} />
-                          </p>
+                };
+              })}
+              selectedId={file ? String(index) : undefined}
+              scopeKey={`${scope}:${draft?.id ?? initialDraftId ?? 'new'}`}
+              filtered={Boolean(entryQuery)}
+              filterKey={entryQuery}
+              disabled={busy}
+              onSelectItem={(item) => {
+                setIndex(Number(item.id));
+                onSelectPath?.(item.path);
+              }}
+            />
+            {!visibleFiles.length && (
+              <p className="p-4 text-sm text-muted-foreground">
+                {payload.files.length
+                  ? 'No matching entries. Clear filters to see all entries.'
+                  : active
+                    ? 'No entries yet. Use Add entry to begin.'
+                    : 'This saved draft has no entries.'}
+              </p>
+            )}
+          </FileNavigator>
+          <div className="content-detail">
+            {file ? (
+              <>
+                <header className="content-entry-heading compact-selected-file">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <FileGlyph kind={file.kind} />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="break-words text-sm font-semibold">
+                          {fileTitle(file) || '(unnamed)'}
+                        </h3>
+                        <KindBadge kind={file.kind} />
+                        {currentChange && (
+                          <span className="studio-file-state">
+                            {currentChange.operation} since {draft ? 'last save' : 'creation base'}
+                          </span>
                         )}
                       </div>
+                      {file.path !== fileTitle(file) && (
+                        <p
+                          tabIndex={0}
+                          className="selected-file-path break-all font-mono text-sm text-muted-foreground"
+                        >
+                          <PathText value={file.path} />
+                        </p>
+                      )}
                     </div>
-                    <div className="selected-entry-actions flex flex-wrap items-center gap-2">
-                      <Dialog
-                        onOpenChange={(open) => {
-                          if (open) setEntryError('');
+                  </div>
+                  <div className="selected-entry-actions flex flex-wrap items-center gap-2">
+                    {(currentChange ||
+                      draftChanges.some((change) => change.path === file.path)) && (
+                      <Button
+                        variant="outline"
+                        aria-label="Compare file"
+                        onClick={() => {
+                          setReviewBase(draft && currentChange ? 'saved' : 'creation');
+                          setReviewPath(file.path);
+                          setDiff(true);
                         }}
                       >
-                        <DialogTrigger asChild>
-                          <Button variant="outline" aria-label="Entry actions">
-                            <span className="entry-actions-full-label">Entry actions</span>
-                            <span className="entry-actions-short-label" aria-hidden="true">
-                              Actions
-                            </span>
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Entry actions</DialogTitle>
-                            <DialogDescription>
-                              Rename, change type, or remove this entry. Changes stay in this draft
-                              until saved.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="space-y-3">
-                            <Label htmlFor="draft-path">Entry path (rename)</Label>
-                            <Input
-                              id="draft-path"
-                              value={file.path}
-                              disabled={busy || !active}
-                              onChange={(e) => update('path', e.target.value)}
-                            />
-                            <Label htmlFor="draft-kind">Entry kind</Label>
-                            <NativeSelect
-                              id="draft-kind"
-                              className="w-full"
-                              value={file.kind}
-                              disabled={busy || !active}
-                              onChange={(e) => update('kind', e.target.value)}
-                            >
-                              <option value="instruction">Instruction</option>
-                              <option value="skill">Skill</option>
-                              <option value="memory">Shared memory</option>
-                            </NativeSelect>
-                            {file.kind === 'skill' && (
-                              <>
+                        <GitCompareArrows aria-hidden="true" /> Compare file
+                      </Button>
+                    )}
+                    <Dialog
+                      onOpenChange={(open) => {
+                        if (open) setEntryError('');
+                      }}
+                    >
+                      <DialogTrigger asChild>
+                        <Button variant="outline" aria-label="Entry actions">
+                          <span className="entry-actions-full-label">Entry actions</span>
+                          <span className="entry-actions-short-label" aria-hidden="true">
+                            Actions
+                          </span>
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Entry actions</DialogTitle>
+                          <DialogDescription>
+                            Rename, change type, or remove this entry. Changes stay in this draft
+                            until saved.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                          <Label htmlFor="draft-path">Entry path (rename)</Label>
+                          <Input
+                            id="draft-path"
+                            value={file.path}
+                            disabled={busy || !active}
+                            onChange={(e) => update('path', e.target.value)}
+                          />
+                          <Label htmlFor="draft-kind">Entry kind</Label>
+                          <NativeSelect
+                            id="draft-kind"
+                            className="w-full"
+                            value={file.kind}
+                            disabled={busy || !active}
+                            onChange={(e) => update('kind', e.target.value)}
+                          >
+                            <option value="instruction">Instruction</option>
+                            <option value="skill">Skill</option>
+                            <option value="memory">Shared memory</option>
+                          </NativeSelect>
+                          {file.kind === 'skill' && (
+                            <>
+                              <Button
+                                variant="outline"
+                                disabled={busy || !active}
+                                onClick={() => {
+                                  editPayload({
+                                    ...payload,
+                                    files: [
+                                      ...payload.files,
+                                      {
+                                        kind: 'skill',
+                                        path: `skills/${file.path.split('/')[1]}/references/new-${payload.files.length}.md`,
+                                        text: '',
+                                      },
+                                    ],
+                                  });
+                                  setIndex(payload.files.length);
+                                }}
+                              >
+                                Add skill support file
+                              </Button>
+                              <Label htmlFor="skill-name">Rename entire skill package</Label>
+                              <div className="flex flex-wrap gap-2">
+                                <Input
+                                  id="skill-name"
+                                  className="min-w-0 flex-1"
+                                  placeholder="new-skill-name"
+                                  value={packageName}
+                                  onChange={(e) => {
+                                    setPackageName(e.target.value);
+                                    setEntryError('');
+                                  }}
+                                  aria-invalid={Boolean(entryError)}
+                                  aria-describedby={entryError ? 'skill-package-error' : undefined}
+                                  disabled={busy || !active}
+                                />
                                 <Button
                                   variant="outline"
-                                  disabled={busy || !active}
+                                  disabled={busy || !active || !packageName.trim()}
                                   onClick={() => {
-                                    editPayload({
-                                      ...payload,
-                                      files: [
-                                        ...payload.files,
-                                        {
-                                          kind: 'skill',
-                                          path: `skills/${file.path.split('/')[1]}/references/new-${payload.files.length}.md`,
-                                          text: '',
-                                        },
-                                      ],
-                                    });
-                                    setIndex(payload.files.length);
+                                    try {
+                                      editPayload(
+                                        renameSkillPackage(
+                                          payload,
+                                          file.path.split('/')[1],
+                                          packageName,
+                                        ),
+                                      );
+                                      setPackageName('');
+                                      setEntryError('');
+                                    } catch (error) {
+                                      setEntryError(
+                                        error instanceof Error
+                                          ? error.message
+                                          : 'Could not rename skill package.',
+                                      );
+                                    }
                                   }}
                                 >
-                                  Add skill support file
+                                  Apply package rename
                                 </Button>
-                                <Label htmlFor="skill-name">Rename entire skill package</Label>
-                                <div className="flex flex-wrap gap-2">
-                                  <Input
-                                    id="skill-name"
-                                    className="min-w-0 flex-1"
-                                    placeholder="new-skill-name"
-                                    value={packageName}
-                                    onChange={(e) => {
-                                      setPackageName(e.target.value);
-                                      setEntryError('');
-                                    }}
-                                    aria-invalid={Boolean(entryError)}
-                                    aria-describedby={
-                                      entryError ? 'skill-package-error' : undefined
-                                    }
-                                    disabled={busy || !active}
-                                  />
-                                  <Button
-                                    variant="outline"
-                                    disabled={busy || !active || !packageName.trim()}
-                                    onClick={() => {
-                                      try {
-                                        editPayload(
-                                          renameSkillPackage(
-                                            payload,
-                                            file.path.split('/')[1],
-                                            packageName,
-                                          ),
-                                        );
-                                        setPackageName('');
-                                        setEntryError('');
-                                      } catch (error) {
-                                        setEntryError(
-                                          error instanceof Error
-                                            ? error.message
-                                            : 'Could not rename skill package.',
-                                        );
-                                      }
-                                    }}
-                                  >
-                                    Apply package rename
-                                  </Button>
-                                </div>
-                                {entryError && (
-                                  <p
-                                    id="skill-package-error"
-                                    role="alert"
-                                    className="text-sm text-destructive"
-                                  >
-                                    {entryError}
-                                  </p>
-                                )}
-                                <p className="text-sm text-muted-foreground">
-                                  Applies the package path and manifest name to all its files in
-                                  browser edits.
+                              </div>
+                              {entryError && (
+                                <p
+                                  id="skill-package-error"
+                                  role="alert"
+                                  className="text-sm text-destructive"
+                                >
+                                  {entryError}
                                 </p>
-                              </>
-                            )}
-                            <Button
-                              variant="outline"
-                              disabled={busy || !active}
-                              onClick={() => {
-                                const prefix =
-                                  file.kind === 'skill'
-                                    ? file.path.split('/').slice(0, 2).join('/') + '/'
-                                    : null;
-                                editPayload({
-                                  ...payload,
-                                  files: payload.files.filter((f, i) =>
-                                    prefix ? !f.path.startsWith(prefix) : i !== index,
-                                  ),
-                                });
-                                setIndex(0);
-                              }}
-                            >
-                              Remove {file.kind === 'skill' ? 'skill package' : 'entry'}
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  </header>
-                  <div className="draft-editor-body">
-                    <CodeEditor
-                      key={`${index}:${payload.files.length}`}
-                      id="draft-text"
-                      aria-label="Content"
-                      path={file.path}
-                      className="draft-source-textarea min-h-[360px] font-mono text-sm"
-                      value={file.text}
-                      disabled={busy || !active}
-                      onChange={(value) => update('text', value)}
-                    />
+                              )}
+                              <p className="text-sm text-muted-foreground">
+                                Applies the package path and manifest name to all its files in
+                                browser edits.
+                              </p>
+                            </>
+                          )}
+                          <Button
+                            variant="outline"
+                            disabled={busy || !active}
+                            onClick={() => {
+                              const prefix =
+                                file.kind === 'skill'
+                                  ? file.path.split('/').slice(0, 2).join('/') + '/'
+                                  : null;
+                              editPayload({
+                                ...payload,
+                                files: payload.files.filter((f, i) =>
+                                  prefix ? !f.path.startsWith(prefix) : i !== index,
+                                ),
+                              });
+                              setIndex(0);
+                            }}
+                          >
+                            Remove {file.kind === 'skill' ? 'skill package' : 'entry'}
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </div>
-                </>
-              ) : (
-                <p className="p-4 text-sm text-muted-foreground">
-                  {active ? 'Add an entry to start editing.' : 'No entry selected.'}
-                </p>
-              )}
-            </div>
+                </header>
+                <div className="draft-editor-body">
+                  <CodeEditor
+                    ref={editorHandle}
+                    key={`${index}:${payload.files.length}`}
+                    lineNumbers
+                    id="draft-text"
+                    aria-label="Content"
+                    path={file.path}
+                    className="draft-source-textarea min-h-[360px] font-mono text-sm"
+                    value={file.text}
+                    disabled={busy || !active}
+                    onChange={(value) => update('text', value)}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3 p-4 text-sm">
+                {index < 0 && initialPath ? (
+                  <>
+                    <p role="status" className="break-words">
+                      This draft has no entry at <code className="break-all">{initialPath}</code>.
+                    </p>
+                    {payload.files[0] && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIndex(0);
+                          onSelectPath?.(payload.files[0].path);
+                        }}
+                      >
+                        Open first entry
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">
+                    {active ? 'Add an entry to start editing.' : 'No entry selected.'}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
-        )}
+        </div>
         {draft && (
           <footer className="draft-utility-footer">
             <div className="draft-footer-actions">
@@ -1376,7 +1535,7 @@ export function DraftWorkspace({
               </Button>
             </div>
           )}
-          {detailOnly && commandScope && (
+          {detailOnly && (
             <Disclosure className="text-sm">
               <DisclosureTrigger className="cursor-pointer text-muted-foreground">
                 Discard draft

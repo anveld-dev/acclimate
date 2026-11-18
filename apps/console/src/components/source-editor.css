@@ -41,3 +41,126 @@
     margin-left: 0;
   }
 }
+
+/* Short published instructions take their natural height. Keep room for the file rail. */
+.file-explorer-workspace .read-only-content {
+  min-height: clamp(220px, 39dvh, 360px);
+}
+.file-explorer-workspace .read-only-content > code {
+  display: block;
+  max-width: 104ch;
+}
+.file-editor-workbench .draft-source-textarea[data-slot='textarea'] {
+  min-height: 300px;
+  height: clamp(300px, 54dvh, 640px);
+}
+.file-explorer-workspace .compact-source-action-icon {
+  display: none;
+}
+.file-explorer-workspace .content-entry-heading {
+  background: color-mix(in srgb, var(--muted) 35%, var(--card));
+}
+@media (max-width: 600px) {
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true']) .read-only-content {
+    min-height: 140px;
+  }
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true']) .compact-source-action-icon {
+    display: block;
+  }
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true']) .source-action-label,
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true']) .published-state-prefix {
+    display: none;
+  }
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true']) .content-entry-actions {
+    gap: 4px;
+  }
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true'])
+    .content-entry-actions
+    > :is(button, a) {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    padding: 0;
+  }
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true'])
+    .content-entry-heading:has(.content-entry-actions) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px;
+    padding-right: 8px;
+  }
+}
+@media (max-width: 600px) and (pointer: coarse) {
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true'])
+    .content-entry-actions
+    > :is(button, a) {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+}
+@media (max-width: 600px) {
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true'])
+    .content-entry-heading:has(.content-entry-actions)
+    > div:first-child,
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true'])
+    .content-entry-heading:has(.content-entry-actions)
+    > div:first-child
+    > .min-w-0 {
+    display: contents;
+  }
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true'])
+    .content-entry-heading
+    .content-entry-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .file-explorer-workspace:has(> .file-navigator[data-compact='true'])
+    .content-entry-heading:has(.content-entry-actions)
+    .selected-file-path {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 360px) {
+  .file-explorer-workspace:has(
+    > .file-navigator[data-compact='true'] > .file-navigator-body[hidden]
+  ) {
+    .file-navigator-toggle[data-slot='button'] {
+      width: 68px;
+    }
+    > .content-detail > .content-entry-heading:has(.content-entry-actions) {
+      grid-template-columns: 60px minmax(0, 1fr) auto;
+      padding-left: 8px;
+      > div:first-child > .min-w-0 > .flex-wrap {
+        display: contents;
+      }
+      h2 {
+        grid-column: 2;
+        grid-row: 1;
+      }
+      .content-entry-actions {
+        grid-column: 3;
+      }
+      .content-entry-metadata {
+        grid-column: 1 / -1;
+        grid-row: 2;
+      }
+      .selected-file-path {
+        grid-row: 3;
+      }
+    }
+  }
+}
+
+.file-editor-workbench .cm-gutters {
+  color: var(--muted-foreground);
+  background: var(--card);
+  border-right: 1px solid var(--border);
+}
+.file-editor-workbench .cm-lineNumbers .cm-gutterElement {
+  padding-inline: 6px 8px;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+}

@@ -125,6 +125,23 @@ test('read-only SSR renders escaped exact source, with accessible labels preserv
   assert.ok(html.includes('\r\n\n'), 'Line endings and empty final lines must survive SSR');
 });
 
+test('numbered source preserves source bytes and numbers the final empty editor line', () => {
+  const code = 'alpha\r\n\nbeta\n';
+  const html = renderToStaticMarkup(createElement(SyntaxCode, { code, lineNumbers: true }));
+  const inner = html.match(/<code[^>]*>([\s\S]*)<\/code>/)![1];
+  assert.deepEqual(
+    [...inner.matchAll(/data-line="(\d+)"/g)].map((match) => match[1]),
+    ['1', '2', '3', '4'],
+  );
+  assert.equal(
+    inner.replace(
+      /<span class="source-line-marker" aria-hidden="true" data-line="\d+"><\/span>/g,
+      '',
+    ),
+    code,
+  );
+});
+
 test('Shiki produces real token styles for the languages used by setup and files', async () => {
   for (const [language, code] of [
     ['typescript', 'const greeting: string = "hello";'],

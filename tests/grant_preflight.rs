@@ -63,6 +63,7 @@ fn grants_check_rejects_malformed_unknown_duplicate_and_invalid_input_without_ec
         String::new(),
         CANARY.into(),
         format!("[\"{CANARY}\"]"),
+        format!(r#"[["{CANARY}","worker","project",["read"]]]"#),
         format!("[{grant},{grant}]"),
         format!(
             r#"[{{"token":"{CANARY}","principalId":"worker","projectId":"project","rights":["{CANARY}"]}}]"#

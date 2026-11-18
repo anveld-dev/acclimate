@@ -161,11 +161,13 @@ test('readiness is bounded, sanitizes failure and never calls identity discovery
   assert.equal(
     (
       await readinessResponse({ ...env, CONSOLE_LOGIN_TOKEN: undefined }, async () => {
-        throw Error('must not call');
+        calls++;
+        return Response.json({ status: 'ready' });
       })
     ).status,
     503,
   );
+  assert.equal(calls, 1, 'invalid configuration must not contact the upstream');
 });
 
 test('workspace creation refuses unaddressable dot IDs before mutation', async () => {

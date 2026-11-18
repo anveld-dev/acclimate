@@ -1,3 +1,4 @@
+import { releaseRevision } from '../navigation';
 import { consoleClient } from './console-client';
 import { requireSession } from './selection';
 import { DeliveryError, verifyPayloadBytes } from '@acclimate/sdk';
@@ -52,12 +53,7 @@ export async function readHistory(
     input && typeof input === 'object'
       ? (input as { beforeRevision?: unknown }).beforeRevision
       : undefined;
-  if (
-    typeof cursor !== 'string' ||
-    !/^[1-9][0-9]*$/.test(cursor) ||
-    cursor.length > 19 ||
-    BigInt(cursor) > 9223372036854775807n
-  )
+  if (typeof cursor !== 'string' || !releaseRevision(cursor))
     return { ok: false, message: 'Invalid history cursor.' };
   try {
     requireSession(env);

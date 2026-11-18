@@ -19,7 +19,7 @@ const payload = {
 const bytes = JSON.stringify(payload) + '\n';
 const version = {
   id: 'parent',
-  bundleId: 'bundle',
+  bundleId: env.CONSOLE_BUNDLE,
   parentVersionId: null,
   createdAt: '2026-11-13T00:00:00Z',
   digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`,
@@ -32,7 +32,7 @@ function fixture(parent = 'parent', conflict = false) {
     if (url.includes('/operations/'))
       return Response.json({ status: 'not_observed', operationId: 'key' });
     if (url.includes('/bundles?'))
-      return Response.json({ items: [{ id: 'bundle', origin: 'unknown' }], nextCursor: null });
+      return Response.json({ items: [{ id: env.CONSOLE_BUNDLE, origin: 'created', compatibilityTarget: 'generic' }], nextCursor: null });
     if (options?.method === 'POST') {
       const body = JSON.parse(options.body as string);
       writes.push({ url, body });

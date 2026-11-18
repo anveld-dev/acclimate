@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Grant {
     pub token: String,
     pub principal_id: String,
@@ -28,7 +28,6 @@ pub struct BundlePayload {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Bundle {
-    #[serde(default = "crate::compatibility::default_target")]
     pub compatibility_target: String,
     pub id: String,
     pub name: String,
@@ -68,11 +67,19 @@ pub struct PolicyReceiptReference {
     pub policy_digest: String,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PolicyOverride {
     pub reason: String,
     pub receipts: Vec<PolicyReceiptReference>,
+}
+
+impl PolicyOverride {
+    pub(crate) fn normalized(mut self) -> Self {
+        self.reason = self.reason.trim().to_owned();
+        self.receipts.sort();
+        self
+    }
 }
 
 #[derive(Clone, Deserialize)]

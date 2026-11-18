@@ -78,7 +78,7 @@ test('validated callback creates session with separate login token, secure bound
   });
   const result = await f.handler(request, env);
   assert.equal(result.status, 303);
-  assert.equal(result.headers.get('location'), '/setup');
+  assert.equal(result.headers.get('location'), '/');
   assert.equal(result.headers.get('cache-control'), 'no-store');
   assert.match(
     result.headers.get('set-cookie')!,
@@ -113,7 +113,7 @@ test('callback returnTo cannot override the default destination', async () => {
   const url = new URL(callback.url);
   url.searchParams.set('returnTo', '/w/untrusted/content');
   const result = await f.handler(new Request(url, callback), env);
-  assert.equal(result.headers.get('location'), '/setup');
+  assert.equal(result.headers.get('location'), '/');
 });
 test('unsafe, malformed, oversized, and auth-loop destinations fail before authorization', async () => {
   const destinations = [
@@ -185,6 +185,22 @@ test('provider rejection consumes flow and never calls session authority or disc
   assert.doesNotMatch(await result.text(), /secret/);
   assert.equal((await f.handler(request, env)).status, 400);
   assert.equal(f.calls.length, 0);
+});
+test('expired browser sign-in offers a clean retry without reflecting callback details', async () => {
+  const f = fixture();
+  const result = await f.handler(
+    new Request('https://console.example/auth/callback?code=private-canary', {
+      headers: { Accept: 'text/html' },
+    }),
+    env,
+  );
+  assert.equal(result.status, 400);
+  assert.equal(result.headers.get('referrer-policy'), 'no-referrer');
+  assert.equal(result.headers.get('cache-control'), 'no-store');
+  const html = await result.text();
+  assert.match(html, /href="\/auth\/login"/);
+  assert.doesNotMatch(html, /private-canary/);
+  assert.equal(f.exchanges(), 0);
 });
 test('callback browser binding and expired state are enforced', async () => {
   const f = fixture();

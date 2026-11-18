@@ -50,7 +50,7 @@ test('files use the verified creation base and keep removed paths in the real tr
   assert.match(text, /creation base/);
   assert.match(text, /Each evaluation lists its own comparison parent/);
   assert.match(text, /Removed: memory\/removed.md/);
-  assert.match(text, /Remove this entry/);
+  assert.match(decodeURIComponent(text), /Remove this entry/);
   assert.match(text, /3 files/);
   assert.doesNotMatch(text, /Changed: AGENTS.md/);
   assert.doesNotMatch(text, /Changed artifact map/);

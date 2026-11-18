@@ -71,6 +71,12 @@ def seed(w):
     return observed, complete, partial, active
 
 
+def expand(scope, label):
+    trigger = scope.get_by_role('button', name=label, exact=True)
+    if trigger.get_attribute('aria-expanded') == 'false':
+        trigger.click()
+
+
 def run(args):
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
@@ -86,6 +92,7 @@ def run(args):
             for width in [1440, 390, 320]:
                 p.set_viewport_size(dict(width=width, height=1000))
                 visit(p, b, route)
+                expand(p, 'Score breakdown')
                 score = p.get_by_role('region', name='Observed paired rewards', exact=True)
                 expect(score).to_contain_text('Observed equal-case mean')
                 expect(score).to_contain_text('Unknown')
@@ -94,14 +101,16 @@ def run(args):
                 expect(score).to_contain_text('2 / 2 expected cases' if label == 'complete' else '1 / 2 expected cases')
                 expect(score.locator('.evaluation-coverage')).to_contain_text('4 / 4' if label == 'complete' else '3 / 4')
                 expect(score).to_contain_text('Complete evidence' if label == 'complete' else 'Partial evidence')
-                score.get_by_role('button', name='How scores are calculated', exact=True).click()
+                expand(score, 'How scores are calculated')
                 expect(score).to_contain_text('Repetitions are averaged within each case, then cases receive equal weight.')
                 expect(score).to_contain_text('Metric direction and application policy are not available here')
                 expect(score).to_contain_text('Complete evidence alone is not a win or release approval.' if label == 'complete' else 'This partial view is not an overall result.')
                 activity = p.get_by_role('region', name='Evaluator activity', exact=True)
                 expect(activity).to_contain_text('Stale report' if label == 'complete' else 'No activity report')
+                expand(activity, 'Report details')
                 expect(activity).to_contain_text('Request status remains completed' if label == 'complete' else 'Request status remains failed')
                 expect(activity).to_contain_text('that a retry is safe')
+                expand(p, 'Case map and all outcomes')
                 evidence = p.locator('.comparison-evidence')
                 expect(evidence.get_by_role('button', name='Inspect case routine / 0', exact=True)).to_be_visible()
                 expect(evidence.get_by_role('button', name='Inspect case critical / 0', exact=True)).to_be_visible()
@@ -120,9 +129,10 @@ def run(args):
             activity = p.get_by_role('region', name='Evaluator activity', exact=True)
             expect(activity).to_contain_text('Recent report at last check')
             expect(activity).to_contain_text('executing · 1 / 8')
-            expect(activity).to_contain_text('Request status remains running')
             expect(activity).to_contain_text('Received ')
-            expect(activity).to_contain_text('checked ')
+            expand(activity, 'Report details')
+            expect(activity).to_contain_text('Request status remains running')
+            expect(activity).to_contain_text('Last checked')
             assert p.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
             capture_layout(p, out, f'active-observation-{width}')
         checks.append('Selected active/stale/absent observations are separate from durable running/completed/failed state; no retry-safety inference')

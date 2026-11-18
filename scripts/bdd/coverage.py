@@ -5,6 +5,11 @@ from collections import defaultdict
 from pathlib import Path
 
 
+def example_values(scenario):
+    """Behave attaches its Examples row to each expanded scenario."""
+    return dict(scenario._row.as_dict()) if scenario._row is not None else None
+
+
 def catalog(root):
     """Discover stories without executing them; compare with the reviewed snapshot."""
     from behave.parser import parse_file
@@ -21,20 +26,36 @@ def catalog(root):
             row=rows.setdefault(ids[0],spec)
             if any(row[key]!=spec[key] for key in ['name','source','lane']):
                 raise ValueError(f'{ids[0]} is reused for different behaviors')
+            example = example_values(scenario)
+            if example is not None:
+                examples = row.setdefault('examples', [])
+                if example in examples:
+                    raise ValueError(f'{ids[0]} repeats the same example: {example}')
+                examples.append(example)
             row['cases']+=1
     return rows
 
 
 def assess(inventory, results):
-    observed=defaultdict(list)
+    observed = defaultdict(lambda: defaultdict(list))
     for feature in results:
         for scenario in feature.get('elements',[]):
             ids=[tag for tag in scenario.get('tags',[]) if tag in inventory]
             for identifier in ids:
                 steps=scenario.get('steps',[])
                 passed=scenario.get('status')=='passed' and bool(steps) and all(s.get('result',{}).get('status')=='passed' for s in steps)
-                observed[identifier].append(passed)
-    return {key:dict(**spec,ran=len(observed[key]),passed=sum(observed[key]),covered=len(observed[key])==spec['cases'] and all(observed[key])) for key,spec in inventory.items()}
+                key = json.dumps(scenario.get('example'), sort_keys=True)
+                observed[identifier][key].append(passed)
+
+    coverage = {}
+    for identifier, spec in inventory.items():
+        examples = observed[identifier]
+        ran = sum(len(attempts) for attempts in examples.values())
+        expected = spec.get('examples', [None])
+        passed = sum(examples.get(json.dumps(row, sort_keys=True)) == [True] for row in expected)
+        coverage[identifier] = dict(**spec, ran=ran, passed=passed,
+                                    covered=ran == passed == spec['cases'])
+    return coverage
 
 
 def write_report(inventory_path,result_path,directory):

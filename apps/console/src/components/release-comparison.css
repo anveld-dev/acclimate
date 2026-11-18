@@ -1,0 +1,209 @@
+.release-workbench {
+  display: grid;
+  grid-template-columns: clamp(190px, 21%, 255px) minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--card);
+}
+.release-picker {
+  min-width: 0;
+  border-inline-end: 1px solid var(--border);
+  background: var(--muted);
+}
+.release-picker h3,
+.release-comparison h4 {
+  font-weight: 650;
+}
+.release-picker h3 {
+  padding: 12px 14px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.release-picker-scroll {
+  max-height: 650px;
+  overflow: auto;
+}
+.release-picker-option {
+  display: grid;
+  grid-template-columns: 16px auto 1fr;
+  gap: 4px 8px;
+  text-align: left;
+  align-items: center;
+  width: 100%;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  font-size: 14px;
+  cursor: pointer;
+}
+.release-picker-option > svg {
+  width: 15px;
+  height: 15px;
+}
+.release-picker-option time,
+.release-picker-option code {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  grid-column: 2/-1;
+}
+.release-picker-option code {
+  font-family: var(--font-mono, monospace);
+}
+.release-picker-option [data-slot='badge'] {
+  justify-self: start;
+}
+.release-picker-option[aria-pressed='true'] {
+  background: var(--accent);
+  border-left-color: var(--primary);
+}
+.release-picker-option:hover {
+  background: var(--accent);
+}
+.release-picker-option:focus-visible,
+.release-picker article:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -3px;
+}
+.release-comparison {
+  min-width: 0;
+}
+.release-comparison-heading,
+.release-comparison-identities {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.release-comparison-heading h3 {
+  font: 650 clamp(21px, 2.2vw, 30px) / 1.25 var(--font-mono, monospace);
+  letter-spacing: -0.045em;
+}
+.release-comparison-identities {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: var(--muted);
+  align-items: start;
+}
+.release-comparison-identities > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.release-comparison-identities span,
+.release-comparison-identities code {
+  overflow-wrap: anywhere;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.release-comparison-identities strong {
+  font-size: 14px;
+}
+.release-comparison-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(190px, 30%, 270px);
+}
+.release-comparison-files,
+.release-comparison-evidence {
+  min-width: 0;
+  padding: 14px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+.release-comparison-files h4 span {
+  border-radius: 4px;
+  background: var(--muted);
+  margin-left: 7px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+.release-comparison-files [data-slot='native-select'] {
+  max-width: 100%;
+}
+.release-comparison-evidence {
+  border-inline-start: 1px solid var(--border);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.release-comparison-evidence h4:not(:first-child) {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.release-result-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.release-result-values dt {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.release-result-values dd {
+  font: 650 23px var(--font-mono, monospace);
+}
+.release-comparison-evidence .release-actions,
+.release-comparison-evidence .release-inspection-actions {
+  display: flex;
+  align-items: start;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+@container release-history (max-width: 935px) {
+  .release-comparison-body {
+    display: flex;
+    flex-direction: column;
+  }
+  .release-comparison-evidence {
+    border-inline-start: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+@container release-history (max-width: 620px) {
+  .release-workbench {
+    display: block;
+  }
+  .release-picker {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .release-picker-scroll {
+    max-height: 136px;
+  }
+  .release-picker-option {
+    grid-template-columns: 16px auto auto 1fr;
+  }
+  .release-picker-option time {
+    grid-column: 4;
+    grid-row: 1;
+    justify-self: end;
+  }
+  .release-picker-option code {
+    display: none;
+  }
+  .release-comparison-heading {
+    flex-wrap: wrap;
+  }
+  .release-comparison-identities,
+  .release-comparison-heading {
+    padding: 10px;
+  }
+  .release-comparison-files,
+  .release-comparison-evidence {
+    padding: 10px;
+  }
+}
+.release-picker-search {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.release-picker-search input {
+  width: 100%;
+  min-width: 0;
+}

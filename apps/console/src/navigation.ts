@@ -9,6 +9,15 @@ export type ConsoleLocation = {
   view: WorkspaceView | BundleView;
 };
 const part = (value: string) => encodeURIComponent(value);
+/** Revisions are persisted as positive PostgreSQL BIGINT values. */
+export function releaseRevision(value: unknown): string | undefined {
+  if (typeof value !== 'string' && !(typeof value === 'number' && Number.isSafeInteger(value)))
+    return;
+  const revision = String(value);
+  if (/^[1-9][0-9]{0,18}$/.test(revision) && BigInt(revision) <= 9223372036854775807n)
+    return revision;
+}
+
 export function workspaceHref(projectId: string, view: WorkspaceView = 'bundles') {
   return `/w/${part(projectId)}/${view === 'members' ? 'settings/members' : view}`;
 }

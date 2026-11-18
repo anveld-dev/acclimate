@@ -42,8 +42,10 @@ test('clean compilation removes obsolete emitted modules and preserves unrelated
     }
     await writeFile(join(root, 'dist/unrelated.js'), 'preserve this output');
     await cleanPackageEmissions(root);
-    for (const name of packageNames)
-      await assert.rejects(access(join(root, 'dist/packages', name, 'src/deleted.js')));
+    for (const name of packageNames) {
+      for (const file of ['deleted.js', 'deleted.d.ts'])
+        await assert.rejects(access(join(root, 'dist/packages', name, 'src', file)), { code: 'ENOENT' });
+    }
     assert.equal(await readFile(join(root, 'dist/unrelated.js'), 'utf8'), 'preserve this output');
   } finally { await rm(root, { recursive: true, force: true }); }
 });

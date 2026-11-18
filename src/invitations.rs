@@ -1,4 +1,5 @@
 //! Email addresses select invitation recipients; issuer + subject still identify accounts.
+use crate::WorkspaceRoutes;
 use crate::{
     ApiResult, AppState, auth, db, err,
     workspaces::{audit, identity},
@@ -16,12 +17,12 @@ use uuid::Uuid;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/v1/projects/{project}/invitations", get(list).post(create))
-        .route(
+        .workspace_route("/v1/projects/{project}/invitations", get(list).post(create))
+        .workspace_route(
             "/v1/projects/{project}/invitations/{invite}",
             axum::routing::delete(revoke),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/invitations/{invite}/resend",
             post(resend),
         )

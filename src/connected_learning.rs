@@ -1,3 +1,4 @@
+use crate::WorkspaceRoutes;
 use crate::{ApiErr, ApiResult, AppState, BundlePayload, CaseKey, PromoteRequest, db, err};
 use axum::{
     Json, Router,
@@ -29,43 +30,43 @@ pub(crate) fn internal_channel(channel: &str) -> bool {
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/corrections",
             post(corrections::submit),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/rechecks",
             post(corrections::recheck),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning",
             get(inspect).put(enroll),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/stop",
             post(stop),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/restore",
             post(restore::restore),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/renew",
             post(epochs::renew),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/outcomes",
             post(submit_outcome),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/outcomes/{outcome}",
             get(incident::inspect),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/incident-replays",
             post(incident::submit),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/work",
             get(work),
         )

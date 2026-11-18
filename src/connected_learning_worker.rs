@@ -1,3 +1,4 @@
+use crate::WorkspaceRoutes;
 use crate::{
     ApiResult, AppState, ComparisonRequest, PromoteRequest, ProposalRequest,
     connected_learning::Descriptor,
@@ -31,15 +32,15 @@ const REVIEW_DECLINED: &str = "Reviewer declined promotion";
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/v1/projects/{project}/integrations/{integration}/learning/field-requalifications/{version}",
+        .workspace_route("/v1/projects/{project}/integrations/{integration}/learning/field-requalifications/{version}",
             axum::routing::get(field_requalification::inspect))
-        .route("/v1/projects/{project}/integrations/{integration}/learning/field-requalifications",
+        .workspace_route("/v1/projects/{project}/integrations/{integration}/learning/field-requalifications",
             post(field_requalification::submit))
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/field-audits",
             post(field_audits::submit),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/rounds/{round}/review",
             post(review),
         )

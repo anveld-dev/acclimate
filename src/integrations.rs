@@ -1,4 +1,5 @@
 //! Opt-in application observations; integration credentials never grant project access.
+use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, db, err, path};
 use axum::{
     Json, Router,
@@ -16,27 +17,27 @@ use uuid::Uuid;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integration-observations",
             get(observations),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations",
             get(list).post(create),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/revoke",
             post(revoke),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/credentials",
             post(issue),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/credentials/{credential}/revoke",
             post(revoke_credential),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/receipts",
             get(receipts).post(receive),
         )

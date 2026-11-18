@@ -53,8 +53,10 @@ CREATE TABLE connected_learning_authorizations (
     authorized_at timestamptz NOT NULL DEFAULT now(),
     FOREIGN KEY (project_id,integration_id) REFERENCES connected_learning_enrollments(project_id,integration_id)
 );
-INSERT INTO connected_learning_authorizations(project_id,integration_id,principal,authorized_at)
-SELECT project_id,integration_id,authorized_by,created_at FROM connected_learning_enrollments;
+-- Existing rows preserve their current authority. Its original authorization
+-- timestamp cannot be recovered from the enrollment.
+INSERT INTO connected_learning_authorizations(project_id,integration_id,principal)
+SELECT project_id,integration_id,authorized_by FROM connected_learning_enrollments;
 
 CREATE TABLE connected_learning_automatic_promotions (
     promotion_id uuid PRIMARY KEY REFERENCES promotions(id),

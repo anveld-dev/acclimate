@@ -575,7 +575,13 @@ export async function runCapturedEvaluation(options: {
           JSON.stringify({ schemaVersion: 1, ...captured.collection }) + '\n',
         );
       }
-      const cachedParent = await options.cachedParent?.();
+      const source = await options.cachedParent?.();
+      const cachedParent = source?.results.every(
+        ({ parent }) =>
+          parent.executionStatus !== 'infrastructure_failed' && Number.isFinite(parent.reward),
+      )
+        ? source
+        : undefined;
       const cachedResults = new Map(
         cachedParent?.results.map((pair) => [
           JSON.stringify([pair.caseId, pair.repetition]),

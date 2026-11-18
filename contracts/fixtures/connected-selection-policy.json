@@ -485,6 +485,92 @@
         ],
         "maximumCandidateTaskFailures": 9007199254740992
       }
+    },
+    {
+      "name": "v3 explicit audit and benefit parameters",
+      "valid": true,
+      "policy": {
+        "schemaVersion": 3,
+        "id": "connected-audit",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "reward",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [
+          "protected"
+        ],
+        "stepMargin": 0.03,
+        "auditMode": "superiority",
+        "targetEffect": 0.1
+      }
+    },
+    {
+      "name": "v3 rejects invalid audit mode",
+      "valid": false,
+      "policy": {
+        "schemaVersion": 3,
+        "id": "connected-audit",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "reward",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [
+          "protected"
+        ],
+        "auditMode": "unknown"
+      }
+    },
+    {
+      "name": "v3 rejects out of range target effect",
+      "valid": false,
+      "policy": {
+        "schemaVersion": 3,
+        "id": "connected-audit",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "reward",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [
+          "protected"
+        ],
+        "targetEffect": 1.01
+      }
+    },
+    {
+      "name": "v2 rejects v3-only fields",
+      "valid": false,
+      "policy": {
+        "schemaVersion": 2,
+        "id": "connected-audit",
+        "revision": "1",
+        "metric": {
+          "name": "reward",
+          "unit": "reward",
+          "direction": "higher"
+        },
+        "aggregation": "equal-case-means",
+        "minimumMeanImprovement": 0,
+        "maximumCaseRegression": 0,
+        "requiredCases": [
+          "protected"
+        ],
+        "stepMargin": 0.03
+      }
     }
   ]
 }

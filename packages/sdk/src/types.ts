@@ -442,6 +442,7 @@ export interface LearningEnrollmentStatus extends LearningEnrollment {
     caseCount?: number;
     flipRate?: number;
     pairedStandardDeviation?: number;
+    effectiveRepetitions?: number;
     standardError?: number;
     minimumDetectableEffect?: number;
     warning?: string | null;

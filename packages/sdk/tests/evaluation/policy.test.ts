@@ -280,12 +280,28 @@ for (const decision of confidence) {
   test(`shared confidence decision: ${decision.name}`, () => {
     const { comparison, binding, descriptor, policy } = structuredClone(fixtures.vectors[0]);
     const template = comparison.results[0];
-    comparison.results = decision.gains.map((gain: number, index: number) => ({
-      ...template,
-      caseId: String(index),
-      parent: { ...template.parent, reward: 0 },
-      candidate: { ...template.candidate, reward: gain },
-    }));
+    const offset = decision.rewardOffset ?? 0;
+    comparison.results = decision.gains.flatMap((gain: number, index: number) =>
+      Array.from({ length: decision.evaluationRepetitions ?? 1 }, (_, repetition) => ({
+        ...template,
+        repetition,
+        caseId: String(index),
+        parent: {
+          ...template.parent,
+          reward: decision.missingParent?.includes(index) ? null : offset + Math.max(0, -gain),
+          ...(decision.missingParent?.includes(index) && { gradingStatus: 'missing' }),
+        },
+        candidate: {
+          ...template.candidate,
+          reward: decision.missingParent?.includes(index)
+            ? 1
+            : decision.missingCandidate?.includes(index)
+              ? null
+              : offset + Math.max(0, gain),
+          ...(decision.missingCandidate?.includes(index) && { gradingStatus: 'missing' }),
+        },
+      })),
+    );
     descriptor.expectedCases = comparison.results.map(
       ({ caseId, repetition }: { caseId: string; repetition: number }) => ({ caseId, repetition }),
     );
@@ -294,10 +310,17 @@ for (const decision of confidence) {
       comparison,
       expectedBinding: binding,
       expectedDescriptor: descriptor,
-      policy: { ...policy, schemaVersion: 2, nonInferiorityMargin: decision.nonInferiorityMargin },
+      policy: {
+        ...policy,
+        schemaVersion: decision.schemaVersion ?? 2,
+        auditMode: decision.auditMode,
+        nonInferiorityMargin: decision.nonInferiorityMargin,
+      },
+      replayPassed: decision.replayPassed,
       stage: decision.stage,
       calibratedStandardDeviation: decision.calibratedStandardDeviation,
+      calibrationEffectiveRepetitions: decision.calibrationEffectiveRepetitions,
     });
-    assert.equal(result.verdict, decision.pass ? 'pass' : 'fail');
+    assert.equal(result.verdict === 'pass', decision.pass);
   });
 }

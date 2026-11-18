@@ -240,7 +240,7 @@ pub(super) async fn submit(
             .bind(&verdict.digest).execute(&mut *tx).await.map_err(db)?;
     }
     for kind in [
-        (current && same_control && decision == FieldDecision::Validate).then_some("validate"),
+        (decision == FieldDecision::Validate).then_some("validate"),
         withdraw.then_some("withdraw"),
         promotion.map(|_| "rollback"),
     ]
@@ -252,7 +252,7 @@ pub(super) async fn submit(
             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING")
             .bind(release).bind(kind).bind(verdict.parent_version_id).bind(&evidence)
             .bind(window_size).bind(regressions).bind(wins)
-            .bind(field_log_likelihood(wins, regressions)).bind(sequence)
+            .bind(field_log_likelihood(wins, regressions)).bind(evidence.last().copied().unwrap_or(sequence))
             .execute(&mut *tx).await.map_err(db)?;
     }
     let mut response = json!({"outcomeId":verdict.outcome_id,"accepted":true,"windowSize":window_size,"regressions":regressions,"wins":wins});
@@ -272,6 +272,10 @@ async fn sequential_test(
         "SELECT sequence, grade FROM connected_learning_field_verdicts
          WHERE promotion_id=$1 AND control_version_id=$2
            AND grade IN ('win','loss','tie')
+           AND sequence > COALESCE((
+               SELECT max(triggering_sequence) FROM connected_learning_field_decisions
+               WHERE promotion_id=$1 AND control_version_id=$2 AND kind='validate'
+           ),0)
          ORDER BY sequence",
     )
     .bind(release)

@@ -45,7 +45,7 @@ LEFT JOIN LATERAL (
     SELECT d.window_size,d.losses FROM connected_learning_field_decisions d
     WHERE d.promotion_id=release.promotion_id
        AND (d.kind='rollback' OR d.control_version_id=release.control_version_id)
-    ORDER BY CASE d.kind WHEN 'rollback' THEN 0 WHEN 'withdraw' THEN 1 ELSE 2 END
+    ORDER BY CASE d.kind WHEN 'rollback' THEN 0 WHEN 'withdraw' THEN 1 ELSE 2 END, d.triggering_sequence DESC NULLS LAST
     LIMIT 1
 ) decision ON true
 CROSS JOIN LATERAL (

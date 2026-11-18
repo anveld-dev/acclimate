@@ -4,11 +4,67 @@ pub(super) const DEVELOPMENT_Z: f64 = 1.2815515655446004;
 pub(super) const AUDIT_Z: f64 = 1.6448536269514722;
 pub(crate) const MAX_MISSING_PERCENT: usize = 15;
 
+// Exact tabulated quantiles through 30 df, then a third-order expansion.
+const T_QUANTILES: [[f64; 3]; 30] = [
+    [1.376381920492, 3.077683537208, 6.313751514801],
+    [1.06066017178, 1.885618083164, 2.919985580356],
+    [0.978472312363, 1.637744353696, 2.353363434802],
+    [0.940964577245, 1.533206274059, 2.131846786327],
+    [0.919543780236, 1.475884048856, 2.015048373333],
+    [0.90570328518, 1.439755747258, 1.943180280515],
+    [0.896029644314, 1.414923927649, 1.894578605061],
+    [0.888889517767, 1.396815309743, 1.859548037523],
+    [0.883403859686, 1.383028738396, 1.833112932654],
+    [0.879057828551, 1.37218364111, 1.812461122811],
+    [0.875529978074, 1.363430318021, 1.795884818704],
+    [0.872609291588, 1.356217334023, 1.782287555649],
+    [0.870151533968, 1.35017128878, 1.770933395987],
+    [0.868054781557, 1.345030374455, 1.761310135775],
+    [0.866244973195, 1.34060560785, 1.753050355693],
+    [0.864667001798, 1.336757167327, 1.745883676276],
+    [0.86327901742, 1.333379389722, 1.739606726075],
+    [0.86204866799, 1.33039094357, 1.734063606618],
+    [0.860950550269, 1.327728209027, 1.729132811521],
+    [0.859964439732, 1.325340706985, 1.724718242921],
+    [0.859074035195, 1.323187873865, 1.720742902812],
+    [0.858266051658, 1.321236741613, 1.71714437438],
+    [0.857529553688, 1.319460239816, 1.713871527747],
+    [0.856855458076, 1.317835933673, 1.710882079909],
+    [0.856236157676, 1.316345072674, 1.708140761252],
+    [0.855665233328, 1.314971864271, 1.705617919759],
+    [0.855137230694, 1.313702912829, 1.703288445722],
+    [0.854647485582, 1.312526781593, 1.701130934266],
+    [0.854191985882, 1.311433647302, 1.699127026533],
+    [0.853767261471, 1.310415025391, 1.697260886594],
+];
+
+pub(super) fn critical_value(n: usize, z: f64) -> f64 {
+    let df = n.saturating_sub(1);
+    if df == 0 {
+        return f64::INFINITY;
+    }
+    if df <= T_QUANTILES.len() {
+        let column = if z == DEVELOPMENT_Z {
+            1
+        } else if z == AUDIT_Z {
+            2
+        } else {
+            0
+        };
+        return T_QUANTILES[df - 1][column];
+    }
+    let d = df as f64;
+    let z2 = z * z;
+    z + z * (z2 + 1.0) / (4.0 * d)
+        + z * (5.0 * z2 * z2 + 16.0 * z2 + 3.0) / (96.0 * d.powi(2))
+        + z * (3.0 * z2.powi(3) + 19.0 * z2 * z2 + 17.0 * z2 - 15.0) / (384.0 * d.powi(3))
+}
+
 pub(super) fn lower_bound(gains: &[f64], calibrated_sd: f64, z: f64) -> f64 {
     let n = gains.len() as f64;
     let mean = gains.iter().sum::<f64>() / n;
     let variance = gains.iter().map(|gain| (gain - mean).powi(2)).sum::<f64>() / (n - 1.0).max(1.0);
-    mean - z * variance.sqrt().max(calibrated_sd) / n.sqrt()
+    mean - critical_value(gains.len(), z) * variance.sqrt().max(calibrated_sd) / n.sqrt()
 }
 
 #[derive(Debug, PartialEq)]
@@ -34,14 +90,6 @@ pub(crate) fn field_decision(wins: i64, losses: i64) -> FieldDecision {
     }
 }
 
-pub(super) fn worst_reward(rewards: impl Iterator<Item = f64>, higher_is_better: bool) -> f64 {
-    if higher_is_better {
-        rewards.fold(0.0, f64::min)
-    } else {
-        rewards.fold(1.0, f64::max)
-    }
-}
-
 pub(crate) fn scored_reward(outcome: &crate::Outcome) -> Option<f64> {
     if outcome.execution_status == "infrastructure_failed" {
         None
@@ -56,12 +104,16 @@ pub(crate) struct Calibration {
     case_count: usize,
     flip_rate: f64,
     paired_standard_deviation: f64,
-    standard_error: f64,
-    pub(crate) minimum_detectable_effect: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    standard_error: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) minimum_detectable_effect: Option<f64>,
+    effective_repetitions: f64,
 }
 
 pub(crate) fn calibrate(
     comparison: &crate::ComparisonRequest,
+    threshold: f64,
     reward: impl Fn(&crate::Outcome) -> Option<f64>,
 ) -> Calibration {
     let mut cases = std::collections::BTreeMap::new();
@@ -72,7 +124,6 @@ pub(crate) fn calibrate(
             *repetitions += 1;
         }
     }
-    let n = cases.len();
     let differences: Vec<_> = cases
         .values()
         .filter(|(_, count)| *count > 0)
@@ -86,14 +137,27 @@ pub(crate) fn calibrate(
     let sd = ((1.0 + differences.iter().map(|d| d * d).sum::<f64>())
         / (differences.len() + 1) as f64)
         .sqrt();
-    let se = sd / (n as f64).sqrt();
+    let n = differences.len();
+    let se = (n > 1).then(|| sd / (n as f64).sqrt());
+    let effective_repetitions = harmonic_repetitions(cases.values().map(|(_, count)| *count));
     Calibration {
         case_count: n,
         flip_rate: flips as f64 / differences.len().max(1) as f64,
         paired_standard_deviation: sd,
         standard_error: se,
-        minimum_detectable_effect: (DEVELOPMENT_Z + 0.8416212335729143) * se,
+        minimum_detectable_effect: se.map(|se| {
+            threshold
+                + (critical_value(n, DEVELOPMENT_Z) + critical_value(n, 0.8416212335729143)) * se
+        }),
+        effective_repetitions,
     }
+}
+
+pub(crate) fn harmonic_repetitions(counts: impl Iterator<Item = usize>) -> f64 {
+    let (n, inverse_sum) = counts.filter(|n| *n > 0).fold((0, 0.0), |(n, sum), count| {
+        (n + 1, sum + 1.0 / count as f64)
+    });
+    if n == 0 { 0.0 } else { n as f64 / inverse_sum }
 }
 
 /// An independent evaluator attests to three bounded attempts per obligation.
@@ -127,11 +191,17 @@ mod tests {
     }
 
     #[test]
-    fn missing_trials_use_the_worst_oriented_score() {
-        assert_eq!(worst_reward([0.2, 0.8].into_iter(), true), 0.0);
-        assert_eq!(worst_reward([0.2, 0.8].into_iter(), false), 1.0);
-        assert_eq!(worst_reward([-5.0, 20.0].into_iter(), true), -5.0);
-        assert_eq!(worst_reward([-5.0, 20.0].into_iter(), false), 20.0);
+    fn student_t_critical_values() {
+        assert!((critical_value(30, DEVELOPMENT_Z) - 1.311434).abs() < 1e-6);
+        assert!((critical_value(30, AUDIT_Z) - 1.699127).abs() < 1e-6);
+        assert!((critical_value(101, AUDIT_Z) - 1.660234).abs() < 1e-6);
+        assert!(!lower_bound(&[1.0], 0.0, AUDIT_Z).is_finite());
+    }
+
+    #[test]
+    fn unequal_repetitions_scale_the_variance_floor() {
+        assert_eq!(harmonic_repetitions([0, 1, 3].into_iter()), 1.5);
+        assert_eq!(harmonic_repetitions([4; 5].into_iter()), 4.0);
     }
 
     #[test]
@@ -149,6 +219,29 @@ mod tests {
         }
         assert!(developmental < 250);
         assert!(noninferior > 1400);
+    }
+
+    #[test]
+    fn audit_size_at_null_boundary_and_power_at_five_point_gain() {
+        let mut seed = 87u64;
+        let mut draw = |probability| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let uniform = (seed >> 32) as f64 / 4294967296.0;
+            f64::from(u8::from(uniform < probability))
+        };
+        let (mut false_pass, mut new_power, mut old_power) = (0, 0, 0);
+        for _ in 0..5000 {
+            let null: Vec<_> = (0..30).map(|_| draw(0.77) - draw(0.80)).collect();
+            let gain: Vec<_> = (0..30).map(|_| draw(0.85) - draw(0.80)).collect();
+            false_pass += usize::from(lower_bound(&null, 0.56, AUDIT_Z) > -0.03);
+            let bound = lower_bound(&gain, 0.56, AUDIT_Z);
+            new_power += usize::from(bound > -0.03);
+            let mean = gain.iter().sum::<f64>() / 30.0;
+            let sd = (gain.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / 29.0).sqrt();
+            old_power += usize::from(mean - AUDIT_Z * sd.max(0.56) / 30.0_f64.sqrt() > 0.0);
+        }
+        assert!(false_pass <= 300, "{false_pass}");
+        assert!(new_power > old_power, "{new_power} vs {old_power}");
     }
 
     #[test]

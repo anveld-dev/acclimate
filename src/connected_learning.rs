@@ -1061,6 +1061,11 @@ async fn work(
                 )) AS payload
                 FROM comparisons c WHERE c.id=e.parent_source_comparison_id
                 AND COALESCE(e.started_at,CURRENT_TIMESTAMP) < e.parent_source_expires_at
+                AND NOT EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(c.body->'results') pair
+                    WHERE jsonb_typeof(pair->e.parent_source_arm->'reward') IS DISTINCT FROM 'number'
+                       OR pair->e.parent_source_arm->>'executionStatus'='infrastructure_failed'
+                )
             ) registration ON true
             WHERE (r.project_id,r.integration_id)=($1,$2) AND e.status IN ('requested','running')
   ) assigned LIMIT 100")

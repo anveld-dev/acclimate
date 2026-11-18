@@ -85,10 +85,10 @@ pub(crate) async fn verify(tx: &mut Tx<'_>, report: &ComparisonRequest) -> ApiRe
         })
         .collect();
     if report.results.len() != cached.len()
-        || report
-            .results
-            .iter()
-            .any(|pair| cached.get(&pair.key) != Some(&json!(pair.parent)))
+        || report.results.iter().any(|pair| {
+            super::statistics::scored_reward(&pair.parent).is_none()
+                || cached.get(&pair.key) != Some(&json!(pair.parent))
+        })
     {
         return Err(invalid_source());
     }

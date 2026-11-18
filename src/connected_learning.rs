@@ -648,6 +648,25 @@ async fn inspect(
     .map_err(db)?;
     view["deliveredVersionId"] = json!(delivery.get::<Uuid, _>("version_id"));
     view["deliveredRevision"] = json!(delivery.get::<i64, _>("revision").to_string());
+    let (version, length, estimate, bound, phase): (Uuid, i32, Option<f64>, Option<f64>, String) =
+        sqlx::query_as(include_str!("connected_learning/incumbent_view.sql"))
+            .bind(&project)
+            .bind(integration)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(db)?;
+    view["developmentIncumbent"] = json!({
+        "versionId": version,
+        "chainLength": length,
+        "cumulativeEstimate": estimate,
+        "cumulativeLowerBound": bound,
+        "nextAuditTrigger": {
+            "state": phase,
+            "acceptedStepsRemaining": if phase == "awaitingSteps" {
+                (crate::connected_learning_worker::development_check_interval() - length).max(0)
+            } else { 0 },
+        },
+    });
     let can_restore = match crate::auth::actor(&h, &s, &project, "promote") {
         Ok(actor) if row.get::<bool, _>("enabled") && !app_principal(&row, &actor.principal) => {
             crate::auth::authorize_transaction(&mut tx, &actor, &project, "promote")
@@ -661,8 +680,12 @@ async fn inspect(
     } else {
         json!([])
     };
-    let rounds: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'policyEpoch',policy_epoch,'outcomeId',outcome_id,'correctionId',correction_id,'attempt',attempt,'incidentReplay',(SELECT replay.incident_replay FROM connected_learning_round_replays replay WHERE replay.round_id=connected_learning_rounds.id),'state',state,'reason',reason,'parentVersionId',parent_version_id,'candidateVersionId',candidate_version_id,'proposalId',proposal_id,'developmentRequestId',development_request_id,'developmentComparisonId',development_comparison_id,'auditRequestId',audit_request_id,'auditComparisonId',audit_comparison_id,'promotionId',promotion_id,'fieldAudits',jsonb_build_object('windowSize',field_audit_window_size,'regressions',field_audit_regressions,'rollbackPromotionId',(SELECT f.rollback_promotion_id FROM connected_learning_field_releases f WHERE f.promotion_id=connected_learning_rounds.promotion_id))) FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100")
-        .bind(&project).bind(integration).fetch_all(&mut *tx).await.map_err(db)?;
+    let rounds: Vec<Value> = sqlx::query_scalar(include_str!("connected_learning/round_view.sql"))
+        .bind(&project)
+        .bind(integration)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(db)?;
     if include_audits {
         let mut epochs: Vec<i64> = rounds
             .iter()
@@ -923,9 +946,9 @@ async fn work(
         .map_err(db)?;
         sqlx::query("INSERT INTO connected_learning_replay_obligations
             (project_id,integration_id,bundle_id,regression_sequence,version_id,baseline_revision)
-            SELECT r.project_id,r.integration_id,r.bundle_id,q.sequence,r.candidate_version_id,r.parent_revision
+            SELECT r.project_id,r.integration_id,r.bundle_id,q.sequence,COALESCE(r.release_candidate_id,r.candidate_version_id),r.parent_revision
             FROM connected_learning_rounds r
-            CROSS JOIN LATERAL connected_field_requirements(r.project_id,r.integration_id,r.candidate_version_id,r.parent_revision) q
+            CROSS JOIN LATERAL connected_field_requirements(r.project_id,r.integration_id,COALESCE(r.release_candidate_id,r.candidate_version_id),r.parent_revision) q
             WHERE (r.project_id,r.integration_id)=($1,$2) AND r.state IN ('development','audit','awaiting_review')
             AND q.replay IS NULL ON CONFLICT DO NOTHING")
             .bind(&project).bind(integration).execute(&mut *tx).await.map_err(db)?;
@@ -953,7 +976,15 @@ async fn work(
             JOIN evaluation_requests e ON e.id=p.calibration_request_id
             WHERE (p.project_id,p.integration_id)=($1,$2) AND e.status IN ('requested','running')
             UNION ALL
-            SELECT jsonb_build_object('roundId',r.id,'evaluationRequestId',e.id,'phase', CASE WHEN e.id=r.audit_request_id THEN 'audit' ELSE 'development' END,'status',e.status) FROM connected_learning_rounds r JOIN evaluation_requests e ON e.project_id=r.project_id AND e.bundle_id=r.bundle_id AND e.id=CASE r.state WHEN 'audit' THEN r.audit_request_id WHEN 'development' THEN r.development_request_id END WHERE r.project_id=$1 AND r.integration_id=$2 AND e.status IN ('requested','running')  ) assigned LIMIT 100")
+            SELECT jsonb_build_object('roundId',r.id,'evaluationRequestId',e.id,
+                'phase',CASE WHEN e.id=r.audit_request_id THEN 'audit' ELSE 'development' END,
+                'cumulative',r.release_candidate_id IS NOT NULL,'status',e.status)
+            FROM connected_learning_rounds r JOIN evaluation_requests e
+              ON (e.project_id,e.bundle_id)=(r.project_id,r.bundle_id)
+              AND e.id=CASE r.state WHEN 'audit' THEN r.audit_request_id
+                  WHEN 'development' THEN COALESCE(r.cumulative_request_id,r.development_request_id) END
+            WHERE (r.project_id,r.integration_id)=($1,$2) AND e.status IN ('requested','running')
+  ) assigned LIMIT 100")
             .bind(project).bind(integration).fetch_all(&mut *tx).await.map_err(db)?
     } else {
         vec![]
@@ -975,7 +1006,7 @@ pub(crate) async fn authorize_evaluator(
     starting: bool,
 ) -> ApiResult<()> {
     let round = sqlx::query(
-        "SELECT integration_id,CASE WHEN audit_request_id=$3 THEN 'audit' ELSE 'development' END AS phase FROM connected_learning_rounds WHERE project_id=$1 AND bundle_id=$2 AND (development_request_id=$3 OR audit_request_id=$3)
+        "SELECT integration_id,CASE WHEN audit_request_id=$3 THEN 'audit' ELSE 'development' END AS phase FROM connected_learning_rounds WHERE project_id=$1 AND bundle_id=$2 AND $3 IN (development_request_id,cumulative_request_id,audit_request_id)
          UNION ALL
          SELECT p.integration_id,'calibration' FROM connected_learning_policy_epochs p
          JOIN connected_learning_enrollments e USING(project_id,integration_id)
@@ -1008,7 +1039,7 @@ pub(crate) async fn authorize_evaluator(
             .map_err(db)?
         } else {
             sqlx::query_scalar(
-            "SELECT state=$3 FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 AND (development_request_id=$4 OR audit_request_id=$4)",
+            "SELECT state=$3 AND ($3<>'development' OR $4=COALESCE(cumulative_request_id,development_request_id)) FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 AND $4 IN (development_request_id,cumulative_request_id,audit_request_id)",
         )
         .bind(project).bind(integration).bind(phase).bind(evaluation)
         .fetch_one(&mut **tx).await.map_err(db)?

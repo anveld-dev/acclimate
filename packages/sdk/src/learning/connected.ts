@@ -444,16 +444,17 @@ export async function serveConnectedLearning(
     }
   }
   async function evaluate(bundleId: string, item: LearningWorkItem): Promise<void> {
-    const phase = item.phase === 'calibration' ? 'development' : item.phase;
+    const calibration = item.phase === 'calibration';
+    const phase = calibration ? 'development' : item.phase;
+    const proposalBound = !calibration && item.cumulative !== true;
     if (!uuid.test(item.evaluationRequestId) || !Object.hasOwn(apps, phase))
       throw new EvaluationError('evidence.identity_mismatch');
     const request = await client.getEvaluation(projectId, bundleId, item.evaluationRequestId);
     if (
       request.id !== item.evaluationRequestId ||
       request.requireBoundEvidence !== true ||
-      (item.phase === 'calibration'
-        ? !!request.proposalId || request.parentVersionId !== request.candidateVersionId
-        : !request.proposalId)
+      Boolean(request.proposalId) !== proposalBound ||
+      (request.parentVersionId === request.candidateVersionId) !== calibration
     )
       throw new EvaluationError('evidence.identity_mismatch');
     if (request.status !== 'requested' && request.status !== 'running') return;

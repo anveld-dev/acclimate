@@ -36,6 +36,8 @@ class World:
             from scripts.bdd.provider import ProviderFixture
             self.provider = ProviderFixture()
             self.h.env.update(ACCLIMATE_MODEL_ENDPOINT=self.provider.url,ACCLIMATE_MODEL_TOKEN='fixture-only',ACCLIMATE_MODEL='gpt-6-luna')
+        if 'learning' in scenario.effective_tags:
+            self.h.env['ACCLIMATE_LEARNING_DRIFT_CHECK_STEPS'] = '1'
         self.h.restart()
         self.root = '/v1/projects/' + self.h.project
         if 'hosted' in scenario.effective_tags: self.hosted()

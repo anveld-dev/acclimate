@@ -21,7 +21,7 @@ UNION ALL (
     SELECT 'field',jsonb_build_object('versionId',v.id,'digest',v.digest,
                'baselineRevision',r.parent_revision::text,'outcomeId',required.outcome_id)
     FROM connected_learning_rounds r
-    JOIN versions v ON v.id=r.candidate_version_id
+    JOIN versions v ON v.id=COALESCE(r.release_candidate_id,r.candidate_version_id)
     CROSS JOIN LATERAL connected_field_requirements(r.project_id,r.integration_id,v.id,r.parent_revision) required
     WHERE (r.project_id,r.integration_id)=($1,$2) AND r.state IN ('development','audit','awaiting_review')
       AND required.replay IS NULL

@@ -192,6 +192,82 @@ impl Connection {
         .map_err(db)
     }
 
+    async fn sync_incumbent(&self, tx: &mut Tx<'_>, baseline: (Uuid, i64)) -> ApiResult<bool> {
+        let changed: String = sqlx::query_scalar(
+            "WITH current AS (
+                SELECT source.revision, head.sequence, head.baseline_version_id, head.baseline_revision, head.source_revision
+                FROM connected_learning_enrollments e
+                JOIN channels source ON (source.project_id,source.bundle_id,source.name)=(e.project_id,e.bundle_id,e.source_channel)
+                LEFT JOIN LATERAL (
+                    SELECT * FROM connected_learning_incumbent_events h
+                    WHERE (h.project_id,h.integration_id,h.policy_epoch)=(e.project_id,e.integration_id,e.policy_epoch)
+                    ORDER BY sequence DESC LIMIT 1
+                ) head ON true
+                WHERE (e.project_id,e.integration_id)=($1,$2)
+                FOR SHARE OF source
+            )
+            INSERT INTO connected_learning_incumbent_events
+                (project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,source_revision,version_id,chain_length,reason)
+            SELECT $1,$2,$3,$4,$5,revision,$4,0,
+                CASE WHEN sequence IS NULL THEN 'epoch initialized' ELSE 'published channel changed' END
+            FROM current WHERE (baseline_version_id,baseline_revision,source_revision) IS DISTINCT FROM ($4,$5,revision)
+            RETURNING reason",
+        )
+        .bind(&self.project).bind(self.integration).bind(self.policy_epoch).bind(baseline.0).bind(baseline.1)
+        .fetch_optional(&mut **tx).await.map_err(db)?.unwrap_or_default();
+        Ok(changed == "published channel changed")
+    }
+
+    async fn accept_development(
+        &self,
+        tx: &mut Tx<'_>,
+        round: &PgRow,
+        comparison: Uuid,
+        indeterminate_cost: bool,
+    ) -> ApiResult<(i32, bool)> {
+        sqlx::query_as(
+            "INSERT INTO connected_learning_incumbent_events
+                (project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,source_revision,
+                 version_id,parent_version_id,round_id,development_comparison_id,chain_length,indeterminate_cost,reason)
+             SELECT project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,source_revision,
+                 $4,version_id,$5,$6,chain_length+1,indeterminate_cost OR $7,'development accepted'
+             FROM connected_learning_incumbent_events
+             WHERE (project_id,integration_id,policy_epoch)=($1,$2,$3)
+             ORDER BY sequence DESC LIMIT 1
+             RETURNING chain_length,indeterminate_cost",
+        )
+        .bind(&self.project).bind(self.integration).bind(self.policy_epoch)
+        .bind(round.get::<Uuid,_>("candidate_version_id")).bind(round.get::<Uuid,_>("id")).bind(comparison)
+        .bind(indeterminate_cost)
+        .fetch_one(&mut **tx).await.map_err(db)
+    }
+
+    async fn cumulative_candidate(&self, tx: &mut Tx<'_>, round: &PgRow) -> ApiResult<Uuid> {
+        let candidate: Uuid = round.get("candidate_version_id");
+        if development_parent(round) == round.get::<Uuid, _>("parent_version_id") {
+            return Ok(candidate);
+        }
+        // The publication and evidence contracts require a direct child of the
+        // delivery baseline. Keep the original candidate and search edge intact.
+        sqlx::query_scalar(
+            "INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload,created_by)
+             SELECT $1,project_id,bundle_id,$2,digest,payload,$3 FROM versions WHERE id=$4 RETURNING id",
+        )
+        .bind(Uuid::new_v4()).bind(round.get::<Uuid,_>("parent_version_id")).bind(WORKER).bind(candidate)
+        .fetch_one(&mut **tx).await.map_err(db)
+    }
+
+    async fn cumulative_growth_allowed(&self, tx: &mut Tx<'_>, round: &PgRow) -> ApiResult<bool> {
+        let (baseline, candidate): (Vec<u8>, Vec<u8>) = sqlx::query_as(
+            "SELECT p.payload,c.payload FROM versions p CROSS JOIN versions c WHERE p.id=$1 AND c.id=$2",
+        )
+        .bind(round.get::<Uuid,_>("parent_version_id")).bind(round.get::<Uuid,_>("candidate_version_id"))
+        .fetch_one(&mut **tx).await.map_err(db)?;
+        let baseline = serde_json::from_slice(&baseline).map_err(db)?;
+        let candidate = serde_json::from_slice(&candidate).map_err(db)?;
+        Ok(crate::proposal_edits::validate_growth(&baseline, &candidate).is_ok())
+    }
+
     async fn admit(&self, tx: &mut Tx<'_>, baseline: (Uuid, i64)) -> ApiResult<()> {
         if !self.active || !self.has_budget || self.next_audit(tx).await?.is_none() {
             return Ok(());
@@ -213,6 +289,12 @@ impl Connection {
         let Some(outcome) = outcome else {
             return Ok(());
         };
+        let incumbent: Uuid = sqlx::query_scalar(
+            "SELECT version_id FROM connected_learning_incumbent_events
+             WHERE (project_id,integration_id,policy_epoch)=($1,$2,$3) ORDER BY sequence DESC LIMIT 1",
+        )
+        .bind(&self.project).bind(self.integration).bind(self.policy_epoch)
+        .fetch_one(&mut **tx).await.map_err(db)?;
         let version: Uuid = outcome.get("observed_version");
         let revision: Option<i64> = outcome.get("observed_revision");
         let status: String = outcome.get("status");
@@ -263,7 +345,7 @@ impl Connection {
             self.add_proposal_history(tx, correction, &mut evidence)
                 .await?;
             let request = ProposalRequest {
-                parent_version_id: baseline.0.to_string(),
+                parent_version_id: incumbent.to_string(),
                 allowed_paths,
                 hypothesis,
                 evidence,
@@ -311,8 +393,8 @@ impl Connection {
         .await
         .map_err(db)?;
         sqlx::query(
-            "INSERT INTO connected_learning_rounds (id,project_id,bundle_id,integration_id,outcome_id,parent_version_id,parent_revision,proposal_id,state,reason,correction_id,attempt,policy_epoch)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+            "INSERT INTO connected_learning_rounds (id,project_id,bundle_id,integration_id,outcome_id,parent_version_id,parent_revision,proposal_id,state,reason,correction_id,attempt,policy_epoch,development_parent_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
         )
         .bind(Uuid::new_v4())
         .bind(&self.project)
@@ -324,7 +406,7 @@ impl Connection {
         .bind(proposal)
         .bind(if proposal.is_some() { "proposing" } else { "rejected" })
         .bind(reason)
-        .bind(correction).bind(attempt).bind(self.policy_epoch)
+        .bind(correction).bind(attempt).bind(self.policy_epoch).bind(incumbent)
         .execute(&mut **tx)
         .await
         .map_err(db)?;
@@ -343,7 +425,7 @@ impl Connection {
                     parent.payload AS before,candidate.payload AS after,c.body
              FROM connected_learning_rounds r
              JOIN proposals p ON p.id=r.proposal_id
-             JOIN versions parent ON parent.id=r.parent_version_id
+             JOIN versions parent ON parent.id=p.parent_version_id
              LEFT JOIN versions candidate ON candidate.id=r.candidate_version_id
              LEFT JOIN comparisons c
                ON (c.project_id,c.bundle_id,c.id)=(r.project_id,r.bundle_id,r.development_comparison_id)
@@ -351,7 +433,7 @@ impl Connection {
                AND r.development_request_id IS DISTINCT FROM r.audit_request_id
                AND c.body #>> '{evaluation,requestId}'=r.development_request_id::text
              WHERE (r.project_id,r.integration_id,r.bundle_id)=($1,$2,$3)
-               AND (r.state='promoted' OR (r.state='rejected'
+               AND (r.state IN ('promoted','developed') OR (r.state='rejected'
                  AND (r.candidate_version_id IS NOT NULL OR r.reason='critic-rejected')))
              ORDER BY (r.correction_id=$4) DESC,r.updated_at DESC,r.id DESC LIMIT 12",
         )
@@ -362,6 +444,8 @@ impl Connection {
             let candidate = row.get::<Option<Uuid>, _>("candidate_version_id");
             let outcome = if row.get::<String, _>("state") == "promoted" {
                 "accepted"
+            } else if row.get::<String, _>("state") == "developed" {
+                "development-accepted"
             } else if row.get::<Option<String>, _>("decision").as_deref() == Some("review_declined")
             {
                 "review-declined"
@@ -451,8 +535,13 @@ impl Connection {
         round: &PgRow,
         candidate: Uuid,
         descriptor: &Descriptor,
+        step: bool,
     ) -> ApiResult<CreateEvaluationRequest> {
-        let parent: Uuid = round.get("parent_version_id");
+        let parent = if step {
+            development_parent(round)
+        } else {
+            round.get("parent_version_id")
+        };
         let versions: Vec<(Uuid, String)> = sqlx::query_as(
             "SELECT id,digest FROM versions WHERE (project_id,bundle_id)=($1,$2) AND id=ANY($3)",
         )
@@ -478,9 +567,13 @@ impl Connection {
             runtime: descriptor.evaluation_runtime(),
             grader_revision: descriptor.grader_revision.clone(),
             expected_cases: descriptor.expected_cases.clone(),
-            proposal_id: round
-                .get::<Option<Uuid>, _>("proposal_id")
-                .map(|id| id.to_string()),
+            proposal_id: if parent != development_parent(round) {
+                None
+            } else {
+                round
+                    .get::<Option<Uuid>, _>("proposal_id")
+                    .map(|id| id.to_string())
+            },
             require_bound_evidence: true,
         })
     }
@@ -491,9 +584,10 @@ impl Connection {
         round: &PgRow,
         candidate: Uuid,
         descriptor: &Descriptor,
+        step: bool,
     ) -> ApiResult<Uuid> {
         let request = self
-            .evaluation_request(tx, round, candidate, descriptor)
+            .evaluation_request(tx, round, candidate, descriptor, step)
             .await?;
         let evaluation =
             enqueue_evaluation(tx, &self.project, self.bundle, WORKER, &request).await?;
@@ -657,8 +751,16 @@ impl Connection {
         .await
         .map_err(db)?;
         let comparison: ComparisonRequest = serde_json::from_value(row.get("body")).map_err(db)?;
+        let step = round.get::<Option<Uuid>, _>("development_request_id") == Some(request_id);
+        let development =
+            step || round.get::<Option<Uuid>, _>("cumulative_request_id") == Some(request_id);
+        let candidate = if step {
+            round.get("candidate_version_id")
+        } else {
+            release_candidate(round)
+        };
         let expected = self
-            .evaluation_request(tx, round, round.get("candidate_version_id"), descriptor)
+            .evaluation_request(tx, round, candidate, descriptor, step)
             .await?;
         if serde_json::to_value(&evaluation.request).map_err(db)?
             != serde_json::to_value(&expected).map_err(db)?
@@ -693,8 +795,6 @@ impl Connection {
             .transpose()
             .map_err(db)?
             .unwrap_or_default();
-        let development =
-            round.get::<Option<Uuid>, _>("development_request_id") == Some(request_id);
         let calibrated_sd = calibration
             .and_then(|v| v["pairedStandardDeviation"].as_f64())
             .unwrap_or(0.0);
@@ -703,7 +803,18 @@ impl Connection {
         } else {
             &policies.audit
         };
-        if let Err(reason) = policy.check_calibrated(&comparison, !development, calibrated_sd) {
+        let mut summary = None;
+        let result =
+            policy.check_with_summary(&comparison, !development, calibrated_sd, &mut summary);
+        if development
+            && (!step || development_parent(round) == round.get::<Uuid, _>("parent_version_id"))
+            && let Some((estimate, bound)) = summary
+        {
+            sqlx::query("UPDATE connected_learning_rounds SET cumulative_estimate=$2,cumulative_bound=$3 WHERE id=$1")
+                .bind(round.get::<Uuid,_>("id")).bind(estimate).bind(bound)
+                .execute(&mut **tx).await.map_err(db)?;
+        }
+        if let Err(reason) = result {
             if matches!(
                 reason,
                 "Candidate cost is unknown" | "Parent cost is unknown"
@@ -738,7 +849,7 @@ impl Connection {
         if !field_requalification::eligible(
             tx,
             self,
-            round.get("candidate_version_id"),
+            release_candidate(round),
             round.get("parent_revision"),
         )
         .await?
@@ -754,7 +865,7 @@ impl Connection {
             &self.channel,
             reviewer,
             PromoteRequest {
-                version_id: round.get::<Uuid, _>("candidate_version_id").to_string(),
+                version_id: release_candidate(round).to_string(),
                 expected_revision: round.get::<i64, _>("parent_revision").to_string(),
                 comparison_id: Some(comparison.to_string()),
                 unevaluated_reason: None,
@@ -815,6 +926,30 @@ impl Evidence {
     }
 }
 
+fn development_parent(round: &PgRow) -> Uuid {
+    round
+        .get::<Option<Uuid>, _>("development_parent_id")
+        .unwrap_or_else(|| round.get("parent_version_id"))
+}
+
+fn release_candidate(round: &PgRow) -> Uuid {
+    round
+        .get::<Option<Uuid>, _>("release_candidate_id")
+        .unwrap_or_else(|| round.get("candidate_version_id"))
+}
+
+pub(crate) fn development_check_interval() -> i32 {
+    let configured = |name, default| {
+        std::env::var(name)
+            .ok()
+            .and_then(|value| value.parse::<i32>().ok())
+            .filter(|value| (1..=1000).contains(value))
+            .unwrap_or(default)
+    };
+    configured("ACCLIMATE_LEARNING_DRIFT_CHECK_STEPS", 3)
+        .min(configured("ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS", 3))
+}
+
 fn baseline_matches(round: &PgRow, baseline: (Uuid, i64)) -> bool {
     round.get::<Uuid, _>("parent_version_id") == baseline.0
         && round.get::<i64, _>("parent_revision") == baseline.1
@@ -841,7 +976,7 @@ pub(crate) async fn close(tx: &mut Tx<'_>, round: &PgRow, reason: &str) -> ApiRe
         .execute(&mut **tx).await.map_err(db)?;
     sqlx::query("UPDATE evaluation_requests e SET status='interrupted',error=$2,updated_at=now()
         FROM connected_learning_rounds r WHERE r.id=$1 AND (e.project_id,e.bundle_id)=(r.project_id,r.bundle_id)
-        AND e.id IN (r.development_request_id,r.audit_request_id) AND e.status IN ('requested','running')")
+        AND e.id IN (r.development_request_id,r.cumulative_request_id,r.audit_request_id) AND e.status IN ('requested','running')")
         .bind(id).bind(reason).execute(&mut **tx).await.map_err(db)?;
     sqlx::query(
         "UPDATE connected_learning_rounds SET state='rejected',reason=$2,updated_at=now(),
@@ -860,13 +995,24 @@ pub(crate) async fn close(tx: &mut Tx<'_>, round: &PgRow, reason: &str) -> ApiRe
     .execute(&mut **tx)
     .await
     .map_err(db)?;
+    sqlx::query(
+        "INSERT INTO connected_learning_incumbent_events
+            (project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,source_revision,
+             version_id,round_id,chain_length,reason)
+         SELECT project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,source_revision,
+            baseline_version_id,$1,0,$2
+         FROM (SELECT h.* FROM connected_learning_incumbent_events h JOIN connected_learning_rounds r
+            ON (h.project_id,h.integration_id,h.policy_epoch)=(r.project_id,r.integration_id,r.policy_epoch)
+            WHERE r.id=$1 ORDER BY h.sequence DESC LIMIT 1) head
+         WHERE head.round_id=$1 AND head.chain_length>0",
+    ).bind(id).bind(reason).execute(&mut **tx).await.map_err(db)?;
     // A release action may invalidate the trial while the underlying correction still applies.
     let superseded: bool = sqlx::query_scalar("SELECT (c.version_id,c.revision) IS DISTINCT FROM ($3,$4)
         FROM connected_learning_enrollments e JOIN channels c ON (c.project_id,c.bundle_id,c.name)=(e.project_id,e.bundle_id,e.delivery_channel)
         WHERE (e.project_id,e.integration_id)=($1,$2)")
         .bind(round.get::<String,_>("project_id")).bind(round.get::<Uuid,_>("integration_id"))
         .bind(round.get::<Uuid,_>("parent_version_id")).bind(round.get::<i64,_>("parent_revision")).fetch_one(&mut **tx).await.map_err(db)?;
-    if superseded {
+    if superseded || reason == "Published channel changed" {
         requeue_correction(tx, round).await?;
     }
     Ok(())
@@ -915,6 +1061,132 @@ async fn incident_replay_ready(tx: &mut Tx<'_>, round: &PgRow) -> ApiResult<bool
     };
     close(tx, round, reason).await?;
     Ok(false)
+}
+
+async fn advance_development(
+    tx: &mut Tx<'_>,
+    connection: &Connection,
+    round: &PgRow,
+) -> ApiResult<()> {
+    let id: Uuid = round.get("id");
+    let cumulative: Option<Uuid> = round.get("cumulative_request_id");
+    let request = cumulative.unwrap_or_else(|| round.get("development_request_id"));
+    let evidence = connection
+        .evidence(tx, round, request, &connection.development)
+        .await?;
+    let (comparison, mut unknown_cost) = match evidence {
+        Evidence::Pending => return Ok(()),
+        Evidence::Rejected {
+            comparison,
+            reason,
+            failed_quality_policy,
+        } => {
+            if cumulative.is_some() {
+                sqlx::query(
+                    "UPDATE connected_learning_rounds SET cumulative_comparison_id=$2 WHERE id=$1",
+                )
+                .bind(id)
+                .bind(comparison)
+                .execute(&mut **tx)
+                .await
+                .map_err(db)?;
+                return close(
+                    tx,
+                    round,
+                    &format!("Cumulative development failed: {reason}"),
+                )
+                .await;
+            }
+            save_step_comparison(tx, id, comparison).await?;
+            close(tx, round, reason).await?;
+            if failed_quality_policy {
+                requeue_correction(tx, round).await?;
+            }
+            return Ok(());
+        }
+        Evidence::Passed(comparison) => (comparison, false),
+        Evidence::Indeterminate(comparison) => (comparison, true),
+    };
+
+    let candidate = if cumulative.is_some() {
+        sqlx::query("UPDATE connected_learning_rounds SET cumulative_comparison_id=$2 WHERE id=$1")
+            .bind(id)
+            .bind(comparison)
+            .execute(&mut **tx)
+            .await
+            .map_err(db)?;
+        release_candidate(round)
+    } else {
+        save_step_comparison(tx, id, Some(comparison)).await?;
+        if !incident_replay_ready(tx, round).await?
+            || !field_requalification::check_required_replays(
+                tx,
+                connection,
+                round,
+                round.get("candidate_version_id"),
+            )
+            .await?
+        {
+            return Ok(());
+        }
+        if !connection.cumulative_growth_allowed(tx, round).await? {
+            return close(tx, round, "Candidate exceeds cumulative byte-growth limit").await;
+        }
+
+        let (length, chain_unknown_cost) = connection
+            .accept_development(tx, round, comparison, unknown_cost)
+            .await?;
+        unknown_cost = chain_unknown_cost;
+        if length < development_check_interval() && connection.has_budget {
+            sqlx::query("UPDATE connected_learning_rounds SET state='developed',updated_at=now() WHERE id=$1")
+                .bind(id).execute(&mut **tx).await.map_err(db)?;
+            return Ok(());
+        }
+
+        let candidate = connection.cumulative_candidate(tx, round).await?;
+        if length > 1 {
+            let request = connection
+                .queue_evaluation(tx, round, candidate, &connection.development, false)
+                .await?;
+            sqlx::query("UPDATE connected_learning_rounds SET cumulative_request_id=$2,release_candidate_id=$3,
+                indeterminate_development_cost=$4,updated_at=now() WHERE id=$1")
+                .bind(id).bind(request).bind(candidate).bind(unknown_cost)
+                .execute(&mut **tx).await.map_err(db)?;
+            return Ok(());
+        }
+        candidate
+    };
+
+    if cumulative.is_some()
+        && !field_requalification::check_required_replays(tx, connection, round, candidate).await?
+    {
+        return Ok(());
+    }
+    let Some(index) = connection.next_audit(tx).await? else {
+        return close(tx, round, "Independent audit cohorts exhausted").await;
+    };
+    let request = connection
+        .queue_evaluation(tx, round, candidate, &connection.audits[index], false)
+        .await?;
+    sqlx::query("UPDATE connected_learning_rounds SET state='audit',audit_index=$2,audit_request_id=$3,
+        indeterminate_development_cost=indeterminate_development_cost OR $4,updated_at=now() WHERE id=$1")
+        .bind(id).bind(index as i32).bind(request).bind(unknown_cost)
+        .execute(&mut **tx).await.map_err(db)?;
+    Ok(())
+}
+
+async fn save_step_comparison(
+    tx: &mut Tx<'_>,
+    id: Uuid,
+    comparison: Option<Uuid>,
+) -> ApiResult<()> {
+    sqlx::query("UPDATE connected_learning_rounds SET development_comparison_id=$2 WHERE id=$1")
+        .bind(id)
+        .bind(comparison)
+        .execute(&mut **tx)
+        .await
+        .map_err(db)?;
+    Ok(())
 }
 
 async fn advance(
@@ -971,7 +1243,7 @@ async fn advance(
                 return close(tx, round, "Successful proposal lacks a candidate").await;
             };
             let request_id = connection
-                .queue_evaluation(tx, round, candidate, &connection.development)
+                .queue_evaluation(tx, round, candidate, &connection.development, true)
                 .await?;
             sqlx::query("UPDATE connected_learning_rounds SET state='development',candidate_version_id=$2,development_request_id=$3,updated_at=now() WHERE id=$1")
                 .bind(id).bind(candidate).bind(request_id).execute(&mut **tx).await.map_err(db)?;
@@ -993,54 +1265,7 @@ async fn advance(
             }
         }
         "development" => {
-            let request = round.get("development_request_id");
-            let evidence = connection
-                .evidence(tx, round, request, &connection.development)
-                .await?;
-            let unknown_cost = matches!(evidence, Evidence::Indeterminate(_));
-            match evidence {
-                Evidence::Pending => {}
-                Evidence::Rejected {
-                    comparison,
-                    reason,
-                    failed_quality_policy,
-                } => {
-                    sqlx::query("UPDATE connected_learning_rounds SET development_comparison_id=$2 WHERE id=$1")
-                        .bind(id).bind(comparison).execute(&mut **tx).await.map_err(db)?;
-                    close(tx, round, reason).await?;
-                    if failed_quality_policy {
-                        requeue_correction(tx, round).await?;
-                    }
-                }
-                Evidence::Passed(comparison) | Evidence::Indeterminate(comparison) => {
-                    // Preserve the suite result while waiting for independent private evidence.
-                    if round.get::<Option<String>, _>("incident_replay").is_some()
-                        && round
-                            .get::<Option<Uuid>, _>("development_comparison_id")
-                            .is_none()
-                    {
-                        sqlx::query("UPDATE connected_learning_rounds SET development_comparison_id=$2 WHERE id=$1")
-                            .bind(id).bind(comparison).execute(&mut **tx).await.map_err(db)?;
-                    }
-                    if !incident_replay_ready(tx, round).await? {
-                        return Ok(());
-                    }
-                    if !field_requalification::check_required_replays(tx, connection, round).await?
-                    {
-                        return Ok(());
-                    }
-                    let Some(index) = connection.next_audit(tx).await? else {
-                        return close(tx, round, "Independent audit cohorts exhausted").await;
-                    };
-                    let candidate = round.get("candidate_version_id");
-                    let request = connection
-                        .queue_evaluation(tx, round, candidate, &connection.audits[index])
-                        .await?;
-                    sqlx::query("UPDATE connected_learning_rounds SET state='audit',development_comparison_id=$2,audit_index=$3,audit_request_id=$4,indeterminate_development_cost=$5,updated_at=now() WHERE id=$1")
-                        .bind(id).bind(comparison).bind(index as i32).bind(request).bind(unknown_cost)
-                        .execute(&mut **tx).await.map_err(db)?;
-                }
-            }
+            advance_development(tx, connection, round).await?;
         }
         "audit" | "awaiting_review" => {
             let index: i32 = round.get("audit_index");
@@ -1078,7 +1303,13 @@ async fn advance(
                     close(tx, round, reason).await?;
                 }
                 Evidence::Passed(comparison) | Evidence::Indeterminate(comparison) => {
-                    if !field_requalification::check_required_replays(tx, connection, round).await?
+                    if !field_requalification::check_required_replays(
+                        tx,
+                        connection,
+                        round,
+                        release_candidate(round),
+                    )
+                    .await?
                     {
                         return Ok(());
                     }
@@ -1092,7 +1323,10 @@ async fn advance(
                         {
                             Ok(promotion) => {
                                 connection.record_automatic(tx, promotion).await?;
-                                record_promotion(tx, id, comparison, promotion, true).await?
+                                record_promotion(tx, id, comparison, promotion, true).await?;
+                                connection
+                                    .sync_incumbent(tx, (release_candidate(round), baseline.1 + 1))
+                                    .await?;
                             }
                             Err(error) if error.1 == "policy_override_required" => {
                                 sqlx::query("UPDATE connected_learning_rounds SET state='awaiting_review',review_started_at=COALESCE(review_started_at,now()),audit_comparison_id=$2,decision='policy_review',reason='Application policy requires explicit review',updated_at=now() WHERE id=$1")
@@ -1152,6 +1386,9 @@ async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<boo
         let mut attempt = tx.begin().await.map_err(db)?;
         let result = async {
             let baseline = connection.baseline(&mut attempt).await?;
+            if connection.sync_incumbent(&mut attempt, baseline).await? {
+                return close(&mut attempt, &round, "Published channel changed").await;
+            }
             advance(&mut attempt, &connection, &round, baseline).await
         }
         .await;
@@ -1182,10 +1419,12 @@ async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<boo
             }
         }
     } else {
+        let baseline = connection.baseline(&mut tx).await?;
+        connection.sync_incumbent(&mut tx, baseline).await?;
         if !connection.active {
+            tx.commit().await.map_err(db)?;
             return Ok(true);
         }
-        let baseline = connection.baseline(&mut tx).await?;
         if connection.calibrate(&mut tx, baseline.0).await? {
             connection.admit(&mut tx, baseline).await?;
         }
@@ -1225,7 +1464,7 @@ pub(crate) async fn authorize_proposal(
         return Ok(false);
     }
     let baseline = connection.baseline(tx).await?;
-    if !baseline_matches(&round, baseline) {
+    if connection.sync_incumbent(tx, baseline).await? || !baseline_matches(&round, baseline) {
         close(tx, &round, "Delivery baseline changed").await?;
         return Ok(false);
     }
@@ -1237,38 +1476,11 @@ pub async fn connected_learning_worker(s: AppState) {
     while !s.runtime.is_draining() {
         let now = tokio::time::Instant::now();
         retry_after.retain(|_, deadline| *deadline > now);
-        let entries = sqlx::query_as::<_, (String, Uuid)>(
-            "SELECT e.project_id,e.integration_id FROM connected_learning_enrollments e
-             WHERE EXISTS (
-                 SELECT 1 FROM connected_learning_rounds r
-                 WHERE (r.project_id,r.integration_id)=(e.project_id,e.integration_id)
-                 AND r.state IN ('proposing','development','audit','awaiting_review')
-                 AND r.next_tick_at <= now()
-             )
-             OR (
-                 NOT EXISTS (SELECT 1 FROM connected_learning_rounds r
-                     WHERE (r.project_id,r.integration_id)=(e.project_id,e.integration_id)
-                     AND r.state IN ('proposing','development','audit','awaiting_review'))
-                 AND e.stopped_at IS NULL
-                 AND EXISTS (
-                     SELECT 1 FROM integrations i WHERE (i.project_id,i.id)=(e.project_id,e.integration_id) AND i.enabled
-                 )
-                 AND (EXISTS (
-                     SELECT 1 FROM connected_learning_policy_epochs p
-                     LEFT JOIN evaluation_requests q ON q.id=p.calibration_request_id
-                     WHERE (p.project_id,p.integration_id,p.epoch)=(e.project_id,e.integration_id,e.policy_epoch)
-                       AND p.noise_calibration IS NULL AND (q.id IS NULL OR q.status IN ('requested','running','completed'))
-                 ) OR (e.proposal_admissions < e.max_proposal_admissions AND EXISTS (
-                     SELECT 1 FROM connected_learning_correction_work f
-                     WHERE (f.project_id,f.integration_id)=(e.project_id,e.integration_id) AND f.action='ready'
-                 )
-                 AND EXISTS (
-                     SELECT 1 FROM connected_learning_available_audits a
-                     WHERE (a.project_id,a.integration_id)=(e.project_id,e.integration_id)
-                 )))
-             )
-             ORDER BY e.project_id,e.integration_id",
-        ).fetch_all(&s.db).await;
+        let entries = sqlx::query_as::<_, (String, Uuid)>(include_str!(
+            "connected_learning/worker_enrollments.sql"
+        ))
+        .fetch_all(&s.db)
+        .await;
         match entries {
             Ok(entries) => {
                 for (project, integration) in entries {
@@ -1446,7 +1658,12 @@ async fn review(
         return Ok(Json(json!({"roundId":round_id,"state":"rejected"})));
     }
     let baseline = connection.baseline(&mut tx).await?;
-    if !connection.active || !baseline_matches(&round, baseline) {
+    if connection.sync_incumbent(&mut tx, baseline).await? || !baseline_matches(&round, baseline) {
+        close(&mut tx, &round, "Published channel changed").await?;
+        tx.commit().await.map_err(db)?;
+        return Err(conflict("Published channel changed"));
+    }
+    if !connection.active {
         return Err(conflict(
             "Connection authority or delivery baseline changed",
         ));
@@ -1473,6 +1690,9 @@ async fn review(
         )
         .await?;
     record_promotion(&mut tx, round_id, comparison, promotion, false).await?;
+    connection
+        .sync_incumbent(&mut tx, (release_candidate(&round), baseline.1 + 1))
+        .await?;
     tx.commit().await.map_err(db)?;
     Ok(Json(
         json!({"roundId":round_id,"state":"promoted","promotionId":promotion}),

@@ -378,13 +378,26 @@ export interface LearningRound {
   policyEpoch?: number;
   id: string;
   outcomeId: string;
-  state: 'proposing' | 'development' | 'audit' | 'awaiting_review' | 'promoted' | 'rejected';
+  state:
+    | 'proposing'
+    | 'development'
+    | 'developed'
+    | 'audit'
+    | 'awaiting_review'
+    | 'promoted'
+    | 'rejected';
   reason: string | null;
   parentVersionId: string;
   candidateVersionId: string | null;
   proposalId: string | null;
   developmentRequestId: string | null;
   developmentComparisonId: string | null;
+  developmentParentVersionId?: string;
+  developmentCandidateVersionId?: string | null;
+  cumulativeDevelopmentRequestId?: string | null;
+  cumulativeDevelopmentComparisonId?: string | null;
+  cumulativeDevelopmentEstimate?: number | null;
+  cumulativeDevelopmentLowerBound?: number | null;
   auditRequestId: string | null;
   auditComparisonId: string | null;
   promotionId: string | null;
@@ -394,7 +407,23 @@ export interface LearningRound {
     rollbackPromotionId?: string | null;
   };
 }
+export interface LearningDevelopmentIncumbent {
+  versionId: string;
+  chainLength: number;
+  cumulativeEstimate: number | null;
+  cumulativeLowerBound: number | null;
+  nextAuditTrigger: {
+    state:
+      | 'awaitingSteps'
+      | 'checkingCumulative'
+      | 'auditPending'
+      | 'awaitingReview'
+      | 'unavailable';
+    acceptedStepsRemaining: number;
+  };
+}
 export interface LearningEnrollmentStatus extends LearningEnrollment {
+  developmentIncumbent?: LearningDevelopmentIncumbent;
   policyHistory?: Array<{
     policyEpoch: number;
     development: LearningEvaluationDescriptor;
@@ -572,7 +601,10 @@ export interface LearningFieldAuditReceipt {
 export type LearningWorkItem = {
   evaluationRequestId: string;
   status: 'requested' | 'running';
-} & ({ phase: 'development' | 'audit'; roundId: string } | { phase: 'calibration'; roundId: null });
+} & (
+  | { phase: 'development' | 'audit'; roundId: string; cumulative?: boolean }
+  | { phase: 'calibration'; roundId: null }
+);
 export interface LearningWork {
   incidentReplays?: Omit<LearningIncidentReplay, 'verdict' | 'attempts'>[];
   fieldReplays?: Omit<LearningFieldReplay, 'verdict' | 'attempts'>[];

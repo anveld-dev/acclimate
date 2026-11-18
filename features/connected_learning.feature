@@ -60,15 +60,15 @@ Feature: Learning from application feedback
     Given development requires every critical request to finish within 100 milliseconds
     When its evaluator reports these paired review results
       | case     | repetition | parent | candidate | candidate status |
-      | fast     | 0          | 100    | 10        | completed        |
-      | fast     | 1          | 100    | 10        | completed        |
+      | fast     | 0          | 100    | 20        | completed        |
+      | fast     | 1          | 100    | 20        | completed        |
       | critical | 0          | 100    | <first>   | completed        |
       | critical | 1          | 100    | <second>  | completed        |
     Then the mean latency falls to 50 milliseconds and the round is <state> with <remaining> audits remaining
     Examples:
       | first | second | state    | remaining |
-      | 60    | 120    | rejected | 1         |
-      | 90    | 90     | audit    | 0         |
+      | 40    | 120    | rejected | 1         |
+      | 80    | 80     | audit    | 0         |
 
   @LEARNING-07
   Scenario: A parked correction is reconsidered once on the new delivery revision

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { bindEvaluationRepetitions, captureDefinition } from '../../src/evaluation/definition.js';
 import { defineEvaluation } from '../../src/evaluation/index.js';
 import { connectedEvaluationDescriptor } from '../../src/learning/index.js';
 import { connectedFixtureBindings } from '../../src/learning/connected-fixtures.js';
@@ -79,4 +80,46 @@ test('connected commitments bind fixture values, labels and repetitions while de
   assert.deepEqual(evaluationDescriptorDifferences(enrollment, bound.descriptor), []);
   enrollment.runtime['acclimate.fixtures.v1.inputs'] = '0'.repeat(64);
   assert.deepEqual(evaluationDescriptorDifferences(enrollment, bound.descriptor), ['runtime']);
+});
+
+test('a planned inventory changes trial counts while retaining the installed fixture commitment', () => {
+  const original = invoice();
+  const captured = captureDefinition(original);
+  const app = defineEvaluation({
+    configId: 'billing',
+    configRevision: 'v1',
+    datasetRevision: 'invoices',
+    graderRevision: 'v1',
+    execution: captured.execution,
+    runtime: {},
+    cases: [
+      ...captured.cases,
+      { caseId: 'refund', input: { status: 'refunded' }, expected: 'archive' },
+    ],
+    execute: captured.execute,
+    grade: captured.grade,
+  });
+  const registration = connectedEvaluationDescriptor(app);
+  const bound = connectedFixtureBindings([app])({
+    ...app.descriptor,
+    runtime: {
+      ...app.descriptor.runtime,
+      'acclimate.fixtures.v1.dataset': registration.datasetDigest!,
+    },
+  })[0]!;
+  const expectedCases = [
+    ...bound.descriptor.expectedCases,
+    { caseId: 'refund', repetition: 1 },
+    { caseId: 'refund', repetition: 2 },
+  ];
+  const planned = bindEvaluationRepetitions(bound, expectedCases);
+  assert.deepEqual(planned.descriptor.runtime, bound.descriptor.runtime);
+  assert.deepEqual(planned.descriptor.expectedCases, expectedCases);
+  assert.deepEqual(
+    captureDefinition(planned).cases.map((item) => item.repetitions),
+    [1, 3],
+  );
+  assert.deepEqual(connectedEvaluationDescriptor(app), registration);
+  assert.equal(bindEvaluationRepetitions(bound, [...expectedCases, expectedCases[0]!]), bound);
+  assert.equal(bindEvaluationRepetitions(bound, [{ caseId: 'unknown', repetition: 0 }]), bound);
 });

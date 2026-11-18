@@ -1,7 +1,11 @@
 use crate::WorkspaceRoutes;
 use crate::{
     ApiResult, AppState, ComparisonRequest, PromoteRequest, ProposalRequest,
-    connected_learning::{Descriptor, selection::Stage},
+    connected_learning::{
+        Descriptor, repetitions,
+        selection::Stage,
+        statistics::{AUDIT_Z, DEVELOPMENT_Z},
+    },
     db, err,
     evaluations::{CreateEvaluationRequest, decode, enqueue_evaluation, validate_report},
     improvement::{enqueue_managed_proposal, validate_comparison},
@@ -695,9 +699,25 @@ impl Connection {
         descriptor: &Descriptor,
         step: bool,
     ) -> ApiResult<Uuid> {
-        let request = self
+        let mut request = self
             .evaluation_request(tx, round, candidate, descriptor, step)
             .await?;
+        let plan: Option<Value> = sqlx::query_scalar(
+            "SELECT repetition_plan FROM connected_learning_policy_epochs
+             WHERE (project_id,integration_id,epoch)=($1,$2,$3)",
+        )
+        .bind(&self.project)
+        .bind(self.integration)
+        .bind(round.get::<i64, _>("policy_epoch"))
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(db)?;
+        if let Some(plan) = plan {
+            let plan: repetitions::Plan =
+                serde_json::from_value(plan["plan"].clone()).map_err(db)?;
+            let audit = self.audits.iter().position(|audit| audit == descriptor);
+            request.expected_cases = plan.expected_cases(descriptor, audit);
+        }
         let evaluation =
             enqueue_evaluation(tx, &self.project, self.bundle, WORKER, &request).await?;
         let id = path(&evaluation.id)?;
@@ -771,7 +791,7 @@ impl Connection {
                 dataset_revision: d.dataset_revision.clone(),
                 grader_revision: d.grader_revision.clone(),
                 runtime: d.evaluation_runtime(),
-                expected_cases: d.expected_cases.clone(),
+                expected_cases: repetitions::calibration_keys(d),
                 proposal_id: None,
                 require_bound_evidence: true,
             };
@@ -811,6 +831,10 @@ impl Connection {
                 .ok()
                 .filter(|comparison| {
                     validate_comparison(comparison) == Ok(true)
+                        && comparison.results.iter().any(|pair| {
+                            scored_reward(&pair.parent).is_some()
+                                && scored_reward(&pair.candidate).is_some()
+                        })
                         && comparison
                             .results
                             .iter()
@@ -849,28 +873,67 @@ impl Connection {
             policies.development.threshold(Stage::Cumulative),
             scored_reward,
         );
-        let mut view = serde_json::to_value(&calibration).map_err(db)?;
-        if policies
-            .development
-            .target_effect
-            .zip(calibration.minimum_detectable_effect)
-            .is_some_and(|(target, mde)| mde > target)
-        {
-            view["warning"] =
-                json!("The estimated detectable effect exceeds the configured target effect");
-        }
+        let target = policies.development.target_effect;
+        let audit_target = policies.audit.target_effect.or(target);
+        let plan = repetitions::Plan::new(
+            &self.development,
+            &self.audits,
+            &calibration,
+            target.or(audit_target),
+        );
+        let development = plan.project(
+            &self.development,
+            None,
+            &calibration,
+            policies.development.threshold(Stage::Development {
+                replay_passed: false,
+            }),
+            DEVELOPMENT_Z,
+            target,
+        );
+        let cumulative = plan.project(
+            &self.development,
+            None,
+            &calibration,
+            policies.development.threshold(Stage::Cumulative),
+            DEVELOPMENT_Z,
+            target,
+        );
+        let audits: Vec<_> = self
+            .audits
+            .iter()
+            .enumerate()
+            .map(|(index, audit)| {
+                plan.project(
+                    audit,
+                    Some(index),
+                    &calibration,
+                    policies.audit.threshold(Stage::Audit),
+                    AUDIT_Z,
+                    audit_target,
+                )
+            })
+            .collect();
+        let stopped = cumulative.stop_reason(target, "Cumulative").or_else(|| {
+            audits
+                .iter()
+                .find_map(|audit| audit.stop_reason(audit_target, "Audit"))
+        });
         sqlx::query(
-            "UPDATE connected_learning_policy_epochs SET noise_calibration=$4
-                     WHERE (project_id,integration_id,epoch)=($1,$2,$3)",
+            "UPDATE connected_learning_policy_epochs
+             SET noise_calibration=$4,repetition_plan=$5,calibration_stopped_reason=$6
+             WHERE (project_id,integration_id,epoch)=($1,$2,$3)",
         )
         .bind(&self.project)
         .bind(self.integration)
         .bind(self.policy_epoch)
-        .bind(view)
+        .bind(json!(calibration))
+        .bind(json!({"plan": plan, "developmentProjection": development, "cumulativeProjection": cumulative, "auditProjections": audits}))
+        .bind(&stopped)
         .execute(&mut **tx)
         .await
         .map_err(db)?;
-        Ok(true)
+        Ok(stopped.is_none())
     }
 
     async fn evidence(
@@ -933,9 +996,13 @@ impl Connection {
         } else {
             release_candidate(round)
         };
-        let expected = self
+        let mut expected = self
             .evaluation_request(tx, round, candidate, descriptor, step)
             .await?;
+        // The immutable request carries the inventory selected when it was queued.
+        expected
+            .expected_cases
+            .clone_from(&evaluation.request.expected_cases);
         if serde_json::to_value(&evaluation.request).map_err(db)?
             != serde_json::to_value(&expected).map_err(db)?
             || comparison.evaluation.is_none()

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { AcclimateClient, ApiError } from '../client.js';
 import { resolveAndCache } from '../cache.js';
 import { readEvaluatorConfig } from '../evaluation/config.js';
-import { captureDefinition } from '../evaluation/definition.js';
+import { bindEvaluationRepetitions, captureDefinition } from '../evaluation/definition.js';
 import {
   EvaluationError,
   toSafeDiagnostic,
@@ -460,9 +460,16 @@ export async function serveConnectedLearning(
       throw new EvaluationError('evidence.identity_mismatch');
     if (request.status !== 'requested' && request.status !== 'running') return;
 
-    const matches = installed[phase](request).filter(
-      (app) => evaluationDescriptorDifferences(request, app.descriptor).length === 0,
-    );
+    const matches = installed[phase](request)
+      .filter(
+        (app) =>
+          evaluationDescriptorDifferences(
+            { ...request, expectedCases: app.descriptor.expectedCases },
+            app.descriptor,
+          ).length === 0,
+      )
+      .map((app) => bindEvaluationRepetitions(app, request.expectedCases))
+      .filter((app) => evaluationDescriptorDifferences(request, app.descriptor).length === 0);
     if (matches.length !== 1) throw new EvaluationError('descriptor.mismatch');
     const handoff = validateEvaluationHandoff({
       schemaVersion: 1,

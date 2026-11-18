@@ -134,6 +134,41 @@ export function bindEvaluationRuntime<I, E, O>(
   definitions.set(bound, { ...captured, descriptor });
   return bound;
 }
+/** Bind a connected request's trial inventory after capturing the installed fixtures. */
+export function bindEvaluationRepetitions<I, E, O>(
+  app: EvaluationApp<I, E, O>,
+  expectedCases: EvaluationDescriptor['expectedCases'],
+): EvaluationApp<I, E, O> {
+  const captured = captureDefinition(app);
+  if (captured.collection) return app;
+  const repetitions = new Map<string, Set<number>>();
+  for (const key of expectedCases) {
+    const indices = repetitions.get(key.caseId) ?? new Set<number>();
+    indices.add(key.repetition);
+    repetitions.set(key.caseId, indices);
+  }
+  if (repetitions.size !== captured.cases.length) return app;
+  const cases = captured.cases.map((item) => ({
+    ...item,
+    repetitions: repetitions.get(item.caseId)?.size ?? 0,
+  }));
+  if (
+    expectedCases.length !== cases.reduce((sum, item) => sum + item.repetitions, 0) ||
+    cases.some((item) => {
+      const indices = repetitions.get(item.caseId);
+      return !indices || [...indices].some((index) => index < 0 || index >= item.repetitions);
+    })
+  )
+    return app;
+  const descriptor = deepFreeze(
+    validateEvaluationDescriptor({ ...captured.descriptor, expectedCases }),
+  );
+  assertReportBudget(descriptor);
+  const bound = Object.freeze({ descriptor }) as EvaluationApp<I, E, O>;
+  definitions.set(bound, { ...captured, descriptor, cases: deepFreeze(cases) });
+  return bound;
+}
+
 export function defineEvaluation<I, E, O>(
   definition: EvaluationDefinition<I, E, O>,
 ): EvaluationApp<I, E, O> {

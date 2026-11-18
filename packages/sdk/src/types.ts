@@ -450,11 +450,32 @@ export interface LearningEnrollmentStatus extends LearningEnrollment {
     effectiveRepetitions?: number;
     standardError?: number;
     minimumDetectableEffect?: number;
+    caseVariability?: Record<string, number>;
+    plan?: {
+      developmentRepetitions: Record<string, number>;
+      auditRepetitions: number[];
+      flakyCaseCount: number;
+      pairBudget: number;
+      trialBudget: number;
+      maxRepetitions: number;
+    };
+    developmentProjection?: LearningPowerProjection;
+    cumulativeProjection?: LearningPowerProjection;
+    auditProjections?: LearningPowerProjection[];
     warning?: string | null;
   };
   deliveredVersionId: string;
   deliveredRevision: string;
   restoreTargets?: LearningRestoreTarget[];
+}
+export interface LearningPowerProjection {
+  caseCount: number;
+  effectiveRepetitions: number;
+  projectedMde: number | null;
+  powerAtEffect: number | null;
+  effect: number;
+  casesNeededAtTarget: number | null;
+  pairedTrials: number;
 }
 export interface LearningRestoreTarget {
   kind: 'delivery' | 'source';

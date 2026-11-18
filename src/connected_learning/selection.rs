@@ -703,6 +703,166 @@ mod tests {
     }
 
     #[test]
+    fn repetition_plan_power_simulation() {
+        use crate::connected_learning::{
+            repetitions::Plan,
+            statistics::{AUDIT_Z, calibrate, harmonic_repetitions, lower_bound, scored_reward},
+        };
+        let ids: Vec<_> = (0..30).map(|i| format!("case-{i:02}")).collect();
+        let probabilities: Vec<_> = (0..30)
+            .map(|i| match i {
+                0..=8 => 0.01,
+                9..=17 => 0.99,
+                _ => 0.50,
+            })
+            .collect();
+        let cohort = |prefix: &str| Descriptor {
+            dataset_revision: prefix.into(),
+            expected_cases: ids
+                .iter()
+                .map(|id| CaseKey {
+                    case_id: format!("{prefix}{id}"),
+                    repetition: 0,
+                })
+                .collect(),
+            grader_revision: "test".into(),
+            runtime: Default::default(),
+            fixture_protocol: None,
+            dataset_digest: None,
+            case_fingerprints: Vec::new(),
+            family_fingerprints: Vec::new(),
+        };
+        let development = cohort("");
+        let audits = [cohort("audit-")];
+        let mut rng = 0x38a7_aefe_4dec_e53c_u64;
+        let mut sample = |p: f64| {
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            if ((rng >> 32) as f64) < p * 4294967296.0 {
+                1.0
+            } else {
+                0.0
+            }
+        };
+        const RUNS: usize = 5000;
+        let mut baseline_passes = [0; 3];
+        let mut audit_passes = [0; 3];
+        let mut targeted_passes = [0; 3];
+        let mut matched_budget_passes = [0; 3];
+        let mut audit_pairs = 0;
+        let mut targeted_pairs = 0;
+        for run in 0..RUNS {
+            let mut observations = Vec::new();
+            for (id, &p) in ids.iter().zip(&probabilities) {
+                for _ in 0..2 {
+                    observations.push((id.as_str(), sample(p), sample(p)));
+                }
+            }
+            let calibration = calibrate(&comparison(&observations), 0.0, scored_reward);
+            let plan = Plan::with_budget(&development, &audits, &calibration, false, 3, 1000);
+            let audit = plan.expected_cases(&audits[0], Some(0));
+            let targeted = plan.expected_cases(&development, None);
+            let counts = |keys: &[CaseKey]| {
+                let mut counts = Vec::new();
+                for key in keys {
+                    if key.repetition == 0 {
+                        counts.push(0);
+                    }
+                    *counts.last_mut().unwrap() += 1;
+                }
+                counts
+            };
+            audit_pairs += audit.len();
+            targeted_pairs += targeted.len();
+            let mut matched_budget = [1; 30];
+            // Rotate the nearly uniform allocation independently of fixture variability.
+            for extra in 0..targeted.len() - 30 {
+                matched_budget[(extra + run) % 30] += 1;
+            }
+            let mut passes = |repeats: &[usize], effect: f64| {
+                let gains: Vec<_> = probabilities
+                    .iter()
+                    .zip(repeats)
+                    .enumerate()
+                    .map(|(i, (&p, &r))| {
+                        let q = if i >= 18 { p + effect / 0.4 } else { p };
+                        (0..r).map(|_| sample(q) - sample(p)).sum::<f64>() / r as f64
+                    })
+                    .collect();
+                let floor = calibration.paired_standard_deviation
+                    * (calibration.effective_repetitions
+                        / harmonic_repetitions(repeats.iter().copied()))
+                    .sqrt();
+                usize::from(lower_bound(&gains, floor, AUDIT_Z) > -0.03)
+            };
+            for (i, effect) in [-0.03, 0.0, 0.05].into_iter().enumerate() {
+                baseline_passes[i] += passes(&[1; 30], effect);
+                audit_passes[i] += passes(&counts(&audit), effect);
+                targeted_passes[i] += passes(&counts(&targeted), effect);
+                matched_budget_passes[i] += passes(&matched_budget, effect);
+            }
+        }
+        let rates = |passes: [usize; 3]| passes.map(|n| n as f64 / RUNS as f64);
+        eprintln!(
+            "Audit-gate pass rates (−3pp, 0pp, +5pp): 30×1 {:?}, matched-budget near-uniform {:?}, targeted {:?} at {:.1} pairs, held-out audit {:?} at {:.1} pairs",
+            rates(baseline_passes),
+            rates(matched_budget_passes),
+            rates(targeted_passes),
+            targeted_pairs as f64 / RUNS as f64,
+            rates(audit_passes),
+            audit_pairs as f64 / RUNS as f64,
+        );
+        assert!(audit_passes[0] <= RUNS * 6 / 100);
+        assert!(audit_passes[2] >= baseline_passes[2] + RUNS / 20);
+        assert!(targeted_passes[0] <= RUNS * 6 / 100);
+        assert!(targeted_pairs <= 54 * RUNS);
+    }
+
+    #[test]
+    fn power_guard_reports_when_the_budget_cannot_support_the_target() {
+        use crate::connected_learning::{
+            repetitions::Plan,
+            statistics::{DEVELOPMENT_Z, calibrate, scored_reward},
+        };
+        let evidence = comparison(&[
+            ("stable", 0., 0.),
+            ("stable", 0., 0.),
+            ("flaky", 0., 1.),
+            ("flaky", 1., 0.),
+        ]);
+        let descriptor = Descriptor {
+            dataset_revision: "test".into(),
+            expected_cases: vec![
+                evidence.expected_cases[0].clone(),
+                evidence.expected_cases[2].clone(),
+            ],
+            grader_revision: "test".into(),
+            runtime: Default::default(),
+            fixture_protocol: None,
+            dataset_digest: None,
+            case_fingerprints: Vec::new(),
+            family_fingerprints: Vec::new(),
+        };
+        let calibration = calibrate(&evidence, 0.0, scored_reward);
+        assert_eq!(calibration.case_variability["flaky"], 1.0);
+        assert_eq!(calibration.case_variability["stable"], 0.0);
+        let plan = Plan::with_budget(&descriptor, &[], &calibration, true, 3, 4);
+        let projection = plan.project(
+            &descriptor,
+            None,
+            &calibration,
+            0.0,
+            DEVELOPMENT_Z,
+            Some(0.05),
+        );
+        let reason = projection.stop_reason(Some(0.05), "Cumulative").unwrap();
+        assert!(reason.contains("2 cases, 4 pairs"));
+        assert!(reason.contains("cases at the same repetition mix are needed"));
+        assert!(projection.stop_reason(None, "Cumulative").is_none());
+    }
+
+    #[test]
     fn calibration_counts_only_scored_case_means() {
         use super::super::statistics::{calibrate, scored_reward};
         let mut evidence = comparison(&[("a", 0., 0.), ("b", 0., 0.), ("c", 0., 0.)]);

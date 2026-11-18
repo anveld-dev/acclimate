@@ -13,7 +13,7 @@ Start from the linked baseline. Allow edits to its instruction and memory only. 
 SHA-256 digests of frozen files follow.
 
 ```text
-f24e35d7be2d06dce186baa00f9251d4b1cdfcb8027c2331a9be1ab0aaa12a86  examples/real-app-learning/tasks.py
+98ba61a7435fe79a90285a67effc0cec9bea0e303362ef232aece0b96615d3fe  examples/real-app-learning/tasks.py
 7d2b7347c5fb9c471235bbb448f8948a0e836bf4faccdf860abb4ab1b2838172  examples/real-app-learning/grade.py
 1a760943b79185b7cff38cea52e06f67b8fe32cd090f560dd4453e0019db103b  examples/real-app-learning/baseline.json
 ```

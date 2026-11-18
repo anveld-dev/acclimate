@@ -70,7 +70,7 @@ FAMILIES = (
         ("Show the stored template named 'release-notes'.", "templates show release-notes"),
         ("Show the fragment stored under alias 'guidelines'.", "fragments show guidelines"),
         ("Show the default options for the model 'ops-mini'.", "models options show ops-mini"),
-        ("Show the registered plugins and their hook names.", "plugins --hooks"),
+        ("Show installed plugins that implement the register_models hook.", "plugins --hook register_models"),
         ("Show stored schema with ID 'example-schema'.", "schemas show example-schema"),
     ]),
     ("", [

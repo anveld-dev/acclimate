@@ -904,6 +904,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         .execute(&db)
         .await
         .unwrap();
+    state.runtime.ownership_acquired();
     let worker = tokio::spawn(acclimate_service::connected_learning_worker(state.clone()));
     let wait_for_round = async |expected: &str, expected_failures: i32| {
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
@@ -925,6 +926,19 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         .unwrap();
     };
     wait_for_round("audit", 0).await;
+    let pending_delay: bool = sqlx::query_scalar(
+        "SELECT next_tick_at > now() AND next_tick_at <= now()+interval '5 seconds'
+         FROM connected_learning_rounds WHERE id=$1",
+    )
+    .bind(round_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(
+        pending_delay,
+        "pending evidence should postpone the next tick"
+    );
+
     sqlx::query("UPDATE evaluation_requests SET started_at=now()-interval '2 days' WHERE id=$1")
         .bind(audit_id)
         .execute(&db)
@@ -939,15 +953,38 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             .unwrap();
     assert!(released);
 
-    // A malformed terminal evaluation trips the consecutive failure limit.
-    sqlx::query("UPDATE evaluation_requests SET body='{}' WHERE id=$1")
-        .bind(audit_id)
-        .execute(&db)
-        .await
-        .unwrap();
+    // Enrollment decode failures occur before advancing the round. They still
+    // count and schedule a backoff, and close only after the failure window.
+    let original_policies: Option<Value> = sqlx::query_scalar(
+        "UPDATE connected_learning_enrollments SET selection_policies='{}' WHERE integration_id=$1
+         RETURNING (SELECT selection_policies FROM connected_learning_policy_epochs
+                    WHERE integration_id=$1 AND epoch=0)",
+    )
+    .bind(enrollment_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
     sqlx::query(
         "UPDATE connected_learning_rounds SET state='audit',audit_released=false,
-        consecutive_failures=4,next_tick_at=now() WHERE id=$1",
+        next_tick_at=now() WHERE id=$1",
+    )
+    .bind(round_id)
+    .execute(&db)
+    .await
+    .unwrap();
+    wait_for_round("audit", 1).await;
+    let failure_delayed: bool = sqlx::query_scalar(
+        "SELECT first_failure_at IS NOT NULL AND next_tick_at=first_failure_at+interval '30 seconds'
+         FROM connected_learning_rounds WHERE id=$1",
+    )
+    .bind(round_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(failure_delayed);
+    sqlx::query(
+        "UPDATE connected_learning_rounds SET consecutive_failures=4,
+        first_failure_at=now()-interval '1 hour',next_tick_at=now() WHERE id=$1",
     )
     .bind(round_id)
     .execute(&db)
@@ -955,26 +992,74 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     .unwrap();
     wait_for_round("rejected", 5).await;
     sqlx::query(
+        "UPDATE connected_learning_enrollments SET selection_policies=$2 WHERE integration_id=$1",
+    )
+    .bind(enrollment_id)
+    .bind(original_policies)
+    .execute(&db)
+    .await
+    .unwrap();
+
+    sqlx::query(
         "UPDATE connected_learning_corrections SET pending=true,lesson='{}' WHERE correction_id=$1",
     )
     .bind(correction_id)
     .execute(&db)
     .await
     .unwrap();
-    let calibration = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+    let calibration_work = async |previous: &str| {
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            loop {
+                let view = call(&app, "GET", &work, "evaluator", Value::Null).await.1;
+                if let Some(item) = view["items"].as_array().and_then(|items| {
+                    items.iter().find(|item| {
+                        item["phase"] == "calibration" && item["evaluationRequestId"] != previous
+                    })
+                }) {
+                    break item["evaluationRequestId"].as_str().unwrap().to_owned();
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .unwrap()
+    };
+    let mut previous = String::new();
+    for _ in 0..3 {
+        previous = calibration_work(&previous).await;
+        sqlx::query(
+            "UPDATE evaluation_requests SET created_at=now()-interval '8 days' WHERE id=$1",
+        )
+        .bind(Uuid::parse_str(&previous).unwrap())
+        .execute(&db)
+        .await
+        .unwrap();
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
-            let view = call(&app, "GET", &work, "evaluator", Value::Null).await.1;
-            if let Some(item) = view["items"]
-                .as_array()
-                .and_then(|items| items.iter().find(|item| item["phase"] == "calibration"))
-            {
-                break item["evaluationRequestId"].as_str().unwrap().to_owned();
+            let view = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;
+            let calibration = &view["noiseCalibration"];
+            if calibration["status"] == "stopped" {
+                assert_eq!(calibration["failedAttempts"], 3);
+                assert!(calibration["stoppedReason"].is_string());
+                assert!(calibration["requestId"].is_null());
+                break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(25)).await;
         }
     })
     .await
     .unwrap();
+    // Restore this fixture's calibration allowance for its remaining API checks.
+    sqlx::query(
+        "UPDATE connected_learning_policy_epochs SET calibration_failures=0,
+        calibration_stopped_reason=NULL WHERE integration_id=$1 AND epoch=0",
+    )
+    .bind(enrollment_id)
+    .execute(&db)
+    .await
+    .unwrap();
+    let calibration = calibration_work(&previous).await;
     let bundle_path = format!("/v1/projects/{p}/bundles/{bundle}");
     let calibration_path = format!("{bundle_path}/evaluation-requests/{calibration}");
     let attempt = Uuid::new_v4().to_string();
@@ -1169,7 +1254,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         row["id"] == json!(round_id)
             && row["reason"]
                 .as_str()
-                .is_some_and(|reason| reason.contains("Invalid stored evaluation request"))
+                .is_some_and(|reason| reason.contains("Invalid stored selection policies"))
     }));
     sqlx::query("UPDATE comparisons SET complete=true WHERE id=$1")
         .bind(audit_comparison)

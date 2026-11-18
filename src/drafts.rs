@@ -303,7 +303,7 @@ async fn change(
                     unevaluated_reason: req.unevaluated_reason,
                     policy_override: req.policy_override,
                 },
-                None,
+                crate::channels::Publication::Standard,
             )
             .await?;
             out.status = "published".into();
@@ -488,7 +488,7 @@ async fn setup(
             unevaluated_reason: Some(req.reason),
             policy_override: None,
         },
-        None,
+        crate::channels::Publication::Standard,
     )
     .await?;
     let out = serde_json::json!({"bundle":{"id":b.to_string(),"projectId":p,"name":req.name.trim(),"origin":req.origin,"sourceLabel":source,"compatibilityTarget":req.compatibility_target,"createdAt":row.get::<DateTime<Utc>,_>("created_at").to_rfc3339()},"version":v,"resolution":{"channel":req.channel,"revision":"1","version":v},"promotion":promotion});

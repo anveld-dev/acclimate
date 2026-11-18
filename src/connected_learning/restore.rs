@@ -203,7 +203,7 @@ pub(super) async fn restore(
             unevaluated_reason: Some(request.reason),
             policy_override: None,
         },
-        Some(match request.target.kind {
+        crate::channels::Publication::Restore(match request.target.kind {
             TargetKind::Delivery => &delivery,
             TargetKind::Source => enrollment.get::<&str, _>("source_channel"),
         }),

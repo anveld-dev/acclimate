@@ -187,7 +187,7 @@ impl Connection {
         sqlx::query_scalar(
             "SELECT EXISTS(
                 SELECT 1 FROM connected_learning_rounds r
-                JOIN versions rejected ON rejected.id=COALESCE(r.release_candidate_id,r.candidate_version_id)
+                JOIN versions rejected ON rejected.id=r.candidate_version_id
                 JOIN versions proposed ON proposed.id=$4 AND proposed.digest=rejected.digest
                 WHERE (r.project_id,r.integration_id,r.policy_epoch)=($1,$2,$3)
                   AND r.audit_policy_rejected
@@ -280,21 +280,6 @@ impl Connection {
         .bind(&self.project).bind(self.integration).bind(self.policy_epoch)
         .bind(round.get::<Uuid,_>("candidate_version_id")).bind(round.get::<Uuid,_>("id")).bind(comparison)
         .bind(indeterminate_cost)
-        .fetch_one(&mut **tx).await.map_err(db)
-    }
-
-    async fn cumulative_candidate(&self, tx: &mut Tx<'_>, round: &PgRow) -> ApiResult<Uuid> {
-        let candidate: Uuid = round.get("candidate_version_id");
-        if development_parent(round) == round.get::<Uuid, _>("parent_version_id") {
-            return Ok(candidate);
-        }
-        // The publication and evidence contracts require a direct child of the
-        // delivery baseline. Keep the original candidate and search edge intact.
-        sqlx::query_scalar(
-            "INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload,created_by)
-             SELECT $1,project_id,bundle_id,$2,digest,payload,$3 FROM versions WHERE id=$4 RETURNING id",
-        )
-        .bind(Uuid::new_v4()).bind(round.get::<Uuid,_>("parent_version_id")).bind(WORKER).bind(candidate)
         .fetch_one(&mut **tx).await.map_err(db)
     }
 
@@ -1105,7 +1090,7 @@ impl Connection {
                 unevaluated_reason: None,
                 policy_override,
             },
-            None,
+            crate::channels::Publication::Learning,
         )
         .await?;
         path(&promotion.id)
@@ -1462,7 +1447,7 @@ async fn start_chain_check(
     if connection.next_audit(tx).await?.is_none() {
         return close(tx, round, "Independent audit cohorts exhausted").await;
     }
-    let candidate = connection.cumulative_candidate(tx, round).await?;
+    let candidate = round.get("candidate_version_id");
     if length <= 1 && !connection.modern_development {
         return start_audit(tx, connection, round, candidate, unknown_cost).await;
     }
@@ -1471,12 +1456,11 @@ async fn start_chain_check(
         .await?;
     sqlx::query(
         "UPDATE connected_learning_rounds SET state='development',
-        cumulative_request_id=$2,release_candidate_id=$3,indeterminate_development_cost=$4,
+        cumulative_request_id=$2,indeterminate_development_cost=$3,
         next_tick_at=now(),updated_at=now() WHERE id=$1",
     )
     .bind(round.get::<Uuid, _>("id"))
     .bind(request)
-    .bind(candidate)
     .bind(unknown_cost)
     .execute(&mut **tx)
     .await

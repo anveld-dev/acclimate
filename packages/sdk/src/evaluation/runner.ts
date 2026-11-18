@@ -245,6 +245,7 @@ async function verified(
   bundleId: string,
   request: Evaluation,
   cacheDir: string,
+  cumulative = false,
 ): Promise<[VerifiedVersion, VerifiedVersion]> {
   const parent = await resolveAndCache(
     api,
@@ -258,11 +259,21 @@ async function verified(
   );
   if (
     parent.version.digest !== request.parentDigest ||
-    candidate.version.digest !== request.candidateDigest ||
-    (candidate.version.id !== parent.version.id &&
-      candidate.version.parentVersionId !== parent.version.id)
+    candidate.version.digest !== request.candidateDigest
   )
     throw new EvaluationError('version.binding_mismatch');
+  if (candidate.version.id !== parent.version.id) {
+    let ancestor = candidate.version.parentVersionId;
+    const seen = new Set([candidate.version.id]);
+    while (ancestor && ancestor !== parent.version.id && cumulative && !seen.has(ancestor)) {
+      seen.add(ancestor);
+      const version = await api.getVersion(config.projectId, bundleId, ancestor);
+      if (version.id !== ancestor || version.bundleId !== bundleId)
+        throw new EvaluationError('version.binding_mismatch');
+      ancestor = version.parentVersionId;
+    }
+    if (ancestor !== parent.version.id) throw new EvaluationError('version.binding_mismatch');
+  }
   return [deepFreeze(parent), deepFreeze(candidate)];
 }
 /** An empty request/channel listing does not establish bundle existence. */
@@ -386,7 +397,11 @@ export async function preflightEvaluation<I, E, O>(
       check: currentCheck,
       status: diagnostic.code === 'capabilities.unsupported' ? 'unverified' : 'failed',
       code: diagnostic.code,
-      ...(diagnostic.pathIssue && { pathIssue: diagnostic.pathIssue, field: diagnostic.field, hint: diagnostic.hint }),
+      ...(diagnostic.pathIssue && {
+        pathIssue: diagnostic.pathIssue,
+        field: diagnostic.field,
+        hint: diagnostic.hint,
+      }),
     });
   } finally {
     if (probe) await rm(probe, { recursive: true, force: true });
@@ -417,6 +432,14 @@ function usage(value: unknown): Outcome['usage'] {
 export async function runEvaluation<I, E, O>(
   options: RunEvaluationOptions<I, E, O>,
 ): Promise<EvaluationRunResult> {
+  return runEvaluationRequest(options, false);
+}
+
+/** Runs a bound request, including cumulative assignments from the managed work queue. */
+export async function runEvaluationRequest<I, E, O>(
+  options: RunEvaluationOptions<I, E, O>,
+  cumulative: boolean,
+): Promise<EvaluationRunResult> {
   const captured = captureDefinition(options.app),
     config = await readEvaluatorConfig(options.configPath),
     handoff = validateEvaluationHandoff(options.handoff);
@@ -434,6 +457,7 @@ export async function runEvaluation<I, E, O>(
     signal: options.signal,
     retryMissingTrial: options.retryMissingTrial,
     cachedParent: options.cachedParent,
+    cumulative,
   });
 }
 
@@ -449,6 +473,7 @@ export async function runCapturedEvaluation(options: {
   signal?: AbortSignal;
   retryMissingTrial?: boolean;
   cachedParent?: () => Promise<CachedLearningParent | null | undefined>;
+  cumulative?: boolean;
 }): Promise<EvaluationRunResult> {
   const { captured, config, handoff, transport } = options,
     api = transport.client;
@@ -566,6 +591,7 @@ export async function runCapturedEvaluation(options: {
         scope.bundleId,
         request,
         path.join(journal.directory, 'cache'),
+        options.cumulative,
       );
       request = await check();
       signal.throwIfAborted();
@@ -1041,5 +1067,12 @@ async function terminal(
     if (!reportsEqual(state.report, comparison))
       throw new EvaluationError('evidence.identity_mismatch');
   }
-  return { schemaVersion: 1, evaluation: request, comparison, callbacksStarted, reusedEvidence, executionState: 'finished' };
+  return {
+    schemaVersion: 1,
+    evaluation: request,
+    comparison,
+    callbacksStarted,
+    reusedEvidence,
+    executionState: 'finished',
+  };
 }

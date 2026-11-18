@@ -2036,7 +2036,7 @@ try {
       second.cumulativeDevelopmentComparisonId,
     );
     assert.equal(cumulativeEvidence.parentSourceComparisonId, undefined);
-    assert.notEqual(second.developmentCandidateVersionId, second.candidateVersionId);
+    assert.equal(second.developmentCandidateVersionId, second.candidateVersionId);
     const cumulative = await client('evaluator').getEvaluation(
       project,
       bundle.id,
@@ -2101,7 +2101,11 @@ try {
         assert.equal((await inspect()).remainingAudits, 1);
       }
     }
-    assert.equal((await fresh(connection)).id, passes ? second.candidateVersionId : baseline.id);
+    const delivered = await fresh(connection);
+    assert.equal(delivered.id, passes ? second.developmentCandidateVersionId : baseline.id);
+    if (passes) {
+      assert.equal(delivered.parentVersionId, first.developmentCandidateVersionId);
+    }
     await stop();
     return { connection, first, second };
   }

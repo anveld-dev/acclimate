@@ -187,7 +187,7 @@ pub(super) async fn submit(
                 unevaluated_reason: Some(reason),
                 policy_override: None,
             },
-            Some(&connection.channel),
+            crate::channels::Publication::Restore(&connection.channel),
         )
         .await
         {

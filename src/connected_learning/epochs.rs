@@ -234,13 +234,36 @@ pub(super) async fn renew(
         }
         let active: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2
-             AND state NOT IN ('promoted','rejected'))"
+             AND state IN ('proposing','development','audit','awaiting_review'))"
         ).bind(&project).bind(integration).fetch_one(&mut *tx).await.map_err(db)?;
         if active {
             return Err(conflict(
                 "Selection and development may rotate only between rounds",
             ));
         }
+        crate::connected_learning_worker::discard_developed(
+            &mut tx,
+            &project,
+            integration,
+            previous_epoch,
+        )
+        .await?;
+        sqlx::query(
+            "INSERT INTO connected_learning_incumbent_events
+            (project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,
+             source_revision,version_id,chain_length,reason)
+            SELECT project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,
+                   source_revision,baseline_version_id,0,'policy epoch rotated'
+            FROM (SELECT * FROM connected_learning_incumbent_events
+                WHERE (project_id,integration_id,policy_epoch)=($1,$2,$3)
+                ORDER BY sequence DESC LIMIT 1) head WHERE chain_length>0",
+        )
+        .bind(&project)
+        .bind(integration)
+        .bind(previous_epoch)
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
         previous_epoch
             .checked_add(1)
             .ok_or_else(|| conflict("Policy epoch limit reached"))?

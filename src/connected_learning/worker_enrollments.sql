@@ -37,13 +37,24 @@ WHERE active_round.next_tick_at <= now()
                     WHERE (h.project_id,h.integration_id,h.policy_epoch)=(e.project_id,e.integration_id,e.policy_epoch)
                 )
                 OR EXISTS (
+                    SELECT 1 FROM connected_learning_incumbent_events h
+                    JOIN connected_learning_rounds r ON r.id=h.round_id
+                    WHERE h.sequence=(SELECT max(sequence) FROM connected_learning_incumbent_events
+                        WHERE (project_id,integration_id,policy_epoch)=(e.project_id,e.integration_id,e.policy_epoch))
+                    AND h.chain_length>0 AND r.state='developed' AND r.next_tick_at<=now()
+                )
+                OR EXISTS (
                     SELECT 1 FROM connected_learning_policy_epochs p
-                    LEFT JOIN evaluation_requests q ON q.id=p.calibration_request_id
                     WHERE (p.project_id,p.integration_id,p.epoch)=(e.project_id,e.integration_id,e.policy_epoch)
-                      AND p.noise_calibration IS NULL AND (q.id IS NULL OR q.status IN ('requested','running','completed'))
+                      AND p.noise_calibration IS NULL AND p.calibration_stopped_reason IS NULL
                 )
                 OR (
                     e.proposal_admissions < e.max_proposal_admissions
+                    AND EXISTS (
+                        SELECT 1 FROM connected_learning_policy_epochs p
+                        WHERE (p.project_id,p.integration_id,p.epoch)=(e.project_id,e.integration_id,e.policy_epoch)
+                        AND p.noise_calibration IS NOT NULL
+                    )
                     AND EXISTS (
                         SELECT 1 FROM connected_learning_correction_work f
                         WHERE (f.project_id,f.integration_id)=(e.project_id,e.integration_id) AND f.action='ready'

@@ -9,7 +9,7 @@ WITH job AS (
         = (e.project_id, e.bundle_id, e.delivery_channel)
     WHERE (e.project_id, e.integration_id, o.outcome_id) = ($1, $2, $3)
 ), corrections AS (
-    SELECT f.correction_id, f.queued_at, r.id AS round_id, r.incident_replay, r.reason,
+    SELECT f.correction_id, f.queued_at, r.id AS round_id, r.incident_replay, r.reason, r.decision,
            r.promotion_id, r.candidate_version_id, r.development_request_id, r.audit_request_id,
            CASE WHEN NOT f.pending AND k.verdict='regression' THEN 'resolved'
                 WHEN NOT f.pending THEN COALESCE(r.state,'closed')
@@ -22,7 +22,7 @@ WITH job AS (
     FROM job j JOIN connected_learning_corrections f USING (project_id,bundle_id,integration_id,outcome_id)
     LEFT JOIN connected_learning_correction_work w ON (w.project_id,w.integration_id,w.correction_id)
         = (f.project_id,f.integration_id,f.correction_id)
-    LEFT JOIN LATERAL (SELECT id,state,reason,incident_replay,promotion_id,COALESCE(release_candidate_id,candidate_version_id) AS candidate_version_id,
+    LEFT JOIN LATERAL (SELECT id,state,reason,decision,incident_replay,COALESCE(promotion_id,chain_promotion_id) AS promotion_id,COALESCE(release_candidate_id,candidate_version_id) AS candidate_version_id,
                          COALESCE(cumulative_request_id,development_request_id) AS development_request_id,audit_request_id FROM connected_learning_rounds
         JOIN connected_learning_round_replays replay ON replay.round_id=connected_learning_rounds.id
         JOIN connected_learning_round_corrections m ON m.round_id=connected_learning_rounds.id
@@ -55,7 +55,7 @@ SELECT jsonb_build_object(
             WHERE decision.promotion_id=v.promotion_id AND decision.kind='rollback'
               AND decision.triggering_sequence=v.sequence)) END,
     'corrections',COALESCE((SELECT jsonb_agg(jsonb_build_object(
-        'correctionId',c.correction_id,'roundId',c.round_id,'reason',c.reason,'state',c.state,
+        'correctionId',c.correction_id,'roundId',c.round_id,'reason',c.reason,'decision',c.decision,'state',c.state,
         'incidentReplay',c.incident_replay,'release',releases.details,'candidateVersionId',c.candidate_version_id,
         'developmentRequestId',c.development_request_id,'auditRequestId',c.audit_request_id)
         ORDER BY c.queued_at DESC,c.correction_id)

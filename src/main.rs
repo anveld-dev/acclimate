@@ -141,11 +141,13 @@ async fn run() -> RunResult {
         .acquire_timeout(Duration::from_secs(5))
         .connect_with(database_options)
         .await?;
-    let mut leader_guard = db.acquire().await?;
-    let leader: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
-        .bind(QUEUE_LOCK)
-        .fetch_one(&mut *leader_guard)
-        .await?;
+    let mut leader_guard = Some(db.acquire().await?);
+    leader_guard.as_mut().unwrap().close_on_drop();
+    let (leader_pid, leader): (i32, bool) =
+        sqlx::query_as("SELECT pg_backend_pid(),pg_try_advisory_lock($1)")
+            .bind(QUEUE_LOCK)
+            .fetch_one(&mut **leader_guard.as_mut().unwrap())
+            .await?;
     if !leader {
         return Err(std::io::Error::other(
             "another Acclimate service process owns the proposal queue",
@@ -225,7 +227,7 @@ async fn run() -> RunResult {
             learning_finished = true;
             Err(std::io::Error::other(format!("connected learning worker exited unexpectedly: {result:?}")).into())
         },
-        reason = monitor_lock(&mut leader_guard) => {
+        reason = monitor_lock(&db, &mut leader_guard, &runtime, leader_pid) => {
             ownership_lost = true;
             Err(QueueOwnershipLost(reason).into())
         },
@@ -274,14 +276,16 @@ async fn run() -> RunResult {
     }
     // Close, rather than pool, the lock session only after requests and worker
     // have drained or been cancelled. Pool return would retain the session lock.
-    let _ = tokio::time::timeout(
-        Duration::from_secs(2),
-        sqlx::query("SELECT pg_advisory_unlock($1)")
-            .bind(QUEUE_LOCK)
-            .execute(&mut *leader_guard),
-    )
-    .await;
-    let _ = tokio::time::timeout(Duration::from_secs(2), leader_guard.close()).await;
+    if let Some(mut guard) = leader_guard {
+        let _ = tokio::time::timeout(
+            Duration::from_secs(2),
+            sqlx::query("SELECT pg_advisory_unlock($1)")
+                .bind(QUEUE_LOCK)
+                .execute(&mut *guard),
+        )
+        .await;
+        guard.close_on_drop();
+    }
     if !drained && result.is_ok() {
         return Err(std::io::Error::other(
             "shutdown drain deadline exceeded; remaining tasks cancelled",
@@ -291,16 +295,65 @@ async fn run() -> RunResult {
     result
 }
 
-async fn monitor_lock(connection: &mut sqlx::pool::PoolConnection<sqlx::Postgres>) -> &'static str {
+async fn monitor_lock(
+    db: &sqlx::PgPool,
+    connection: &mut Option<sqlx::pool::PoolConnection<sqlx::Postgres>>,
+    runtime: &RuntimeStatus,
+    mut previous_pid: i32,
+) -> &'static str {
     loop {
+        let guard = connection.as_mut().expect("ownership connection assigned");
         let probe = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND pid=pg_backend_pid() AND granted AND classid=169 AND objid=3333947977 AND objsubid=1)"
-        ).fetch_one(&mut **connection);
-        match tokio::time::timeout(Duration::from_secs(2), probe).await {
-            Ok(Ok(true)) => {}
-            Ok(Ok(false)) => return "advisory lock is no longer held",
-            Ok(Err(_)) => return "database connection failed",
-            Err(_) => return "database connection timed out",
+        ).fetch_one(&mut **guard);
+        if !matches!(
+            tokio::time::timeout(Duration::from_secs(2), probe).await,
+            Ok(Ok(true))
+        ) {
+            runtime.ownership_uncertain();
+            runtime.settle_claims().await;
+            // Disconnect the previous session so its lock cannot survive in the pool.
+            drop(
+                connection
+                    .take()
+                    .expect("ownership connection assigned")
+                    .detach(),
+            );
+            let mut delay = Duration::from_millis(250);
+            loop {
+                let reacquire = async {
+                    let mut guard = db.acquire().await?;
+                    guard.close_on_drop();
+                    let (pid, acquired): (i32, bool) =
+                        sqlx::query_as("SELECT pg_backend_pid(),pg_try_advisory_lock($1)")
+                            .bind(QUEUE_LOCK)
+                            .fetch_one(&mut *guard)
+                            .await?;
+                    if acquired {
+                        return Ok::<_, sqlx::Error>((Some((guard, pid)), false));
+                    }
+                    // A stalled backend can keep its lock until it observes our disconnect.
+                    let competing: bool = sqlx::query_scalar(
+                        "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory'
+                         AND database=(SELECT oid FROM pg_database WHERE datname=current_database())
+                         AND granted AND classid=169 AND objid=3333947977 AND objsubid=1 AND pid<>$1)",
+                    ).bind(previous_pid).fetch_one(&mut *guard).await?;
+                    Ok((None, competing))
+                };
+                match tokio::time::timeout(Duration::from_secs(5), reacquire).await {
+                    Ok(Ok((Some((guard, pid)), _))) => {
+                        *connection = Some(guard);
+                        previous_pid = pid;
+                        runtime.ownership_acquired();
+                        break;
+                    }
+                    Ok(Ok((None, true))) => return "another service holds the advisory lock",
+                    _ => {
+                        tokio::time::sleep(delay).await;
+                        delay = (delay * 2).min(Duration::from_secs(10));
+                    }
+                }
+            }
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }

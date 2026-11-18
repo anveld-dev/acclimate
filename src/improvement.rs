@@ -397,9 +397,42 @@ static PROPOSAL_SLOT: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 pub async fn proposal_worker(s: AppState) {
     let _lifetime = s.runtime.worker_started();
     while !s.runtime.is_draining() {
-        let _=sqlx::query("UPDATE proposals SET status=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,error=CASE WHEN attempts<3 THEN 'worker interrupted; retrying' ELSE 'attempt limit reached' END WHERE status='running'").execute(&s.db).await;
-        if let Ok(Some(r))=sqlx::query("SELECT id,project_id,bundle_id FROM proposals WHERE status='queued' ORDER BY created_at LIMIT 1").fetch_optional(&s.db).await {
-            run_proposal(s.clone(),r.get("project_id"),r.get("bundle_id"),r.get("id")).await;
+        let next = if let Some(permit) = s.runtime.claim_permit().await {
+            let recovered = sqlx::query("UPDATE proposals SET status=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,
+                error=CASE WHEN attempts<3 THEN 'worker interrupted; retrying' ELSE 'attempt limit reached' END,
+                next_claim_at=now()+make_interval(secs=>power(2,attempts)) WHERE status='running'")
+                .execute(&s.db).await;
+            let next = match recovered {
+                Ok(_) => sqlx::query(
+                    "SELECT id,project_id,bundle_id FROM proposals
+                    WHERE status='queued' AND next_claim_at<=now() ORDER BY created_at LIMIT 1",
+                )
+                .fetch_optional(&s.db)
+                .await
+                .ok()
+                .flatten(),
+                Err(_) => None,
+            };
+            drop(permit);
+            next
+        } else {
+            None
+        };
+        if let Some(r) = next {
+            let id = r.get("id");
+            run_proposal(s.clone(), r.get("project_id"), r.get("bundle_id"), id).await;
+            if let Some(_permit) = s.runtime.claim_permit().await
+                && sqlx::query(
+                    "UPDATE proposals SET next_claim_at=now()+interval '5 seconds'
+                    WHERE id=$1 AND status='queued'",
+                )
+                .bind(id)
+                .execute(&s.db)
+                .await
+                .is_err()
+            {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
         } else {
             tokio::select! {
                 _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {},
@@ -491,7 +524,7 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
     for stage in usize::from(first_rejection.is_some())..2 {
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(125),
-            provider.propose_scoped(
+            provider.propose_classified(
                 parent_payload.clone(),
                 model_request.clone(),
                 policy.clone(),
@@ -500,18 +533,30 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
         .await;
         let (candidate, rationale) = match result {
             Ok(Ok(output)) => output,
-            Ok(Err(reason)) => {
-                let error = if reason.starts_with("Proposal format rejected: ") && managed {
-                    "proposal-format-rejected"
-                } else {
-                    public_edit_error(
-                        reason
-                            .strip_prefix("Proposal format rejected: ")
-                            .unwrap_or(&reason),
-                    )
-                    .unwrap_or("provider request failed")
-                };
-                fail_proposal(&s, id, attempt, error).await;
+            Ok(Err(error)) => {
+                match error {
+                    crate::ProposalFailure::Format(_) if managed => {
+                        let _ = sqlx::query(
+                            "UPDATE proposals SET status='failed',
+                            error='proposal-format-rejected',failure_kind='proposal-format-rejected'
+                            WHERE id=$1 AND status='running' AND attempts=$2",
+                        )
+                        .bind(id)
+                        .bind(attempt)
+                        .execute(&s.db)
+                        .await;
+                    }
+                    crate::ProposalFailure::Format(detail)
+                    | crate::ProposalFailure::Provider(detail) => {
+                        fail_proposal(
+                            &s,
+                            id,
+                            attempt,
+                            public_edit_error(&detail).unwrap_or("provider request failed"),
+                        )
+                        .await;
+                    }
+                }
                 return;
             }
             Err(_) => {
@@ -577,7 +622,7 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
                 } else {
                     "critic-unavailable"
                 };
-                let _ = sqlx::query("UPDATE proposals SET status='failed',error=$3,screening=screening || jsonb_build_array($4::jsonb) WHERE id=$1 AND status='running' AND attempts=$2")
+                let _ = sqlx::query("UPDATE proposals SET status='failed',error=$3,failure_kind=$3,screening=screening || jsonb_build_array($4::jsonb) WHERE id=$1 AND status='running' AND attempts=$2")
                     .bind(id).bind(attempt).bind(error).bind(record).execute(&s.db).await;
                 return;
             }
@@ -592,6 +637,9 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
             let _=sqlx::query("UPDATE proposals SET status='failed',error='candidate payload exceeds limit' WHERE id=$1 AND status='running' AND attempts=$2").bind(id).bind(attempt).execute(&s.db).await;
             return;
         }
+    };
+    let Some(_permit) = s.runtime.claim_permit().await else {
+        return;
     };
     let mut tx = match s.db.begin().await {
         Ok(t) => t,

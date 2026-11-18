@@ -76,7 +76,17 @@ def qualify(h, setup=None, world=None):
                     suspended = None
                 else:
                     assert h.sql('SELECT pg_terminate_backend(' + str(guard) + ')') == 't'
-                wait_event(process, 'restart')
+                deadline = time.monotonic() + 15
+                while time.monotonic() < deadline:
+                    current_guard = h.sql(
+                        "SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted "
+                        "AND classid=169 AND objid=3333947977 LIMIT 1"
+                    )
+                    if current_guard and int(current_guard) != guard:
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise AssertionError('The service did not reacquire its advisory lock')
                 wait_health(h.base)
                 assert process.poll() is None
                 os.kill(web_pid, 0)

@@ -23,7 +23,8 @@ SELECT jsonb_build_object(
     'cumulativeDevelopmentLowerBound',r.cumulative_bound,
     'auditRequestId',r.audit_request_id,
     'auditComparisonId',r.audit_comparison_id,
-    'promotionId',r.promotion_id,
+    'promotionId',COALESCE(r.promotion_id,r.chain_promotion_id),
+    'decision',r.decision,
     'fieldAudits',jsonb_build_object(
         'windowSize',COALESCE(decision.window_size,live.window_size),
         'regressions',COALESCE(decision.losses,live.losses),

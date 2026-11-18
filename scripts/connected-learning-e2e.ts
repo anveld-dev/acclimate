@@ -66,7 +66,7 @@ async function listen(server: Server): Promise<number> {
 }
 
 async function waitFor<T>(label: string, probe: () => Promise<T | undefined>): Promise<T> {
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 75_000;
   do {
     const found = await probe();
     if (found !== undefined) return found;
@@ -315,8 +315,7 @@ try {
         ...environment,
         ACCLIMATE_MODEL_ENDPOINT: `http://127.0.0.1:${modelPort}/v1/chat/completions`,
         ACCLIMATE_MODEL_TOKEN: modelToken,
-        ACCLIMATE_LEARNING_DRIFT_CHECK_STEPS: String(checkSteps),
-        ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS: '3',
+        ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS: String(checkSteps),
         ACCLIMATE_LEARNING_PARENT_MAX_AGE_SECONDS: '86400',
         ACCLIMATE_LEARNING_PARENT_MAX_REUSES: String(parentMaxReuses),
         ACCLIMATE_MODEL: 'gpt-6.2-sol',
@@ -1521,7 +1520,7 @@ try {
     installationId: structuralInstallation,
     automaticRollout: true,
     permittedPaths: ['AGENTS.md'],
-    maxProposalAdmissions: 4,
+    maxProposalAdmissions: 5,
     skillPackages: { createSkillNames: ['refunds'], retireSkillNames: ['refunds'] },
     development: descriptor(initialDevelopment),
     audits: auditApps.map(descriptor),
@@ -1531,10 +1530,18 @@ try {
   });
   await calibrateOnly(structural, structuralInstallation, initialDevelopment);
   const empty = await submit(structural, baseline, 'Keep current behavior exactly.');
-  const unchanged = await observe(structural, empty, 'rejected');
-  assert.equal(unchanged.candidateVersionId, null);
-  assert.equal(unchanged.developmentRequestId, null);
-  assert.equal((await api('GET', learning(structural))).proposalAdmissions, 0);
+  const formatRounds = await waitFor(
+    'one format refund and a final charged rejection',
+    async () => {
+      const view = await api<LearningEnrollmentStatus>('GET', learning(structural));
+      const rounds = view.rounds.filter((round) => round.outcomeId === empty);
+      return rounds.length === 2 && rounds.every((round) => round.state === 'rejected')
+        ? rounds
+        : undefined;
+    },
+  );
+  assert(formatRounds.every((round) => round.candidateVersionId === null && round.attempt === 1));
+  assert.equal((await api('GET', learning(structural))).proposalAdmissions, 1);
   assert.equal((await api('GET', learning(structural))).remainingAudits, 2);
   const reportSkill = createLearningOutcomeReporter({
     client: client('other', structural),
@@ -1660,7 +1667,16 @@ try {
   await stopService();
   await startService(2, 1);
   async function chainFixture(
-    mode: 'pass' | 'drift' | 'audit-failure' | 'external' | 'aged' | 'use-limit',
+    mode:
+      | 'pass'
+      | 'drift'
+      | 'audit-failure'
+      | 'external'
+      | 'aged'
+      | 'use-limit'
+      | 'short'
+      | 'chain-age'
+      | 'rotate',
   ) {
     const connection = await makeConnection(`Development chain ${mode}`);
     const installation = `chain-${mode}`;
@@ -1692,7 +1708,10 @@ try {
       maxCorrectionsPerRound: 2,
       selectionPolicies: {
         development: qualificationDevelopment,
-        audit: { ...qualificationPolicies.audit, nonInferiorityMargin: 0 },
+        audit: {
+          ...qualificationPolicies.audit,
+          nonInferiorityMargin: mode === 'short' || mode === 'chain-age' ? 0.55 : 0,
+        },
       },
       development: descriptor(apps.development),
       audits: apps.audits.map(descriptor),
@@ -1733,6 +1752,57 @@ try {
     assert.equal(firstView.developmentIncumbent?.nextAuditTrigger.acceptedStepsRemaining, 1);
     assert.equal(firstView.remainingAudits, 1);
     assert.equal((await fresh(connection)).id, baseline.id);
+    if (mode === 'rotate') {
+      const renewed = await api('POST', learning(connection) + '/renew', {
+        renewalId: randomUUID(),
+        expectedRevision: 0,
+        proposalAdmissions: 0,
+        selectionPolicies: {
+          development: { ...qualificationDevelopment, revision: '2' },
+          audit: { ...qualificationPolicies.audit, nonInferiorityMargin: 0 },
+        },
+        audits: [],
+      });
+      assert.equal(renewed.policyEpoch, 1);
+      const current = await inspect();
+      const discarded = current.rounds.find((round) => round.id === first.id);
+      assert.equal(discarded?.state, 'rejected');
+      assert.equal(discarded?.decision, 'chain_discarded');
+      const outcome = await api('GET', learning(connection) + '/outcomes/' + firstId);
+      assert.equal(outcome.corrections[0].state, 'queued');
+      await stop();
+      return { connection, first };
+    }
+    if (mode === 'short' || mode === 'chain-age') {
+      if (mode === 'chain-age') {
+        assert(database && process.env.EVALUATION_TEST_PSQL);
+        assert.match(first.id, /^[a-f0-9-]{36}$/);
+        execFileSync(
+          process.env.EVALUATION_TEST_PSQL,
+          [
+            '-X',
+            '-v',
+            'ON_ERROR_STOP=1',
+            '--dbname',
+            database,
+            '-c',
+            `BEGIN;
+          UPDATE connected_learning_incumbent_events SET created_at=now()-interval '25 hours'
+              WHERE round_id='${first.id}';
+          UPDATE connected_learning_corrections SET pending=true
+              WHERE correction_id=(SELECT correction_id FROM connected_learning_rounds WHERE id='${first.id}');
+          COMMIT;`,
+          ],
+          { stdio: 'ignore' },
+        );
+      }
+      const flushed = await observe(connection, firstId, 'promoted');
+      assert(flushed.auditRequestId);
+      assert.equal(flushed.cumulativeDevelopmentRequestId, null);
+      assert.equal((await inspect()).rounds.length, 1);
+      await stop();
+      return { connection, first, flushed };
+    }
     if (mode === 'external') {
       await stop();
       return { connection, first };
@@ -1815,6 +1885,9 @@ try {
     assert.equal(cumulative.parentVersionId, baseline.id);
     assert.equal(cumulative.candidateVersionId, second.candidateVersionId);
     const finished = await inspect();
+    const finalizedFirst = finished.rounds.find((round) => round.id === first.id);
+    assert.equal(finalizedFirst?.state, passes ? 'promoted' : 'rejected');
+    assert.equal(finalizedFirst?.decision, passes ? 'chain_promoted' : 'chain_discarded');
     assert.equal(finished.developmentIncumbent?.chainLength, 0);
     if (mode === 'drift') {
       assert.match(second.reason ?? '', /Cumulative development failed/);
@@ -1849,6 +1922,9 @@ try {
   const external = await chainFixture('external');
   const aged = await chainFixture('aged');
   const useLimit = await chainFixture('use-limit');
+  const short = await chainFixture('short');
+  const chainAge = await chainFixture('chain-age');
+  const rotatedChain = await chainFixture('rotate');
 
   const sourceUpdate = await operator.createVersion(
     project,
@@ -1875,14 +1951,27 @@ try {
     },
     randomUUID(),
   );
-  const reset = await api<LearningEnrollmentStatus>('GET', learning(external.connection));
+  const reset = await waitFor('source publish discards the chain', async () => {
+    const view = await api<LearningEnrollmentStatus>('GET', learning(external.connection));
+    return view.rounds.some((round) => round.id === external.first.id && round.state === 'rejected')
+      ? view
+      : undefined;
+  });
   assert.equal(reset.developmentIncumbent?.chainLength, 0);
   assert.equal(reset.developmentIncumbent?.versionId, baseline.id);
   assert.equal(reset.remainingAudits, 1);
-  assert(
-    reset.rounds.some((round) => round.id === external.first.id && round.state === 'developed'),
-  );
-  evidence.developmentChains = { compounded, drifted, failedAudit, external, aged, useLimit };
+
+  evidence.developmentChains = {
+    compounded,
+    drifted,
+    failedAudit,
+    external,
+    aged,
+    useLimit,
+    short,
+    chainAge,
+    rotatedChain,
+  };
   const beforeRefresh = await installedBundle(automatic);
   const refresh = {
     restoreId: randomUUID(),
@@ -1900,7 +1989,7 @@ try {
     failedWithdrawalReplay: triggeringLoss.outcomeId,
   };
   evidence.structuralLearning = {
-    unchanged: unchanged.id,
+    unchanged: formatRounds.map((round) => round.id),
     attempts: attempts.map((r: Round) => r.id),
     retirement: retiredRound.id,
   };

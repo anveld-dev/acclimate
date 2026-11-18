@@ -542,7 +542,7 @@ def review_publish(context, expected_verdict='fail'):
     command[command.index('--handoff')+1]=str(w.evaluator_app/'downloaded-evaluation-request.json')
     result=subprocess.run(command,cwd=w.evaluator_app,env=w.evaluator_env,capture_output=True,text=True,timeout=60)
     assert result.returncode=={'fail':2,'pass':0}[expected_verdict] and json.loads(result.stdout)['verdict']==expected_verdict
-    policy.get_by_role('button',name='Refresh policy receipts',exact=True).click()
+    policy.get_by_role('button',name='Refresh policy checks',exact=True).click()
     expect(policy.get_by_text({'fail':'Failed','pass':'Passed'}[expected_verdict],exact=True)).to_be_visible()
     if expected_verdict=='fail':
         expect(policy.get_by_text('Minimum mean improvement',exact=True)).to_be_visible()

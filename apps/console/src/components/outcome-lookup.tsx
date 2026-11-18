@@ -26,7 +26,7 @@ const correctionLabels: Record<string, string> = {
   private_evidence_unavailable: 'The app could not check the issue on the current version',
   admission_closed: 'This connection is closed to new proposals',
   admissions_exhausted: 'Proposal limit reached. Update the limit to continue.',
-  audits_exhausted: 'Independent comparisons exhausted. Install and register a fresh cohort.',
+  audits_exhausted: 'No independent comparisons remain. Add more cases to continue.',
   resolved: 'The issue is resolved on the current version',
 };
 

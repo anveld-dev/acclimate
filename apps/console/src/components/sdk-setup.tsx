@@ -231,7 +231,7 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
             >
               <p>
                 <strong>Delivery:</strong> a workspace admin issues content-read access in
-                Connections; optional observations use a separate receipt-write credential.
+                Connections; optional observations use a separate reporting credential.
               </p>
               <p>
                 <strong>Evaluation:</strong> ask the service operator for a dedicated workspace
@@ -326,7 +326,7 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
               <DisclosureContent className="sdk-detail-content">
                 <p>
                   <strong>Delivery:</strong> a workspace admin issues content-read access in
-                  Connections; optional observations use a separate receipt-write credential.
+                  Connections; optional observations use a separate reporting credential.
                 </p>
                 <p>
                   <strong>Evaluation:</strong> ask the service operator for a dedicated workspace
@@ -550,7 +550,7 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
             <p>
               Set <code>ACCLIMATE_INTEGRATION</code> to your connection ID to scope the TypeScript
               client’s delivery to that connection. To report observations, set{' '}
-              <code>ACCLIMATE_RECEIPT_TOKEN</code> to a separate receipt-write credential.
+              <code>ACCLIMATE_RECEIPT_TOKEN</code> to a separate reporting credential.
             </p>
             <p>
               {canManage ? (
@@ -561,9 +561,7 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
                   in Connections to create the reporting credential.
                 </>
               ) : (
-                <>
-                  Ask a workspace admin for a connection ID and a separate receipt-write credential.
-                </>
+                <>Ask a workspace admin for a connection ID and a separate reporting credential.</>
               )}
             </p>
             <p>
@@ -571,7 +569,7 @@ export function SdkSetup({ state, role }: { state: Ready; role?: string }) {
               retries. Optional reporting failures do not block delivery or application start.
             </p>
             <p>
-              Connect the receipt reporter to your application’s actual start event. Call{' '}
+              Connect reporting to your application’s actual start event. Call{' '}
               <code>
                 {isTypeScript
                   ? 'reporter.reportStarted(bundle)'

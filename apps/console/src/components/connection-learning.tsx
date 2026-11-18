@@ -285,7 +285,7 @@ export function ConnectionLearning({
             <p className="text-sm">
               Development policy · {status.policySummary.development}
               <br />
-              Audit policy · {status.policySummary.audit}
+              Independent comparison rules · {status.policySummary.audit}
             </p>
           )}
           {active && proposalLimitReached && <p className="text-sm">Proposal limit reached.</p>}
@@ -513,7 +513,7 @@ export function ConnectionLearning({
           )}
           {decision?.approve && decision.policies === null && (
             <p role="status">
-              Policy receipts could not be loaded. Refresh learning status to review a blocking
+              Policy checks could not be loaded. Refresh learning status to review a blocking
               policy.
             </p>
           )}
@@ -544,7 +544,7 @@ export function ConnectionLearning({
                 maxLength={1024}
                 onChange={(e) => setOverrideReason(e.target.value)}
               />
-              <p>The release records your reason and the policy receipts you reviewed.</p>
+              <p>The release records your reason and the policy checks you reviewed.</p>
             </div>
           )}
           <DialogFooter>
@@ -781,7 +781,7 @@ function RenewalForm({
   return (
     <form onSubmit={(event) => void submit(event)} className="space-y-3 pt-2">
       <div className="space-y-1.5">
-        <Label htmlFor={`${prefix}-limit`}>Additional proposal admissions</Label>
+        <Label htmlFor={`${prefix}-limit`}>Additional proposals</Label>
         <Input
           id={`${prefix}-limit`}
           name="proposalAdmissions"

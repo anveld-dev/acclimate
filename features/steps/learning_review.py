@@ -173,7 +173,7 @@ def released(context):
     w = context.world
     region = w.browser_fixture.page.get_by_role('region', name='Continuous learning')
     expect(region.get_by_role('button', name='Review rollout', exact=True)).to_have_count(0)
-    expect(region.get_by_text('Rolled out', exact=False)).to_be_visible()
+    expect(region.get_by_text('Released · outcome', exact=False)).to_be_visible()
     round_ = wait_for_round(w, 'promoted')
     release, *previous = w.call('GET', w.history_path)['items']
     assert previous == w.original_history

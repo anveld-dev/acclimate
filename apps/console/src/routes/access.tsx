@@ -5,5 +5,7 @@ export const Route = createFileRoute('/access')({
   validateSearch: (search: Record<string, unknown>) => search,
   loaderDeps: ({ search }) => ({ search }),
   loader: ({ deps }) => readLanding({ data: { legacy: 'access', search: deps.search } }),
-  component: () => <LegacyPage landing={Route.useLoaderData()} />,
+  component: function LegacyAccessPage() {
+    return <LegacyPage landing={Route.useLoaderData()} />;
+  },
 });

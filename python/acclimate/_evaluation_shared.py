@@ -252,7 +252,7 @@ def validate_service_url(value: Any) -> None:
         url = urllib.parse.urlsplit(value)
         if (url.scheme != "https" and not (url.scheme == "http" and url.hostname in ("127.0.0.1","localhost","::1"))) or not url.hostname or url.username or url.password or url.query or url.fragment or url.path not in ("", "/"):
             raise ValueError()
-        url.port
+        _ = url.port  # Reading the port validates its syntax and range.
     except ValueError:
         raise EvaluationError("config.url") from None
 

@@ -5,5 +5,7 @@ export const Route = createFileRoute('/setup')({
   validateSearch: (search: Record<string, unknown>) => search,
   loaderDeps: ({ search }) => ({ search }),
   loader: ({ deps }) => readLanding({ data: { legacy: 'setup', search: deps.search } }),
-  component: () => <LegacyPage landing={Route.useLoaderData()} />,
+  component: function LegacySetupPage() {
+    return <LegacyPage landing={Route.useLoaderData()} />;
+  },
 });

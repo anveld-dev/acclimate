@@ -22,8 +22,8 @@ WITH job AS (
     FROM job j JOIN connected_learning_corrections f USING (project_id,bundle_id,integration_id,outcome_id)
     LEFT JOIN connected_learning_correction_work w ON (w.project_id,w.integration_id,w.correction_id)
         = (f.project_id,f.integration_id,f.correction_id)
-    LEFT JOIN LATERAL (SELECT id,state,reason,incident_replay,promotion_id,candidate_version_id,
-                         development_request_id,audit_request_id FROM connected_learning_rounds
+    LEFT JOIN LATERAL (SELECT id,state,reason,incident_replay,promotion_id,COALESCE(release_candidate_id,candidate_version_id) AS candidate_version_id,
+                         COALESCE(cumulative_request_id,development_request_id) AS development_request_id,audit_request_id FROM connected_learning_rounds
         JOIN connected_learning_round_replays replay ON replay.round_id=connected_learning_rounds.id
         WHERE (project_id,integration_id,correction_id)=(f.project_id,f.integration_id,f.correction_id)
         ORDER BY attempt DESC LIMIT 1) r ON true
@@ -37,7 +37,7 @@ WITH job AS (
     SELECT p.id, jsonb_build_object('promotionId',p.id,'versionId',p.version_id,'revision',p.revision::text,
         'withdrawn',f.withdrawn,'rollback',CASE WHEN rb.id IS NOT NULL THEN
             jsonb_build_object('promotionId',rb.id,'versionId',rb.version_id,'revision',rb.revision::text) END,
-        'developmentRequestId',r.development_request_id,'auditRequestId',r.audit_request_id) AS details
+        'developmentRequestId',COALESCE(r.cumulative_request_id,r.development_request_id),'auditRequestId',r.audit_request_id) AS details
     FROM promotions p JOIN connected_learning_field_releases f ON f.promotion_id=p.id
     LEFT JOIN promotions rb ON rb.id=f.rollback_promotion_id
     LEFT JOIN connected_learning_rounds r ON r.promotion_id=p.id

@@ -23,6 +23,7 @@ import {
 } from '../packages/sdk/src/learning/index.js';
 import type {
   BundlePayload,
+  LearningEnrollmentStatus,
   LearningOutcomeRequest,
   VerifiedBundle,
   VersionMetadata,
@@ -111,7 +112,7 @@ function runRefundTask(payload: BundlePayload, task: Task): string {
 
 // Each cohort uses distinct purchases with a different correct refund balance.
 let purchaseSequence = 0;
-function cohort(dataset: string, tasks: Task[]) {
+function cohort(dataset: string, tasks: Task[], reward?: (bundle: BundlePayload) => number) {
   const cases = tasks.map((task, index) => {
     const sequence = ++purchaseSequence;
     const remainingBalance = 650 + sequence * 157;
@@ -135,10 +136,12 @@ function cohort(dataset: string, tasks: Task[]) {
     cases,
     async execute({ bundle, input, caseId }) {
       executions.push({ dataset, caseId, version: bundle.version.id });
-      return { output: runRefundTask(bundle.payload, input) };
+      return {
+        output: reward ? String(reward(bundle.payload)) : runRefundTask(bundle.payload, input),
+      };
     },
     async grade({ output, expected }) {
-      return { reward: output === expected ? 1 : 0 };
+      return { reward: reward ? Number(output) : output === expected ? 1 : 0 };
     },
   });
 }
@@ -154,6 +157,9 @@ interface Round {
   parentVersionId: string;
   candidateVersionId: string | null;
   developmentRequestId: string | null;
+  developmentParentVersionId: string;
+  developmentCandidateVersionId: string | null;
+  cumulativeDevelopmentRequestId: string | null;
   developmentComparisonId: string | null;
   proposalId: string;
   auditRequestId: string | null;
@@ -299,12 +305,14 @@ try {
       encoding: 'utf8',
     }),
   );
-  async function startService() {
+  async function startService(checkSteps = 1) {
     child = spawn('target/debug/acclimate-service', [], {
       env: {
         ...environment,
         ACCLIMATE_MODEL_ENDPOINT: `http://127.0.0.1:${modelPort}/v1/chat/completions`,
         ACCLIMATE_MODEL_TOKEN: modelToken,
+        ACCLIMATE_LEARNING_DRIFT_CHECK_STEPS: String(checkSteps),
+        ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS: '3',
         ACCLIMATE_MODEL: 'gpt-6.2-sol',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1632,6 +1640,112 @@ try {
   assert.equal(incidentFailure.promotionId, null);
   assert.equal((await fresh(incidentConnection)).id, incidentBundle.version.id);
 
+  // The legacy cases use a one-step cadence. Exercise multi-step search through
+  // the same service and installed evaluator, with isolated cohorts.
+  await stopService();
+  await startService(2);
+  async function chainFixture(mode: 'pass' | 'drift' | 'audit-failure' | 'external') {
+    const connection = await makeConnection(`Development chain ${mode}`);
+    const installation = `chain-${mode}`;
+    const tasks: Task[] = [{ kind: 'refund' }, { kind: 'refund-status' }];
+    const inventory = Array.from({ length: 12 }, (_, index) => tasks[index % tasks.length]);
+    const apps = {
+      development: cohort(
+        `${installation}-development`,
+        inventory,
+        mode === 'drift'
+          ? (payload) =>
+              0.8 -
+              0.12 *
+                payload.files.flatMap((file) => file.text.match(/Drift exercise/g) ?? []).length
+          : undefined,
+      ),
+      audits: [
+        cohort(`${installation}-audit`, tasks, mode === 'audit-failure' ? () => 0 : undefined),
+      ],
+    };
+    await api('PUT', learning(connection), {
+      installationId: installation,
+      automaticRollout: true,
+      permittedPaths: ['AGENTS.md'],
+      maxProposalAdmissions: 4,
+      selectionPolicies: {
+        development: qualificationDevelopment,
+        audit: { ...qualificationPolicies.audit, nonInferiorityMargin: 0 },
+      },
+      development: descriptor(apps.development),
+      audits: apps.audits.map(descriptor),
+      evaluatorPrincipal: 'evaluator',
+      outcomePrincipal: 'other',
+    });
+    const stop = enableDriver(connection, installation, apps);
+    const inspect = () => api<LearningEnrollmentStatus>('GET', learning(connection));
+    const firstId = await submit(
+      connection,
+      baseline,
+      mode === 'drift' ? 'Drift exercise one.' : alpha,
+    );
+    const first = await observe(connection, firstId, 'developed');
+    assert.equal(first.auditRequestId, null);
+    const firstView = await inspect();
+    assert.equal(firstView.developmentIncumbent?.versionId, first.candidateVersionId);
+    assert.equal(firstView.developmentIncumbent?.chainLength, 1);
+    assert.equal(firstView.developmentIncumbent?.nextAuditTrigger.acceptedStepsRemaining, 1);
+    assert.equal(firstView.remainingAudits, 1);
+    assert.equal((await fresh(connection)).id, baseline.id);
+    if (mode === 'external') {
+      await stop();
+      return { connection, first };
+    }
+
+    const secondId = await submit(
+      connection,
+      baseline,
+      mode === 'drift' ? 'Drift exercise two.' : beta,
+    );
+    const second = await observe(connection, secondId, mode === 'pass' ? 'promoted' : 'rejected');
+    assert.equal(second.parentVersionId, baseline.id);
+    assert.equal(second.developmentParentVersionId, first.developmentCandidateVersionId);
+    assert(second.cumulativeDevelopmentRequestId);
+    assert.notEqual(second.developmentCandidateVersionId, second.candidateVersionId);
+    const cumulative = await client('evaluator').getEvaluation(
+      project,
+      bundle.id,
+      second.cumulativeDevelopmentRequestId,
+    );
+    assert.equal(cumulative.parentVersionId, baseline.id);
+    assert.equal(cumulative.candidateVersionId, second.candidateVersionId);
+    const finished = await inspect();
+    assert.equal(finished.developmentIncumbent?.chainLength, 0);
+    if (mode === 'drift') {
+      assert.match(second.reason ?? '', /Cumulative development failed/);
+      assert.equal(second.auditRequestId, null);
+      assert.equal(finished.remainingAudits, 1);
+    } else {
+      assert(second.auditRequestId);
+      assert(second.auditComparisonId);
+      const audit = await client('evaluator').getEvaluation(
+        project,
+        bundle.id,
+        second.auditRequestId,
+      );
+      assert.equal(audit.parentVersionId, baseline.id);
+      assert.equal(audit.candidateVersionId, second.candidateVersionId);
+      assert.equal(finished.rounds.filter((round) => round.auditRequestId).length, 1);
+      assert.equal(finished.remainingAudits, 0);
+    }
+    assert.equal(
+      (await fresh(connection)).id,
+      mode === 'pass' ? second.candidateVersionId : baseline.id,
+    );
+    await stop();
+    return { connection, first, second };
+  }
+  const compounded = await chainFixture('pass');
+  const drifted = await chainFixture('drift');
+  const failedAudit = await chainFixture('audit-failure');
+  const external = await chainFixture('external');
+
   const sourceUpdate = await operator.createVersion(
     project,
     bundle.id,
@@ -1657,6 +1771,14 @@ try {
     },
     randomUUID(),
   );
+  const reset = await api<LearningEnrollmentStatus>('GET', learning(external.connection));
+  assert.equal(reset.developmentIncumbent?.chainLength, 0);
+  assert.equal(reset.developmentIncumbent?.versionId, baseline.id);
+  assert.equal(reset.remainingAudits, 1);
+  assert(
+    reset.rounds.some((round) => round.id === external.first.id && round.state === 'developed'),
+  );
+  evidence.developmentChains = { compounded, drifted, failedAudit, external };
   const beforeRefresh = await installedBundle(automatic);
   const refresh = {
     restoreId: randomUUID(),

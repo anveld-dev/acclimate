@@ -9,7 +9,7 @@ A closed round releases its audit reservation if no complete comparison was reco
 | Method and suffix | Authority and operation |
 | --- | --- |
 | `PUT` | A workspace administrator enrolls an enabled connection with a released source channel, separate outcome/evaluator principals, an installation ID, file permissions, proposal allowance, development and audit descriptors and rollout settings. Enabling automatic rollout requires promotion authority. |
-| `GET` | Inspect enrollment, remaining audit inventory, delivery target and recent rounds. Protected audit descriptors are available to authorized administrators. |
+| `GET` | Inspect enrollment, remaining audit inventory, delivery target, development incumbent and recent rounds. Protected audit descriptors are available to authorized administrators. |
 | `POST /outcomes` | The outcome principal reports `outcomeId`, `status`, `versionId`, `digest`, the observed `deliveryRevision` and optional teaching. A matching `startedReceiptId` identifies a sample for field grading. |
 | `POST /corrections` | The outcome principal appends a correction to a recorded outcome. Supply a stable `correctionId`, the original `outcomeId`, and an approved `lesson` or `feedback`. Replay the same contents under the same ID. |
 | `GET /work` | The enrolled evaluator fetches its assigned development/audit evaluations and outstanding observation rechecks. |
@@ -66,6 +66,16 @@ The proposer receives outcomes, lessons, bundles, and prior attempts as fenced d
 Service-managed proposals use the configured provider to screen candidate edits for case-specific data or hard-coding, planted instructions, credentials, and contradictions. A rejection permits one repair with the critic’s objections. A second rejection closes the round with reason `critic-rejected`. An unavailable or invalid critic closes it with reason `critic-unavailable`. Only accepted candidates proceed to development. The proposal API exposes completed screens through `screening`, with each stage, verdict, rationale, and bounded edit excerpts.
 
 The proposer sees a bounded history of prior final outcomes and edit excerpts for the same connection and bundle. Case-level history comes from bound development comparisons. Held-out case details stay private.
+
+#### Development incumbent and cumulative audit
+
+Each enrollment and policy epoch starts its private development chain at the published delivery version. A critic-approved candidate must pass the paired development gate and any required replays against its immediate incumbent before it becomes the next search parent. An accepted step can finish in `developed` while jobs keep serving the published version. The proposal growth cap applies both to each edit and to the cumulative payload relative to the published version.
+
+The service checks cumulative development after three accepted steps by default, or on the accepted step that exhausts admissions. `ACCLIMATE_LEARNING_DRIFT_CHECK_STEPS` and `ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS` each default to 3 and accept integers from 1 to 1,000. The earlier limit sets the checkpoint. Before reserving an audit, the same calibrated development gate must pass against the published delivery baseline. The first step's comparison can serve both roles when it already compares that pair. The audit then compares the cumulative head with the same published baseline using one fresh cohort.
+
+A failed cumulative check resets search to the published checkpoint. Audit failure, review decline, or expiry also resets search there. A successful release starts a new chain at the newly delivered version. Changes to either published channel invalidate the chain, and a source-only change starts search again at the connection's current delivery version. Use the reviewed source restore to adopt the new source version. Each accepted edge and reset is retained with its epoch and timestamp. For a multi-step release, the service evaluates a content-identical direct child of the published baseline and records both version IDs.
+
+Inspect `developmentIncumbent` for the head, chain length, cumulative mean estimate and lower bound when measured for that head, and the next audit trigger. Round fields `developmentParentVersionId` and `developmentCandidateVersionId` show the search edge. `candidateVersionId` identifies the release version once it exists. Separate cumulative request and comparison IDs identify the additional development evidence. For an evaluation of the baseline-rooted copy, `GET /work` marks the development or audit assignment with `cumulative: true`. These requests bind both versions and omit the individual edit's proposal ID.
 
 #### Observations and delayed feedback
 

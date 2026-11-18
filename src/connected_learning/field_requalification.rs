@@ -182,9 +182,9 @@ pub(super) async fn check_required_replays(
     tx: &mut Tx<'_>,
     c: &Connection,
     round: &sqlx::postgres::PgRow,
+    candidate: Uuid,
 ) -> ApiResult<bool> {
     use sqlx::Row;
-    let candidate = round.get("candidate_version_id");
     let revision = round.get("parent_revision");
     if eligible(tx, c, candidate, revision).await? {
         return Ok(true);

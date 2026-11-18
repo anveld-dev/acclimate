@@ -1011,6 +1011,58 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         }
     }).await.unwrap();
     assert_eq!(malformed, "Missing lesson path");
+    // Seed a developed search edge, then promote the source through the public API.
+    // The worker must persist the reset even without another admitted correction.
+    sqlx::query(
+        "INSERT INTO connected_learning_incumbent_events
+         (project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,source_revision,
+          version_id,parent_version_id,round_id,development_comparison_id,chain_length,reason)
+         SELECT project_id,integration_id,policy_epoch,parent_version_id,parent_revision,1,
+          candidate_version_id,parent_version_id,id,development_comparison_id,1,'development accepted'
+         FROM connected_learning_rounds WHERE id=$1",
+    )
+    .bind(round_id)
+    .execute(&db)
+    .await
+    .unwrap();
+    let source_change = call(
+        &app,
+        "POST",
+        &format!("/v1/projects/{p}/bundles/{bundle}/channels/stable/promotions"),
+        "owner",
+        json!({"expectedRevision":"1","versionId":baseline,"unevaluatedReason":"Review source again"}),
+    )
+    .await;
+    assert_eq!(source_change.0, StatusCode::CREATED, "{}", source_change.1);
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let latest: (Uuid, i32, String) = sqlx::query_as(
+                "SELECT version_id,chain_length,reason FROM connected_learning_incumbent_events
+                 WHERE (project_id,integration_id)=($1,$2) ORDER BY sequence DESC LIMIT 1",
+            )
+            .bind(&p)
+            .bind(enrollment_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+            if latest.1 == 0 {
+                assert_eq!(latest, (baseline, 0, "published channel changed".into()));
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let ancestry: (Uuid, Uuid, Uuid) = sqlx::query_as(
+        "SELECT version_id,parent_version_id,development_comparison_id
+         FROM connected_learning_incumbent_events WHERE round_id=$1 AND reason='development accepted'",
+    )
+    .bind(round_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(ancestry, (replacement, baseline, development_comparison));
     state.runtime.begin_draining();
     worker.await.unwrap();
     let inspected = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;
@@ -1227,7 +1279,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         "target":{"kind":"source", "revision":"1", "versionId":replacement}
     });
     let published = call(&app, "POST", &format!("{resolve}/promotions"), "owner",
-        json!({"expectedRevision":"1","versionId":replacement,"unevaluatedReason":"Reviewed source update"})).await;
+        json!({"expectedRevision":"2","versionId":replacement,"unevaluatedReason":"Reviewed source update"})).await;
     assert_eq!(published.0, StatusCode::CREATED, "{}", published.1);
     assert_eq!(
         call(&app, "POST", &restore, "owner", refresh.clone())
@@ -1235,7 +1287,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             .0,
         StatusCode::CONFLICT
     );
-    refresh["target"]["revision"] = json!("2");
+    refresh["target"]["revision"] = json!("3");
     let updated = call(&app, "POST", &restore, "owner", refresh).await;
     assert_eq!(updated.0, StatusCode::OK, "{}", updated.1);
     assert_eq!(updated.1["revision"], "4");

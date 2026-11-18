@@ -11,6 +11,43 @@
     }
   ],
   "paths": {
+    "/v1/projects/{projectId}/integrations/{integrationId}/learning": {
+      "get": {
+        "operationId": "getLearningEnrollment",
+        "summary": "Inspect the connection’s delivery and private development incumbent",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "integrationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enrollment status and recent rounds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningEnrollmentInspection"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/projects/{projectId}/bundles": {
       "post": {
         "operationId": "createBundle",
@@ -2421,6 +2458,135 @@
       }
     },
     "schemas": {
+      "LearningEnrollmentInspection": {
+        "type": "object",
+        "required": [
+          "deliveredVersionId",
+          "deliveredRevision",
+          "developmentIncumbent",
+          "rounds"
+        ],
+        "properties": {
+          "deliveredVersionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deliveredRevision": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "developmentIncumbent": {
+            "type": "object",
+            "required": [
+              "versionId",
+              "chainLength",
+              "cumulativeEstimate",
+              "cumulativeLowerBound",
+              "nextAuditTrigger"
+            ],
+            "properties": {
+              "versionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "chainLength": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cumulativeEstimate": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "cumulativeLowerBound": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "nextAuditTrigger": {
+                "type": "object",
+                "required": [
+                  "state",
+                  "acceptedStepsRemaining"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "awaitingSteps",
+                      "checkingCumulative",
+                      "auditPending",
+                      "awaitingReview",
+                      "unavailable"
+                    ]
+                  },
+                  "acceptedStepsRemaining": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "rounds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "enum": [
+                    "proposing",
+                    "development",
+                    "developed",
+                    "audit",
+                    "awaiting_review",
+                    "promoted",
+                    "rejected"
+                  ]
+                },
+                "developmentParentVersionId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "developmentCandidateVersionId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "cumulativeDevelopmentRequestId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "cumulativeDevelopmentComparisonId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                }
+              },
+              "cumulativeDevelopmentEstimate": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "cumulativeDevelopmentLowerBound": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      },
       "BundlePayload": {
         "type": "object",
         "additionalProperties": false,

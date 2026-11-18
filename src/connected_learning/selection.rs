@@ -196,12 +196,22 @@ impl SelectionPolicy {
         self.check_calibrated(comparison, self.id == "connected-audit", 0.0)
     }
 
-    /// Called only after the service verifies a complete, bound comparison.
+    #[cfg(test)]
     pub(crate) fn check_calibrated(
         &self,
         comparison: &ComparisonRequest,
         audit: bool,
         calibrated_sd: f64,
+    ) -> Result<(), &'static str> {
+        self.check_with_summary(comparison, audit, calibrated_sd, &mut None)
+    }
+
+    pub(crate) fn check_with_summary(
+        &self,
+        comparison: &ComparisonRequest,
+        audit: bool,
+        calibrated_sd: f64,
+        summary: &mut Option<(f64, f64)>,
     ) -> Result<(), &'static str> {
         let sign = if self.metric.direction == Direction::Higher {
             1.0
@@ -278,6 +288,9 @@ impl SelectionPolicy {
             (DEVELOPMENT_Z, self.minimum_mean_improvement)
         };
         let bound = lower_bound(&gains, calibrated_sd, z);
+        if bound.is_finite() {
+            *summary = Some((gains.iter().sum::<f64>() / case_count, bound));
+        }
         if !bound.is_finite() || bound <= threshold {
             return Err("Minimum mean improvement was not reached");
         }

@@ -256,15 +256,8 @@ pub(super) async fn remaining_audits(
     integration: Uuid,
 ) -> ApiResult<i64> {
     sqlx::query_scalar(
-        "SELECT count(*) FROM connected_learning_enrollments e
-         CROSS JOIN LATERAL jsonb_array_elements(e.audits) WITH ORDINALITY AS a(descriptor,n)
-         WHERE (e.project_id,e.integration_id)=($1,$2)
-           AND (NOT e.automatic_rollout OR descriptor->>'fixtureProtocol'='installed-v1')
-           AND NOT EXISTS (
-              SELECT 1 FROM connected_learning_rounds r
-              WHERE (r.project_id,r.integration_id,r.audit_index)=(e.project_id,e.integration_id,(n-1)::integer)
-           )
-           AND connected_learning_audit_registered(e.project_id,e.bundle_id,e.integration_id,(n-1)::integer,descriptor)",
+        "SELECT count(*) FROM connected_learning_available_audits
+         WHERE (project_id,integration_id)=($1,$2)",
     )
     .bind(project)
     .bind(integration)

@@ -360,6 +360,15 @@ async fn upgrade_preserves_connected_history_and_quarantines_overlapping_slots()
     .await
     .unwrap();
     assert_eq!(registrations, vec![(2, 0, true, false, true); 2]);
+    // Both legacy rosters overlap at slot 0. Only the first enrollment spent its fresh slot 1.
+    let available: Vec<(Uuid, i32)> = sqlx::query_as(
+        "SELECT integration_id,audit_index FROM connected_learning_available_audits
+         WHERE project_id='upgrade-cohorts'",
+    )
+    .fetch_all(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(available, vec![(enrollments[1], 1)]);
     sqlx::raw_sql(&format!(
         "SET search_path TO public; DROP SCHEMA {schema} CASCADE"
     ))

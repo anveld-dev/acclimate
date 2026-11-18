@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
 import { AcclimateClient } from '../client.js';
 import { assertGuidedTarget, validateEvaluationServiceUrl } from '../evaluation-validation.js';
 import { evaluationMutationFor } from './http-bridge.js';
+import { postFingerprint } from './operation-fingerprint.js';
 
 export type EvaluationMutationOperation =
   | 'start'
@@ -50,15 +50,7 @@ export function evaluationFingerprint(
   scope: EvaluationMutationScope,
   body: string,
 ): string {
-  return (
-    'sha256:' +
-    createHash('sha256')
-      .update('POST\0')
-      .update(evaluationOperationPath(operation, scope))
-      .update('\0')
-      .update(body, 'utf8')
-      .digest('hex')
-  );
+  return postFingerprint(evaluationOperationPath(operation, scope), body);
 }
 
 export function createEvaluationTransport(config: EvaluationTransportConfig) {

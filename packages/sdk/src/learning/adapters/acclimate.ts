@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { AcclimateClient } from '../../client.js';
 import { assertCompatible } from '../../compatibility.js';
 import { validatePayload, evaluationDescriptorDifferences } from '../../validation.js';
@@ -18,6 +17,7 @@ import type {
 import { operationRuntime } from '../operations.js';
 import { proposalEvidence, validDevelopmentFeedback } from '../history.js';
 import { evaluationMutationFor } from '../../internal/http-bridge.js';
+import { postFingerprint } from '../../internal/operation-fingerprint.js';
 import { captureDefinition } from '../../evaluation/definition.js';
 import { teachingText } from '../admission.js';
 import type { Ref, ExperimentManifestV1 } from '../evidence-types.js';
@@ -112,9 +112,11 @@ function attemptedEdits(parent: BundlePayload, candidate: BundlePayload): Array<
       after: newText.slice(offset, offset + 100).join('') }];
   }).slice(0, 2);
 }
-function fingerprint(path: string, body: unknown): string {
-  return 'sha256:' + createHash('sha256').update('POST\0').update(path).update('\0')
-    .update(JSON.stringify(body)).digest('hex');
+type CreationMode = 'dispatch' | 'reconcile';
+interface CreationResults {
+  versions: VersionMetadata;
+  proposals: Proposal;
+  'evaluation-requests': Evaluation;
 }
 function cost(comparison: Comparison): number | null {
   let total = 0;
@@ -148,8 +150,6 @@ export function createAcclimateLearningAdapter(options: AcclimateLearningAdapter
   const developmentControlsDigest = options.developmentControlsDigest;
   if (developmentControlsDigest !== undefined && !digestPattern.test(developmentControlsDigest))
     fail('learning.adapter.configuration');
-  const mutate = async <T>(path: string, body: unknown, key: string): Promise<T> =>
-    await evaluationMutationFor(client)(path, JSON.stringify(body), key) as T;
   const scope = { projectId: options.projectId, bundleId: options.bundleId, channel: options.channel };
   if (!options.revision || !scope.projectId || !scope.bundleId || !scope.channel ||
       typeof prepareExperiment !== 'function' || !(disclosure === 'sha256' || typeof disclosure === 'function') ||
@@ -199,14 +199,24 @@ export function createAcclimateLearningAdapter(options: AcclimateLearningAdapter
     return { bundle: { version: observed, payload, resolvedAt: Date.now(), stale: false }, bytes };
   }
   const verified = async (meta: VersionMetadata) => (await verifiedSnapshot(meta)).bundle;
-  async function committed<T>(op: LearningOperation, path: string, body: unknown): Promise<T | null> {
-    const observation = await client.getOperation(scope.projectId, op.key, path);
-    if (observation.status !== 'committed') return null;
-    if (observation.operationId !== op.key || observation.path !== path ||
-        observation.requestFingerprint !== fingerprint(path, body))
-      fail('learning.adapter.operation_binding');
-    return observation.result as T;
+  function creationFor(op: Readonly<LearningOperation>, signal: AbortSignal, mode: CreationMode) {
+    return {
+      mode,
+      async create<K extends keyof CreationResults>(target: K, body: object): Promise<CreationResults[K] | null> {
+        const path = root + '/' + target;
+        signal.throwIfAborted();
+        if (mode === 'dispatch')
+          return await evaluationMutationFor(client)(path, JSON.stringify(body), op.key) as CreationResults[K];
+        const observation = await client.getOperation(scope.projectId, op.key, path);
+        if (observation.status !== 'committed') return null;
+        if (observation.operationId !== op.key || observation.path !== path ||
+            observation.requestFingerprint !== postFingerprint(path, JSON.stringify(body)))
+          fail('learning.adapter.operation_binding');
+        return observation.result as CreationResults[K];
+      },
+    };
   }
+  type Creation = ReturnType<typeof creationFor>;
   let targetVerified = false;
   async function verifyMutationTarget(): Promise<boolean> {
     if (targetVerified) return true;
@@ -290,14 +300,11 @@ export function createAcclimateLearningAdapter(options: AcclimateLearningAdapter
     }
   }
   async function publishCandidate(
-    op: LearningOperation, baseline: VerifiedBundle, payload: BundlePayload, context: WorkContext,
-    reconcile: boolean, mutationPreparation?: Ref<MutationPreparationV1>,
+    op: LearningOperation, baseline: VerifiedBundle, payload: BundlePayload, creation: Creation,
+    mutationPreparation?: Ref<MutationPreparationV1>,
   ): Promise<WorkReceipt> {
     const body = { parentVersionId: baseline.version.id, payload };
-    context.signal.throwIfAborted();
-    const created = reconcile
-      ? await committed<VersionMetadata>(op, root + '/versions', body)
-      : await mutate<VersionMetadata>(root + '/versions', body, op.key);
+    const created = await creation.create('versions', body);
     if (!created) return receipt(op, 'unknown', false, 'learning.adapter.operation_unobserved');
     const candidate = await verified(version(created, scope.bundleId));
     if (candidate.version.parentVersionId !== baseline.version.id ||
@@ -306,25 +313,25 @@ export function createAcclimateLearningAdapter(options: AcclimateLearningAdapter
       output: { kind: 'proposal', candidate: candidate.version, ...(mutationPreparation ? { mutationPreparation } : {}) },
       costMicroUsd: 0 };
   }
-  async function proposed(op: LearningOperation, context: WorkContext, reconcile: boolean): Promise<WorkReceipt> {
+  async function proposed(op: LearningOperation, context: WorkContext, creation: Creation): Promise<WorkReceipt> {
     const { bundle: baseline, bytes } = await verifiedSnapshot(op.baseline.version);
     context.signal.throwIfAborted();
     if (mutation) {
       const preparation = await prepareMutation(op, baseline, bytes, context);
       if (typeof preparation === 'string') {
-        if (reconcile) fail(preparation);
+        if (creation.mode === 'reconcile') fail(preparation);
         return { ...receipt(op, 'failed', true, preparation), costMicroUsd: 0 };
       }
       const mutationPreparation = await context.artifacts.putArtifact(preparation);
       assertArtifactBytes(mutationPreparation, canonicalJson(preparation));
-      return publishCandidate(op, baseline, preparation.plan.payload, context, reconcile, mutationPreparation);
+      return publishCandidate(op, baseline, preparation.plan.payload, creation, mutationPreparation);
     }
     if (installedProposer) {
       // This seam is deliberately synchronous/pure. A paid app proposer needs its own retained attempt protocol.
       const payload = structuredClone(installedProposer(structuredClone(op), structuredClone(baseline)));
       fixedEdits(baseline.payload, payload, allowedPaths);
       assertCompatible(payload, compatibilityTarget);
-      return publishCandidate(op, baseline, payload, context, reconcile);
+      return publishCandidate(op, baseline, payload, creation);
     }
     let evidence = [...op.teaching];
     let proposalHypothesis = hypothesis;
@@ -362,10 +369,7 @@ export function createAcclimateLearningAdapter(options: AcclimateLearningAdapter
       hypothesis: proposalHypothesis,
       evidence,
     };
-    context.signal.throwIfAborted();
-    const created = reconcile
-      ? await committed<Proposal>(op, root + '/proposals', body)
-      : await mutate<Proposal>(root + '/proposals', body, op.key);
+    const created = await creation.create('proposals', body);
     if (!created) return receipt(op, 'unknown', false, 'learning.adapter.operation_unobserved');
     if (!created.id || created.parentVersionId !== baseline.version.id) fail('learning.adapter.proposal_binding');
     const proposal = await client.getProposal(scope.projectId, scope.bundleId, created.id);
@@ -382,7 +386,7 @@ export function createAcclimateLearningAdapter(options: AcclimateLearningAdapter
     return { operationId: op.id, status: 'succeeded', executionSettled: true,
       output: { kind: 'proposal', candidate: candidate.version }, costMicroUsd: null };
   }
-  async function evaluated(op: LearningOperation, context: WorkContext, reconcile: boolean): Promise<WorkReceipt> {
+  async function evaluated(op: LearningOperation, context: WorkContext, creation: Creation): Promise<WorkReceipt> {
     const experiment = await prepareExperiment({ operation: structuredClone(op), artifacts: context.artifacts });
     validateRef(experiment);
     const manifest = await context.artifacts.readArtifact(experiment);
@@ -431,10 +435,7 @@ export function createAcclimateLearningAdapter(options: AcclimateLearningAdapter
       candidateVersionId: op.candidate!.id, candidateDigest: op.candidate!.digest,
       ...descriptor, requireBoundEvidence: true,
     };
-    context.signal.throwIfAborted();
-    const request = reconcile
-      ? await committed<Evaluation>(op, root + '/evaluation-requests', body)
-      : await mutate<Evaluation>(root + '/evaluation-requests', body, op.key);
+    const request = await creation.create('evaluation-requests', body);
     if (!request) return receipt(op, 'unknown', false, 'learning.adapter.operation_unobserved');
     if (!request.id || request.parentVersionId !== body.parentVersionId ||
         request.parentDigest !== body.parentDigest || request.candidateVersionId !== body.candidateVersionId ||
@@ -465,10 +466,11 @@ export function createAcclimateLearningAdapter(options: AcclimateLearningAdapter
     return { operationId: op.id, status: 'succeeded', executionSettled: true,
       output: { kind: 'evaluation', comparison: structuredClone(comparison) }, costMicroUsd: cost(comparison) };
   }
-  async function work(op: Readonly<LearningOperation>, context: WorkContext, reconcile: boolean): Promise<WorkReceipt> {
+  async function work(op: Readonly<LearningOperation>, context: WorkContext, mode: CreationMode): Promise<WorkReceipt> {
     assertOperation(op);
     try {
-      return op.kind === 'propose' ? await proposed(op, context, reconcile) : await evaluated(op, context, reconcile);
+      const creation = creationFor(op, context.signal, mode);
+      return op.kind === 'propose' ? await proposed(op, context, creation) : await evaluated(op, context, creation);
     } catch (error) {
       if (error instanceof AcclimateLearningAdapterError || error instanceof LearningEvidenceError) throw error;
       if (error instanceof EvaluationError && error.code === 'journal.busy')
@@ -492,8 +494,8 @@ export function createAcclimateLearningAdapter(options: AcclimateLearningAdapter
       version(resolution.version, scope.bundleId);
       return structuredClone(resolution);
     },
-    dispatch: (op, context) => work(op, context, false),
-    reconcile: (op, context) => work(op, context, true),
+    dispatch: (op, context) => work(op, context, 'dispatch'),
+    reconcile: (op, context) => work(op, context, 'reconcile'),
     decide(comparison: Comparison, stage: 'development' | 'audit'): SelectionVerdict {
       const policyDigest = policyDigests[stage];
       const binding = comparison.evaluation;

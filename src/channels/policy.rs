@@ -11,8 +11,7 @@ pub(super) async fn approve(
     reviewed: Option<PolicyOverride>,
     restore_from: Option<&str>,
 ) -> ApiResult<(Option<Json<PolicyOverride>>, Option<Uuid>)> {
-    // A baseline-rooted release of a development chain inherits the blocking
-    // receipts of its content-identical search candidate.
+    // Historical copy releases inherit the blocking receipts of the chain head.
     let search: Option<Uuid> = sqlx::query_scalar(
         "SELECT candidate_version_id FROM connected_learning_rounds
          WHERE (project_id,bundle_id,release_candidate_id)=($1,$2,$3)",

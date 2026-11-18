@@ -7,11 +7,11 @@ import { readEvaluatorConfig } from '../evaluation/config.js';
 import { captureDefinition } from '../evaluation/definition.js';
 import {
   EvaluationError,
-  runEvaluation,
   toSafeDiagnostic,
   type EvaluationApp,
   type SafeDiagnostic,
 } from '../evaluation/index.js';
+import { runEvaluationRequest } from '../evaluation/runner.js';
 import type {
   DeliveryReceiptRequest,
   LearningFieldAuditRequest,
@@ -314,7 +314,8 @@ export interface ConnectedLearningDriverOptions {
 }
 
 function validateInstalledApps(value: ConnectedLearningDriverOptions['apps']) {
-  const invalid = (cause?: unknown) => new EvaluationError('learning.apps_invalid_export', {}, { cause });
+  const invalid = (cause?: unknown) =>
+    new EvaluationError('learning.apps_invalid_export', {}, { cause });
   if (!value || typeof value !== 'object' || !Array.isArray(value.audit)) throw invalid();
   for (const callback of [value.recheck, value.requalifyFieldCase, value.replayIncident]) {
     if (callback !== undefined && typeof callback !== 'function') throw invalid();
@@ -446,14 +447,14 @@ export async function serveConnectedLearning(
   async function evaluate(bundleId: string, item: LearningWorkItem): Promise<void> {
     const calibration = item.phase === 'calibration';
     const phase = calibration ? 'development' : item.phase;
-    const proposalBound = !calibration && item.cumulative !== true;
+    const cumulative = !calibration && item.cumulative === true;
     if (!uuid.test(item.evaluationRequestId) || !Object.hasOwn(apps, phase))
       throw new EvaluationError('evidence.identity_mismatch');
     const request = await client.getEvaluation(projectId, bundleId, item.evaluationRequestId);
     if (
       request.id !== item.evaluationRequestId ||
       request.requireBoundEvidence !== true ||
-      Boolean(request.proposalId) !== proposalBound ||
+      (!cumulative && Boolean(request.proposalId) === calibration) ||
       (request.parentVersionId === request.candidateVersionId) !== calibration
     )
       throw new EvaluationError('evidence.identity_mismatch');
@@ -484,19 +485,22 @@ export async function serveConnectedLearning(
         const app = matches[0]!;
         const live = captureDefinition(app).execution === 'live';
         if (live && !allowLive) throw new EvaluationError('config.schema');
-        await runEvaluation({
-          app,
-          configPath,
-          handoff,
-          allowLive: live,
-          retryMissingTrial: true,
-          cachedParent: item.cachedParent
-            ? async () =>
-                (await work()).items.find((next) => next.evaluationRequestId === request.id)
-                  ?.cachedParent
-            : undefined,
-          signal: running,
-        });
+        await runEvaluationRequest(
+          {
+            app,
+            configPath,
+            handoff,
+            allowLive: live,
+            retryMissingTrial: true,
+            cachedParent: item.cachedParent
+              ? async () =>
+                  (await work()).items.find((next) => next.evaluationRequestId === request.id)
+                    ?.cachedParent
+              : undefined,
+            signal: running,
+          },
+          cumulative && !request.proposalId,
+        );
       },
     );
   }

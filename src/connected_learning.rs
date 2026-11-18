@@ -608,7 +608,7 @@ async fn enroll(
             ),
             policy_override: None,
         },
-        Some(&source),
+        crate::channels::Publication::Restore(&source),
     )
     .await?;
     let row = sqlx::query("INSERT INTO connected_learning_enrollments(project_id,integration_id,bundle_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,development,audits,automatic_rollout,outcome_principal,evaluator_principal,authorized_by,automatic_rollback,selection_policies,skill_packages,max_corrections_per_round) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *")
@@ -1051,7 +1051,7 @@ async fn work(
             UNION ALL
             SELECT jsonb_build_object('roundId',r.id,'evaluationRequestId',e.id,
                 'phase',CASE WHEN e.id=r.audit_request_id THEN 'audit' ELSE 'development' END,
-                'cumulative',r.release_candidate_id IS NOT NULL,'status',e.status,
+                'cumulative',r.cumulative_request_id IS NOT NULL,'status',e.status,
                 'cachedParent',registration.payload)
             FROM connected_learning_rounds r JOIN evaluation_requests e
               ON (e.project_id,e.bundle_id)=(r.project_id,r.bundle_id)
@@ -1168,4 +1168,30 @@ pub(crate) fn audit_visible(evidence_match: &str, principal: usize, reviewer: us
            AND cl.evaluator_principal <> ${principal}
            AND (NOT ${reviewer} OR cl.outcome_principal = ${principal}))"
     )
+}
+
+pub(crate) async fn descends_from(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    project: &str,
+    bundle: Uuid,
+    candidate: Uuid,
+    baseline: Uuid,
+) -> ApiResult<bool> {
+    sqlx::query_scalar(
+        "WITH RECURSIVE lineage(id) AS (
+            SELECT parent_version_id FROM versions
+            WHERE (project_id,bundle_id,id)=($1,$2,$3)
+            UNION
+            SELECT v.parent_version_id FROM versions v JOIN lineage l ON v.id=l.id
+            WHERE (v.project_id,v.bundle_id)=($1,$2) AND l.id<>$4
+        )
+        SELECT EXISTS(SELECT 1 FROM lineage WHERE id=$4)",
+    )
+    .bind(project)
+    .bind(bundle)
+    .bind(candidate)
+    .bind(baseline)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(db)
 }

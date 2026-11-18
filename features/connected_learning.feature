@@ -1,6 +1,7 @@
 @service @learning @provider_fixture
 Feature: Learning from application feedback
   The application provides the evidence used to change the connection's delivered instructions.
+  A qualified multi-step chain delivers its head with its development parent intact.
 
   Background:
     Given a published bundle containing "Review code."

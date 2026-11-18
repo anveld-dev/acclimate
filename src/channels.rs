@@ -198,10 +198,24 @@ pub(crate) async fn promote(
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),
     };
-    let promotion =
-        promote_in_tx(&mut command.tx, &p, path(&b)?, &c, &a.principal, req, None).await?;
+    let promotion = promote_in_tx(
+        &mut command.tx,
+        &p,
+        path(&b)?,
+        &c,
+        &a.principal,
+        req,
+        Publication::Standard,
+    )
+    .await?;
     crate::commands::finish_mutation(command, StatusCode::CREATED, promotion).await
 }
+pub(crate) enum Publication<'a> {
+    Standard,
+    Learning,
+    Restore(&'a str),
+}
+
 pub(crate) async fn promote_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     p: &str,
@@ -209,7 +223,7 @@ pub(crate) async fn promote_in_tx(
     c: &str,
     principal: &str,
     req: PromoteRequest,
-    restored_release_channel: Option<&str>,
+    publication: Publication<'_>,
 ) -> ApiResult<Promotion> {
     if !valid_channel(c) || req.comparison_id.is_some() == req.unevaluated_reason.is_some() {
         return Err(err(
@@ -256,14 +270,14 @@ pub(crate) async fn promote_in_tx(
         .map_err(db)?
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "not_found", "Comparison not found"))?;
         let cmp: ComparisonRequest = serde_json::from_value(cr.get("body")).map_err(db)?;
+        let parent = path(&cmp.parent_version_id)?;
+        let direct_parent = vr.get::<Option<Uuid>, _>("parent_version_id") == Some(parent);
         if !cr.get::<bool, _>("complete")
             || cmp.candidate_version_id != vid.to_string()
-            || cmp.parent_version_id
-                != vr
-                    .get::<Option<Uuid>, _>("parent_version_id")
-                    .map(|x| x.to_string())
-                    .unwrap_or_default()
-            || previous.map(|x| x.to_string()) != Some(cmp.parent_version_id.clone())
+            || previous != Some(parent)
+            || !(direct_parent
+                || matches!(publication, Publication::Learning)
+                    && crate::connected_learning::descends_from(tx, p, bid, vid, parent).await?)
         {
             return Err(err(
                 StatusCode::CONFLICT,
@@ -274,7 +288,7 @@ pub(crate) async fn promote_in_tx(
         let dig = sqlx::query(
             "SELECT digest FROM versions WHERE id=$1 AND project_id=$2 AND bundle_id=$3",
         )
-        .bind(path(&cmp.parent_version_id)?)
+        .bind(parent)
         .bind(p)
         .bind(bid)
         .fetch_one(&mut **tx)
@@ -308,14 +322,16 @@ pub(crate) async fn promote_in_tx(
             "A policy override requires comparison evidence.",
         ));
     }
-    let historical_channel = restored_release_channel.or_else(|| {
+    let historical_channel = if let Publication::Restore(channel) = publication {
+        Some(channel)
+    } else {
         // An ordinary manual rollback can only inherit an existing decision
         // for this exact version on this channel, outside its original transition.
         (req.comparison_id.is_none()
             && previous.is_some()
             && previous != vr.get::<Option<Uuid>, _>("parent_version_id"))
         .then_some(c)
-    });
+    };
     let (policy_override, approval_id) =
         policy::approve(tx, p, bid, vid, req.policy_override, historical_channel).await?;
     let nr = revision + 1;
@@ -355,4 +371,95 @@ pub(crate) async fn promote_in_tx(
         reviewer: principal.into(),
         created_at: when,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[sqlx::test]
+    #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
+    async fn learning_publication_requires_ancestry(db: sqlx::PgPool) {
+        let project = "learning-lineage";
+        let bundle = Uuid::new_v4();
+        let baseline = Uuid::new_v4();
+        let step = Uuid::new_v4();
+        let head = Uuid::new_v4();
+        let unrelated = Uuid::new_v4();
+        let mut tx = db.begin().await.unwrap();
+        sqlx::query("INSERT INTO projects(id,name) VALUES($1,$1)")
+            .bind(project)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO bundles(id,project_id,name) VALUES($1,$2,'fixture')")
+            .bind(bundle)
+            .bind(project)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let digest = format!("sha256:{}", "a".repeat(64));
+        for (id, parent) in [
+            (baseline, None),
+            (step, Some(baseline)),
+            (head, Some(step)),
+            (unrelated, None),
+        ] {
+            sqlx::query("INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload,created_by)
+                VALUES($1,$2,$3,$4,$5,$6,'fixture')")
+                .bind(id).bind(project).bind(bundle).bind(parent).bind(&digest)
+                .bind(br#"{"schemaVersion":1,"files":[]}"#.as_slice())
+                .execute(&mut *tx).await.unwrap();
+        }
+        sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'stable',1,$3)")
+            .bind(project).bind(bundle).bind(baseline).execute(&mut *tx).await.unwrap();
+
+        for (candidate, publication, allowed) in [
+            (unrelated, Publication::Learning, false),
+            (head, Publication::Standard, false),
+            (head, Publication::Learning, true),
+        ] {
+            let comparison = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO comparisons(id,project_id,bundle_id,body,complete,submitter)
+                VALUES($1,$2,$3,$4,true,'fixture')",
+            )
+            .bind(comparison)
+            .bind(project)
+            .bind(bundle)
+            .bind(json!({
+                "parentVersionId": baseline, "candidateVersionId": candidate,
+                "parentDigest": digest, "candidateDigest": digest,
+                "datasetRevision": "fixture", "graderRevision": "fixture",
+                "runtime": {}, "expectedCases": [], "results": []
+            }))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            let result = promote_in_tx(
+                &mut tx,
+                project,
+                bundle,
+                "stable",
+                "fixture",
+                PromoteRequest {
+                    version_id: candidate.to_string(),
+                    expected_revision: "1".into(),
+                    comparison_id: Some(comparison.to_string()),
+                    unevaluated_reason: None,
+                    policy_override: None,
+                },
+                publication,
+            )
+            .await;
+            if allowed {
+                let promotion = result.unwrap();
+                assert_eq!(promotion.version.id, head.to_string());
+                assert_eq!(promotion.version.parent_version_id, Some(step.to_string()));
+            } else {
+                assert_eq!(result.err().unwrap().1, "parent_conflict");
+            }
+        }
+    }
 }

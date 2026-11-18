@@ -1642,6 +1642,24 @@ async fn review(
             "Independent reviewer required",
         ));
     }
+    let command = crate::commands::DurableCommand::new(
+        &connection.project,
+        integration,
+        "review",
+        &actor.principal,
+        round_id,
+        json!({"approve":review.approve,"policyOverride":review.policy_override}),
+    ).with_legacy_request(
+        json!({"approve":review.approve,"policyOverride":review.policy_override.clone().map(crate::PolicyOverride::normalized)}),
+    );
+    let replay = command
+        .replay(&mut tx, || conflict("Round already has a review"))
+        .await;
+    match replay {
+        Ok(Some(response)) => return Ok(Json(response)),
+        Err(error) if error.0 != StatusCode::CONFLICT => return Err(error),
+        _ => {}
+    }
     let round = sqlx::query(
         "SELECT r.*,replay.incident_replay FROM connected_learning_rounds r
          JOIN connected_learning_round_replays replay ON replay.round_id=r.id
@@ -1678,23 +1696,8 @@ async fn review(
              FROM promotions p WHERE (p.project_id,p.bundle_id,p.id)=($1,$2,$3)"
         )).bind(&connection.project).bind(connection.bundle).bind(promotion)
             .bind(&actor.principal).bind(can_read).fetch_one(&mut *tx).await.map_err(db)?;
-        let recorded = decision
-            .get::<Option<sqlx::types::Json<crate::PolicyOverride>>, _>("policy_override")
-            .map(|v| v.0);
         let reviewer: String = decision.get("reviewer");
         let automatic = round_decision.as_deref() == Some("automatic_rollout");
-        if review.approve
-            && !automatic
-            && reviewer == actor.principal
-            && review
-                .policy_override
-                .map(crate::PolicyOverride::normalized)
-                == recorded
-        {
-            return Ok(Json(
-                json!({"roundId":round_id,"state":state,"promotionId":promotion}),
-            ));
-        }
         let mut message = if automatic {
             "Automatic rollout already released this candidate.".to_owned()
         } else {
@@ -1716,12 +1719,7 @@ async fn review(
         connection.project
     );
     if state == "rejected" && round_decision.as_deref() == Some("review_declined") {
-        let reviewer: Option<String> = sqlx::query_scalar(
-            "SELECT principal_id FROM mutation_audit WHERE project_id=$1 AND path=$2 AND operation_key=$3 ORDER BY id DESC LIMIT 1"
-        ).bind(&connection.project).bind(&route).bind(round_id.to_string()).fetch_optional(&mut *tx).await.map_err(db)?;
-        if !review.approve && reviewer.as_deref() == Some(&actor.principal) {
-            return Ok(Json(json!({"roundId":round_id,"state":state})));
-        }
+        let reviewer: Option<String> = round.get("reviewer_principal");
         let message = reviewer.as_ref().map_or_else(
             || "This rollout was already declined.".to_owned(),
             |principal| format!("This rollout was already declined by {principal}."),
@@ -1737,8 +1735,8 @@ async fn review(
         return Err(conflict("Review deadline expired"));
     }
     if !review.approve {
-        sqlx::query("UPDATE connected_learning_rounds SET decision='review_declined' WHERE id=$1")
-            .bind(round_id)
+        sqlx::query("UPDATE connected_learning_rounds SET decision='review_declined',reviewer_principal=$2 WHERE id=$1")
+            .bind(round_id).bind(&actor.principal)
             .execute(&mut *tx)
             .await
             .map_err(db)?;
@@ -1748,8 +1746,9 @@ async fn review(
             VALUES($1,$2,$3,$4,$5,$6)")
             .bind(&connection.project).bind(actor.user_id).bind(&actor.service_principal)
             .bind(&actor.principal).bind(route).bind(round_id.to_string()).execute(&mut *tx).await.map_err(db)?;
-        tx.commit().await.map_err(db)?;
-        return Ok(Json(json!({"roundId":round_id,"state":"rejected"})));
+        return command
+            .finish(tx, json!({"roundId":round_id,"state":"rejected"}))
+            .await;
     }
     let baseline = connection.baseline(&mut tx).await?;
     if connection.sync_incumbent(&mut tx, baseline).await? || !baseline_matches(&round, baseline) {
@@ -1787,10 +1786,12 @@ async fn review(
     connection
         .sync_incumbent(&mut tx, (release_candidate(&round), baseline.1 + 1))
         .await?;
-    tx.commit().await.map_err(db)?;
-    Ok(Json(
-        json!({"roundId":round_id,"state":"promoted","promotionId":promotion}),
-    ))
+    command
+        .finish(
+            tx,
+            json!({"roundId":round_id,"state":"promoted","promotionId":promotion}),
+        )
+        .await
 }
 
 #[cfg(test)]

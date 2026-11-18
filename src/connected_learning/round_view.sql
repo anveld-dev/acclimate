@@ -25,8 +25,8 @@ SELECT jsonb_build_object(
     'auditComparisonId',r.audit_comparison_id,
     'promotionId',r.promotion_id,
     'fieldAudits',jsonb_build_object(
-        'windowSize',r.field_audit_window_size,
-        'regressions',r.field_audit_regressions,
+        'windowSize',COALESCE(decision.window_size,live.window_size),
+        'regressions',COALESCE(decision.losses,live.losses),
         'rollbackPromotionId',release.rollback_promotion_id
     )
 )
@@ -41,6 +41,19 @@ CROSS JOIN LATERAL (
 ) members
 LEFT JOIN connected_learning_round_replays replay ON replay.round_id=r.id
 LEFT JOIN connected_learning_field_releases release ON release.promotion_id=r.promotion_id
+LEFT JOIN LATERAL (
+    SELECT d.window_size,d.losses FROM connected_learning_field_decisions d
+    WHERE d.promotion_id=release.promotion_id
+       AND (d.kind='rollback' OR d.control_version_id=release.control_version_id)
+    ORDER BY CASE d.kind WHEN 'rollback' THEN 0 WHEN 'withdraw' THEN 1 ELSE 2 END
+    LIMIT 1
+) decision ON true
+CROSS JOIN LATERAL (
+    SELECT count(*) AS window_size,count(*) FILTER (WHERE v.grade='loss') AS losses
+    FROM connected_learning_field_verdicts v
+    WHERE v.promotion_id=release.promotion_id AND v.control_version_id=release.control_version_id
+      AND v.grade IN ('win','loss','tie')
+) live
 WHERE (r.project_id,r.integration_id)=($1,$2)
 ORDER BY r.created_at DESC,r.id DESC
 LIMIT 100

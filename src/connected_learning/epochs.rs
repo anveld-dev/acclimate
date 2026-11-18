@@ -151,6 +151,22 @@ pub(super) async fn renew(
     if app_principal(&row, &actor.principal) {
         return Err(denied());
     }
+    let command = crate::commands::DurableCommand::new(
+        &project,
+        integration,
+        "renew",
+        &actor.principal,
+        request.renewal_id,
+        body.clone(),
+    );
+    if let Some(response) = command
+        .replay(&mut tx, || {
+            conflict("Renewal ID already binds different settings")
+        })
+        .await?
+    {
+        return Ok(Json(response));
+    }
     if let Some((prior, revision)) = sqlx::query_as::<_, (Value, i64)>(
         "SELECT request,revision FROM connected_learning_renewals
          WHERE project_id=$1 AND integration_id=$2 AND renewal_id=$3",
@@ -285,23 +301,9 @@ pub(super) async fn renew(
         &request.audits,
     )
     .await?;
-    sqlx::query(
-        "INSERT INTO connected_learning_renewals(project_id,integration_id,renewal_id,request,revision,authorized_by)
-         VALUES($1,$2,$3,$4,$5,$6)",
-    )
-    .bind(&project)
-    .bind(integration)
-    .bind(request.renewal_id)
-    .bind(body)
-    .bind(revision)
-    .bind(actor.principal)
-    .execute(&mut *tx)
-    .await
-    .map_err(db)?;
-    tx.commit().await.map_err(db)?;
     let mut view = enrollment_view(&updated, true, true)?;
     view["appliedRenewalRevision"] = json!(revision);
-    Ok(Json(view))
+    command.finish(tx, view).await
 }
 
 pub(super) async fn remaining_audits(

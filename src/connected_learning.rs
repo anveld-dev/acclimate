@@ -413,8 +413,16 @@ async fn enroll(
             "Skill package permissions require bounded unique skill names",
         ));
     }
+    let command = crate::commands::DurableCommand::optional(
+        &h,
+        &project,
+        integration,
+        "enrollment",
+        &actor.principal,
+        serde_json::to_value(&request).map_err(db)?,
+    )?;
     let expected_rollout = request.expected_automatic_rollout.take();
-    let connection = sqlx::query("SELECT bundle_id,channel FROM integrations WHERE project_id=$1 AND id=$2 AND enabled FOR UPDATE")
+    let connection = sqlx::query("SELECT bundle_id,channel,enabled FROM integrations WHERE project_id=$1 AND id=$2 FOR UPDATE")
         .bind(&project).bind(integration).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(absent)?;
     if let Some(row) = sqlx::query(
         "SELECT * FROM connected_learning_enrollments WHERE project_id=$1 AND integration_id=$2",
@@ -427,6 +435,18 @@ async fn enroll(
     {
         if app_principal(&row, &actor.principal) {
             return Err(denied());
+        }
+        if let Some(command) = &command
+            && let Some(response) = command
+                .replay(&mut tx, || {
+                    conflict("Enrollment key already binds different settings")
+                })
+                .await?
+        {
+            return Ok(Json(response));
+        }
+        if !connection.get::<bool, _>("enabled") {
+            return Err(absent());
         }
         let mut frozen = config(&row)?;
         let previous_packages = frozen.skill_packages.clone();
@@ -511,7 +531,12 @@ async fn enroll(
             && previous_rollout == request.automatic_rollout
             && previous_rollback == request.automatic_rollback
         {
-            return Ok(Json(enrollment_view(&row, true, true)?));
+            return crate::commands::DurableCommand::finish_optional(
+                command,
+                tx,
+                enrollment_view(&row, true, true)?,
+            )
+            .await;
         }
         let reauthorize = (!previous_rollout && request.automatic_rollout)
             || (previous_rollback != request.automatic_rollback
@@ -525,8 +550,15 @@ async fn enroll(
             .bind(request.skill_packages.as_ref().map(serde_json::to_value).transpose().map_err(db)?)
             .bind(&request.permitted_paths)
             .fetch_one(&mut *tx).await.map_err(db)?;
-        tx.commit().await.map_err(db)?;
-        return Ok(Json(enrollment_view(&row, true, true)?));
+        return crate::commands::DurableCommand::finish_optional(
+            command,
+            tx,
+            enrollment_view(&row, true, true)?,
+        )
+        .await;
+    }
+    if !connection.get::<bool, _>("enabled") {
+        return Err(absent());
     }
     if expected_rollout.is_some() {
         return Err(conflict(
@@ -607,8 +639,12 @@ async fn enroll(
     .execute(&mut *tx)
     .await
     .map_err(db)?;
-    tx.commit().await.map_err(db)?;
-    Ok(Json(enrollment_view(&row, true, true)?))
+    crate::commands::DurableCommand::finish_optional(
+        command,
+        tx,
+        enrollment_view(&row, true, true)?,
+    )
+    .await
 }
 
 async fn record_authorization(
@@ -723,15 +759,34 @@ async fn stop(
     let actor = learning_admin(&s, &h, &project)?;
     let mut tx = s.db.begin().await.map_err(db)?;
     crate::auth::authorize_transaction(&mut tx, &actor, &project, "admin").await?;
-    let current = enrollment(&mut tx, &project, integration).await?;
+    let current = corrections::locked(&mut tx, &project, integration).await?;
+    let command = crate::commands::DurableCommand::optional(
+        &h,
+        &project,
+        integration,
+        "stop",
+        &actor.principal,
+        Value::Null,
+    )?;
     if app_principal(&current, &actor.principal) {
         return Err(denied());
+    }
+    if let Some(command) = &command
+        && let Some(response) = command
+            .replay(&mut tx, || conflict("Stop key already used"))
+            .await?
+    {
+        return Ok(Json(response));
     }
     let enabled = current.get("enabled");
     let row = sqlx::query("UPDATE connected_learning_enrollments SET stopped_at=COALESCE(stopped_at,now()) WHERE project_id=$1 AND integration_id=$2 RETURNING *")
         .bind(project).bind(integration).fetch_one(&mut *tx).await.map_err(db)?;
-    tx.commit().await.map_err(db)?;
-    Ok(Json(enrollment_view(&row, enabled, true)?))
+    crate::commands::DurableCommand::finish_optional(
+        command,
+        tx,
+        enrollment_view(&row, enabled, true)?,
+    )
+    .await
 }
 
 // Keep the original parent binding in the idempotent outcome response even
@@ -776,24 +831,29 @@ async fn submit_outcome(
     if row.get::<String, _>("outcome_principal") != actor.principal {
         return Err(denied());
     }
+    let bundle: Uuid = row.get("bundle_id");
+    let body = serde_json::to_value(&outcome).map_err(db)?;
+    let command = crate::commands::DurableCommand::new(
+        &project,
+        integration,
+        "outcome",
+        &actor.principal,
+        outcome.outcome_id,
+        body.clone(),
+    );
+    if let Some(response) = command
+        .replay(&mut tx, || {
+            conflict("Outcome ID was already used for different content")
+        })
+        .await?
+    {
+        return Ok(Json(response));
+    }
     corrections::validate_teaching(&row, outcome.lesson.as_ref(), outcome.feedback.as_ref())?;
     if outcome.require_incident_replay && outcome.lesson.is_none() && outcome.feedback.is_none() {
         return Err(invalid(
             "An incident replay requires a lesson or graded discrepancy",
         ));
-    }
-    let bundle: Uuid = row.get("bundle_id");
-    let body = serde_json::to_value(&outcome).map_err(db)?;
-    let fingerprint = crate::digest(&serde_json::to_vec(&body).map_err(db)?);
-    let prior = sqlx::query_as::<_, (String, Option<Uuid>)>("SELECT fingerprint,field_parent_version_id FROM connected_learning_outcomes WHERE project_id=$1 AND integration_id=$2 AND bundle_id=$3 AND outcome_id=$4")
-        .bind(&project).bind(integration).bind(bundle).bind(outcome.outcome_id).fetch_optional(&mut *tx).await.map_err(db)?;
-    if let Some((prior, parent)) = prior {
-        if prior != fingerprint {
-            return Err(conflict(
-                "Outcome ID was already used for different content",
-            ));
-        }
-        return outcome_response(&mut tx, &project, bundle, &outcome, parent).await;
     }
     if !row.get::<bool, _>("enabled")
         || row
@@ -871,9 +931,9 @@ async fn submit_outcome(
     };
     let inserted = sqlx::query(
         "INSERT INTO connected_learning_outcomes(project_id,integration_id,bundle_id,outcome_id,
-             version_id,digest,status,lesson,feedback,submitted_by,fingerprint,
+             version_id,digest,status,lesson,feedback,submitted_by,
              started_receipt_id,field_parent_version_id,observed_revision)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          ON CONFLICT DO NOTHING",
     )
     .bind(&project)
@@ -900,7 +960,6 @@ async fn submit_outcome(
             .map_err(db)?,
     )
     .bind(&actor.principal)
-    .bind(&fingerprint)
     .bind(outcome.started_receipt_id)
     .bind(field_parent)
     .bind(observed_revision)
@@ -916,8 +975,7 @@ async fn submit_outcome(
     if outcome.lesson.is_some() || outcome.feedback.is_some() {
         corrections::append(&mut tx, &row, &outcome.into(), &actor.principal).await?;
     }
-    tx.commit().await.map_err(db)?;
-    Ok(response)
+    command.finish(tx, response.0).await
 }
 
 async fn work(

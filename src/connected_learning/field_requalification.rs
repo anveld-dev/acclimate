@@ -5,11 +5,11 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Replay {
     version_id: Uuid,
@@ -132,6 +132,22 @@ pub(super) async fn submit(
         .ok()
         .filter(|v| *v > 0 && v.to_string() == replay.baseline_revision)
         .ok_or_else(|| conflict("Invalid baseline revision"))?;
+    let command = crate::commands::DurableCommand::new(
+        &c.project,
+        integration,
+        "field-replay",
+        &c.evaluator,
+        format!("{}:{revision}:{}", replay.version_id, replay.outcome_id),
+        serde_json::to_value(&replay).map_err(db)?,
+    );
+    if let Some(response) = command
+        .replay(&mut tx, || {
+            conflict("A different field replay result already exists")
+        })
+        .await?
+    {
+        return Ok(Json(response));
+    }
     if digest(&mut tx, &c, replay.version_id).await? != replay.digest {
         return Err(conflict("Field replay candidate digest does not match"));
     }
@@ -147,11 +163,10 @@ pub(super) async fn submit(
     .await
     .map_err(db)?
     .ok_or_else(|| conflict("Outcome is not a required field replay for these bytes"))?;
-    if let Some(previous) = previous {
-        if previous != replay.verdict {
-            return Err(conflict("A different field replay result already exists"));
-        }
-    } else {
+    if previous.is_some() {
+        return Err(conflict("A different field replay result already exists"));
+    }
+    {
         if !matches!(replay.verdict.as_str(), "pass" | "regression")
             || !crate::connected_learning::statistics::valid_replays(
                 &replay.verdict,
@@ -174,8 +189,7 @@ pub(super) async fn submit(
             .bind(&c.project).bind(integration).bind(c.bundle).bind(&replay.attempts)
             .execute(&mut *tx).await.map_err(db)?;
     }
-    tx.commit().await.map_err(db)?;
-    Ok(Json(json!({"accepted":true})))
+    command.finish(tx, json!({"accepted":true})).await
 }
 
 pub(super) async fn check_required_replays(

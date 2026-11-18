@@ -418,7 +418,16 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         .1;
     assert_eq!(upgraded["auditCount"], 2);
     assert_eq!(upgraded["remainingAudits"], 1);
-    let actual = call(&app, "PUT", &enrollment, "owner", settings.clone()).await;
+    let enrollment_key = Uuid::new_v4().to_string();
+    let actual = call_with_key(
+        &app,
+        "PUT",
+        &enrollment,
+        "owner",
+        settings.clone(),
+        Some(&enrollment_key),
+    )
+    .await;
     assert_eq!(actual.0, StatusCode::OK, "{}", actual.1);
     assert_eq!(
         call(&app, "PUT", &enrollment, "owner", settings.clone()).await,
@@ -435,6 +444,32 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     assert_eq!(updated.0, StatusCode::OK);
     assert_eq!(updated.1["automaticRollout"], false);
     assert!(updated.1.get("expectedAutomaticRollout").is_none());
+    // An old command returns its original receipt without re-enabling rollout.
+    assert_eq!(
+        call_with_key(
+            &app,
+            "PUT",
+            &enrollment,
+            "owner",
+            settings.clone(),
+            Some(&enrollment_key)
+        )
+        .await,
+        actual
+    );
+    assert_eq!(
+        call_with_key(
+            &app,
+            "PUT",
+            &enrollment,
+            "owner",
+            stale_rollback.clone(),
+            Some(&enrollment_key)
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
     let stale = call(&app, "PUT", &enrollment, "owner", stale_rollback.clone()).await;
     assert_eq!(stale.0, StatusCode::CONFLICT);
     let current = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;
@@ -1068,8 +1103,8 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     let mut queue = db.begin().await.unwrap();
     sqlx::query(
         "INSERT INTO connected_learning_outcomes
-            (project_id,bundle_id,integration_id,outcome_id,version_id,digest,status,submitted_by,fingerprint,observed_revision)
-         VALUES ($1,$2,$3,$4,$5,$6,'failed','outcome','batch-test',1)",
+            (project_id,bundle_id,integration_id,outcome_id,version_id,digest,status,submitted_by,observed_revision)
+         VALUES ($1,$2,$3,$4,$5,$6,'failed','outcome',1)",
     )
     .bind(&p).bind(bundle).bind(enrollment_id).bind(batch_outcome).bind(baseline).bind(&digest)
     .execute(&mut *queue).await.unwrap();

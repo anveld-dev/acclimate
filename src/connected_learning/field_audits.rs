@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::connected_learning::statistics::{FieldDecision, field_decision};
+use crate::connected_learning::statistics::{FieldDecision, field_decision, field_log_likelihood};
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -36,12 +36,20 @@ pub(super) enum Verdict {
 }
 
 impl Verdict {
-    pub(super) fn as_str(&self) -> &'static str {
+    fn label(&self) -> &'static str {
         match self {
             Self::Pass => "pass",
-            Self::Regression | Self::Loss => "regression",
+            Self::Regression => "regression",
             Self::Win => "win",
+            Self::Loss => "loss",
             Self::Tie => "tie",
+        }
+    }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Loss => "regression",
+            verdict => verdict.label(),
         }
     }
 }
@@ -72,25 +80,21 @@ pub(super) async fn submit(
         ));
     }
     let request = serde_json::to_value(&verdict).map_err(db)?;
-    let prior: Option<(Value, Value)> = sqlx::query_as(
-        "SELECT request,response FROM connected_learning_field_verdicts
-         WHERE (project_id,bundle_id,integration_id,outcome_id)=($1,$2,$3,$4)",
-    )
-    .bind(&connection.project)
-    .bind(connection.bundle)
-    .bind(integration)
-    .bind(verdict.outcome_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(db)?;
-    if let Some((stored, response)) = prior {
-        return if stored == request {
-            Ok(Json(response))
-        } else {
-            Err(conflict(
-                "A field verdict already exists for this served job",
-            ))
-        };
+    let command = crate::commands::DurableCommand::new(
+        &connection.project,
+        integration,
+        "field",
+        &actor.principal,
+        verdict.outcome_id,
+        request,
+    );
+    if let Some(response) = command
+        .replay(&mut tx, || {
+            conflict("A field verdict already exists for this served job")
+        })
+        .await?
+    {
+        return Ok(Json(response));
     }
     if !connection.active {
         return Err(conflict("Field auditing authority is inactive"));
@@ -131,19 +135,21 @@ pub(super) async fn submit(
     let existing_rollback: Option<Uuid> = served.get("rollback_promotion_id");
     let sequence: Option<i64> = sqlx::query_scalar(
         "INSERT INTO connected_learning_field_verdicts
-         (project_id,bundle_id,integration_id,round_id,outcome_id,started_receipt_id,verdict,evaluator_principal,request,promotion_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING RETURNING sequence",
+         (project_id,bundle_id,integration_id,round_id,outcome_id,started_receipt_id,verdict,evaluator_principal,control_version_id,promotion_id,grade)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING RETURNING sequence",
     )
     .bind(&connection.project).bind(connection.bundle).bind(integration).bind(round)
     .bind(verdict.outcome_id).bind(verdict.started_receipt_id).bind(verdict.verdict.as_str())
-    .bind(actor.principal).bind(request).bind(release).fetch_optional(&mut *tx).await.map_err(db)?;
+    .bind(actor.principal).bind(verdict.parent_version_id).bind(release)
+    .bind(verdict.verdict.label()).fetch_optional(&mut *tx).await.map_err(db)?;
     let Some(sequence) = sequence else {
         return Err(conflict(
             "A field verdict already exists for this served job",
         ));
     };
-    let (window_size, regressions, wins, decision) =
+    let (evidence, regressions, wins, decision) =
         sequential_test(&mut tx, release, verdict.parent_version_id).await?;
+    let window_size = evidence.len() as i64;
     let same_control = control == Some(verdict.parent_version_id);
     let withdraw = connection.automatic_rollback && decision == FieldDecision::Withdraw;
     // Quarantine the failing bytes before the promotion chooses a
@@ -233,55 +239,56 @@ pub(super) async fn submit(
             .bind(&connection.project).bind(integration).bind(connection.bundle).bind(&connection.channel)
             .bind(&verdict.digest).execute(&mut *tx).await.map_err(db)?;
     }
-    if let Some(round) = round
-        && same_control
-        && existing_rollback.is_none()
+    for kind in [
+        (current && same_control && decision == FieldDecision::Validate).then_some("validate"),
+        withdraw.then_some("withdraw"),
+        promotion.map(|_| "rollback"),
+    ]
+    .into_iter()
+    .flatten()
     {
-        // Preserve the recorded basis for a rollback even when later historical grades arrive.
-        sqlx::query("UPDATE connected_learning_rounds SET field_audit_window_size=$2,field_audit_regressions=$3,
-                     updated_at=now() WHERE id=$1")
-            .bind(round).bind(window_size as i32).bind(regressions as i32).execute(&mut *tx).await.map_err(db)?;
+        sqlx::query("INSERT INTO connected_learning_field_decisions
+            (promotion_id,kind,control_version_id,verdict_sequences,window_size,losses,wins,log_likelihood,triggering_sequence)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING")
+            .bind(release).bind(kind).bind(verdict.parent_version_id).bind(&evidence)
+            .bind(window_size).bind(regressions).bind(wins)
+            .bind(field_log_likelihood(wins, regressions)).bind(sequence)
+            .execute(&mut *tx).await.map_err(db)?;
     }
     let mut response = json!({"outcomeId":verdict.outcome_id,"accepted":true,"windowSize":window_size,"regressions":regressions,"wins":wins});
     if let Some(promotion) = promotion {
         response["rollbackPromotionId"] = json!(promotion);
     }
-    sqlx::query("UPDATE connected_learning_field_verdicts SET response=$2 WHERE sequence=$1")
-        .bind(sequence)
-        .bind(&response)
-        .execute(&mut *tx)
-        .await
-        .map_err(db)?;
-    tx.commit().await.map_err(db)?;
-    Ok(Json(response))
+    command.finish(tx, response).await
 }
 
 async fn sequential_test(
     tx: &mut Tx<'_>,
     release: Uuid,
     control: Uuid,
-) -> ApiResult<(i64, i64, i64, FieldDecision)> {
+) -> ApiResult<(Vec<i64>, i64, i64, FieldDecision)> {
     // Legacy pass combined wins and ties. Exclude both legacy labels from inference.
-    let rows: Vec<String> = sqlx::query_scalar(
-        "SELECT request->>'verdict' FROM connected_learning_field_verdicts
-         WHERE promotion_id=$1 AND request->>'parentVersionId'=$2
-           AND request->>'verdict' IN ('win','loss','tie')
+    let rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT sequence, grade FROM connected_learning_field_verdicts
+         WHERE promotion_id=$1 AND control_version_id=$2
+           AND grade IN ('win','loss','tie')
          ORDER BY sequence",
     )
     .bind(release)
-    .bind(control.to_string())
+    .bind(control)
     .fetch_all(&mut **tx)
     .await
     .map_err(db)?;
-    let (mut count, mut wins, mut losses) = (0, 0, 0);
-    for verdict in rows {
-        count += 1;
+    let (mut wins, mut losses) = (0, 0);
+    let mut evidence = Vec::new();
+    for (sequence, verdict) in rows {
+        evidence.push(sequence);
         wins += i64::from(verdict == "win");
         losses += i64::from(verdict == "loss");
         let decision = field_decision(wins, losses);
         if decision != FieldDecision::Pending {
-            return Ok((count, losses, wins, decision));
+            return Ok((evidence, losses, wins, decision));
         }
     }
-    Ok((count, losses, wins, FieldDecision::Pending))
+    Ok((evidence, losses, wins, FieldDecision::Pending))
 }

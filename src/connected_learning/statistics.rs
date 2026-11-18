@@ -19,8 +19,12 @@ pub(crate) enum FieldDecision {
 }
 
 /// Wald SPRT with alpha=.05, beta=.20, comparing loss probabilities .50 and .75.
+pub(crate) fn field_log_likelihood(wins: i64, losses: i64) -> f64 {
+    losses as f64 * 1.5_f64.ln() + wins as f64 * 0.5_f64.ln()
+}
+
 pub(crate) fn field_decision(wins: i64, losses: i64) -> FieldDecision {
-    let likelihood = losses as f64 * 1.5_f64.ln() + wins as f64 * 0.5_f64.ln();
+    let likelihood = field_log_likelihood(wins, losses);
     if likelihood >= (0.8_f64 / 0.05).ln() {
         FieldDecision::Withdraw
     } else if likelihood <= (0.2_f64 / 0.95).ln() {

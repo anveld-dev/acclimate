@@ -348,16 +348,8 @@ impl Connection {
 
     async fn next_audit(&self, tx: &mut Tx<'_>) -> ApiResult<Option<usize>> {
         let index: Option<i32> = sqlx::query_scalar(
-            "SELECT (n-1)::integer FROM connected_learning_enrollments e
-             CROSS JOIN LATERAL jsonb_array_elements(e.audits) WITH ORDINALITY AS a(descriptor,n)
-             WHERE (e.project_id,e.integration_id)=($1,$2)
-             AND (NOT e.automatic_rollout OR descriptor->>'fixtureProtocol'='installed-v1')
-             AND NOT EXISTS (
-                 SELECT 1 FROM connected_learning_rounds r
-                 WHERE (r.project_id,r.integration_id,r.audit_index)=(e.project_id,e.integration_id,(n-1)::integer)
-             )
-             AND connected_learning_audit_registered(e.project_id,e.bundle_id,e.integration_id,(n-1)::integer,descriptor)
-             ORDER BY n LIMIT 1",
+            "SELECT audit_index FROM connected_learning_available_audits
+             WHERE (project_id,integration_id)=($1,$2) ORDER BY audit_index LIMIT 1",
         )
         .bind(&self.project)
         .bind(self.integration)
@@ -945,13 +937,8 @@ pub async fn connected_learning_worker(s: AppState) {
                      WHERE (f.project_id,f.integration_id)=(e.project_id,e.integration_id) AND f.action='ready'
                  )
                  AND EXISTS (
-                     SELECT 1 FROM jsonb_array_elements(e.audits) WITH ORDINALITY AS a(descriptor,n)
-                     WHERE (NOT e.automatic_rollout OR descriptor->>'fixtureProtocol'='installed-v1')
-                     AND NOT EXISTS (
-                         SELECT 1 FROM connected_learning_rounds r
-                         WHERE (r.project_id,r.integration_id,r.audit_index)=(e.project_id,e.integration_id,(n-1)::integer)
-                     )
-                     AND connected_learning_audit_registered(e.project_id,e.bundle_id,e.integration_id,(n-1)::integer,descriptor)
+                     SELECT 1 FROM connected_learning_available_audits a
+                     WHERE (a.project_id,a.integration_id)=(e.project_id,e.integration_id)
                  )
              )
              ORDER BY e.project_id,e.integration_id",

@@ -106,7 +106,7 @@
     "apps/console/src/server/edit-channel.ts": "8ea5c5330358aefa8b3c19c0d98e440825d91c9b299ea9d053793316fb140835",
     "apps/console/src/server/identity.ts": "ce50c2ac9090b1f695ad264b03e14947e067f07bf0ada216d4dbb2b2be6a7814",
     "apps/console/src/server/improvement.ts": "e2eba8d61a28e9803dd90c933a1c9dc60283bbd78639859825ca477bdef68a21",
-    "apps/console/src/server/integration-core.ts": "8fef0b55d06d56d63d52f340a0257cff7cf3003cafefbc56e441f75167d68672",
+    "apps/console/src/server/integration-core.ts": "472e6b39063af4e914bb79a533f45b5ec429c68d88ad5b55cc80c98a01beed65",
     "apps/console/src/server/listing.ts": "0df3e589b6c83a9f5ca10e8b0e6672d6ac3cbc73d7e908d7d4588be04e425823",
     "apps/console/src/server/selection.ts": "bca4ad06a73e6273b9662fe23f7daa73e7cfdd936f93754e8d4ed1cb20b88c0e",
     "apps/console/src/server/setup.ts": "895fe67355ff3243db4bec3430e0b1360f6f130d3f897b8a8cba06c744d12420",

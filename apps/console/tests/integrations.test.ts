@@ -1,7 +1,12 @@
 import { consoleEnvironment } from './console-fixture';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { integrationCommand, readIntegrationState } from '../src/server/integration-core';
+import type { DeliveryReceipt, Page } from '@acclimate/sdk';
+import {
+  integrationCommand,
+  readConnectionsState,
+  readIntegrationState,
+} from '../src/server/integration-core';
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const other = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const key = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -13,7 +18,7 @@ const env = { ...consoleEnvironment,
   CONSOLE_SESSION_TOKEN: 'fixture-session',
   CONSOLE_ALLOW_EDITS: 'true',
 };
-function fixture(role = 'admin') {
+function fixture(role = 'admin', receipts: Page<DeliveryReceipt> = { items: [], nextCursor: null }) {
   const requests: { url: string; method: string; headers: Headers; body: unknown }[] = [];
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -29,7 +34,7 @@ function fixture(role = 'admin') {
       body = { items: [{ id: 'project', name: 'Project', role }], nextCursor: null };
     else if (url.endsWith('/credentials'))
       body = { id: key, kind: 'receipt-write', secret: 'fixture-once' };
-    else if (url.includes('/receipts')) body = { items: [], nextCursor: null };
+    else if (url.includes('/receipts')) body = receipts;
     else if (/\/bundles\?/.test(url))
       body = {
         items: [
@@ -98,6 +103,60 @@ test('list filters selected bundle, reads actual receipts with console session, 
   for (const r of f.requests) {
     assert.equal(r.headers.get('authorization'), 'Bearer fixture-console');
     assert.equal(r.headers.get('x-acclimate-session'), 'fixture-session');
+  }
+});
+test('all receipt views preserve the selected page and reject a single out-of-scope item', async () => {
+  const receipt: DeliveryReceipt = {
+    projectId: 'project',
+    integrationId: id,
+    bundleId: 'bundle',
+    channel: null,
+    eventId: other,
+    versionId: key,
+    digest: `sha256:${'0'.repeat(64)}`,
+    stage: 'verified',
+    occurredAt: '2026-11-13T00:00:00Z',
+    receivedAt: '2026-11-13T00:01:00Z',
+    source: 'network',
+    delayed: false,
+  };
+  const mismatches = [
+    { projectId: 'other-project' },
+    { bundleId: 'other-bundle' },
+    { integrationId: other },
+  ];
+  for (const mismatch of [undefined, ...mismatches]) {
+    const page = { items: [receipt, { ...receipt, eventId: key, ...mismatch }], nextCursor: other };
+    const f = fixture('admin', page);
+    const list = await readIntegrationState(env, f.fetcher);
+    const detail = await readConnectionsState(
+      { ...env, CONSOLE_BUNDLE: 'other-bundle' },
+      { projectId: 'project', integrationId: id },
+      f.fetcher,
+    );
+    const history = await integrationCommand(
+      env,
+      { action: 'receipts', id, cursor: key },
+      f.fetcher,
+    );
+    if (mismatch) {
+      for (const result of [list, detail, history]) {
+        assert.deepEqual(result, {
+          ok: false,
+          message:
+            'Could not confirm the service response. Refresh to check current integrations before repeating an action.',
+        });
+      }
+    } else {
+      assert(list.ok && history.ok && detail.ok);
+      assert.deepEqual(list.state?.entries[0].receipts, page);
+      assert.deepEqual(detail.state.selected?.receipts, page);
+      assert.deepEqual(history.receipts, page);
+      const queries = f.requests
+        .filter((request) => request.url.includes('/receipts'))
+        .map((request) => Object.fromEntries(new URL(request.url).searchParams));
+      assert.deepEqual(queries, [{ limit: '20' }, { limit: '20' }, { limit: '20', cursor: key }]);
+    }
   }
 });
 test('server denies viewer and editor administration without issuing credentials', async () => {

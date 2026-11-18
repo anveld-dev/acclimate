@@ -1,13 +1,17 @@
 import { consoleClient } from './console-client';
 import { allPages } from './listing';
 import { ApiError } from '@acclimate/sdk';
-import type { Integration, IntegrationCredential, DeliveryReceipt, Page } from '@acclimate/sdk';
 import type {
+  AcclimateClient,
+  DeliveryReceipt,
+  Integration,
+  IntegrationCredential,
   LearningEnrollmentStatus,
   LearningOutcomeStatus,
   LearningReleaseEvidence,
   LearningRestoreTarget,
   LearningRound,
+  Page,
   PolicyOverride,
 } from '@acclimate/sdk';
 import { requireSession, actorScope, type Environment } from './selection';
@@ -136,6 +140,21 @@ async function workspaceContext(env: Environment, projectId: string, fetcher: ty
     canManage: admin && env.CONSOLE_ALLOW_EDITS === 'true',
   };
 }
+async function readReceiptPage(client: AcclimateClient, integration: Integration, cursor?: string) {
+  const { projectId, id, bundleId } = integration;
+  const receipts = await client.listDeliveryReceipts(projectId, id, { limit: 20, cursor });
+  if (
+    receipts.items.some(
+      (receipt) =>
+        receipt.projectId !== projectId ||
+        receipt.integrationId !== id ||
+        receipt.bundleId !== bundleId,
+    )
+  )
+    throw Error('Receipt scope mismatch');
+  return receipts;
+}
+
 export async function readIntegrationState(
   env: Environment,
   fetcher: typeof fetch = fetch,
@@ -148,7 +167,7 @@ export async function readIntegrationState(
     const entries = await Promise.all(
       c.integrations.map(async (integration) => ({
         integration,
-        receipts: await c.client.listDeliveryReceipts(c.projectId, integration.id, { limit: 20 }),
+        receipts: await readReceiptPage(c.client, integration),
       })),
     );
     return {
@@ -199,26 +218,20 @@ export async function integrationCommand(
       );
       return { ok: true, integration };
     } else {
-      if (!uuid.test(input.id) || !c.integrations.some((i) => i.id === input.id))
+      const integration = c.integrations.find((item) => item.id === input.id);
+      if (!uuid.test(input.id) || !integration)
         return { ok: false, message: 'Integration is outside the selected bundle and channel.' };
       if (input.action === 'receipts') {
         if (input.cursor && !uuid.test(input.cursor))
           return { ok: false, message: 'Invalid history cursor.' };
-        const receipts = await c.client.listDeliveryReceipts(c.projectId, input.id, {
-          limit: 20,
-          cursor: input.cursor,
-        });
-        if (receipts.items.some((r) => r.bundleId !== c.bundleId || r.integrationId !== input.id))
-          throw Error('Receipt scope mismatch');
+        const receipts = await readReceiptPage(c.client, integration, input.cursor);
         return { ok: true, receipts };
       }
       if (input.action === 'issue') {
         if (!['content-read', 'receipt-write'].includes(input.kind))
           return { ok: false, message: 'Invalid credential kind.' };
         if (input.replacementOf) {
-          const original = c.integrations
-            .find((i) => i.id === input.id)
-            ?.credentials?.find((item) => item.id === input.replacementOf);
+          const original = integration.credentials?.find((item) => item.id === input.replacementOf);
           if (
             !uuid.test(input.replacementOf) ||
             !original ||
@@ -898,16 +911,10 @@ export async function readConnectionsState(
     let selected: ConnectionsState['selected'];
     if (integration) {
       const [receipts, result] = await Promise.all([
-        c.client.listDeliveryReceipts(c.projectId, integration.id, { limit: 20 }),
+        readReceiptPage(c.client, integration),
         c.client.resolveChannel(c.projectId, integration.bundleId, integration.channel),
       ]);
       if (!result.resolution) throw Error('Channel unavailable');
-      if (
-        receipts.items.some(
-          (r) => r.integrationId !== integration.id || r.bundleId !== integration.bundleId,
-        )
-      )
-        throw Error('Receipt scope mismatch');
       selected = {
         integration,
         receipts,

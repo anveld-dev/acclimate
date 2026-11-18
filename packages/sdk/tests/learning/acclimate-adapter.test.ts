@@ -170,6 +170,23 @@ test('installed pure proposer publishes the exact parent-bound bytes; reconcilia
   assert.ok(!('promote' in adapter));
 });
 
+test('cancellation during proposal preparation prevents dispatch and recovery lookup', async () => {
+  for (const mode of ['dispatch', 'reconcile'] as const) {
+    const f = fixture();
+    const controller = new AbortController();
+    f.options.propose = () => {
+      controller.abort();
+      return candidatePayload;
+    };
+    const adapter = createAcclimateLearningAdapter(f.options);
+    const result = await adapter[mode](operation(), { ...context, signal: controller.signal });
+    assert.equal(controller.signal.aborted, true);
+    assert.equal(result.status, 'unknown');
+    assert.equal(result.executionSettled, false);
+    assert.equal(f.calls.some(call => call.method === 'POST' || call.path.includes('/operations/')), false);
+  }
+});
+
 test('unobserved or conflicting retained creation cannot cause a replacement version', async () => {
   const f = fixture(), adapter = createAcclimateLearningAdapter(f.options), op = operation();
   const unknown = await adapter.reconcile(op, context);

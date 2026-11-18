@@ -22,6 +22,8 @@ A closed round releases its audit reservation if no complete comparison was reco
 | `POST /restore` | An independent reviewer with promotion authority restores an earlier connection release or adopts the current approved source release under a checked delivery revision. |
 | `POST /stop` | Stop learning on the connection. Jobs continue to resolve its last delivered release. |
 
+Successful learning submissions retain durable receipts keyed by the connection, caller and operation identity. Repeat the same request with the same outcome, correction, assignment, renewal, restore or review identity to recover the recorded response. A changed request under the same identity conflicts. Enrollment settings and stop accept an optional `Idempotency-Key` header for durable retries. Use a fresh key for each new settings change, even when returning to previously used settings.
+
 #### Fixtures, acceptance and mutation
 
 Register descriptors made by `connectedEvaluationDescriptor(app)` from `@acclimate/sdk/learning`. The `installed-v1` fixture protocol hashes the ordered inventory of case IDs, normalized repetitions and canonical hashes of the private inputs and expected answers. The runner also commits to the sorted input fingerprints so the cohort registry can detect reused inputs under different case IDs. The service registers declared cohort identities and binds the fixture commitment to the evaluation request and report. The installed evaluator recomputes the commitment before grading. Audit inputs must be disjoint from exposed development and other audit inputs within the bundle. The application chooses genuinely independent tasks and can supply family fingerprints to register known relationships.

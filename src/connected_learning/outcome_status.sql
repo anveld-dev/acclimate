@@ -50,8 +50,10 @@ SELECT jsonb_build_object(
     'bundleId',j.bundle_id,'channel',j.source_channel,
     'currentDelivery',jsonb_build_object('versionId',j.current_version,'revision',j.current_revision::text),
     'servedRelease',(SELECT releases.details FROM releases JOIN served USING (id)),
-    'fieldAudit',CASE WHEN v.verdict IS NOT NULL THEN jsonb_build_object('verdict',v.request->>'verdict',
-        'controlVersionId',v.request->>'parentVersionId','triggeredRollback',v.response ? 'rollbackPromotionId') END,
+    'fieldAudit',CASE WHEN v.verdict IS NOT NULL THEN jsonb_build_object('verdict',v.grade,
+        'controlVersionId',v.control_version_id,'triggeredRollback',EXISTS (SELECT 1 FROM connected_learning_field_decisions decision
+            WHERE decision.promotion_id=v.promotion_id AND decision.kind='rollback'
+              AND decision.triggering_sequence=v.sequence)) END,
     'corrections',COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'correctionId',c.correction_id,'roundId',c.round_id,'reason',c.reason,'state',c.state,
         'incidentReplay',c.incident_replay,'release',releases.details,'candidateVersionId',c.candidate_version_id,

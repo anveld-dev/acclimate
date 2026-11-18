@@ -26,7 +26,7 @@ pub(super) async fn inspect(
     Ok(Json(result))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Verdict {
     round_id: Uuid,
@@ -35,7 +35,7 @@ pub(super) struct Verdict {
     digest: String,
     baseline_revision: String,
     verdict: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     attempts: Vec<String>,
 }
 
@@ -63,6 +63,23 @@ pub(super) async fn submit(
     ) {
         return Err(invalid("Unknown incident replay verdict"));
     }
+    let command = crate::commands::DurableCommand::new(
+        &project,
+        integration,
+        "incident",
+        &actor.principal,
+        format!("{}:{}", input.round_id, input.outcome_id),
+        serde_json::to_value(&input).map_err(db)?,
+    )
+    .with_optional_retry_field("attempts");
+    if let Some(response) = command
+        .replay(&mut tx, || {
+            conflict("A different incident replay result already exists")
+        })
+        .await?
+    {
+        return Ok(Json(response));
+    }
     // The enrollment/connection lock serializes verdicts with state transitions.
     let row = sqlx::query(
         "SELECT r.state,COALESCE(replay.verdict,'pending') AS incident_replay,(c.version_id,c.revision)=(r.parent_version_id,r.parent_revision) AS current
@@ -76,7 +93,7 @@ pub(super) async fn submit(
      .bind(&input.digest).bind(revision).fetch_optional(&mut *tx).await.map_err(db)?
      .ok_or_else(|| conflict("Incident replay identity does not match this round"))?;
     let saved: Option<String> = row.get("incident_replay");
-    if saved.as_deref() != Some(&input.verdict) {
+    {
         if !super::statistics::valid_replays(&input.verdict, &input.attempts, true) {
             return Err(invalid("Invalid incident replay attempts"));
         }
@@ -98,6 +115,5 @@ pub(super) async fn submit(
             .await
             .map_err(db)?;
     }
-    tx.commit().await.map_err(db)?;
-    Ok(Json(json!({"accepted":true})))
+    command.finish(tx, json!({"accepted":true})).await
 }

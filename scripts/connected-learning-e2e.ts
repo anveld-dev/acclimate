@@ -853,6 +853,15 @@ try {
   });
   const second = await observe(automatic, delayedJob, 'promoted');
   assert.equal(second.incidentReplay, 'pass');
+  const exactIncident = { ...passedIncident, attempts: ['pass', 'pass', 'pass'] };
+  assert.deepEqual(await api('POST', incidentPath, exactIncident, 'evaluator'), { accepted: true });
+  await api(
+    'POST',
+    incidentPath,
+    { ...exactIncident, attempts: ['pass', 'pass', 'regression'] },
+    'evaluator',
+    409,
+  );
   const lateApproval = await api(
     'POST',
     `${learning(automatic)}/rounds/${second.id}/review`,

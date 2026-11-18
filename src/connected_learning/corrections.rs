@@ -35,7 +35,7 @@ pub(super) fn validate_teaching(
     Ok(())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Correction {
     correction_id: Uuid,
@@ -97,20 +97,28 @@ pub(super) async fn append(
         .map(serde_json::to_value)
         .transpose()
         .map_err(db)?;
-    let same: Option<bool> = sqlx::query_scalar(
-        "SELECT (outcome_id,lesson,feedback,require_incident_replay,submitted_by)
-            IS NOT DISTINCT FROM ($4,$5,$6,$7,$8)
-         FROM connected_learning_corrections WHERE (project_id,integration_id,correction_id)=($1,$2,$3)")
-        .bind(&project).bind(integration).bind(correction.correction_id)
-        .bind(correction.outcome_id).bind(&lesson).bind(&feedback).bind(correction.require_incident_replay)
-        .bind(principal).fetch_optional(&mut **tx).await.map_err(db)?;
-    if let Some(same) = same {
-        return if same {
-            Ok(())
-        } else {
-            Err(conflict("Correction ID already binds different teaching"))
-        };
+    let command = crate::commands::DurableCommand::new(
+        &project,
+        integration,
+        "correction",
+        principal,
+        correction.correction_id,
+        serde_json::to_value(correction).map_err(db)?,
+    );
+    if command
+        .replay(tx, || {
+            conflict("Correction ID already binds different teaching")
+        })
+        .await?
+        .is_some()
+    {
+        return Ok(());
     }
+    validate_teaching(
+        row,
+        correction.lesson.as_ref(),
+        correction.feedback.as_ref(),
+    )?;
     if !active(row) {
         return Err(conflict("Learning admission is closed"));
     }
@@ -127,7 +135,11 @@ pub(super) async fn append(
             "Outcome not found on this connection",
         ));
     }
-    Ok(())
+    command.record(tx, &correction_response(correction)).await
+}
+
+fn correction_response(c: &Correction) -> Value {
+    json!({"correctionId":c.correction_id,"outcomeId":c.outcome_id,"accepted":true})
 }
 
 pub(super) async fn submit(
@@ -146,15 +158,12 @@ pub(super) async fn submit(
     if c.correction_id.is_nil() || (c.lesson.is_none() && c.feedback.is_none()) {
         return Err(invalid("A correction ID and teaching are required"));
     }
-    validate_teaching(&row, c.lesson.as_ref(), c.feedback.as_ref())?;
     append(&mut tx, &row, &c, &actor.principal).await?;
     tx.commit().await.map_err(db)?;
-    Ok(Json(
-        json!({"correctionId":c.correction_id,"outcomeId":c.outcome_id,"accepted":true}),
-    ))
+    Ok(Json(correction_response(&c)))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Recheck {
     correction_id: Uuid,
@@ -191,26 +200,21 @@ pub(super) async fn recheck(
     let response = Json(
         json!({"correctionId":q.correction_id,"revision":q.revision,"verdict":q.verdict,"accepted":true}),
     );
-    let prior: Option<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT k.version_id,v.digest,
-            CASE k.verdict WHEN 'pass' THEN 'reproduced' WHEN 'regression' THEN 'resolved' ELSE k.verdict END
-        FROM connected_learning_replay_results k JOIN versions v ON v.id=k.version_id
-        WHERE (k.project_id,k.integration_id,k.correction_id,k.baseline_revision)=($1,$2,$3,$4) AND k.verdict IS NOT NULL",
-    )
-    .bind(&project)
-    .bind(integration)
-    .bind(q.correction_id)
-    .bind(revision)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(db)?;
-    if let Some(stored) = prior {
-        if stored == (q.version_id, q.digest, q.verdict) {
-            return Ok(response);
-        }
-        return Err(conflict(
-            "A different recheck was recorded at this revision",
-        ));
+    let command = crate::commands::DurableCommand::new(
+        &project,
+        integration,
+        "recheck",
+        &actor.principal,
+        format!("{}:{revision}", q.correction_id),
+        serde_json::to_value(&q).map_err(db)?,
+    );
+    if let Some(response) = command
+        .replay(&mut tx, || {
+            conflict("A different recheck was recorded at this revision")
+        })
+        .await?
+    {
+        return Ok(Json(response));
     }
     if !enabled {
         return Err(conflict("Learning admission is closed"));
@@ -234,6 +238,5 @@ pub(super) async fn recheck(
         sqlx::query("UPDATE connected_learning_corrections SET pending=false WHERE (project_id,integration_id,correction_id)=($1,$2,$3)")
             .bind(&project).bind(integration).bind(q.correction_id).execute(&mut *tx).await.map_err(db)?;
     }
-    tx.commit().await.map_err(db)?;
-    Ok(response)
+    command.finish(tx, response.0).await
 }

@@ -46,7 +46,10 @@ async fn provider_requires_bounded_complete_patch_response() {
         unsafe { std::env::set_var("ACCLIMATE_MODEL", legacy_model) };
         assert!(OpenAiModel::from_env().unwrap().is_some());
     }
-    unsafe { std::env::set_var("ACCLIMATE_MODEL", "gpt-6.2-sol") };
+    unsafe {
+        std::env::set_var("ACCLIMATE_MODEL", "gpt-6.2-sol");
+        std::env::set_var("ACCLIMATE_CRITIC_MODEL", "independent-critic-fixture");
+    }
     let model = OpenAiModel::from_env().unwrap().unwrap();
     let parent:BundlePayload=serde_json::from_value(json!({"schemaVersion":1,"files":[{"path":"guide.md","kind":"instruction","text":"before\n"},{"path":"large.md","kind":"memory","text":"保留".repeat(10000)}]})).unwrap();
     let request = ProposalRequest {
@@ -100,11 +103,16 @@ async fn provider_requires_bounded_complete_patch_response() {
             .contains("key must be a string at line 1 column 2")
     );
 
-    let critique = json!({"verdict":"reject","objections":["Remove case data."]}).to_string();
+    let critique =
+        json!({"verdict":"reject","risky":true,"objections":["Remove case data."]}).to_string();
     *output.lock().unwrap() =
         json!({"choices":[{"finish_reason":"stop","message":{"content":critique}}]});
     assert!(
-        matches!(model.critique(json!({"changes": []})).await.unwrap(), CriticVerdict::Reject { objections } if objections == ["Remove case data."])
+        matches!(model.critique(json!({"changes": []})).await.unwrap(), CriticVerdict::Reject { objections, .. } if objections == ["Remove case data."])
+    );
+    assert_eq!(
+        observed.lock().unwrap()["model"],
+        "independent-critic-fixture"
     );
     for content in [
         json!({"payload":parent,"rationale":"full echo"}).to_string(),

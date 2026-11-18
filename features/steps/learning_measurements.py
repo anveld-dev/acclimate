@@ -59,8 +59,8 @@ def partial_credit_feedback(context):
     wait_for_round(w, 'development', attempt=2)
     _, second = w.provider.requests
     evidence = proposal_prompt(second)['request']['evidence']
-    entry, = [json.loads(line.removeprefix('Prior attempt: '))
-              for line in evidence if line.startswith('Prior attempt: ')]
+    entry, = [json.loads(line['text'])
+              for line in evidence if line['field'] == 'priorAttempt']
     assert entry['candidateVersionId'] == rejected['candidateVersionId']
     assert entry['development']['improvedPairs'] == 2
     assert entry['development']['regressedPairs'] == 0

@@ -214,6 +214,19 @@ pub(crate) fn validate_changes(
             {
                 return Err("Edit outside allowed paths".into());
             }
+            if file.kind == "skill"
+                && file.text != next.text
+                && let Some((name, "SKILL.md")) = file
+                    .path
+                    .strip_prefix("skills/")
+                    .and_then(|path| path.split_once('/'))
+                && (compatibility::metadata_valid(&file.text, name)
+                    || next.text.starts_with("---\n")
+                    || next.text.starts_with("---\r\n"))
+                && !compatibility::metadata_valid(&next.text, name)
+            {
+                return Err("Invalid skill package".into());
+            }
             changed |= file.text != next.text;
         } else {
             if file.kind == "memory"

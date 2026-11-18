@@ -81,6 +81,7 @@
       }
     ],
     "codes": [
+      "skill_file_type",
       "skill_manifest"
     ]
   },
@@ -219,6 +220,22 @@
         "text": "---\nname: check\n---junk\ndescription: Checks things\n---\nBody"
       }
     ],
-    "codes": []
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "manifest tool permissions are forbidden",
+    "target": "claude",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: Checks things\nallowed-tools: Bash\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
   }
 ]

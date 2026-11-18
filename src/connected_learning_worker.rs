@@ -160,7 +160,7 @@ impl Connection {
             permitted_paths: row.get("permitted_paths"),
             development: serde_json::from_value(row.get("development")).map_err(db)?,
             audits: serde_json::from_value(row.get("audits")).map_err(db)?,
-            automatic: row.get("automatic_rollout"),
+            automatic: role.as_deref() == Some("admin") && row.get("automatic_rollout"),
             automatic_rollback: row.get("automatic_rollback"),
             has_budget: row.get("has_budget"),
             max_corrections_per_round: row.get("max_corrections_per_round"),
@@ -301,6 +301,7 @@ impl Connection {
         .fetch_one(&mut **tx).await.map_err(db)?;
         let mut included = Vec::new();
         let mut structural = false;
+        let mut includes_lesson = false;
         let mut rejection = None;
         let mut request = ProposalRequest {
             parent_version_id: incumbent.to_string(),
@@ -323,6 +324,14 @@ impl Connection {
                     ],
                     None => self.permitted_paths.clone(),
                 };
+                if paths
+                    .iter()
+                    .any(|path| !self.permitted_paths.contains(path))
+                {
+                    return Err(processing_error(
+                        "Queued lesson path is no longer permitted",
+                    ));
+                }
                 let provenance = json!({
                     "correctionId": correction,
                     "outcomeId": row.get::<Uuid, _>("outcome_id"),
@@ -336,15 +345,17 @@ impl Connection {
                         || row.get::<Option<i64>, _>("observed_revision") != Some(baseline.1),
                     "lessonPath": lesson.as_ref().map(|l| &l["path"]),
                 });
-                next.evidence.push(format!("Correction: {provenance}"));
+                next.evidence.push(evidence_entry(
+                    "service",
+                    "correction",
+                    &provenance.to_string(),
+                ));
                 if let Some(lesson) = &lesson {
                     let instruction = lesson["instruction"]
                         .as_str()
                         .ok_or_else(|| processing_error("Missing lesson instruction"))?;
-                    if included.is_empty() {
-                        next.hypothesis = instruction.to_owned();
-                    }
-                    next.evidence.push(instruction.to_owned());
+                    next.evidence
+                        .push(evidence_entry("app", "lessonInstruction", instruction));
                 }
                 if let Some(feedback) = feedback {
                     let expected = feedback["expected"]
@@ -353,8 +364,10 @@ impl Connection {
                     let observed = feedback["observed"]
                         .as_str()
                         .ok_or_else(|| processing_error("Missing observed outcome"))?;
-                    next.evidence.push(format!("Expected outcome: {expected}"));
-                    next.evidence.push(format!("Observed outcome: {observed}"));
+                    next.evidence
+                        .push(evidence_entry("app", "expected", expected));
+                    next.evidence
+                        .push(evidence_entry("app", "observed", observed));
                 }
                 for path in paths {
                     if !next.allowed_paths.contains(&path) {
@@ -377,6 +390,7 @@ impl Connection {
                 break;
             }
             structural |= lesson.is_none();
+            includes_lesson |= lesson.is_some();
             included.push(correction);
             request = next;
         }
@@ -387,7 +401,7 @@ impl Connection {
             None
         } else {
             let mut history = Vec::new();
-            self.add_proposal_history(tx, &included, &mut history)
+            self.add_proposal_history(tx, &included, includes_lesson, &mut history)
                 .await?;
             for entry in history {
                 request.evidence.push(entry);
@@ -468,18 +482,22 @@ impl Connection {
         &self,
         tx: &mut Tx<'_>,
         corrections: &[Uuid],
+        includes_lesson: bool,
         evidence: &mut Vec<String>,
     ) -> ApiResult<()> {
         let history = sqlx::query(
             "SELECT members.provenance,
                     r.candidate_version_id,r.state,r.reason,r.decision,r.audit_request_id,
-                    p.request->>'hypothesis' AS hypothesis,p.rationale,p.screening,
+                    CASE WHEN (NOT members.has_lesson OR $5)
+                           AND p.screening -> -1 -> 'scannerClean' = 'true'::jsonb
+                         THEN p.rationale END AS rationale,
                     parent.payload AS before,candidate.payload AS after,c.body
              FROM connected_learning_rounds r
              CROSS JOIN LATERAL (
                  SELECT jsonb_agg(jsonb_build_object('correctionId',m.correction_id,'outcomeId',c.outcome_id,
                             'attempt',m.attempt) ORDER BY m.position) AS provenance,
-                        bool_or(m.correction_id=ANY($4::uuid[])) AS same_correction
+                        bool_or(m.correction_id=ANY($4::uuid[])) AS same_correction,
+                        bool_or(c.lesson IS NOT NULL) AS has_lesson
                  FROM connected_learning_round_corrections m
                  JOIN connected_learning_corrections c USING (project_id,integration_id,correction_id)
                  WHERE m.round_id=r.id
@@ -494,13 +512,19 @@ impl Connection {
                AND c.body #>> '{evaluation,requestId}'=r.development_request_id::text
              WHERE (r.project_id,r.integration_id,r.bundle_id)=($1,$2,$3)
                AND (r.state IN ('promoted','developed') OR (r.state='rejected'
-                 AND (r.candidate_version_id IS NOT NULL OR r.reason='critic-rejected')))
+                 AND (r.candidate_version_id IS NOT NULL OR r.reason IN ('critic-rejected','scanner-rejected'))))
              ORDER BY members.same_correction DESC,r.updated_at DESC,r.id DESC LIMIT 12",
         )
-        .bind(&self.project).bind(self.integration).bind(self.bundle).bind(corrections)
+        .bind(&self.project).bind(self.integration).bind(self.bundle).bind(corrections).bind(includes_lesson)
         .fetch_all(&mut **tx).await.map_err(db)?;
         let mut remaining = 8192;
         for row in history {
+            if let Some(reason @ ("critic-rejected" | "scanner-rejected")) =
+                row.get::<Option<&str>, _>("reason")
+            {
+                evidence.push(evidence_entry("service", "priorOutcome", reason));
+                continue;
+            }
             let candidate = row.get::<Option<Uuid>, _>("candidate_version_id");
             let outcome = if row.get::<String, _>("state") == "promoted" {
                 "accepted"
@@ -509,8 +533,6 @@ impl Connection {
             } else if row.get::<Option<String>, _>("decision").as_deref() == Some("review_declined")
             {
                 "review-declined"
-            } else if row.get::<Option<String>, _>("reason").as_deref() == Some("critic-rejected") {
-                "critic-rejected"
             } else if row.get::<Option<Uuid>, _>("audit_request_id").is_some() {
                 "audit-rejected"
             } else {
@@ -540,26 +562,21 @@ impl Connection {
                     }
                 }
             }
-            let screening: Value = row.get("screening");
-            let last_screen = screening.as_array().and_then(|items| items.last());
-            let excerpts = if let Some(after) = row.get::<Option<Vec<u8>>, _>("after") {
+            let excerpts = if let Some(after) = row.get::<Option<Vec<u8>>, _>("after")
+                && row.get::<Option<String>, _>("rationale").is_some()
+            {
                 let before =
                     serde_json::from_slice(&row.get::<Vec<u8>, _>("before")).map_err(db)?;
                 let after = serde_json::from_slice(&after).map_err(db)?;
                 serde_json::json!(crate::proposal_edits::edit_excerpts(&before, &after))
             } else {
-                last_screen.map_or(Value::Null, |record| record["changes"].clone())
+                Value::Null
             };
-            let rationale = row.get::<Option<String>, _>("rationale").or_else(|| {
-                last_screen
-                    .and_then(|record| record["rationale"].as_str())
-                    .map(str::to_owned)
-            });
             let entry = serde_json::json!({
                 "candidateVersionId": candidate,
                 "includedCorrections": row.get::<Value, _>("provenance"),
                 "outcome": outcome,
-                "rationale": rationale.or_else(|| row.get("hypothesis")).map(|text| text.chars().take(160).collect::<String>()),
+                "rationale": row.get::<Option<String>, _>("rationale").map(|text| text.chars().take(160).collect::<String>()),
                 "edits": excerpts,
                 "development": (scored + failures > 0).then(|| serde_json::json!({
                     "scoredPairs": scored, "improvedPairs": gains, "regressedPairs": losses,
@@ -568,7 +585,7 @@ impl Connection {
                     "taskFailures": failures
                 })),
             });
-            let summary = format!("Prior attempt: {entry}");
+            let summary = evidence_entry("service", "priorAttempt", &entry.to_string());
             if summary.len() <= remaining.min(4096) {
                 remaining -= summary.len();
                 evidence.push(summary);
@@ -1034,6 +1051,10 @@ fn baseline_matches(round: &PgRow, baseline: (Uuid, i64)) -> bool {
         && round.get::<i64, _>("parent_revision") == baseline.1
 }
 
+fn evidence_entry(source: &str, field: &str, text: &str) -> String {
+    json!({"source": source, "field": field, "text": text}).to_string()
+}
+
 fn fits_proposal_prompt(request: &ProposalRequest) -> bool {
     request.evidence.len() <= 20
         && json!(request)
@@ -1305,6 +1326,9 @@ async fn advance(
                 "succeeded" => {}
                 _ => {
                     match proposal.get::<Option<String>, _>("error").as_deref() {
+                        Some("scanner-rejected") => {
+                            return close(tx, round, "scanner-rejected").await;
+                        }
                         Some("critic-rejected") => {
                             return close(tx, round, "critic-rejected").await;
                         }
@@ -1367,7 +1391,40 @@ async fn advance(
                 .audits
                 .get(index as usize)
                 .ok_or_else(|| db("Unknown audit index"))?;
-            let can_automate = connection.automatic
+            let review_reason: Option<String> = sqlx::query_scalar(
+                "WITH RECURSIVE release_steps AS (
+                   SELECT candidate_version_id AS version_id, parent_version_id AS baseline,
+                          project_id, integration_id, policy_epoch
+                   FROM connected_learning_rounds WHERE id=$1
+                   UNION ALL
+                   SELECT v.parent_version_id, steps.baseline,
+                          steps.project_id, steps.integration_id, steps.policy_epoch
+                   FROM release_steps steps JOIN versions v ON v.id=steps.version_id
+                   WHERE v.parent_version_id IS DISTINCT FROM steps.baseline
+                 )
+                 SELECT CASE
+                   WHEN EXISTS (SELECT 1 FROM connected_learning_round_corrections m
+                     JOIN connected_learning_corrections c USING (project_id,integration_id,correction_id)
+                     WHERE m.round_id=r.id AND c.lesson IS NOT NULL)
+                     THEN 'Candidate derives from app lesson instructions'
+                   WHEN p.screening -> -1 -> 'structural' = 'true'::jsonb
+                     THEN 'Candidate adds or removes bundle files'
+                   WHEN p.screening -> -1 -> 'scannerClean' IS DISTINCT FROM 'true'::jsonb
+                     THEN 'Candidate lacks a clean scanner result'
+                   WHEN p.screening -> -1 -> 'result' ->> 'verdict' IS DISTINCT FROM 'accept'
+                     OR p.screening -> -1 -> 'result' -> 'risky' IS DISTINCT FROM 'false'::jsonb
+                     OR p.screening -> -1 -> 'structural' IS DISTINCT FROM 'false'::jsonb
+                     THEN 'Candidate lacks a low-risk critic acceptance'
+                 END AS reason
+                 FROM release_steps steps
+                 LEFT JOIN connected_learning_rounds r
+                   ON (r.project_id,r.integration_id,r.policy_epoch,r.candidate_version_id)
+                    = (steps.project_id,steps.integration_id,steps.policy_epoch,steps.version_id)
+                 LEFT JOIN proposals p ON p.id=r.proposal_id
+                 ORDER BY 1 NULLS LAST LIMIT 1"
+            ).bind(id).fetch_one(&mut **tx).await.map_err(db)?;
+            let can_automate = review_reason.is_none()
+                && connection.automatic
                 && connection.development.committed()
                 && descriptor.committed();
             if state == "awaiting_review"
@@ -1434,8 +1491,8 @@ async fn advance(
                             Err(error) => return Err(error),
                         }
                     } else {
-                        sqlx::query("UPDATE connected_learning_rounds SET state='awaiting_review',review_started_at=COALESCE(review_started_at,now()),audit_comparison_id=$2,updated_at=now() WHERE id=$1")
-                            .bind(id).bind(comparison).execute(&mut **tx).await.map_err(db)?;
+                        sqlx::query("UPDATE connected_learning_rounds SET state='awaiting_review',review_started_at=COALESCE(review_started_at,now()),audit_comparison_id=$2,reason=$3,updated_at=now() WHERE id=$1")
+                            .bind(id).bind(comparison).bind(review_reason).execute(&mut **tx).await.map_err(db)?;
                     }
                 }
             }

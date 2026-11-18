@@ -39,7 +39,7 @@ class ProviderFixture:
                 prompt = proposal_prompt(request)
                 if critic:
                     reject = len(owner.critic_requests) <= owner.critic_rejections
-                    content = dict(verdict='reject' if reject else 'accept',
+                    content = dict(verdict='reject' if reject else 'accept', risky=reject,
                                    objections=['Generalize the retry guidance.'] if reject else [])
                 elif owner.mode in ('malformed', 'malformed-once') and (
                     owner.mode == 'malformed' or not prompt['parserError']

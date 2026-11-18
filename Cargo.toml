@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.89"
 
 [dependencies]
+regex = "1"
 axum = { version = "0.8", features = ["macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }

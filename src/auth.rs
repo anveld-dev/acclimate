@@ -12,6 +12,9 @@ pub fn validate_grants(grants: &[Grant]) -> Result<(), &'static str> {
         {
             return Err("grant token, principal and project must be nonempty");
         }
+        if grant.principal_id.trim().contains(':') {
+            return Err("grant principal must not use a reserved namespace");
+        }
         if let Some(previous) = principals.insert(&grant.token, &grant.principal_id)
             && previous != &grant.principal_id
         {
@@ -213,6 +216,14 @@ mod validation_tests {
             vec![grant("secret", "a", "p", &["read", "read"])],
             vec![grant("secret", "a", "p", &["admin"])],
             vec![grant("", "a", "p", &["read"])],
+            vec![grant(
+                "secret",
+                "service:connected-learning",
+                "p",
+                &["read"],
+            )],
+            vec![grant("secret", "user:spoof", "p", &["read"])],
+            vec![grant("secret", "future:reserved", "p", &["read"])],
         ];
         for grants in cases {
             let error = validate_grants(&grants).unwrap_err();

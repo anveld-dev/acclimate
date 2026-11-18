@@ -91,6 +91,27 @@ class ProposalRequest(TypedDict):
     evidence: list[str]
 
 
+class CriticVerdict(TypedDict):
+    verdict: Literal["accept", "reject"]
+    objections: list[str]
+    risky: NotRequired[bool]
+
+
+class ProposalChange(TypedDict):
+    path: str
+    before: str | None
+    after: str | None
+
+
+class ProposalScreen(TypedDict):
+    stage: Literal["initial", "repair"]
+    result: CriticVerdict | None
+    changes: list[ProposalChange]
+    scannerClean: NotRequired[bool]
+    structural: NotRequired[bool]
+    rationale: NotRequired[str]
+
+
 class Proposal(TypedDict):
     id: str
     parentVersionId: str
@@ -98,6 +119,7 @@ class Proposal(TypedDict):
     attempts: int
     candidate: VersionMetadata | None
     rationale: str | None
+    screening: NotRequired[list[ProposalScreen]]
     error: str | None
     createdAt: str
 

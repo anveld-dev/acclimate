@@ -216,62 +216,76 @@ impl Connection {
         let lesson: Option<Value> = outcome.get("lesson");
         let feedback: Option<Value> = outcome.get("feedback");
         let correction: Uuid = outcome.get("correction_id");
-        let structural = lesson.is_none();
-        let (allowed_paths, hypothesis) = match lesson {
-            Some(lesson) => (
-                vec![
-                    lesson["path"]
+        let admission = async {
+            let structural = lesson.is_none();
+            let (allowed_paths, hypothesis) = match lesson {
+                Some(lesson) => (
+                    vec![
+                        lesson["path"]
+                            .as_str()
+                            .ok_or_else(|| processing_error("Missing lesson path"))?
+                            .to_owned(),
+                    ],
+                    lesson["instruction"]
                         .as_str()
-                        .ok_or_else(|| processing_error("Missing lesson path"))?
+                        .ok_or_else(|| processing_error("Missing lesson instruction"))?
                         .to_owned(),
-                ],
-                lesson["instruction"]
-                    .as_str()
-                    .ok_or_else(|| processing_error("Missing lesson instruction"))?
-                    .to_owned(),
-            ),
-            None => (
-                self.permitted_paths.clone(),
-                "Improve the bundle so future tasks satisfy the trusted expected outcome.".into(),
-            ),
-        };
-        let mut evidence = vec![format!(
-            "Connection task ended {status} using version {version} ({digest})."
-        )];
-        if version != baseline.0 || revision != Some(baseline.1) {
-            evidence.push(format!(
+                ),
+                None => (
+                    self.permitted_paths.clone(),
+                    "Improve the bundle so future tasks satisfy the trusted expected outcome."
+                        .into(),
+                ),
+            };
+            let mut evidence = vec![format!(
+                "Connection task ended {status} using version {version} ({digest})."
+            )];
+            if version != baseline.0 || revision != Some(baseline.1) {
+                evidence.push(format!(
                 "The evaluator reproduced this correction on version {} at delivery revision {}.",
                 baseline.0, baseline.1
             ));
+            }
+            if let Some(feedback) = feedback {
+                let expected = feedback["expected"]
+                    .as_str()
+                    .ok_or_else(|| processing_error("Missing expected outcome"))?;
+                let observed = feedback["observed"]
+                    .as_str()
+                    .ok_or_else(|| processing_error("Missing observed outcome"))?;
+                evidence.push(format!("Expected outcome: {expected}"));
+                evidence.push(format!("Observed outcome: {observed}"));
+            }
+            self.add_development_history(tx, baseline, correction, &mut evidence)
+                .await?;
+            let request = ProposalRequest {
+                parent_version_id: baseline.0.to_string(),
+                allowed_paths,
+                hypothesis,
+                evidence,
+            };
+            let proposal = enqueue_managed_proposal(
+                tx,
+                &self.project,
+                self.bundle,
+                self.integration,
+                &request,
+                structural,
+            )
+            .await?
+            .map(|(id, _)| id);
+            Ok::<_, crate::ApiErr>(proposal)
         }
-        if let Some(feedback) = feedback {
-            let expected = feedback["expected"]
-                .as_str()
-                .ok_or_else(|| processing_error("Missing expected outcome"))?;
-            let observed = feedback["observed"]
-                .as_str()
-                .ok_or_else(|| processing_error("Missing observed outcome"))?;
-            evidence.push(format!("Expected outcome: {expected}"));
-            evidence.push(format!("Observed outcome: {observed}"));
-        }
-        self.add_development_history(tx, baseline, correction, &mut evidence)
-            .await?;
-        let request = ProposalRequest {
-            parent_version_id: baseline.0.to_string(),
-            allowed_paths,
-            hypothesis,
-            evidence,
+        .await;
+        let (proposal, reason) = match admission {
+            Ok(Some(proposal)) => (Some(proposal), None),
+            Ok(None) => (
+                None,
+                Some("Correction has no applicable permitted paths".to_owned()),
+            ),
+            Err(error) if error.1 == "learning_processing_error" => (None, Some(error.2)),
+            Err(error) => return Err(error),
         };
-        let proposal = enqueue_managed_proposal(
-            tx,
-            &self.project,
-            self.bundle,
-            self.integration,
-            &request,
-            structural,
-        )
-        .await?
-        .map(|(id, _)| id);
         if proposal.is_some() {
             sqlx::query(
                 "UPDATE connected_learning_enrollments SET proposal_admissions=proposal_admissions+1 WHERE (project_id,integration_id)=($1,$2)",
@@ -292,9 +306,6 @@ impl Connection {
         .fetch_one(&mut **tx)
         .await
         .map_err(db)?;
-        let reason = proposal
-            .is_none()
-            .then_some("Correction has no applicable permitted paths");
         sqlx::query(
             "INSERT INTO connected_learning_rounds (id,project_id,bundle_id,integration_id,outcome_id,parent_version_id,parent_revision,proposal_id,state,reason,correction_id,attempt,policy_epoch)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
@@ -910,13 +921,13 @@ async fn record_promotion(
     Ok(())
 }
 
-async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<()> {
+async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<bool> {
     let Some(_permit) = s.runtime.claim_permit().await else {
-        return Ok(());
+        return Ok(false);
     };
     let mut tx = s.db.begin().await.map_err(db)?;
     let Some(connection) = Connection::lock(&mut tx, s, project, integration).await? else {
-        return Ok(());
+        return Ok(false);
     };
     let round = sqlx::query(
         "SELECT r.*, replay.incident_replay, next_tick_at <= now() AS tick_due
@@ -926,7 +937,7 @@ async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<()>
     .bind(&connection.project).bind(connection.integration).fetch_optional(&mut *tx).await.map_err(db)?;
     if let Some(round) = round {
         if !round.get::<bool, _>("tick_due") {
-            return Ok(());
+            return Ok(false);
         }
         let id: Uuid = round.get("id");
         let mut attempt = tx.begin().await.map_err(db)?;
@@ -939,7 +950,7 @@ async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<()>
             Ok(()) => {
                 attempt.commit().await.map_err(db)?;
                 sqlx::query("UPDATE connected_learning_rounds SET consecutive_failures=0,last_error=NULL,
-                    next_tick_at=now()+CASE WHEN state='awaiting_review' THEN interval '5 seconds' ELSE interval '0' END WHERE id=$1")
+                    next_tick_at=now()+CASE WHEN state='awaiting_review' THEN interval '5 seconds' ELSE interval '0' END WHERE id=$1 AND (state='awaiting_review' OR consecutive_failures>0)")
                     .bind(id).execute(&mut *tx).await.map_err(db)?;
             }
             Err(error) => {
@@ -962,10 +973,14 @@ async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<()>
             }
         }
     } else {
+        if !connection.active {
+            return Ok(true);
+        }
         let baseline = connection.baseline(&mut tx).await?;
         connection.admit(&mut tx, baseline).await?;
     }
-    tx.commit().await.map_err(db)
+    tx.commit().await.map_err(db)?;
+    Ok(false)
 }
 
 /// Protect provider work before a queue claim and again before accepting its
@@ -1047,15 +1062,20 @@ pub async fn connected_learning_worker(s: AppState) {
                     if retry_after.contains_key(&(project.clone(), integration)) {
                         continue;
                     }
-                    if let Err(error) = tick(&s, project.clone(), integration).await {
-                        retry_after.insert(
-                            (project.clone(), integration),
-                            now + Duration::from_secs(10),
-                        );
-                        eprintln!(
-                            "Connected learning round processing failed for {project}/{integration}: {}",
-                            error.1
-                        );
+                    match tick(&s, project.clone(), integration).await {
+                        Ok(false) => {}
+                        Ok(true) => {
+                            retry_after
+                                .insert((project, integration), now + Duration::from_secs(10));
+                        }
+                        Err(error) => {
+                            eprintln!(
+                                "Connected learning round processing failed for {project}/{integration}: {}",
+                                error.2
+                            );
+                            retry_after
+                                .insert((project, integration), now + Duration::from_secs(10));
+                        }
                     }
                 }
             }

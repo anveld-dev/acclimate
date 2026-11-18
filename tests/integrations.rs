@@ -864,6 +864,11 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     .execute(&db)
     .await
     .unwrap();
+    sqlx::query("UPDATE connected_learning_corrections SET pending=false WHERE correction_id=$1")
+        .bind(correction_id)
+        .execute(&db)
+        .await
+        .unwrap();
     let worker = tokio::spawn(acclimate_service::connected_learning_worker(state.clone()));
     let wait_for_round = async |expected: &str, expected_failures: i32| {
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
@@ -914,6 +919,29 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     .await
     .unwrap();
     wait_for_round("rejected", 5).await;
+    sqlx::query(
+        "UPDATE connected_learning_corrections SET pending=true,lesson='{}' WHERE correction_id=$1",
+    )
+    .bind(correction_id)
+    .execute(&db)
+    .await
+    .unwrap();
+    let malformed = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let reason: Option<String> = sqlx::query_scalar(
+                "SELECT reason FROM connected_learning_rounds WHERE correction_id=$1 AND state='rejected'",
+            )
+            .bind(correction_id)
+            .fetch_optional(&db)
+            .await
+            .unwrap();
+            if let Some(reason) = reason {
+                break reason;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    }).await.unwrap();
+    assert_eq!(malformed, "Missing lesson path");
     state.runtime.begin_draining();
     worker.await.unwrap();
     let inspected = call(&app, "GET", &enrollment, "owner", Value::Null).await.1;
@@ -951,8 +979,8 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         .bind(baseline).bind(audit_comparison).execute(&db).await.unwrap();
     sqlx::query("INSERT INTO connected_learning_field_releases(promotion_id,control_version_id) VALUES($1,$2)")
         .bind(promotion).bind(baseline).execute(&db).await.unwrap();
-    sqlx::query("UPDATE connected_learning_rounds SET state='promoted',promotion_id=$1,audit_comparison_id=$2 WHERE project_id=$3 AND integration_id=$4")
-        .bind(promotion).bind(audit_comparison).bind(&p).bind(enrollment_id).execute(&db).await.unwrap();
+    sqlx::query("UPDATE connected_learning_rounds SET state='promoted',promotion_id=$1,audit_comparison_id=$2 WHERE id=$3")
+        .bind(promotion).bind(audit_comparison).bind(round_id).execute(&db).await.unwrap();
 
     let receipt_route = format!("{connection}/receipts");
     let stale_id = Uuid::new_v4();

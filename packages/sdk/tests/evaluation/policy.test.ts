@@ -16,6 +16,29 @@ const fixtures = JSON.parse(
   ),
 );
 
+const selectionPolicies = JSON.parse(
+  readFileSync(
+    new URL('../../../../contracts/fixtures/connected-selection-policy.json', import.meta.url),
+    'utf8',
+  ),
+);
+for (const { name, policy, valid } of selectionPolicies.cases) {
+  test(`connected selection policy conformance: ${name}`, () => {
+    const parse = () => parseEvaluationPolicy(JSON.stringify(policy), selectionPolicies.descriptor);
+    if (valid) {
+      const parsed = parse().policy;
+      for (const field of [
+        'protectedCaseThresholds',
+        'minimumRepetitionsPerCase',
+        'minimumCostSavingsUsd',
+      ] as const)
+        assert.deepEqual(parsed[field], policy[field] ?? undefined);
+    } else {
+      assert.throws(parse, PolicyError);
+    }
+  });
+}
+
 for (const vector of fixtures.vectors) {
   test(`shared policy vector: ${vector.name}`, () => {
     const execute = () =>

@@ -327,14 +327,7 @@ export interface LearningEvaluationDescriptor extends EvaluationDescriptor {
   caseFingerprints?: string[];
   familyFingerprints?: string[];
 }
-export interface LearningSelectionPolicy extends EvaluationPolicyV1 {
-  /** Each matching candidate repetition must complete and meet its oriented reward threshold. */
-  protectedCaseThresholds?: Record<string, number>;
-  /** Require observed savings across the complete paired case inventory. */
-  minimumCostSavingsUsd?: number;
-  /** Minimum paired repetitions required for every case in the stage inventory. */
-  minimumRepetitionsPerCase?: number;
-}
+export type LearningSelectionPolicy = EvaluationPolicyV1;
 export interface LearningSelectionPolicies {
   development: LearningSelectionPolicy;
   audit: LearningSelectionPolicy;

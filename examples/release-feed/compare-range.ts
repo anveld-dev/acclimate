@@ -11,7 +11,7 @@ import {
   type VerifiedBundle,
 } from '../../packages/sdk/src/index.js';
 import { prepare } from '../../packages/codex-plugin/src/index.js';
-import { callLiveModel } from '../continuous-learning/live-model.js';
+import { callLiveModel } from './live-model.js';
 
 process.umask(0o077);
 const [operatorFile, connectionFile, previousSummary, output, teaching, audit1, audit2, probe] =

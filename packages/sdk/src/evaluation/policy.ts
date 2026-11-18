@@ -15,6 +15,12 @@ export interface EvaluationPolicyV1 {
   requiredCases: string[];
   maximumCandidateTaskFailures?: number;
   cost?: { maximumCandidateUsd?: number; maximumIncreaseUsd?: number };
+  /** Each matching candidate repetition must meet its oriented reward threshold. */
+  protectedCaseThresholds?: Record<string, number>;
+  /** Require observed savings across the complete paired case inventory. */
+  minimumCostSavingsUsd?: number;
+  /** Minimum paired repetitions required for every case in the stage inventory. */
+  minimumRepetitionsPerCase?: number;
 }
 
 export interface ExpectedComparisonBinding {
@@ -54,12 +60,19 @@ export interface PolicyVerdict {
 }
 
 const requiredPolicyFields = [
-  'schemaVersion', 'id', 'revision', 'metric', 'aggregation', 'minimumMeanImprovement',
-  'maximumCaseRegression', 'requiredCases',
+  'schemaVersion',
+  'id',
+  'revision',
+  'metric',
+  'aggregation',
+  'minimumMeanImprovement',
+  'maximumCaseRegression',
+  'requiredCases',
 ];
 const requiredMetricFields = ['name', 'unit', 'direction'];
 const publicPolicyFields = new Set([
-  ...requiredPolicyFields, ...requiredMetricFields.map(name => 'metric.' + name),
+  ...requiredPolicyFields,
+  ...requiredMetricFields.map((name) => 'metric.' + name),
 ]);
 
 type PolicyErrorCode =
@@ -78,7 +91,10 @@ export class PolicyError extends Error {
     nextAction: 'fix_config';
     missingFields?: string[];
   };
-  constructor(readonly code: PolicyErrorCode, missingFields: string[] = []) {
+  constructor(
+    readonly code: PolicyErrorCode,
+    missingFields: string[] = [],
+  ) {
     super(
       code === 'policy.inventory_incompatible'
         ? 'The policy requires cases absent from the trusted evaluation inventory.'
@@ -94,7 +110,9 @@ export class PolicyError extends Error {
       phase: 'policy',
       executionState: 'finished',
       nextAction: 'fix_config',
-      ...(missingFields.length && { missingFields: missingFields.filter(field => publicPolicyFields.has(field)) }),
+      ...(missingFields.length && {
+        missingFields: missingFields.filter((field) => publicPolicyFields.has(field)),
+      }),
     };
   }
 }
@@ -106,11 +124,14 @@ const record = (value: unknown): value is Record<string, unknown> =>
   [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
   Object.values(Object.getOwnPropertyDescriptors(value)).every((entry) => !entry.get && !entry.set);
 const encoder = new TextEncoder();
-const string = (value: unknown, max = 1024): value is string =>
+const boundedString = (value: unknown, max: number): value is string =>
   typeof value === 'string' &&
-  !!value.trim() &&
   encoder.encode(value).length <= max &&
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
+const string = (value: unknown, max = 1024): value is string =>
+  boundedString(value, max) && !!value.trim();
+const policyString = (value: unknown, max = 1024): value is string =>
+  boundedString(value, max) && /[^\p{White_Space}]/u.test(value);
 const finite = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 const nonnegative = (value: unknown): value is number => finite(value) && value >= 0;
@@ -127,47 +148,77 @@ export function validateEvaluationPolicy(
   expectedDescriptor?: EvaluationDescriptor,
 ): EvaluationPolicyV1 {
   if (!record(value)) invalid();
-  const missing = requiredPolicyFields.filter(key => !own(value, key));
+  const missing = requiredPolicyFields.filter((key) => !own(value, key));
   const metric = value.metric;
   if (record(metric)) {
-    for (const key of requiredMetricFields)
-      if (!own(metric, key)) missing.push('metric.' + key);
+    for (const key of requiredMetricFields) if (!own(metric, key)) missing.push('metric.' + key);
   }
   if (missing.length) throw new PolicyError('policy.invalid', missing);
   if (
-    !fields(value, [...requiredPolicyFields, 'candidateThreshold', 'maximumCandidateTaskFailures', 'cost'], []) ||
+    !fields(
+      value,
+      [
+        ...requiredPolicyFields,
+        'candidateThreshold',
+        'maximumCandidateTaskFailures',
+        'cost',
+        'protectedCaseThresholds',
+        'minimumCostSavingsUsd',
+        'minimumRepetitionsPerCase',
+      ],
+      [],
+    ) ||
     value.schemaVersion !== 1 ||
-    !string(value.id, 128) ||
-    !string(value.revision) ||
+    !policyString(value.id, 128) ||
+    !policyString(value.revision) ||
     value.aggregation !== 'equal-case-means' ||
     !finite(value.minimumMeanImprovement) ||
     !nonnegative(value.maximumCaseRegression) ||
     !record(metric) ||
     !fields(metric, requiredMetricFields, []) ||
-    !string(metric.name, 128) ||
-    !string(metric.unit, 128) ||
+    !policyString(metric.name, 128) ||
+    !policyString(metric.unit, 128) ||
     !['higher', 'lower'].includes(metric.direction as string) ||
     !Array.isArray(value.requiredCases) ||
     value.requiredCases.length > 1000 ||
-    value.requiredCases.some((caseId) => !string(caseId)) ||
+    value.requiredCases.some((caseId) => !policyString(caseId)) ||
     new Set(value.requiredCases).size !== value.requiredCases.length ||
-    (own(value, 'candidateThreshold') && !finite(value.candidateThreshold)) ||
-    (own(value, 'maximumCandidateTaskFailures') &&
+    (value.candidateThreshold != null && !finite(value.candidateThreshold)) ||
+    (value.maximumCandidateTaskFailures != null &&
       (!Number.isSafeInteger(value.maximumCandidateTaskFailures) ||
-        (value.maximumCandidateTaskFailures as number) < 0))
+        (value.maximumCandidateTaskFailures as number) < 0)) ||
+    (value.minimumCostSavingsUsd != null && !nonnegative(value.minimumCostSavingsUsd)) ||
+    (value.minimumRepetitionsPerCase != null &&
+      (!nonnegative(value.minimumRepetitionsPerCase) ||
+        !Number.isInteger(value.minimumRepetitionsPerCase) ||
+        value.minimumRepetitionsPerCase < 1 ||
+        value.minimumRepetitionsPerCase > 1000))
   )
     invalid();
   let cost: EvaluationPolicyV1['cost'];
-  if (own(value, 'cost')) {
+  if (value.cost != null) {
     if (
       !record(value.cost) ||
-      !Object.keys(value.cost).length ||
+      !Object.values(value.cost).some(nonnegative) ||
       !fields(value.cost, ['maximumCandidateUsd', 'maximumIncreaseUsd'], []) ||
-      Object.values(value.cost).some((item) => !nonnegative(item))
+      Object.values(value.cost).some((item) => item != null && !nonnegative(item))
     )
       invalid();
-    cost = { ...value.cost };
+    cost = Object.fromEntries(Object.entries(value.cost).filter(([, amount]) => amount != null));
   }
+  let protectedCaseThresholds: EvaluationPolicyV1['protectedCaseThresholds'];
+  if (own(value, 'protectedCaseThresholds')) {
+    const thresholds = value.protectedCaseThresholds;
+    if (!record(thresholds)) invalid();
+    const entries = Object.entries(thresholds);
+    if (
+      entries.length > 1000 ||
+      entries.some(([id, threshold]) => !policyString(id) || !finite(threshold))
+    )
+      invalid();
+    protectedCaseThresholds = { ...thresholds } as Record<string, number>;
+  }
+  const minimumRepetitions = value.minimumRepetitionsPerCase;
   if (expectedDescriptor !== undefined) {
     let descriptor: EvaluationDescriptor;
     try {
@@ -175,8 +226,16 @@ export function validateEvaluationPolicy(
     } catch {
       return invalid();
     }
-    const caseIds = new Set(descriptor.expectedCases.map((item) => item.caseId));
-    if ((value.requiredCases as string[]).some((caseId) => !caseIds.has(caseId)))
+    const counts = new Map<string, number>();
+    for (const { caseId } of descriptor.expectedCases)
+      counts.set(caseId, (counts.get(caseId) ?? 0) + 1);
+    if (
+      [...value.requiredCases, ...Object.keys(protectedCaseThresholds ?? {})].some(
+        (caseId) => !counts.has(caseId),
+      ) ||
+      (typeof minimumRepetitions === 'number' &&
+        [...counts.values()].some((count) => count < minimumRepetitions))
+    )
       throw new PolicyError('policy.inventory_incompatible');
   }
   return {
@@ -192,13 +251,22 @@ export function validateEvaluationPolicy(
     minimumMeanImprovement: value.minimumMeanImprovement as number,
     maximumCaseRegression: value.maximumCaseRegression as number,
     requiredCases: [...(value.requiredCases as string[])],
-    ...(own(value, 'candidateThreshold')
+    ...(value.candidateThreshold != null
       ? { candidateThreshold: value.candidateThreshold as number }
       : {}),
-    ...(own(value, 'maximumCandidateTaskFailures')
+    ...(value.maximumCandidateTaskFailures != null
       ? { maximumCandidateTaskFailures: value.maximumCandidateTaskFailures as number }
       : {}),
     ...(cost ? { cost } : {}),
+    ...(protectedCaseThresholds && Object.keys(protectedCaseThresholds).length
+      ? { protectedCaseThresholds }
+      : {}),
+    ...(typeof value.minimumCostSavingsUsd === 'number'
+      ? { minimumCostSavingsUsd: value.minimumCostSavingsUsd }
+      : {}),
+    ...(typeof minimumRepetitions === 'number'
+      ? { minimumRepetitionsPerCase: minimumRepetitions }
+      : {}),
   };
 }
 
@@ -239,7 +307,7 @@ function strictJson(text: string): unknown {
     }
     throw new Error();
   };
-  const parse = (depth: number): unknown => {
+  const parse = (depth: number, unsignedInteger = false): unknown => {
     if (depth > 32) throw new Error();
     whitespace();
     const first = text[cursor];
@@ -259,7 +327,13 @@ function strictJson(text: string): unknown {
         if (own(object, key)) throw new Error();
         whitespace();
         if (text[cursor++] !== ':') throw new Error();
-        object[key] = parse(depth + 1);
+        object[key] = parse(
+          depth + 1,
+          depth === 0 &&
+            (key === 'schemaVersion' ||
+              key === 'maximumCandidateTaskFailures' ||
+              key === 'minimumRepetitionsPerCase'),
+        );
         whitespace();
         if (text[cursor] === '}') {
           cursor++;
@@ -289,7 +363,8 @@ function strictJson(text: string): unknown {
     const token = /^(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)/.exec(
       text.slice(cursor),
     );
-    if (!token) throw new Error();
+    if (!token || (unsignedInteger && token[0] !== 'null' && !/^\d+$/.test(token[0])))
+      throw new Error();
     cursor += token[0].length;
     return JSON.parse(token[0]);
   };

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { lstat } from 'node:fs/promises';
+import { lstat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { EvaluationError, ExecutionUncertainError } from '../evaluation/errors.js';
 import { acquireFileLock } from '../evaluation/journal.js';
@@ -60,8 +60,17 @@ export async function replayVerdict<Verdict extends string>(
     signal.throwIfAborted();
     lock.assertOwned();
     await atomicPrivateWrite(record, JSON.stringify({ identity, state: 'started' }));
-    signal.throwIfAborted();
-    const verdict = await options.execute(signal);
+    if (signal.aborted) {
+      lock.assertOwned();
+      await unlink(record);
+      signal.throwIfAborted();
+    }
+    let verdict: Verdict;
+    try {
+      verdict = await options.execute(signal);
+    } catch (error) {
+      throw new ExecutionUncertainError({ cause: error });
+    }
     if (!options.verdicts.includes(verdict)) throw new EvaluationError('config.schema');
     // A completed callback remains recoverable even when a stop coincides with its return.
     lock.assertOwned();

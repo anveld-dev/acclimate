@@ -307,11 +307,12 @@ export interface ConnectedLearningDriverOptions {
   allowLive?: boolean;
   pollIntervalMs?: number;
   signal?: AbortSignal;
-  onDiagnostic?: (diagnostic: SafeDiagnostic) => void;
+  /** The original error may contain private data. Keep it out of shared diagnostics. */
+  onDiagnostic?: (diagnostic: SafeDiagnostic, error: unknown) => void;
 }
 
 function validateInstalledApps(value: ConnectedLearningDriverOptions['apps']) {
-  const invalid = () => new EvaluationError('learning.apps_invalid_export');
+  const invalid = (cause?: unknown) => new EvaluationError('learning.apps_invalid_export', {}, { cause });
   if (!value || typeof value !== 'object' || !Array.isArray(value.audit)) throw invalid();
   for (const callback of [value.recheck, value.requalifyFieldCase, value.replayIncident]) {
     if (callback !== undefined && typeof callback !== 'function') throw invalid();
@@ -325,8 +326,8 @@ function validateInstalledApps(value: ConnectedLearningDriverOptions['apps']) {
   }
   try {
     for (const app of [value.development, ...value.audit]) captureDefinition(app);
-  } catch {
-    throw invalid();
+  } catch (error) {
+    throw invalid(error);
   }
 }
 
@@ -384,7 +385,7 @@ export async function serveConnectedLearning(
     return result;
   }
   function report(error: unknown) {
-    onDiagnostic?.(toSafeDiagnostic(error));
+    onDiagnostic?.(toSafeDiagnostic(error), error);
   }
   function terminalError(error: unknown): boolean {
     return (

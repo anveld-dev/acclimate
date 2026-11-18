@@ -127,8 +127,12 @@ const allowedFields = new Set([
 export class EvaluationError extends Error {
   readonly diagnostic: SafeDiagnostic;
   readonly code: SafeCode;
-  constructor(code: SafeCode, options: Partial<Omit<SafeDiagnostic, 'code'>> = {}) {
-    super(`Evaluation operation was not confirmed (${code}).`);
+  constructor(
+    code: SafeCode,
+    options: Partial<Omit<SafeDiagnostic, 'code'>> = {},
+    cause?: ErrorOptions,
+  ) {
+    super(`Evaluation operation was not confirmed (${code}).`, cause);
     this.name = 'EvaluationError';
     this.code = code;
     this.diagnostic = {
@@ -158,8 +162,8 @@ export class EvaluationError extends Error {
 }
 /** The application cannot establish quiescence. This is never an ordinary failed case. */
 export class ExecutionUncertainError extends EvaluationError {
-  constructor() {
-    super('execution.uncertain', { phase: 'execute', executionState: 'may_have_started' });
+  constructor(cause?: ErrorOptions) {
+    super('execution.uncertain', { phase: 'execute', executionState: 'may_have_started' }, cause);
     this.name = 'ExecutionUncertainError';
   }
 }

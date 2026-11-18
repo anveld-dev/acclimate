@@ -296,9 +296,8 @@ impl Connection {
             .is_none()
             .then_some("Correction has no applicable permitted paths");
         sqlx::query(
-            "INSERT INTO connected_learning_rounds (id,project_id,bundle_id,integration_id,outcome_id,parent_version_id,parent_revision,proposal_id,state,reason,correction_id,attempt,policy_epoch,incident_replay)
-             SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,CASE WHEN require_incident_replay THEN 'pending' END
-             FROM connected_learning_corrections WHERE (project_id,integration_id,correction_id)=($2,$4,$11)",
+            "INSERT INTO connected_learning_rounds (id,project_id,bundle_id,integration_id,outcome_id,parent_version_id,parent_revision,proposal_id,state,reason,correction_id,attempt,policy_epoch)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
         )
         .bind(Uuid::new_v4())
         .bind(&self.project)
@@ -721,12 +720,7 @@ async fn incident_replay_ready(tx: &mut Tx<'_>, round: &PgRow) -> ApiResult<bool
         None | Some("pass") => return Ok(true),
         Some("regression") => "Candidate still fails the triggering incident",
         Some("unavailable") => "Evaluator could not reproduce the incident from private evidence",
-        Some("pending") => {
-            if !round.get::<bool, _>("replay_expired") {
-                return Ok(false);
-            }
-            "Timed out waiting for the evaluator to replay the triggering incident"
-        }
+        Some("pending") => return Ok(false),
         Some(_) => return Err(db("Invalid incident replay state")),
     };
     close(tx, round, reason).await?;
@@ -768,6 +762,22 @@ async fn advance(
                 .await?;
             sqlx::query("UPDATE connected_learning_rounds SET state='development',candidate_version_id=$2,development_request_id=$3,updated_at=now() WHERE id=$1")
                 .bind(id).bind(candidate).bind(request_id).execute(&mut **tx).await.map_err(db)?;
+            if round.get::<Option<String>, _>("incident_replay").is_some() {
+                sqlx::query(
+                    "INSERT INTO connected_learning_replay_obligations
+                    (project_id,integration_id,bundle_id,version_id,baseline_revision,round_id)
+                    VALUES ($1,$2,$3,$4,$5,$6)",
+                )
+                .bind(&connection.project)
+                .bind(connection.integration)
+                .bind(connection.bundle)
+                .bind(candidate)
+                .bind(baseline.1)
+                .bind(id)
+                .execute(&mut **tx)
+                .await
+                .map_err(db)?;
+            }
         }
         "development" => {
             let request = round.get("development_request_id");
@@ -909,9 +919,9 @@ async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<()>
         return Ok(());
     };
     let round = sqlx::query(
-        "SELECT *, next_tick_at <= now() AS tick_due, updated_at < now()-interval '24 hours' AS replay_expired
-         FROM connected_learning_rounds WHERE (project_id,integration_id)=($1,$2)
-         AND state IN ('proposing','development','audit','awaiting_review') ORDER BY created_at,id LIMIT 1",
+        "SELECT r.*, replay.incident_replay, next_tick_at <= now() AS tick_due
+         FROM connected_learning_rounds r JOIN connected_learning_round_replays replay ON replay.round_id=r.id
+         WHERE (project_id,integration_id)=($1,$2) AND state IN ('proposing','development','audit','awaiting_review') ORDER BY created_at,id LIMIT 1",
     )
     .bind(&connection.project).bind(connection.integration).fetch_optional(&mut *tx).await.map_err(db)?;
     if let Some(round) = round {
@@ -1091,7 +1101,9 @@ async fn review(
         ));
     }
     let round = sqlx::query(
-        "SELECT * FROM connected_learning_rounds WHERE (project_id,integration_id,id)=($1,$2,$3)",
+        "SELECT r.*,replay.incident_replay FROM connected_learning_rounds r
+         JOIN connected_learning_round_replays replay ON replay.round_id=r.id
+         WHERE (project_id,integration_id,id)=($1,$2,$3)",
     )
     .bind(&connection.project)
     .bind(integration)

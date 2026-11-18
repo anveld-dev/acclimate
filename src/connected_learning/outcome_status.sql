@@ -11,7 +11,7 @@ WITH job AS (
 ), corrections AS (
     SELECT f.correction_id, f.queued_at, r.id AS round_id, r.incident_replay, r.reason,
            r.promotion_id, r.candidate_version_id, r.development_request_id, r.audit_request_id,
-           CASE WHEN NOT f.pending AND k.verdict='resolved' THEN 'resolved'
+           CASE WHEN NOT f.pending AND k.verdict='regression' THEN 'resolved'
                 WHEN NOT f.pending THEN COALESCE(r.state,'closed')
                 WHEN NOT j.enabled OR j.stopped_at IS NOT NULL THEN 'admission_closed'
                 WHEN w.action='recheck' THEN 'awaiting_baseline_recheck'
@@ -24,11 +24,12 @@ WITH job AS (
         = (f.project_id,f.integration_id,f.correction_id)
     LEFT JOIN LATERAL (SELECT id,state,reason,incident_replay,promotion_id,candidate_version_id,
                          development_request_id,audit_request_id FROM connected_learning_rounds
+        JOIN connected_learning_round_replays replay ON replay.round_id=connected_learning_rounds.id
         WHERE (project_id,integration_id,correction_id)=(f.project_id,f.integration_id,f.correction_id)
         ORDER BY attempt DESC LIMIT 1) r ON true
-    LEFT JOIN LATERAL (SELECT verdict FROM connected_learning_rechecks
+    LEFT JOIN LATERAL (SELECT verdict FROM connected_learning_replay_results
         WHERE (project_id,integration_id,correction_id)=(f.project_id,f.integration_id,f.correction_id)
-        ORDER BY revision DESC LIMIT 1) k ON true
+        ORDER BY baseline_revision DESC LIMIT 1) k ON true
 ), served AS (
     SELECT p.id FROM job j JOIN promotions p ON (p.project_id,p.bundle_id,p.channel,p.version_id,p.revision)
         = (j.project_id,j.bundle_id,j.delivery_channel,j.version_id,j.observed_revision)

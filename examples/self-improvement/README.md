@@ -63,7 +63,7 @@ Artifacts are private by default. USD cost stays unknown rather than being guess
 - This is supervised content improvement: the app supplies authorized corrections and a trusted grader. The service does not infer reliable truth from arbitrary transcripts.
 - The controller is an opt-in example, not an always-running production learner. Its automatic approval applies only to its disposable test channel. Production releases still need an authorized review.
 - All model calls use Luna through the Codex SDK. A local authenticated adapter connects the Rust service's OpenAI-compatible proposer to that SDK; a direct vendor endpoint is not qualified here.
-- Workspaces contain only prepared bundle files and task inputs. Network is disabled and native jobs are read-only. This is not hostile-tenant isolation; native commands are retained for inspection.
+- Workspaces contain only files prepared from the version and task inputs. Network is disabled and native jobs are read-only. This is not hostile-tenant isolation; native commands are retained for inspection.
 - These are synthetic variations of one policy task. Passing does not establish broad agent improvement, another harness's behavior, payment safety or production readiness.
 
 ## Code map

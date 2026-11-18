@@ -27,7 +27,7 @@ Requires the same [tools and Codex authentication](../README.md) as the smaller 
 3. Run both the current best and candidate against the same 24 development incidents, in fresh native threads.
 4. Record the bound evaluation and comparison through the real API.
 5. Accept only complete evidence with no new unsafe decisions, no lower correct count, and no higher unsafe count. Then require more correct answers, fewer unsafe answers, or fewer bytes at equal quality.
-6. Explicitly promote accepted versions on the disposable `working` channel. Preserve the incumbent when a proposal regresses, fails, or adds text without improving behavior.
+6. Explicitly release accepted versions on the disposable `working` channel. Keep the current version when a proposal regresses, fails, or adds text without improving behavior.
 
 The two development batches are reused for tuning. Their scores are noisy, and selecting winners adaptively can overestimate quality. Every round measures both arms again; the final audit stays separate.
 

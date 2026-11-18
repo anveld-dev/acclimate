@@ -1,6 +1,6 @@
 # Evaluate a change with your coding agent
 
-Use the same installed agent, task and repository snapshot for each side of an evaluation. This starter stages verified bundle content, retains the agent’s edits and lets your grader test the solution against the original repository inputs.
+Use the same installed agent, task and repository snapshot for each side of an evaluation. This starter stages verified version content, retains the agent’s edits and lets your grader test the solution against the original repository inputs.
 
 Node 22.22+, npm 10+ and Linux/macOS (POSIX) are required. Obtain the native starter, matching SDK/plugin tarballs, release manifest and checksums from your release operator; no registry publication or download URL is implied. Verify `SHA256SUMS` in that release directory before extraction. Keep the included private `package.json`: it establishes the application boundary even when extracted beneath another npm workspace. Its empty dependency list deliberately performs no implicit registry resolution.
 

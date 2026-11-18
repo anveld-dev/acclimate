@@ -99,7 +99,7 @@ export async function createSetup(
     compatibilityTarget?: CompatibilityTarget;
     name: string;
     channel: string;
-    origin: 'created' | 'imported' | 'example';
+    origin: 'created' | 'imported';
     payload?: BundlePayload;
     key: string;
   },
@@ -118,7 +118,7 @@ export async function createSetup(
       !/^[a-f0-9-]{36}$/i.test(input.key)
     )
       throw new Error('Invalid setup request.');
-    if (!['created', 'imported', 'example'].includes(input.origin))
+    if (!['created', 'imported'].includes(input.origin))
       throw new Error('Invalid origin.');
     body = setupRequest(input);
     validatePayload(body.payload);

@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, readFile, realpath, rename, rm } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rm } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,6 +13,8 @@ export const LIMITS = Object.freeze({
   resultFileBytes: 1024 * 1024,
   resultBytes: 8 * 1024 * 1024,
   patchBytes: 1024 * 1024,
+  inlineOutputBytes: 64 * 1024,
+  privateOutputBytes: 8 * 1024 * 1024,
   sourceManifestBytes: 1024 * 1024,
   jobBytes: 64 * 1024,
 });
@@ -359,11 +361,29 @@ async function retainResults({
   binding,
   contextPolicyRevision,
   selectedMemorySha256,
+  runOutput,
 }) {
   let total = 0;
   let patch = '';
   const changes = [];
   const beforeMap = new Map(source.files.map((file) => [file.path, file]));
+  const solutions = new Set(resultFiles);
+  const protectedChanges = [];
+  for (const file of source.files) {
+    if (solutions.has(file.path)) continue;
+    try {
+      const captured = await safeRead(cwd, file.path, LIMITS.sourceFileBytes);
+      const changedContent = sha256(captured.bytes) !== file.sha256;
+      const changedExecutable = (captured.mode & 0o100) !== (file.mode & 0o100);
+      if (changedContent || changedExecutable)
+        protectedChanges.push({ path: file.path, status: 'modified' });
+    } catch (error) {
+      if (error.code === 'ENOENT') protectedChanges.push({ path: file.path, status: 'deleted' });
+      else if (['native.unsafe_path', 'native.unsafe_file', 'ENOTDIR'].includes(error.code))
+        protectedChanges.push({ path: file.path, status: 'replaced' });
+      else throw error;
+    }
+  }
   for (const relative of validateInventory(resultFiles, LIMITS.resultFiles)) {
     let after;
     try {
@@ -384,6 +404,7 @@ async function retainResults({
       path: relative,
       beforeSha256,
       afterSha256,
+      executable: !!(after?.mode & 0o100),
       status:
         beforeSha256 === afterSha256
           ? 'unchanged'
@@ -398,6 +419,9 @@ async function retainResults({
     if (Buffer.byteLength(patch) > LIMITS.patchBytes) fail('native.patch_limit');
   }
   await exclusiveWrite(artifactDirectory, 'result.patch', Buffer.from(patch));
+  const outputBytes = jsonBytes(runOutput);
+  if (outputBytes.length > LIMITS.privateOutputBytes) fail('native.output_limit');
+  await exclusiveWrite(artifactDirectory, 'output.json', outputBytes);
   const manifest = {
     schemaVersion: 1,
     kind: 'acclimate-native-results',
@@ -406,6 +430,8 @@ async function retainResults({
     contextPolicyRevision,
     selectedMemorySha256,
     changes,
+    protectedChanges,
+    output: { sha256: sha256(outputBytes), bytes: outputBytes.length },
     patch: {
       path: 'result.patch',
       sha256: sha256(Buffer.from(patch)),
@@ -414,7 +440,59 @@ async function retainResults({
   };
   const bytes = jsonBytes(manifest);
   await exclusiveWrite(artifactDirectory, 'manifest.json', bytes);
-  return { manifest, manifestSha256: sha256(bytes), patch };
+  return { manifest, manifestSha256: sha256(bytes) };
+}
+
+/** Grade in a fresh tree containing frozen inputs and only the retained solution files. */
+export async function gradeRepositoryTests({
+  repository, artifactRoot, source, resultFiles, runTests,
+}) {
+  validateFrozenSource(source);
+  const allowed = validateInventory(resultFiles, LIMITS.resultFiles);
+  if (
+    typeof runTests !== 'function' ||
+    !/^[a-f0-9]{64}$/.test(repository?.jobId) ||
+    !/^[a-f0-9]{64}$/.test(repository.manifestSha256)
+  )
+    fail('native.grading_configuration');
+  await canonicalDirectory(artifactRoot, { private: true });
+  const artifactDirectory = path.join(artifactRoot, repository.jobId);
+  await canonicalDirectory(artifactDirectory, { private: true });
+  const { bytes } = await safeRead(artifactDirectory, 'manifest.json', LIMITS.sourceManifestBytes);
+  if (sha256(bytes) !== repository.manifestSha256) fail('native.artifact_digest');
+  const manifest = JSON.parse(text(bytes));
+  if (
+    manifest.kind !== 'acclimate-native-results' ||
+    manifest.sourceManifestSha256 !== source.sha256 ||
+    !Array.isArray(manifest.protectedChanges) ||
+    !Array.isArray(manifest.changes) ||
+    JSON.stringify(manifest.changes.map(change => change.path)) !== JSON.stringify(allowed)
+  )
+    fail('native.grading_binding');
+
+  const cwd = await mkdtemp(path.join(os.tmpdir(), 'native-grading-'));
+  try {
+    const solutions = new Set(allowed);
+    for (const file of source.files) {
+      if (solutions.has(file.path)) continue;
+      const bytes = Buffer.from(file.dataBase64, 'base64');
+      await exclusiveWrite(cwd, file.path, bytes, 0o600 | (file.mode & 0o100));
+    }
+    for (const change of manifest.changes) {
+      if (change.afterSha256 === null) continue;
+      const result = await safeRead(artifactDirectory, 'files/' + change.path, LIMITS.resultFileBytes);
+      if (sha256(result.bytes) !== change.afterSha256) fail('native.artifact_digest');
+      await exclusiveWrite(cwd, change.path, result.bytes, change.executable ? 0o700 : 0o600);
+    }
+    const passed = await runTests({ cwd });
+    if (typeof passed !== 'boolean') fail('native.grader_result');
+    return {
+      reward: passed && manifest.protectedChanges.length === 0 ? 1 : 0,
+      explanation: { testsPassed: passed, protectedChanges: manifest.protectedChanges },
+    };
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
 }
 
 async function uncertain() {
@@ -602,6 +680,7 @@ export async function runRepositoryJob(options) {
       binding,
       contextPolicyRevision,
       selectedMemorySha256,
+      runOutput: run.output ?? null,
     });
     record.artifactManifest = {
       path: path.join(artifactDirectory, 'manifest.json'),
@@ -610,19 +689,26 @@ export async function runRepositoryJob(options) {
     record.facts.resultsRetained = true;
     await save();
     retained = true;
+    if (run.infrastructureFailure) fail('native.harness_failed');
     return {
       output: {
-        result: run.output ?? null,
+        result: results.manifest.output.bytes <= LIMITS.inlineOutputBytes ? run.output ?? null : null,
         repository: {
+          jobId: context.jobId,
           sourceManifestSha256: source.sha256,
           contextPolicyRevision,
           selectedMemorySha256,
           manifestSha256: results.manifestSha256,
           changes: results.manifest.changes,
-          patch: results.patch,
+          patch: results.manifest.patch,
+          protectedChangeCount: results.manifest.protectedChanges.length,
+          retainedOutput: results.manifest.output,
         },
       },
       outputRef: `native-job:${context.jobId}`,
+      ...(run.executionStatus !== undefined ? { executionStatus: run.executionStatus } : {}),
+      ...(run.usage !== undefined ? { usage: run.usage } : {}),
+      ...(run.error !== undefined ? { error: run.error } : {}),
     };
   } finally {
     if (prepared && (!launched || retained)) {

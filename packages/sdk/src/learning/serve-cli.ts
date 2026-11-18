@@ -1,15 +1,43 @@
 #!/usr/bin/env node
+import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { toSafeDiagnostic } from '../evaluation/errors.js';
+import { EvaluationError, toSafeDiagnostic } from '../evaluation/errors.js';
 import { serveConnectedLearning } from './connected.js';
 import type { ConnectedLearningDriverOptions } from './connected.js';
 
 const usage =
   'acclimate-learning --config /private/evaluator.json --integration UUID --installation ID --apps ./evaluators.mjs [--live]';
-const report = (diagnostic: ReturnType<typeof toSafeDiagnostic>) =>
-  console.error(JSON.stringify({ schemaVersion: 1, diagnostic }));
+const startupHints: Partial<Record<ReturnType<typeof toSafeDiagnostic>['code'], string>> = {
+  'learning.apps_module_missing':
+    'Point --apps at the compiled evaluator module in this installation.',
+  'learning.apps_module_load_failed':
+    'Check that the --apps module and its imports load in this Node installation.',
+  'learning.apps_invalid_export':
+    'Default-export { development, audit: [...] } using evaluations created by defineEvaluation from the installed SDK. Optional replay hooks must be functions.',
+};
+function report(diagnostic: ReturnType<typeof toSafeDiagnostic>) {
+  const hint = startupHints[diagnostic.code];
+  console.error(JSON.stringify({ schemaVersion: 1, diagnostic, ...(hint ? { hint } : {}) }));
+}
+
+async function loadApps(path: string): Promise<ConnectedLearningDriverOptions['apps']> {
+  const filename = resolve(path);
+  try {
+    if (!(await stat(filename)).isFile()) throw new EvaluationError('learning.apps_module_missing');
+  } catch (error) {
+    if (error instanceof EvaluationError) throw error;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      throw new EvaluationError('learning.apps_module_missing');
+    throw new EvaluationError('learning.apps_module_load_failed');
+  }
+  try {
+    return (await import(pathToFileURL(filename).href)).default;
+  } catch {
+    throw new EvaluationError('learning.apps_module_load_failed');
+  }
+}
 
 async function main() {
   const { values } = parseArgs({
@@ -32,9 +60,7 @@ async function main() {
     return;
   }
   // Load only the local application module explicitly selected by the operator.
-  const loaded = (await import(pathToFileURL(resolve(values.apps)).href)) as {
-    default: ConnectedLearningDriverOptions['apps'];
-  };
+  const apps = await loadApps(values.apps);
   const stop = new AbortController();
   const shutdown = () => stop.abort();
   process.once('SIGINT', shutdown);
@@ -44,7 +70,7 @@ async function main() {
       integrationId: values.integration,
       installationId: values.installation,
       configPath: values.config,
-      apps: loaded.default,
+      apps,
       allowLive: values.live,
       signal: stop.signal,
       onDiagnostic: report,

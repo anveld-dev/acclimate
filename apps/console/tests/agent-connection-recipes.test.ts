@@ -26,7 +26,7 @@ async function runFixture(
     if (behavior === 'collision') await writeFile(resultPath, 'original output', { mode: 0o600 });
     let command: string;
     let filename: string;
-    let recipe = recipes[language];
+    const recipe = recipes[language];
     if (language === 'typescript') {
       const sdk = join(root, 'node_modules', '@acclimate', 'sdk');
       await mkdir(sdk, { recursive: true });
@@ -39,19 +39,22 @@ async function runFixture(
         `
 import { writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-export class AcclimateClient {}
-export async function resolveAndCache() { return { version: { id: 'version-one', digest: 'digest-one' } }; }
-export async function prepareFiles(bundle, root) {
-  const absolutePath = join(root, 'AGENTS.md');
-  await writeFile(absolutePath, 'Prepared instruction');
-  return { files: [{ kind: 'instruction', absolutePath }], cleanup: () => unlink(absolutePath) };
+export class AcclimateClient {
+  async prepare({destination}) {
+    const absolutePath = join(destination, 'AGENTS.md');
+    await writeFile(absolutePath, 'Prepared instruction');
+    return { version: { id: 'version-one', digest: 'digest-one' }, instructions: 'Prepared instruction',
+      skillFiles: [], files: [{ kind: 'instruction', absolutePath }], cleanup: () => unlink(absolutePath) };
+  }
 }`,
       );
-      recipe = recipe.replace(
-        'return { stopped: true, result:',
-        behavior === 'rejected'
-          ? "throw new Error('Application did not settle'); return { stopped: true, result:"
-          : `return { stopped: ${behavior !== 'uncertain'}, result:`,
+      await writeFile(
+        join(root, 'application.mjs'),
+        `
+export async function runExistingAgent({instruction, approvedMemory, task}) {
+  ${behavior === 'rejected' ? "throw new Error('Application did not settle');" : ''}
+  return {stopped: ${behavior !== 'uncertain'}, result: {instructionProvided: Boolean(instruction), selectedMemory: approvedMemory.length, task}};
+}`,
       );
       filename = join(root, 'agent-connection.mjs');
       command = process.execPath;
@@ -62,22 +65,25 @@ export async function prepareFiles(bundle, root) {
 from pathlib import Path
 class AcclimateClient:
     def __init__(self, *args): pass
-def resolve_and_cache(*args, **kwargs):
-    return dict(version=dict(id='version-one', digest='digest-one'))
+    def prepare(self, *args, destination, **kwargs): return Prepared(destination)
 class Prepared:
     def __init__(self, root):
         self.path = Path(root) / 'AGENTS.md'
         self.path.write_text('Prepared instruction')
+        self.instructions = 'Prepared instruction'
+        self.version = dict(id='version-one', digest='digest-one')
+        self.skill_files = []
         self.files = [dict(kind='instruction', absolutePath=str(self.path))]
     def cleanup(self): self.path.unlink()
-def prepare_files(bundle, root): return Prepared(root)
 `,
       );
-      recipe = recipe.replace(
-        'return dict(stopped=True, result=',
-        behavior === 'rejected'
-          ? "raise RuntimeError('Application did not settle')\n    return dict(stopped=True, result="
-          : `return dict(stopped=${behavior !== 'uncertain' ? 'True' : 'False'}, result=`,
+      await writeFile(
+        join(root, 'application.py'),
+        `
+def run_existing_agent(*, instruction, skill_files, approved_memory, task):
+    ${behavior === 'rejected' ? "raise RuntimeError('Application did not settle')" : ''}
+    return dict(stopped=${behavior !== 'uncertain' ? 'True' : 'False'}, result=dict(instructionProvided=bool(instruction), selectedMemory=len(approved_memory), task=task))
+`,
       );
       filename = join(root, 'agent_connection.py');
       command = 'python3';
@@ -94,6 +100,7 @@ def prepare_files(bundle, root): return Prepared(root)
         ACCLIMATE_SCOPE: 'app',
         ACCLIMATE_CACHE: join(root, 'cache'),
         ACCLIMATE_JOB_DIR: job,
+        AGENT_TASK: 'Check the latest receipt',
       },
     });
     assert.ifError(child.error);
@@ -104,6 +111,7 @@ def prepare_files(bundle, root): return Prepared(root)
       assert.equal(result.digest, 'digest-one');
       assert.equal(result.result.instructionProvided, true);
       assert.equal(result.result.selectedMemory, 0);
+      assert.equal(result.result.task, 'Check the latest receipt');
       assert.equal((await stat(resultPath)).mode & 0o777, 0o600);
       assert.doesNotMatch(child.stdout, /instructionProvided|Prepared instruction/);
       await assert.rejects(access(instructionPath));

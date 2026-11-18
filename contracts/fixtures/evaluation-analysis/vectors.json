@@ -564,11 +564,31 @@
                 "missingPairs": 1
               },
               "summary": null,
-              "cases": [],
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 2,
+                  "parentMean": 92.0,
+                  "candidateMean": 95.0,
+                  "orientedMeanImprovement": -3.0
+                }
+              ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
                 "interval": null
+              },
+              "evidenceGaps": {
+                "total": 1,
+                "rows": [
+                  {
+                    "caseId": "routine",
+                    "repetition": 0,
+                    "side": "parent",
+                    "stage": "metric",
+                    "reason": "missing_component"
+                  }
+                ]
               }
             }
           ]
@@ -723,11 +743,31 @@
                 "missingPairs": 1
               },
               "summary": null,
-              "cases": [],
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 2,
+                  "parentMean": 8.0,
+                  "candidateMean": 5.0,
+                  "orientedMeanImprovement": -3.0
+                }
+              ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
                 "interval": null
+              },
+              "evidenceGaps": {
+                "total": 1,
+                "rows": [
+                  {
+                    "caseId": "routine",
+                    "repetition": 0,
+                    "side": "candidate",
+                    "stage": "grade",
+                    "reason": "grading_failed"
+                  }
+                ]
               }
             },
             {
@@ -747,11 +787,31 @@
                 "missingPairs": 1
               },
               "summary": null,
-              "cases": [],
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 2,
+                  "parentMean": 92.0,
+                  "candidateMean": 95.0,
+                  "orientedMeanImprovement": -3.0
+                }
+              ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
                 "interval": null
+              },
+              "evidenceGaps": {
+                "total": 1,
+                "rows": [
+                  {
+                    "caseId": "routine",
+                    "repetition": 0,
+                    "side": "candidate",
+                    "stage": "grade",
+                    "reason": "grading_failed"
+                  }
+                ]
               }
             }
           ]
@@ -2029,11 +2089,31 @@
                 "missingPairs": 1
               },
               "summary": null,
-              "cases": [],
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 2,
+                  "parentMean": 8.0,
+                  "candidateMean": 5.0,
+                  "orientedMeanImprovement": -3.0
+                }
+              ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
                 "interval": null
+              },
+              "evidenceGaps": {
+                "total": 1,
+                "rows": [
+                  {
+                    "caseId": "routine",
+                    "repetition": 0,
+                    "side": "parent",
+                    "stage": "grade",
+                    "reason": "invalid_reward"
+                  }
+                ]
               }
             },
             {
@@ -2053,11 +2133,31 @@
                 "missingPairs": 1
               },
               "summary": null,
-              "cases": [],
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 2,
+                  "parentMean": 92.0,
+                  "candidateMean": 95.0,
+                  "orientedMeanImprovement": -3.0
+                }
+              ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
                 "interval": null
+              },
+              "evidenceGaps": {
+                "total": 1,
+                "rows": [
+                  {
+                    "caseId": "routine",
+                    "repetition": 0,
+                    "side": "parent",
+                    "stage": "grade",
+                    "reason": "invalid_reward"
+                  }
+                ]
               }
             }
           ]
@@ -2116,11 +2216,31 @@
                 "missingPairs": 1
               },
               "summary": null,
-              "cases": [],
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 2,
+                  "parentMean": 8.0,
+                  "candidateMean": 5.0,
+                  "orientedMeanImprovement": -3.0
+                }
+              ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
                 "interval": null
+              },
+              "evidenceGaps": {
+                "total": 1,
+                "rows": [
+                  {
+                    "caseId": "routine",
+                    "repetition": 0,
+                    "side": "parent",
+                    "stage": "execute",
+                    "reason": "infrastructure_failed"
+                  }
+                ]
               }
             },
             {
@@ -2140,11 +2260,31 @@
                 "missingPairs": 1
               },
               "summary": null,
-              "cases": [],
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 2,
+                  "parentMean": 92.0,
+                  "candidateMean": 95.0,
+                  "orientedMeanImprovement": -3.0
+                }
+              ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
                 "interval": null
+              },
+              "evidenceGaps": {
+                "total": 1,
+                "rows": [
+                  {
+                    "caseId": "routine",
+                    "repetition": 0,
+                    "side": "parent",
+                    "stage": "execute",
+                    "reason": "infrastructure_failed"
+                  }
+                ]
               }
             }
           ]

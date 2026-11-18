@@ -128,7 +128,7 @@ class BoundDeliveryReporter:
     def __init__(self, reporter, bundle_id, bundle, source):
         self.reporter, self.bundle_id, self.bundle, self.source = reporter, bundle_id, bundle, source
 
-    def report(self, stage):
+    def _make_receipt(self, stage):
         if stage not in ("resolved", "downloaded", "verified", "prepared", "started"):
             raise ValueError("invalid receipt stage")
         resolution = self.bundle.get("resolution")
@@ -142,8 +142,16 @@ class BoundDeliveryReporter:
         if resolution is not None:
             receipt.update(channel=resolution["channel"], revision=resolution["revision"],
                            resolvedAt=_timestamp(self.bundle["resolvedAt"] / 1000), stale=self.bundle["stale"])
+        return receipt
+
+    def _queue_prepared_start(self, prior):
+        receipt = prior if prior is not None else self._make_receipt("started")
+        return receipt, self.reporter._enqueue(receipt)
+
+    def report(self, stage):
+        receipt = self._make_receipt(stage)
         try:
-            r._enqueue(receipt)
+            return receipt if self.reporter._enqueue(receipt) else None
         except Exception:
             pass
 
@@ -151,4 +159,4 @@ class BoundDeliveryReporter:
         self.report("prepared")
 
     def report_started(self):
-        self.report("started")
+        return self.report("started")

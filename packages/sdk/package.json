@@ -46,10 +46,15 @@
     "./learning": {
       "types": "./dist/learning/index.d.ts",
       "import": "./dist/learning/index.js"
+    },
+    "./evaluation/app-cli": {
+      "types": "./dist/evaluation/app-cli.d.ts",
+      "import": "./dist/evaluation/app-cli.js"
     }
   },
   "bin": {
-    "acclimate-learning": "./dist/learning/serve-cli.js"
+    "acclimate-learning": "./dist/learning/serve-cli.js",
+    "acclimate-eval": "./dist/evaluation/bin.js"
   },
   "files": [
     "dist"

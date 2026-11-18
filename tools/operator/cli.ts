@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { lstat, open } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { AcclimateClient, DeliveryError, verifyPayloadBytes } from '../../packages/sdk/src/index.js';
+import { AcclimateClient, ApiError, DeliveryError, verifyPayloadBytes } from '../../packages/sdk/src/index.js';
 import type {
   BundlePayload,
   Comparison,
   Outcome,
   ProposalRequest,
+  PolicyOverride,
 } from '../../packages/sdk/src/types.js';
 
 const commands: Record<string, string[]> = {
@@ -15,7 +16,7 @@ const commands: Record<string, string[]> = {
   proposal: ['id'],
   review: ['comparison', 'proposal'],
   history: ['limit', 'before'],
-  promote: ['version', 'comparison', 'expected-revision', 'key'],
+  promote: ['version', 'comparison', 'expected-revision', 'key', 'ack-policy', 'override-reason'],
   rollback: ['version', 'reason', 'expected-revision', 'key'],
 };
 const common = ['project', 'bundle', 'channel', 'output'];
@@ -36,7 +37,7 @@ export function parseArgs(args: string[]) {
     const name = arg.slice(2),
       value = args.shift();
     if (!value || value.startsWith('--')) throw new Error(`--${name} requires a value`);
-    if (flags[name] && !['path', 'evidence'].includes(name)) throw new Error(`Duplicate --${name}`);
+    if (flags[name] && !['path', 'evidence', 'ack-policy'].includes(name)) throw new Error(`Duplicate --${name}`);
     (flags[name] ??= []).push(value);
   }
   return { command, flags };
@@ -223,6 +224,17 @@ export async function run(args: string[], client?: AcclimateClient) {
         proposal.candidate.digest !== candidate.version.digest)
     )
       throw new Error('Proposal does not identify the compared candidate');
+    let policyReview;
+    try {
+      const [receipts, blockers] = await Promise.all([
+        client.listComparisonPolicyReceipts(project, bundle, comparison.id),
+        client.listCandidatePolicyReceipts(project, bundle, candidate.version.id),
+      ]);
+      policyReview = { status: 'available', receipts: receipts.items, blockers: blockers.items };
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 404)) throw error;
+      policyReview = { status: 'unavailable' };
+    }
     result = {
       project,
       bundle,
@@ -232,6 +244,7 @@ export async function run(args: string[], client?: AcclimateClient) {
       candidate: candidate.version,
       proposal,
       comparison: evidence(comparison),
+      policyReview,
       changes: changes(parent.payload, candidate.payload),
     };
   } else {
@@ -240,9 +253,20 @@ export async function run(args: string[], client?: AcclimateClient) {
       expectedRevision = required(flags, 'expected-revision');
     if (!/^(0|[1-9][0-9]*)$/.test(expectedRevision))
       throw new Error('--expected-revision must be a canonical revision');
+    let policyOverride: PolicyOverride | undefined;
+    if (flags['ack-policy'] || flags['override-reason']) {
+      const reason = required(flags, 'override-reason');
+      if (!flags['ack-policy']?.length) throw new Error('Acknowledge each reviewed receipt with --ack-policy COMPARISON_ID@sha256:DIGEST');
+      const receipts = flags['ack-policy'].map((value) => {
+        const match = /^([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})@(sha256:[a-f0-9]{64})$/.exec(value);
+        if (!match) throw new Error('Expected --ack-policy COMPARISON_ID@sha256:DIGEST');
+        return { comparisonId: match[1], policyDigest: match[2] };
+      });
+      policyOverride = { reason, receipts };
+    }
     const request =
       command === 'promote'
-        ? { versionId, expectedRevision, comparisonId: required(flags, 'comparison') }
+        ? { versionId, expectedRevision, comparisonId: required(flags, 'comparison'), ...(policyOverride ? { policyOverride } : {}) }
         : { versionId, expectedRevision, unevaluatedReason: required(flags, 'reason') };
     result = await client.promote(
       project,

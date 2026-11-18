@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { lstat, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fixture } from './support.mjs';
 import {
   cleanupQuarantinedJob,
   freezeSourceInventory,
+  gradeRepositoryTests,
   inspectNativeJob,
   validateInventory,
 } from '../repository-job.mjs';
@@ -50,9 +52,11 @@ test('retains text add/change/delete patch before cleanup and keeps original sou
     const result = await run();
     assert.equal(cleaned(), 1);
     assert.match(await readOriginal(), /attempt/);
-    assert.match(result.output.repository.patch, /^--- a\/delete.txt/m);
-    assert.match(result.output.repository.patch, /^\+\+\+ b\/added.txt/m);
-    assert.match(result.output.repository.patch, /\+export const key = "request";/);
+    const patch = await readFile(path.join(artifacts, options.context.jobId, 'result.patch'), 'utf8');
+    assert.match(patch, /^--- a\/delete.txt/m);
+    assert.match(patch, /^\+\+\+ b\/added.txt/m);
+    assert.match(patch, /\+export const key = "request";/);
+    assert.equal(result.output.repository.patch.bytes, Buffer.byteLength(patch));
     const manifest = JSON.parse(
       await readFile(path.join(artifacts, options.context.jobId, 'manifest.json')),
     );
@@ -69,6 +73,69 @@ test('retains text add/change/delete patch before cleanup and keeps original sou
       cleaned: true,
     });
     await assert.rejects(lstat(record.cwd), { code: 'ENOENT' });
+  });
+});
+
+test('independent grading uses the original test when a coding agent rewrites its copy', async () => {
+  await fixture(async ({ run, source, artifacts }) => {
+    const testProgram = "import assert from 'node:assert/strict'; assert.equal(false,true);";
+    await writeFile(path.join(source, 'verify.mjs'), testProgram);
+    const snapshot = await freezeSourceInventory({
+      sourceRoot: source, paths: ['src/retry.js', 'verify.mjs'], revision: 'fixed-tests',
+    });
+    const resultFiles = ['src/retry.js'];
+    const result = await run({
+      source: snapshot, resultFiles,
+      runHarness: async ({ context }) => {
+        await writeFile(path.join(context.cwd, 'verify.mjs'), '');
+        assert.equal(spawnSync(process.execPath, ['verify.mjs'], { cwd: context.cwd }).status, 0);
+        return { stopped: true, output: { passed: true }, executionStatus: 'task_failed',
+          usage: { inputTokens: 11, outputTokens: 2, costUsd: 0.42 } };
+      },
+    });
+    assert.equal(result.executionStatus, 'task_failed');
+    assert.deepEqual(result.usage, { inputTokens: 11, outputTokens: 2, costUsd: 0.42 });
+    assert.equal(result.output.repository.protectedChangeCount, 1);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const grade = await gradeRepositoryTests({
+        source: snapshot, artifactRoot: artifacts, resultFiles, repository: result.output.repository,
+        runTests: ({ cwd }) => spawnSync(process.execPath, ['verify.mjs'], { cwd }).status === 0,
+      });
+      assert.deepEqual(grade, { reward: 0, explanation: {
+        testsPassed: false, protectedChanges: [{ path: 'verify.mjs', status: 'modified' }],
+      } });
+    }
+    const protectedGrade = await gradeRepositoryTests({
+      source: snapshot, artifactRoot: artifacts, resultFiles, repository: result.output.repository,
+      runTests: async () => true,
+    });
+    assert.equal(protectedGrade.reward, 0);
+  });
+});
+
+test('large patches and outputs stay private and retained solution files are verified on regrade', async () => {
+  await fixture(async ({ run, options, artifacts }) => {
+    const content = JSON.stringify({ message: '"'.repeat(280000) });
+    const resultFiles = ['added.txt'];
+    const result = await run({
+      resultFiles,
+      runHarness: async ({ context }) => {
+        await writeFile(path.join(context.cwd, 'added.txt'), content);
+        return { stopped: true, output: content };
+      },
+    });
+    assert.ok(Buffer.byteLength(JSON.stringify(result.output)) < 1024 * 1024);
+    assert.equal(result.output.result, null);
+    const directory = path.join(artifacts, options.context.jobId);
+    assert.match(await readFile(path.join(directory, 'result.patch'), 'utf8'), /message/);
+    assert.equal(JSON.parse(await readFile(path.join(directory, 'output.json'), 'utf8')), content);
+    const grade = () => gradeRepositoryTests({
+      source: options.source, artifactRoot: artifacts, resultFiles, repository: result.output.repository,
+      runTests: async ({ cwd }) => await readFile(path.join(cwd, 'added.txt'), 'utf8') === content,
+    });
+    assert.equal((await grade()).reward, 1);
+    await writeFile(path.join(directory, 'files/added.txt'), 'different');
+    await assert.rejects(grade(), { code: 'native.artifact_digest' });
   });
 });
 

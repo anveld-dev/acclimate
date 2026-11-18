@@ -2,6 +2,7 @@ import json
 import re
 import shlex
 import subprocess
+import sys
 import time
 from pathlib import Path
 from behave import given, when, then
@@ -64,20 +65,21 @@ def empty(context):
     page(context).get_by_role('button',name='Create your first bundle',exact=True).click()
 
 
-@when('I explicitly create {origin} content in Bundles')
-def create(context,origin):
+@when('I create content from {source} in Bundles')
+def create(context,source):
     p=page(context)
     p.get_by_label('Bundle name',exact=True).fill('Explicit BDD content')
-    p.get_by_role('radio',name={'created':'Write instructions','imported':'Import JSON','example':'Use example'}[origin],exact=True).check()
-    if origin=='created':
+    p.get_by_role('radio',name=source,exact=True).check()
+    if source=='Write instructions':
         p.get_by_label('Instructions',exact=True).fill('Review code.')
-    elif origin=='imported':
+    elif source=='Import JSON':
         p.get_by_label('Bundle JSON',exact=True).fill(json.dumps(payload('Review code.')))
+    elif source=='Import files':
+        p.get_by_label('Individual files',exact=True).set_input_files(
+            dict(name='AGENTS.md',mimeType='text/markdown',buffer=b'Review code.'))
+    else: raise AssertionError(source)
+    if source!='Write instructions':
         p.get_by_label('Confirm these entries for import',exact=True).check()
-    elif origin=='example':
-        expect(p.get_by_role('heading',name='Example preview · generic',exact=True)).to_be_visible()
-        expect(p.locator('[data-slot=disclosure][data-state=open] pre').first).to_be_visible()
-    else: raise AssertionError(origin)
     summary=p.get_by_label('Initial publication summary',exact=True)
     expect(summary).to_contain_text('Publishes ')
     expect(summary).to_contain_text('to stable.')
@@ -87,7 +89,7 @@ def create(context,origin):
     expect(p.get_by_label('Compatibility target',exact=True)).to_have_value('generic')
     expect(p.get_by_text('Fixed after creation. Choose your agent for native compatibility checks.',exact=True)).to_be_visible()
     assert context.world.call('GET',context.world.root+'/bundles')['items']==[]
-    p.get_by_role('button',name='Import and publish' if origin=='imported' else 'Create and publish',exact=True).click()
+    p.get_by_role('button',name='Create and publish' if source=='Write instructions' else 'Import and publish',exact=True).click()
     expect(p.get_by_role('navigation',name='Bundle navigation',exact=True)).to_be_visible(timeout=30000)
 
 
@@ -403,6 +405,22 @@ def fresh_new(context,text):
     expect_editor_value(page(context).get_by_role('textbox', name='Content', exact=True), text)
 
 
+def install_browser_evaluator(w, p):
+    from scripts.packaging.fixture_application import install_test_application
+
+    app = w.h.dir / ('evaluation-app-' + w.h.project)
+    app.mkdir(mode=0o700)
+    cases = install_test_application(app, "python")
+    w.evaluator_app = app
+    w.evaluator_env = dict(w.h.env, PYTHONPATH=str(ROOT/'python'), PYTHONDONTWRITEBYTECODE='1',
+                           ACCLIMATE_EVALUATOR_CASES=cases, SSL_CERT_FILE=str(w.browser_fixture.ca_path))
+    described = subprocess.run([sys.executable, '-m', 'acclimate', 'describe'], cwd=app,
+                               env=w.evaluator_env, text=True, capture_output=True, check=True)
+    section = p.get_by_role('region', name='Create evaluation request', exact=True)
+    section.get_by_label('Evaluator language', exact=True).select_option('python')
+    section.get_by_label('Public evaluator configuration (JSON)', exact=True).filter(visible=True).fill(described.stdout)
+
+
 @when('I save a browser draft and request its evaluation')
 def browser_evaluation(context):
     ensure_editor(context)
@@ -414,25 +432,31 @@ def browser_evaluation(context):
     p.get_by_role('link',name='Continue to evaluation',exact=True).click()
     open_details(p,'Set up evaluation request')
     expect(p.get_by_role('button',name='Create evaluation request',exact=True)).to_be_disabled()
-    p.get_by_label('Evaluation configuration',exact=True).select_option('presence-contract')
+    install_browser_evaluator(w, p)
     p.get_by_role('button',name='Create evaluation request',exact=True).click()
     expect(p.get_by_role('status').filter(has_text='Evaluation request created. Run it in your app, then return here for the results.')).to_be_visible()
     w.browser_request=w.call('GET',w.bundle+'/evaluation-requests')['items'][0]
 
 
-@when('the application runs the displayed fixture evaluator')
+@when('the test application runs the downloaded handoff using the displayed command')
 def external_app(context):
     w=context.world
     import json
-    config_root=w.h.dir/'copied-helper-config'
+    config_root=w.evaluator_app
     config_root.mkdir(mode=0o700,exist_ok=True)
     config_path=config_root/'evaluator.json'
-    config=dict(schemaVersion=1,serviceUrl=w.h.base,projectId=w.h.project,
+    config=dict(schemaVersion=1,serviceUrl=w.browser_fixture.base,projectId=w.h.project,
                 evaluatorToken=w.h.tokens['evaluator'],evaluatorPrincipalId='evaluator',
                 journalRoot=str(config_root/'journal'))
     config_path.write_text(json.dumps(config))
     config_path.chmod(0o600)
     p=w.browser_fixture.page
+    p.get_by_role('button',name='Copy instructions for evaluator owner',exact=True).click()
+    instructions=p.evaluate('navigator.clipboard.readText()')
+    assert w.browser_fixture.base+'/evaluator-setup.html#python' in instructions and 'python -m acclimate doctor' in instructions
+    assert json.loads(instructions[instructions.index('{'):])['requestId']==w.browser_request['id']
+    guide=p.request.get(w.browser_fixture.base+'/evaluator-setup.html')
+    assert guide.ok and 'def execute(run)' in guide.text() and 'def grade(run)' in guide.text()
     p.get_by_role('button',name='Copy request ID',exact=True).click()
     assert p.evaluate('navigator.clipboard.readText()') == w.browser_request['id']
     p.get_by_role('button',name='Copy request JSON',exact=True).click()
@@ -461,24 +485,21 @@ def external_app(context):
     for private_value in [*w.h.tokens.values(),w.console_token,w.login_token,
                           str(config_path),config['journalRoot']]:
         assert private_value not in downloaded_text, 'Download contains private fixture material'
-    p.get_by_text('Included checkout setup (required)',exact=True).click()
-    p.get_by_role('button',name='Copy setup-required command',exact=True).click()
-    expect(p.get_by_role('status').filter(has_text='Copied.').last).to_be_visible()
+    p.get_by_role('button', name='Copy evaluator run command', exact=True).click()
     command=shlex.split(p.evaluate('navigator.clipboard.readText()'))
-    assert command[:4]==['npm','run','evaluate:app','--']
-    assert command[command.index('--config')+1]=='/absolute/private/evaluator.json'
-    assert command[command.index('--bundleID')+1]==w.setup['bundle']['id']
-    assert command[command.index('--requestID')+1]==w.browser_request['id']
-    assert '--live' not in command, 'Default browser acceptance must not execute a paid evaluator'
-    # The public recipe requires setup. Supply only the private test-owned config.
+    assert command == ['python','-m','acclimate','compare','--config','/absolute/private/evaluator.json',
+                       '--handoff','evaluation-request.json','--live']
+    command[0]=sys.executable
     command[command.index('--config')+1]=str(config_path)
-    result=subprocess.run(command,cwd=ROOT,env=w.h.env,capture_output=True,text=True,timeout=60)
-    assert result.returncode==0,'Copied app evaluator failed: '+result.stderr[-1500:]
+    command[command.index('--handoff')+1]=str(downloaded_path)
+    # This evaluator directory contains only the test application installed above.
+    result=subprocess.run(command,cwd=w.evaluator_app,env=w.evaluator_env,capture_output=True,text=True,timeout=60)
+    assert result.returncode==0,'Installed app evaluator failed: '+result.stderr[-1500:]
 
 
 
 @when('I inspect the comparison and publish through the console')
-def review_publish(context):
+def review_publish(context, expected_verdict='fail'):
     p=page(context)
     p.reload()
     evidence=p.get_by_role('link',name=re.compile(r'^Inspect evidence for '))
@@ -491,9 +512,34 @@ def review_publish(context):
     expected_pairs=len(context.world.browser_request['expectedCases'])
     expect(rewards.get_by_text('Scored pairs',exact=True).locator('..').locator('dd')).to_have_text(f'{expected_pairs} / {expected_pairs}')
     expect(rewards.get_by_text('Execution failures · expected outcomes',exact=True).locator('..').locator('dd')).to_have_text('0')
+    policy=p.get_by_label('Application policy check', exact=True)
+    expect(policy.get_by_label('Evaluator language', exact=True)).to_have_value('python')
+    expect(policy.get_by_text('No policy verdict has been reported for this comparison.',exact=True)).to_be_visible()
+    policy.get_by_role('button',name='Copy policy check command',exact=True).click()
+    command=shlex.split(p.evaluate('navigator.clipboard.readText()'))
+    assert command == ['python','-m','acclimate','check','--config','/absolute/private/evaluator.json',
+                       '--handoff','evaluation-request.json','--policy','quality-policy.json']
+    w=context.world
+    command[0]=sys.executable
+    command[command.index('--config')+1]=str(w.evaluator_app/'evaluator.json')
+    command[command.index('--handoff')+1]=str(w.evaluator_app/'downloaded-evaluation-request.json')
+    result=subprocess.run(command,cwd=w.evaluator_app,env=w.evaluator_env,capture_output=True,text=True,timeout=60)
+    assert result.returncode=={'fail':2,'pass':0}[expected_verdict] and json.loads(result.stdout)['verdict']==expected_verdict
+    policy.get_by_role('button',name='Refresh policy receipts',exact=True).click()
+    expect(policy.get_by_text({'fail':'Failed','pass':'Passed'}[expected_verdict],exact=True)).to_be_visible()
+    if expected_verdict=='fail':
+        expect(policy.get_by_text('Minimum mean improvement',exact=True)).to_be_visible()
     p.get_by_role('button',name='Review release with this evidence',exact=True).click()
-    expect(p.get_by_role('dialog',name='Publish to stable?',exact=True)).to_contain_text('generation')
-    submit_and_wait(p,p.get_by_role('dialog').get_by_role('button',name='Publish with selected evidence',exact=True))
+    dialog=p.get_by_role('dialog',name='Publish to stable?',exact=True)
+    expect(dialog).to_contain_text('generation')
+    if expected_verdict=='fail':
+        publish=dialog.get_by_role('button',name='Override policy and publish',exact=True)
+        expect(publish).to_be_disabled()
+        dialog.get_by_label('Reason for overriding policy',exact=True).fill('Reviewer accepted the unchanged score for a scoped rollout.')
+    else:
+        expect(dialog.get_by_label('Reason for overriding policy',exact=True)).to_have_count(0)
+        publish=dialog.get_by_role('button',name='Publish with selected evidence',exact=True)
+    submit_and_wait(p,publish)
     expect(p.get_by_role('status').filter(has_text='Release recorded.')).to_be_visible()
 
 
@@ -501,6 +547,10 @@ def review_publish(context):
 def exact_published(context):
     w=context.world
     assert w.call('GET',w.channel)['version']==w.browser_saved['snapshotVersion']
+    promotion=w.call('GET',w.channel+'/promotions')['items'][0]
+    receipt=w.call('GET',w.bundle+'/comparisons/'+promotion['comparisonId']+'/policy-receipts')['items'][0]
+    assert promotion['policyOverride']=={'reason':'Reviewer accepted the unchanged score for a scoped rollout.',
+        'receipts':[{'comparisonId':receipt['comparisonId'],'policyDigest':receipt['policy']['sha256']}]}
     p=page(context)
     expect(p.get_by_role('button',name='Review release with this evidence',exact=True,include_hidden=True)).to_have_count(0)
     expect(p.get_by_role('button',name='Review manual release',exact=True,include_hidden=True)).to_have_count(0)
@@ -518,6 +568,20 @@ def no_grades(context):
     w.start_attempt()
     w.comparison(outcome='missing grades')
     w.finish()
+    endpoint=w.bundle+'/comparisons/'+w.report['id']+'/policy-receipts'
+    receipt={'requestId':w.evaluation['id'],'attemptId':w.attempt,
+             'policy':{'id':'coverage','revision':'1','sha256':'sha256:'+'1'*64},
+             'verdict':'indeterminate','checks':[{'code':'evidence.incomplete','result':'unknown'}]}
+    denied=w.call('POST',endpoint,receipt,actor='other',expected=409)
+    assert denied['error']['code']=='policy_binding_mismatch'
+    saved=w.call('POST',endpoint,receipt,actor='evaluator')
+    assert saved==w.call('POST',endpoint,receipt,actor='evaluator'), 'Same evidence and policy must yield the original receipt'
+    invalid=dict(receipt,checks=[{'code':'private.output','result':'unknown'}])
+    w.call('POST',endpoint,invalid,actor='evaluator',expected=400)
+    w.call('POST',endpoint,dict(receipt,policy=dict(receipt['policy'],revision='changed')),actor='evaluator',expected=409)
+    assert w.call('GET',endpoint)['items']==[saved]
+    assert w.call('GET',w.bundle+'/versions/'+w.draft['snapshotVersion']['id']+'/policy-receipts')['items']==[saved]
+
 
 
 @when('I inspect that comparison in the console')

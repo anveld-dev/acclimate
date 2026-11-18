@@ -21,6 +21,7 @@ from urllib.request import Request, urlopen
 import uuid
 
 from scripts.acceptance.dx_personas.support import PersonaFixture
+from scripts.packaging.fixture_application import install_test_application
 from scripts.packaging.qualify_dx import replace_private_json
 
 
@@ -166,6 +167,7 @@ def journey(output):
             config['serviceUrl'] = gate.base
             replace_private_json(f.evaluator_config, config)
             app, python = f.install_python()
+            f.clean_env['ACCLIMATE_EVALUATOR_CASES'] = install_test_application(app, 'python')
             cli = [python, app / 'acclimate_eval.py']
             # Instrument only this installed application's callback, preserving
             # its real model-free agent implementation and public descriptor.
@@ -182,7 +184,7 @@ def journey(output):
                 '        raise ExecutionUncertainError()\n'
                 '    return original_agent(**kwargs)\n')
             agent.chmod(0o600)
-            entrypoint = app / 'acclimate_eval.py'
+            entrypoint = app / 'application.py'
             entrypoint.write_text(entrypoint.read_text().replace('def execute(run):', 'def original_execute(run):')
                 .replace('def grade(run):', CALLBACK_PROGRESS + 'def grade(run):'))
             entrypoint.chmod(0o600)
@@ -327,7 +329,7 @@ def journey(output):
             initial_progress = h.call('GET', progress_route, actor='viewer')
             assert initial_progress['activity'] == 'absent' and initial_progress['observation'] is None
             gate.block = True
-            blocked = invoke('run', *target, expected=3)
+            blocked = invoke('run', '--live', *target, expected=3)
             assert blocked['error']['code'] == 'submission.unconfirmed' and callbacks() == 4
             running = h.call('GET', route, actor='evaluator')
             assert running['status'] == 'running'
@@ -409,7 +411,7 @@ def journey(output):
             replace_private_json(f.evaluator_config, dict(config, evaluatorToken=replacement))
             invoke('doctor', *target)
             gate.block = False
-            recovered = invoke('run', *target)
+            recovered = invoke('run', '--live', *target)
             assert recovered['status'] == 'completed' and callbacks() == 4
             completed = h.call('GET', route, actor='replacement')
             after = json.loads(state_file.read_text())
@@ -428,7 +430,7 @@ def journey(output):
             evidence['results']['progress'].update(revokedCredentialDenied=revoked_progress['error']['code'],
                 revokedReporterReturnedFalse=True, lateTerminalReportDenied=late_progress['error']['code'],
                 completedObservation=terminal_progress)
-            final_replay = invoke('run', *target)
+            final_replay = invoke('run', '--live', *target)
             final_root = Path(config['journalRoot']).stat()
             assert final_replay['comparisonId'] == completed['comparisonId'] and callbacks() == 4
             assert (root_info.st_dev, root_info.st_ino) == (final_root.st_dev, final_root.st_ino)
@@ -454,9 +456,9 @@ def journey(output):
             uncertain_handoff, uncertain_frozen, uncertain_route = create('uncertain')
             uncertain_target = ['--config', f.evaluator_config, '--handoff', uncertain_handoff]
             (app / 'uncertain.flag').touch(mode=0o600)
-            uncertain = invoke('run', *uncertain_target, expected=3)
+            uncertain = invoke('run', '--live', *uncertain_target, expected=3)
             assert uncertain['error']['code'] == 'execution.uncertain' and callbacks() == 5
-            repeated = invoke('run', *uncertain_target, expected=3)
+            repeated = invoke('run', '--live', *uncertain_target, expected=3)
             assert repeated['error']['code'] == 'execution.uncertain' and callbacks() == 5
             unknown = invoke('status', *uncertain_target)
             assert unknown['status'] == 'running'
@@ -465,7 +467,7 @@ def journey(output):
             assert uncertain_progress['attemptId'] == unknown['attemptId']
             interruption = invoke('interrupt', *uncertain_target, '--reason', 'Owned model-free callback process exited; preserve uncertainty and do not replay')
             assert interruption['status'] == 'interrupted' and interruption['attemptId'] == unknown['attemptId']
-            no_replay = invoke('run', *uncertain_target, expected=3)
+            no_replay = invoke('run', '--live', *uncertain_target, expected=3)
             assert no_replay['status'] == 'interrupted' and callbacks() == 5
             interrupted_progress = h.call('GET', uncertain_route + '/progress', actor='viewer')
             assert interrupted_progress['status'] == 'interrupted' and interrupted_progress['activity'] == 'stale'

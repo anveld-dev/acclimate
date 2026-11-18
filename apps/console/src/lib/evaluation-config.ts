@@ -1,75 +1,56 @@
-import type { BundlePayload, EvaluationDescriptor } from '@acclimate/sdk';
+import type { EvaluationDescriptor } from '@acclimate/sdk';
+import { nativeReviewDescriptor } from '../../../../examples/evaluation/descriptor';
 import {
-  validateEvaluationDescriptor,
   evaluationDescriptorDifferences,
+  validateEvaluationDescriptor,
 } from '@acclimate/sdk/validation';
-import {
-  localEvaluationDescriptor,
-  presenceDescriptor,
-  nativeReviewDescriptor,
-} from './evaluation-presets.js';
 
-export const evaluationPresets = {
-  'payment-retry': localEvaluationDescriptor,
-  'presence-contract': presenceDescriptor,
-  'codex-luna-review': nativeReviewDescriptor,
-} as const;
-export type EvaluationPreset = keyof typeof evaluationPresets;
-export type EvaluationChoice = EvaluationPreset | 'custom' | '';
-
-/** Public intent only. Requests cannot load adapters, endpoints, code or credentials. */
 export function evaluationConfiguration(value: unknown): EvaluationDescriptor {
   return validateEvaluationDescriptor(value);
 }
 
-export function selectedEvaluationConfiguration(
-  choice: EvaluationChoice,
-  publicJson: string,
-): EvaluationDescriptor {
-  if (!choice) throw new Error('Choose your app’s evaluator or an explicit example.');
-  if (choice === 'custom') {
-    let value: unknown;
-    try {
-      value = JSON.parse(publicJson);
-    } catch {
-      throw new Error('Paste the public JSON from your app’s describe command.');
-    }
-    return evaluationConfiguration(value);
-  }
-  return evaluationConfiguration(evaluationPresets[choice]);
-}
-
-/** This known example measures declarative policy, never an arbitrary instruction edit. */
-export function paymentSimulatorIssue(payload: BundlePayload): string | undefined {
-  const file = payload.files.find((item) => item.path === 'payment-policy.json');
+export function parseEvaluationConfiguration(publicJson: string): EvaluationDescriptor {
+  let value: unknown;
   try {
-    const value: unknown = file && JSON.parse(file.text);
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error();
-    const policy = value as Record<string, unknown>;
-    if (
-      Object.keys(policy).sort().join(',') !== 'idempotency,maxAttempts' ||
-      !Number.isInteger(policy.maxAttempts) ||
-      Number(policy.maxAttempts) < 1 ||
-      Number(policy.maxAttempts) > 3 ||
-      !['request', 'attempt', 'none'].includes(String(policy.idempotency))
-    )
-      throw Error();
+    value = JSON.parse(publicJson);
   } catch {
-    return 'This example needs valid payment-policy.json data. Choose your app’s evaluator to measure instruction changes.';
+    throw new Error('Paste the public JSON from your app’s describe command.');
   }
+  return evaluationConfiguration(value);
 }
 
-export function isPaymentSimulatorConfiguration(configuration: EvaluationDescriptor): boolean {
-  return evaluationDescriptorDifferences(configuration, localEvaluationDescriptor).length === 0;
-}
+export type EvaluatorLanguage = 'javascript' | 'python';
 
-export function applicationEvaluatorRunCommand(
-  configuration: EvaluationDescriptor,
-  language: 'javascript' | 'python' = 'javascript',
+export function applicationEvaluatorCommand(
+  language: EvaluatorLanguage,
+  command: 'describe' | 'doctor' | 'compare' | 'check',
+  live = false,
 ) {
-  const entry = language === 'python' ? 'python3 acclimate_eval.py' : 'node acclimate-eval.mjs';
-  return `${entry} run --config /absolute/private/evaluator.json --handoff evaluation-request.json${configuration.runtime.execution === 'live' ? ' --live' : ''}`;
+  const entry = language === 'python' ? 'python -m acclimate' : 'npx --no-install acclimate-eval';
+  if (command === 'describe') return entry + ' describe';
+  const args = '--config /absolute/private/evaluator.json --handoff evaluation-request.json';
+  const extra =
+    command === 'compare' && live
+      ? ' --live'
+      : command === 'check'
+        ? ' --policy quality-policy.json'
+        : '';
+  return `${entry} ${command} ${args}${extra}`;
 }
+
+/** Match the full installed native definition before offering its checkout-specific command. */
+export function isCheckoutCodexEvaluator(configuration: EvaluationDescriptor): boolean {
+  return evaluationDescriptorDifferences(configuration, nativeReviewDescriptor).length === 0;
+}
+
+export function checkoutCodexRunCommand(bundleId: string, requestId: string): string | undefined {
+  const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+  if (!uuid.test(bundleId) || !uuid.test(requestId)) return;
+  return `npm run evaluate:app -- --config /absolute/private/evaluator.json --bundleID ${bundleId} --requestID ${requestId} --adapter codex-luna-review --live`;
+}
+
+export const checkoutCodexCheckCommand =
+  'npm run --silent evaluate:app -- check --config /absolute/private/evaluator.json --handoff evaluation-request.json --policy quality-policy.json';
 
 /** An app-owned public handoff: never credentials, a private path or an internal endpoint. */
 export function evaluationHandoff(
@@ -101,24 +82,4 @@ export function evaluationHandoff(
     null,
     2,
   );
-}
-
-/** Optional checkout setup example. Matching describes compatibility, never installed availability. */
-export function includedEvaluatorSetupCommand(
-  bundleId: string,
-  requestId: string,
-  descriptor: EvaluationDescriptor,
-): string | null {
-  if (
-    ![bundleId, requestId].every((value) =>
-      /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value),
-    )
-  )
-    return null;
-  for (const [name, preset] of Object.entries(evaluationPresets)) {
-    if (evaluationDescriptorDifferences(descriptor, preset).length) continue;
-    const suffix = ` --adapter ${name}${name === 'codex-luna-review' ? ' --live' : ''}`;
-    return `npm run evaluate:app -- --config /absolute/private/evaluator.json --bundleID ${bundleId} --requestID ${requestId}${suffix}`;
-  }
-  return null;
 }

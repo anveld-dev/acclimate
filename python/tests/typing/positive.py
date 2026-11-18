@@ -7,6 +7,7 @@ from acclimate import (
     TransportError,
     DeliveryError,
     PreparedFiles,
+    PreparedDelivery,
     prepare_files,
     resolve_and_cache,
     validate_payload,
@@ -104,6 +105,10 @@ def lifecycle(client: AcclimateClient, evaluation: Evaluation) -> None:
 
 
 def delivery(client: AcclimateClient, api_error: ApiError) -> None:
+    with client.prepare("p", "b", channel="stable") as job:
+        assert_type(job, PreparedDelivery)
+        assert_type(job.version, VersionMetadata)
+        assert_type(job.instructions, str)
     assert_type(api_error.status, int)
     bundle = resolve_and_cache(client, "project", "bundle", channel="stable", cache_dir="/private/cache")
     assert_type(bundle, VerifiedBundle)

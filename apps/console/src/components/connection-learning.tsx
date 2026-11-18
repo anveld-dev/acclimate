@@ -2,9 +2,10 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { LearningRound } from '@acclimate/sdk';
 import { readConnectionLearning, runConnectionLearning } from '../server/integration-actions';
-import type { LearningRequest, LearningResult } from '../server/integration-core';
+import type { BlockingLearningPolicy, LearningRequest, LearningResult } from '../server/integration-core';
 import type { LearningSetup } from '../server/connection-learning-policy';
 import { bundleHref } from '../navigation';
+import { OutcomeLookup, roundLabels } from './outcome-lookup';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
@@ -29,15 +30,6 @@ import {
 
 type Target = Pick<LearningRequest, 'projectId' | 'integrationId'>;
 type Mutation = Exclude<LearningRequest, { action: 'read' }>;
-const roundLabels: Record<string, string> = {
-  proposing: 'Generating proposal',
-  development: 'Development evaluation',
-  audit: 'Independent audit',
-  awaiting_review: 'Awaiting decision',
-  promoted: 'Rolled out',
-  rejected: 'Rejected',
-};
-
 export function ConnectionLearning({
   target,
   bundleId,
@@ -60,7 +52,13 @@ export function ConnectionLearning({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirmStop, setConfirmStop] = useState(false);
-  const [decision, setDecision] = useState<{ roundId: string; approve: boolean }>();
+  const [decision, setDecision] = useState<{
+    roundId: string;
+    candidateVersionId: string | null;
+    approve: boolean;
+    policies?: BlockingLearningPolicy[] | null;
+  }>();
+  const [overrideReason, setOverrideReason] = useState('');
   const decisionTrigger = useRef<HTMLElement | null>(null);
   const stopTrigger = useRef<HTMLElement | null>(null);
   const titleId = useId();
@@ -318,6 +316,7 @@ export function ConnectionLearning({
               onSubmit={(settings) => mutate({ ...target, action: 'restore', ...settings })}
             />
           )}
+          <OutcomeLookup key={integrationId} target={target} />
           <div className="space-y-2">
             <h4 className="text-sm font-semibold">Learning rounds</h4>
             {status.rounds.length ? (
@@ -332,7 +331,13 @@ export function ConnectionLearning({
                         editable && active && round.state === 'awaiting_review'
                           ? (approve, trigger) => {
                               decisionTrigger.current = trigger;
-                              setDecision({ roundId: round.id, approve });
+                              setOverrideReason('');
+                              setDecision({
+                                roundId: round.id,
+                                candidateVersionId: round.candidateVersionId,
+                                approve,
+                                policies: round.blockingPolicies,
+                              });
                             }
                           : undefined
                       }
@@ -395,16 +400,72 @@ export function ConnectionLearning({
                 : 'Keep the current delivery target and record this decision for the learning round.'}
             </DialogDescription>
           </DialogHeader>
+          {decision?.approve && decision.policies === null && (
+            <p role="status">
+              Policy receipts could not be loaded. Refresh learning status to review a blocking
+              policy.
+            </p>
+          )}
+          {decision?.approve && !!decision.policies?.length && (
+            <div className="space-y-2">
+              <p>Review the policies blocking rollout of this candidate.</p>
+              <ul className="list-disc pl-5">
+                {decision.policies.map((policy) => (
+                  <li key={policy.comparisonId + policy.policyDigest}>
+                    <ConsoleLink
+                      className="underline"
+                      href={bundleHref({ projectId, bundleId, channel }, 'changes', {
+                        history: 1,
+                        candidate: decision.candidateVersionId ?? undefined,
+                        request: policy.requestId,
+                        comparison: policy.comparisonId,
+                      })}
+                    >
+                      {policy.policyId} · {policy.revision} · {policy.verdict}
+                    </ConsoleLink>
+                  </li>
+                ))}
+              </ul>
+              <Label htmlFor={titleId + '-override'}>Reason for overriding these policies</Label>
+              <Input
+                id={titleId + '-override'}
+                value={overrideReason}
+                maxLength={1024}
+                onChange={(e) => setOverrideReason(e.target.value)}
+              />
+              <p>The release records your reason and the policy receipts you reviewed.</p>
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" disabled={busy} onClick={() => setDecision(undefined)}>
               Cancel
             </Button>
             <Button
-              disabled={busy || !decision}
+              disabled={
+                busy ||
+                !decision ||
+                (decision.approve && !!decision.policies?.length && !overrideReason.trim())
+              }
               onClick={() => {
                 if (!decision) return;
                 setDecision(undefined);
-                void mutate({ ...target, action: 'review', ...decision });
+                void mutate({
+                  ...target,
+                  action: 'review',
+                  roundId: decision.roundId,
+                  approve: decision.approve,
+                  ...(decision.approve && decision.policies?.length
+                    ? {
+                        policyOverride: {
+                          reason: overrideReason.trim(),
+                          receipts: decision.policies.map(({ comparisonId, policyDigest }) => ({
+                            comparisonId,
+                            policyDigest,
+                          })),
+                        },
+                      }
+                    : {}),
+                });
               }}
             >
               {decision?.approve ? 'Roll out candidate' : 'Decline candidate'}
@@ -686,6 +747,14 @@ function LearningRound({
       </DisclosureTrigger>
       <DisclosureContent className="space-y-2 pt-1 text-sm">
         {round.reason && <p>{round.reason}</p>}
+        {round.incidentReplay && (
+          <p>
+            Triggering incident replay ·{' '}
+            {round.state === 'rejected' && round.incidentReplay === 'pending'
+              ? 'No verdict received'
+              : round.incidentReplay}
+          </p>
+        )}
         {round.correctionId && (
           <p className="break-all">
             Correction <code>{round.correctionId}</code>

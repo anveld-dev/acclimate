@@ -8,7 +8,7 @@ import {
   ExecutionUncertainError,
   EvaluationError,
 } from '../../src/evaluation/index.js';
-import { preflightEvaluation, runEvaluation } from '../../src/evaluation/index.js';
+import { assertEvaluationOutput, preflightEvaluation, runEvaluation } from '../../src/evaluation/index.js';
 import { createServer } from 'node:http';
 import { execFileSync, spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -59,6 +59,30 @@ const defaultDefinition = (): EvaluationDefinition<
     explanation: { reason: 'exact' },
   }),
 });
+test('oversize definitions report a usable conservative partition size', () => {
+  const definition = defaultDefinition();
+  const cases = Array.from({ length: 50 }, (_, i) => ({
+    ...definition.cases[0],
+    caseId: `case${i}`,
+    repetitions: 10,
+  }));
+  assert.throws(
+    () => defineEvaluation({ ...definition, cases }),
+    (error: unknown) => {
+      assert.ok(error instanceof EvaluationError);
+      const budget = error.diagnostic.reportBudget!;
+      assert.equal(budget.expectedPairs, 500);
+      assert.ok(budget.estimatedBytes > budget.limitBytes);
+      assert.ok(budget.maxPairsPerPartition >= 10);
+      defineEvaluation({
+        ...definition,
+        cases: cases.slice(0, Math.floor(budget.maxPairsPerPartition / 10)),
+      });
+      return true;
+    },
+  );
+});
+
 async function setup(definition = defaultDefinition()) {
   const root = await mkdtemp(path.join(await realpath(tmpdir()), 'acclimate-core-')),
     app = defineEvaluation(definition),
@@ -112,6 +136,43 @@ async function setup(definition = defaultDefinition()) {
     cleanup: () => rm(root, { recursive: true, force: true }),
   };
 }
+
+test('callback diagnostics retain private frame locations only when enabled', async () => {
+  for (const enabled of [false, true]) {
+    const definition = defaultDefinition();
+    const directories: string[] = [];
+    definition.execute = async ({ context, repetition }) => {
+      directories.push(context.privateJobDirectory);
+      if (repetition === 0) throw new TypeError('private callback canary\n    at /secret/path:1:1');
+      return { output: { answer: 'ok' } };
+    };
+    definition.grade = async () => {
+      throw new RangeError('private grader canary');
+    };
+    const run = await setup(definition);
+    try {
+      run.options.config.captureCallbackErrors = enabled;
+      const result = await runCapturedEvaluation(run.options);
+      assert.equal(result.evaluation.status, 'failed');
+      assert.doesNotMatch(JSON.stringify(result), /canary|secret\/path|callback-error/);
+      for (const [i, dir] of directories.entries()) {
+        const filename = path.join(dir, 'callback-error.json');
+        if (!enabled) {
+          await assert.rejects(readFile(filename), { code: 'ENOENT' });
+          continue;
+        }
+        const body = await readFile(filename, 'utf8');
+        const diagnostic = JSON.parse(body);
+        assert.equal(diagnostic.phase, i < 2 ? 'execute' : 'grade');
+        assert.equal(diagnostic.exceptionType, i < 2 ? 'TypeError' : 'RangeError');
+        assert.ok(diagnostic.frames.length > 0 && diagnostic.frames.length <= 8);
+        assert.doesNotMatch(body, /canary|secret\/path/);
+      }
+    } finally {
+      await run.cleanup();
+    }
+  }
+});
 
 test('definition captures immutable public descriptor/inventory and keeps expected values private', () => {
   const definition = defaultDefinition(),
@@ -208,6 +269,8 @@ test('installed runner isolates verified bundles and uses exact full-side callba
       assert.equal(index.entries.length, 8);
       assert.equal(index.comparisonId, result.comparison!.id);
       const entry = index.entries.find((e) => e.role === 'output')!;
+      assert.equal(result.comparison!.results[0].parent.outputRef, 'acclimate:artifact:' + entry.sha256);
+      assert.ok(!body.includes(s.root));
       const envelope = JSON.parse(await readFile(path.join(j.directory, entry.file), 'utf8'));
       assert.deepEqual(envelope.identity, {
         requestId,
@@ -284,6 +347,40 @@ test('JSON validation rejects array accessors/prototypes/serializers before invo
     );
   assert.equal(getters, 0);
   assert.equal(serializers, 0);
+});
+
+test('non-JSON adapter output identifies the field only in the private job', async () => {
+  const providerResult = { observedAt: new Date() };
+  assert.throws(() => assertEvaluationOutput(providerResult), /observedAt.*toISOString/);
+  if (false) {
+    defineEvaluation({
+      ...defaultDefinition(),
+      // @ts-expect-error Dates require an explicit conversion at the durable adapter boundary.
+      execute: async () => ({ output: providerResult }),
+      grade: async () => ({ reward: 1 }),
+    });
+  }
+  const jobs: string[] = [];
+  const definition = defaultDefinition();
+  definition.execute = async ({ context }) => {
+    jobs.push(context.privateJobDirectory);
+    if (context.side === 'candidate') assertEvaluationOutput(providerResult);
+    return { output: providerResult as never }; // Untyped provider SDK at runtime.
+  };
+  const s = await setup(definition);
+  try {
+    const result = await runCapturedEvaluation(s.options);
+    assert.equal(result.comparison!.results[0].parent.error, 'output_invalid');
+    assert.equal(result.comparison!.results[0].candidate.error, 'output_invalid');
+    assert.ok(!s.submitted[0].body.includes('observedAt'));
+    const diagnostic = JSON.parse(
+      await readFile(path.join(jobs[0], 'output-validation.json'), 'utf8'),
+    );
+    assert.equal(diagnostic.field, 'output["observedAt"]');
+    assert.match(diagnostic.reason, /toISOString/);
+  } finally {
+    await s.cleanup();
+  }
 });
 
 test('output references reject lone surrogates as failed evidence and preserve Unicode scalar strings', async () => {
@@ -405,6 +502,19 @@ for (const cancelAt of ['execute', 'grade'] as const)
     }
   });
 
+function lockOwnerPid(directory: string): number {
+  const children = execFileSync('pgrep', ['-P', String(process.pid)], { encoding: 'utf8' })
+    .trim()
+    .split(/\s+/);
+  const processes = execFileSync('ps', ['-ww', '-p', children.join(','), '-o', 'pid=,command='], {
+    encoding: 'utf8',
+  });
+  const lock = path.join(directory, 'ownership.lock');
+  const owner = processes.split('\n').find((line) => line.trimEnd().endsWith(lock));
+  assert.ok(owner, 'Expected the helper holding the journal lock');
+  return Number(owner.trimStart().split(/\s+/, 1)[0]);
+}
+
 test('lock helper loss during authoritative GET is checked before app execution', async () => {
   const definition = defaultDefinition();
   let executions = 0;
@@ -414,29 +524,12 @@ test('lock helper loss during authoritative GET is checked before app execution'
   };
   const s = await setup(definition),
     get = s.f.api.getEvaluation.bind(s.f.api);
-  let reads = 0,
-    killed = false;
+  let reads = 0;
   s.f.api.getEvaluation = async (...args) => {
     const result = await get(...args);
     reads++;
     if (reads === 4) {
-      const lines = execFileSync('ps', ['-axo', 'pid,ppid'], { encoding: 'utf8' }).split('\n');
-      for (const line of lines) {
-        const [pid, ppid] = line.trim().split(/\s+/).map(Number);
-        if (ppid !== process.pid) continue;
-        try {
-          const command = execFileSync('ps', ['-ww', '-p', String(pid), '-o', 'command='], {
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore'],
-          });
-          if (command.includes(path.join(s.directory, 'ownership.lock'))) {
-            process.kill(pid, 'SIGKILL');
-            killed = true;
-            break;
-          }
-        } catch {}
-      }
-      assert.equal(killed, true);
+      process.kill(lockOwnerPid(s.directory), 'SIGKILL');
       await new Promise((resolve) => setTimeout(resolve, 30));
     }
     return result;
@@ -475,24 +568,13 @@ test('saved mutation body cannot be returned after ownership is lost during its 
     prototype.read = async function (...args: unknown[]) {
       const result = await read.apply(this, args);
       if (!killed) {
-        const lines = execFileSync('ps', ['-axo', 'pid,ppid'], { encoding: 'utf8' }).split('\n');
-        for (const line of lines) {
-          const [pid, ppid] = line.trim().split(/\s+/).map(Number);
-          if (ppid !== process.pid) continue;
-          const command = execFileSync('ps', ['-ww', '-p', String(pid), '-o', 'command='], {
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore'],
-          });
-          if (!command.includes(path.join(s.directory, 'ownership.lock'))) continue;
-          const lost = new Promise<void>((resolve) =>
-            journal!.signal.addEventListener('abort', () => resolve(), { once: true }),
-          );
-          process.kill(pid, 'SIGKILL');
-          killed = true;
-          await lost;
-          break;
-        }
-        assert.equal(killed, true);
+        const pid = lockOwnerPid(s.directory);
+        const lost = new Promise<void>((resolve) =>
+          journal!.signal.addEventListener('abort', () => resolve(), { once: true }),
+        );
+        process.kill(pid, 'SIGKILL');
+        killed = true;
+        await lost;
       }
       return result;
     };

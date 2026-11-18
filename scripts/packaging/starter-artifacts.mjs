@@ -1,6 +1,6 @@
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
 const inventories = JSON.parse(await readFile(new URL('./starter-files.json', import.meta.url), 'utf8'));
@@ -8,10 +8,11 @@ const inventories = JSON.parse(await readFile(new URL('./starter-files.json', im
 const excluded = new Set(['node_modules', '__pycache__', '.cache', '.local', 'dist', '.DS_Store']);
 const privateNames = new Set(['evaluator.json', 'reader.json', 'intent.json', 'attempt.json', 'attempt.python.json', 'ownership.lock', 'job.json', 'evaluation-request.json']);
 
-async function checkSource(directory, inventory, relative = '') {
+async function checkSource(directory, inventory, omitted, relative = '') {
   const root = await lstat(directory);
   if (root.isSymbolicLink() || !root.isDirectory()) throw new Error('Starter source root is not a regular directory');
   for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (!relative && omitted.has(entry.name)) continue;
     if (excluded.has(entry.name) || entry.name.endsWith('.pyc')) continue;
     if (entry.name.startsWith('.') || privateNames.has(entry.name.toLowerCase()) || /\.(?:key|pem|lock)$/i.test(entry.name) || /\.origin\.json$/i.test(entry.name))
       throw new Error('Private configuration or state must not enter a starter archive');
@@ -20,19 +21,19 @@ async function checkSource(directory, inventory, relative = '') {
     const info = await lstat(filename);
     if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile()))
       throw new Error('Starter source contains an unsupported filesystem entry');
-    if (info.isDirectory()) await checkSource(filename, inventory, publicPath);
+    if (info.isDirectory()) await checkSource(filename, inventory, omitted, publicPath);
     else if (!inventory.has(publicPath)) throw new Error('Unreviewed file must not enter a starter archive');
   }
 }
 
-async function copyStarter(source, destination, inventory) {
-  await checkSource(source, new Set(inventory));
-  for (const filename of inventory)
+async function copyStarter(source, destination, inventory, omitted = new Set()) {
+  await checkSource(source, new Set(inventory), omitted);
+  for (const filename of inventory) {
+    const target = join(destination, filename);
     if (!(await lstat(join(source, filename))).isFile()) throw new Error('Reviewed starter source is missing');
-  await cp(source, destination, {
-    recursive: true, errorOnExist: true, force: false,
-    filter: path => !path.split('/').some(part => excluded.has(part) || part.endsWith('.pyc')),
-  });
+    await mkdir(dirname(target), { recursive: true });
+    await cp(join(source, filename), target, { errorOnExist: true, force: false });
+  }
 }
 
 // A small deterministic USTAR writer avoids platform-specific tar flags and
@@ -84,10 +85,9 @@ export async function archiveStarters(root, output, metadata) {
       const dirname = `${starter.name}-starter`;
       const destination = join(workspace, dirname);
       const source = starter.name === 'evaluation' ? 'evaluation-starter' : starter.name;
-      await copyStarter(join(root, 'examples', source), destination, inventories[starter.name]);
-      if (starter.name === 'ci')
-        await copyStarter(join(root, 'examples', 'evaluation-starter'), join(destination, 'evaluation'), inventories.evaluation);
-      const packageFile = join(destination, starter.name === 'ci' ? 'evaluation' : '', 'package.json');
+      const omitted = starter.name === 'native-repository' ? new Set(['QUALIFICATION.md', 'test']) : new Set();
+      await copyStarter(join(root, 'examples', source), destination, inventories[starter.name], omitted);
+      const packageFile = join(destination, 'package.json');
       try {
         const manifest = JSON.parse(await readFile(packageFile, 'utf8'));
         if (manifest.dependencies?.['@acclimate/sdk']) manifest.dependencies['@acclimate/sdk'] = metadata.version;

@@ -172,7 +172,7 @@ pub async fn create_comparison(
 }
 // The binding exists as soon as the evaluator submits the report. The round's
 // comparison pointer is populated only after evaluation settlement.
-const AUDIT_COMPARISON_MATCH: &str =
+pub(crate) const AUDIT_COMPARISON_MATCH: &str =
     "r.audit_comparison_id=c.id OR r.audit_request_id::text=c.body #>> '{evaluation,requestId}'";
 
 pub async fn get_comparison(

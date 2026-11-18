@@ -42,6 +42,20 @@ pub(super) struct Correction {
     outcome_id: Uuid,
     lesson: Option<Lesson>,
     feedback: Option<Feedback>,
+    #[serde(default)]
+    require_incident_replay: bool,
+}
+
+impl From<TaskOutcome> for Correction {
+    fn from(outcome: TaskOutcome) -> Self {
+        Self {
+            correction_id: outcome.outcome_id,
+            outcome_id: outcome.outcome_id,
+            lesson: outcome.lesson,
+            feedback: outcome.feedback,
+            require_incident_replay: outcome.require_incident_replay,
+        }
+    }
 }
 
 pub(super) async fn locked(
@@ -65,35 +79,46 @@ fn active(row: &PgRow) -> bool {
 pub(super) async fn append(
     tx: &mut Transaction<'_, Postgres>,
     row: &PgRow,
-    correction: Uuid,
-    outcome: Uuid,
-    lesson: Option<&Lesson>,
-    feedback: Option<&Feedback>,
+    correction: &Correction,
     principal: &str,
 ) -> ApiResult<()> {
     let project: String = row.get("project_id");
     let bundle: Uuid = row.get("bundle_id");
     let integration: Uuid = row.get("integration_id");
-    let lesson = lesson.map(serde_json::to_value).transpose().map_err(db)?;
-    let feedback = feedback.map(serde_json::to_value).transpose().map_err(db)?;
-    let prior: Option<(Uuid, Option<Value>, Option<Value>, String)> = sqlx::query_as(
-        "SELECT outcome_id,lesson,feedback,submitted_by
-        FROM connected_learning_corrections WHERE (project_id,integration_id,correction_id)=($1,$2,$3)")
-        .bind(&project).bind(integration).bind(correction).fetch_optional(&mut **tx).await.map_err(db)?;
-    if let Some(prior) = prior {
-        if prior == (outcome, lesson, feedback, principal.to_owned()) {
-            return Ok(());
-        }
-        return Err(conflict("Correction ID already binds different teaching"));
+    let lesson = correction
+        .lesson
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(db)?;
+    let feedback = correction
+        .feedback
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(db)?;
+    let same: Option<bool> = sqlx::query_scalar(
+        "SELECT (outcome_id,lesson,feedback,require_incident_replay,submitted_by)
+            IS NOT DISTINCT FROM ($4,$5,$6,$7,$8)
+         FROM connected_learning_corrections WHERE (project_id,integration_id,correction_id)=($1,$2,$3)")
+        .bind(&project).bind(integration).bind(correction.correction_id)
+        .bind(correction.outcome_id).bind(&lesson).bind(&feedback).bind(correction.require_incident_replay)
+        .bind(principal).fetch_optional(&mut **tx).await.map_err(db)?;
+    if let Some(same) = same {
+        return if same {
+            Ok(())
+        } else {
+            Err(conflict("Correction ID already binds different teaching"))
+        };
     }
     if !active(row) {
         return Err(conflict("Learning admission is closed"));
     }
     let inserted = sqlx::query("INSERT INTO connected_learning_corrections
-        (project_id,bundle_id,integration_id,correction_id,outcome_id,lesson,feedback,submitted_by)
-        SELECT project_id,bundle_id,integration_id,$5,outcome_id,$6,$7,$8 FROM connected_learning_outcomes
+        (project_id,bundle_id,integration_id,correction_id,outcome_id,lesson,feedback,submitted_by,require_incident_replay)
+        SELECT project_id,bundle_id,integration_id,$5,outcome_id,$6,$7,$8,$9 FROM connected_learning_outcomes
         WHERE (project_id,bundle_id,integration_id,outcome_id)=($1,$2,$3,$4)")
-        .bind(&project).bind(bundle).bind(integration).bind(outcome).bind(correction).bind(lesson).bind(feedback).bind(principal)
+        .bind(&project).bind(bundle).bind(integration).bind(correction.outcome_id).bind(correction.correction_id).bind(lesson).bind(feedback).bind(principal).bind(correction.require_incident_replay)
         .execute(&mut **tx).await.map_err(db)?;
     if inserted.rows_affected() != 1 {
         return Err(err(
@@ -122,16 +147,7 @@ pub(super) async fn submit(
         return Err(invalid("A correction ID and teaching are required"));
     }
     validate_teaching(&row, c.lesson.as_ref(), c.feedback.as_ref())?;
-    append(
-        &mut tx,
-        &row,
-        c.correction_id,
-        c.outcome_id,
-        c.lesson.as_ref(),
-        c.feedback.as_ref(),
-        &actor.principal,
-    )
-    .await?;
+    append(&mut tx, &row, &c, &actor.principal).await?;
     tx.commit().await.map_err(db)?;
     Ok(Json(
         json!({"correctionId":c.correction_id,"outcomeId":c.outcome_id,"accepted":true}),

@@ -18,10 +18,13 @@ def compare_sources(context):
     expect(p.get_by_label('Instructions',exact=True)).to_have_count(0)
     p.get_by_label('Bundle JSON',exact=True).fill(json.dumps(dict(schemaVersion=1,files=[dict(path='AGENTS.md',kind='instruction',text='Imported preview only.')])))
     expect(p.get_by_role('heading',name='Import preview · generic',exact=True)).to_be_visible()
-    p.get_by_role('radio',name='Use example',exact=True).check()
+    expect(p.get_by_role('radiogroup',name='Bundle source').get_by_role('radio')).to_have_count(3)
+    p.get_by_role('radio',name='Import files',exact=True).check()
     expect(p.get_by_label('Bundle JSON',exact=True)).to_have_count(0)
-    expect(p.get_by_role('heading',name='Example preview · generic',exact=True)).to_be_visible()
-    expect(p.locator('[data-slot=disclosure][data-state=open] pre').first).to_be_visible()
+    p.get_by_label('Individual files',exact=True).set_input_files(
+        dict(name='AGENTS.md',mimeType='text/markdown',buffer=b'Uploaded preview only.'))
+    p.get_by_role('button',name='AGENTS.md · instruction',exact=True).click()
+    expect(p.locator('[data-slot=disclosure][data-state=open] pre').first).to_have_text('Uploaded preview only.')
     p.get_by_role('radio',name='Write instructions',exact=True).check()
 
 
@@ -31,7 +34,7 @@ def one_source(context):
     p=page(context)
     expect(p.get_by_label('Instructions',exact=True)).to_have_value('Keep these exact instructions.')
     expect(p.get_by_label('Bundle JSON',exact=True)).to_have_count(0)
-    expect(p.get_by_role('heading',name='Example preview · generic',exact=True)).to_have_count(0)
+    expect(p.get_by_role('heading',name='Import preview · generic',exact=True)).to_have_count(0)
     summary=p.get_by_label('Initial publication summary',exact=True)
     expect(summary).to_contain_text('Publishes 1 entry to stable.')
     expect(summary).to_contain_text('No evaluation is run.')
@@ -67,7 +70,7 @@ def lose_initial(context):
 def reconcile_initial(context):
     w=context.world
     p=page(context)
-    expect(p.get_by_role('radio',name='Use example',exact=True)).to_have_count(0)
+    expect(p.get_by_role('radiogroup',name='Bundle source',exact=True)).to_have_count(0)
     expect(p.get_by_role('button',name='Pending creation',exact=True)).to_be_disabled()
     open_details(p,'Creation recovery details')
     frozen=json.loads(p.get_by_label('Exact submitted creation',exact=True).inner_text())

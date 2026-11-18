@@ -17,35 +17,24 @@ To use an adapter included in this checkout, install and configure the checkout 
 
 The evaluator credential needs read/write access to the selected project; it needs neither propose nor promote. The service URL, project and principal must identify the same application as the request. Remote API URLs require HTTPS. HTTP is accepted only for an explicitly configured same-host private hop at 127.0.0.1, localhost or [::1]; it is never a public deployment recipe. `journalRoot` must be absolute and owner-only; the helper creates it when absent. Symlinks, shared permissions, unknown fields, oversized files and missing configuration are rejected. The helper reads only the file supplied through `--config`; environment credentials, launcher files and default state directories are never consulted.
 
-After setup, replace the placeholder in the optional console example and run it from your installed checkout:
+For your own agent, install the [application evaluator starter](../evaluation-starter/README.md) and provide your agent, cases and grader. To evaluate Codex on the saved code-review tasks included in this checkout, print the installed descriptor, use it to create a request in the console, and run that request against the deployed service:
 
 ```sh
-npm run evaluate:app -- --config /absolute/private/evaluator.json --bundleID UUID --requestID UUID --adapter payment-retry
-```
-
-A compatible public descriptor only explains which included adapter could match. It does not establish that the viewer has an installed checkout, credentials or a runnable evaluator. Custom app evaluators consume the default request/configuration handoff through the public SDK instead.
-
-The installed `payment-retry` adapter uses `localEvaluationDescriptor` from `descriptor.ts`. It executes an in-memory payment processor under response loss, transient failure and ordinary success. Each version supplies declarative data in a bundle file at `payment-policy.json`, for example:
-
-```json
-{"maxAttempts":2,"idempotency":"request"}
-```
-
-The allowed attempt count is 1–3, and idempotency is `request`, `attempt` or `none`. The grader independently requires a successful response and exactly one charge. A missing or invalid policy earns zero, with the saved trace explaining the result. Changing an instruction sentence alone does not improve this score. This simulator is orchestration regression evidence only.
-
-`--adapter presence-contract` runs the explicitly named instruction/skill presence contract using `presenceDescriptor`. It makes no behavioral quality claim.
-
-For native review evaluation, create a request with `nativeReviewDescriptor` and opt in explicitly:
-
-```sh
+npm run --silent evaluate:app -- describe
 npm run evaluate:app -- --config /absolute/private/evaluator.json --bundleID UUID --requestID UUID --adapter codex-luna-review --live
 ```
 
-This installed adapter prepares each immutable bundle using the Codex plugin, then runs the existing `service-proposer` saved review cases and independent exact-finding grader. It authorizes at most four Luna turns, each with a 110-second timeout, read-only filesystem, disabled network and no approvals. Use it only when paid execution is intended and Codex authentication is already configured. No paid calls run in the default tests. The fake native adapter test verifies wiring and identifies itself as `fake-native-review`; it provides no evidence of native improvement. No new live native quality claim has been qualified.
+For the policy decision on the saved request, download its public JSON from the console and run:
+
+```sh
+npm run --silent evaluate:app -- check --config /absolute/private/evaluator.json --handoff evaluation-request.json --policy /path/to/your/quality-policy.json
+```
+
+This installed adapter prepares each immutable bundle using the Codex plugin, then runs the existing `service-proposer` saved review cases and independent exact-finding grader. It authorizes at most four Luna turns, each with a 110-second timeout, read-only filesystem, disabled network and no approvals. Use it only when paid execution is intended and Codex authentication is already configured.
 
 Applications can supply their own installed `InstalledAdapter` to `runEvaluation`. Its `describe()` returns dataset/grader revisions, a fixed case inventory, and runtime identity including app-owned `configId`/`configRevision`. Its installed callbacks own execution and grading. The request must structurally match those values before any execution starts. A service request cannot name a script, module, URL, path or credential to execute. The CLI selects only names installed in its explicit allowlist.
 
-The native example retains prepared inputs and reports `execution.uncertain` when its SDK await fails; a timeout/error is not proof that provider work stopped. It does not automatically execute the candidate after an uncertain parent run. The [native repository starter](../native-repository/README.md) adds persistent job locators and operator-reviewed quarantine recovery; its model-free checks do not establish live provider termination.
+The native example retains prepared inputs and reports `execution.uncertain` when its SDK await fails; a timeout/error is not proof that provider work stopped. It does not automatically execute the candidate after an uncertain parent run. The [native repository starter](../native-repository/README.md) adds persistent job locators and operator-reviewed quarantine recovery.
 
 Each request has an owner-only journal scoped to service/project/bundle/request/evaluator. New journal writes also record the absolute journal root and refuse recovery from a relocated copy. A kernel file lock (Python 3 `fcntl`) grants exclusive process ownership. The helper saves attempt and idempotency keys before start, the execution marker before callbacks, and the exact report before submission. A response lost during start, report submission or finish can be recovered with the same private configuration and command. Keep the exact service URL, project, evaluator principal and original journal root for unfinished requests. Token rotation is possible only for the same authorized principal. Per-case outputs are private JSON files referenced by the report. Complete losses finish `completed`; retained infrastructure or grading failures finish `failed` with partial evidence.
 

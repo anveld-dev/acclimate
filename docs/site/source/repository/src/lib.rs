@@ -26,6 +26,7 @@ mod integrations;
 mod invitations;
 pub mod mail;
 pub mod pagination;
+mod policy_receipts;
 pub mod proposal_edits;
 mod store;
 mod types;
@@ -152,6 +153,7 @@ pub fn router(state: AppState) -> Router {
         .merge(drafts::routes())
         .merge(evaluations::routes())
         .merge(evaluation_progress::routes())
+        .merge(policy_receipts::routes())
         .merge(workspaces::routes())
         .merge(invitations::routes())
         .route("/health", get(|| async { "ok" }))

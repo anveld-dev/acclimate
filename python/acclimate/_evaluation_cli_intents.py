@@ -156,13 +156,24 @@ def _assert_request(request, state):
         raise _fail()
 
 
-def create_request_from_intent(*, app, config, bundle_id, channel, payload_file, intent_path, output_file):
+def create_request_from_intent(*, app, config, bundle_id, channel, payload_file, intent_path, output_file, predecessor=None):
     filename = Path(intent_path)
     if not filename.is_absolute() or filename.resolve() != filename:
         raise EvaluationError("config.permissions")
     output = os.path.abspath(output_file)
     payload = read_command_json(payload_file)
     validate_payload(payload)
+    prior = None
+    if predecessor:
+        handoff_file, request = predecessor
+        prior = _read_intent(handoff_file.parent / "intent.json")
+        if (not prior or prior.get("schemaVersion") != 1 or prior.get("kind") != "acclimate-request-intent"
+                or prior.get("identity") != _identity(config) or prior.get("output") != str(handoff_file)
+                or prior.get("bundleId") != bundle_id or prior.get("channel") != channel or prior.get("payload") != payload
+                or any((prior.get("request") or {}).get(key) != request[key] for key in ("id", "candidateVersionId", "candidateDigest"))
+                or prior.get("base", {}).get("versionId") != request["parentVersionId"]
+                or prior.get("base", {}).get("digest") != request["parentDigest"]):
+            raise _fail()
     ensure_private_directory(filename.parent)
     client = make_client(config)
     scope = {"projectId": config["projectId"], "bundleId": bundle_id, "channel": channel}
@@ -177,16 +188,24 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
             origin_file = Path(str(filename) + ".origin.json")
             if state is None and (origin_file.exists() or origin_file.is_symlink()):
                 raise EvaluationError("journal.missing", phase="claim", next_action="inspect_external_app")
+            if state is not None and prior and state.get("retryAfterRequestId") != prior["request"]["id"]:
+                raise _fail()
             if state is not None and (state.get("schemaVersion") != 1 or state.get("kind") != "acclimate-request-intent" or state.get("identity") != _identity(config) or state.get("bundleId") != bundle_id or state.get("channel") != channel or state.get("output") != output or state.get("payload") != payload or state.get("descriptor") != app.descriptor):
                 raise _fail()
             if state is None:
                 current = client.resolve_channel(config["projectId"], bundle_id, channel)[0]
                 if not current:
                     raise _fail("request.base_conflict")
+                if prior and (current["version"]["id"] != prior["base"]["versionId"]
+                              or current["version"]["digest"] != prior["base"]["digest"]
+                              or current["revision"] != prior["base"]["revision"]):
+                    raise _fail("request.base_conflict")
                 state = {"schemaVersion": 1, "kind": "acclimate-request-intent", "identity": _identity(config), "bundleId": bundle_id, "channel": channel, "output": output, "payload": payload, "descriptor": app.descriptor,
                     "base": {"versionId": current["version"]["id"], "digest": current["version"]["digest"], "revision": current["revision"]},
                     "keys": {"draft": str(uuid.uuid4()), "request": str(uuid.uuid4())},
                     "draftBody": json_bytes({"baseVersionId": current["version"]["id"], "baseRevision": current["revision"], "payload": payload}).decode()}
+                if prior:
+                    state["retryAfterRequestId"] = prior["request"]["id"]
                 atomic_private_write(origin_file, json_bytes({"schemaVersion": 1, "kind": "acclimate-request-intent-origin", "draftKey": state["keys"]["draft"]}) + b"\n")
                 save(state)
             base = state["base"]
@@ -233,7 +252,16 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
             request = state["request"]
             handoff = validate_handoff({"schemaVersion": 1, "serviceUrl": config["serviceUrl"], "projectId": config["projectId"], "bundleId": bundle_id, "requestId": request["id"], "configuration": state["descriptor"]})
             _write_handoff(output, handoff)
-            return {"schemaVersion": 1, "requestId": request["id"], "draftId": draft["id"], "generation": draft["generation"], "parentVersionId": base["versionId"], "candidateVersionId": version["id"], "status": request["status"]}
+            return {
+                "schemaVersion": 1,
+                "requestId": request["id"],
+                "draftId": draft["id"],
+                "generation": draft["generation"],
+                "parentVersionId": base["versionId"],
+                "candidateVersionId": version["id"],
+                "candidateDigest": request["candidateDigest"],
+                "status": request["status"],
+            }
     except Exception as error:
         raise _command_failure(error) from None
 

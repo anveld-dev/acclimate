@@ -1,6 +1,6 @@
 # Run Acclimate locally
 
-If you already have a workspace, start with [Connect an existing agent](getting-started.md) and the [installed evaluator starter](../examples/evaluation-starter/README.md). This document covers developing/operating the repository; a model-free [starter trial](../examples/evaluation-starter/README.md#install-and-try-without-a-service) can show paired behavior before PostgreSQL/OIDC setup. Operators provision evaluator access using the [evaluator runbook](evaluator-operations.md).
+If you already have a workspace, start with [Connect an existing agent](getting-started.md) and the [installed evaluator starter](../examples/evaluation-starter/README.md). This document covers developing and operating the service. Operators provision evaluator access using the [evaluator runbook](evaluator-operations.md).
 
 The first implementation is a Rust HTTP service, a TypeScript delivery SDK, and native preparation plugins. The app runs the agent. Start with PostgreSQL and the delivery example; model calls are optional.
 
@@ -16,7 +16,7 @@ npm run build
 cargo build --release
 ```
 
-Inject runtime environment from your secret manager. `npm start` starts the built Rust service, `npm run start:console` starts the built console, and `npm run dev` runs Vite with the same required production configuration. No command provisions a database, invents a user, loads old `.local` state or supplies credentials. `npm run local`, `demo` and the old bridge commands fail with migration guidance. Existing private files are left alone.
+Inject runtime environment from your secret manager. `npm start` starts the built Rust service, `npm run start:console` starts the built console, and `npm run dev` runs Vite with the same required production configuration. No command provisions a database, invents a user, loads old `.local` state or supplies credentials. `npm run local` and the old bridge commands fail with migration guidance. Existing private files are left alone.
 
 Rust validates PostgreSQL/access/issuer configuration before listening, holds exclusive queue ownership, applies migrations and registers project rows named in explicit machine grants. That registration never grants human membership. The console validates its own required settings before built or development listening. Use the public console URL through the configured TLS proxy, not its private listener.
 
@@ -32,20 +32,18 @@ HTTP requests have a 2MiB limit, 30-second deadline and 64-handler concurrency c
 
 ## Publish and consume content
 
-In another terminal, use the same configured token:
+Configure `ACCLIMATE_URL`, `ACCLIMATE_PROJECT`, `ACCLIMATE_SCOPE` and `ACCLIMATE_TOKEN` for the workspace. To publish the first version of a new bundle, supply your bundle JSON, its name and the reason for the initial release.
 
 ```sh
-export ACCLIMATE_TOKEN='replace-with-a-long-random-token'
-npm run example:publish
+npm run example:publish -- "$BUNDLE_FILE" "$BUNDLE_NAME" "$INITIAL_RELEASE_REASON"
 ```
 
-This publishes the checked-in instruction, skill, and memory fixture, creates `stable` with an explicit unevaluated seed reason, and prints the IDs. It makes no model call.
+The service creates the bundle, version and channel in one operation. The channel defaults to `stable`. Set `ACCLIMATE_CHANNEL` to choose another, or `ACCLIMATE_OPERATION_ID` to reuse the same operation on retry.
 
-Set `ACCLIMATE_BUNDLE` to the printed bundle ID, then run an application-owned Codex session:
+Set `ACCLIMATE_BUNDLE` to the printed bundle ID. Pass a task from your application to start a paid Codex session.
 
 ```sh
-export ACCLIMATE_BUNDLE='the-printed-bundle-id'
-npm run example:codex -- --live 'Use the retry-review skill to review: retry a payment after a timeout.'
+npm run example:codex -- --live "$TASK"
 ```
 
 The explicit --live flag authorizes a paid Luna turn using the official Codex SDK and existing app authentication. The app fetches a fresh channel mapping, verifies/caches immutable bytes, prepares native files, then starts a fresh read-only session. Only `gpt-6-luna` and `gpt-5.6-luna` are accepted; the default is `gpt-6-luna`. The service never receives Codex credentials. The example requests cancellation after 110 seconds; an SDK error does not prove external termination. Successful completion cleans the prepared inputs, while unconfirmed execution retains them and reports uncertainty. Use the [native repository starter](../examples/native-repository/README.md) for persistent private job locators and explicit quarantine recovery. No new live-provider termination guarantee is claimed.
@@ -66,7 +64,7 @@ Existing cache/preparation roots must already be private and owned by the curren
 
 ## Try the improvement loop
 
-`npm run example:compare` runs deterministic app callbacks and prints a paired comparison report. It is a wiring example, not evidence of better model performance. The real app supplies execution, isolation, fixture services, and grading.
+Use the [installed-app evaluator](../examples/evaluation-starter/README.md) to compare two immutable bundle versions on your private cases. For the checkout's Codex integration, use the [native review command](../examples/evaluation/README.md).
 
 The service proposer is disabled by default. An authorized request is recorded and then fails clearly if no provider is configured. To enable it, set `ACCLIMATE_MODEL_ENDPOINT` to a full OpenAI-compatible chat-completions URL, `ACCLIMATE_MODEL_TOKEN`, and `ACCLIMATE_MODEL=gpt-6.2-sol` to have Sol draft candidates. Existing configurations using `gpt-6-luna` or `gpt-5.6-luna` also work. This setting only selects the service proposer. The app selects the runtime model used to evaluate each candidate. The proposer returns bounded JSON containing `schemaVersion:1`, `edits:[{path,oldText,newText}]` and `rationale`. Exact original-text anchors must be unique and nonoverlapping; only text at existing allowed paths can change. The proposer permits three attempts, a 60-second call deadline, 32KiB edit content and a 256KiB transport envelope, with an 8192 completion-token request cap. Large unchanged bundle files do not need to be echoed. Model attempts are bounded, may still incur cost after a timeout, and never run tools.
 

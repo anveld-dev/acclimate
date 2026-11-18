@@ -46,7 +46,7 @@ A **workspace** is the existing project. A **bundle** is a named collection of i
 | Overview file list, current revision, latest release | Content and compact bundle header; decision details in Releases |
 | Setup workspace selection | Persistent workspace switcher |
 | Setup bundle selection | Bundles library, scoped to that workspace |
-| Setup create, JSON import, explicit example | Bundles → New bundle; retain separate choices and pending-operation recovery |
+| Write instructions, upload files, import JSON | Bundles → New bundle; retain separate choices and pending-operation recovery |
 | Content browse, filter, select and download published entries | Bundle → Content |
 | Content add/rename/remove entries or skill packages, import files | Changes → draft detail; one editor |
 | Save, reopen, diff and inspect draft generations | That draft's detail; Edit from Content opens the same entry there |
@@ -113,7 +113,7 @@ Don't settle this by counting links. Ask new users to edit a selected skill, reo
 ## Implementation order and acceptance
 
 1. **Establish scope.** Scoped loaders/links, explicit mutation targets, real workspace/bundle labels, correct state reset, permission-aware destinations. Reproduce and close the two cross-tab/state risks.
-2. **Replace Overview and Setup with Bundles.** Preserve explicit examples/imports, provenance and unknown-write recovery. Hosted nonoperators without membership get their verified ID and an ask-admin state; local users get the configured workspace.
+2. **Replace Overview and Setup with Bundles.** Preserve imported content, stored provenance and unknown-write recovery. Hosted nonoperators without membership get their verified ID and an ask-admin state; local users get the configured workspace.
 3. **Make one change detail.** Move the existing editor there, preserve complete skill packages, and link draft/suggestion → exact candidate → evaluation/evidence → deliberate publication. Keep paused/interrupted/missing evidence honest.
 4. **Move administration.** One workspace Connections index; reader-accessible SDK recipe; Members separated from account actions. Don't expand the backend domain model.
 

@@ -19,12 +19,11 @@ import tarfile
 import zipfile
 from urllib.parse import unquote, urlsplit
 
+from scripts.packaging.fixture_application import FIXTURE
 from scripts.packaging.qualify_dx import extract_starter, private_json, run as installed_run, verify_release
 from scripts.productization.qualify import Harness, ROOT
 
-DEFAULT_RELEASE = Path('/private/tmp/acclimate-dx-release-20261117-review-1')
 DEFAULT_PG_BIN = '/opt/homebrew/opt/postgresql@16/bin'
-SOURCE_FINGERPRINT = '15feab4b46cd8c4d52592fc318cd171a267daa1ec562d4447ae261a16db03f6b'
 
 
 def _name(value: str) -> str:
@@ -46,8 +45,17 @@ class PersonaFixture:
     def __init__(self, name: str, output: Path, release: Path | None = None,
                  pg_bin: str = DEFAULT_PG_BIN, *, source_sha256: str | None = None):
         # Select acceptance inputs before stripping ambient application settings.
-        release = release if release is not None else os.environ.get('ACCLIMATE_PERSONA_RELEASE', DEFAULT_RELEASE)
-        self.expected_source_sha256 = source_sha256 if source_sha256 is not None else os.environ.get('ACCLIMATE_PERSONA_SOURCE_SHA256', SOURCE_FINGERPRINT)
+        release = release or os.environ.get('ACCLIMATE_PERSONA_RELEASE')
+        if not release:
+            version = json.loads((ROOT / 'packages/sdk/package.json').read_text())['version']
+            release = ROOT / 'artifacts/releases' / version
+        self.expected_source_sha256 = source_sha256 or os.environ.get('ACCLIMATE_PERSONA_SOURCE_SHA256')
+        if not self.expected_source_sha256:
+            self.expected_source_sha256 = subprocess.check_output([
+                'node', '--input-type=module', '-e',
+                "import { releaseSourceFingerprint } from './scripts/packaging/source-fingerprint.mjs'; "
+                "console.log((await releaseSourceFingerprint(process.cwd())).sha256);"
+            ], cwd=ROOT, text=True).strip()
         if not re.fullmatch(r'[0-9a-f]{64}', self.expected_source_sha256):
             raise ValueError('Expected acceptance source fingerprint must be a lowercase SHA256')
         self.name = _name(name)
@@ -179,12 +187,7 @@ class PersonaFixture:
 
     def bootstrap(self, payload=None, name='Disposable developer persona fixture'):
         if payload is None:
-            baseline = self.root / 'baseline-starter'
-            if not baseline.exists():
-                app = extract_starter(self.release, self._starter('evaluation'), baseline)
-            else:
-                app = baseline / self._starter('evaluation')['directory']
-            payload = json.loads((app / 'baseline.json').read_text())
+            payload = json.loads((FIXTURE / 'baseline.json').read_text())
         return self.h.call('POST', '/v1/projects/' + self.project + '/bundle-setups', dict(
             name=name, origin='example', sourceLabel='Disposable model-free persona acceptance',
             channel='stable', payload=payload, reason='Explicit disposable seed fixture'))

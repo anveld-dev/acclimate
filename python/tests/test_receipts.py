@@ -37,8 +37,9 @@ class ReceiptTests(unittest.TestCase):
         self.assertTrue(reporter.wait())
         self.assertEqual(original, client.events[1])
         client.fail = True
-        bound.report_started()
+        started = bound.report_started()
         self.assertTrue(reporter.wait())
+        self.assertEqual(started, client.events[-1])
         count = len(client.events)
         clock[0] += 86401
         reporter.flush()

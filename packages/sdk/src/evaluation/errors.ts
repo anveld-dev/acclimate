@@ -13,6 +13,12 @@ export type SafeCode =
   | 'guided_target_unsupported'
   | 'auth.denied'
   | 'auth.principal_mismatch'
+  | 'learning.apps_module_missing'
+  | 'learning.apps_module_load_failed'
+  | 'learning.apps_invalid_export'
+  | 'learning.recheck_callback_missing'
+  | 'learning.field_replay_callback_missing'
+  | 'learning.incident_replay_callback_missing'
   | 'descriptor.mismatch'
   | 'version.binding_mismatch'
   | 'service.unavailable'
@@ -65,7 +71,18 @@ export type SafeNextAction =
   | 'inspect_external_app'
   | 'interrupt_then_new_request'
   | 'review_terminal_evidence';
+const pathGuidance = {
+  configAlias: { field: 'configPath', hint: 'Use the absolute realpath of the config file, including all parent directories. On macOS, /var is an alias for /private/var.' },
+  journalAlias: { field: 'journalRoot', hint: 'Set journalRoot to the absolute realpath of the journal directory, including all parents. On macOS, /var is an alias for /private/var.' },
+  configMode: { field: 'configPath', hint: 'Use a config owned by the current user with mode 0600 (chmod 600) in a private directory owned by that user with mode 0700 (chmod 700).' },
+  journalMode: { field: 'journalRoot', hint: 'Use a journal directory owned by the current user with mode 0700 (chmod 700).' },
+  exportOverlap: { field: 'outputDirectory', hint: 'Set --out to a new directory outside the config, journal and prepared workspace trees. Choose a separate private sibling of those trees.' },
+} as const;
+export type PathIssue = keyof typeof pathGuidance;
 export interface SafeDiagnostic {
+  pathIssue?: PathIssue;
+  field?: (typeof pathGuidance)[PathIssue]['field'];
+  hint?: string;
   code: SafeCode;
   phase: EvaluationPhase;
   executionState: ExecutionState;
@@ -74,6 +91,12 @@ export interface SafeDiagnostic {
   correlationId?: string;
   httpStatus?: number;
   mismatchFields?: readonly string[];
+  reportBudget?: {
+    estimatedBytes: number;
+    limitBytes: number;
+    expectedPairs: number;
+    maxPairsPerPartition: number;
+  };
 }
 const nextAction = (code: SafeCode): SafeNextAction => {
   if (code === 'capabilities.unsupported') return 'upgrade_service';
@@ -112,6 +135,9 @@ export class EvaluationError extends Error {
     this.code = code;
     this.diagnostic = {
       code,
+      ...(options.pathIssue && Object.hasOwn(pathGuidance, options.pathIssue)
+        ? { pathIssue: options.pathIssue, ...pathGuidance[options.pathIssue] }
+        : {}),
       phase: options.phase ?? 'configure',
       executionState: options.executionState ?? 'not_started',
       nextAction: options.nextAction ?? nextAction(code),

@@ -26,29 +26,28 @@ def run(args):
         w.draft=w.call('POST',w.channel+'/drafts',dict(baseVersionId=w.original['version']['id'],baseRevision=w.original['revision'],payload=dict(schemaVersion=1,files=[dict(f,text=f['text']+'\nKeep the original receipt.\n') for f in FILES])))
         b=w.browser();p=b.page;route_path=b.bundle_path('changes',candidate=w.draft['snapshotVersion']['id'])
         section=p.get_by_role('region',name='Create evaluation request',exact=True)
-        profile=section.get_by_label('Evaluation configuration',exact=True)
+        language=section.get_by_label('Evaluator language',exact=True)
         editor=section.get_by_label('Public evaluator configuration (JSON)',exact=True).filter(visible=True)
         trigger=section.locator('h2 > [data-slot=disclosure-trigger]')
         create=section.get_by_role('button',name='Create evaluation request',exact=True)
         preview=section.locator('.evaluation-setup-preview')
         for width in (1440,1024,390,320):
             p.set_viewport_size(dict(width=width,height=1000));visit(p,b,route_path)
-            expect(profile).to_be_visible();assert p.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+            expect(language).to_be_visible();assert p.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
             capture_layout(p,out,f'first-setup-{width}')
             if args.verify:
-                expect(profile).to_have_value('')
+                expect(language).to_have_value('javascript')
                 expect(create).to_be_disabled()
                 expect(preview.locator('dl')).to_have_count(0)
                 assert section.evaluate('e=>e.getBoundingClientRect().width>document.querySelector(".evaluation-workspace").getBoundingClientRect().width-4')
             record(f'First setup fits {width}px')
         p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,route_path)
-        for value,count in [('payment-retry',6),('presence-contract',4),('codex-luna-review',2)]:
-            profile.select_option(value)
-            if args.verify:expect(preview.locator('dd').first).to_have_text(str(count))
-            capture_layout(p,out,'profile-'+value)
+        for value in ('python','javascript'):
+            language.select_option(value)
+            expect(section).to_contain_text('python -m acclimate describe' if value == 'python' else 'acclimate-eval describe')
             assert w.call('GET',w.bundle+'/evaluation-requests')['items']==[]
-        record('Preset selections show exact 6/4/2 expected pairs without submitting or executing')
-        profile.select_option('custom');editor.fill('{')
+        record('Selecting either evaluator language performs no write')
+        editor.fill('{')
         expect(create).to_be_disabled();expect(section.get_by_role('alert')).to_be_visible()
         if args.verify:
             expect(editor).to_have_attribute('aria-invalid','true')
@@ -63,7 +62,7 @@ def run(args):
         expect(create).to_be_enabled();expect_editor_value(editor,text)
         if args.verify:
             expect(editor).to_have_attribute('aria-invalid','false');expect(preview.locator('dd').first).to_have_text('3')
-        profile.select_option('payment-retry');profile.select_option('custom');expect_editor_value(editor,text)
+        language.select_option('python');language.select_option('javascript');expect_editor_value(editor,text)
         capture_layout(p,out,'custom-valid-desktop')
         editor.focus();p.keyboard.press('Tab');expect(preview).to_be_focused();p.keyboard.press('Tab');expect(create).to_be_focused()
         trigger.click();expect(editor).to_be_hidden();trigger.focus();p.keyboard.press('Tab');assert not section.locator('[data-slot=disclosure-content]').evaluate('e=>e.contains(document.activeElement)')
@@ -126,7 +125,7 @@ def run(args):
                 create.click();expect(p.get_by_role('button',name='Check result',exact=True)).to_be_enabled()
             finally:p.unroute(pattern,lose_confirmation)
             assert dropped
-            expect(profile).to_be_disabled();expect(create).to_be_disabled()
+            expect(create).to_be_disabled()
             trigger.click();expect(trigger).to_have_attribute('aria-expanded','false')
             expect(section.locator('.evaluation-setup-blocked-reason')).to_contain_text('not been confirmed')
             capture_layout(p,out,'unconfirmed-operation-setup-collapsed')
@@ -134,7 +133,7 @@ def run(args):
             p.get_by_role('button',name='Check result',exact=True).click()
             expect(p.get_by_role('region',name='Unconfirmed operation',exact=True)).to_have_count(0)
             assert len(w.call('GET',w.bundle+'/evaluation-requests')['items'])==2
-            trigger.click();expect(profile).to_be_enabled();expect_editor_value(editor,json.dumps(configuration(7)))
+            trigger.click();expect(create).to_be_enabled();expect_editor_value(editor,json.dumps(configuration(7)))
             record('Lost successful submission confirmation blocks a new request and remains visible while folded; checking the exact result recovers once without duplicate creation')
             # Force the existing editor loading fallback through the real browser asset boundary.
             fallback_context=b.browser.new_context(ignore_https_errors=True,viewport=dict(width=1024,height=1000))
@@ -144,7 +143,6 @@ def run(args):
                 fp=fallback_context.new_page();visit(fp,b,route_path)
                 fs=fp.get_by_role('region',name='Create evaluation request',exact=True)
                 fs.locator('h2 > [data-slot=disclosure-trigger]').click()
-                fs.get_by_label('Evaluation configuration',exact=True).select_option('custom')
                 expect(fs.get_by_text('Syntax editor unavailable. Plain-text editing is available.',exact=True)).to_be_visible()
                 fallback=fs.get_by_label('Public evaluator configuration (JSON)',exact=True).filter(visible=True)
                 fallback.fill('{');expect(fallback).to_have_attribute('aria-invalid','true')

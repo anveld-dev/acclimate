@@ -62,15 +62,16 @@ test('expired sessions offer sign-in while missing workspace permission stays a 
     }
   }
 });
-test('example creation uses one atomic command and trusted session transport', async () => {
+test('creating supplied instructions uses one atomic command and trusted session transport', async () => {
   let calls = 0;
   await createSetup(
     { ...env, CONSOLE_SESSION_TOKEN: 'session' },
     {
       projectId: 'one',
-      name: 'Example',
+      name: 'Team instructions',
       channel: 'stable',
-      origin: 'example',
+      origin: 'created',
+      payload: suppliedPayload,
       key: '11111111-1111-4111-8111-111111111111',
     },
     async (url, init) => {
@@ -80,7 +81,8 @@ test('example creation uses one atomic command and trusted session transport', a
       assert.match(String(url), /projects\/one\/bundle-setups$/);
       assert.equal((init?.headers as Record<string, string>)['X-Acclimate-Session'], 'session');
       const body = JSON.parse(String(init?.body));
-      assert.equal(body.origin, 'example');
+      assert.equal(body.origin, 'created');
+      assert.deepEqual(body.payload, suppliedPayload);
       assert.match(body.reason, /no model evaluation/i);
       return Response.json({});
     },
@@ -92,16 +94,6 @@ const suppliedPayload: BundlePayload = {
   schemaVersion: 1,
   files: [{ path: 'AGENTS.md', kind: 'instruction', text: 'Review café\r\n確認\n' }],
 };
-const examplePayload: BundlePayload = {
-  schemaVersion: 1,
-  files: [
-    {
-      path: 'AGENTS.md',
-      kind: 'instruction',
-      text: '# Example instructions\n\nReview changes carefully and explain your validation.\n',
-    },
-  ],
-};
 for (const fixture of [
   { label: 'created content', origin: 'created', payload: suppliedPayload },
   {
@@ -110,15 +102,8 @@ for (const fixture of [
     payload: suppliedPayload,
     compatibilityTarget: 'codex',
   },
-  { label: 'example content', origin: 'example' },
-  {
-    label: 'example content overriding a supplied payload',
-    origin: 'example',
-    payload: suppliedPayload,
-  },
 ] as const) {
   test(`setup preserves exact request bytes for ${fixture.label}`, async () => {
-    const payload = 'payload' in fixture ? fixture.payload : undefined;
     const compatibilityTarget =
       'compatibilityTarget' in fixture ? fixture.compatibilityTarget : undefined;
     const key = '11111111-1111-4111-8111-111111111111';
@@ -126,12 +111,9 @@ for (const fixture of [
       name: 'Reviewed bundle',
       channel: 'stable',
       origin: fixture.origin,
-      payload: fixture.origin === 'example' ? examplePayload : payload,
+      payload: fixture.payload,
       compatibilityTarget: compatibilityTarget ?? 'generic',
-      reason:
-        fixture.origin === 'example'
-          ? 'Explicit example creation; no model evaluation was run.'
-          : 'Initial content setup; no model evaluation was run.',
+      reason: 'Initial content setup; no model evaluation was run.',
     });
     const methods: string[] = [];
     await createSetup(
@@ -176,6 +158,29 @@ test('created and imported setups without content retain definitive empty-payloa
       },
     );
   }
+  assert.equal(calls, 0);
+});
+
+test('the console rejects requests to create sample content before transport', async () => {
+  let calls = 0;
+  await assert.rejects(
+    createSetup(
+      env,
+      {
+        projectId: 'one',
+        name: 'Sample',
+        channel: 'stable',
+        origin: 'example' as 'created',
+        payload: suppliedPayload,
+        key: '11111111-1111-4111-8111-111111111111',
+      },
+      async () => {
+        calls++;
+        return Response.json({});
+      },
+    ),
+    /Invalid origin/,
+  );
   assert.equal(calls, 0);
 });
 

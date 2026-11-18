@@ -4,6 +4,8 @@ if not __debug__:
     raise RuntimeError('Wheel verification requires Python assertions; remove -O/PYTHONOPTIMIZE')
 
 import argparse
+import json
+from fixture_application import install_test_application
 from pathlib import Path
 import shutil
 import subprocess
@@ -37,12 +39,17 @@ with tempfile.TemporaryDirectory(prefix='acclimate-wheel-dx-') as temporary:
                     'from acclimate import EvaluationProgressReporter; '
                     'assert all(callable(x) for x in (define_evaluation,preflight_evaluation,run_evaluation,evaluation_main,check_comparison,export_review_evidence,verify_review_export,analyze_comparison,create_evaluation_manifest,restore_evaluation_manifest,EvaluationProgressReporter))'],
                    cwd=directory, check=True)
-    subprocess.run([str(python), 'trial.py'], cwd=app, env=clean_env, check=True)
+    clean_env['ACCLIMATE_EVALUATOR_CASES'] = install_test_application(app, 'python')
     described = subprocess.run([str(python), 'acclimate_eval.py', 'describe'], cwd=app, check=True,
                               capture_output=True, text=True, env=clean_env)
-    import json
     descriptor = json.loads(described.stdout)
-    assert descriptor['runtime']['configId'] == 'installed-payment-starter'
+    subprocess.run([str(python), '-m', 'acclimate', '--help'], cwd=directory, env=clean_env, check=True)
+    module = subprocess.run([str(python), '-m', 'acclimate', 'describe'], cwd=app, env=clean_env,
+                            check=True, capture_output=True, text=True)
+    assert json.loads(module.stdout) == descriptor
+
+    assert descriptor['runtime']['configId'] == 'installed-qualification-worker'
+    assert descriptor['runtime']['execution'] == 'live'
     assert len(descriptor['expectedCases']) == 2
     assert '"expected"' not in described.stdout and 'evaluatorToken' not in described.stdout
     subprocess.run([str(python), '-m', 'unittest', 'discover', '-s', 'test', '-v'], cwd=app, env=clean_env, check=True)
@@ -58,4 +65,4 @@ with tempfile.TemporaryDirectory(prefix='acclimate-wheel-dx-') as temporary:
         paths.append(str(config))
         checked = subprocess.run([str(python),str(app/'analyze.py'),*paths],cwd=directory,env=clean_env,check=True,capture_output=True,text=True)
         assert json.loads(checked.stdout) == fixture['vectors'][0]['expected']['result']
-    print('Installed Python evaluator/CLI/policy/artifact imports, trial and public descriptor passed.')
+    print('Installed Python evaluator/CLI/policy/artifact imports, and app-owned public descriptor passed.')

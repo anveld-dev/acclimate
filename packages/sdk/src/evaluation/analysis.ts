@@ -1,4 +1,5 @@
 import type { Comparison, EvaluationDescriptor } from '../types.js';
+import { addGap, scalarGap, type EvidenceGaps } from './evidence-gaps.js';
 import { checkComparison, type ExpectedComparisonBinding } from './policy.js';
 
 /** App assertions, not execution attestation. Nothing here releases or promotes a version. */
@@ -43,6 +44,7 @@ export interface AnalysisOptions {
   uncertainty?: PairedUncertainty;
 }
 export interface MetricAnalysis {
+  evidenceGaps?: EvidenceGaps;
   metric: AnalysisMetric;
   status: 'descriptive' | 'indeterminate';
   code: string;
@@ -250,21 +252,20 @@ export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis 
   }
   const results: MetricAnalysis[] = metrics.map((metric) => {
     const groups = new Map<string, Array<{ parent: number; candidate: number }>>();
+    const incompleteCases = new Set<string>();
+    const gaps: EvidenceGaps = { total: 0, rows: [] };
     let comparable = 0,
       nonfinite = false;
     for (const row of ordered) {
       if (!groups.has(row.caseId)) groups.set(row.caseId, []);
       const pair = pairs.get(key(row.caseId, row.repetition));
-      if (!pair) continue;
       const values = (['parent', 'candidate'] as const).map((side) => {
-        const outcome = pair[side];
-        if (
-          outcome.executionStatus === 'infrastructure_failed' ||
-          outcome.gradingStatus !== 'scored'
-        )
-          return null;
-        if (!finite(outcome.reward)) {
-          if (typeof outcome.reward === 'number') nonfinite = true;
+        const outcome = pair?.[side];
+        const gap = scalarGap(outcome);
+        if (gap || !outcome) {
+          if (gap) addGap(gaps, row, side, ...gap);
+          if (gap?.[1] === 'invalid_reward' && typeof outcome?.reward === 'number')
+            nonfinite = true;
           return null;
         }
         const value =
@@ -272,14 +273,17 @@ export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis 
             ? outcome.reward
             : observed.get(key(row.caseId, row.repetition, side))?.values[metric.id];
         if (typeof value === 'number' && !Number.isFinite(value)) nonfinite = true;
-        return finite(value) ? value : null;
+        if (finite(value)) return value;
+        addGap(gaps, row, side, 'metric', 'missing_component');
+        return null;
       });
       if (values[0] !== null && values[1] !== null) {
         comparable++;
         groups.get(row.caseId)!.push({ parent: values[0], candidate: values[1] });
-      }
+      } else incompleteCases.add(row.caseId);
     }
     const result: MetricAnalysis = {
+      ...(gaps.total ? { evidenceGaps: gaps } : {}),
       metric: { ...metric },
       status: 'indeterminate',
       code: nonfinite ? 'analysis.nonfinite' : 'evidence.incomplete',
@@ -297,11 +301,11 @@ export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis 
         interval: null,
       },
     };
-    if (comparable !== ordered.length) return result;
     const direction = metric.direction === 'higher' ? 1 : -1;
     try {
       const differences: number[][] = [];
       for (const [caseId, rows] of groups) {
+        if (incompleteCases.has(caseId)) continue;
         const parentMean = mean(rows.map((row) => row.parent)),
           candidateMean = mean(rows.map((row) => row.candidate));
         result.cases.push({
@@ -315,6 +319,7 @@ export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis 
           rows.map((row) => arithmetic(direction * arithmetic(row.candidate - row.parent))),
         );
       }
+      if (comparable !== ordered.length) return result;
       result.summary = {
         parentMean: mean(result.cases.map((row) => row.parentMean)),
         candidateMean: mean(result.cases.map((row) => row.candidateMean)),

@@ -1,11 +1,9 @@
+import { ApiError } from '@acclimate/sdk';
 import { consoleClient } from './console-client';
-import {
-  evaluationConfiguration,
-  isPaymentSimulatorConfiguration,
-  paymentSimulatorIssue,
-} from '../lib/evaluation-config';
+import { evaluationConfiguration } from '../lib/evaluation-config';
 import type {
   Comparison,
+  ComparisonPolicyReceipt,
   Evaluation,
   Proposal,
   Promotion,
@@ -20,7 +18,7 @@ import { readVersion } from './version-workflows';
 
 type Env = Record<string, string | undefined>;
 export type ImprovementResult =
-  | { ok: false; message: string }
+  | { ok: false; message: string; code?: 'policy_override_required' }
   | {
       ok: true;
       outcome?: Awaited<ReturnType<typeof lookupOperation>>;
@@ -36,16 +34,9 @@ export type ImprovementResult =
       parent?: VersionMetadata;
       parentPayload?: BundlePayload;
       comparison?: Comparison;
+      receipts?: { comparison: ComparisonPolicyReceipt[]; blockers: ComparisonPolicyReceipt[] };
       promotion?: Promotion;
     };
-export const fixtureIdentity = {
-  datasetRevision: 'bundle-contract-fixtures-v1',
-  graderRevision: 'bundle-contract-grader-v1',
-  runtime: { app: 'bundle-contract-fixture-v1', model: 'none', writes: 'disabled' },
-  expectedCases: ['instructions-present', 'skills-present'].flatMap((caseId) =>
-    [0, 1].map((repetition) => ({ caseId, repetition })),
-  ),
-};
 export function comparisonSummary(report: Comparison) {
   const outcomes = report.results.flatMap((pair) => [pair.parent, pair.candidate]);
   const scoredPairs = report.results.filter((pair) =>
@@ -141,8 +132,7 @@ export async function improvement(
     if (input.action === 'evaluate' && input.configuration === undefined)
       return {
         ok: false,
-        message:
-          'Choose an evaluator and provide its public configuration before creating a request.',
+        message: 'Provide the public configuration from your installed application evaluator.',
       };
     const state = await readChannel(env, fetcher);
     if (state.status !== 'ready')
@@ -197,6 +187,15 @@ export async function improvement(
         parentPayload: parent.payload,
       };
     }
+    if (input.action === 'policyReceipts') {
+      const [comparison, candidate] = await Promise.all([
+        input.comparison
+          ? api.listComparisonPolicyReceipts(p, b, String(input.comparison))
+          : Promise.resolve({ items: [] }),
+        api.listCandidatePolicyReceipts(p, b, String(input.candidate)),
+      ]);
+      return { ok: true, receipts: { comparison: comparison.items, blockers: candidate.items } };
+    }
     if (input.action === 'comparison')
       return { ok: true as const, comparison: await api.getComparison(p, b, String(input.id)) };
     if (!state.canEdit)
@@ -242,10 +241,6 @@ export async function improvement(
         throw new Error('stale');
       if (input.action === 'evaluate') {
         const configuration = evaluationConfiguration(input.configuration);
-        const prerequisite = isPaymentSimulatorConfiguration(configuration)
-          ? paymentSimulatorIssue(candidate.payload)
-          : undefined;
-        if (prerequisite) return { ok: false, message: prerequisite };
         return {
           ok: true as const,
           command: {
@@ -268,7 +263,10 @@ export async function improvement(
       if (!evidence && (typeof input.reason !== 'string' || !input.reason.trim()))
         throw new Error('reason');
       const release = evidence
-        ? { comparisonId: evidence }
+        ? {
+            comparisonId: evidence,
+            ...(input.policyOverride ? { policyOverride: input.policyOverride } : {}),
+          }
         : { unevaluatedReason: String(input.reason).trim() };
       if (typeof input.draftId === 'string' && input.draftId) {
         const draft = await api.getDraft(p, b, state.channel, input.draftId);
@@ -318,7 +316,19 @@ export async function improvement(
         ),
       };
     throw new Error('invalid');
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof ApiError &&
+      error.status === 409 &&
+      error.code === 'policy_override_required'
+    ) {
+      return {
+        ok: false,
+        code: 'policy_override_required',
+        message:
+          'Release blocked by a reported policy verdict. Review the current receipts and acknowledge them before publishing.',
+      };
+    }
     return {
       ok: false as const,
       message:

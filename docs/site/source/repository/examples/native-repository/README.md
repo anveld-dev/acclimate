@@ -1,6 +1,6 @@
-# Existing-repository native starter
+# Evaluate a change with your coding agent
 
-This complete application-owned starter combines a frozen source inventory with a pinned bundle in the private workspace created by an installed native plugin. It retains a text patch before cleanup. The runnable task uses a deterministic fake harness; it verifies wiring and resource/lifetime rules, not model quality or real SDK termination.
+Use the same installed agent, task and repository snapshot for each side of an evaluation. This starter stages verified bundle content, retains the agent’s edits and lets your grader test the solution against the original repository inputs.
 
 Node 22.22+, npm 10+ and Linux/macOS (POSIX) are required. Obtain the native starter, matching SDK/plugin tarballs, release manifest and checksums from your release operator; no registry publication or download URL is implied. Verify `SHA256SUMS` in that release directory before extraction. Keep the included private `package.json`: it establishes the application boundary even when extracted beneath another npm workspace. Its empty dependency list deliberately performs no implicit registry resolution.
 
@@ -14,86 +14,60 @@ npm install --prefix "$app" --workspaces=false --offline --ignore-scripts --no-a
 node "$app/verify-install.mjs" codex
 ```
 
-The explicit prefix and `--workspaces=false` keep npm writes inside the starter. Run the import check before any job: it imports public entrypoints only after confirming their real paths are beneath this application's own `node_modules`; enclosing-workspace or symlinked checkout imports fail. Local tarball paths are recorded in this application's manifest/lockfile. Preserve them with your installation evidence; do not replace them with unpinned package names. For the all-four-plugin fixture/tests, supply the Claude, Pi and Cursor plugin tarballs in the same install command, then run `node "$app/verify-install.mjs" --all`. Optional provider peers are unnecessary for the deterministic fixture.
-
-No TypeScript runner, provider credentials or paid calls are needed for the fixture. Run from the extracted starter directory, choosing a new absolute directory beneath an existing canonical parent:
+The packaged `application.mjs` runs a real Codex turn and grades the retained solution with your original Node tests. Install the matching provider SDK and platform executable from your approved npm cache:
 
 ```sh
-node demo.mjs --state-root /absolute/private/new-native-run --harness codex
-```
-
-`claude`, `pi` and `cursor` use the same command. The fixture imports only public installed SDK/plugin entry points. It runs `node --test` on a tiny disposable source checkout, changes retry identity to remain request-scoped, retains `artifacts/<jobId>/result.patch`, and emits:
-
-```json
-{"harness":"codex","sourceManifestSha256":"...","retainedPatch":true,"cleaned":true,"evidence":"deterministic-wiring-only"}
-```
-
-The demo creates owner-only `workspaces`, `jobs` and `artifacts` directories, then starts its dedicated worker with OS `TMPDIR` set to the persistent `workspaces` parent. The helper refuses an implicit system-temp fallback. Reusing a demo state directory is rejected; retained output is never overwritten. For production, configure the dedicated worker's TMPDIR at launch to a fixed canonical private local volume outside automatic temp cleanup, and preserve that physical volume across worker restarts.
-
-## Attach your existing agent
-
-`repository-job.mjs` exports `freezeSourceInventory`, `runRepositoryJob`, `inspectNativeJob` and `cleanupQuarantinedJob`. `worker.mjs` is a complete runnable example. In an evaluator callback, pass the runner-provided `context`, `caseId`, `repetition` and verified `bundle` into the helper:
-
-```js
-execute: async ({ bundle, context, caseId, repetition, signal }) =>
-  runRepositoryJob({
-    bundle, context, caseId, repetition, signal,
-    source: frozenSource, harness: installed.name, prepare: installed.prepare,
-    workspaceParent, artifactRoot,
-    selectedMemoryPaths: ['memory/approved.md'],
-    resultFiles: ['src/retry.js'],
-    runHarness: async ({ context: effective, signal, acknowledge }) => {
-      const job = await startMyExistingAgent({ cwd: effective.cwd, signal,
-        instructionPath: effective.instructionPath, skillPaths: effective.skillPaths,
-        approvedMemory: effective.memoryFiles });
-      await acknowledge({ kind: 'app-job', value: job.id });
-      const result = await job.waitUntilStopped();
-      return { stopped: result.confirmedStopped, output: result.gradeableOutput };
-    },
-  })
-```
-
-The last callback is the marked application seam; `startMyExistingAgent` is your installed application function, not an Acclimate helper. Your adapter owns SDK authentication, permissions, budgets, tools and actual process/provider shutdown. `harnesses.mjs` contains a closed installed-plugin allowlist and `freshSessionInputs` showing the supported native option/loader helpers. Its `memoryFiles` are application context, not an invented native SDK `memory` option. Pi's loader and native option tests require the corresponding declared optional peers; the ordinary fake fixture does not.
-
-`runHarness` must return `stopped:true` only after its external work is quiescent. Returning false or rejecting conservatively throws the SDK's `ExecutionUncertainError`, leaves the native workspace quarantined, and lets the evaluator retain its ambiguous execution marker. An abort signal, timeout, missing handle or rejected SDK await is never treated as proof a job stopped. Do not race a timeout against a run and unconditionally clean up.
-
-## Declared Codex runtime policy
-
-The optional real Codex adapter is pinned to `@openai/codex-sdk@0.169.0`; it is not installed by this manifest. Obtain that exact SDK and its platform-native optional package through your application's approved artifact process. If that process has already populated npm's cache, the explicit offline installation is:
-
-```sh
-npm install --prefix "$app" --workspaces=false --offline --ignore-scripts --no-audit --no-fund --save-exact @openai/codex-sdk@0.169.0
+npm install --prefix "$app" --workspaces=false --offline --include=optional --ignore-scripts --no-audit --no-fund \
+  --save-exact @openai/codex-sdk@0.169.0
 node "$app/verify-install.mjs" codex --codex-sdk
 ```
 
-A cache miss fails instead of downloading. Installing a version string is not evidence of artifact provenance: record your approved SDK/native package hashes and lockfile alongside the release hashes. An SDK constructor can fail if its platform-native executable was not obtained. The deterministic fixture never constructs the SDK or requests a provider.
+The provider check constructs the installed SDK, runs the local CLI’s `--version` and prints `cliVersion`. It needs no credentials. If it reports `install.codex_cli_unavailable`, include the matching optional platform package for the evaluator host in your cache and retry the install above.
 
-For a real adapter, `codexRuntimeInputs` requires an explicit child environment and model. It returns official SDK constructor/thread options without starting work:
+## Configure your repository
 
-```js
-import { Codex } from '@openai/codex-sdk';
-import { codexRuntimeInputs } from './harnesses.mjs';
+Create a private `native.json` beside the extracted `application.mjs`. Use your own paths, a model your account can run, and a coding task whose behavior your frozen tests exercise. The case’s expected behavior lives in those tests, so the SDK case can use `expected: null`.
 
-const inputs = codexRuntimeInputs(effective, {
-  env: declaredChildEnvironment, // reviewed string map; never log credential values
-  model: declaredModel,
-  config: reviewedConfigOverrides,
-  configOverrides: reviewedRawTomlOverrides,
-});
-const thread = new Codex(inputs.constructorOptions).startThread(inputs.threadOptions);
+```json
+{
+  "sourceRoot": "/absolute/path/to/your/repository",
+  "stateRoot": "/absolute/private/native-evaluator",
+  "sourceFiles": ["package.json", "src/retry.js", "tests/retry.test.mjs"],
+  "resultFiles": ["src/retry.js"],
+  "testFiles": ["tests/retry.test.mjs"],
+  "model": "YOUR_CODEX_MODEL",
+  "cases": [{
+    "caseId": "request-scoped-retry",
+    "input": {"prompt": "Preserve a request’s retry identity across attempts."},
+    "expected": null
+  }]
+}
 ```
 
-This recipe selects a fresh workspace-write thread, approval `never`, disabled network access and disabled web search. Authentication, model access, time/usage limits, completion/termination observation and result retention remain application responsibilities. Keep the existing `runRepositoryJob` stop/quarantine contract around the complete SDK stream. There is no paid execution in the snippet above until the app calls a run method.
+Relative paths for `sourceRoot` and `stateRoot` resolve from the starter directory. Include every file your tests need. Declare writable solution paths in `resultFiles`. Each `testFiles` entry must be an original protected input. Keep `stateRoot` on persistent local storage outside both the repository and evaluator journal. Run the following from the extracted starter:
 
-The installed official SDK 0.169.0 README sections “Controlling the Codex CLI environment” and “Passing `--config` overrides”, its `dist/index.d.ts` `CodexOptions`, and `dist/index.js` establish these controls: supplying `env` replaces inherited Node process environment; the SDK still injects required originator/authentication/binary-path values. Structured config is followed by raw TOML overrides, then SDK-managed/thread settings. These are environment and override controls, not a promise to ignore all host configuration.
+```sh
+cd "$app"
+state=/absolute/private/native-evaluator
+mkdir -p -m 700 "$state" "$state/workspaces" "$state/artifacts"
+export TMPDIR="$state/workspaces"
 
-Declare one policy in the evaluation's runtime revision before describing a request. For an inherited-configuration policy, explicitly select the authentication/home/config locations and environment names and record nonsecret configuration file hashes, CLI/SDK hashes, effective permission/model/tool choices, warnings and reported usage. For a dedicated-configuration policy, provision a private application-owned Codex home and supply `CODEX_HOME` and only approved environment strings through `env`; deliberately provision approved authentication there instead of copying an entire user profile. Review any CLI/system/project configuration sources that still apply. The source inventory excludes project guidance/settings from the copied repository, but this helper does not demonstrate complete host-configuration isolation. Do not label a run hermetic without separate evidence.
+./node_modules/.bin/acclimate-eval describe
+./node_modules/.bin/acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
+./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+```
 
-The 2026-11-17 accepted external-consumer run used existing SDK authentication/configuration. It emitted five nonfatal setting/marketplace warnings and reported 107,854 input tokens, 84,992 cached input tokens and 663 output tokens on a tiny task. Those historical observations motivate declaring configuration provenance; they do not establish a token-cost estimate, provider-request count or performance bound. See the repository acceptance record `docs/acceptance/developer-personas-20261117/plugin-author.md` for that run's evidence and limits.
+Use the public `describe` output in the console to create the evaluation request before running `doctor` or `compare`. The installed CLI loads the named `cases`, `execute` and `grade` exports. Only the live comparison launches Codex. Supply your application’s approved authentication and run the worker in the sandbox you use for executing candidate code.
+
+Every CLI invocation freezes the listed files. The descriptor binds their captured bytes and mode bits, the model, harness implementation, application module, lockfile, Node runtime, file policies and timeouts. The grader identity includes the frozen inputs, test selection and grading implementation. Changing these inputs requires a fresh evaluation request. If model deployment or host configuration changes independently of these files, give that deployment a new nonsecret `deploymentRevision` in `native.json`. Credential values stay out of the descriptor. Optional `approvedMemoryPaths`, `turnTimeoutMs` and `testTimeoutMs` configure the effective job and are included in its revision.
+
+The default grader reconstructs a fresh tree from frozen inputs and digest-verified solution files. It reruns `node --test` and returns zero if any test fails or a protected file changed. For projects with additional dependencies, customize `grade` in `application.mjs` to run the same isolated test environment you use in CI and bind its dependency lock or image digest. Regrading reads the retained solution and original snapshot for that request.
+
+For Claude, Pi or Cursor, replace the Codex call in the application's named `execute` function with your installed native SDK. `installedHarness` and `freshSessionInputs` expose the supported preparation helpers. Record that SDK and its settings in the runtime identity. In your adapter, acknowledge the real job handle, keep the inputs alive until termination, and return its gradeable output, task status and measured usage.
 
 ## Frozen source and context policy
 
-Call `freezeSourceInventory` once before defining/requesting an evaluation, then reuse that same captured snapshot for parent and candidate. Its source manifest hashes actual bytes, sizes and source mode bits. Include its digest, context policy revision and selected-memory digest in your declared dataset/runtime revision convention before `describe`. Revision strings are app assertions; the helper does not create a new server hashing protocol.
+The packaged application captures the source once per invocation and uses the same snapshot for both sides. Keep the checkout fixed until the request finishes or is regraded.
 
 `repository-source-policy-v1` accepts only an explicit list of regular portable paths. It rejects every dot-prefixed segment, `AGENTS.md`/`CLAUDE.md` at every depth and case variant, symlinks, device/socket/FIFO files, traversal, case/prefix collisions and existing native-file collisions. It copies no `.git`, `.env`, hooks, MCP settings, implicit dependencies or build outputs. Existing repository guidance must be deliberately reviewed into the bundle or handled by a separately versioned app recipe. The small text recipe does not sandbox ambient user/host SDK settings; record those application policies separately.
 
@@ -109,12 +83,4 @@ The local operator can inspect `inspectNativeJob(privateJobDirectory)`. `cleanup
 
 Cleanup saves a durable deletion intent before removing the owned tree. If the worker dies after deletion but before recording completion, explicit recovery can finish that record after termination verification. A missing workspace without that prior intent remains an ownership error.
 
-Artifacts remain owner-only. `runRepositoryJob` returns a gradeable result, relative change/patch data and an opaque `native-job:<jobId>` reference. Deliberate shared review artifacts go through the evaluator's explicit selection/redactor exporter; never upload the job directory, entire workspace or private expected answers.
-
-## Checks and evidence
-
-```sh
-node --test test/repository.test.mjs test/crash.test.mjs test/installed.test.mjs test/codex-policy.test.mjs
-```
-
-These tests require the installed SDK/plugin artifacts. `test/native-helpers.test.mjs` additionally exercises installed native option/Pi loader interfaces with their declared optional peer dependencies. No test starts a model or native provider session. See [qualification ledger](QUALIFICATION.md) for precise evidence and unrun live gates.
+The owner-only artifact directory stores the complete `result.patch`, `output.json`, retained solution files and their manifest. The evaluator receives hashes, sizes, declared-file changes, a protected-change count, an opaque job reference and up to 64 KiB of agent output. Larger outputs stay private and the inline `result` becomes null. The private output limit is 8 MiB. Review exports can select and redact the bounded evidence using the installed evaluator’s export workflow.

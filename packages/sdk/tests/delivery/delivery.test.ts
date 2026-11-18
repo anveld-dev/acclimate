@@ -283,9 +283,14 @@ test('connection-qualified delivery isolates conditional and offline entries for
     seen.push({ path: req.url, connection, etag: req.headers['if-none-match'] });
     if (offline) return send(res, 503, {});
     if (req.url.endsWith('/channels/stable')) {
-      return send(res, 200, { ...resolution, version: connection === enrolled ? candidate : version }, {
-        etag: connection === enrolled ? '"connection:1"' : '"1"',
-      });
+      return send(
+        res,
+        200,
+        { ...resolution, version: connection === enrolled ? candidate : version },
+        {
+          etag: connection === enrolled ? '"connection:1"' : '"1"',
+        },
+      );
     }
     if (req.url.endsWith('/payload')) {
       res.writeHead(200);
@@ -295,23 +300,91 @@ test('connection-qualified delivery isolates conditional and offline entries for
   });
   const dir = await mkdtemp(join(await realpath(tmpdir()), 'acclimate-connection-cache-'));
   try {
-    const make = (integrationId?: string) => new AcclimateClient({
-      baseUrl: service.baseUrl, token: 'shared-reader', scope: 'project-reader', integrationId,
-    });
+    const make = (integrationId?: string) =>
+      new AcclimateClient({
+        baseUrl: service.baseUrl,
+        token: 'shared-reader',
+        scope: 'project-reader',
+        integrationId,
+      });
     const policy = { cacheDir: dir, offline: { maxAgeMs: 60_000 } };
     const selection = { projectId: 'p', bundleId: 'b1', channel: 'stable' };
     const resolved = await resolveAndCache(make(enrolled), selection, policy);
     assert.equal(resolved.version.id, 'candidate');
     assert.deepEqual(resolved.connection, { projectId: 'p', integrationId: enrolled });
     assert.equal((await resolveAndCache(make(sibling), selection, policy)).version.id, 'v1');
-    assert.deepEqual(seen.map(call => call.connection), [enrolled, enrolled, sibling, sibling]);
+    assert.deepEqual(
+      seen.map((call) => call.connection),
+      [enrolled, enrolled, sibling, sibling],
+    );
     assert.equal(seen[2]?.etag, undefined);
     offline = true;
-    assert.equal((await resolveAndCache(make(enrolled), selection, policy)).version.id, 'candidate');
+    assert.equal(
+      (await resolveAndCache(make(enrolled), selection, policy)).version.id,
+      'candidate',
+    );
     assert.equal((await resolveAndCache(make(sibling), selection, policy)).version.id, 'v1');
     await assert.rejects(resolveAndCache(make(), selection, policy), ApiError);
   } finally {
     await service.close();
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('client.prepare pins a real selection, owns per-job files and reports observed stages once', async () => {
+  const f = await fixture((req, res) => {
+    if (req.url.endsWith('/payload')) return res.end(payloadBytes);
+    send(res, 200, req.url.includes('/channels/') ? resolution : version);
+  });
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'prepare-delivery-'));
+  try {
+    const client = new AcclimateClient({ baseUrl: f.baseUrl, token: 'read', scope: 'app' });
+    const stages: string[] = [];
+    const options = { projectId: 'p', bundleId: 'b1', cacheDir: join(root, 'cache') };
+    const first = await client.prepare({
+      ...options,
+      channel: 'stable',
+      reporter: {
+        observeDelivery: () => {
+          stages.push('verified');
+        },
+        reportPrepared: () => {
+          stages.push('prepared');
+        },
+        reportStarted: () => {
+          stages.push('started');
+        },
+      },
+    });
+    assert.equal(first.version.digest, digest);
+    assert.equal(
+      first.instructions,
+      first.bundle.payload.files
+        .filter((f) => f.kind === 'instruction')
+        .map((f) => f.text)
+        .join('\n\n'),
+    );
+    assert.deepEqual(
+      first.skillFiles,
+      first.files.filter((f) => f.kind === 'skill'),
+    );
+    assert.equal(
+      await readFile(first.files[0]!.absolutePath, 'utf8'),
+      first.bundle.payload.files[0]!.text,
+    );
+    assert.deepEqual(stages, ['verified', 'prepared']);
+    assert.equal(first.reportStarted(), null);
+    assert.equal(first.reportStarted(), null);
+    assert.deepEqual(stages, ['verified', 'prepared', 'started']);
+    await first[Symbol.asyncDispose]();
+    await first.cleanup();
+    await assert.rejects(readFile(first.files[0]!.absolutePath), { code: 'ENOENT' });
+    const second = await client.prepare({ ...options, versionId: version.id });
+    assert.equal(second.version.id, version.id);
+    assert.notEqual(second.directory, first.directory);
+    await second.cleanup();
+  } finally {
+    await f.close();
+    await rm(root, { recursive: true, force: true });
   }
 });

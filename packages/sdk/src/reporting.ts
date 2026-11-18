@@ -34,21 +34,26 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
     VerifiedBundle,
     Omit<DeliveryReceiptRequest, 'eventId' | 'stage' | 'occurredAt'>
   >();
-  function reportStage(
+  function createStageReceipt(
     bundle: VerifiedBundle,
     stage: DeliveryReceiptRequest['stage'],
-  ): Readonly<DeliveryReceiptRequest> | null {
+  ): Readonly<DeliveryReceiptRequest> {
     const binding = bindings.get(bundle);
     if (!binding) throw new TypeError('Bundle has not been observed by this reporter');
-    const receipt = Object.freeze({
+    return Object.freeze({
       ...binding,
       eventId: randomUUID(),
       stage,
       occurredAt: new Date(now()).toISOString(),
     });
+  }
+  function queueReceipt(receipt: Readonly<DeliveryReceiptRequest>) {
     const accepted = enqueue(receipt);
     void flush();
     return accepted ? receipt : null;
+  }
+  function reportStage(bundle: VerifiedBundle, stage: DeliveryReceiptRequest['stage']) {
+    return queueReceipt(createStageReceipt(bundle, stage));
   }
   function observeDelivery({ selection, bundle, source, downloaded }: DeliveryObservation): void {
     if (
@@ -134,6 +139,12 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
     observeDelivery,
     reportPrepared: (bundle: VerifiedBundle) => reportStage(bundle, 'prepared') !== null,
     reportStarted: (bundle: VerifiedBundle) => reportStage(bundle, 'started') !== null,
+    /** Bind a single job's first observed start time and event ID across queue refusals. */
+    bindStartedReceipt(bundle: VerifiedBundle) {
+      const receipt = createStageReceipt(bundle, 'started');
+      let queued: Readonly<DeliveryReceiptRequest> | null = null;
+      return () => (queued ??= queueReceipt(receipt));
+    },
     /** Queue a started receipt and return its exact body for a durable job handoff. */
     reportStartedReceipt: (bundle: VerifiedBundle) => reportStage(bundle, 'started'),
     /** Stop claiming events. An already in-flight request may still finish. */

@@ -63,6 +63,7 @@ function fixture(deny = false, parentBytes = p, parentDigest = parent.digest) {
         { status: 403 },
       );
     if (method === 'POST') return Response.json({ id: 'promoted' }, { status: 201 });
+    if (path.endsWith('/policy-receipts')) return Response.json({ items: [] });
     if (path.endsWith('/comparisons/cmp')) return Response.json(comparison);
     if (path.endsWith('/channels/live'))
       return Response.json({ channel: 'live', revision: '3', version: parent });
@@ -94,12 +95,13 @@ test('review verifies payloads and never mutates or fetches output references', 
   const { client, calls } = fixture();
   const text = await run(['review', ...scope, '--comparison', 'cmp', '--proposal', 'pr'], client);
   const review = JSON.parse(text);
+  assert.deepEqual(review.policyReview, { status: 'available', receipts: [], blockers: [] });
   assert.equal(review.comparison.missingPairs, 1);
   assert.equal(review.comparison.parent.costUsd.unknownCount, 1);
   assert.equal(review.changes[0].before.text, 'old\u001b[31m');
   assert.ok(!text.includes('\u001b'));
   assert.ok(calls.every((call) => call.method === 'GET'));
-  assert.equal(calls.length, 7);
+  assert.equal(calls.length, 9);
 });
 test('denials propagate and do not promote', async () => {
   const { client, calls } = fixture(true);
@@ -151,4 +153,16 @@ test('promotion and rollback require their explicit evidence and revision', asyn
       { versionId: 'p', expectedRevision: '4', unevaluatedReason: 'regression' },
     ],
   );
+});
+
+test('promotion requires an explicit reason and exact receipt identities for an override', async () => {
+  const { client, calls } = fixture();
+  const args = ['promote', ...scope, '--version', 'c', '--comparison', 'cmp', '--expected-revision', '3'];
+  const comparisonId = '5ea10529-8f9e-435f-8b6e-ac42343d69b4';
+  const policyDigest = 'sha256:' + 'a'.repeat(64);
+  const acknowledgement = ['--ack-policy', comparisonId + '@' + policyDigest];
+  await assert.rejects(run([...args, ...acknowledgement], client), /override-reason/);
+  assert.equal(calls.length, 0);
+  await run([...args, ...acknowledgement, '--override-reason', 'Reviewed exception'], client);
+  assert.deepEqual(calls[0].body.policyOverride, { reason: 'Reviewed exception', receipts: [{ comparisonId, policyDigest }] });
 });

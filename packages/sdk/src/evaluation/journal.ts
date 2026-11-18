@@ -162,7 +162,7 @@ export async function acquireFileLock(filename: string) {
 }
 export async function openJournal(root: string, scope: JournalScope) {
   if (!path.isAbsolute(root)) throw new EvaluationError('config.permissions');
-  await privateDirectory(root);
+  await privateDirectory(root, true);
   if ((await realpath(root)) !== path.resolve(root))
     throw new EvaluationError('config.permissions');
   const directory = journalDirectory(root, scope),

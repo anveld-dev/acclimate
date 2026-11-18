@@ -1,6 +1,6 @@
 # Navigation and evaluation workspace
 
-[Example workspace](https://localhost:3443/w/acclimate-examples/bundles) · [Evaluation review](review-evaluation.md) · [Example-data setup](../../../scripts/examples/README.md)
+[Evaluation review](review-evaluation.md)
 
 The desktop shell uses a 64px icon rail. Main destinations sit at the top, Workspaces sits near the bottom, and Account is last. Hover or keyboard focus shows each icon’s name. The workspace menu includes the current selection and workspace creation. Narrow screens retain the labeled navigation sheet.
 
@@ -10,7 +10,7 @@ Evaluations pair a compact run history with selected evidence. Setup and app han
 
 The reward chart compares observed means over the same scored, gradeable pairs. Valid graded task failures stay included. Missing grades, execution failures, denominator and reported cost stay visible; incomplete evidence is explicitly partial. Rewards can be negative or larger than one, so the chart uses a signed reward axis rather than a percentage.
 
-The Example workspace contains three bundles, four drafts, six evaluation requests and four bound comparisons. Every evaluation is labeled simulated. These are real persisted service records, useful for exploring the UI; they are not benchmark claims or model executions. The seed script is additive and safe to rerun.
+The original layout review used three bundles, four drafts, six evaluation requests and four bound comparisons. The archived captures identify their simulated inputs.
 
 All new surfaces reuse the existing shadcn components. The shared [file tree](../file-tree/README.md), pending-write recovery, release gates and account behavior remain in place.
 

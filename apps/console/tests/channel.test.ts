@@ -138,6 +138,20 @@ test('environment labels cannot classify legacy content as an example', async ()
     });
 });
 
+test('historical bundles keep their stored example origin and published content', async () => {
+  const { fetcher } = fixture();
+  const result = await readChannel(env, (input, init) =>
+    String(input).includes('/bundles?')
+      ? Promise.resolve(Response.json({ items: [{ id: 'bundle', origin: 'example' }], nextCursor: null }))
+      : fetcher(input, init),
+  );
+  assert.equal(result.status, 'ready');
+  if (result.status === 'ready') {
+    assert.equal(result.source.kind, 'seeded-example');
+    assert.deepEqual(result.payload, payload);
+  }
+});
+
 test('failed refresh retains only the prior verified observation and hides content', async () => {
   const success = await readChannel(env, fixture().fetcher);
   assert.equal(success.status, 'ready');

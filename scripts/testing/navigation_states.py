@@ -238,9 +238,6 @@ def sources(w,b,p,e):
     expect(p.get_by_role('button',name='Import and publish',exact=True)).to_be_enabled()
     p.get_by_role('heading',name='Import preview · generic',exact=True).scroll_into_view_if_needed()
     e.capture(p,'desktop-create-json-confirmed-preview')
-    p.get_by_role('radio',name='Use example',exact=True).click()
-    p.get_by_role('heading',name='Example preview · generic',exact=True).scroll_into_view_if_needed()
-    e.capture(p,'desktop-create-example-preview')
     p.get_by_role('radio',name='Write instructions',exact=True).click()
     # Real connection loss leaves the app-written frozen operation unresolved.
     p.context.set_offline(True)

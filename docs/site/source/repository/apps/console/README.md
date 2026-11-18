@@ -17,10 +17,10 @@ npm run start:console
 
 ## Use it
 
-1. **Workspace → Bundles:** choose a bundle and channel, or select New bundle to create, import JSON, or explicitly create an example. Choose the immutable compatibility target: generic, Codex, Claude, Pi or Cursor. Generic leaves native compatibility unchecked; stored origin labels remain separate from content quality.
+1. **Workspace → Bundles:** choose a bundle and channel, or select New bundle to write instructions, upload files, or import bundle JSON. Choose the fixed compatibility target from generic, Codex, Claude, Pi or Cursor. Generic leaves native compatibility unchecked.
 2. **Content:** browse, filter and download the published files. Edit entry opens that same path in a draft under Changes; published content stays unchanged.
 3. **Changes:** reopen a saved draft or suggestion. Save draft generations, import nested files, rename complete skill packages, and review the exact saved snapshot, including kind changes and empty-file additions/removals. Incomplete native metadata can be saved and repaired; publication checks the stored target. Unsaved text prompts before navigation, workspace/channel changes or refresh.
-4. **Review release:** from a saved change, choose an evaluation configuration, create a new request, run the matching installed adapter, inspect its bound exact-version evidence, then deliberately publish that snapshot. Choose Release manually to publish without evaluation; it requires its own reason. Complete evidence can include a losing candidate; request state, report completeness and the release decision stay separate.
+4. **Review release:** from a saved change, paste the installed evaluator’s public configuration, create a request, run the matching application, inspect its bound exact-version evidence, then deliberately publish that snapshot. Choose Release manually to publish without evaluation; it requires its own reason. Complete evidence can include a losing candidate; request state, report completeness and the release decision stay separate.
 5. **Releases:** inspect/download historical versions or restore one with a reason. Releases affect future resolutions; existing prepared jobs stay pinned.
 6. **App setup:** every authorized reader can open the bundle's real SDK delivery recipe. Applications own their agent loop and credentials; a connection record is optional.
 7. **Connections:** workspace administrators manage existing bundle/channel-bound integration records, one-time credentials and optional app-reported receipts. Missing receipts mean unknown delivery. Members shows existing access and current roles in workspace settings, and the last admin cannot remove or demote themselves. Lost credential issuance responses can be reconciled without replaying a secret; replacement follows confirmed revocation. Personal identity and sign-out live in Account.
@@ -29,24 +29,18 @@ Audited writes keep their exact submitted snapshot in this tab's session storage
 
 ## Run an evaluation
 
-The **Evaluation configuration** selector offers:
+On a saved candidate, paste the JSON from your installed evaluator’s `describe` command.
+The console previews the dataset, grader, configuration revision and case inventory.
+The SDK’s evaluation CLI loads your installed cases, agent and grader from the adjacent
+application module. Set `ACCLIMATE_EVALUATOR_CASES` if you keep the cases in a private JSON file. For the native Codex reviewer, run
+`npm run --silent evaluate:app -- describe` in its checkout.
 
-- **Payment retry simulator:** model-free payment traces from declarative `payment-policy.json`; this checks orchestration. Missing policy can produce complete zero scores.
-- **File presence contract:** model-free instruction/skill presence checks, with no behavioral quality claim.
-- **Native Codex review · Luna:** installed retry-review cases and an independent grader, with at most four bounded Luna turns.
-- **My app's installed evaluator:** paste public JSON containing dataset/grader revisions, runtime `configId`/`configRevision` and settings, and expected case/repetition pairs. Keep credentials and case contents in your app.
-
-Selecting a profile and creating a request do not execute an agent or call a model. Copy the request ID and frozen public configuration to your application's installed runner. The app owns execution, isolation and grading.
-
-The included checkout runner is optional and needs an explicit owner-only configuration file:
-
-```sh
-npm run evaluate:app -- --config /absolute/private/evaluator.json --bundleID UUID --requestID UUID --adapter payment-retry
-```
-
-See the [adapter guide](../../examples/evaluation/README.md) for exact adapter names, configuration schema and journal recovery. The console never assumes its server can run your app's evaluator. There is no `.local` or ambient credential fallback. Native Codex evaluation additionally requires `--adapter codex-luna-review --live`; that explicitly permits bounded Luna calls.
-
-The installed adapter must structurally match the frozen request before execution. Other app configurations need that app's installed runner; the console does not download or launch code from a descriptor. See [the adapter guide](../../examples/evaluation/README.md) for policy data, runner callbacks and attempt-journal recovery. An uncertain helper retry keeps the same request/attempt; an explicit new evaluation gets a new request. Legacy unbound evidence remains labeled.
+Create the request, download `evaluation-request.json`, and give it to the evaluator owner.
+Select Node.js or Python for the matching `compare` command. It reports scores and accepts an optional policy file. A recognized native Codex request
+shows its checkout command. The evaluator runs the frozen parent and candidate. The request
+shows its reported activity, coverage, and paired grades. Use the policy-check command
+beside a bound comparison with the application’s own quality-policy file before deciding
+whether to publish the saved snapshot. Checking with the evaluator principal stores its policy identity, digest, verdict and named checks on the comparison. An evidence-based release of a candidate with failed or indeterminate verdicts requires a reviewer to acknowledge the exact receipts and record an override reason. [Application evaluator setup](../../examples/evaluation-starter/README.md)
 
 Bundle URLs identify their workspace and bundle; channel-specific views also identify the channel. Saved details, selected files and search can be bookmarked. Another tab's remembered selection cannot retarget an open form. The old Overview/Setup/Improvement URLs redirect to scoped destinations; they aren't sidebar pages.
 

@@ -95,6 +95,16 @@ class EvaluationPolicyTests(unittest.TestCase):
             self.assertEqual(result["counts"]["comparablePairs"], 0)
             self.assertIsNone(result["summary"]["candidateMean"])
 
+    def test_missing_pairs_report_bounded_public_arm_diagnostics(self):
+        source = copy.deepcopy(FIXTURES["vectors"][0])
+        keys = [{"caseId":"ordinary", "repetition": i} for i in range(20)]
+        source["descriptor"]["expectedCases"] = source["comparison"]["expectedCases"] = keys
+        source["comparison"]["results"] = []
+        gaps = run(source)["evidenceGaps"]
+        self.assertEqual((gaps["total"], len(gaps["rows"])), (40, 32))
+        self.assertEqual(gaps["rows"][0], {"caseId":"ordinary", "repetition":0,
+            "side":"parent", "stage":"collection", "reason":"missing_pair"})
+
     def test_equal_case_means_and_visible_known_failure(self):
         weighted = next(vector for vector in FIXTURES["vectors"] if vector["name"] == "unequal-repetitions")
         result = run(weighted)
@@ -103,7 +113,8 @@ class EvaluationPolicyTests(unittest.TestCase):
         self.assertEqual(result["summary"]["worstCaseRegression"], 1)
         uncertain = next(vector for vector in FIXTURES["vectors"] if vector["name"] == "known-failure-and-unknown-cost")
         result = run(uncertain)
-        self.assertEqual(result["verdict"], "indeterminate")
+        self.assertEqual(result["verdict"], "fail")
+        self.assertEqual(result["evidenceGaps"]["rows"][0]["reason"], "missing_cost")
         self.assertTrue(any(item["result"] == "fail" for item in result["checks"]))
         self.assertTrue(any(item["result"] == "unknown" for item in result["checks"]))
 

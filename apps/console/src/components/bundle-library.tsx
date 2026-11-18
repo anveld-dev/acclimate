@@ -62,7 +62,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
   );
   const [channel, setChannel] = useState('stable');
   const [compatibilityTarget, setCompatibilityTarget] = useState<CompatibilityTarget>('generic');
-  const [source, setSource] = useState<'created' | 'imported' | 'files' | 'example'>('created');
+  const [source, setSource] = useState<'created' | 'imported' | 'files'>('created');
   const [json, setJson] = useState('');
   const [importedFiles, setImportedFiles] = useState<BundlePayload>(EMPTY_IMPORT);
   const [readingFiles, setReadingFiles] = useState(false);
@@ -145,24 +145,16 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
   let preview: { path: string; kind: string; text: string }[] | undefined;
   let validationError = '';
   let importIssues: CompatibilityIssue[] = [];
+  function creationPayload(): unknown {
+    if (source === 'imported') return JSON.parse(json);
+    if (source === 'files') return importedFiles;
+    return {
+      schemaVersion: 1,
+      files: [{ path: 'AGENTS.md', kind: 'instruction', text: initialText }],
+    };
+  }
   try {
-    const candidate: unknown =
-      source === 'imported'
-        ? JSON.parse(json)
-        : source === 'files'
-          ? importedFiles
-          : setupRequest({
-              name,
-              channel,
-              origin: source,
-              payload:
-                source === 'created'
-                  ? {
-                      schemaVersion: 1,
-                      files: [{ path: 'AGENTS.md', kind: 'instruction', text: initialText }],
-                    }
-                  : undefined,
-            }).payload;
+    const candidate = creationPayload();
     validatePayload(candidate);
     preview = candidate.files;
     importIssues = compatibilityIssues(candidate, compatibilityTarget);
@@ -214,24 +206,13 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
       setPending(false);
     }
   }
-  async function create(source: 'created' | 'example' | 'imported' | 'files') {
+  async function create() {
     const origin = source === 'files' ? 'imported' : source;
     if (!storageReady) return;
     setPending(true);
     setMessage('');
     try {
-      const payload = operation
-        ? undefined
-        : source === 'files'
-          ? importedFiles
-          : origin === 'imported'
-            ? JSON.parse(json)
-            : origin === 'created'
-              ? {
-                  schemaVersion: 1 as const,
-                  files: [{ path: 'AGENTS.md', kind: 'instruction' as const, text: initialText }],
-                }
-              : undefined;
+      const payload = operation ? undefined : creationPayload();
       const reviewed = { projectId, name, channel, origin, payload, compatibilityTarget };
       if (operation) {
         const stored = loadPending(sessionStorage, recoveryScope);
@@ -365,7 +346,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                   <Button
                     variant="outline"
                     disabled={pending}
-                    onClick={() => void create('created')}
+                    onClick={() => void create()}
                   >
                     Retry exact submitted creation
                   </Button>
@@ -577,7 +558,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                 <RadioGroup
                   name="bundle-source"
                   aria-label="Bundle source"
-                  className="grid grid-cols-2 gap-2"
+                  className="grid gap-2 sm:grid-cols-3"
                   value={source}
                   disabled={pending}
                   onValueChange={(value) => {
@@ -590,7 +571,6 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                       ['created', 'Write instructions', FileText],
                       ['files', 'Import files', Files],
                       ['imported', 'Import JSON', Upload],
-                      ['example', 'Use example', BookOpen],
                     ] as const
                   ).map(([value, label, Icon]) => (
                     <Label
@@ -685,11 +665,6 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                   )}
                 </div>
               )}
-              {source === 'example' && (
-                <p className="text-sm text-muted-foreground">
-                  This example is stored as real, editable bundle content.
-                </p>
-              )}
               <Disclosure className="rounded-lg border px-4 py-3">
                 <DisclosureTrigger className="cursor-pointer text-sm font-medium">
                   Publishing settings{' '}
@@ -737,16 +712,9 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
               </Disclosure>
               {preview && preview.length > 0 && source !== 'created' && (
                 <div className="space-y-3 rounded-lg border p-4">
-                  <h3 className="font-medium">
-                    {source === 'imported' || source === 'files'
-                      ? 'Import preview'
-                      : source === 'example'
-                        ? 'Example preview'
-                        : 'Publication preview'}{' '}
-                    · {compatibilityTarget}
-                  </h3>
-                  {preview.map((file, index) => (
-                    <Disclosure key={`${source}-${index}`} defaultOpen={source === 'example'}>
+                  <h3 className="font-medium">Import preview · {compatibilityTarget}</h3>
+                  {preview.map((file) => (
+                    <Disclosure key={`${source}-${file.path}`}>
                       <DisclosureTrigger className="break-all text-sm">
                         {file.path} · {file.kind}
                       </DisclosureTrigger>
@@ -759,17 +727,15 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                       </DisclosureContent>
                     </Disclosure>
                   ))}
-                  {(source === 'imported' || source === 'files') && (
-                    <Label className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        aria-label="Confirm these entries for import"
-                        disabled={pending || readingFiles}
-                        checked={confirmed}
-                        onCheckedChange={(checked) => setConfirmed(checked === true)}
-                      />
-                      Confirm these entries for import
-                    </Label>
-                  )}
+                  <Label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      aria-label="Confirm these entries for import"
+                      disabled={pending || readingFiles}
+                      checked={confirmed}
+                      onCheckedChange={(checked) => setConfirmed(checked === true)}
+                    />
+                    Confirm these entries for import
+                  </Label>
                 </div>
               )}
               {importIssues.length > 0 && (
@@ -817,7 +783,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                     (source === 'created' && !initialText.trim()) ||
                     ((source === 'imported' || source === 'files') && !confirmed)
                   }
-                  onClick={() => void create(source)}
+                  onClick={() => void create()}
                 >
                   {pending
                     ? 'Publishing…'

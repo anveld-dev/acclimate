@@ -6,7 +6,7 @@ from behave import given, when, then
 from playwright.sync_api import expect
 from scripts.bdd.editor import expect_editor_value
 from scripts.productization.qualify import ROOT
-from features.steps.console import save_browser, saved_draft, external_app, review_publish, restore
+from features.steps.console import save_browser, saved_draft, external_app, review_publish, restore, install_browser_evaluator
 from features.steps.remediation_recovery import lose_response, records
 from scripts.bdd.interactions import open_details
 
@@ -93,6 +93,8 @@ def incomplete_repair(context):
     expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), '# Incomplete manifest retained as a draft.\n')
     expect(p.get_by_text('Native compatibility needs repair before publication.', exact=False)).to_be_visible()
     p.get_by_role('textbox', name='Content', exact=True).fill(REPAIRED_SKILL)
+    p.get_by_role('treeitem', name='Open AGENTS.md', exact=True).click()
+    p.get_by_role('textbox', name='Content', exact=True).fill('Review code. Reuse the same idempotency key after a lost response.')
     p.get_by_role('treeitem', name='Open payment-policy.json', exact=True).click()
     p.get_by_role('textbox', name='Content', exact=True).fill(json.dumps(dict(maxAttempts=2, idempotency='request')))
     lose_response(p, lambda: p.get_by_role('button', name='Save draft', exact=True).click())
@@ -115,7 +117,7 @@ def strict_helper_release(context):
     p.get_by_role('link', name='Continue to evaluation', exact=True).click()
     open_details(p, 'Set up evaluation request')
     expect(p.get_by_role('button', name='Create evaluation request', exact=True)).to_be_disabled()
-    p.get_by_label('Evaluation configuration', exact=True).select_option('payment-retry')
+    install_browser_evaluator(w, p)
     p.get_by_role('button', name='Create evaluation request', exact=True).click()
     expect(p.get_by_role('status').filter(has_text='Evaluation request created. Run it in your app, then return here for the results.')).to_be_visible()
     w.browser_request = w.call('GET', w.bundle+'/evaluation-requests')['items'][0]
@@ -125,14 +127,14 @@ def strict_helper_release(context):
     request = w.call('GET', w.bundle+'/evaluation-requests/'+w.browser_request['id'])
     assert request['status'] == 'completed' and request['evaluatorPrincipal'] == 'evaluator'
     report = w.call('GET', w.bundle+'/comparisons/'+request['comparisonId'])
-    assert report['complete'] and len(report['results']) == len(report['expectedCases']) == 6
+    assert report['complete'] and len(report['results']) == len(report['expectedCases']) == 2
     assert report['evaluation'] == dict(requestId=request['id'], attemptId=request['attemptId'])
     assert all(pair[side]['executionStatus'] == 'completed' and pair[side]['gradingStatus'] == 'scored'
                for pair in report['results'] for side in ['parent','candidate'])
     assert all(pair['candidate']['reward'] == 1 for pair in report['results'])
     assert any(pair['parent']['reward'] == 0 for pair in report['results'])
     assert w.call('GET', w.channel)['revision'] == '1', 'App evaluation must not promote automatically'
-    review_publish(context)
+    review_publish(context, expected_verdict='pass')
     open_details(p,'Evidence details')
     expect(p.locator('.comparison-evidence-binding').get_by_text(request['id'],exact=True)).to_be_visible()
     expect(p.locator('.comparison-evidence-provenance')).to_contain_text('Attempt '+request['attemptId'])

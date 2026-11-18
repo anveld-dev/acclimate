@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { lstat, realpath } from 'node:fs/promises';
-import { readPrivateJson } from './private-state.js';
-import { EvaluationError } from './errors.js';
+import { assertUnaliasedPath, readPrivateJson } from './private-state.js';
+import { EvaluationError, type PathIssue } from './errors.js';
 import type { EvaluatorConfig, ReaderConfig } from './types.js';
 export type { EvaluatorConfig, ReaderConfig } from './types.js';
 export class EvaluatorConfigError extends EvaluationError {
@@ -11,8 +11,9 @@ export class EvaluatorConfigError extends EvaluationError {
       | 'config.permissions'
       | 'config.url'
       | 'config.missing' = 'config.schema',
+    pathIssue?: PathIssue,
   ) {
-    super(code);
+    super(code, { pathIssue });
     this.name = 'EvaluatorConfigError';
   }
 }
@@ -45,24 +46,29 @@ export function assertServiceUrl(value: unknown): asserts value is string {
 async function config(filename: string, reader: boolean): Promise<EvaluatorConfig | ReaderConfig> {
   if (!path.isAbsolute(filename)) throw new EvaluatorConfigError('config.permissions');
   try {
+    await assertUnaliasedPath(filename, 'configAlias');
     const parent = path.dirname(filename),
       s = await lstat(parent);
     if (
       !s.isDirectory() ||
       s.isSymbolicLink() ||
-      s.mode & 0o077 ||
-      (process.getuid && s.uid !== process.getuid()) ||
       (await realpath(parent)) !== path.resolve(parent)
     )
       throw new Error();
-  } catch {
+    if (s.mode & 0o077 || (process.getuid && s.uid !== process.getuid()))
+      throw new EvaluatorConfigError('config.permissions', 'configMode');
+  } catch (error) {
+    if (error instanceof EvaluationError) throw new EvaluatorConfigError('config.permissions', error.diagnostic.pathIssue);
     throw new EvaluatorConfigError('config.permissions');
   }
   // Preserve an absent explicit config as a distinct operator action before
   // private-file validation intentionally hides other filesystem details.
   try {
-    await lstat(filename);
+    const file = await lstat(filename);
+    if (file.isFile() && ((file.mode & 0o077) || !(file.mode & 0o400) || (process.getuid && file.uid !== process.getuid())))
+      throw new EvaluatorConfigError('config.permissions', 'configMode');
   } catch (error) {
+    if (error instanceof EvaluatorConfigError) throw error;
     throw new EvaluatorConfigError(
       (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'config.missing' : 'config.permissions',
     );
@@ -87,6 +93,10 @@ async function config(filename: string, reader: boolean): Promise<EvaluatorConfi
         'evaluatorToken',
         'journalRoot',
       ];
+  if (!reader && Object.hasOwn(value, 'captureCallbackErrors')) {
+    if (typeof value.captureCallbackErrors !== 'boolean') throw new EvaluatorConfigError();
+    fields.push('captureCallbackErrors');
+  }
   if (
     value.schemaVersion !== 1 ||
     Object.keys(value).length !== fields.length ||

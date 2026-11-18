@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, writeFile, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { defineEvaluation } from '../../src/evaluation/index.js';
 import { evaluationMain } from '../../src/evaluation/cli.js';
+import { applicationMain } from '../../src/evaluation/app-cli.js';
 import { parseCommandJson } from '../../src/evaluation/cli-intents.js';
 import { openJournal } from '../../src/evaluation/journal.js';
 
@@ -19,14 +20,17 @@ const comparisonId = '66666666-6666-4666-8666-666666666666';
 const now = '2026-11-16T12:00:00Z';
 
 async function invoke(
-  app: ReturnType<typeof defineEvaluation>,
+  app: ReturnType<typeof defineEvaluation> | undefined,
   args: string[],
   options?: Parameters<typeof evaluationMain>[2],
+  tty = false,
 ) {
   let out = '',
     err = '';
   const stdout = process.stdout.write,
     stderr = process.stderr.write;
+  const ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+  Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: tty });
   process.stdout.write = ((value: unknown) => {
     out += String(value);
     return true;
@@ -36,21 +40,25 @@ async function invoke(
     return true;
   }) as typeof process.stderr.write;
   try {
-    const status = await evaluationMain(app, args, options);
+    const status = app
+      ? await evaluationMain(app, args, options)
+      : await applicationMain(args, path.join(tmpdir(), 'acclimate-reader-without-agent'));
     return {
       status,
       out,
       err,
-      result: out ? JSON.parse(out) : undefined,
-      error: err ? JSON.parse(err) : undefined,
+      result: out && out.startsWith('{') ? JSON.parse(out) : undefined,
+      error: err && err.startsWith('{') ? JSON.parse(err) : undefined,
     };
   } finally {
     process.stdout.write = stdout;
     process.stderr.write = stderr;
+    if (ttyDescriptor) Object.defineProperty(process.stdout, 'isTTY', ttyDescriptor);
+    else Reflect.deleteProperty(process.stdout, 'isTTY');
   }
 }
 
-async function fixture() {
+async function fixture(execution: 'live' | 'model-free' = 'model-free') {
   const directory = await mkdtemp(path.join(await realpath(tmpdir()), 'acclimate-cli-'));
   const original = {
     schemaVersion: 1,
@@ -72,6 +80,7 @@ async function fixture() {
     candidate = version(candidateId, payload, parentId);
   const state: {
     request: any;
+    progress?: unknown;
     comparison: any;
     revision: string;
     drafts: number;
@@ -103,7 +112,10 @@ async function fixture() {
     writeEvaluation: true,
     receipts: new Map(),
   };
+  const policyReceipts = new Map<string, object>();
+  const traffic: Array<[string | undefined, string | undefined]> = [];
   const server = createServer(async (req, res) => {
+    traffic.push([req.method, req.url]);
     try {
       const url = new URL(req.url!, 'http://fixture'),
         route = url.pathname;
@@ -126,6 +138,7 @@ async function fixture() {
         return reply(state.receipts.get(key) ?? { status: 'not_observed', operationId: key });
       }
       if (req.method === 'GET') {
+        if (route.endsWith('/policy-receipts')) return reply({ items: [...policyReceipts.values()] });
         if (route === '/v1/projects/project/bundles')
           return reply({ items: [{ id: bundleId }], nextCursor: null });
         if (route.endsWith('/channels/stable'))
@@ -141,6 +154,8 @@ async function fixture() {
         if (route.endsWith(`/versions/${candidateId}`)) return reply(candidate);
         if (route.endsWith(`/evaluation-requests/${requestId}`) && state.request)
           return reply(state.request);
+        if (route.endsWith(`/evaluation-requests/${requestId}/progress`) && state.progress)
+          return reply(state.progress);
         if (route.endsWith(`/comparisons/${comparisonId}`) && state.comparison)
           return reply(state.comparison);
         return reply(
@@ -153,6 +168,11 @@ async function fixture() {
       const raw = Buffer.concat(chunks).toString(),
         body = JSON.parse(raw),
         key = String(req.headers['idempotency-key']);
+      if (route.endsWith('/policy-receipts')) {
+        const receipt = { ...body, comparisonId, reportedBy: 'evaluator', receivedAt: now };
+        policyReceipts.set(body.policy.sha256, receipt);
+        return reply(receipt);
+      }
       assert.equal(req.headers['x-acclimate-durable-operation'], 'true');
       const fingerprint =
         'sha256:' +
@@ -305,7 +325,7 @@ async function fixture() {
     datasetRevision: 'cases-1',
     graderRevision: 'grader-1',
     runtime: { model: 'none' },
-    execution: 'model-free',
+    execution,
     cases: [{ caseId: 'case', input: { task: 'saved' }, expected: true }],
     execute: async ({ bundle }) => {
       state.executions++;
@@ -338,6 +358,7 @@ async function fixture() {
   ];
   return {
     directory,
+    traffic,
     state,
     app,
     config,
@@ -356,6 +377,56 @@ async function fixture() {
   };
 }
 
+test('status reports bound activity and preserves lifecycle status without an observation', async () => {
+  const f = await fixture();
+  try {
+    assert.equal((await invoke(f.app, f.requestArgs)).status, 0);
+    const status = async () =>
+      (await invoke(undefined, ['status', '--read-config', f.reader, '--handoff', f.handoff])).result;
+    assert.deepEqual((await status()).progress, { activity: 'unknown', reason: 'unavailable' });
+    const view = {
+      schemaVersion: 1,
+      status: 'requested',
+      requestId,
+      attemptId: null,
+      activity: 'absent',
+      checkedAt: now,
+      observation: null,
+    };
+    f.state.progress = view;
+    assert.equal((await status()).progress.reason, 'no_report');
+    const attemptId = '88888888-8888-4888-8888-888888888888';
+    Object.assign(f.state.request, { status: 'running', attemptId });
+    f.state.progress = {
+      ...view,
+      status: 'running',
+      attemptId,
+      activity: 'fresh',
+      observation: {
+        attemptId,
+        phase: 'grading',
+        completed: 1,
+        total: 2,
+        receivedAt: now,
+        case: f.state.request.expectedCases[0],
+      },
+    };
+    assert.deepEqual((await status()).progress, {
+      activity: 'fresh',
+      checkedAt: now,
+      receivedAt: now,
+      phase: 'grading',
+      completed: 1,
+      total: 2,
+      case: f.state.request.expectedCases[0],
+    });
+    f.state.progress = { ...view, status: 'running', attemptId: candidateId };
+    assert.equal((await status()).progress.reason, 'unavailable');
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('closed CLI describe and usage errors never expose app data or config path', async () => {
   const f = await fixture();
   try {
@@ -369,6 +440,160 @@ test('closed CLI describe and usage errors never expose app data or config path'
     assert.ok(!invalid.err.includes(f.config));
     assert.equal(f.state.executions, 0);
     assert.throws(() => parseCommandJson('{"role":"output","role":"grader-explanation"}'));
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a named comparison reports callback reuse and supplies a durable handle to status, policy and export', async () => {
+  const f = await fixture('live');
+  try {
+    const handle = ['--config', f.config, '--name', 'first-run'];
+    const compare = ['compare', ...handle, '--bundle', bundleId, '--channel', 'stable', '--payload', f.payloadFile, '--live'];
+    const first = await invoke(f.app, compare);
+    assert.equal(first.status, 0, first.err);
+    assert.equal(first.result.runName, 'first-run');
+    assert.deepEqual(first.result.invocation, { callbacksStarted: 2, reusedEvidence: false });
+    const again = await invoke(f.app, compare);
+    assert.deepEqual(again.result.invocation, { callbacksStarted: 0, reusedEvidence: true });
+    assert.equal(again.result.requestId, first.result.requestId);
+    assert.equal((await invoke(undefined, ['status', ...handle])).result.requestId, first.result.requestId);
+    assert.equal((await invoke(f.app, ['check', ...handle, '--policy', f.policy])).result.verdict, 'pass');
+    const destination = path.join(f.directory, 'named-export');
+    assert.equal((await invoke(f.app, ['export', ...handle, '--out', destination])).status, 0);
+    assert.equal((await invoke(undefined, ['verify-export', '--manifest', path.join(destination, 'manifest.json')])).status, 0);
+    assert.equal(f.state.executions, 2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('fresh attempt checks predecessor status, candidate payload and pinned base before creating work', async () => {
+  const f = await fixture('live');
+  try {
+    const inputs = ['compare', '--config', f.config, '--bundle', bundleId, '--channel', 'stable', '--payload', f.payloadFile, '--live'];
+    assert.equal((await invoke(f.app, [...inputs, '--name', 'original'])).status, 0);
+    const retry = [...inputs, '--retry-after', 'original'];
+    for (const status of ['requested', 'running', 'interrupted']) {
+      Object.assign(f.state.request, { status });
+      const blocked = await invoke(f.app, retry);
+      assert.equal(blocked.status, 3);
+      assert.equal(blocked.error.error.code, 'evidence.not_terminal');
+    }
+    Object.assign(f.state.request, { status: 'completed' });
+    f.state.revision = '2';
+    assert.equal((await invoke(f.app, retry)).error.error.code, 'request.base_conflict');
+    await writeFile(f.payloadFile, JSON.stringify({ schemaVersion: 1, files: [{ path: 'instruction.md', kind: 'instruction', text: 'changed' }] }));
+    assert.equal((await invoke(f.app, retry)).error.error.code, 'request.intent_mismatch');
+    assert.equal(f.state.drafts, 1);
+    assert.equal(f.state.executions, 2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('an incomplete first policy reports only known missing schema fields before any execution', async () => {
+  const f = await fixture('live');
+  try {
+    const { id, requiredCases, ...policy } = f.quality;
+    await writeFile(f.policy, JSON.stringify({ ...policy, metric: { name: 'PRIVATE_CANARY' }, PRIVATE_CANARY: 'x' }));
+    const result = await invoke(f.app, ['compare', '--config', f.config, '--handoff', f.handoff, '--policy', f.policy, '--live']);
+    assert.equal(result.error.error.code, 'policy.invalid');
+    assert.deepEqual(result.error.error.missingFields.sort(), ['id', 'metric.direction', 'metric.unit', 'requiredCases']);
+    assert.ok(!result.err.includes('PRIVATE_CANARY'));
+    assert.equal(f.traffic.length, 0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('compare terminal and JSON modes render the same bound run without extra calls', async () => {
+  const f = await fixture('live');
+  try {
+    const args = ['compare', '--config', f.config, '--handoff', f.handoff, '--policy', f.policy];
+    const missingLive = await invoke(f.app, args, undefined, true);
+    assert.equal(missingLive.status, 1);
+    assert.match(missingLive.err, /requires --live/);
+    assert.match(missingLive.err, /--bundle ID --channel CHANNEL/);
+    assert.ok(!missingLive.err.includes(f.config));
+    const mixed = await invoke(
+      f.app,
+      [...args, '--live', '--name', 'PRIVATE_CANARY'],
+      undefined,
+      true,
+    );
+    assert.match(mixed.err, /--handoff cannot be combined/);
+    assert.ok(!mixed.err.includes('PRIVATE_CANARY'));
+    assert.equal(f.traffic.length, 0);
+    assert.equal((await invoke(f.app, f.requestArgs)).status, 0);
+    args.push('--live');
+    await writeFile(f.policy, JSON.stringify({ ...f.quality, minimumMeanImprovement: 2 }));
+    const first = await invoke(f.app, args, undefined, true);
+    assert.equal(first.status, 2);
+    assert.match(first.out, new RegExp(requestId));
+    assert.match(first.out, /Equal-case means\s+parent 0\s+candidate 1/);
+    assert.match(first.out, /Pair coverage\s+1\/1/);
+    assert.match(first.out, /"case"\s+parent 0\s+candidate 1/);
+    assert.match(first.out, /Policy\s+fail/);
+    assert.match(first.out, /fail\s+policy.minimum_mean_improvement/);
+    const before = f.traffic.length;
+    const piped = await invoke(f.app, args);
+    const readCalls = f.traffic.slice(before);
+    const next = f.traffic.length;
+    const explicit = await invoke(f.app, [...args, '--json'], undefined, true);
+    assert.equal(explicit.out, piped.out);
+    assert.deepEqual(f.traffic.slice(next), readCalls);
+    const last = f.traffic.length;
+    assert.match(first.out, /Execution callbacks started this time: 2/);
+    assert.match((await invoke(f.app, args, undefined, true)).out, /Reused saved evidence/);
+    assert.deepEqual(f.traffic.slice(last), readCalls);
+    assert.ok(readCalls.every(([method]) => method === 'GET'));
+    assert.equal(f.state.executions, 2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('compare terminal preserves missing scores and partial coverage', async () => {
+  const f = await fixture('live');
+  try {
+    f.state.failGrade = true;
+    assert.equal((await invoke(f.app, f.requestArgs)).status, 0);
+    const result = await invoke(
+      f.app,
+      ['compare', '--config', f.config, '--handoff', f.handoff, '--live', '--policy', f.policy],
+      undefined,
+      true,
+    );
+    assert.equal(result.status, 3);
+    assert.match(result.out, /candidate · grade · grading_failed/);
+    assert.match(result.out, /parent unknown\s+candidate unknown/);
+    assert.match(result.out, /0\/1 \(partial\)/);
+    assert.match(result.out, /"case" \[0\]\s+parent unknown\s+candidate unknown/);
+    assert.match(result.out, /Policy\s+indeterminate/);
+    assert.match(result.out, /unknown\s+evidence.incomplete/);
+    const json = await invoke(f.app, [
+      'compare',
+      '--config',
+      f.config,
+      '--handoff',
+      f.handoff,
+      '--live',
+      '--policy',
+      f.policy,
+      '--json',
+    ]);
+    assert.equal(json.status, 3);
+    assert.deepEqual(json.result.scores.evidenceGaps.rows, [
+      { caseId: 'case', repetition: 0, side: 'parent', stage: 'grade', reason: 'grading_failed' },
+      {
+        caseId: 'case',
+        repetition: 0,
+        side: 'candidate',
+        stage: 'grade',
+        reason: 'grading_failed',
+      },
+    ]);
   } finally {
     await f.cleanup();
   }
@@ -436,7 +661,7 @@ test('installed app headless request -> run -> read-only policy check -> export 
     assert.equal(exported.status, 0);
     assert.equal(exported.result.localInspection, 'not_requested');
     assert.ok(!exported.out.includes(f.directory));
-    const verified = await invoke(f.app, [
+    const verified = await invoke(undefined, [
       'verify-export',
       '--manifest',
       path.join(out, 'manifest.json'),
@@ -891,6 +1116,33 @@ test('creation recovery survives same-principal token rotation and retains crede
   }
 });
 
+test('doctor distinguishes config aliases, journal aliases and directory permissions', async () => {
+  const f = await fixture();
+  try {
+    const alias = path.join(f.directory, 'private-name-canary');
+    await symlink(f.directory, alias);
+    const linked = path.join(f.directory, 'file-alias');
+    await symlink(f.config, linked);
+    const config = JSON.parse(await readFile(f.config, 'utf8'));
+    config.journalRoot = path.join(alias, 'missing', 'journals');
+    await writeFile(f.config, JSON.stringify(config));
+    for (const filename of [linked, path.join(alias, path.relative(f.directory, f.config)), f.config]) {
+      const result = await invoke(f.app, ['doctor', '--config', filename, '--bundle', bundleId]);
+      assert.equal(result.status, 1);
+      const failure = result.error?.error ?? result.result.checks.at(-1);
+      assert.equal(failure.code, 'config.permissions');
+      assert.equal(failure.field, filename === f.config ? 'journalRoot' : 'configPath');
+      assert.match(failure.hint, /realpath/);
+      assert.doesNotMatch(failure.hint, /chmod/);
+      assert.ok(!JSON.stringify(failure).includes(f.directory));
+    }
+    await assert.rejects(readFile(path.join(f.directory, 'missing')), { code: 'ENOENT' });
+    assert.equal(f.state.executions, 0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('doctor reports missing private configuration as invalid input exit 1', async () => {
   const f = await fixture();
   try {
@@ -913,6 +1165,8 @@ test('doctor reports missing private configuration as invalid input exit 1', asy
     ]);
     assert.equal(unsafeStorage.status, 1);
     assert.equal(unsafeStorage.result.checks.at(-1).code, 'config.permissions');
+    assert.equal(unsafeStorage.result.checks.at(-1).field, 'journalRoot');
+    assert.match(unsafeStorage.result.checks.at(-1).hint, /chmod/);
     assert.equal(f.state.executions, 0);
   } finally {
     await f.cleanup();

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EvaluationHandoffDownload } from '../src/components/evaluation-handoff-download';
-import { evaluationHandoff, evaluationPresets } from '../src/lib/evaluation-config';
+import { appDescriptor } from './fixtures/app-evaluator';
+import { evaluationHandoff } from '../src/lib/evaluation-config';
 
 test('request download retains exactly the public handoff and releases its blob URL', async (t) => {
   const handoff = evaluationHandoff(
@@ -9,7 +10,7 @@ test('request download retains exactly the public handoff and releases its blob 
     'project',
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-    evaluationPresets['presence-contract'],
+    appDescriptor,
   );
   let saved: Blob | undefined;
   let clicked = false;

@@ -69,15 +69,33 @@ export async function runExistingAgent({ bundle, task, signal }) {
 }
 '''
 
-CASES = r'''export const cases = [
-  {caseId:'compromised-account', input:{compromised:true}, expected:{queue:'security'}},
-  {caseId:'ordinary-issue', input:{compromised:false}, expected:{queue:'normal'}},
-];
-export function gradeResult(output, expected) {
-  return {reward:Number(output.queue === expected.queue),
-    explanation:{queueMatches:output.queue === expected.queue}};
+def install_routing_app(f, app):
+    (app / 'private-jobs').mkdir(mode=0o700)
+    (app / 'agent.mjs').write_text(AGENT)
+    cases = [
+        {'caseId':'compromised-account', 'input':{'compromised': True}, 'expected':{'queue':'security'}},
+        {'caseId':'ordinary-issue', 'input':{'compromised': False}, 'expected':{'queue':'normal'}},
+    ]
+    f.clean_env['ACCLIMATE_EVALUATOR_CASES'] = str(f.write_json(app / 'cases.json', cases))
+    agent_digest = hashlib.sha256(AGENT.encode()).hexdigest()
+    (app / 'application.mjs').write_text("""
+import { runExistingAgent } from './agent.mjs';
+export const configId = 'first-adopter-support-routing';
+export const runtime = { settings: {app: 'support-routing'}, artifacts: {app: 'sha256:APP_DIGEST'} };
+export async function execute({ bundle, input, signal }) {
+  return {output: await runExistingAgent({bundle, task: input, signal}), usage: {costUsd: 0}};
 }
-'''
+export async function grade({ output, expected }) {
+  const queueMatches = output.queue === expected.queue;
+  return {reward: Number(queueMatches), explanation: {queueMatches}};
+}
+export const grader = {sourceUtf8: grade.toString()};
+export async function toReviewArtifact({ identity, value }) {
+  return {mediaType: 'application/json', value: identity.role === 'output'
+    ? {queue: value.queue} : {queueMatches: value.queueMatches}};
+}
+""".replace('APP_DIGEST', agent_digest))
+
 
 def add_shared_browser_evidence(public):
     """Attribute an already completed root browser run; never start another run."""
@@ -152,33 +170,13 @@ def main():
         app = f.install_js(name='support-routing', starter='evaluation')
         node = shutil.which('node')
         cli = [node, str(app / 'acclimate-eval.mjs')]
-        trial = f.run([node, str(app / 'trial.mjs')], cwd=app)
-        check('offline trial explicit simulation', trial['simulated'], True)
-        check('offline trial no service mutation', trial['serviceMutation'], False)
-        check('offline trial no release evidence', trial['releaseEvidence'], False)
-        check('shipped trial parent mean', trial['parentMean'], 0.5)
-        check('shipped trial candidate mean', trial['candidateMean'], 1)
-
-        # Adapt only the adopter-owned files extracted from the shipped archive.
-        (app / 'private-jobs').mkdir(mode=0o700)
-        (app / 'agent.mjs').write_text(AGENT)
-        (app / 'cases.mjs').write_text(CASES)
-        entry = (app / 'acclimate-eval.mjs').read_text()
-        entry = entry.replace('installed-payment-starter', 'first-adopter-support-routing')
-        entry = entry.replace('payment-response-fixtures-1', 'support-routing-tasks-1')
-        entry = entry.replace('single-charge-result-1', 'independent-queue-label-1')
-        entry = entry.replace('payment-starter-1', 'support-routing-1')
-        entry = entry.replace("{ charges: value.charges, succeeded: value.succeeded }", "{ queue: value.queue }")
-        entry = entry.replace("{ singleCharge: value.singleCharge, succeeded: value.succeeded }", "{ queueMatches: value.queueMatches }")
-        (app / 'acclimate-eval.mjs').write_text(entry)
+        install_routing_app(f, app)
         policy = {'schemaVersion': 1, 'id': 'support-routing-quality', 'revision': '1',
                   'metric': {'name':'correct queue', 'unit':'reward', 'direction':'higher'},
                   'aggregation':'equal-case-means', 'minimumMeanImprovement':0.5,
                   'maximumCaseRegression':0, 'candidateThreshold':1,
                   'requiredCases':['compromised-account','ordinary-issue'],
                   'maximumCandidateTaskFailures':0, 'cost':{'maximumCandidateUsd':0}}
-        for name in ('quality-policy.json','candidate.json','share-selection.json'):
-            (app/name).unlink()
         f.write_json(app / 'quality-policy.json', policy)
         f.write_json(app / 'candidate.json', CANDIDATE)
         f.write_json(app / 'share-selection.json', {'schemaVersion':1, 'entries':[
@@ -222,7 +220,7 @@ def main():
         check('doctor never executes callbacks', (app/'callback-events.jsonl').exists(), False)
         target = ['--config',str(f.evaluator_config),'--handoff',str(handoff)]
         f.run(cli + ['doctor',*target], cwd=app)
-        f.run(cli + ['run',*target], cwd=app)
+        f.run(cli + ['run','--live',*target], cwd=app)
         policy_result = f.run(cli + ['check',*target,'--policy',str(app/'quality-policy.json')], cwd=app)
         export_dir = f.root / 'review-export'
         f.run(cli + ['export',*target,'--selection',str(app/'share-selection.json'),
@@ -256,8 +254,7 @@ def main():
             action = 'install --offline --ignore-scripts'
             if invocation.exists():
                 argv = json.loads(invocation.read_text())['command']
-                action = ('trial' if Path(argv[1]).name == 'trial.mjs' else
-                          'installed SDK resolution' if argv[1] == '--input-type=module' else argv[2])
+                action = 'installed SDK resolution' if argv[1] == '--input-type=module' else argv[2]
             commands.append({'step':action, **command_meta})
         node_version = subprocess.run([node,'--version'], env=f.clean_env, capture_output=True,
                                       check=True,text=True).stdout.strip()
@@ -281,7 +278,7 @@ def main():
                   'comparisonId':authoritative['comparisonId'],
                   'consumedVersionIds':sorted({e['versionId'] for e in events}),
                   'consumedDigests':sorted({e['digest'] for e in events}),
-                  'trial':trial, 'policy':policy_result, 'verification':verified,
+                  'policy':policy_result, 'verification':verified,
                   'commands':commands, 'runtime':{'node':node_version,'python':sys.version.split()[0],
                     'postgres':f.h.pg('postgres','--version').stdout.strip()},
                   'installedReleaseProvenance':f.installation_proofs['support-routing'],

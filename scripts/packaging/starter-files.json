@@ -2,46 +2,27 @@
   "evaluation": [
     "ANALYSIS.md",
     "README.md",
+    "acclimate-eval.d.mts",
     "acclimate-eval.mjs",
     "acclimate_eval.py",
-    "agent.d.mts",
-    "agent.mjs",
-    "agent.py",
     "analyze.mjs",
     "analyze.py",
     "async_eval.py",
-    "baseline.json",
-    "candidate.json",
-    "cases.mjs",
     "package.json",
-    "quality-policy.json",
-    "share-selection.json",
-    "test/test_async_lifetime.py",
-    "trial.mjs",
-    "trial.py",
-    "typescript/acclimate-eval.ts.template",
-    "typescript/agent.ts.template",
-    "typescript/tsconfig.json"
+    "quality-policy.example.json",
+    "test/test_async_lifetime.py"
   ],
-  "ci": ["README.md", "ci.sh"],
-  "native-repository": [
-    "QUALIFICATION.md",
+  "ci": [
     "README.md",
-    "demo.mjs",
-    "fixture/package.json",
-    "fixture/src/retry.js",
-    "fixture/tests/retry.test.mjs",
+    "ci.py",
+    "ci.sh"
+  ],
+  "native-repository": [
+    "README.md",
+    "application.mjs",
     "harnesses.mjs",
     "package.json",
     "repository-job.mjs",
-    "test/codex-policy.test.mjs",
-    "test/crash.test.mjs",
-    "test/fault-worker.mjs",
-    "test/installed.test.mjs",
-    "test/native-helpers.test.mjs",
-    "test/repository.test.mjs",
-    "test/support.mjs",
-    "verify-install.mjs",
-    "worker.mjs"
+    "verify-install.mjs"
   ]
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { evaluateRequest, fixtureIdentity } from './evaluate-request.js';
+import { evaluateRequest, fixtureIdentity } from './evaluation/tests/evaluate-request.js';
 import { fixture, projectId, bundleId, requestId, evaluatorPrincipalId, serviceUrl } from './evaluation/fixture.js';
 import type { ComparisonRequest } from '../packages/sdk/src/types.js';
 

@@ -6,10 +6,12 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+from unittest.mock import Mock, patch
 from acclimate import (
     AcclimateClient,
     ApiError,
     DeliveryError,
+    DeliveryReporter,
     prepare_files,
     resolve_and_cache,
     validate_payload,
@@ -110,6 +112,69 @@ class SDKTest(unittest.TestCase):
         self.client = AcclimateClient(
             "http://127.0.0.1:%d" % self.server.server_port, "secret", "principal"
         )
+
+    def test_prepare_scopes_delivery_and_cleanup_to_the_real_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp).resolve() / "cache"
+            reporter = Mock()
+            with self.client.prepare("p", "b1", channel="stable", cache_dir=cache, reporter=reporter) as job:
+                self.assertEqual(job.version["digest"], VERSION["digest"])
+                self.assertEqual(job.instructions, "\n\n".join(
+                    file["text"] for file in job.bundle["payload"]["files"] if file["kind"] == "instruction"))
+                self.assertEqual(job.skill_files, [file for file in job.files if file["kind"] == "skill"])
+                self.assertTrue(Path(job.files[0]["absolutePath"]).exists())
+                binding = reporter.bind.return_value
+                binding.report_prepared.assert_called_once_with()
+                binding.report_started.assert_not_called()
+                binding.report_started.return_value = {"eventId": "one-start", "stage": "started"}
+                receipt = job.report_started()
+                self.assertEqual(receipt, binding.report_started.return_value)
+                receipt["eventId"] = "modified caller copy"
+                self.assertEqual(job.report_started()["eventId"], "one-start")
+                binding.report_started.assert_called_once_with()
+            self.assertFalse(Path(job.directory).exists())
+            job.cleanup()
+            destination = Path(tmp).resolve() / "job"
+            with self.client.prepare("p", "b1", version_id=VERSION["id"], cache_dir=cache, destination=destination) as pinned:
+                self.assertEqual(pinned.version["id"], job.version["id"])
+                retained = destination / "app-result.json"
+                retained.write_text("ok")
+            self.assertEqual(retained.read_text(), "ok")
+            self.assertFalse(Path(pinned.files[0]["absolutePath"]).exists())
+
+    def test_prepared_job_retries_a_refused_start_with_the_original_identity(self):
+        release = threading.Event()
+        events = []
+        now = [1_700_000_000]
+        writer = Mock()
+
+        def send(project, integration, receipt):
+            release.wait(2)
+            events.append(receipt)
+
+        writer.report_delivery_receipt.side_effect = send
+        reporter = DeliveryReporter(writer, "p", "i", max_queue=1, clock=lambda: now[0])
+        try:
+            with tempfile.TemporaryDirectory() as temp, self.client.prepare(
+                "p", "b1", channel="stable", cache_dir=Path(temp).resolve() / "cache",
+                reporter=reporter,
+            ) as job:
+                with patch("acclimate.receipts.uuid.uuid4", return_value="first-start-id"):
+                    self.assertIsNone(job.report_started())
+                now[0] += 60
+                self.assertIsNone(job.report_started())
+                release.set()
+                self.assertTrue(reporter.wait(2))
+                accepted = job.report_started()
+                self.assertEqual(accepted["eventId"], "first-start-id")
+                self.assertEqual(accepted["occurredAt"], "2023-11-14T22:13:20Z")
+                self.assertEqual(job.report_started(), accepted)
+                self.assertTrue(reporter.wait(2))
+                self.assertEqual(job.report_started(), accepted)
+                self.assertEqual([r for r in events if r["stage"] == "started"], [accepted])
+        finally:
+            release.set()
+            reporter.close()
 
     def test_retry_same_bytes_and_key(self):
         self.client.create_bundle("p", {"name": "café"}, "key")

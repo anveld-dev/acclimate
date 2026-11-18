@@ -202,6 +202,7 @@ interface RequestIntent {
   output: string;
   payload: BundlePayload;
   descriptor: EvaluationApp<any, any, any>['descriptor'];
+  retryAfterRequestId?: string;
   base: { versionId: string; digest: string; revision: string };
   keys: { draft: string; request: string };
   draftBody: string;
@@ -310,6 +311,7 @@ export async function createRequestFromIntent(options: {
   payloadFile: string;
   intentPath: string;
   outputFile: string;
+  predecessor?: { handoffFile: string; request: Evaluation };
 }): Promise<{
   schemaVersion: 1;
   requestId: string;
@@ -317,6 +319,7 @@ export async function createRequestFromIntent(options: {
   generation: number;
   parentVersionId: string;
   candidateVersionId: string;
+  candidateDigest: string;
   status: string;
 }> {
   const { app, config, bundleId, channel } = options;
@@ -325,6 +328,18 @@ export async function createRequestFromIntent(options: {
   const output = path.resolve(options.outputFile);
   const payload = await readCommandJson(options.payloadFile);
   validatePayload(payload);
+  let prior: RequestIntent | undefined;
+  if (options.predecessor) {
+    const { handoffFile, request } = options.predecessor;
+    prior = await existingIntent(path.join(path.dirname(handoffFile), 'intent.json'));
+    if (!prior || prior.kind !== 'acclimate-request-intent' || prior.schemaVersion !== 1 ||
+        stable(prior.identity) !== stable(identity(config)) || prior.output !== handoffFile ||
+        prior.bundleId !== bundleId || prior.channel !== channel || stable(prior.payload) !== stable(payload) ||
+        prior.request?.id !== request.id || prior.request.candidateVersionId !== request.candidateVersionId ||
+        prior.request.candidateDigest !== request.candidateDigest || prior.base?.versionId !== request.parentVersionId ||
+        prior.base.digest !== request.parentDigest)
+      throw fail();
+  }
   await privateDirectory(path.dirname(filename));
   const lock = await acquireFileLock(filename + '.lock');
   const transport = createEvaluationTransport(config);
@@ -354,6 +369,7 @@ export async function createRequestFromIntent(options: {
       (state.schemaVersion !== 1 ||
         state.kind !== 'acclimate-request-intent' ||
         stable(state.identity) !== stable(identity(config)) ||
+        (prior && state.retryAfterRequestId !== prior.request!.id) ||
         state.bundleId !== bundleId ||
         state.channel !== channel ||
         state.output !== output ||
@@ -365,9 +381,13 @@ export async function createRequestFromIntent(options: {
       const current = await transport.client.resolveChannel(config.projectId, bundleId, channel);
       if (!current.resolution) throw fail('request.base_conflict');
       const base = current.resolution;
+      if (prior && (base.version.id !== prior.base.versionId || base.version.digest !== prior.base.digest ||
+          base.revision !== prior.base.revision))
+        throw fail('request.base_conflict');
       state = {
         schemaVersion: 1,
         kind: 'acclimate-request-intent',
+        ...(prior && { retryAfterRequestId: prior.request!.id }),
         identity: identity(config),
         bundleId,
         channel,
@@ -509,6 +529,7 @@ export async function createRequestFromIntent(options: {
       generation: draft.generation,
       parentVersionId: fixed.base.versionId,
       candidateVersionId: draft.snapshotVersion.id,
+      candidateDigest: fixed.request.candidateDigest,
       status: fixed.request.status,
     };
   } catch (error) {

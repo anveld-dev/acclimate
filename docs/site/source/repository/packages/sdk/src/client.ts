@@ -1,6 +1,9 @@
-import type { Operation } from './types.js';
+import type { Operation, PolicyOverride } from './types.js';
+import type { PrepareDeliveryOptions, PreparedDelivery } from './prepare.js';
 import { registerEvaluationMutation } from './internal/http-bridge.js';
 import type {
+  ComparisonPolicyReceipt,
+  ComparisonPolicyReport,
   EvaluationCapabilities,
   IntegrationObservation,
   EvaluationProgressRequest,
@@ -22,6 +25,8 @@ import type {
   LearningFieldRequalification,
   LearningFieldReplay,
   LearningOutcomeReceipt,
+  LearningOutcomeStatus,
+  LearningIncidentReplay,
   LearningOutcomeRequest,
   LearningCorrectionRequest,
   LearningRecheckRequest,
@@ -122,6 +127,11 @@ export class AcclimateClient {
   private readonly timeoutMs: number;
   private readonly maxPayloadBytes: number;
   private readonly maxJsonResponseBytes: number;
+  /** Resolve a published channel or pinned version and stage its verified content for one job. */
+  async prepare(options: PrepareDeliveryOptions): Promise<PreparedDelivery> {
+    const { prepareDelivery } = await import('./prepare.js');
+    return prepareDelivery(this, options);
+  }
   constructor(options: ClientOptions) {
     if (!options.baseUrl || !options.token || !options.scope)
       throw new TypeError('baseUrl, token, and scope are required');
@@ -400,6 +410,28 @@ export class AcclimateClient {
       key,
     );
   }
+  getLearningOutcome(
+    projectId: string,
+    integrationId: string,
+    outcomeId: string,
+  ): Promise<LearningOutcomeStatus> {
+    return this.request(
+      'GET',
+      this.learningPath(projectId, integrationId) + '/outcomes/' + this.part(outcomeId),
+    );
+  }
+  reportLearningIncidentReplay(
+    projectId: string,
+    integrationId: string,
+    body: LearningIncidentReplay,
+  ): Promise<{ accepted: true }> {
+    return this.request(
+      'POST',
+      this.learningPath(projectId, integrationId) + '/incident-replays',
+      JSON.stringify(body),
+      body.roundId,
+    );
+  }
   reportLearningOutcome(
     projectId: string,
     integrationId: string,
@@ -488,11 +520,12 @@ export class AcclimateClient {
     roundId: string,
     approve: boolean,
     key: string,
+    policyOverride?: PolicyOverride,
   ): Promise<LearningReviewReceipt> {
     return this.request(
       'POST',
       this.learningPath(projectId, integrationId) + `/rounds/${this.part(roundId)}/review`,
-      JSON.stringify({ approve }),
+      JSON.stringify({ approve, policyOverride }),
       key,
     );
   }
@@ -593,6 +626,45 @@ export class AcclimateClient {
     return this.request(
       'GET',
       this.path(projectId, `/bundles/${this.part(bundleId)}/comparisons/${this.part(id)}`),
+    );
+  }
+  private comparisonPolicyPath(projectId: string, bundleId: string, comparisonId: string) {
+    return this.path(
+      projectId,
+      `/bundles/${this.part(bundleId)}/comparisons/${this.part(comparisonId)}/policy-receipts`,
+    );
+  }
+  listComparisonPolicyReceipts(
+    projectId: string,
+    bundleId: string,
+    comparisonId: string,
+  ): Promise<{ items: ComparisonPolicyReceipt[] }> {
+    return this.request('GET', this.comparisonPolicyPath(projectId, bundleId, comparisonId));
+  }
+  listCandidatePolicyReceipts(
+    projectId: string,
+    bundleId: string,
+    versionId: string,
+  ): Promise<{ items: ComparisonPolicyReceipt[] }> {
+    return this.request(
+      'GET',
+      this.path(
+        projectId,
+        `/bundles/${this.part(bundleId)}/versions/${this.part(versionId)}/policy-receipts`,
+      ),
+    );
+  }
+  reportComparisonPolicyReceipt(
+    projectId: string,
+    bundleId: string,
+    comparisonId: string,
+    report: ComparisonPolicyReport,
+  ): Promise<ComparisonPolicyReceipt> {
+    return this.request(
+      'POST',
+      this.comparisonPolicyPath(projectId, bundleId, comparisonId),
+      JSON.stringify(report),
+      `policy:${comparisonId}:${report.policy.sha256}`,
     );
   }
   private listing(options: ListOptions = {}): string {

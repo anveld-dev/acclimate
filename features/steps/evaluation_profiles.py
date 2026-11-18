@@ -1,6 +1,8 @@
 """Browser-only profile handoff; these scenarios never launch a provider."""
 import json
 import shlex
+import subprocess
+from scripts.productization.qualify import ROOT
 from behave import when, then
 from playwright.sync_api import expect
 from features.steps.console import ensure_editor, save_browser
@@ -15,33 +17,31 @@ def candidate(context):
     save_browser(context)
     p.get_by_role('link', name='Continue to evaluation', exact=True).click()
     open_details(p, 'Set up evaluation request')
-    expect(p.get_by_label('Evaluation configuration', exact=True)).to_be_visible()
+    expect(p.get_by_label('Public evaluator configuration (JSON)', exact=True).filter(visible=True)).to_be_visible()
     return w, p
 
 
-@when('I save a browser candidate and select the native Luna evaluation configuration')
+@when('I save a browser candidate and paste the installed Codex evaluator description')
 def native_profile(context):
     w, p = candidate(context)
-    p.get_by_label('Evaluation configuration', exact=True).select_option('codex-luna-review')
-    expect(p.get_by_text('Creating a request makes no model call.', exact=False)).to_be_visible()
+    described = subprocess.run(['npm','run','--silent','evaluate:app','--','describe'], cwd=ROOT,
+                               env=w.h.env, capture_output=True, text=True, check=True)
+    w.native_descriptor = json.loads(described.stdout)
+    p.get_by_label('Public evaluator configuration (JSON)', exact=True).filter(visible=True).fill(described.stdout)
     p.get_by_role('button', name='Create evaluation request', exact=True).click()
     expect(p.get_by_role('status').filter(has_text='Evaluation request created. Run it in your app, then return here for the results.')).to_be_visible()
     w.profile_request = w.call('GET', w.bundle+'/evaluation-requests')['items'][0]
 
 
-@then('its strict frozen request and copied command select the native installed adapter without executing it')
+@then('its strict frozen request and copied command match the installed Codex evaluator')
 def native_handoff(context):
     w = context.world
     p = w.browser_fixture.page
     request = w.profile_request
     assert request['status'] == 'requested' and request['requireBoundEvidence'] is True
-    assert request['runtime'] == dict(configId='codex-luna-review', configRevision='1', app='service-proposer-review-v1',
-        model='gpt-6-luna', sampling='reasoning-low', writes='disabled', network='disabled', maxTurns='4', turnTimeoutMs='110000', concurrency='1')
-    assert request['datasetRevision'] == 'retry-review-snapshots-v1'
-    assert request['graderRevision'] == 'retry-review-exact-finding-v1'
-    assert request['expectedCases'] == [dict(caseId=case, repetition=0) for case in ['checkout-retry','checkout-keyed']]
-    p.get_by_text('Included checkout setup (required)',exact=True).click()
-    p.get_by_role('button', name='Copy setup-required command', exact=True).click()
+    for key, value in w.native_descriptor.items():
+        assert request[key] == value
+    p.get_by_role('button', name='Copy evaluator run command', exact=True).click()
     expect(p.get_by_role('status').filter(has_text='Copied.')).to_be_visible()
     command = shlex.split(p.evaluate('navigator.clipboard.readText()'))
     assert command == ['npm','run','evaluate:app','--','--config','/absolute/private/evaluator.json','--bundleID',w.setup['bundle']['id'],
@@ -54,7 +54,6 @@ def native_handoff(context):
 @when('I select my app evaluator and enter malformed then valid public configuration')
 def custom_profile(context):
     w, p = candidate(context)
-    p.get_by_label('Evaluation configuration', exact=True).select_option('custom')
     field = p.get_by_label('Public evaluator configuration (JSON)', exact=True).filter(visible=True)
     valid = dict(datasetRevision='bdd-custom-dataset-v7', graderRevision='bdd-custom-grader-v3',
         runtime=dict(configId='bdd-installed-app', configRevision='opaque-revision-42', app='bdd-app', model='none',

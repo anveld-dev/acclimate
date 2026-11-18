@@ -277,8 +277,9 @@ impl Connection {
             .is_none()
             .then_some("Correction has no applicable permitted paths");
         sqlx::query(
-            "INSERT INTO connected_learning_rounds (id,project_id,bundle_id,integration_id,outcome_id,parent_version_id,parent_revision,proposal_id,state,reason,correction_id,attempt)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+            "INSERT INTO connected_learning_rounds (id,project_id,bundle_id,integration_id,outcome_id,parent_version_id,parent_revision,proposal_id,state,reason,correction_id,attempt,incident_replay)
+             SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN require_incident_replay THEN 'pending' END
+             FROM connected_learning_corrections WHERE (project_id,integration_id,correction_id)=($2,$4,$11)",
         )
         .bind(Uuid::new_v4())
         .bind(&self.project)
@@ -527,7 +528,16 @@ impl Connection {
         round: &PgRow,
         comparison: Uuid,
         reviewer: &str,
+        policy_override: Option<crate::PolicyOverride>,
     ) -> ApiResult<Uuid> {
+        if !matches!(
+            round.get::<Option<String>, _>("incident_replay").as_deref(),
+            None | Some("pass")
+        ) {
+            return Err(conflict(
+                "A passing replay of the triggering incident is required",
+            ));
+        }
         if !field_requalification::eligible(
             tx,
             self,
@@ -551,7 +561,9 @@ impl Connection {
                 expected_revision: round.get::<i64, _>("parent_revision").to_string(),
                 comparison_id: Some(comparison.to_string()),
                 unevaluated_reason: None,
+                policy_override,
             },
+            None,
         )
         .await?;
         path(&promotion.id)
@@ -664,6 +676,23 @@ pub(crate) async fn close(tx: &mut Tx<'_>, round: &PgRow, reason: &str) -> ApiRe
     Ok(())
 }
 
+async fn incident_replay_ready(tx: &mut Tx<'_>, round: &PgRow) -> ApiResult<bool> {
+    let reason = match round.get::<Option<String>, _>("incident_replay").as_deref() {
+        None | Some("pass") => return Ok(true),
+        Some("regression") => "Candidate still fails the triggering incident",
+        Some("unavailable") => "Evaluator could not reproduce the incident from private evidence",
+        Some("pending") => {
+            if !round.get::<bool, _>("replay_expired") {
+                return Ok(false);
+            }
+            "Timed out waiting for the evaluator to replay the triggering incident"
+        }
+        Some(_) => return Err(db("Invalid incident replay state")),
+    };
+    close(tx, round, reason).await?;
+    Ok(false)
+}
+
 async fn advance(
     tx: &mut Tx<'_>,
     connection: &Connection,
@@ -717,6 +746,18 @@ async fn advance(
                     }
                 }
                 Evidence::Passed(comparison) => {
+                    // Preserve the suite result while waiting for independent private evidence.
+                    if round.get::<Option<String>, _>("incident_replay").is_some()
+                        && round
+                            .get::<Option<Uuid>, _>("development_comparison_id")
+                            .is_none()
+                    {
+                        sqlx::query("UPDATE connected_learning_rounds SET development_comparison_id=$2 WHERE id=$1")
+                            .bind(id).bind(comparison).execute(&mut **tx).await.map_err(db)?;
+                    }
+                    if !incident_replay_ready(tx, round).await? {
+                        return Ok(());
+                    }
                     if !field_requalification::check_required_replays(tx, connection, round).await?
                     {
                         return Ok(());
@@ -746,7 +787,11 @@ async fn advance(
             let can_automate = connection.automatic
                 && connection.development.committed()
                 && descriptor.committed();
-            if state == "awaiting_review" && !can_automate {
+            if state == "awaiting_review"
+                && (!can_automate
+                    || round.get::<Option<String>, _>("reason").as_deref()
+                        == Some("Application policy requires explicit review"))
+            {
                 return Ok(());
             }
             let request = round.get("audit_request_id");
@@ -772,11 +817,15 @@ async fn advance(
                     }
                     if can_automate {
                         match connection
-                            .promote(tx, round, comparison, &connection.authorizer)
+                            .promote(tx, round, comparison, &connection.authorizer, None)
                             .await
                         {
                             Ok(promotion) => {
                                 record_promotion(tx, id, comparison, promotion).await?
+                            }
+                            Err(error) if error.1 == "policy_override_required" => {
+                                sqlx::query("UPDATE connected_learning_rounds SET state='awaiting_review',audit_comparison_id=$2,reason='Application policy requires explicit review',updated_at=now() WHERE id=$1")
+                                    .bind(id).bind(comparison).execute(&mut **tx).await.map_err(db)?;
                             }
                             Err(error) if error.0.is_client_error() => {
                                 sqlx::query("UPDATE connected_learning_rounds SET audit_comparison_id=$2 WHERE id=$1")
@@ -803,7 +852,7 @@ async fn record_promotion(
     comparison: Uuid,
     promotion: Uuid,
 ) -> ApiResult<()> {
-    sqlx::query("UPDATE connected_learning_rounds SET state='promoted',audit_comparison_id=$2,promotion_id=$3,updated_at=now() WHERE id=$1")
+    sqlx::query("UPDATE connected_learning_rounds SET state='promoted',reason=NULL,audit_comparison_id=$2,promotion_id=$3,updated_at=now() WHERE id=$1")
         .bind(round).bind(comparison).bind(promotion).execute(&mut **tx).await.map_err(db)?;
     Ok(())
 }
@@ -817,7 +866,8 @@ async fn tick(s: &AppState, project: String, integration: Uuid) -> ApiResult<()>
         return Ok(());
     };
     let round = sqlx::query(
-        "SELECT * FROM connected_learning_rounds WHERE (project_id,integration_id)=($1,$2)
+        "SELECT *, updated_at < now()-interval '24 hours' AS replay_expired
+         FROM connected_learning_rounds WHERE (project_id,integration_id)=($1,$2)
          AND state IN ('proposing','development','audit','awaiting_review') ORDER BY created_at,id LIMIT 1",
     )
     .bind(&connection.project).bind(connection.integration).fetch_optional(&mut *tx).await.map_err(db)?;
@@ -917,9 +967,10 @@ pub async fn connected_learning_worker(s: AppState) {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Review {
     approve: bool,
+    policy_override: Option<crate::PolicyOverride>,
 }
 
 async fn review(
@@ -970,6 +1021,11 @@ async fn review(
             json!({"roundId":round_id,"state":state,"promotionId":round.get::<Uuid,_>("promotion_id")}),
         ));
     }
+    if !review.approve && review.policy_override.is_some() {
+        return Err(conflict(
+            "A declined review cannot override an application policy",
+        ));
+    }
     if !review.approve && reason.as_deref() == Some("Reviewer declined promotion") {
         return Ok(Json(json!({"roundId":round_id,"state":state})));
     }
@@ -1002,7 +1058,13 @@ async fn review(
         return Err(conflict("Audit evidence is not eligible for promotion"));
     };
     let promotion = connection
-        .promote(&mut tx, &round, comparison, &actor.principal)
+        .promote(
+            &mut tx,
+            &round,
+            comparison,
+            &actor.principal,
+            review.policy_override,
+        )
         .await?;
     record_promotion(&mut tx, round_id, comparison, promotion).await?;
     tx.commit().await.map_err(db)?;

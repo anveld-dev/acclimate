@@ -2,9 +2,9 @@ import { consoleEnvironment } from './console-fixture';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { comparisonSummary, fixtureIdentity, improvement } from '../src/server/improvement';
+import { comparisonSummary, improvement } from '../src/server/improvement';
 import type { Comparison, Outcome } from '@acclimate/sdk';
-import { evaluationPresets } from '../src/lib/evaluation-config';
+import { appDescriptor } from './fixtures/app-evaluator';
 const scored: Outcome = {
   executionStatus: 'completed',
   gradingStatus: 'scored',
@@ -15,7 +15,7 @@ const scored: Outcome = {
 };
 test('missing inventory and unknown cost never become success or zero', () => {
   const report = {
-    expectedCases: fixtureIdentity.expectedCases,
+    expectedCases: appDescriptor.expectedCases,
     results: [
       {
         caseId: 'instructions-present',
@@ -131,17 +131,28 @@ test('selected request reads optional progress without allowing activity failure
   const { env, fetcher } = historyFixture();
   const reads: string[] = [];
   const request = { id: 'request', attemptId: 'attempt', status: 'running' };
-  const progress = { requestId: 'request', attemptId: 'attempt', activity: 'absent', observation: null };
+  const progress = {
+    requestId: 'request',
+    attemptId: 'attempt',
+    activity: 'absent',
+    observation: null,
+  };
   for (const unavailable of [false, true]) {
-    const result = await improvement(env, { action: 'request', id: 'request' }, async (input, init) => {
-      const path = new URL(String(input)).pathname;
-      if (path.endsWith('/evaluation-requests/request/progress')) {
-        reads.push(init?.method ?? 'GET');
-        return unavailable ? Response.json({ error: 'unavailable' }, { status: 503 }) : Response.json(progress);
-      }
-      if (path.endsWith('/evaluation-requests/request')) return Response.json(request);
-      return fetcher(input, init);
-    });
+    const result = await improvement(
+      env,
+      { action: 'request', id: 'request' },
+      async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path.endsWith('/evaluation-requests/request/progress')) {
+          reads.push(init?.method ?? 'GET');
+          return unavailable
+            ? Response.json({ error: 'unavailable' }, { status: 503 })
+            : Response.json(progress);
+        }
+        if (path.endsWith('/evaluation-requests/request')) return Response.json(request);
+        return fetcher(input, init);
+      },
+    );
     assert.equal(result.ok, true);
     if (!result.ok) continue;
     assert.deepEqual(result.request, request);
@@ -242,7 +253,7 @@ test('a new request requires explicit configuration and never supplies an exampl
     fetcher,
   );
   assert.equal(result.ok, false);
-  if (!result.ok) assert.match(result.message, /Choose an evaluator/);
+  if (!result.ok) assert.match(result.message, /public configuration/);
   assert.equal(calls.length, 0);
 });
 
@@ -256,7 +267,7 @@ test('reviewing a current candidate freezes the explicitly selected public descr
       versionId: 'candidate',
       expectedRevision: '3',
       key: '11111111-1111-4111-8111-111111111111',
-      configuration: evaluationPresets['presence-contract'],
+      configuration: appDescriptor,
     },
     async (input, init) => {
       if (init?.method === 'POST') writes++;
@@ -273,31 +284,9 @@ test('reviewing a current candidate freezes the explicitly selected public descr
   if (!prepared.ok || !prepared.command) return;
   const body = JSON.parse(prepared.command.body);
   assert.equal(body.requireBoundEvidence, true);
-  assert.equal(body.runtime.configId, 'presence-contract');
+  assert.equal(body.runtime.configId, 'app-agent');
   assert.equal(body.runtime.configRevision, '1');
   assert.equal(body.expectedCases.length, 4);
   assert.equal(body.parentVersionId, 'current');
   assert.equal(body.candidateVersionId, 'candidate');
-});
-
-test('the payment example cannot evaluate unrelated instructions without its policy data', async () => {
-  const { env, fetcher } = historyFixture();
-  const result = await improvement(
-    env,
-    {
-      action: 'evaluate',
-      versionId: 'candidate',
-      expectedRevision: '3',
-      key: '11111111-1111-4111-8111-111111111111',
-      configuration: evaluationPresets['payment-retry'],
-    },
-    async (input, init) => {
-      const response = await fetcher(input, init);
-      if (new URL(String(input)).pathname.endsWith('/versions/candidate'))
-        return Response.json({ ...(await response.json()), parentVersionId: 'current' });
-      return response;
-    },
-  );
-  assert.equal(result.ok, false);
-  if (!result.ok) assert.match(result.message, /payment-policy\.json/);
 });

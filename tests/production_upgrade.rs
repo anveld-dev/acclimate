@@ -124,6 +124,16 @@ async fn migration_0012_to_current_preserves_business_rows_and_revokes_sessions_
         request["progress_fingerprint"] = Value::Null;
     }
     expected.insert("evaluation_progress".into(), serde_json::json!([]));
+    expected.insert("evaluation_policy_receipts".into(), serde_json::json!([]));
+    for promotion in expected
+        .get_mut("promotions")
+        .unwrap()
+        .as_array_mut()
+        .unwrap()
+    {
+        promotion["policy_override"] = Value::Null;
+        promotion["policy_approval_promotion_id"] = Value::Null;
+    }
     for proposal in expected
         .get_mut("proposals")
         .unwrap()

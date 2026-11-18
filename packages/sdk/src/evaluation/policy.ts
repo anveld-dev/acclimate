@@ -1,4 +1,5 @@
 import type { Comparison, EvaluationDescriptor } from '../types.js';
+import { addGap, scalarGap, type EvidenceGaps } from './evidence-gaps.js';
 import { validateEvaluationDescriptor, evaluationDescriptorDifferences } from '../validation.js';
 
 /** Pure, descriptive policy calculation. It neither fetches nor authenticates evidence. */
@@ -28,6 +29,7 @@ export interface ExpectedComparisonBinding {
 }
 
 export interface PolicyVerdict {
+  evidenceGaps?: EvidenceGaps;
   schemaVersion: 1;
   verdict: 'pass' | 'fail' | 'indeterminate';
   code: string;
@@ -51,6 +53,15 @@ export interface PolicyVerdict {
   interpretation: 'descriptive-policy-check';
 }
 
+const requiredPolicyFields = [
+  'schemaVersion', 'id', 'revision', 'metric', 'aggregation', 'minimumMeanImprovement',
+  'maximumCaseRegression', 'requiredCases',
+];
+const requiredMetricFields = ['name', 'unit', 'direction'];
+const publicPolicyFields = new Set([
+  ...requiredPolicyFields, ...requiredMetricFields.map(name => 'metric.' + name),
+]);
+
 type PolicyErrorCode =
   | 'policy.invalid'
   | 'policy.inventory_incompatible'
@@ -65,8 +76,9 @@ export class PolicyError extends Error {
     phase: 'policy';
     executionState: 'finished';
     nextAction: 'fix_config';
+    missingFields?: string[];
   };
-  constructor(readonly code: PolicyErrorCode) {
+  constructor(readonly code: PolicyErrorCode, missingFields: string[] = []) {
     super(
       code === 'policy.inventory_incompatible'
         ? 'The policy requires cases absent from the trusted evaluation inventory.'
@@ -82,6 +94,7 @@ export class PolicyError extends Error {
       phase: 'policy',
       executionState: 'finished',
       nextAction: 'fix_config',
+      ...(missingFields.length && { missingFields: missingFields.filter(field => publicPolicyFields.has(field)) }),
     };
   }
 }
@@ -113,45 +126,27 @@ export function validateEvaluationPolicy(
   value: unknown,
   expectedDescriptor?: EvaluationDescriptor,
 ): EvaluationPolicyV1 {
+  if (!record(value)) invalid();
+  const missing = requiredPolicyFields.filter(key => !own(value, key));
+  const metric = value.metric;
+  if (record(metric)) {
+    for (const key of requiredMetricFields)
+      if (!own(metric, key)) missing.push('metric.' + key);
+  }
+  if (missing.length) throw new PolicyError('policy.invalid', missing);
   if (
-    !record(value) ||
-    !fields(
-      value,
-      [
-        'schemaVersion',
-        'id',
-        'revision',
-        'metric',
-        'aggregation',
-        'minimumMeanImprovement',
-        'maximumCaseRegression',
-        'candidateThreshold',
-        'requiredCases',
-        'maximumCandidateTaskFailures',
-        'cost',
-      ],
-      [
-        'schemaVersion',
-        'id',
-        'revision',
-        'metric',
-        'aggregation',
-        'minimumMeanImprovement',
-        'maximumCaseRegression',
-        'requiredCases',
-      ],
-    ) ||
+    !fields(value, [...requiredPolicyFields, 'candidateThreshold', 'maximumCandidateTaskFailures', 'cost'], []) ||
     value.schemaVersion !== 1 ||
     !string(value.id, 128) ||
     !string(value.revision) ||
     value.aggregation !== 'equal-case-means' ||
     !finite(value.minimumMeanImprovement) ||
     !nonnegative(value.maximumCaseRegression) ||
-    !record(value.metric) ||
-    !fields(value.metric, ['name', 'unit', 'direction'], ['name', 'unit', 'direction']) ||
-    !string(value.metric.name, 128) ||
-    !string(value.metric.unit, 128) ||
-    !['higher', 'lower'].includes(value.metric.direction as string) ||
+    !record(metric) ||
+    !fields(metric, requiredMetricFields, []) ||
+    !string(metric.name, 128) ||
+    !string(metric.unit, 128) ||
+    !['higher', 'lower'].includes(metric.direction as string) ||
     !Array.isArray(value.requiredCases) ||
     value.requiredCases.length > 1000 ||
     value.requiredCases.some((caseId) => !string(caseId)) ||
@@ -162,7 +157,6 @@ export function validateEvaluationPolicy(
         (value.maximumCandidateTaskFailures as number) < 0))
   )
     invalid();
-  const metric = value.metric as Record<string, unknown>;
   let cost: EvaluationPolicyV1['cost'];
   if (own(value, 'cost')) {
     if (
@@ -556,7 +550,24 @@ export function checkComparison(options: {
     );
   });
   const distinctCases = new Set(ordered.map((item) => item.caseId)).size;
+  const gaps: EvidenceGaps = { total: 0, rows: [] };
+  for (const item of ordered) {
+    const pair = pairs.get(key(item));
+    for (const side of ['parent', 'candidate'] as const) {
+      const outcome = pair?.[side];
+      const gap = scalarGap(outcome);
+      if (gap) addGap(gaps, item, side, ...gap);
+      if (
+        outcome &&
+        outcome.usage?.costUsd === undefined &&
+        (policy.cost?.maximumIncreaseUsd !== undefined ||
+          (side === 'candidate' && policy.cost?.maximumCandidateUsd !== undefined))
+      )
+        addGap(gaps, item, side, 'usage', 'missing_cost');
+    }
+  }
   const result: PolicyVerdict = {
+    ...(gaps.total ? { evidenceGaps: gaps } : {}),
     schemaVersion: 1,
     verdict: 'indeterminate',
     code: 'evidence.incomplete',
@@ -688,7 +699,10 @@ export function checkComparison(options: {
     result.checks.push({ code: 'analysis.nonfinite', result: 'unknown' });
     return result;
   }
-  if (result.checks.some((check) => check.result === 'unknown')) {
+  if (
+    !result.checks.some((check) => check.result === 'fail') &&
+    result.checks.some((check) => check.result === 'unknown')
+  ) {
     result.code = 'cost.unknown';
     return result;
   }

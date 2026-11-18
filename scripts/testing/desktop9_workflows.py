@@ -29,7 +29,7 @@ LONG_NAME='Production review instructions and reusable memory for background age
 LONG_CHANNEL='production-review-integrations-preserved-retry-contracts'
 LONG_APP='Production review agent for background integrations with preserved retry contracts and reusable context'
 LONG_SUBJECT='reviewer:'+('background-integrations-preserved-retry-contracts/'*5)+'verified-person'
-REQUIRED=['ACCLIMATE_URL','ACCLIMATE_TOKEN','ACCLIMATE_SCOPE','ACCLIMATE_CACHE','ACCLIMATE_JOB_DIR']
+REQUIRED=['ACCLIMATE_URL','ACCLIMATE_TOKEN','ACCLIMATE_SCOPE']
 
 
 def activate(p,target):
@@ -176,8 +176,8 @@ def sdk(w,b,e):
         open_details(p,'View the '+label+' recipe');recipe=p.get_by_label(label+' delivery recipe',exact=True);expect(recipe).to_be_visible();text=recipe.inner_text()
         for value in (w.h.project,w.setup['bundle']['id'],LONG_CHANNEL,*REQUIRED):assert value in text,value
         p.get_by_role('button',name='Copy recipe',exact=True).click();assert p.evaluate('navigator.clipboard.readText()')==text and text!=install
-        open_details(p,'Install from this checkout');open_details(p,'Environment variables and private directories');open_details(p,'Optional delivery reports');open_details(p,'Cache and offline delivery')
-        for name in ('View the '+label+' recipe','Install from this checkout','Environment variables and private directories','Optional delivery reports','Cache and offline delivery'):
+        open_details(p,'Install from this checkout');open_details(p,'Environment variables and private directories');open_details(p,'Optional delivery reports');open_details(p,'Preparing job-local files')
+        for name in ('View the '+label+' recipe','Install from this checkout','Environment variables and private directories','Optional delivery reports','Preparing job-local files'):
             expect(p.get_by_role('button',name=name,exact=True)).to_have_attribute('aria-expanded','true')
         for name in ('Manage app credentials','Manage reporting credentials'):
             link=p.get_by_role('link',name=name,exact=True);query=parse_qs(urlsplit(link.get_attribute('href')).query)

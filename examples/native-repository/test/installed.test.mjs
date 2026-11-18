@@ -13,7 +13,7 @@ for (const harness of ['codex', 'claude', 'pi', 'cursor']) {
     const parent = await realpath(await mkdtemp(path.join(os.tmpdir(), 'native-installed-')));
     try {
       const { stdout } = await run(process.execPath, [
-        fileURLToPath(new URL('../demo.mjs', import.meta.url)),
+        fileURLToPath(new URL('./run-fixture.mjs', import.meta.url)),
         '--state-root',
         path.join(parent, 'run'),
         '--harness',

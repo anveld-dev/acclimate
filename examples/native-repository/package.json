@@ -5,7 +5,6 @@
   "type": "module",
   "engines": { "node": ">=22.22.0", "npm": ">=10" },
   "scripts": {
-    "check:install": "node verify-install.mjs --all",
-    "test": "node --test test/repository.test.mjs test/crash.test.mjs test/installed.test.mjs test/codex-policy.test.mjs"
+    "check:install": "node verify-install.mjs"
   }
 }

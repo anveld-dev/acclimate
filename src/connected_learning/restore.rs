@@ -203,7 +203,12 @@ pub(super) async fn restore(
             expected_revision: request.expected_revision,
             comparison_id: None,
             unevaluated_reason: Some(request.reason),
+            policy_override: None,
         },
+        Some(match request.target.kind {
+            TargetKind::Delivery => &delivery,
+            TargetKind::Source => enrollment.get::<&str, _>("source_channel"),
+        }),
     )
     .await?;
     let rounds = sqlx::query(

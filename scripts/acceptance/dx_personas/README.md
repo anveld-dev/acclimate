@@ -3,9 +3,13 @@ release and real PostgreSQL/Rust service. Run acceptance with Python 3.11 or new
 No build, model call, deployment, or SDK import from checkout is performed here.
 
 ```python
+from scripts.packaging.fixture_application import install_test_application
+
 with PersonaFixture('example', output) as fixture:
     setup = fixture.bootstrap()
     app = fixture.install_js(plugin='codex')  # optional local release plugin
+    # Supply the application's installed adapter and private case file.
+    fixture.clean_env['ACCLIMATE_EVALUATOR_CASES'] = install_test_application(app, 'javascript')
     descriptor = fixture.run(['node', 'acclimate-eval.mjs', 'describe'], cwd=app)
 ```
 
@@ -23,8 +27,8 @@ also accept `ci` and `native-repository`.
 
 For a fresh release use `PersonaFixture(..., release=Path(...),
 source_sha256='<expected inventory SHA256>')`. Arguments override
-`ACCLIMATE_PERSONA_RELEASE` and `ACCLIMATE_PERSONA_SOURCE_SHA256`; unset values retain
-the historical review release and fingerprint. Selection happens before application
+`ACCLIMATE_PERSONA_RELEASE` and `ACCLIMATE_PERSONA_SOURCE_SHA256`; the defaults select the current SDK version under
+`artifacts/releases/` and compute its expected source fingerprint from the checkout. Selection happens before application
 environment cleanup. Set both environment variables for existing drivers. The
 manifest, checksums, and every release artifact are verified on construction,
 before startup, and before installation; manifest/checksum hashes must stay fixed.
@@ -48,7 +52,7 @@ and `h.restart()` are available for explicitly owned operator scenarios.
 `evaluator_config`, and `reader_config` are stable fixture properties. Evaluator
 principal is `evaluator`; reader is a separate project principal with read rights.
 
-`bootstrap(payload=None, name=...)` uses the distributed evaluation baseline by
+`bootstrap(payload=None, name=...)` uses the test harness’s private qualification baseline by
 default and returns bundle setup JSON. `write_json(path, value)` writes a new
 private JSON file inside `root` with mode 0600. `run(command, cwd, expected=0)`
 returns parsed JSON stdout, or None for empty output; stdout/stderr are private.

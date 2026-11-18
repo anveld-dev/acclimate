@@ -128,7 +128,7 @@ def creation(w,b,e,f):
     confirm=form.get_by_role('checkbox',name='Confirm these entries for import',exact=True);tab_to(p,confirm);p.keyboard.press('Space');expect(confirm).to_be_checked();expect(publish).to_be_enabled();capture(e,p,'1440-create-files-preview-confirmed')
     form.get_by_role('radio',name='Import JSON',exact=True).click();form.get_by_label('Bundle JSON',exact=True).fill('{invalid');expect(form.get_by_role('alert')).to_have_text('Enter valid bundle JSON.');expect(publish).to_be_disabled()
     form.get_by_label('Bundle JSON',exact=True).fill(json.dumps(dict(schemaVersion=1,files=FILES[:1]+FILES[-1:])));expect(publish).to_be_disabled();form.get_by_role('button',name='AGENTS.md · instruction',exact=True).click();form.get_by_role('button',name='memory/team.md · memory',exact=True).click();confirm.check();expect(publish).to_be_enabled();capture(e,p,'1440-create-json-preview-independent-confirmed')
-    form.get_by_role('radio',name='Use example',exact=True).click();expect(form.get_by_role('heading',name='Example preview · generic',exact=True)).to_be_visible();capture(e,p,'1440-create-real-example-preview')
+    expect(form.get_by_role('radiogroup',name='Bundle source').get_by_role('radio')).to_have_count(3)
     form.get_by_role('radio',name='Write instructions',exact=True).click();expect(form.get_by_label('Instructions',exact=True)).to_contain_text('Browser-only instructions')
     form.get_by_role('button',name='Cancel',exact=True).click();expect(guard).to_be_visible();guard.get_by_role('button',name='Leave editor',exact=True).click();expect(form).to_have_count(0)
     assert len(w.call('GET',w.root+'/bundles')['items'])==4,'Source-mode review published unexpectedly'
@@ -139,7 +139,7 @@ def creation(w,b,e,f):
     bundles=w.call('GET',w.root+'/bundles')['items'];created=[item for item in bundles if item['name']==CREATED_NAME];assert len(created)==1 and created[0]['compatibilityTarget']=='codex',created;f['createdBundle']=created[0]
     base=w.root+'/bundles/'+created[0]['id'];resolution=w.call('GET',base+'/channels/review');assert resolution['revision']=='1';payload=w.call('GET',base+'/versions/'+resolution['version']['id']+'/payload');assert payload['files']==[dict(path='AGENTS.md',kind='instruction',text=CREATED_TEXT)],payload
     assert len(w.call('GET',base+'/channels/review/promotions')['items'])==1;capture(e,p,'1440-real-created-bundle-fixed-codex-target')
-    return dict(sourceModes=['Write instructions','Import files','Import JSON','Use example'],inline=True,dirtyCancelPreservedThenDiscarded=True,filesAndJsonRequireConfirmation=True,independentImportPreviews=True,exactlyOneUiBundleCreated=created[0]['id'],fixedTarget='codex',initialChannel='review',initialRevision='1')
+    return dict(sourceModes=['Write instructions','Import files','Import JSON'],inline=True,dirtyCancelPreservedThenDiscarded=True,filesAndJsonRequireConfirmation=True,independentImportPreviews=True,exactlyOneUiBundleCreated=created[0]['id'],fixedTarget='codex',initialChannel='review',initialRevision='1')
 
 
 def changes(w,b,e,f):
@@ -247,7 +247,7 @@ def main():
     try:
         assert before==args.expected_build_hash,'Frozen build differs from GO';w.start();w.fresh_scenario(SimpleNamespace(effective_tags=['provider_fixture']));f=fixtures(w);b=w.browser();p=b.page;initial=snapshot(w,f)
         e.run('library-four-real-bundles-query-and-channel-links',p,lambda:library(w,b,e,f))
-        e.run('inline-creation-four-sources-cancel-and-initial-publication',p,lambda:creation(w,b,e,f))
+        e.run('inline-creation-three-sources-cancel-and-initial-publication',p,lambda:creation(w,b,e,f))
         e.run('changes-real-closed-pagination-and-all-channel-suggestions',p,lambda:changes(w,b,e,f))
         e.run('suggestion-consent-write-scope-long-path-and-readonly',p,lambda:suggestions(w,b,e,f))
         e.run('actual-native200-open-creation-changes-and-suggest',p,lambda:native(w,b,e,f))

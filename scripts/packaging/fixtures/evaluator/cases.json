@@ -1,0 +1,4 @@
+[
+  {"caseId": "lost-response", "input": {"scenario": "lost-response"}, "expected": {"charges": 1, "succeeded": true}},
+  {"caseId": "clean", "input": {"scenario": "clean"}, "expected": {"charges": 1, "succeeded": true}}
+]

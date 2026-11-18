@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { LearningEnrollmentStatus } from '@acclimate/sdk';
 import { consoleEnvironment } from './console-fixture';
-import { connectionLearning } from '../src/server/integration-core';
+import { connectionLearning, lookupLearningOutcome } from '../src/server/integration-core';
 import { learningPolicy } from '../src/server/connection-learning-policy';
 
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -61,6 +61,8 @@ function fixture(
     status?: LearningEnrollmentStatus | null;
     concurrentRollout?: boolean;
     omitRollbackPolicy?: boolean;
+    policyReceipts?: unknown[];
+    staleOverride?: boolean;
   } = {},
 ) {
   let status = options.status === undefined ? enrollment : options.status;
@@ -111,12 +113,20 @@ function fixture(
       status = { ...(status ?? enrollment), ...policy };
       return Response.json(status);
     }
+    if (url.endsWith('/policy-receipts') && method === 'GET')
+      return Response.json({items: options.policyReceipts ?? []});
+    if (url.endsWith('/review') && options.staleOverride)
+      return Response.json({ error: { code: 'policy_override_required' } }, { status: 409 });
     if (url.endsWith('/stop') && method === 'POST') {
       status = { ...enrollment, ...status, stoppedAt: '2026-11-17T15:00:00Z' };
       return Response.json(status);
     }
     if (url.endsWith('/restore') && method === 'POST' && status) {
-      status = { ...status, deliveredVersionId: body.target.versionId, deliveredRevision: (BigInt(status.deliveredRevision) + 1n).toString() };
+      status = {
+        ...status,
+        deliveredVersionId: body.target.versionId,
+        deliveredRevision: (BigInt(status.deliveredRevision) + 1n).toString(),
+      };
       return Response.json({ id: 'restore-promotion' });
     }
     if (url.endsWith('/renew') || url.endsWith(`/rounds/${roundId}/review`))
@@ -581,4 +591,113 @@ test('reviewed restores bind the exact connection, current revision, selected ta
   const invalid = await connectionLearning(env, { ...request, expectedRevision: '9.0' }, f.fetcher);
   assert(!invalid.ok);
   assert.equal(f.requests.filter((entry) => entry.method === 'POST').length, 1);
+});
+
+test('read-only outcome lookup scopes the UUID and omits private data from the browser response', async () => {
+  const requests: string[] = [];
+  const status = await lookupLearningOutcome(
+    { ...env, CONSOLE_ALLOW_EDITS: 'false' },
+    { ...target, outcomeId: roundId },
+    async (url) => {
+      requests.push(String(url));
+      return Response.json({
+        outcomeId: roundId,
+        status: 'failed',
+        versionId: id,
+        deliveryRevision: '2',
+        receivedAt: '2026-11-17T12:00:00Z',
+        secret: 'private-job',
+        currentDelivery: { versionId: id, revision: '3', secret: 'private-job' },
+        fieldAudit: {
+          verdict: 'regression',
+          controlVersionId: id,
+          triggeredRollback: true,
+          secret: 'private-job',
+        },
+        servedRelease: {
+          promotionId: id,
+          versionId: roundId,
+          revision: '2',
+          withdrawn: true,
+          rollback: { promotionId: roundId, versionId: id, revision: '3', secret: 'private-job' },
+          developmentRequestId: null,
+          auditRequestId: roundId,
+          secret: 'private-job',
+        },
+        corrections: [
+          {
+            correctionId: id,
+            roundId: null,
+            state: 'awaiting_baseline_recheck',
+            reason: null,
+            incidentReplay: null,
+            feedback: 'private-job',
+          },
+        ],
+      });
+    },
+  );
+  assert.ok(status.ok);
+  assert.equal(status.outcome.corrections[0]?.state, 'awaiting_baseline_recheck');
+  assert.equal(status.outcome.servedRelease?.withdrawn, true);
+  assert.equal(status.outcome.fieldAudit?.triggeredRollback, true);
+  assert.equal(status.outcome.currentDelivery?.revision, '3');
+  assert.equal(JSON.stringify(status).includes('private-job'), false);
+  assert.equal(requests.length, 1);
+  assert.ok(
+    requests[0]!.endsWith(
+      '/projects/workspace/integrations/' + id + '/learning/outcomes/' + roundId,
+    ),
+  );
+});
+
+test('connected review displays the candidate’s blocking policies, forwards only reviewed receipts and rejects a stale decision', async () => {
+  const digest = 'sha256:' + 'a'.repeat(64);
+  const candidate = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const status: LearningEnrollmentStatus = {...enrollment, rounds:[{
+    id: roundId, outcomeId:id, state:'awaiting_review', reason:null, parentVersionId:id,
+    candidateVersionId:candidate, proposalId:null, developmentRequestId:id, auditRequestId:roundId,
+    developmentComparisonId:id, auditComparisonId:roundId, promotionId:null,
+  }]};
+  const receipt = {comparisonId:id, requestId:roundId, policy:{id:'cost', revision:'v2', sha256:digest},
+    verdict:'indeterminate', reportedBy:'private-machine-name', checks:[{code:'cost.unknown',result:'unknown'}]};
+  const f = fixture({status, policyReceipts:[{...receipt,verdict:'pass'}, receipt]});
+  const read = await connectionLearning(env, {...target, action:'read'}, f.fetcher);
+  assert(read.ok);
+  assert.deepEqual(read.status?.rounds[0].blockingPolicies, [
+    {
+      comparisonId: id,
+      requestId: roundId,
+      policyId: 'cost',
+      revision: 'v2',
+      policyDigest: digest,
+      verdict: 'indeterminate',
+    },
+  ]);
+  assert(
+    f.requests.some((r) =>
+      r.url.endsWith('/bundles/bundle/versions/' + candidate + '/policy-receipts'),
+    ),
+  );
+  const policyOverride = {
+    reason: 'Accept unmetered local execution',
+    receipts: [{ comparisonId: id, policyDigest: digest }],
+  };
+  const decision = { ...target, action: 'review' as const, roundId, approve: true, policyOverride };
+  const accepted = await connectionLearning(env, decision, f.fetcher);
+  assert(accepted.ok);
+  assert.deepEqual(f.requests.find((r) => r.url.endsWith('/review'))?.body, {
+    approve: true,
+    policyOverride,
+  });
+  const rejected = await connectionLearning(env, { ...decision, approve: false }, f.fetcher);
+  assert(!rejected.ok);
+  assert.equal(f.requests.filter((r) => r.url.endsWith('/review')).length, 1);
+  const stale = await connectionLearning(
+    env,
+    decision,
+    fixture({ status, staleOverride: true }).fetcher,
+  );
+  assert(!stale.ok);
+  assert.match(stale.message, /Refresh learning status and review the current receipts/);
 });

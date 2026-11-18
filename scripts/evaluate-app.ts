@@ -3,12 +3,13 @@ import { pathToFileURL } from 'node:url';
 import { AcclimateClient } from '../packages/sdk/src/index.js';
 import { EvaluatorConfigError, readEvaluatorConfig } from './evaluator-config.js';
 import { runEvaluation } from '../examples/evaluation/runner.js';
-import { paymentAdapter, presenceAdapter } from '../examples/evaluation/payment.js';
+import { nativeReviewDescriptor } from '../examples/evaluation/descriptor.js';
 import { codexLunaAdapter } from '../examples/service-proposer/evaluation-adapter.js';
+import { evaluationCheckMain } from '../packages/sdk/src/evaluation/cli.js';
 import { EvaluationError } from '../packages/sdk/src/evaluation/errors.js';
 
 const usage =
-  'Usage: npm run evaluate:app -- --config /absolute/private/config.json --bundleID UUID --requestID UUID --adapter payment-retry|presence-contract|codex-luna-review [--live]';
+  'Usage: npm run evaluate:app -- --config /absolute/private/config.json --bundleID UUID --requestID UUID --adapter codex-luna-review --live';
 
 export function parseEvaluatorArguments(args: string[]) {
   const values: Record<string, string> = {};
@@ -37,12 +38,9 @@ export function parseEvaluatorArguments(args: string[]) {
   )
     throw new Error(usage);
   const adapter = values['--adapter'];
-  if (!['payment-retry', 'presence-contract', 'codex-luna-review'].includes(adapter))
+  if (adapter !== 'codex-luna-review')
     throw new Error('Adapter must be an installed allowlisted adapter name');
-  if ((adapter === 'codex-luna-review') !== live)
-    throw new Error(
-      'The installed codex-luna-review adapter requires explicit --live; model-free adapters do not accept --live',
-    );
+  if (!live) throw new Error('The installed codex-luna-review adapter requires explicit --live');
   return {
     bundleId: values['--bundleID'],
     requestId: values['--requestID'],
@@ -54,12 +52,7 @@ export function parseEvaluatorArguments(args: string[]) {
 export async function evaluateApp(args: string[]) {
   const parsed = parseEvaluatorArguments(args);
   const config = await readEvaluatorConfig(parsed.configPath);
-  const adapter =
-    parsed.adapter === 'payment-retry'
-      ? paymentAdapter
-      : parsed.adapter === 'presence-contract'
-        ? presenceAdapter
-        : await codexLunaAdapter();
+  const adapter = await codexLunaAdapter();
   const api = new AcclimateClient({
     baseUrl: config.serviceUrl,
     token: config.evaluatorToken,
@@ -83,7 +76,7 @@ export function evaluatorErrorMessage(error: unknown): string {
     usage,
     'Invalid evaluator arguments. ' + usage,
     'Adapter must be an installed allowlisted adapter name',
-    'The installed codex-luna-review adapter requires explicit --live; model-free adapters do not accept --live',
+    'The installed codex-luna-review adapter requires explicit --live',
     'Another evaluator process owns this request; no execution was started here',
     'Execution started without a complete saved report; interrupt this request and create a new request',
     'Request does not match installed fixture/application configuration',
@@ -99,19 +92,25 @@ export function evaluatorErrorMessage(error: unknown): string {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  evaluateApp(process.argv.slice(2))
-    .then((request) => {
-      console.log(
-        JSON.stringify({
-          requestId: request.id,
-          status: request.status,
-          comparisonId: request.comparisonId,
-        }),
-      );
-      process.exitCode = request.status === 'completed' ? 0 : request.status === 'failed' ? 2 : 3;
-    })
-    .catch((error: unknown) => {
-      console.error(evaluatorErrorMessage(error));
-      process.exitCode = 1;
-    });
+  if (process.argv.length === 3 && process.argv[2] === 'describe') {
+    console.log(JSON.stringify(nativeReviewDescriptor, null, 2));
+  } else if (process.argv[2] === 'check') {
+    process.exitCode = await evaluationCheckMain(nativeReviewDescriptor, process.argv.slice(2));
+  } else {
+    evaluateApp(process.argv.slice(2))
+      .then((request) => {
+        console.log(
+          JSON.stringify({
+            requestId: request.id,
+            status: request.status,
+            comparisonId: request.comparisonId,
+          }),
+        );
+        process.exitCode = request.status === 'completed' ? 0 : request.status === 'failed' ? 2 : 3;
+      })
+      .catch((error: unknown) => {
+        console.error(evaluatorErrorMessage(error));
+        process.exitCode = 1;
+      });
+  }
 }

@@ -16,4 +16,10 @@ WHERE (r.project_id,r.integration_id,r.bundle_id,r.policy_epoch)=($1,$2,$3,$4)
   AND jsonb_array_length(c.body->'results')=jsonb_array_length($10)
   AND c.created_at <= now() AND c.created_at > now()-make_interval(secs => $11)
   AND (measured.incumbent OR (c.body->>'parentDigest'=$5 AND c.parent_source_comparison_id IS NULL))
+  AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(c.body->'results') AS result(pair)
+      CROSS JOIN LATERAL (SELECT result.pair->(CASE WHEN measured.incumbent THEN 'candidate' ELSE 'parent' END) AS outcome) source
+      WHERE jsonb_typeof(source.outcome->'reward') IS DISTINCT FROM 'number'
+         OR source.outcome->>'executionStatus'='infrastructure_failed'
+  )
 ORDER BY c.created_at DESC,c.id DESC LIMIT 1

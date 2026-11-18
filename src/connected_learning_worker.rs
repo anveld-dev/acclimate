@@ -1,7 +1,7 @@
 use crate::WorkspaceRoutes;
 use crate::{
     ApiResult, AppState, ComparisonRequest, PromoteRequest, ProposalRequest,
-    connected_learning::Descriptor,
+    connected_learning::{Descriptor, selection::Stage},
     db, err,
     evaluations::{CreateEvaluationRequest, decode, enqueue_evaluation, validate_report},
     improvement::{enqueue_managed_proposal, validate_comparison},
@@ -74,6 +74,7 @@ struct Connection {
     max_corrections_per_round: i32,
     policy_epoch: i64,
     higher_is_better: bool,
+    modern_development: bool,
     active: bool,
 }
 
@@ -151,6 +152,7 @@ impl Connection {
         Ok(Some(Self {
             policy_epoch: row.get("policy_epoch"),
             higher_is_better: policies.development.higher_is_better(),
+            modern_development: policies.development.modern(),
             project,
             integration,
             bundle: row.get("bundle_id"),
@@ -166,6 +168,25 @@ impl Connection {
             max_corrections_per_round: row.get("max_corrections_per_round"),
             active,
         }))
+    }
+
+    async fn audit_rejected_digest(&self, tx: &mut Tx<'_>, version: Uuid) -> ApiResult<bool> {
+        sqlx::query_scalar(
+            "SELECT EXISTS(
+                SELECT 1 FROM connected_learning_rounds r
+                JOIN versions rejected ON rejected.id=COALESCE(r.release_candidate_id,r.candidate_version_id)
+                JOIN versions proposed ON proposed.id=$4 AND proposed.digest=rejected.digest
+                WHERE (r.project_id,r.integration_id,r.policy_epoch)=($1,$2,$3)
+                  AND r.audit_policy_rejected
+            )",
+        )
+        .bind(&self.project)
+        .bind(self.integration)
+        .bind(self.policy_epoch)
+        .bind(version)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(db)
     }
 
     async fn record_automatic(&self, tx: &mut Tx<'_>, promotion: Uuid) -> ApiResult<()> {
@@ -670,7 +691,7 @@ impl Connection {
         let evaluation =
             enqueue_evaluation(tx, &self.project, self.bundle, WORKER, &request).await?;
         let id = path(&evaluation.id)?;
-        // A first step can also serve as the cumulative check against delivery.
+        // Legacy policies can use a fresh first step as their cumulative check.
         let private_parent = development_parent(round) != round.get::<Uuid, _>("parent_version_id");
         if step && private_parent {
             crate::connected_learning::parent_cache::assign(
@@ -769,19 +790,37 @@ impl Connection {
             return Ok(false);
         }
         let comparison: ComparisonRequest = serde_json::from_value(row.get("body")).map_err(db)?;
-        let calibration =
-            crate::connected_learning::statistics::calibrate(&comparison, scored_reward);
         let policies: crate::connected_learning::selection::Policies = row
             .get::<Option<Value>, _>("selection_policies")
             .map(serde_json::from_value)
             .transpose()
             .map_err(db)?
             .unwrap_or_default();
+        if validate_comparison(&comparison) != Ok(true)
+            || comparison
+                .results
+                .iter()
+                .flat_map(|pair| [&pair.parent, &pair.candidate])
+                .filter_map(scored_reward)
+                .any(|v| !(0.0..=1.0).contains(&v))
+        {
+            return Ok(false);
+        }
+        let calibration = crate::connected_learning::statistics::calibrate(
+            &comparison,
+            policies.development.threshold(Stage::Cumulative),
+            scored_reward,
+        );
         let mut view = serde_json::to_value(&calibration).map_err(db)?;
-        view["warning"] =
-            json!((policies.development.minimum_mean_improvement()
-            < calibration.minimum_detectable_effect).then_some(
-            "The configured minimum improvement is below the estimated detectable effect"));
+        if policies
+            .development
+            .target_effect
+            .zip(calibration.minimum_detectable_effect)
+            .is_some_and(|(target, mde)| mde > target)
+        {
+            view["warning"] =
+                json!("The estimated detectable effect exceeds the configured target effect");
+        }
         sqlx::query(
             "UPDATE connected_learning_policy_epochs SET noise_calibration=$4
                      WHERE (project_id,integration_id,epoch)=($1,$2,$3)",
@@ -876,7 +915,7 @@ impl Connection {
                 "Evidence bindings or completeness checks failed",
             ));
         }
-        let (policy, calibration): (Option<Value>, Option<Value>) = sqlx::query_as(
+        let (policy, mut calibration): (Option<Value>, Option<Value>) = sqlx::query_as(
             "SELECT selection_policies,noise_calibration FROM connected_learning_policy_epochs
              WHERE project_id=$1 AND integration_id=$2 AND epoch=$3",
         )
@@ -886,13 +925,43 @@ impl Connection {
         .fetch_one(&mut **tx)
         .await
         .map_err(db)?;
+        if calibration.is_none() {
+            // An upgrade may invalidate the report of a still-active round.
+            if !self.calibrate(tx, round.get("parent_version_id")).await? {
+                return Ok(Evidence::invalid(
+                    Some(comparison_id),
+                    "A valid noise calibration is required",
+                ));
+            }
+            calibration = sqlx::query_scalar(
+                "SELECT noise_calibration FROM connected_learning_policy_epochs
+                 WHERE (project_id,integration_id,epoch)=($1,$2,$3)",
+            )
+            .bind(&self.project)
+            .bind(self.integration)
+            .bind(round.get::<i64, _>("policy_epoch"))
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(db)?;
+        }
         let policies: crate::connected_learning::selection::Policies = policy
             .map(serde_json::from_value)
             .transpose()
             .map_err(db)?
             .unwrap_or_default();
+        let mut repetitions = std::collections::BTreeMap::new();
+        for pair in &comparison.results {
+            *repetitions.entry(&pair.key.case_id).or_insert(0usize) += 1;
+        }
+        let evaluated =
+            crate::connected_learning::statistics::harmonic_repetitions(repetitions.into_values());
         let calibrated_sd = calibration
-            .and_then(|v| v["pairedStandardDeviation"].as_f64())
+            .and_then(|v| {
+                Some(
+                    v["pairedStandardDeviation"].as_f64()?
+                        * (v["effectiveRepetitions"].as_f64()? / evaluated).sqrt(),
+                )
+            })
             .unwrap_or(0.0);
         let policy = if development {
             &policies.development
@@ -900,8 +969,17 @@ impl Connection {
             &policies.audit
         };
         let mut summary = None;
-        let result =
-            policy.check_with_summary(&comparison, !development, calibrated_sd, &mut summary);
+        let stage = if step {
+            Stage::Development {
+                replay_passed: round.get::<Option<String>, _>("incident_replay").as_deref()
+                    == Some("pass"),
+            }
+        } else if development {
+            Stage::Cumulative
+        } else {
+            Stage::Audit
+        };
+        let result = policy.check_with_summary(&comparison, stage, calibrated_sd, &mut summary);
         if development
             && (!step || development_parent(round) == round.get::<Uuid, _>("parent_version_id"))
             && let Some((estimate, bound)) = summary
@@ -911,6 +989,12 @@ impl Connection {
                 .execute(&mut **tx).await.map_err(db)?;
         }
         if let Err(reason) = result {
+            if step
+                && reason == "Development step lacks evidence of benefit"
+                && round.get::<Option<String>, _>("incident_replay").as_deref() == Some("pending")
+            {
+                return Ok(Evidence::Pending);
+            }
             if matches!(
                 reason,
                 "Candidate cost is unknown" | "Parent cost is unknown"
@@ -1254,7 +1338,7 @@ async fn advance_development(
         }
 
         let candidate = connection.cumulative_candidate(tx, round).await?;
-        if length > 1 {
+        if length > 1 || connection.modern_development {
             let request = connection
                 .queue_evaluation(tx, round, candidate, &connection.development, false)
                 .await?;
@@ -1271,6 +1355,14 @@ async fn advance_development(
         && !field_requalification::check_required_replays(tx, connection, round, candidate).await?
     {
         return Ok(());
+    }
+    if connection.audit_rejected_digest(tx, candidate).await? {
+        return close(
+            tx,
+            round,
+            "Candidate content was previously audit-rejected in this epoch",
+        )
+        .await;
     }
     let Some(index) = connection.next_audit(tx).await? else {
         return close(tx, round, "Independent audit cohorts exhausted").await;
@@ -1357,6 +1449,14 @@ async fn advance(
             let Some(candidate) = proposal.get::<Option<Uuid>, _>("candidate_version_id") else {
                 return close(tx, round, "Successful proposal lacks a candidate").await;
             };
+            if connection.audit_rejected_digest(tx, candidate).await? {
+                return close(
+                    tx,
+                    round,
+                    "Candidate content was previously audit-rejected in this epoch",
+                )
+                .await;
+            }
             let request_id = connection
                 .queue_evaluation(tx, round, candidate, &connection.development, true)
                 .await?;
@@ -1441,13 +1541,16 @@ async fn advance(
             match evidence {
                 Evidence::Pending => {}
                 Evidence::Rejected {
-                    comparison, reason, ..
+                    comparison,
+                    reason,
+                    failed_quality_policy,
                 } => {
                     sqlx::query(
-                        "UPDATE connected_learning_rounds SET audit_comparison_id=$2 WHERE id=$1",
+                        "UPDATE connected_learning_rounds SET audit_comparison_id=$2,audit_policy_rejected=$3 WHERE id=$1",
                     )
                     .bind(id)
                     .bind(comparison)
+                    .bind(failed_quality_policy)
                     .execute(&mut **tx)
                     .await
                     .map_err(db)?;
@@ -1888,21 +1991,21 @@ mod tests {
                 .into_iter()
                 .map(|key| CasePair {
                     key,
-                    parent: scored(1.0, "completed"),
-                    candidate: scored(1.0, "completed"),
+                    parent: scored(0.5, "completed"),
+                    candidate: scored(0.5, "completed"),
                 })
                 .collect(),
         };
         let policy = crate::connected_learning::selection::Policies::default().development;
         assert!(policy.check(&comparison).is_err());
-        comparison.results[0].candidate.reward = Some(2.0);
-        comparison.results[1].candidate.reward = Some(2.0);
+        comparison.results[0].candidate.reward = Some(1.0);
+        comparison.results[1].candidate.reward = Some(1.0);
         assert!(policy.check(&comparison).is_ok());
         comparison.results[1].candidate.reward = Some(0.0);
         assert!(policy.check(&comparison).is_err());
-        comparison.results[1].candidate = scored(1.0, "task_failed");
+        comparison.results[1].candidate = scored(0.5, "task_failed");
         assert!(policy.check(&comparison).is_err());
-        comparison.results[1].candidate = scored(1.0, "completed");
+        comparison.results[1].candidate = scored(0.5, "completed");
         comparison.results[1].candidate.reward = None;
         assert!(policy.check(&comparison).is_err());
     }

@@ -460,13 +460,13 @@ try {
     revision: '1',
     metric: { name: 'correctness', unit: 'reward', direction: 'higher' as const },
     aggregation: 'equal-case-means' as const,
-    minimumMeanImprovement: -0.25,
+    minimumMeanImprovement: -1.15,
     maximumCaseRegression: 0,
     requiredCases: [],
   };
   const qualificationPolicies = {
     development: qualificationDevelopment,
-    audit: { ...qualificationDevelopment, id: 'fixture-audit', nonInferiorityMargin: 0.55 },
+    audit: { ...qualificationDevelopment, id: 'fixture-audit', nonInferiorityMargin: 0.7 },
   };
   async function calibrateOnly(
     connection: string,
@@ -1279,6 +1279,7 @@ try {
   assert.equal(runRefundTask(bad.payload, { kind: 'refund-escalation' }), 'Give up.');
   const historicalPass = await auditServedTask(late);
   assert(!historicalPass.rollbackPromotionId);
+  assert.equal(historicalPass.windowSize, 1);
   // Ten ties leave the sequential test open for the slower failing jobs.
   for (let count = 1; count <= 10; count++) {
     const passing = await runServedTask({ kind: 'refund' });
@@ -1526,7 +1527,12 @@ try {
     { kind: 'refund-status' },
   ]);
   const auditApps = ['skill-audit-v1', 'skill-audit-v2'].map((dataset) =>
-    cohort(dataset, [{ kind: 'refund-escalation' }]),
+    cohort(dataset, [
+      { kind: 'refund-escalation' },
+      { kind: 'refund-status' },
+      { kind: 'exchange' },
+      { kind: 'refund-escalation' },
+    ]),
   );
   const quality = {
     schemaVersion: 2,
@@ -1534,7 +1540,7 @@ try {
     revision: '1',
     metric: { name: 'correctness', unit: 'reward', direction: 'higher' },
     aggregation: 'equal-case-means',
-    minimumMeanImprovement: -0.2,
+    minimumMeanImprovement: -1.1,
     maximumCaseRegression: 0,
     requiredCases: [],
   };
@@ -1644,7 +1650,10 @@ try {
     [0, 1],
   );
   assert(skillHistory[1][0].includes(firstAttempt.candidateVersionId!));
-  assert.deepEqual(await scores(attempts[1].auditComparisonId, attempts[1].auditRequestId), [0]);
+  assert.deepEqual(
+    await scores(attempts[1].auditComparisonId, attempts[1].auditRequestId),
+    [0, 0, 0, 0],
+  );
   const withSkill = await installedBundle(structural);
   assert(withSkill.payload.files.some((f) => f.path === 'skills/refunds/SKILL.md'));
   assert.equal(runRefundTask(withSkill.payload, { kind: 'refund' }), expectedResponse.refund);
@@ -1803,7 +1812,8 @@ try {
             : undefined,
       ),
       audits: [
-        cohort(`${installation}-audit`, tasks, mode === 'audit-failure' ? () => 0 : undefined),
+        cohort(`${installation}-audit`, inventory, mode === 'audit-failure' ? () => 0 : undefined),
+        ...(mode === 'audit-failure' ? [cohort(`${installation}-audit-unused`, inventory)] : []),
       ],
     };
     await api(
@@ -1816,8 +1826,16 @@ try {
         maxProposalAdmissions: 4,
         maxCorrectionsPerRound: 2,
         selectionPolicies: {
-          development: qualificationDevelopment,
-          audit: { ...qualificationPolicies.audit, nonInferiorityMargin: 0 },
+          development: {
+            ...qualificationDevelopment,
+            schemaVersion: mode === 'pass' ? 3 : 2,
+            minimumMeanImprovement: mode === 'pass' ? 0 : -0.25,
+          },
+          audit: {
+            ...qualificationPolicies.audit,
+            schemaVersion: mode === 'pass' ? 3 : 2,
+            nonInferiorityMargin: 0,
+          },
         },
         development: descriptor(apps.development),
         audits: apps.audits.map(descriptor),
@@ -1858,7 +1876,7 @@ try {
     assert.equal(firstView.developmentIncumbent?.versionId, first.candidateVersionId);
     assert.equal(firstView.developmentIncumbent?.chainLength, 1);
     assert.equal(firstView.developmentIncumbent?.nextAuditTrigger.acceptedStepsRemaining, 1);
-    assert.equal(firstView.remainingAudits, 1);
+    assert.equal(firstView.remainingAudits, apps.audits.length);
     assert.equal((await fresh(connection)).id, baseline.id);
     if (mode === 'external') {
       await stop();
@@ -1964,7 +1982,14 @@ try {
       assert.equal(audit.parentVersionId, baseline.id);
       assert.equal(audit.candidateVersionId, second.candidateVersionId);
       assert.equal(finished.rounds.filter((round) => round.auditRequestId).length, 1);
-      assert.equal(finished.remainingAudits, 0);
+      assert.equal(finished.remainingAudits, apps.audits.length - 1);
+      if (mode === 'audit-failure') {
+        const duplicate = await submit(connection, baseline, `${alpha}\n${beta}`);
+        const rejectedDuplicate = await observe(connection, duplicate, 'rejected');
+        assert.match(rejectedDuplicate.reason ?? '', /previously audit-rejected/);
+        assert.equal(rejectedDuplicate.developmentRequestId, null);
+        assert.equal((await inspect()).remainingAudits, 1);
+      }
     }
     assert.equal((await fresh(connection)).id, passes ? second.candidateVersionId : baseline.id);
     await stop();

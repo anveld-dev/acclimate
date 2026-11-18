@@ -48,20 +48,27 @@ pub fn validate_comparison(q: &ComparisonRequest) -> Result<bool, String> {
         }
     }
     use crate::connected_learning::statistics::{MAX_MISSING_PERCENT, scored_reward};
-    let missing = q
-        .results
-        .iter()
-        .flat_map(|pair| [&pair.parent, &pair.candidate])
-        .filter(|outcome| scored_reward(outcome).is_none())
-        .count();
+    let cap = if q.evaluation.is_some() {
+        MAX_MISSING_PERCENT
+    } else {
+        0
+    };
     Ok(seen.len() == expected.len()
-        && missing * 100
-            <= 2 * expected.len()
-                * if q.evaluation.is_some() {
-                    MAX_MISSING_PERCENT
-                } else {
-                    0
+        && [true, false].into_iter().all(|parent| {
+            q.results
+                .iter()
+                .filter(|pair| {
+                    scored_reward(if parent {
+                        &pair.parent
+                    } else {
+                        &pair.candidate
+                    })
+                    .is_none()
                 })
+                .count()
+                * 100
+                <= expected.len() * cap
+        }))
 }
 
 // Only fixed local edit-validation errors are public. Never reflect arbitrary provider details.

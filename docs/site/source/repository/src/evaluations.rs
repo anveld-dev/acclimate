@@ -204,20 +204,26 @@ pub(crate) async fn enqueue_evaluation(
     }
     let parent = path(&q.parent_version_id)?;
     let candidate = path(&q.candidate_version_id)?;
+    let managed = principal == "service:connected-learning" && q.proposal_id.is_none();
     let rows=sqlx::query("SELECT id,digest,parent_version_id FROM versions WHERE project_id=$1 AND bundle_id=$2 AND id=ANY($3)").bind(project).bind(bid).bind(vec![parent,candidate]).fetch_all(&mut **tx).await.map_err(db)?;
-    if !rows.iter().any(|r| {
-        r.get::<Uuid, _>("id") == parent && r.get::<String, _>("digest") == q.parent_digest
-    }) || !rows.iter().any(|r| {
-        r.get::<Uuid, _>("id") == candidate
-            && r.get::<String, _>("digest") == q.candidate_digest
-            && (r.get::<Option<Uuid>, _>("parent_version_id") == Some(parent)
-                || (parent == candidate
-                    && principal == "service:connected-learning"
-                    && q.proposal_id.is_none()))
-    }) {
-        return Err(invalid(
-            "Version identities or candidate parent do not match",
-        ));
+    let matches_version = |id, digest: &str| {
+        rows.iter()
+            .find(|row| row.get::<Uuid, _>("id") == id && row.get::<String, _>("digest") == digest)
+    };
+    let invalid_identity = || invalid("Version identities or candidate parent do not match");
+    let candidate_row =
+        matches_version(candidate, &q.candidate_digest).ok_or_else(invalid_identity)?;
+    let direct_parent = candidate_row.get::<Option<Uuid>, _>("parent_version_id") == Some(parent);
+    if matches_version(parent, &q.parent_digest).is_none()
+        || !(direct_parent
+            || managed
+                && (parent == candidate
+                    || crate::connected_learning::descends_from(
+                        tx, project, bid, candidate, parent,
+                    )
+                    .await?))
+    {
+        return Err(invalid_identity());
     }
     if let Some(proposal) = &q.proposal_id {
         let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM proposals WHERE project_id=$1 AND bundle_id=$2 AND id=$3 AND parent_version_id=$4 AND candidate_version_id=$5 AND status='succeeded')").bind(project).bind(bid).bind(path(proposal)?).bind(parent).bind(candidate).fetch_one(&mut **tx).await.map_err(db)?;
@@ -470,16 +476,18 @@ pub(crate) async fn validate_submission(
     bundle: Uuid,
     report: &ComparisonRequest,
     principal: &str,
-) -> ApiResult<()> {
+) -> ApiResult<bool> {
     let Some(binding) = &report.evaluation else {
-        return Ok(());
+        return Ok(false);
     };
     let row = sqlx::query("SELECT * FROM evaluation_requests WHERE project_id=$1 AND bundle_id=$2 AND id=$3 FOR UPDATE")
         .bind(project).bind(bundle).bind(path(&binding.request_id)?).fetch_optional(&mut **tx).await.map_err(db)?
         .ok_or_else(|| invalid("Evaluation request not found"))?;
+    let managed = row.get::<String, _>("requested_by") == "service:connected-learning";
     let evaluation = decode(row)?;
     if evaluation.status != "running" {
         return Err(conflict());
     }
-    validate_report(&evaluation, report, principal, principal)
+    validate_report(&evaluation, report, principal, principal)?;
+    Ok(managed)
 }

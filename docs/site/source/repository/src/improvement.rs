@@ -124,7 +124,8 @@ pub async fn create_comparison(
     let complete =
         validate_comparison(&q).map_err(|e| err(StatusCode::BAD_REQUEST, "invalid_content", e))?;
     let bid = path(&b)?;
-    crate::evaluations::validate_submission(&mut command.tx, &p, bid, &q, &a.principal).await?;
+    let managed =
+        crate::evaluations::validate_submission(&mut command.tx, &p, bid, &q, &a.principal).await?;
     crate::connected_learning::parent_cache::verify(&mut command.tx, &q).await?;
     for (id, dig) in [
         (&q.parent_version_id, &q.parent_digest),
@@ -166,6 +167,15 @@ pub async fn create_comparison(
             .get::<Option<Uuid>, _>("parent_version_id")
             .map(|x| x.to_string())
             != Some(q.parent_version_id.clone())
+        && !(managed
+            && crate::connected_learning::descends_from(
+                &mut command.tx,
+                &p,
+                bid,
+                path(&q.candidate_version_id)?,
+                path(&q.parent_version_id)?,
+            )
+            .await?)
     {
         return Err(err(
             StatusCode::BAD_REQUEST,

@@ -3,7 +3,7 @@ import type {
   Evaluation,
   EvaluationDescriptor,
   EvaluationHandoff,
-  VerifiedBundle,
+  VerifiedVersion,
 } from '../types.js';
 import type { ExecutionResult, GradeResult } from '../compare.js';
 import type { SafeCode, SafeDiagnostic, SafeNextAction } from './errors.js';
@@ -59,7 +59,7 @@ export interface EvaluationDefinition<I = Json, E = Json, O = Json> {
   cases: readonly EvaluationCase<I, E>[];
   collection?: EvaluationCollection;
   execute(input: {
-    bundle: VerifiedBundle;
+    bundle: VerifiedVersion;
     caseId: string;
     repetition: number;
     input: I;

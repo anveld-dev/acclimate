@@ -5,7 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compare, submitComparison } from '../../../packages/sdk/src/compare.js';
 import { resolveAndCache, ApiError } from '../../../packages/sdk/src/index.js';
-import type { VerifiedBundle } from '../../../packages/sdk/src/types.js';
+import type { VerifiedVersion } from '../../../packages/sdk/src/types.js';
 import { Luna, model } from '../luna.js';
 import { startService } from '../service.js';
 import { helperObserved, helperOutput } from '../repair/observed.js';
@@ -45,10 +45,10 @@ const digest = createHash('sha256').update(JSON.stringify(frozen)).digest('hex')
 assert.equal(digest, experiment.datasetDigest, 'Frozen large audit changed');
 const originalSource = JSON.parse(
   await readFile(path.join(source, 'parent.json'), 'utf8'),
-) as VerifiedBundle;
+) as VerifiedVersion;
 const candidateSource = JSON.parse(
   await readFile(path.join(source, 'release-candidate.json'), 'utf8'),
-) as VerifiedBundle;
+) as VerifiedVersion;
 const save = (name: string, value: unknown) =>
   writeFile(path.join(output, name), JSON.stringify(value, null, 2) + '\n', {
     mode: 0o600,

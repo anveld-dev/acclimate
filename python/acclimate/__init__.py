@@ -41,7 +41,7 @@ from .types import (
     EvaluationBinding as EvaluationBinding,
     ComparisonRequest as ComparisonRequest,
     Comparison as Comparison,
-    VerifiedBundle as VerifiedBundle,
+    VerifiedVersion as VerifiedVersion,
     EvaluationDescriptor as EvaluationDescriptor,
     EvaluationHandoff as EvaluationHandoff,
     EvaluationRequest as EvaluationRequest,
@@ -87,6 +87,7 @@ from .evaluation_progress import EvaluationProgressReporter as EvaluationProgres
 
 # Deprecated compatibility exports.
 from .types import (
+    VerifiedBundle as VerifiedBundle,
     Promotion as Promotion,
     PromotionPage as PromotionPage,
     PromoteRequest as PromoteRequest,

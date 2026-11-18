@@ -11,7 +11,7 @@ import type {
   EvaluationDescriptor,
   EvaluationHandoff,
   Outcome,
-  VerifiedBundle,
+  VerifiedVersion,
 } from '../types.js';
 import {
   assertGuidedTarget,
@@ -243,7 +243,7 @@ async function verified(
   bundleId: string,
   request: Evaluation,
   cacheDir: string,
-): Promise<[VerifiedBundle, VerifiedBundle]> {
+): Promise<[VerifiedVersion, VerifiedVersion]> {
   const parent = await resolveAndCache(
     api,
     { projectId: config.projectId, bundleId, versionId: request.parentVersionId },

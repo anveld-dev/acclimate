@@ -152,7 +152,7 @@ class Comparison(ComparisonRequest):
     createdAt: str
 
 
-class VerifiedBundle(TypedDict):
+class VerifiedVersion(TypedDict):
     version: VersionMetadata
     payload: BundlePayload
     resolution: NotRequired[ChannelResolution]
@@ -388,3 +388,6 @@ IntegrationObservation = ConnectionObservation
 IntegrationLatestObservation = ConnectionLatestObservation
 # Deprecated. Use ConnectionObservationPage.
 IntegrationObservationPage = ConnectionObservationPage
+
+# Deprecated. Use VerifiedVersion.
+VerifiedBundle = VerifiedVersion

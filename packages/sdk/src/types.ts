@@ -190,7 +190,7 @@ export interface Comparison extends ComparisonRequest {
 export interface ApiErrorBody {
   error: { code: string; message: string; requestId: string; details?: Record<string, unknown> };
 }
-export interface VerifiedBundle {
+export interface VerifiedVersion {
   version: VersionMetadata;
   payload: BundlePayload;
   resolution?: ChannelResolution;
@@ -678,3 +678,6 @@ export type IntegrationCredential = ConnectionCredential;
 export type IntegrationCredentialKind = ConnectionCredentialKind;
 /** @deprecated Use ConnectionObservation. */
 export type IntegrationObservation = ConnectionObservation;
+
+/** @deprecated Use VerifiedVersion. */
+export type VerifiedBundle = VerifiedVersion;

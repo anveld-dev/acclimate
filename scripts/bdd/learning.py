@@ -64,7 +64,13 @@ def calibrate(w):
 
 
 def install_enrollment(w, enrollment):
-    w.call('PUT', w.learning_path, enrollment)
+    actor = w.actor
+    if enrollment['automaticRollout']:
+        actor = 'admin'
+        w.prepare_browser_identity()
+        if actor not in w.sessions:
+            w.sign_in(actor, 'operator')
+    w.call('PUT', w.learning_path, enrollment, actor=actor)
     calibrate(w)
     w.original_delivery = w.call('GET', w.channel, actor='content-reader')
     w.history_path = w.bundle + '/channels/learn-' + w.integration['id'] + '/releases'
@@ -92,9 +98,10 @@ def grade_phase(w, phase, *, attempt=1):
                      settings=dict(w.started, evaluation=dict(requestId=request_id, attemptId=w.attempt)))
 
 
-def grade_through_audit(w):
-    w.outcome_id = report_failed_job(w, w.original_delivery,
-        lesson=dict(path='AGENTS.md', instruction='Review retries and duplicated effects.'))
+def grade_through_audit(w, **teaching):
+    if not teaching:
+        teaching = dict(feedback=dict(expected='Review retries and duplicated effects.', observed='The review omitted retry guidance.'))
+    w.outcome_id = report_failed_job(w, w.original_delivery, **teaching)
     grade_phase(w, 'development')
     assert w.finish()['status'] == 'completed'
     grade_phase(w, 'audit')

@@ -159,6 +159,16 @@ fn scoped_skill_mutations_require_complete_packages_and_exact_parent_inventory()
         "---\nname: settlement\ndescription: Classify a settlement\n---\nUse the helper.";
     let create = json!({"op":"createSkill","name":"settlement","files":[{"relativePath":"SKILL.md","text":manifest}]});
     let p = parent("unchanged");
+    let mut script = create.clone();
+    script["files"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"relativePath":"scripts/helper.sh","text":"echo helper"}));
+    assert!(scoped(&p, json!([script])).is_err());
+    let mut tool_permission = create.clone();
+    tool_permission["files"][0]["text"] =
+        json!(manifest.replace("description:", "allowed-tools: Bash\ndescription:"));
+    assert!(scoped(&p, json!([tool_permission])).is_err());
     let (created, _) = scoped(&p, json!([create.clone()])).unwrap();
     assert_eq!(created.files[2].path, "skills/settlement/SKILL.md");
     assert!(scoped(&created, json!([create.clone()])).is_err());

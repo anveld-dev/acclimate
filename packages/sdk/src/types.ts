@@ -75,8 +75,10 @@ export interface Proposal {
   rationale: string | null;
   screening?: Array<{
     stage: 'initial' | 'repair';
-    result: { verdict: 'accept' | 'reject'; objections: string[] } | null;
-    rationale: string;
+    result: { verdict: 'accept' | 'reject'; objections: string[]; risky?: boolean } | null;
+    scannerClean?: boolean;
+    structural?: boolean;
+    rationale?: string;
     changes: Array<{ path: string; before: string | null; after: string | null }>;
   }>;
   error: string | null;

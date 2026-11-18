@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn upgrade_keeps_existing_enrollment_authority_and_policies() {
+async fn upgrade_preserves_enrollment_policies_and_requires_fresh_rollout_authorization() {
     let url = common::database_url();
     let schema = format!("baseline_{}", Uuid::new_v4().simple());
     let mut connection = sqlx::PgConnection::connect(&url).await.unwrap();
@@ -58,7 +58,7 @@ async fn upgrade_keeps_existing_enrollment_authority_and_policies() {
     .fetch_one(&mut connection)
     .await
     .unwrap();
-    assert!(rollout);
+    assert!(!rollout);
     let authorization: String = sqlx::query_scalar(
         "SELECT principal FROM connected_learning_authorizations WHERE integration_id=$1",
     )

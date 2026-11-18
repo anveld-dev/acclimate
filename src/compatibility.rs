@@ -32,7 +32,7 @@ pub(crate) fn name_valid(name: &str) -> bool {
 fn js_whitespace(c: char) -> bool {
     matches!(c, '\u{0009}'..='\u{000d}' | ' ' | '\u{00a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}')
 }
-fn metadata_valid(text: &str, name: &str) -> bool {
+pub(crate) fn metadata_valid(text: &str, name: &str) -> bool {
     let normalized = text.replace("\r\n", "\n");
     let Some(rest) = normalized.strip_prefix("---\n") else {
         return false;
@@ -66,7 +66,21 @@ fn metadata_valid(text: &str, name: &str) -> bool {
                 && value.encode_utf16().count() >= 2
         })
     });
-    matching_name && description
+    matching_name
+        && description
+        && lines
+            .iter()
+            .filter(|line| line.starts_with("name:"))
+            .count()
+            == 1
+        && lines
+            .iter()
+            .filter(|line| line.starts_with("description:"))
+            .count()
+            == 1
+        && lines.iter().all(|line| {
+            line.trim().is_empty() || line.starts_with("name:") || line.starts_with("description:")
+        })
 }
 pub fn validate(payload: &BundlePayload, target: &str) -> Result<(), Vec<CompatibilityIssue>> {
     if target == "generic" {
@@ -115,6 +129,14 @@ pub fn validate(payload: &BundlePayload, target: &str) -> Result<(), Vec<Compati
             continue;
         }
         let name = parts[1];
+        if !file.path.ends_with(".md") {
+            add(
+                "skill_file_type",
+                "Skill packages may contain only Markdown files",
+                Some(&file.path),
+                Some(name),
+            );
+        }
         if target == "cursor"
             && !name
                 .bytes()

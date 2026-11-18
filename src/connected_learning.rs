@@ -378,6 +378,9 @@ async fn enroll(
         return Err(denied());
     }
     if request.automatic_rollout {
+        if actor.user_id.is_none() {
+            return Err(denied());
+        }
         crate::auth::actor(&h, &s, &project, "promote")?;
     }
     let enrolled_grant = |principal: &str, rights: &[&str]| {

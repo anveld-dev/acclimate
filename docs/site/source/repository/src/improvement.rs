@@ -367,7 +367,8 @@ pub async fn get_proposal(
     h: HeaderMap,
 ) -> ApiResult<Json<Proposal>> {
     let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
-    let r=sqlx::query("SELECT p.id,p.parent_version_id AS proposal_parent_version_id,p.status,p.attempts,p.candidate_version_id,p.rationale,p.error,p.screening,p.created_at,v.id,v.bundle_id,v.parent_version_id,v.digest,v.created_at AS v_created FROM proposals p LEFT JOIN versions v ON v.id=p.candidate_version_id WHERE p.project_id=$1 AND p.bundle_id=$2 AND p.id=$3").bind(&p).bind(path(&b)?).bind(path(&id)?).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Proposal not found"))?;
+    let (_, review) = crate::connected_learning::audit_reader(&s, &h, &mut tx, &p).await?;
+    let r=sqlx::query("SELECT p.id,p.parent_version_id AS proposal_parent_version_id,p.status,p.attempts,p.candidate_version_id,CASE WHEN $4 THEN p.rationale END AS rationale,p.error,CASE WHEN $4 THEN p.screening ELSE '[]'::jsonb END AS screening,p.created_at,v.id,v.bundle_id,v.parent_version_id,v.digest,v.created_at AS v_created FROM proposals p LEFT JOIN versions v ON v.id=p.candidate_version_id WHERE p.project_id=$1 AND p.bundle_id=$2 AND p.id=$3").bind(&p).bind(path(&b)?).bind(path(&id)?).bind(review).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Proposal not found"))?;
     let candidate = r
         .get::<Option<Uuid>, _>("candidate_version_id")
         .map(|vid| VersionMetadata {
@@ -411,13 +412,6 @@ pub async fn proposal_worker(s: AppState) {
 async fn fail_proposal(s: &AppState, id: Uuid, attempt: i32, error: &str) {
     let _ = sqlx::query("UPDATE proposals SET status='failed',error=$3 WHERE id=$1 AND status='running' AND attempts=$2")
         .bind(id).bind(attempt).bind(error).execute(&s.db).await;
-}
-
-fn add_critic_objections(request: &mut ProposalRequest, record: &serde_json::Value) {
-    request.evidence.push(format!(
-        "Critic objections for repair: {}",
-        serde_json::json!({"objections": record["result"]["objections"], "previousEdits": record["changes"]})
-    ));
 }
 
 async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
@@ -479,23 +473,24 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
             Err(_) => return,
         };
     let managed = requested_by == "service:connected-learning";
-    let mut model_request = q.clone();
+    // Pending proposals created before structured evidence must be readmitted.
+    if managed
+        && q.evidence
+            .iter()
+            .any(|entry| serde_json::from_str::<crate::LearningEvidence>(entry).is_err())
+    {
+        fail_proposal(&s, id, attempt, "proposal-format-rejected").await;
+        return;
+    }
     let mut candidate_output = None;
     let screening: serde_json::Value = r.get("screening");
     let first_rejection = screening
         .get(0)
         .filter(|record| record["result"]["verdict"] == "reject");
-    if let Some(record) = first_rejection {
-        add_critic_objections(&mut model_request, record);
-    }
     for stage in usize::from(first_rejection.is_some())..2 {
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(125),
-            provider.propose_scoped(
-                parent_payload.clone(),
-                model_request.clone(),
-                policy.clone(),
-            ),
+            provider.propose_scoped(parent_payload.clone(), q.clone(), policy.clone()),
         )
         .await;
         let (candidate, rationale) = match result {
@@ -538,14 +533,33 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
             .await;
             return;
         }
+        let files = crate::proposal_edits::changed_files(&parent_payload, &candidate);
+        let scan_text = std::iter::once(rationale.as_str()).chain(
+            files
+                .iter()
+                .flat_map(|(path, old, new)| std::iter::once(*path).chain(*old).chain(*new)),
+        );
+        if !matches!(crate::proposal_scanner::scan(scan_text), Ok(false)) {
+            fail_proposal(&s, id, attempt, "scanner-rejected").await;
+            return;
+        }
         if !managed {
             candidate_output = Some((candidate, rationale, None));
             break;
         }
-        let changes = crate::proposal_edits::changed_files(&parent_payload, &candidate);
+        let structural = files
+            .iter()
+            .any(|(_, old, new)| old.is_none() || new.is_none());
+        let retained: Vec<_> = parent_payload
+            .files
+            .iter()
+            .filter(|file| !files.iter().any(|(path, _, _)| *path == file.path))
+            .collect();
+        let changes: Vec<_> = files.iter().map(|(path, before, after)| {
+            serde_json::json!({"path": path, "before": before, "after": after})
+        }).collect();
         let data = serde_json::json!({
-            "request": q, "rationale": rationale, "changes": changes,
-            "parent": parent_payload
+            "changes": changes, "retained": retained
         });
         let verdict =
             tokio::time::timeout(std::time::Duration::from_secs(60), provider.critique(data))
@@ -555,8 +569,9 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
         let record = serde_json::json!({
             "stage": if stage == 0 { "initial" } else { "repair" },
             "result": verdict,
-            "rationale": rationale,
-            "changes": crate::proposal_edits::edit_excerpts(&parent_payload, &candidate),
+            "scannerClean": true,
+            "structural": structural,
+            "changes": changes,
         });
         match verdict {
             Some(crate::CriticVerdict::Accept { .. }) => {
@@ -569,7 +584,6 @@ async fn run_proposal(s: AppState, p: String, b: Uuid, id: Uuid) {
                 if !matches!(recorded, Ok(result) if result.rows_affected() == 1) {
                     return;
                 }
-                add_critic_objections(&mut model_request, &record);
             }
             verdict => {
                 let error = if verdict.is_some() {
@@ -689,7 +703,8 @@ pub async fn list_proposals(
     let n = q.bounds()?;
     let bid = path(&b)?;
     let c = crate::pagination::decode("proposals", &p, bid, q.cursor.as_deref())?;
-    let rows=sqlx::query("SELECT p.id,p.parent_version_id AS proposal_parent_version_id,p.status,p.attempts,p.candidate_version_id,p.rationale,p.error,p.screening,p.created_at,v.bundle_id,v.parent_version_id,v.digest,v.created_at AS v_created FROM proposals p LEFT JOIN versions v ON v.id=p.candidate_version_id WHERE p.project_id=$1 AND p.bundle_id=$2 AND ($3::timestamptz IS NULL OR (p.created_at,p.id)<($3,$4)) ORDER BY p.created_at DESC,p.id DESC LIMIT $5").bind(&p).bind(bid).bind(c.map(|x|x.0)).bind(c.map(|x|x.1)).bind(n+1).fetch_all(&mut *tx).await.map_err(db)?;
+    let (_, review) = crate::connected_learning::audit_reader(&s, &h, &mut tx, &p).await?;
+    let rows=sqlx::query("SELECT p.id,p.parent_version_id AS proposal_parent_version_id,p.status,p.attempts,p.candidate_version_id,CASE WHEN $6 THEN p.rationale END AS rationale,p.error,CASE WHEN $6 THEN p.screening ELSE '[]'::jsonb END AS screening,p.created_at,v.bundle_id,v.parent_version_id,v.digest,v.created_at AS v_created FROM proposals p LEFT JOIN versions v ON v.id=p.candidate_version_id WHERE p.project_id=$1 AND p.bundle_id=$2 AND ($3::timestamptz IS NULL OR (p.created_at,p.id)<($3,$4)) ORDER BY p.created_at DESC,p.id DESC LIMIT $5").bind(&p).bind(bid).bind(c.map(|x|x.0)).bind(c.map(|x|x.1)).bind(n+1).bind(review).fetch_all(&mut *tx).await.map_err(db)?;
     let items = rows
         .into_iter()
         .map(|r| Proposal {

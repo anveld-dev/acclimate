@@ -4,6 +4,8 @@ The current product is a small content-improvement service with application-side
 
 ## Current questions
 
+- [Connected learning on LLM CLI support](real-app-learning-experiment/README.md) reports a paired development gain and a held-out tie. [Pre-registration](real-app-learning-experiment/preregistration.md)
+
 - [Luna integration in Simon Willison’s LLM](luna-real-app-integration.md) follows the packaged SDK from a real Python app through native grading, CI and independent review.
 
 - [Continuous harness concept review](continuous-harness-review/README.md): parallel AgentRun/RRSI and implementation review, including a [second-pass counter-review](continuous-harness-review/second-pass/README.md); distinguishes content delivery from durable harness learning and prioritizes the missing concepts.

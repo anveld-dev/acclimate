@@ -7,6 +7,7 @@ so both SDKs report identical plans.
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 from ._student_t import student_t_quantile
@@ -153,3 +154,46 @@ def plan_evaluation(*, policy: dict, descriptor: dict, calibration: dict | None 
             "simulation": {"model": "bernoulli-cases-uniform-0.2-0.8", "runs": simulations, "seed": seed,
                            "results": results},
             "warnings": warnings}
+
+
+def plan_command(descriptor: dict, flags: dict, read_bytes, read_json, error_type) -> tuple[int, dict]:
+    """``python -m acclimate plan --policy FILE [--aa FILE] [--effects 0,0.05] [--simulations N] [--seed N]``."""
+    from .evaluation_policy import parse_evaluation_policy
+
+    if not flags.get("policy"):
+        raise error_type("config.schema")
+
+    def integer(name):
+        value = flags.get(name)
+        if value is None:
+            return None
+        if not re.fullmatch(r"\d{1,10}", value):
+            raise error_type("config.schema")
+        return int(value)
+
+    effects = None
+    if flags.get("effects"):
+        if not all(re.fullmatch(r"-?\d+(\.\d+)?", item.strip()) for item in flags["effects"].split(",")):
+            raise error_type("config.schema")
+        effects = [float(item) for item in flags["effects"].split(",")]
+    policy = parse_evaluation_policy(read_bytes(flags["policy"]).decode(), descriptor)["policy"]
+    options = {"policy": policy, "descriptor": descriptor}
+    if flags.get("aa"):
+        options["calibration"] = read_json(flags["aa"], 64 * 1024 * 1024)
+    if effects is not None:
+        options["effects"] = effects
+    for name in ("simulations", "seed"):
+        if integer(name) is not None:
+            options[name] = integer(name)
+    try:
+        plan = plan_evaluation(**options)
+    except PlanError:
+        raise error_type("config.schema") from None
+    return (0 if plan["sufficient"] else 3), plan
+
+
+def policy_readiness(policy: dict, descriptor: dict) -> dict:
+    """Doctor's policy summary: sufficiency, detectable effect and repetition warnings."""
+    plan = plan_evaluation(policy=policy, descriptor=descriptor, simulations=0, effects=[])
+    return {name: plan[name] for name in ("method", "confidence", "cases", "repetitions", "sufficient",
+                                          "minimumDetectableEffect", "warnings")}

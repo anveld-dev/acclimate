@@ -168,6 +168,16 @@ class CommandTests(unittest.TestCase):
             status = evaluation_main(self.app, args, review=review)
         return status, json.loads(output.getvalue()) if output.getvalue() else None, json.loads(errors.getvalue()) if errors.getvalue() else None
 
+    def test_plan_sizes_the_inventory_without_running_callbacks(self):
+        status, plan, _ = self.invoke(["plan", "--policy", str(self.policy), "--simulations", "20"])
+        self.assertEqual((status, plan["method"], plan["cases"]), (0, "none", 1))
+        self.policy.write_bytes(encoded({**self.quality, "inference": {"method": "paired-t"}}))
+        status, plan, _ = self.invoke(["plan", "--policy", str(self.policy), "--simulations", "5"])
+        self.assertEqual((status, plan["sufficient"]), (3, False))
+        self.assertEqual(plan["simulation"]["results"][0]["indeterminateRate"], 1)
+        status, _, error = self.invoke(["plan", "--policy", str(self.policy), "--effects", "x"])
+        self.assertEqual((status, error["error"]["code"]), (1, "config.schema"))
+
     def test_closed_usage_and_descriptor(self):
         status, value, _ = self.invoke(["describe"])
         self.assertEqual(status, 0)

@@ -25,6 +25,7 @@ from ._evaluation_cli_intents import (
 from .evaluation_analysis import analyze_comparison
 from ._evaluation_policy_receipt import record_policy_receipt
 from .evaluation_policy import PolicyError, check_comparison, parse_evaluation_policy
+from .evaluation_plan import plan_command, policy_readiness
 from .evaluation_artifacts import (
     export_review_evidence, verify_review_export, parse_artifact_selection,
 )
@@ -40,6 +41,7 @@ _FLAGS = {
     "interrupt": {"config", "handoff", "reason", "name"},
     "export": {"config", "read-config", "handoff", "out", "selection", "name"},
     "verify-export": {"manifest", "read-config", "handoff"},
+    "plan": {"policy", "aa", "effects", "simulations", "seed"},
 }
 
 
@@ -268,11 +270,15 @@ def _dispatch(app, command, flags, review):
     if command == "doctor":
         if bool(flags.get("bundle")) == bool(flags.get("handoff")):
             raise EvaluationError("config.schema")
+        readiness = None
         if flags.get("policy"):
-            parse_evaluation_policy(read_command_bytes(_required(flags, "policy")).decode(), app.descriptor)
+            readiness = policy_readiness(parse_evaluation_policy(
+                read_command_bytes(_required(flags, "policy")).decode(), app.descriptor)["policy"], app.descriptor)
         target = {"handoff": _handoff(flags)} if flags.get("handoff") else {"bundleId": _required(flags, "bundle")}
         result = preflight_evaluation(app=app, config_path=_required(flags, "config"), target=target)
-        return _readiness_status(result), result
+        return _readiness_status(result), ({**result, "policyReadiness": readiness} if readiness else result)
+    if command == "plan":
+        return plan_command(app.descriptor, flags, read_command_bytes, read_command_json, EvaluationError)
     comparing = command == "compare"
     policy = None
     if comparing:

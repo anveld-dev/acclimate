@@ -1,4 +1,5 @@
 import type { Comparison, EvaluationDescriptor } from '../types.js';
+import { EvaluationError } from './errors.js';
 import { addGap, scalarGap, type EvidenceGaps } from './evidence-gaps.js';
 import { checkComparison, type ExpectedComparisonBinding } from './policy.js';
 
@@ -78,16 +79,19 @@ export interface ComparisonAnalysis {
   uncertaintyProtocol: PairedUncertainty | null;
   metrics: MetricAnalysis[];
 }
-export class AnalysisError extends Error {
+export class AnalysisError extends EvaluationError {
+  declare readonly code:
+    | 'analysis.invalid_config'
+    | 'analysis.invalid_observations'
+    | 'analysis.identity_mismatch';
   constructor(
-    readonly code:
-      | 'analysis.invalid_config'
-      | 'analysis.invalid_observations'
-      | 'analysis.identity_mismatch',
+    code: 'analysis.invalid_config' | 'analysis.invalid_observations' | 'analysis.identity_mismatch',
   ) {
-    super(
-      'The analysis configuration or component observation is invalid or does not match trusted evidence.',
-    );
+    super(code, {
+      phase: 'policy',
+      message:
+        'The analysis configuration or component observation is invalid or does not match trusted evidence.',
+    });
     this.name = 'AnalysisError';
   }
 }

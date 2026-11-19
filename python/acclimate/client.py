@@ -10,18 +10,28 @@ from pathlib import Path
 from typing import Any
 from .types import *
 from .receipts import DeliveryReporter
+from .errors import AcclimateError, UsageError
 
 
-class ApiError(Exception):
+class ApiError(AcclimateError):
+    """The service answered with a non-success HTTP status. ``code`` is the service's error code."""
+
     def __init__(self, status: int, code: str, message: str, request_id: str = "", details=None):
-        super().__init__(message)
-        self.status, self.code, self.request_id = status, code, request_id
+        super().__init__(code, message)
+        self.status, self.request_id = status, request_id
         self.requestId = request_id
         self.details = details
 
 
-class TransportError(Exception):
-    """A network failure for which an explicitly configured offline policy may apply."""
+class TransportError(AcclimateError):
+    """The SDK could not reach the service. Only this error means "outage".
+
+    An explicitly configured offline policy may apply.
+    """
+
+    def __init__(self, message: str = "HTTP transport failed", service_url: str | None = None):
+        super().__init__("transport.unreachable", message)
+        self.service_url = service_url
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -52,8 +62,9 @@ class AcclimateClient:
             or not token
             or not scope
         ):
-            raise ValueError(
-                "base_url, token and scope are required; base_url must be an HTTP(S) URL without credentials, query or fragment"
+            raise UsageError(
+                "base_url, token and scope are required; base_url must be an HTTP(S) URL without credentials, query or fragment",
+                "base_url" if token and scope else "token" if scope else "scope",
             )
         if (
             not isinstance(retries, int)
@@ -63,7 +74,7 @@ class AcclimateClient:
             or type(max_json_response_bytes) is not int
             or not 1 <= max_json_response_bytes <= 8388608
         ):
-            raise ValueError("invalid retries, timeout or payload limit")
+            raise UsageError("invalid retries, timeout or payload limit", "retries")
         self.base_url, self.scope, self._token = base_url.rstrip("/"), scope, token
         self.retries, self.timeout, self.max_payload_bytes = (
             retries,
@@ -128,8 +139,8 @@ class AcclimateClient:
         if mutation and (
             not isinstance(key, str) or not re.fullmatch(r"[\x20-\x7e]{1,128}", key)
         ):
-            raise ValueError(
-                "mutations require a printable ASCII idempotency key (1..128 characters)"
+            raise UsageError(
+                "mutations require a printable ASCII idempotency key (1..128 characters)", "key"
             )
         data = _body_bytes if _body_bytes is not None else (
             json.dumps(
@@ -206,12 +217,16 @@ class AcclimateClient:
                 OSError,
             ) as e:
                 if attempt == (self.retries if mutation else 0):
-                    raise TransportError("HTTP transport failed") from e
+                    raise TransportError(
+                        f"Could not reach the Acclimate service at {self.base_url}. "
+                        "Check that the service is running and reachable from this machine.",
+                        self.base_url,
+                    ) from e
 
     @staticmethod
     def _part(value: str) -> str:
         if not isinstance(value, str) or not value or value in (".", ".."):
-            raise ValueError("path identifiers must be nonempty and not dot segments")
+            raise UsageError("path identifiers must be nonempty and not dot segments", "path")
         return urllib.parse.quote(value, safe="")
 
     def _base(self, p: str, b: str | None = None) -> str:

@@ -6,6 +6,7 @@ import json
 import math
 import re
 from typing import Any, Literal, NotRequired, TypedDict
+from ._evaluation_shared import EvaluationError
 
 
 class EvaluationMetric(TypedDict):
@@ -134,25 +135,28 @@ _REQUIRED_METRIC_FIELDS = ("name", "unit", "direction")
 _PUBLIC_POLICY_FIELDS = {*_REQUIRED_POLICY_FIELDS, *("metric." + key for key in _REQUIRED_METRIC_FIELDS)}
 
 
-class PolicyError(ValueError):
-    """A fixed safe category; never carries a source value, path or raw parser error."""
+class PolicyError(EvaluationError, ValueError):
+    """A fixed safe category; never carries a source value, path or raw parser error.
+
+    ``field`` and ``reason`` may name a misspelled or unexpected policy field.
+    """
 
     phase = "policy"
     executionState = "finished"
     nextAction = "fix_config"
 
-    def __init__(self, code: str, missing_fields=()):
-        self.code = code
-        self.diagnostic = {"code": code, "phase": self.phase,
-                           "executionState": self.executionState, "nextAction": self.nextAction}
-        if missing_fields:
-            self.diagnostic["missingFields"] = [key for key in missing_fields if key in _PUBLIC_POLICY_FIELDS]
-        super().__init__({
+    def __init__(self, code: str, missing_fields=(), *, field: str | None = None, reason: str | None = None):
+        message = {
             "policy.invalid": "The evaluation policy or trusted inventory is invalid.",
             "policy.inventory_incompatible": "The policy requires cases absent from the trusted evaluation inventory.",
             "evidence.identity_mismatch": "The comparison does not match the expected evaluation identity.",
             "evidence.malformed": "The comparison evidence is malformed.",
-        }.get(code, "The evaluation policy could not be checked."))
+        }.get(code, "The evaluation policy could not be checked.")
+        if field:
+            message += f" {field}" + (f": {reason}" if reason else "")
+        super().__init__(code, phase="policy", execution_state="finished", next_action="fix_config",  # type: ignore[arg-type]
+                         field=field, reason=reason, message=message,
+                         missing_fields=[key for key in missing_fields if key in _PUBLIC_POLICY_FIELDS])
 
 
 def _record(value: Any) -> bool:

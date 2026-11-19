@@ -11,16 +11,25 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from .client import AcclimateClient, ApiError, TransportError
+from .errors import AcclimateError, UsageError
 from .types import BundlePayload, VerifiedVersion
 from .receipts import BoundDeliveryReporter
 
 
-class DeliveryError(Exception):
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
+DeliveryErrorCode = Literal["cache_miss", "collision", "digest_mismatch", "invalid_cache", "invalid_payload",
+                           "invalid_response", "stale_resolution", "unsafe_cache", "unsafe_destination",
+                           "unsafe_path", "unsupported_platform", "unsupported_schema"]
+
+
+class DeliveryError(AcclimateError):
+    """Delivered content could not be resolved, verified, cached or written safely."""
+
+    code: DeliveryErrorCode
+
+    def __init__(self, code: DeliveryErrorCode, message: str):
+        super().__init__(code, message)
 
 
 def validate_payload(value: Any) -> None:
@@ -197,13 +206,13 @@ def resolve_and_cache(
 ) -> VerifiedVersion:
     """Resolve online by default. Offline age is seconds; a pin permits that exact version."""
     if (channel is None) == (version_id is None):
-        raise ValueError("Select exactly one channel or version_id")
+        raise UsageError("Select exactly one channel or version_id", "selection")
     if offline_max_age is not None and (not 0 <= offline_max_age <= 30 * 86400):
-        raise ValueError("offline_max_age must be between 0 and 30 days")
+        raise UsageError("offline_max_age must be between 0 and 30 days", "offline_max_age")
     if offline_max_age is not None and offline_pinned_version is not None:
-        raise ValueError("Choose one offline policy")
+        raise UsageError("Choose one offline policy", "offline_pinned_version")
     if not 1 <= max_cache_bytes <= 1024 * 1024 * 1024:
-        raise ValueError("invalid max_cache_bytes")
+        raise UsageError("invalid max_cache_bytes", "max_cache_bytes")
     fd = _private_dir(cache_dir)
     now = time.time()
     stale = False

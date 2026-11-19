@@ -1,3 +1,4 @@
+import { AcclimateUsageError } from './errors.js';
 import { randomUUID } from 'node:crypto';
 import type { Selection } from './cache.js';
 import type { VerifiedVersion } from './types.js';
@@ -25,7 +26,7 @@ export interface ReceiptReporterOptions {
 export function createReceiptReporter(options: ReceiptReporterOptions) {
   const maxPending = options.maxPending ?? 100;
   if (!Number.isInteger(maxPending) || maxPending < 1 || maxPending > 1000)
-    throw new RangeError('maxPending must be an integer between 1 and 1000');
+    throw new AcclimateUsageError('maxPending must be an integer between 1 and 1000', 'maxPending');
   const now = options.now ?? Date.now;
   const pending = new Map<string, { receipt: DeliveryReceiptRequest; queuedAt: number }>();
   let running: Promise<void> | undefined;
@@ -39,7 +40,7 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
     stage: DeliveryReceiptRequest['stage'],
   ): Readonly<DeliveryReceiptRequest> {
     const binding = bindings.get(bundle);
-    if (!binding) throw new TypeError('Bundle has not been observed by this reporter');
+    if (!binding) throw new AcclimateUsageError('Bundle has not been observed by this reporter', 'bundle');
     return Object.freeze({
       ...binding,
       eventId: randomUUID(),
@@ -63,7 +64,7 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
         (bundle.connection.projectId !== options.projectId ||
           bundle.connection.integrationId.toLowerCase() !== options.integrationId.toLowerCase()))
     )
-      throw new TypeError('Delivery scope must match reporter scope');
+      throw new AcclimateUsageError('Delivery scope must match reporter scope', 'scope');
     const binding: Omit<DeliveryReceiptRequest, 'eventId' | 'stage' | 'occurredAt'> = {
       integrationId: options.integrationId,
       projectId: selection.projectId,
@@ -94,7 +95,7 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
   function enqueue(receipt: DeliveryReceiptRequest): boolean {
     if (closed) return false;
     if (receipt.projectId !== options.projectId || receipt.integrationId !== options.integrationId)
-      throw new TypeError('Receipt scope must match reporter scope');
+      throw new AcclimateUsageError('Receipt scope must match reporter scope', 'scope');
     if (pending.has(receipt.eventId)) return false;
     if (pending.size >= maxPending) return false;
     pending.set(receipt.eventId, { receipt: structuredClone(receipt), queuedAt: now() });

@@ -5,7 +5,13 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, realpath, readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AcclimateClient, ApiError, DeliveryError, resolveAndCache } from '../../src/index.js';
+import {
+  AcclimateClient,
+  ApiError,
+  DeliveryError,
+  TransportError,
+  resolveAndCache,
+} from '../../src/index.js';
 
 const bytes = Buffer.from(
   JSON.stringify({
@@ -71,9 +77,14 @@ for (const kind of ['channel', 'version'] as const) {
         await resolveAndCache(client, selection, { cacheDir: dir });
         mode = 'stall';
         // Native AbortSignal.timeout is exercised by real stalled HTTP, no mocked error.
+        // The client reports it as a TransportError that keeps the native error as its cause.
         await assert.rejects(
           resolveAndCache(client, selection, { cacheDir: dir }),
-          (e: any) => e instanceof DOMException && ['TimeoutError', 'AbortError'].includes(e.name),
+          (e: any) =>
+            e instanceof TransportError &&
+            e.code === 'transport.timeout' &&
+            e.cause instanceof DOMException &&
+            ['TimeoutError', 'AbortError'].includes(e.cause.name),
         );
         const cached = await resolveAndCache(client, selection, { cacheDir: dir, offline });
         assert.equal(cached.stale, true);

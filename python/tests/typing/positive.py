@@ -1,5 +1,5 @@
 """Consumer of every root domain export and public evaluator annotations."""
-from typing import assert_type
+from typing import Literal, assert_type
 
 from acclimate import (
     AcclimateClient,
@@ -66,8 +66,8 @@ from acclimate import (
     Operation,
 )
 from acclimate.evaluation import (
-    Case, EvaluationApp, ExecuteInput, ExecutionResult, GradeInput, GradeResult,
-    define_evaluation,
+    Case, EvaluationApp, EvaluationRunResult, ExecuteInput, ExecutionResult, GradeInput, GradeResult,
+    define_evaluation, preflight_evaluation, run_evaluation,
 )
 from acclimate.evaluation_analysis import (
     AnalysisComparisonBinding, AnalysisMetric, ComponentObservation,
@@ -139,3 +139,17 @@ app = define_evaluation(
     execute=execute, grade=grade,
 )
 assert_type(app, EvaluationApp[dict[str, str], dict[str, str], dict[str, str]])
+
+
+def typed_results(handoff: EvaluationHandoff) -> None:
+    result = run_evaluation(app=app, config_path="/private/evaluator.json", handoff=handoff)
+    assert_type(result, EvaluationRunResult)
+    preflight = preflight_evaluation(app=app, config_path="/private/evaluator.json", handoff=handoff)
+    assert_type(preflight["status"], Literal["ready", "blocked"])
+    assert_type(app.execution, Literal["model-free", "live"])
+
+
+def helpers(run: ExecuteInput[dict[str, str]]) -> ExecutionResult[dict[str, str]]:
+    assert_type(run.instructions, str)
+    assert_type(run.skill_files, tuple[BundleFile, ...])
+    return ExecutionResult({"queue": run.instructions}, usage={"inputTokens": 3, "costUsd": 0.01})

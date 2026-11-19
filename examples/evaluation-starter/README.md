@@ -98,7 +98,8 @@ Omit `--policy` when you only need paired evidence. `--live` authorizes both eva
 ## Review evidence and recover
 
 With a policy, `compare` and `check` exit 0 for pass, 2 for a known violation,
-and 3 for an indeterminate decision. A known threshold violation still fails
+and 3 for an indeterminate decision. A run that finishes as failed exits 4. See the
+[exit codes](../../apps/docs/content/docs/reference/evaluator-cli.mdx#errors-and-exit-codes). A known threshold violation still fails
 when required cost measurements are missing. Inspect the individual checks for
 both conditions. In JSON output, `evidenceGaps` identifies each affected case,
 repetition, arm and stage, up to 32 entries with the total count. Complete cases
@@ -106,11 +107,12 @@ retain their scores when another case is incomplete.
 
 A policy check with `--config` computes the verdict locally and records a receipt for release review. A passing policy returns exit 0 only when the service confirms that receipt. If `policyReceipt.status` is `unconfirmed`, retry `check` with the same evaluator config and policy. A reviewer can use `--read-config` with a public handoff to compute an independent verdict. Its receipt status is `read_only`.
 
-To debug an unexpected agent or grader exception, set `"captureCallbackErrors": true`
-in the private evaluator configuration before execution. Inspect `callback-error.json`
-in the affected arm's private job directory for the phase, exception type, and up to
-eight stack frame locations. The public comparison identifies the stage and reason
-through `evidenceGaps`. Private diagnostics omit exception messages and local variables.
+When an agent or grader callback raises, the evaluator writes `callback-error.json`
+to the affected arm's private job directory with the phase, exception type, redacted
+message and stack trace. The `compare` output names the first failure and its file.
+The file never leaves the machine. Set `"captureCallbackErrors": false` in the private
+evaluator configuration to opt out. The public comparison identifies the stage and
+reason through `evidenceGaps`.
 
 To deliberately rerun the same candidate after a completed or failed comparison, substitute `--retry-after "$RUN_NAME"` for `--name "$RUN_NAME"` in the headless compare command. The SDK verifies the original target, candidate payload and channel base, then creates one new run under a name derived from the prior request ID. The new attempt can use a repaired adapter, different case set or different policy. Repeat the same command to recover that successor. For policy-only changes, `check` can score the retained evidence without any new execution. Requests still marked requested, running or interrupted cannot serve as predecessors.
 

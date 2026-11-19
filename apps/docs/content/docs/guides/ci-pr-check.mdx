@@ -24,7 +24,7 @@ sh "$ACCLIMATE_CI/ci.sh" \
 
 ## Report the result
 
-The wrapper writes one JSON summary to stdout and sends phase diagnostics to stderr. Associate its verified `commit`, `candidateVersionId`, and `candidateDigest` with the PR. Use `result` to distinguish a policy verdict from a failed execution. Both can have the same exit code.
+The wrapper writes one JSON summary to stdout and sends phase diagnostics to stderr. Associate its verified `commit`, `candidateVersionId`, and `candidateDigest` with the PR. Use `result` to distinguish a policy verdict from a failed execution. The evaluator exits 2 when the quality gate fails and 4 when the run or service fails. See [exit codes](/docs/reference/evaluator-cli#errors-and-exit-codes).
 
 | Result | CI action |
 | --- | --- |

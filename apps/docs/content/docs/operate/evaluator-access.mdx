@@ -96,7 +96,7 @@ ACCLIMATE_EVALUATOR_TOKEN="$CI_EVALUATOR_TOKEN" \
   acclimate-eval compare --config "$RUNNER_TEMP/acclimate/evaluator.json" ...
 ```
 
-A remote service URL requires HTTPS. When recovering an attempt, use the exact URL, workspace, principal, canonical journal root, and originating SDK language and release. On a durable worker, keep the journal on one authoritative physical volume across restarts.
+Pass the path as `--config`. Relative paths resolve against the current directory. A remote service URL requires HTTPS. The worker records a failed callback's redacted message and stack trace in its private job directory. Add `"captureCallbackErrors": false` to opt out. When recovering an attempt, use the exact URL, workspace, principal, canonical journal root, and originating SDK language and release. On a durable worker, keep the journal on one authoritative physical volume across restarts.
 
 For a separate reader, provide a private config with `schemaVersion`, `serviceUrl`, `projectId`, and `readToken`. A read-only policy check sends no verdict.
 

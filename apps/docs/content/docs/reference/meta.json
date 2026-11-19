@@ -4,6 +4,7 @@
     "typescript-sdk",
     "python-sdk",
     "evaluator-cli",
+    "error-codes",
     "operator-cli",
     "configuration",
     "http-api"

@@ -12,8 +12,9 @@ export class EvaluatorConfigError extends EvaluationError {
       | 'config.url'
       | 'config.missing' = 'config.schema',
     pathIssue?: PathIssue,
+    detail: { field?: string; reason?: string; hint?: string } = {},
   ) {
-    super(code, { pathIssue });
+    super(code, { pathIssue, ...detail });
     this.name = 'EvaluatorConfigError';
   }
 }
@@ -46,8 +47,19 @@ export function assertServiceUrl(value: unknown): asserts value is string {
 /** Environment variable that supplies the evaluator token when the config names none. */
 export const EVALUATOR_TOKEN_ENV = 'ACCLIMATE_EVALUATOR_TOKEN';
 /** A private config or token file: absolute, unaliased, owner-only, in an owner-only directory. */
-async function assertPrivateFile(filename: string): Promise<void> {
-  if (!path.isAbsolute(filename)) throw new EvaluatorConfigError('config.permissions');
+async function assertPrivateFile(filename: string, field = 'configPath'): Promise<void> {
+  if (!path.isAbsolute(filename)) throw new EvaluatorConfigError('config.permissions', 'configAlias');
+  // Report an absent file before judging its directory, so a typo in the path
+  // is not mistaken for a permissions problem.
+  try {
+    await lstat(filename);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      throw new EvaluatorConfigError('config.missing', undefined, {
+        field,
+        hint: `Check the ${field === 'configPath' ? 'config' : 'token file'} path. Relative CLI paths resolve against the current directory.`,
+      });
+  }
   try {
     await assertUnaliasedPath(filename, 'configAlias');
     const parent = path.dirname(filename),
@@ -79,7 +91,7 @@ async function assertPrivateFile(filename: string): Promise<void> {
 }
 /** Read a token file with the config file's privacy checks. One trailing newline is allowed. */
 async function readTokenFile(filename: string): Promise<string> {
-  await assertPrivateFile(filename);
+  await assertPrivateFile(filename, 'evaluatorTokenFile');
   let text: string;
   try {
     text = await readPrivateText(filename, 8192);

@@ -187,27 +187,38 @@ class EvaluationCoreTests(unittest.TestCase):
         self.assertEqual(len(list(self.journal_root.rglob("output-validation.json"))), 2)
         self.assertNotIn("seenAt", json.dumps(service.comparison))
 
-    def test_callback_exception_diagnostics_are_private_opt_in(self):
+    def test_callback_exception_diagnostics_are_private_by_default_with_opt_out(self):
         def broken(run):
-            raise RuntimeError("sensitive provider message")
+            raise RuntimeError("provider message Authorization: Bearer sk-live-0123456789abcdef")
         for phase in ("execute", "grade"):
-            for opted_in in (False, True):
-                self.config.write_bytes(json_bytes({**json.loads(self.config.read_bytes()),
-                    "captureCallbackErrors": opted_in, "journalRoot": str(self.root / (phase + str(opted_in)))}))
+            for setting in (False, None, True):
+                root = self.root / (phase + str(setting))
+                config = {**json.loads(self.config.read_bytes()), "journalRoot": str(root)}
+                config.pop("captureCallbackErrors", None)
+                if setting is not None:
+                    config["captureCallbackErrors"] = setting
+                self.config.write_bytes(json_bytes(config))
                 app = self.app(**{phase: broken})
                 service = FakeService(app)
-                self.run_app(app, service)
-                reports = list((self.root / (phase + str(opted_in))).rglob("callback-error.json"))
-                self.assertEqual(len(reports), 2 if opted_in else 0)
+                result = self.run_app(app, service)
+                reports = list(root.rglob("callback-error.json"))
+                self.assertEqual(len(reports), 0 if setting is False else 2)
                 self.assertEqual(service.comparison["results"][0]["parent"]["error"], "execution_failed" if phase == "execute" else "grading_failed")
+                failure = result["firstCallbackFailure"]
+                self.assertEqual((failure["caseId"], failure["repetition"], failure["stage"]), ("one", 0, phase))
+                self.assertEqual("diagnosticFile" in failure, setting is not False)
                 for report in reports:
                     details = json.loads(report.read_bytes())
                     self.assertEqual(details["phase"], phase)
                     self.assertEqual(details["exceptionType"], "RuntimeError")
                     self.assertEqual(details["frames"][-1]["function"], "broken")
-                    self.assertNotIn("sensitive provider message", report.read_text())
+                    self.assertIn("provider message", details["message"])
+                    self.assertIn("in broken", details["stack"])
+                    self.assertNotIn("sk-live-0123456789abcdef", report.read_text())
                     self.assertEqual(report.stat().st_mode & 0o777, 0o600)
                 self.assertNotIn("RuntimeError", json.dumps(service.comparison))
+                self.assertNotIn("provider message", json.dumps(service.comparison))
+                self.assertNotIn("provider message", json.dumps(result))
 
     def test_collection_schedule_matches_typescript_and_actual_callbacks(self):
         seen = []
@@ -233,7 +244,8 @@ class EvaluationCoreTests(unittest.TestCase):
         for key in ("protocol", "seed", "schedule"):
             with self.assertRaises(EvaluationError) as caught:
                 define_evaluation(**{**config, "runtime": {"acclimate.collection." + key: "spoofed"}})
-            self.assertEqual(caught.exception.code, "config.schema")
+            self.assertEqual(caught.exception.code, "definition.invalid")
+            self.assertEqual(caught.exception.field, "runtime.acclimate.collection." + key)
 
     def test_oversized_report_exposes_a_usable_partition_limit(self):
         make_cases = lambda n: [Case("case" + str(i), {}, True, 10) for i in range(n)]
@@ -468,18 +480,31 @@ class EvaluationCoreTests(unittest.TestCase):
                 self.assertEqual(calls,["execute"] if uncertainty=="execute" else ["execute","grade"])
                 self.assertIsNone(service.comparison)
 
-    def test_async_callback_and_future_outputs_are_not_ordinary_failure(self):
+    def test_coroutine_callbacks_run_to_completion_and_future_outputs_are_uncertain(self):
+        import asyncio
+        loops = set()
         async def async_execute(run):
-            return ExecutionResult(True)
-        with self.assertRaises(EvaluationError) as caught:
-            self.app(async_execute)
-        self.assertEqual(caught.exception.code, "config.async_callback")
-        self.assertEqual(caught.exception.next_action, "use_async_callback_adapter")
-        class AsyncCallable:
-            async def __call__(self,run):
-                return ExecutionResult(True)
-        with self.assertRaises(EvaluationError):
-            self.app(AsyncCallable())
+            await asyncio.sleep(0)
+            loops.add(id(asyncio.get_running_loop()))
+            return ExecutionResult({"ok": True})
+        class AsyncGrader:
+            async def __call__(self, run):
+                loops.add(id(asyncio.get_running_loop()))
+                return GradeResult(1.0)
+        app = self.app(async_execute, AsyncGrader())
+        service = FakeService(app)
+        result = self.run_app(app, service)
+        self.assertEqual(result["evaluation"]["status"], "completed")
+        self.assertEqual(service.comparison["results"][0]["candidate"]["reward"], 1.0)
+        # One loop serves every callback so loop-bound clients keep working.
+        self.assertEqual(len(loops), 1)
+        # A cancelled coroutine cannot attest that its external work stopped.
+        async def cancelled(run):
+            raise asyncio.CancelledError()
+        with self.assertRaises(ExecutionUncertainError):
+            self.app(cancelled)._execute(None)
+        self.config.write_bytes(json_bytes({**json.loads(self.config.read_bytes()),
+                                            "journalRoot": str(self.root / "future-journal")}))
         app=self.app(lambda run:ExecutionResult({"active":Future()}))
         service=FakeService(app)
         with self.assertRaises(ExecutionUncertainError):

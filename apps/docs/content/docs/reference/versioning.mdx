@@ -1,0 +1,82 @@
+---
+title: Versioning and compatibility
+description: How releases are numbered, which SDK and service versions work together, and how the wire contract and deprecated names change.
+---
+
+## One version for every artifact
+
+Each Acclimate release has one `major.minor.patch` version. The service and console images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives all carry it. The release check refuses to build artifacts whose versions differ. Git tags add a leading `v`, such as `v0.1.0`.
+
+## What a version number promises
+
+Acclimate is at `0.x`. Until `1.0.0`:
+
+| Release | May contain |
+| --- | --- |
+| Patch, such as `0.1.0` to `0.1.1` | Fixes and additive changes only. Upgrading never requires a code change. |
+| Minor, such as `0.1.x` to `0.2.0` | Breaking changes to SDK APIs, CLI flags or the HTTP contract. Each one is listed under **Breaking** in the [changelog](https://github.com/anveld-dev/acclimate/blob/main/CHANGELOG.md) with its replacement. |
+
+From `1.0.0`, Acclimate follows [Semantic Versioning](https://semver.org): breaking changes wait for a major release.
+
+## Match SDK and service versions
+
+Use the SDK release that matches your service's minor version. The service also accepts requests from SDKs and evaluators of the previous minor release, so you can upgrade the service first and then roll out applications and evaluators. An SDK newer than the service isn't supported, because it can call routes or send fields the older service rejects.
+
+| Service | SDK `0.N.x` | SDK `0.(N-1).x` | SDK `0.(N+1).x` |
+| --- | --- | --- | --- |
+| `0.N.x` | Supported | Supported during the upgrade | Not supported |
+
+Upgrade in this order:
+
+1. Upgrade the service and console. See [upgrades and recovery](/docs/operate/upgrades-and-recovery).
+2. Upgrade evaluators and applications to the matching SDK.
+3. Finish or recover any evaluation that started before the upgrade with the SDK language and release that started it. A run's private journal belongs to that release.
+
+Evaluators also check the service's capabilities before they write. `GET /v1/workspaces/{workspaceId}/evaluation-capabilities` returns what the caller may do, and the release manifest lists the capability names the release supports, such as `retained-evaluation-operations-v1`. An evaluator stops with a setup error when a capability it needs is missing.
+
+## The wire contract
+
+[`contracts/openapi.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/openapi.json) is the source of truth for routes, fields, status codes and error codes. Both SDKs follow it: TypeScript types ship in `@acclimate/sdk`'s declarations and Python types in `acclimate.types`.
+
+All routes start with `/v1`. Within `/v1`, a release may:
+
+- add routes, optional request fields and response fields;
+- add values to an enumeration, such as a new status or error code;
+- relax a limit.
+
+Write clients that ignore response fields they don't recognize and treat an unknown enumeration value as unknown rather than failing. A change that removes or renames a field or route, makes an optional field required, or tightens a limit is breaking. It follows the rules above and appears in the changelog. Breaking changes to every route would move to `/v2`, and the service would serve both prefixes for at least one minor release.
+
+### Field names
+
+JSON fields are camelCase on the wire and in both SDKs' request and response objects. Python method arguments, keyword options and object attributes are snake_case. For example, the Python client's `ApiError.request_id` carries the error body's `requestId`, and `prepare(..., version_id=...)` sends a version ID that responses return as `versionId`.
+
+## Document schema versions
+
+Several JSON documents carry a `schemaVersion` field: bundle payloads, evaluation handoffs, capability snapshots and evaluation manifests. All are version `1` today.
+
+- A document's `schemaVersion` changes only when the document changes incompatibly. Additive fields keep the number.
+- Readers reject a `schemaVersion` they don't know rather than guessing.
+- Stored bundle versions are immutable and keep the schema version they were written with. The service keeps reading every schema version it has stored.
+- When a new schema version arrives, the service keeps accepting the previous one for writes for at least one minor release.
+
+## Deprecation
+
+A deprecated name keeps working until it is removed. Deprecations are announced in the changelog with their replacements, and removal waits at least one minor release after the announcement.
+
+| Where | How deprecation appears |
+| --- | --- |
+| TypeScript | A `@deprecated` tag that editors and type checkers show. |
+| Python | A `Deprecated.` comment on the alias, listed in the [Python SDK reference](/docs/reference/python-sdk#deprecated-names). |
+| HTTP | The [HTTP reference](/docs/reference/http-api) lists older route spellings that still work. |
+
+These names are deprecated today:
+
+| Deprecated | Use |
+| --- | --- |
+| `listProjects` | `listWorkspaces` |
+| `listPromotions`, `promote` (`list_promotions`, `promote` in Python) | `listReleases`, `createRelease` |
+| `createIntegration`, `listIntegrations`, `createIntegrationCredential`, `revokeIntegration`, `revokeIntegrationCredential`, `listIntegrationObservations` and their Python equivalents | The matching `Connection` method |
+| `Promotion`, `PromotionPage`, `PromoteRequest`, `VerifiedBundle` and the `Integration*` types | `Release`, `ReleasePage`, `CreateReleaseRequest`, `VerifiedVersion` and the `Connection*` types |
+| `/v1/projects/{projectId}` routes and their `integrations` and `promotions` paths | `/v1/workspaces/{workspaceId}` with `connections` and `releases` |
+
+Some SDK arguments and wire fields still use `projectId` and `integrationId` for the workspace and connection IDs. A future minor release renames them following the deprecation rules above.

@@ -224,6 +224,22 @@ class ParityTest(unittest.TestCase):
             self.assertEqual(Recorder.calls, [], "invalid policies must fail before any request")
 
 
+class ReferenceDocsTest(unittest.TestCase):
+    def test_python_reference_lists_every_client_method(self):
+        reference = (ROOT / "apps" / "docs" / "content" / "docs" / "reference" / "python-sdk.mdx").read_text()
+        documented = set(re.findall(r"`([a-z_]+)`", reference))
+        deprecated = {
+            name for name, value in vars(AcclimateClient).items()
+            if callable(value) and value.__name__ != name
+        }
+        public = {
+            name for name, value in vars(AcclimateClient).items()
+            if callable(value) and not name.startswith("_")
+        }
+        self.assertEqual(sorted(public - documented), [])
+        self.assertLessEqual(deprecated, documented, "list deprecated aliases under Deprecated names")
+
+
 class NamespaceTest(unittest.TestCase):
     def test_root_exports_only_public_sdk_names(self):
         for helper in ("Literal", "TypedDict", "NotRequired", "Any", "Generic", "TypeVar"):

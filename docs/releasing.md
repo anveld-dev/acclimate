@@ -30,4 +30,4 @@ Nothing publishes without approval. Each job runs in a GitHub environment, `npm`
 2. On PyPI, add a trusted publisher for the `acclimate-sdk` project: owner `anveld-dev`, repository `acclimate`, workflow `release.yaml`, environment `pypi`. For a project that doesn't exist yet, add it as a pending publisher. PyPI then needs no stored token.
 3. On npm, the first publication of each `@acclimate` package needs a token. Store an automation token as the `NPM_TOKEN` secret of the `npm` environment. After the first release, add a trusted publisher to each package (repository `anveld-dev/acclimate`, workflow `release.yaml`, environment `npm`) and delete the secret.
 
-npm provenance requires each package's `repository.url` to match this repository, so every published `package.json` declares it.
+npm provenance requires each published `package.json` to declare a `repository.url` that matches this repository.

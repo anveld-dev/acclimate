@@ -154,7 +154,7 @@ def check_email_join(*, browser, admin_context, console_origin, issuer, project,
         try:
             recovery_page=recovery.new_page()
             recovery_page.goto(console_origin+'/auth/login')
-            recovery_page.get_by_role('link',name='Forgot Password?',exact=True).click()
+            recovery_page.get_by_role('link',name='Forgot password?',exact=True).click()
             recovery_page.locator('input[name="username"]').fill(recipient)
             recovery_page.locator('input[type="submit"], button[type="submit"]').click()
             reset=message_matching(lambda message: 'Reset password' in message.get('HTML','') and 'login-actions' in message['Text'])

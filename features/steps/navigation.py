@@ -31,9 +31,9 @@ def workspace_links(context):
         expect(nav.get_by_role('link',name=name,exact=True)).to_have_count(1)
 
 
-@then('the bundle tabs contain Content, Changes and Releases')
+@then('the bundle tabs contain Content, Changes, Releases and Evaluations')
 def bundle_tabs(context):
-    assert tabs(context).get_by_role('link').all_text_contents()==['Content','Changes','Releases']
+    assert tabs(context).get_by_role('link').all_text_contents()==['Content','Changes','Releases','Evaluations']
     expect(tabs(context).get_by_role('link',name='Content',exact=True)).to_have_attribute('aria-current','page')
 
 

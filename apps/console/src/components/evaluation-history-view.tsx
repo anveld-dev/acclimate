@@ -4,7 +4,11 @@ import type { Comparison, Evaluation, EvaluationProgressView, Outcome } from '@a
 import type { EvaluationHistoryViewProps, RequestEvidence } from '../lib/changes-workspace';
 import { evaluationEvidenceSummary, notComparableReasons } from '../lib/evaluation-history';
 import { evaluationPairs, formatReward, pairCounts, pairLabels } from '../lib/evaluation-pairs';
-import { evaluationRunName } from '../lib/evaluation-run-name';
+import {
+  evaluationRunName,
+  isDigestRevision,
+  shortRevision,
+} from '../lib/evaluation-run-name';
 import { Button } from './ui/button';
 import { DirectorySearch } from './ui/directory-search';
 import { NativeSelect, NativeSelectOption } from './ui/native-select';
@@ -363,7 +367,7 @@ export function EvaluationHistoryView({
     if (status && run.status !== status) return false;
     if (!terms.length) return true;
     const text = [
-      evaluationRunName(run.datasetRevision),
+      evaluationRunName(run.datasetRevision, run.runtime?.configId),
       run.datasetRevision,
       run.graderRevision,
       run.id,
@@ -426,7 +430,9 @@ export function EvaluationHistoryView({
               )
             ) : (
               <>
-                {loaded.length} loaded {loaded.length === 1 ? 'request' : 'requests'}
+                {/* "Loaded" only matters when older pages or an outside selection exist. */}
+                {loaded.length} {model.cursor || pinned ? 'loaded ' : ''}
+                {loaded.length === 1 ? 'request' : 'requests'}
                 {selectedCandidateId ? ' for this version' : ' across bundle channels'}
               </>
             )}
@@ -543,7 +549,10 @@ export function EvaluationHistoryView({
                   evidence.status === 'bound'
                     ? evaluationEvidenceSummary(evidence.comparison)
                     : null;
-                const name = evaluationRunName(request.datasetRevision);
+                const name = evaluationRunName(
+                  request.datasetRevision,
+                  request.runtime?.configId,
+                );
                 const observation =
                   open &&
                   request.status === 'running' &&
@@ -577,6 +586,11 @@ export function EvaluationHistoryView({
                               <span className="sr-only">Dataset {request.datasetRevision}</span>
                             )}
                             <small>
+                              {isDigestRevision(request.datasetRevision) && (
+                                <code className="ledger-request-dataset" aria-hidden="true">
+                                  {shortRevision(request.datasetRevision)} ·{' '}
+                                </code>
+                              )}
                               {request.runtime?.harness ? `${request.runtime.harness} · ` : ''}
                               <span className="ledger-request-id">
                                 Request {request.id.slice(0, 8)} ·{' '}

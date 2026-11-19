@@ -37,6 +37,8 @@ export function EvaluationOutcomeStrip({ comparison }: { comparison: Comparison 
           {candidateMean === null ? '—' : reward(candidateMean)}
           {delta !== null && Number.isFinite(delta) && (
             <span className="outcome-delta" data-direction={direction}>
+              {/* Matches the change cards: direction is shown, not only colored. */}
+              <span aria-hidden="true">{delta > 0 ? '▲ ' : delta < 0 ? '▼ ' : ''}</span>
               {delta > 0 ? '+' : ''}
               {reward(delta)}
             </span>

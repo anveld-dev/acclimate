@@ -100,6 +100,7 @@ function OutcomeComparison({
                   key={name}
                   data-different={a !== b || undefined}
                   data-reward={name === 'Reward' || undefined}
+                  data-reference={name === 'Output reference' || undefined}
                 >
                   <th scope="row">
                     {name}

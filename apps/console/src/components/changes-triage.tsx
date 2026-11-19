@@ -31,7 +31,7 @@ export function ChangesTriage({
           <span>Latest evaluation</span>
           <strong>
             <GitCompareArrows size={16} aria-hidden="true" />
-            {request ? evaluationRunName(request.datasetRevision) : 'No run'}
+            {request ? evaluationRunName(request.datasetRevision, request.runtime?.configId) : 'No run'}
           </strong>
           {request && (
             <ReceiptTime value={request.createdAt} />

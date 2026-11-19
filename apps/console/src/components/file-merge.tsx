@@ -33,7 +33,9 @@ export function FileMerge({
   const showEndings =
     endingsOnly || (inspectEndings && (before.includes('\r') || after.includes('\r')));
   const visible = width > 0;
-  const split = width >= 620 && mode !== 'unified';
+  // An added or removed file has nothing on one side; a single pane reads better by default.
+  const oneSided = before === '' || after === '';
+  const split = width >= 620 && (mode === 'split' || (mode === undefined && !oneSided));
   const [original, revised] = labels;
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));

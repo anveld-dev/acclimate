@@ -471,3 +471,43 @@
 .sdk-connection-recipe .sdk-expected-output {
   margin-bottom: 0;
 }
+
+/* Numbered markers make the four steps scannable down a long page. */
+.sdk-step h3:has(.sdk-step-number) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sdk-step-number {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: var(--type-13);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.sdk-agent-instructions {
+  display: grid;
+  gap: 6px;
+}
+.sdk-agent-instructions ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-inline-start: 20px;
+  list-style: decimal;
+  line-height: 21px;
+}
+.sdk-agent-instructions li::marker {
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-step .sdk-agent-note {
+  color: var(--muted-foreground);
+  font-size: var(--type-13);
+  line-height: 19px;
+}

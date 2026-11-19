@@ -1689,8 +1689,7 @@
   .bundle-scope-return-short {
     display: inline;
   }
-  .bundle-scope-return-label,
-  .bundle-channel-label {
+  .bundle-scope-return-label {
     position: absolute;
     width: 1px;
     height: 1px;

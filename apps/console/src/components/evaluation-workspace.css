@@ -1104,3 +1104,128 @@
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
+
+/* Result headline above the review evidence: reward change first, then how pairs moved. */
+.evaluation-outcome-strip {
+  display: grid;
+  grid-template-columns: minmax(12rem, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 32px;
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.evaluation-outcome-strip .outcome-label {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: var(--type-12);
+  line-height: var(--leading-12);
+  font-weight: 550;
+}
+.evaluation-outcome-strip .outcome-value {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 2px;
+  font-size: var(--type-28);
+  line-height: var(--leading-28);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.evaluation-outcome-strip .outcome-delta {
+  font-size: var(--type-16);
+  font-weight: 650;
+  letter-spacing: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.evaluation-outcome-strip .outcome-delta[data-direction='up'] {
+  background: var(--tone-success-bg);
+  color: var(--tone-success-fg);
+}
+.evaluation-outcome-strip .outcome-delta[data-direction='down'] {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+.evaluation-outcome-strip .outcome-note {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: var(--type-13);
+  font-variant-numeric: tabular-nums;
+}
+.evaluation-outcome-strip .outcome-pairs {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.evaluation-outcome-strip .outcome-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+}
+.evaluation-outcome-strip .outcome-bar > span {
+  flex-basis: 0;
+  min-width: 4px;
+}
+.evaluation-outcome-strip [data-change='higher'] {
+  --outcome-color: var(--tone-success-fg);
+}
+.evaluation-outcome-strip [data-change='same'] {
+  --outcome-color: var(--chart-3);
+}
+.evaluation-outcome-strip [data-change='lower'] {
+  --outcome-color: var(--destructive);
+}
+.evaluation-outcome-strip [data-change='unscored'] {
+  --outcome-color: var(--tone-warning-fg);
+}
+.evaluation-outcome-strip .outcome-bar > span {
+  background: var(--outcome-color);
+}
+.evaluation-outcome-strip .outcome-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--type-13);
+  font-variant-numeric: tabular-nums;
+}
+.evaluation-outcome-strip .outcome-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.evaluation-outcome-strip .outcome-legend li > span {
+  color: var(--outcome-color);
+  font-weight: 700;
+}
+@media (max-width: 900px) {
+  .evaluation-outcome-strip {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .evaluation-outcome-strip .outcome-pairs {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+@media (max-width: 480px) {
+  .evaluation-outcome-strip {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px 14px;
+  }
+  .evaluation-outcome-strip .outcome-pairs {
+    grid-row: auto;
+  }
+  .evaluation-outcome-strip .outcome-completeness {
+    justify-self: start;
+  }
+}

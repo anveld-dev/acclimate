@@ -47,6 +47,13 @@ function OutcomeComparison({
 }) {
   const json = evaluationCaseJson(comparison, row);
   const { parent, candidate } = row.pair ?? {};
+  // Lead with what differs; identical evidence folds into one row instead of repeating.
+  const values = fields.map((field) => {
+    const a = parent ? (field.read(parent) ?? field.empty) : 'Missing outcome';
+    const b = candidate ? (field.read(candidate) ?? field.empty) : 'Missing outcome';
+    return { name: field.name, a, b, same: a === b };
+  });
+  const identical = values.filter(({ name, same }) => same && name !== 'Reward');
   function download() {
     const url = URL.createObjectURL(new Blob([json + '\n'], { type: 'application/json' }));
     const a = document.createElement('a');
@@ -85,26 +92,38 @@ function OutcomeComparison({
           </tr>
         </thead>
         <tbody>
-          {fields.map((field) => {
-            const a = parent ? (field.read(parent) ?? field.empty) : 'Missing outcome';
-            const b = candidate ? (field.read(candidate) ?? field.empty) : 'Missing outcome';
-            return (
-              <tr
-                key={field.name}
-                data-different={a !== b || undefined}
-                data-reward={field.name === 'Reward' || undefined}
-              >
-                <th scope="row">
-                  {field.name}
-                  {a !== b && <span className="case-review-difference">Differs</span>}
-                </th>
-                <td>{a}</td>
-                <td data-candidate-change={field.name === 'Reward' ? row.change : undefined}>
-                  {b}
-                </td>
-              </tr>
-            );
-          })}
+          {values
+            .filter(({ name, same }) => name === 'Reward' || !same)
+            .map(({ name, a, b }) => {
+              return (
+                <tr
+                  key={name}
+                  data-different={a !== b || undefined}
+                  data-reward={name === 'Reward' || undefined}
+                >
+                  <th scope="row">
+                    {name}
+                    {a !== b && <span className="case-review-difference">Differs</span>}
+                  </th>
+                  <td>{a}</td>
+                  <td data-candidate-change={name === 'Reward' ? row.change : undefined}>{b}</td>
+                </tr>
+              );
+            })}
+          {identical.length > 0 && (
+            <tr className="case-review-identical">
+              <th scope="row">Same on both</th>
+              <td colSpan={2}>
+                <ul>
+                  {identical.map(({ name, a }) => (
+                    <li key={name}>
+                      <span>{name}</span> {a}
+                    </li>
+                  ))}
+                </ul>
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
       <div className="case-review-tools">

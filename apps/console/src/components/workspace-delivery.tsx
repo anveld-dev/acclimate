@@ -51,7 +51,15 @@ export function WorkspaceDelivery({
     }
   }
   const apps = result.ok ? result.page.items : [];
-  const selected = initialAppId ? apps.find((app) => app.id === initialAppId) : apps[0];
+  // Without an explicit choice, open the app with the most recent report rather than
+  // an arbitrary first row that may have nothing to show.
+  const selected = initialAppId
+    ? apps.find((app) => app.id === initialAppId)
+    : apps.reduce<(typeof apps)[number] | undefined>((best, app) => {
+        const time = Date.parse(app.latestObservation?.receivedAt ?? '');
+        const bestTime = Date.parse(best?.latestObservation?.receivedAt ?? '');
+        return !best || (Number.isFinite(time) && !(time <= bestTime)) ? app : best;
+      }, undefined);
   const home = workspaceHref(projectId, 'delivery');
   return (
     <section className="workspace-delivery delivery-console space-y-4">

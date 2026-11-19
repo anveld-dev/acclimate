@@ -3,11 +3,79 @@ import { StatusBadge } from './status-badge';
 import { evaluationScoreSummary } from '../lib/evaluation-score-summary';
 import { evaluationEvidenceSummary } from '../lib/evaluation-history';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from './ui/disclosure';
+import { evaluationPairs, pairCounts, pairLabels, pairSymbols } from '../lib/evaluation-pairs';
 
 function reward(value: number) {
   return Math.abs(value) >= 10000 || (value !== 0 && Math.abs(value) < 0.001)
     ? value.toExponential(2)
     : value.toLocaleString(undefined, { maximumFractionDigits: 3 });
+}
+
+/** The headline of a comparison: the mean reward change and how paired cases moved. */
+export function EvaluationOutcomeStrip({ comparison }: { comparison: Comparison }) {
+  const summary = evaluationScoreSummary(comparison);
+  const evidence = evaluationEvidenceSummary(comparison);
+  const counts = pairCounts(evaluationPairs(comparison));
+  const { parentMean, candidateMean } = summary;
+  const delta = parentMean === null || candidateMean === null ? null : candidateMean - parentMean;
+  const direction =
+    delta === null || !Number.isFinite(delta)
+      ? 'unknown'
+      : delta > 0
+        ? 'up'
+        : delta < 0
+          ? 'down'
+          : 'flat';
+  const total = counts.higher + counts.same + counts.lower + counts.unscored;
+  const segments = (['higher', 'same', 'lower', 'unscored'] as const).filter((key) => counts[key]);
+  const breakdown = segments.map((key) => `${counts[key]} ${pairLabels[key].toLowerCase()}`);
+  return (
+    <section className="evaluation-outcome-strip" aria-label="Result summary">
+      <div className="outcome-metric">
+        <span className="outcome-label">Candidate mean reward</span>
+        <span className="outcome-value">
+          {candidateMean === null ? '—' : reward(candidateMean)}
+          {delta !== null && Number.isFinite(delta) && (
+            <span className="outcome-delta" data-direction={direction}>
+              {delta > 0 ? '+' : ''}
+              {reward(delta)}
+            </span>
+          )}
+        </span>
+        <span className="outcome-note">
+          Parent {parentMean === null ? '—' : reward(parentMean)} · equal-case mean
+        </span>
+      </div>
+      <div className="outcome-pairs">
+        <span className="outcome-label">
+          Paired outcomes · {summary.pairedCount} of {summary.expectedCount} scored
+        </span>
+        {total > 0 && (
+          <div className="outcome-bar" role="img" aria-label={breakdown.join(', ')}>
+            {segments.map((key) => (
+              <span
+                key={key}
+                data-change={key}
+                style={{ flexGrow: counts[key] }}
+                title={`${counts[key]} ${pairLabels[key].toLowerCase()}`}
+              />
+            ))}
+          </div>
+        )}
+        <ul className="outcome-legend" aria-hidden="true">
+          {segments.map((key) => (
+            <li key={key} data-change={key}>
+              <span aria-hidden="true">{pairSymbols[key]}</span> {counts[key]}{' '}
+              {pairLabels[key].toLowerCase()}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <StatusBadge tone={evidence.partial ? 'warning' : 'success'} className="outcome-completeness">
+        {evidence.partial ? 'Partial evidence' : 'Complete evidence'}
+      </StatusBadge>
+    </section>
+  );
 }
 
 export function EvaluationScorecard({
@@ -20,22 +88,10 @@ export function EvaluationScorecard({
   const summary = evaluationScoreSummary(comparison);
   const evidence = evaluationEvidenceSummary(comparison);
   if (compact) {
-    const { parentMean, candidateMean } = summary;
-    const delta = parentMean === null || candidateMean === null ? null : candidateMean - parentMean;
+    // The result summary above the evidence carries the reward change; this keeps coverage.
     return (
       <section className="review-section space-y-2 p-3" aria-label="Score summary">
-        <h3 className="font-semibold">Mean reward</h3>
-        <p className="break-words font-medium tabular-nums">
-          {parentMean === null ? '—' : reward(parentMean)} →{' '}
-          {candidateMean === null ? '—' : reward(candidateMean)}
-          {delta !== null && Number.isFinite(delta) && (
-            <>
-              {' '}
-              ({delta > 0 ? '+' : ''}
-              {reward(delta)})
-            </>
-          )}
-        </p>
+        <h3 className="font-semibold">Evidence coverage</h3>
         <dl className="review-score-facts text-sm">
           <dt>Scored pairs</dt>
           <dd>

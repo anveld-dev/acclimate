@@ -141,7 +141,13 @@
   font-weight: 600;
 }
 .suggestion-result[data-status='failed'] {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+  border-color: color-mix(in srgb, var(--tone-danger-fg) 22%, transparent);
   border-inline-start-color: var(--destructive);
+}
+.suggestion-result[data-status='failed'] a {
+  color: inherit;
 }
 @container suggestion-page (min-width: 800px) {
   .suggestion-composer-grid {

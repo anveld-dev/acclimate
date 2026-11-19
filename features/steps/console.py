@@ -517,6 +517,9 @@ def inspect_case_and_scores(p):
 def review_publish(context, expected_verdict='fail'):
     p=page(context)
     p.reload()
+    # The review opens on the newest completed result; return to its runs to inspect it.
+    expect(p).to_have_url(re.compile(r'[?&]comparison='),timeout=30000)
+    p.get_by_role('tab',name=re.compile(r'^Evaluation runs')).click()
     evidence=p.get_by_role('link',name=re.compile(r'^Inspect evidence for '))
     href=evidence.get_attribute('href')
     evidence.click()

@@ -14,16 +14,15 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "engines": {
     "node": ">=22"
   },
-  "dependencies": {
-    "@acclimate/sdk": "0.1.0"
-  },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "1.5.2"
+    "@acclimate/sdk": "^0.1.0",
+    "@earendil-works/pi-coding-agent": "^1.5.2"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {

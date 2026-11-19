@@ -45,7 +45,8 @@ for (const name of ['sdk', 'codex-plugin', 'claude-plugin', 'pi-plugin', 'cursor
         const updated = text
           .replaceAll('../../sdk/src/types.js', '@acclimate/sdk')
           .replaceAll('../../sdk/src/cache.js', '@acclimate/sdk')
-          .replaceAll('../../sdk/src/internal/native-files.js', '@acclimate/sdk/native-files');
+          .replaceAll('../../sdk/src/internal/native-files.js', '@acclimate/sdk/native-files')
+          .replaceAll('../../sdk/src/native-files.js', '@acclimate/sdk/native-files');
         if (updated.includes('../../sdk/src/')) throw new Error(`Unmapped SDK import in ${file}`);
         await writeFile(file, updated);
       }

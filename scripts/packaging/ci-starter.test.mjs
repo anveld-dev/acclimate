@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -9,14 +10,24 @@ import { fileURLToPath } from 'node:url';
 const shell = fileURLToPath(new URL('../../examples/ci/ci.sh', import.meta.url));
 const candidate = '{"schemaVersion":1,"files":[{"path":"instructions.md","kind":"instruction","text":"PR content"}]}';
 const requestId = '00000000-0000-4000-8000-000000000001';
+const successorId = '00000000-0000-4000-8000-000000000009';
 const candidateVersionId = '00000000-0000-4000-8000-000000000002';
+const parentVersionId = '00000000-0000-4000-8000-000000000004';
 const candidateDigest = 'sha256:' + '3'.repeat(64);
+const comparisonId = '00000000-0000-4000-8000-000000000003';
 let root, commit, previousCommit;
+
+const git = (repo, ...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
+const commitAll = (repo, message) => {
+  git(repo, 'add', '-A');
+  git(repo, '-c', 'user.name=CI', '-c', 'user.email=ci@example.invalid', '-c', 'commit.gpgsign=false',
+    'commit', '--quiet', '-m', message);
+  return git(repo, 'rev-parse', 'HEAD');
+};
 
 before(async () => {
   root = await mkdtemp(join(await realpath(tmpdir()), 'acclimate-ci-test-'));
-  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '--quiet');
+  git(root, 'init', '--quiet');
   await writeFile(join(root, 'bundle.json'), candidate);
   await mkdir(join(root, 'agent', 'skills', 'orders'), { recursive: true });
   await mkdir(join(root, 'agent', 'memory'));
@@ -26,36 +37,71 @@ before(async () => {
   await writeFile(join(root, 'agent', 'memory', 'private.md'), 'Private note\n');
   await mkdir(join(root, 'bad-source'));
   await symlink('../bundle.json', join(root, 'bad-source', 'instructions.md'));
-  git('add', 'bundle.json', 'agent', 'bad-source');
-  git('-c', 'user.name=CI', '-c', 'user.email=ci@example.invalid', '-c', 'commit.gpgsign=false',
+  git(root, 'add', 'bundle.json', 'agent', 'bad-source');
+  git(root, '-c', 'user.name=CI', '-c', 'user.email=ci@example.invalid', '-c', 'commit.gpgsign=false',
     'commit', '--quiet', '-m', 'Original instructions');
-  previousCommit = git('rev-parse', 'HEAD');
+  previousCommit = git(root, 'rev-parse', 'HEAD');
   await writeFile(join(root, 'agent', 'instructions.md'), 'New instructions in the PR\n');
-  git('add', 'agent/instructions.md');
-  git('-c', 'user.name=CI', '-c', 'user.email=ci@example.invalid', '-c', 'commit.gpgsign=false',
+  git(root, 'add', 'agent/instructions.md');
+  git(root, '-c', 'user.name=CI', '-c', 'user.email=ci@example.invalid', '-c', 'commit.gpgsign=false',
     'commit', '--quiet', '-m', 'Candidate under review');
-  commit = git('rev-parse', 'HEAD');
+  commit = git(root, 'rev-parse', 'HEAD');
   await writeFile(join(root, 'bundle.json'), 'Uncommitted working-tree edit');
   await writeFile(join(root, 'agent', 'instructions.md'), 'Unsaved change after checkout');
   await writeFile(join(root, 'agent', 'untracked.md'), 'Untracked scratch note');
+  // A fake installed evaluator. CI_RESPONSES maps each command to one response, or to a list
+  // consumed one invocation at a time. `hang` keeps the command running until a signal arrives.
   await writeFile(join(root, 'eval.mjs'), `#!${process.execPath}
-    import { appendFileSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
-    import { dirname } from 'node:path';
+    import { spawn } from 'node:child_process';
+    import { appendFileSync, existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+    import { dirname, join } from 'node:path';
     const [command, ...flags] = process.argv.slice(2);
-    const phase = JSON.parse(process.env.CI_RESPONSES)[command] ?? {};
-    const payload = command === 'request' ? readFileSync(flags[flags.indexOf('--payload') + 1], 'utf8') : null;
-    appendFileSync(process.env.CI_COMMAND_LOG, JSON.stringify({ command, flags, payload, cwd: process.cwd(), python: process.env.CI_TEST_PYTHON_EXE }) + '\\n');
-    if (command === 'request' && !phase.exit) {
-      const handoff = flags[flags.indexOf('--out') + 1];
-      mkdirSync(dirname(handoff), {recursive:true});
-      writeFileSync(handoff, JSON.stringify({ configuration: { runtime: 'old evaluator' } }));
-    }
-    if (phase.error) console.error(JSON.stringify({error: {code: phase.error}}));
-    console.log(JSON.stringify(phase.body ?? (command === 'request' ? {
+    const flag = name => { const at = flags.indexOf('--' + name); return at < 0 ? undefined : flags[at + 1]; };
+    const counter = process.env.CI_COMMAND_LOG + '.' + command + '.count';
+    const count = existsSync(counter) ? Number(readFileSync(counter, 'utf8')) : 0;
+    writeFileSync(counter, String(count + 1));
+    let phase = JSON.parse(process.env.CI_RESPONSES)[command] ?? {};
+    if (Array.isArray(phase)) phase = phase[Math.min(count, phase.length - 1)] ?? {};
+    let config = {};
+    try { config = JSON.parse(readFileSync(flag('config'), 'utf8')); } catch {}
+    const payload = command === 'request' ? readFileSync(flag('payload'), 'utf8') : null;
+    const log = entry => appendFileSync(process.env.CI_COMMAND_LOG, JSON.stringify(entry) + '\\n');
+    log({ command, flags, payload, cwd: process.cwd(), python: process.env.CI_TEST_PYTHON_EXE,
+      configToken: config.evaluatorToken ?? null, pid: process.pid });
+    const body = phase.body ?? (command === 'request' ? {
       requestId: ${JSON.stringify(requestId)}, candidateVersionId: ${JSON.stringify(candidateVersionId)},
-      candidateDigest: ${JSON.stringify(candidateDigest)},
-    } : command === 'check' ? { verdict: 'pass' } : { status: 'ok' })));
-    process.exit(phase.exit ?? 0);
+      candidateDigest: ${JSON.stringify(candidateDigest)}, parentVersionId: ${JSON.stringify(parentVersionId)},
+    } : command === 'check' ? { verdict: 'pass' } : command === 'describe' ? { runtime: 'old evaluator' }
+      : command === 'interrupt' ? { status: 'interrupted' } : { status: 'ok' });
+    if (command === 'request' && !phase.exit) {
+      const handoff = flag('out');
+      mkdirSync(dirname(handoff), { recursive: true });
+      if (!existsSync(handoff)) writeFileSync(handoff, JSON.stringify({ schemaVersion: 1,
+        serviceUrl: config.serviceUrl ?? 'https://acclimate.invalid/', projectId: config.projectId ?? 'workspace',
+        bundleId: flag('bundle'), requestId: body.requestId, configuration: { runtime: 'old evaluator' } }));
+    }
+    if (command === 'export' && !phase.exit) {
+      mkdirSync(flag('out'), { recursive: true });
+      writeFileSync(join(flag('out'), 'manifest.json'), '{}');
+    }
+    if (phase.error) console.error(JSON.stringify({ schemaVersion: 1, command, error: phase.error }));
+    if (phase.hang) {
+      const helper = spawn('sleep', ['60'], { stdio: 'ignore' });
+      log({ command, event: 'started', pid: process.pid, helper: helper.pid });
+      const stop = signal => {
+        log({ command, event: 'signal', signal });
+        if (phase.hang !== 'graceful') return;
+        helper.kill();
+        console.log(JSON.stringify(body));
+        process.exit(phase.exit ?? 2);
+      };
+      process.on('SIGINT', stop);
+      process.on('SIGTERM', stop);
+      setInterval(() => {}, 1000);
+    } else {
+      console.log(JSON.stringify(body));
+      process.exit(phase.exit ?? 0);
+    }
   `);
   await chmod(join(root, 'eval.mjs'), 0o755);
   await writeFile(join(root, 'eval.py'), `
@@ -66,23 +112,81 @@ os.execv(os.environ["CI_FIXTURE_NODE"], [os.environ["CI_FIXTURE_NODE"], os.envir
 });
 after(async () => { if (root) await rm(root, { recursive: true, force: true }); });
 
-async function pipeline(language, responses, extra = [], omit = [], env = {}) {
-  const dir = await mkdtemp(join(root, 'run-'));
+function invocation(language, responses, extra, omit, env, dir) {
   const app = join(root, language === 'python' ? 'eval.py' : 'eval.mjs');
   const args = { language, app, config: join(root, 'config.json'), bundle: 'bundle-under-test',
     channel: 'canary', repo: root, commit, payload: 'bundle.json', policy: join(root, 'policy.json'),
     intent: join(dir, 'intent.json'), 'output-dir': dir };
   const flags = Object.entries(args).filter(([k]) => !omit.includes(k)).flatMap(([k, v]) => ['--' + k, v]);
-  const result = spawnSync('sh', [shell, ...flags, ...extra], {
-    cwd: root,
-    env: { ...process.env, CI_COMMAND_LOG: join(dir, 'log'), CI_FIXTURE_NODE: process.execPath,
-      CI_FIXTURE_APP: join(root, 'eval.mjs'), CI_RESPONSES: JSON.stringify(responses), ...env }, encoding: 'utf8',
-  });
-  const commands = (await readFile(join(dir, 'log'), 'utf8').catch(error => {
+  return {
+    argv: [shell, ...flags, ...extra],
+    options: { cwd: root, encoding: 'utf8', env: { ...process.env, CI_COMMAND_LOG: join(dir, 'log'),
+      CI_FIXTURE_NODE: process.execPath, CI_FIXTURE_APP: join(root, 'eval.mjs'),
+      CI_RESPONSES: JSON.stringify(responses), ...env } },
+  };
+}
+
+async function commandLog(dir) {
+  return (await readFile(join(dir, 'log'), 'utf8').catch(error => {
     if (error.code === 'ENOENT') return '';
     throw error;
   })).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
-  return { ...result, summary: JSON.parse(result.stdout), commands };
+}
+
+async function pipeline(language, responses, extra = [], omit = [], env = {}) {
+  const dir = await mkdtemp(join(root, 'run-'));
+  const { argv, options } = invocation(language, responses, extra, omit, env, dir);
+  const result = spawnSync('sh', argv, options);
+  const commands = (await commandLog(dir)).filter(entry => !entry.event);
+  let summary;
+  try {
+    summary = JSON.parse(result.stdout);
+  } catch {
+    summary = null;
+  }
+  return { ...result, summary, commands, dir };
+}
+
+/** Start the wrapper in the background, wait for the named command to start, then signal it. */
+async function interrupted(responses, extra, omit, signals, env = {}) {
+  const dir = await mkdtemp(join(root, 'cancel-'));
+  const { argv, options } = invocation('javascript', responses, extra, omit, env, dir);
+  const child = spawn('sh', argv, { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
+  let stdout = '', stderr = '';
+  child.stdout.on('data', data => { stdout += data; });
+  child.stderr.on('data', data => { stderr += data; });
+  const exited = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
+  for (let waited = 0; !(await commandLog(dir)).some(entry => entry.event === 'started'); waited += 50) {
+    assert.ok(waited < 20000, 'the evaluator command did not start\n' + stderr);
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  for (const [signal, delay] of signals) {
+    await new Promise(resolve => setTimeout(resolve, delay));
+    child.kill(signal);
+  }
+  const { code } = await exited;
+  const entries = await commandLog(dir);
+  return { status: code, stdout, stderr, summary: JSON.parse(stdout), entries, dir };
+}
+
+async function alive(pid) {
+  // Allow the process to be reaped after its group is killed.
+  for (let waited = 0; waited < 3000; waited += 100) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return false;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return true;
+}
+
+async function writeConfig(dir, values) {
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const file = join(dir, 'config.json');
+  await writeFile(file, JSON.stringify(values), { mode: 0o600 });
+  return file;
 }
 
 for (const language of ['javascript', 'python']) {
@@ -100,9 +204,9 @@ for (const language of ['javascript', 'python']) {
       assert.equal(phase.flags[phase.flags.indexOf('--policy') + 1], join(root, 'policy.json'));
     }
     assert.deepEqual([summary.commit, summary.channel, summary.requestId, summary.candidateVersionId,
-      summary.candidateDigest, summary.qualityVerdict, summary.result],
-      [commit, 'canary', requestId, candidateVersionId, candidateDigest, 'pass', 'pass']);
-    assert.match(summary.reviewDirectory, /^review-/);
+      summary.candidateDigest, summary.qualityVerdict, summary.result, summary.exitCode],
+      [commit, 'canary', requestId, candidateVersionId, candidateDigest, 'pass', 'pass', 0]);
+    assert.match(summary.reviewDirectory, new RegExp('^reviews/' + requestId));
     assert.deepEqual(Object.values(summary.phaseExitCodes), [0, 0, 0, 0, 0, 0]);
   });
 }
@@ -123,11 +227,78 @@ for (const [name, responses, expected, resultName, phaseCodes] of [
     const run = await pipeline('javascript', responses);
     assert.equal(run.status, expected, run.stderr);
     assert.equal(run.summary.result, resultName);
+    assert.equal(run.summary.exitCode, expected);
+    assert.ok(run.summary.nextAction);
     assert.deepEqual(Object.values(run.summary.phaseExitCodes), phaseCodes);
     assert.ok(run.commands.every(c => !c.flags.includes('--live') && !c.flags.includes('--selection')));
     if (phaseCodes[5] !== 0) assert.equal(run.summary.reviewDirectory, null);
   });
 }
+
+test('CI reports the diagnostic, failed checks and hint for every phase', async () => {
+  const doctor = await pipeline('javascript', { doctor: { exit: 3, body: { schemaVersion: 1, status: 'blocked',
+    authorization: 'unverified', nextAction: 'retry_same_command', checks: [{ check: 'runtime', status: 'passed' },
+      { check: 'serviceIdentity', status: 'failed', code: 'service.unavailable' }] } } });
+  assert.equal(doctor.summary.result, 'preflight_failed');
+  assert.equal(doctor.summary.failedPhase, 'doctor');
+  assert.equal(doctor.summary.diagnosticCode, 'service.unavailable');
+  assert.deepEqual(doctor.summary.failedChecks, [{ check: 'serviceIdentity', status: 'failed', code: 'service.unavailable' }]);
+  assert.match(doctor.summary.hint, /could not reach the service/);
+  assert.equal(doctor.summary.evaluatorNextAction, 'retry_same_command');
+
+  const run = await pipeline('javascript', { run: { exit: 3, error: { code: 'journal.busy', phase: 'claim',
+    nextAction: 'retry_same_command' } } });
+  assert.equal(run.summary.result, 'execution_unresolved');
+  assert.equal(run.summary.failedPhase, 'run');
+  assert.equal(run.summary.diagnosticCode, 'journal.busy');
+  assert.match(run.summary.hint, /orphaned evaluator/);
+
+  const request = await pipeline('javascript', { request: { exit: 1, error: { code: 'request.channel_empty',
+    hint: 'Publish a baseline release to channel canary first.' } } });
+  assert.equal(request.summary.diagnosticCode, 'request.channel_empty');
+  assert.equal(request.summary.hint, 'Publish a baseline release to channel canary first.');
+});
+
+test('CI writes GitHub annotations, Markdown and step outputs that name failed criteria and cases', async () => {
+  const verdict = { verdict: 'fail', code: 'policy.fail', comparisonId,
+    policy: { id: 'shipping', revision: 'r1', sha256: candidateDigest },
+    counts: { distinctCases: 2, expectedPairs: 3, comparablePairs: 2 },
+    summary: { parentMean: 1, candidateMean: 0.5, orientedMeanImprovement: -0.5 },
+    checks: [{ code: 'policy.minimum_mean_improvement', result: 'fail', caseIds: ['refund-flow'] }],
+    cases: [{ caseId: 'refund-flow', parentMean: 1, candidateMean: 0, orientedMeanImprovement: -1 },
+      { caseId: 'steady', parentMean: 1, candidateMean: 1, orientedMeanImprovement: 0 }],
+    evidenceGaps: { total: 1, rows: [{ caseId: 'missing\nscore', repetition: 0, side: 'candidate',
+      stage: 'grading', reason: 'grading_failed' }] } };
+  const files = await mkdtemp(join(root, 'reports-'));
+  const markdown = join(files, 'summary.md'), outputs = join(files, 'outputs'), json = join(files, 'summary.json');
+  await writeFile(markdown, '# Existing step summary\n');
+  const run = await pipeline('javascript', { check: { exit: 2, body: verdict },
+    run: { body: { status: 'completed', comparisonId }, error: { code: 'note' } } },
+  ['--format', 'github', '--summary-md', markdown, '--summary-json', json, '--github-output', outputs]);
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stdout, /^::error title=Acclimate quality gate failed::Failed criteria: policy.minimum_mean_improvement/m);
+  assert.match(run.stdout, /^::error title=Failed criterion policy.minimum_mean_improvement::.*refund-flow/m);
+  assert.match(run.stdout, /^::error title=Regressed case refund-flow::Case refund-flow changed by -1/m);
+  assert.match(run.stdout, /^::warning title=Missing evidence for missing score::/m);
+  assert.doesNotMatch(run.stdout, /steady/);
+  // Evaluator output is fenced so that it cannot issue workflow commands.
+  const token = /::stop-commands::([0-9a-f]{32})/.exec(run.stderr)[1];
+  assert.ok(run.stderr.includes('::group::Acclimate run'));
+  assert.ok(run.stderr.indexOf('"code":"note"') > run.stderr.indexOf('::stop-commands::' + token));
+  assert.ok(run.stderr.includes('::' + token + '::'));
+  const written = JSON.parse(await readFile(json, 'utf8'));
+  assert.equal(written.result, 'quality_failed');
+  assert.deepEqual(written.quality.regressedCases.map(row => row.caseId), ['refund-flow']);
+  const text = await readFile(markdown, 'utf8');
+  assert.ok(text.startsWith('# Existing step summary\n### ❌ Acclimate quality gate failed'));
+  assert.match(text, /\*\*Failed criteria:\*\* `policy.minimum_mean_improvement`/);
+  assert.match(text, /\| `refund-flow` \| 1 \| 0 \| -1 \|/);
+  assert.match(await readFile(outputs, 'utf8'),
+    new RegExp(`^result=quality_failed\nexit-code=2\nverdict=fail\ncomparison-id=${comparisonId}\n`));
+
+  const plain = await pipeline('javascript', {}, ['--format', 'markdown']);
+  assert.match(plain.stdout, /^### ✅ Acclimate quality gate passed/);
+});
 
 for (const [name, extra, omit] of [
   ['missing payload', [], ['payload']],
@@ -143,6 +314,19 @@ for (const [name, extra, omit] of [
     assert.equal(run.commands.length, 0);
   });
 }
+
+test('CI explains a pull_request merge checkout and prints required flags in help', async () => {
+  const run = await pipeline('javascript', {}, ['--commit', 'f'.repeat(40)], ['commit']);
+  assert.match(run.summary.hint, /HEAD is [0-9a-f]{40} but --commit is f{40}.*github\.sha/);
+  const help = spawnSync('sh', [shell, '--help'], { encoding: 'utf8' });
+  assert.equal(help.status, 0);
+  const required = help.stdout.slice(help.stdout.indexOf('required arguments:'), help.stdout.indexOf('bundle source:'));
+  for (const flag of ['--commit', '--app', '--config', '--bundle ID', '--channel', '--policy', '--output-dir', '--bundle-dir']) {
+    assert.ok(required.includes(flag), flag);
+  }
+  assert.match(help.stdout, /--rerun-after HANDOFF/);
+  assert.doesNotMatch(help.stdout, /--retry-after/);
+});
 
 test('directory input binds committed source edits, memory choices, and retries', async () => {
   const output = await mkdtemp(join(root, 'private-results-'));
@@ -160,10 +344,16 @@ test('directory input binds committed source edits, memory choices, and retries'
   const intent = flags[flags.indexOf('--intent') + 1];
   assert.equal(join(output, first.summary.handoff), flags[flags.indexOf('--out') + 1]);
   assert.ok(intent.startsWith(join(output, 'requests', commit)));
+  assert.deepEqual(first.summary.reuse, { status: 'unavailable', reason: 'channel_release_unknown' });
   const repeat = await pipeline('javascript', {}, selected, omitted);
   assert.equal(repeat.status, 0, repeat.stderr);
-  assert.equal(repeat.commands[1].flags[repeat.commands[1].flags.indexOf('--intent') + 1], intent);
+  const resumed = repeat.commands.find(c => c.command === 'request');
+  assert.equal(resumed.flags[resumed.flags.indexOf('--intent') + 1], intent);
   assert.equal(repeat.summary.handoff, first.summary.handoff);
+  // The saved review export is verified and reused rather than exported again.
+  assert.deepEqual(repeat.commands.map(c => c.command), ['doctor', 'status', 'request', 'run', 'check', 'verify-export']);
+  assert.equal(repeat.summary.reviewDirectory, first.summary.reviewDirectory);
+  assert.deepEqual((await readdir(join(output, 'reviews'))).filter(name => !name.startsWith('.')), [requestId]);
   const noMemory = await pipeline('python', {}, [...source, '--no-memory'], omitted);
   assert.equal(noMemory.status, 0, noMemory.stderr);
   assert.deepEqual(JSON.parse(noMemory.commands[1].payload).files.map(f => f.kind), ['instruction', 'skill']);
@@ -183,6 +373,13 @@ test('directory input rejects stale commits, symlinks and unspecified memory bef
     assert.equal(run.summary.result, 'configuration_error');
     assert.equal(run.commands.length, 0);
   }
+});
+
+test('--base-commit lists the bundle files changed since the merge base', async () => {
+  const run = await pipeline('javascript', {}, ['--bundle-dir', 'agent', '--no-memory', '--base-commit', previousCommit],
+    ['payload']);
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(run.summary.changedFiles, [{ status: 'M', path: 'agent/instructions.md' }]);
 });
 
 test('installed SDK directory commands resolve the adapter, interpreter and caller paths', async () => {
@@ -235,22 +432,33 @@ test('installed SDK directory commands resolve the adapter, interpreter and call
   assert.ok(chosen.commands.every(c => c.cwd === nodeApp && c.python === interpreter));
 });
 
+test('a Python evaluator on an old interpreter fails with a version message, not an ImportError', async () => {
+  const app = join(root, 'old-python-app');
+  await mkdir(join(app, '.venv', 'bin'), { recursive: true });
+  await writeFile(join(app, 'application.py'), '');
+  await writeFile(join(app, '.venv', 'bin', 'python'), '#!/bin/sh\necho 3.9\n', { mode: 0o755 });
+  const run = await pipeline('python', {}, ['--app', app], ['language', 'app'], { ACCLIMATE_CI_PYTHON: '' });
+  assert.equal(run.status, 1);
+  assert.equal(run.summary.result, 'configuration_error');
+  assert.equal(run.commands.length, 0);
+  assert.match(run.stderr, /Python evaluators need Python 3\.11 or later, but .*\.venv\/bin\/python is 3\.9/);
+});
+
 test('CI exposes policy measurements, incomplete pairs, reasons and receipt independently of execution', async () => {
-  const id = '00000000-0000-4000-8000-000000000003';
   const policy = { id: 'shipping', revision: 'r1', sha256: candidateDigest };
   const counts = { distinctCases: 2, expectedPairs: 3, comparablePairs: 2 };
   const scores = { parentMean: 1, candidateMean: 0.5, orientedMeanImprovement: -0.5 };
   const gaps = { total: 1, rows: [{ caseId: 'missing-score', repetition: 0, side: 'candidate',
     stage: 'grading', reason: 'grading_failed' }] };
-  const verdict = { verdict: 'fail', code: 'policy.fail', policy, comparisonId: id, counts,
+  const verdict = { verdict: 'fail', code: 'policy.fail', policy, comparisonId, counts,
     summary: scores, checks: [{ code: 'policy.minimum_mean_improvement', result: 'fail' },
       { code: 'policy.cost_unknown', result: 'unknown' }, { code: 'ignored.pass', result: 'pass' }],
     evidenceGaps: gaps, policyReceipt: { status: 'recorded', code: 'saved' } };
-  const result = await pipeline('javascript', { run: { body: { status: 'completed', comparisonId: id } },
+  const result = await pipeline('javascript', { run: { body: { status: 'completed', comparisonId } },
     check: { exit: 2, body: verdict } });
   assert.equal(result.status, 2, result.stderr);
   assert.equal(result.summary.executionStatus, 'completed');
-  assert.equal(result.summary.comparisonId, id);
+  assert.equal(result.summary.comparisonId, comparisonId);
   assert.equal(result.summary.qualityVerdict, 'fail');
   assert.deepEqual(result.summary.quality, { code: 'policy.fail', policy, scores,
     counts: { ...counts, incompletePairs: 1 }, failedCriteria: ['policy.minimum_mean_improvement'],
@@ -268,38 +476,286 @@ test('one successor per settled request; uncertain, unrelated and unverified pre
   const common = ['--output-dir', output];
   const first = await pipeline('javascript', {}, common, omitted);
   const previous = first.summary.handoff;
-  const status = {status: 'failed', requestId, attemptId: candidateVersionId,
-    comparisonId: '00000000-0000-4000-8000-000000000003'};
+  const status = { status: 'failed', requestId, attemptId: candidateVersionId, comparisonId };
   const mismatch = await pipeline('javascript', {
-    request: { exit: 1, error: 'request.intent_mismatch' },
+    request: { exit: 1, error: { code: 'request.intent_mismatch' } },
     status: { body: status }, describe: { body: { runtime: 'repaired evaluator' } },
   }, common, omitted);
   assert.equal(mismatch.status, 1);
   assert.equal(mismatch.summary.mismatch, 'evaluator_definition_changed');
   assert.equal(mismatch.summary.priorHandoff, previous);
   assert.equal(mismatch.summary.previousExecutionStatus, 'failed');
-  assert.match(mismatch.summary.nextAction, /--retry-after/);
+  assert.equal(mismatch.summary.diagnosticCode, 'request.intent_mismatch');
+  assert.match(mismatch.summary.nextAction, /--rerun-after/);
   assert.ok(mismatch.commands.every(c => c.command !== 'run'));
-  const next = [...common, '--retry-after', previous];
-  const retried = await pipeline('javascript', { status: { body: status } }, next, omitted);
-  const replay = await pipeline('javascript', { status: { body: status } }, next, omitted);
+  const next = [...common, '--rerun-after', previous];
+  const successor = { request: { body: { requestId: successorId, candidateVersionId, candidateDigest } } };
+  const retried = await pipeline('javascript', { status: { body: status }, ...successor }, next, omitted);
+  const replay = await pipeline('javascript', { status: { body: { ...status, requestId: successorId } }, ...successor },
+    next, omitted);
   assert.equal(retried.status, 0, retried.stderr);
-  assert.equal(replay.status, 0);
+  assert.equal(replay.status, 0, replay.stderr);
   assert.ok(retried.summary.handoff.includes('/after-' + requestId + '/'));
   assert.equal(replay.summary.handoff, retried.summary.handoff);
   assert.notEqual(retried.summary.handoff, previous);
   assert.equal(retried.summary.previousRequestId, requestId);
-  for (const body of ['requested', 'running', 'interrupted'].map(value => ({ ...status, status: value }))
-    .concat([{ ...status, comparisonId: null }])) {
-    const unsafe = await pipeline('javascript', { status: { body } }, next, omitted);
+  assert.equal(replay.summary.requestId, successorId);
+  // The deprecated wrapper spelling still works and names the replacement.
+  const alias = await pipeline('javascript', { status: { body: { ...status, requestId: successorId } }, ...successor },
+    [...common, '--retry-after', previous], omitted);
+  assert.equal(alias.status, 0, alias.stderr);
+  assert.match(alias.stderr, /--retry-after is deprecated for the CI wrapper; use --rerun-after/);
+  assert.equal(alias.summary.handoff, retried.summary.handoff);
+  // A plain rerun follows the chain to the latest generation.
+  const plain = await pipeline('javascript', { status: { body: { ...status, requestId: successorId } }, ...successor },
+    common, omitted);
+  assert.equal(plain.summary.handoff, retried.summary.handoff);
+
+  const fresh = async () => {
+    const dir = await mkdtemp(join(root, 'recovery-'));
+    const seeded = await pipeline('javascript', {}, ['--output-dir', dir], omitted);
+    return [dir, seeded.summary.handoff];
+  };
+  for (const body of [{ ...status, status: 'running' }, { ...status, comparisonId: null }]) {
+    const [dir, handoff] = await fresh();
+    const unsafe = await pipeline('javascript', { status: { body } }, ['--output-dir', dir, '--rerun-after', handoff], omitted);
     assert.equal(unsafe.status, 3);
     assert.equal(unsafe.summary.result, 'prior_execution_unresolved');
-    assert.deepEqual(unsafe.commands.map(c => c.command), ['status']);
+    assert.deepEqual(unsafe.commands.map(c => c.command), ['doctor', 'status']);
   }
-  const denied = await pipeline('javascript', { status: { exit: 1 } }, next, omitted);
+  const [deniedDir, deniedHandoff] = await fresh();
+  const denied = await pipeline('javascript', { status: { exit: 1 } },
+    ['--output-dir', deniedDir, '--rerun-after', deniedHandoff], omitted);
   assert.equal(denied.summary.result, 'prior_status_unavailable');
-  assert.deepEqual(denied.commands.map(c => c.command), ['status']);
+  assert.deepEqual(denied.commands.map(c => c.command), ['doctor', 'status']);
   const unrelated = await pipeline('javascript', {}, [...next, '--channel', 'elsewhere'], [...omitted, 'channel']);
   assert.equal(unrelated.summary.result, 'configuration_error');
-  assert.deepEqual(unrelated.commands, []);
+  assert.match(unrelated.summary.hint, /already starts a fresh request/);
+  assert.deepEqual(unrelated.commands.map(c => c.command), ['doctor']);
+  // A corrupt saved handoff does not hide the request failure.
+  const [dir, handoff] = await fresh();
+  await writeFile(join(dir, handoff), 'not json');
+  const corrupt = await pipeline('javascript', { request: { exit: 1, error: { code: 'request.intent_mismatch' } },
+    status: { body: status } }, ['--output-dir', dir], omitted);
+  assert.equal(corrupt.summary.result, 'request_failed');
+});
+
+test('interrupted predecessors are followed headlessly; unstarted ones are reconciled; uncertain ones need opt-in', async () => {
+  const omitted = ['intent', 'output-dir'];
+  const journalRoot = await realpath(await mkdtemp(join(root, 'journal-')));
+  const configValues = { schemaVersion: 1, serviceUrl: 'http://127.0.0.1:9/', projectId: 'workspace',
+    evaluatorPrincipalId: 'ci-evaluator', evaluatorToken: 'secret-token', journalRoot };
+  const config = await writeConfig(await mkdtemp(join(root, 'config-')), configValues);
+  const status = { requestId, attemptId: candidateVersionId, comparisonId: null };
+  const successor = { request: { body: { requestId: successorId, candidateVersionId, candidateDigest } } };
+  const setup = async () => {
+    const dir = await mkdtemp(join(root, 'headless-'));
+    const first = await pipeline('javascript', { run: { exit: 3 } }, ['--output-dir', dir, '--config', config],
+      [...omitted, 'config']);
+    assert.equal(first.summary.result, 'execution_unresolved');
+    return [dir, first.summary.handoff];
+  };
+  const journal = async (state) => {
+    const scope = JSON.stringify({ serviceUrl: configValues.serviceUrl, projectId: 'workspace',
+      bundleId: 'bundle-under-test', requestId, evaluatorPrincipalId: 'ci-evaluator' });
+    const directory = join(journalRoot, createHash('sha256').update(scope).digest('hex'));
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeFile(join(directory, 'attempt.json'), JSON.stringify(state), { mode: 0o600 });
+  };
+
+  // Server-side interruption, including expiry of an abandoned attempt, starts a successor automatically.
+  let [dir, handoff] = await setup();
+  const expired = await pipeline('javascript', { status: { body: { ...status, status: 'interrupted' } }, ...successor },
+    ['--output-dir', dir, '--config', config], [...omitted, 'config']);
+  assert.equal(expired.status, 0, expired.stderr);
+  assert.equal(expired.summary.requestId, successorId);
+  assert.equal(expired.summary.previousExecutionStatus, 'interrupted');
+  assert.equal(expired.summary.handoff, handoff.replace(/[^/]+$/, 'after-' + requestId + '/evaluation-request.json'));
+
+  // A running request whose journal has no execution marker is interrupted and replaced.
+  [dir, handoff] = await setup();
+  await journal({ attemptId: 'a' });
+  const reconciled = await pipeline('javascript', { status: { body: { ...status, status: 'running' } }, ...successor },
+    ['--output-dir', dir, '--config', config, '--rerun-after', handoff], [...omitted, 'config']);
+  assert.equal(reconciled.status, 0, reconciled.stderr);
+  assert.deepEqual(reconciled.summary.reconciled, { requestId, previousStatus: 'running', journal: 'not_started',
+    action: 'interrupted' });
+  const interrupt = reconciled.commands.find(c => c.command === 'interrupt');
+  assert.match(interrupt.flags[interrupt.flags.indexOf('--reason') + 1], /before execution started/);
+
+  // Execution may have started: stop unless the CI owner opts in.
+  [dir, handoff] = await setup();
+  await journal({ attemptId: 'a', executionStarted: true });
+  const uncertain = await pipeline('javascript', { status: { body: { ...status, status: 'running' } } },
+    ['--output-dir', dir, '--config', config, '--rerun-after', handoff], [...omitted, 'config']);
+  assert.equal(uncertain.summary.result, 'prior_execution_unresolved');
+  assert.equal(uncertain.summary.previousJournalState, 'may_have_started');
+  assert.ok(!uncertain.commands.some(c => c.command === 'interrupt'));
+  const abandoned = await pipeline('javascript', { status: { body: { ...status, status: 'running' } }, ...successor },
+    ['--output-dir', dir, '--config', config, '--abandon-uncertain'], [...omitted, 'config']);
+  assert.equal(abandoned.status, 0, abandoned.stderr);
+  assert.equal(abandoned.summary.reconciled.journal, 'may_have_started');
+  assert.match(abandoned.commands.find(c => c.command === 'interrupt').flags.join(' '), /--abandon-uncertain/);
+});
+
+test('SIGINT reaches the evaluator, the summary is printed, and a rerun starts a fresh request', async () => {
+  const output = await mkdtemp(join(root, 'cancel-state-'));
+  const omitted = ['intent', 'output-dir'];
+  const responses = { run: { hang: 'graceful', exit: 2, body: { status: 'failed', comparisonId } } };
+  const run = await interrupted(responses, ['--output-dir', output], omitted, [['SIGINT', 0]]);
+  assert.equal(run.status, 130, run.stderr);
+  assert.equal(run.summary.result, 'cancelled');
+  assert.deepEqual(run.summary.cancellation, { signal: 'SIGINT', phase: 'run', forced: false });
+  assert.equal(run.summary.executionStatus, 'failed');
+  assert.equal(run.summary.phaseExitCodes.check, null);
+  assert.doesNotMatch(run.stderr, /Traceback|KeyboardInterrupt/);
+  assert.deepEqual(run.entries.filter(e => e.event === 'signal').map(e => e.signal), ['SIGINT']);
+  const started = run.entries.find(e => e.event === 'started');
+  assert.ok(!(await alive(started.pid)) && !(await alive(started.helper)));
+  const marker = JSON.parse(await readFile(join(output, run.summary.handoff.replace(/[^/]+$/, 'cancelled.json')), 'utf8'));
+  assert.equal(marker.requestId, requestId);
+
+  const rerun = await pipeline('javascript', { status: { body: { status: 'failed', requestId, comparisonId } },
+    request: { body: { requestId: successorId, candidateVersionId, candidateDigest } } }, ['--output-dir', output], omitted);
+  assert.equal(rerun.status, 0, rerun.stderr);
+  assert.equal(rerun.summary.requestId, successorId);
+  assert.ok(rerun.summary.handoff.includes('/after-' + requestId + '/'));
+});
+
+test('SIGTERM kills an evaluator that ignores it after the grace period, leaving no orphan', async () => {
+  const run = await interrupted({ run: { hang: 'ignore' } }, ['--cancel-grace', '1'], [], [['SIGTERM', 0]]);
+  assert.equal(run.status, 143, run.stderr);
+  assert.equal(run.summary.result, 'cancelled');
+  assert.deepEqual(run.summary.cancellation, { signal: 'SIGTERM', phase: 'run', forced: true });
+  const started = run.entries.find(e => e.event === 'started');
+  assert.ok(!(await alive(started.pid)) && !(await alive(started.helper)));
+
+  // A second signal, like a CI runner's escalation, shortens the wait.
+  const begun = Date.now();
+  const escalated = await interrupted({ run: { hang: 'ignore' } }, ['--cancel-grace', '60'], [],
+    [['SIGINT', 0], ['SIGTERM', 200]]);
+  assert.equal(escalated.status, 130);
+  assert.ok(Date.now() - begun < 15000);
+  assert.deepEqual(escalated.entries.filter(e => e.event === 'signal').map(e => e.signal), ['SIGINT', 'SIGTERM']);
+});
+
+test('a token from the environment or a private file is injected into a private, temporary config', async () => {
+  const dir = await mkdtemp(join(root, 'token-config-'));
+  const template = await writeConfig(dir, { schemaVersion: 1, serviceUrl: 'http://127.0.0.1:9/', projectId: 'p',
+    evaluatorPrincipalId: 'ci', journalRoot: '/tmp/unused' });
+  const omitted = ['config'];
+  const run = await pipeline('javascript', {}, ['--config', template, '--token-env', 'CI_TEST_TOKEN'], omitted,
+    { CI_TEST_TOKEN: 'from-environment' });
+  assert.equal(run.status, 0, run.stderr);
+  const configured = run.commands.filter(c => c.flags.includes('--config'));
+  assert.equal(configured.length, 5);
+  assert.ok(configured.every(c => c.configToken === 'from-environment'));
+  const used = run.commands[0].flags[run.commands[0].flags.indexOf('--config') + 1];
+  assert.ok(used.startsWith(run.dir + '/.credentials-'));
+  await assert.rejects(stat(used));
+  assert.doesNotMatch(run.stdout + run.stderr, /from-environment/);
+
+  const tokenFile = join(dir, 'token');
+  await writeFile(tokenFile, 'from-file\n', { mode: 0o600 });
+  const fromFile = await pipeline('javascript', {}, ['--config', template, '--token-file', tokenFile], omitted);
+  assert.ok(fromFile.commands.filter(c => c.flags.includes('--config')).every(c => c.configToken === 'from-file'));
+  await chmod(tokenFile, 0o644);
+  const exposed = await pipeline('javascript', {}, ['--config', template, '--token-file', tokenFile], omitted);
+  assert.equal(exposed.summary.result, 'configuration_error');
+  assert.match(exposed.stderr, /mode 0600/);
+  const missing = await pipeline('javascript', {}, ['--config', template, '--token-env', 'CI_TEST_UNSET'], omitted,
+    { CI_TEST_UNSET: '' });
+  assert.equal(missing.summary.result, 'configuration_error');
+});
+
+test('an unchanged candidate, release and evaluator reuse their result across commits', async () => {
+  // The fake service runs in its own process: spawnSync blocks this test's event loop.
+  const state = await mkdtemp(join(root, 'reuse-service-'));
+  const releaseFile = join(state, 'release.json'), seenFile = join(state, 'seen.log');
+  let release = { channel: 'canary', revision: '7', version: { id: parentVersionId, digest: candidateDigest } };
+  const publish = value => writeFile(releaseFile, JSON.stringify(value));
+  await publish(release);
+  const server = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { appendFileSync, readFileSync } from 'node:fs';
+    import { createServer } from 'node:http';
+    const server = createServer((request, response) => {
+      appendFileSync(${JSON.stringify(seenFile)}, JSON.stringify({ url: request.url,
+        authorization: request.headers.authorization }) + '\\n');
+      const release = JSON.parse(readFileSync(${JSON.stringify(releaseFile)}, 'utf8'));
+      response.writeHead(release ? 200 : 404, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(release ?? { error: { code: 'not_found', message: 'Channel not found' } }));
+    });
+    server.listen(0, '127.0.0.1', () => console.log(server.address().port));
+  `], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const port = await new Promise(resolve => server.stdout.once('data', data => resolve(Number(String(data).trim()))));
+  try {
+    const repo = await mkdtemp(join(root, 'reuse-repo-'));
+    git(repo, 'init', '--quiet');
+    await mkdir(join(repo, 'agent'));
+    await writeFile(join(repo, 'agent', 'instructions.md'), 'Same instructions\n');
+    await writeFile(join(repo, 'README.md'), 'First\n');
+    const first = commitAll(repo, 'First');
+    await writeFile(join(repo, 'README.md'), 'Docs only\n');
+    const second = commitAll(repo, 'Docs only');
+    const config = await writeConfig(await mkdtemp(join(root, 'reuse-config-')), { schemaVersion: 1,
+      serviceUrl: `http://127.0.0.1:${port}/`, projectId: 'workspace',
+      evaluatorPrincipalId: 'ci', evaluatorToken: 'reuse-token', journalRoot: '/tmp/unused' });
+    const output = await mkdtemp(join(root, 'reuse-output-'));
+    const omitted = ['payload', 'repo', 'commit', 'config', 'intent', 'output-dir'];
+    const at = (sha, extra = []) => {
+      git(repo, 'checkout', '--quiet', '--detach', sha);
+      return pipeline('javascript', { status: { body: { status: 'completed', requestId, comparisonId } } },
+        ['--repo', repo, '--commit', sha, '--bundle-dir', 'agent', '--config', config, '--output-dir', output, ...extra],
+        omitted);
+    };
+    const original = await at(first);
+    assert.equal(original.status, 0, original.stderr);
+    assert.equal(original.summary.reuse.status, 'new');
+    const seen = (await readFile(seenFile, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(seen[0], { url: '/v1/workspaces/workspace/bundles/bundle-under-test/channels/canary',
+      authorization: 'Bearer reuse-token' });
+    const reused = await at(second);
+    assert.equal(reused.status, 0, reused.stderr);
+    assert.deepEqual(reused.summary.reuse, { status: 'reused', key: original.summary.reuse.key, originCommit: first });
+    assert.equal(reused.summary.commit, second);
+    assert.equal(reused.summary.handoff, original.summary.handoff);
+
+    // A new channel release, a changed evaluator or a different case subset needs a new request.
+    release = { ...release, revision: '8', version: { id: successorId, digest: candidateDigest } };
+    await publish(release);
+    const moved = await at(second);
+    assert.equal(moved.summary.reuse.status, 'new');
+    assert.notEqual(moved.summary.handoff, original.summary.handoff);
+    const subset = await at(second, ['--cases', 'refund-flow']);
+    assert.notEqual(subset.summary.handoff, moved.summary.handoff);
+    const runFlags = subset.commands.find(c => c.command === 'run').flags;
+    assert.deepEqual(runFlags.slice(runFlags.indexOf('--cases')), ['--cases', 'refund-flow']);
+    const disabled = await at(second, ['--no-reuse']);
+    assert.ok(disabled.summary.handoff.startsWith('requests/' + second + '-'));
+
+    // An empty channel stops before a request with a clear next step.
+    await publish(null);
+    const empty = await at(second);
+    assert.equal(empty.status, 1);
+    assert.equal(empty.summary.result, 'request_failed');
+    assert.equal(empty.summary.diagnosticCode, 'request.channel_empty');
+    assert.match(empty.summary.hint, /Publish a baseline release to this channel/);
+    assert.deepEqual(empty.commands.map(c => c.command), ['doctor']);
+  } finally {
+    server.kill();
+  }
+});
+
+test('cost and time limits pass through to the evaluator run command', async () => {
+  const run = await pipeline('javascript', {}, ['--deadline', '30m', '--max-cost-usd', '2.50', '--concurrency', '4',
+    '--shard', '1/3']);
+  assert.equal(run.status, 0, run.stderr);
+  const flags = run.commands.find(c => c.command === 'run').flags;
+  assert.deepEqual(flags.slice(flags.indexOf('--deadline')),
+    ['--deadline', '30m', '--max-cost-usd', '2.50', '--concurrency', '4', '--shard', '1/3']);
+  for (const command of run.commands.filter(c => c.command !== 'run')) assert.ok(!command.flags.includes('--deadline'));
+  for (const bad of [['--concurrency', '0'], ['--max-cost-usd', 'lots'], ['--cancel-grace', '0']]) {
+    const rejected = await pipeline('javascript', {}, bad);
+    assert.equal(rejected.summary.result, 'configuration_error', bad.join(' '));
+  }
 });

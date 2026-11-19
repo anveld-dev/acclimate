@@ -301,7 +301,12 @@ export function serviceRunNotices(result: EvaluationRunResult, digests: { parent
   // Service compare keeps stderr a single JSON diagnostic; warnings ride in the result.
   if (warnings.length && process.stderr.isTTY)
     for (const warning of warnings) process.stderr.write(`WARNING: ${warning}\n`);
-  return { lines: [...(summary ? summaryLines(summary) : []), ...warnings.map((w) => `WARNING: ${w}`)], json: summary ? { run: summary, warnings } : {} };
+  return {
+    lines: [...(summary ? summaryLines(summary) : []), ...warnings.map((w) => `WARNING: ${w}`)],
+    json: summary ? { run: summary, warnings } : {},
+    /** A deadline, cost limit or interruption left pairs unrun: exit 3 like an indeterminate result. */
+    exitStatus: summary && summary.stopReason !== 'completed' ? 3 : 0,
+  };
 }
 
 /**

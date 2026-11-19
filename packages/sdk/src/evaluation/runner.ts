@@ -423,7 +423,7 @@ export async function runEvaluationRequest<I, E, O>(
     retryMissingTrial: options.retryMissingTrial,
     cachedParent: options.cachedParent,
     cumulative,
-    controls: { ...captured.controls, ...options.controls },
+    controls: options.controls,
   });
 }
 
@@ -615,7 +615,7 @@ export async function runCapturedEvaluation(options: {
         bundles,
         jobsRoot: path.join(journal.directory, 'jobs'),
         signal,
-        controls: options.controls,
+        controls: { ...captured.controls, ...options.controls },
         retryMissingTrial: options.retryMissingTrial,
         captureCallbackErrors: config.captureCallbackErrors,
         cachedParent: cachedParent ? cachedResults : undefined,

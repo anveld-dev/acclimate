@@ -507,7 +507,7 @@ async function dispatch(
           ? 'Reused saved evidence. No execution callbacks started.'
           : `Execution callbacks started this time: ${result.callbacksStarted}.`;
         return {
-          status: status || (receipt?.status === 'unconfirmed' ? 1 : 0),
+          status: status || (receipt?.status === 'unconfirmed' ? 1 : 0) || notices.exitStatus,
           result: terminal
             ? [comparisonText(request, result.comparison, scores, policyResult, !!policy), ...notices.lines, execution,
                 ...(receipt ? [receipt.status === 'recorded' ? 'Policy receipt recorded for release review.' : 'Policy receipt unconfirmed. Retry check with the evaluator config.'] : []),
@@ -528,7 +528,11 @@ async function dispatch(
       }
       return {
         status: runStatus(result.evaluation),
-        result: { ...safeRequest(result.evaluation), executionState: result.executionState },
+        result: {
+          ...safeRequest(result.evaluation),
+          executionState: result.executionState,
+          ...(result.runSummary ? { run: result.runSummary } : {}),
+        },
       };
     } finally {
       process.off('SIGINT', cancel);

@@ -744,7 +744,7 @@ impl Connection {
     async fn calibrate(&self, tx: &mut Tx<'_>, baseline: Uuid) -> ApiResult<bool> {
         use crate::connected_learning::statistics::scored_reward;
         let row = sqlx::query(
-            "SELECT p.calibration_request_id,p.noise_calibration,p.selection_policies,p.calibration_stopped_reason,
+            "SELECT p.calibration_request_id,(p.noise_calibration IS NOT NULL AND p.repetition_plan IS NOT NULL) AS published,p.selection_policies,p.calibration_stopped_reason,
                     e.status,c.body,c.complete,c.submitter,
                     CASE WHEN e.started_at IS NULL THEN e.created_at < now()-make_interval(secs => $5)
                          ELSE e.started_at < now()-make_interval(secs => $4) END AS expired
@@ -770,7 +770,7 @@ impl Connection {
         {
             return Ok(false);
         }
-        if row.get::<Option<Value>, _>("noise_calibration").is_some() {
+        if row.get::<bool, _>("published") {
             return Ok(true);
         }
         if row

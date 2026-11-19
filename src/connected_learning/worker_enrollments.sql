@@ -46,14 +46,14 @@ WHERE active_round.next_tick_at <= now()
                 OR EXISTS (
                     SELECT 1 FROM connected_learning_policy_epochs p
                     WHERE (p.project_id,p.integration_id,p.epoch)=(e.project_id,e.integration_id,e.policy_epoch)
-                      AND p.noise_calibration IS NULL AND p.calibration_stopped_reason IS NULL
+                      AND (p.noise_calibration IS NULL OR p.repetition_plan IS NULL) AND p.calibration_stopped_reason IS NULL
                 )
                 OR (
                     e.proposal_admissions < e.max_proposal_admissions
                     AND EXISTS (
                         SELECT 1 FROM connected_learning_policy_epochs p
                         WHERE (p.project_id,p.integration_id,p.epoch)=(e.project_id,e.integration_id,e.policy_epoch)
-                        AND p.noise_calibration IS NOT NULL AND p.calibration_stopped_reason IS NULL
+                        AND p.noise_calibration IS NOT NULL AND p.repetition_plan IS NOT NULL AND p.calibration_stopped_reason IS NULL
                     )
                     AND EXISTS (
                         SELECT 1 FROM connected_learning_correction_work f

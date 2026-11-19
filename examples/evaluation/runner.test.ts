@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { runEvaluation } from './runner.js';
 import { EvaluationError } from '../../packages/sdk/src/evaluation/errors.js';
+import { TransportError } from '../../packages/sdk/src/errors.js';
 const safeCode =
   (...codes: string[]) =>
   (error: unknown) =>
@@ -163,7 +164,7 @@ for (const action of ['start', 'submit', 'finish'] as const) {
         if (first) {
           first = false;
           if (committed) await (original as (...args: unknown[]) => unknown)(...args);
-          throw new TypeError('lost response');
+          throw new TransportError('http://fixture.test', new TypeError('lost response'));
         }
         return (original as (...args: unknown[]) => unknown)(...args);
       };
@@ -349,7 +350,7 @@ for (const changed of ['serviceUrl', 'evaluatorPrincipalId', 'journalRoot'] as c
     const start = f.api.startEvaluation.bind(f.api);
     f.api.startEvaluation = async (...args) => {
       await start(...args);
-      throw new TypeError('lost start response');
+      throw new TransportError('http://fixture.test', new TypeError('lost start response'));
     };
     try {
       await assert.rejects(runEvaluation(options), safeCode('service.unavailable'));
@@ -385,7 +386,7 @@ test('copying an unfinished journal to a different root refuses recovery and cal
   const submit = f.api.createComparison.bind(f.api);
   f.api.createComparison = async (...args) => {
     await submit(...args);
-    throw new TypeError('lost submit response');
+    throw new TransportError('http://fixture.test', new TypeError('lost submit response'));
   };
   try {
     await assert.rejects(runEvaluation(options), safeCode('submission.unconfirmed'));

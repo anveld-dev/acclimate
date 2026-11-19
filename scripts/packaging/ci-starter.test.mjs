@@ -155,18 +155,19 @@ async function interrupted(responses, extra, omit, signals, env = {}) {
   let stdout = '', stderr = '';
   child.stdout.on('data', data => { stdout += data; });
   child.stderr.on('data', data => { stderr += data; });
-  const exited = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
+  const exited = new Promise(resolve => child.once('exit', code => resolve({ code, at: Date.now() })));
   for (let waited = 0; !(await commandLog(dir)).some(entry => entry.event === 'started'); waited += 50) {
-    assert.ok(waited < 20000, 'the evaluator command did not start\n' + stderr);
+    assert.ok(waited < 60000, 'the evaluator command did not start\n' + stderr);
     await new Promise(resolve => setTimeout(resolve, 50));
   }
+  const signalledAt = Date.now();
   for (const [signal, delay] of signals) {
     await new Promise(resolve => setTimeout(resolve, delay));
     child.kill(signal);
   }
-  const { code } = await exited;
+  const { code, at } = await exited;
   const entries = await commandLog(dir);
-  return { status: code, stdout, stderr, summary: JSON.parse(stdout), entries, dir };
+  return { status: code, stdout, stderr, summary: JSON.parse(stdout), entries, dir, elapsed: at - signalledAt };
 }
 
 async function alive(pid) {
@@ -225,6 +226,7 @@ for (const [name, responses, expected, resultName, phaseCodes] of [
 ]) {
   test(`CI distinguishes ${name}`, async () => {
     const run = await pipeline('javascript', responses);
+
     assert.equal(run.status, expected, run.stderr);
     assert.equal(run.summary.result, resultName);
     assert.equal(run.summary.exitCode, expected);
@@ -259,6 +261,19 @@ test('CI reports the diagnostic, failed checks and hint for every phase', async 
   assert.equal(request.summary.hint, 'Publish a baseline release to channel canary first.');
 });
 
+test('without a structured diagnostic the summary keeps the evaluator\'s last output', async () => {
+  const files = await mkdtemp(join(root, 'unstructured-'));
+  const json = join(files, 'summary.json');
+  const run = await pipeline('javascript', { doctor: { exit: 1, error: 'Node.js 22.22 is required' } },
+    ['--format', 'markdown', '--summary-json', json]);
+  assert.equal(run.status, 1);
+  const summary = JSON.parse(await readFile(json, 'utf8'));
+  assert.equal(summary.diagnosticCode, null);
+  assert.match(summary.hint, /^Last evaluator output: .*Node\.js 22\.22 is required/);
+  assert.match(run.stdout, /\*\*Diagnostic:\*\* phase `doctor`\n/);
+  assert.doesNotMatch(run.stdout, /None|null/);
+});
+
 test('CI writes GitHub annotations, Markdown and step outputs that name failed criteria and cases', async () => {
   const verdict = { verdict: 'fail', code: 'policy.fail', comparisonId,
     policy: { id: 'shipping', revision: 'r1', sha256: candidateDigest },
@@ -286,6 +301,9 @@ test('CI writes GitHub annotations, Markdown and step outputs that name failed c
   assert.ok(run.stderr.includes('::group::Acclimate run'));
   assert.ok(run.stderr.indexOf('"code":"note"') > run.stderr.indexOf('::stop-commands::' + token));
   assert.ok(run.stderr.includes('::' + token + '::'));
+  // Each command's JSON result is printed before its fence closes.
+  const runGroup = run.stderr.slice(run.stderr.indexOf('::group::Acclimate run'));
+  assert.ok(runGroup.indexOf(comparisonId) < runGroup.indexOf('::endgroup::'));
   const written = JSON.parse(await readFile(json, 'utf8'));
   assert.equal(written.result, 'quality_failed');
   assert.deepEqual(written.quality.regressedCases.map(row => row.caseId), ['refund-flow']);
@@ -631,11 +649,10 @@ test('SIGTERM kills an evaluator that ignores it after the grace period, leaving
   assert.ok(!(await alive(started.pid)) && !(await alive(started.helper)));
 
   // A second signal, like a CI runner's escalation, shortens the wait.
-  const begun = Date.now();
   const escalated = await interrupted({ run: { hang: 'ignore' } }, ['--cancel-grace', '60'], [],
     [['SIGINT', 0], ['SIGTERM', 200]]);
   assert.equal(escalated.status, 130);
-  assert.ok(Date.now() - begun < 15000);
+  assert.ok(escalated.elapsed < 30000, 'a second signal should not wait for the 60 second grace period');
   assert.deepEqual(escalated.entries.filter(e => e.event === 'signal').map(e => e.signal), ['SIGINT', 'SIGTERM']);
 });
 

@@ -650,10 +650,10 @@ class Runner:
             self.cancellation.kill(child)
         for reader in readers:
             reader.join(timeout=5)
-        self.end_group(token)
         self.record(name, returncode if returncode >= 0 else 128 - returncode)
         value = {}
         if output:
+            # The command result stays inside the fenced group with the rest of the evaluator's output.
             sys.stderr.buffer.write(bytes(output))
             if not output.endswith(b"\n"):
                 sys.stderr.buffer.write(b"\n")
@@ -663,6 +663,7 @@ class Runner:
                 value = parsed if isinstance(parsed, dict) else {}
             except (ValueError, UnicodeError):
                 pass
+        self.end_group(token)
         self.diagnose(name, value, recent)
         if self.cancellation.signal is not None:
             raise Cancelled(name, value)
@@ -707,6 +708,11 @@ class Runner:
                 diagnostic["failedChecks"] = failed
                 if isinstance(value.get("nextAction"), str):
                     diagnostic.setdefault("nextAction", value["nextAction"])
+        if diagnostic is None and self.codes.get(name):
+            # Without a structured diagnostic, keep the evaluator's last words for the summary.
+            last = next((line.strip() for line in reversed(recent) if line.strip()), b"")
+            if last:
+                diagnostic = {"output": text(last.decode("utf-8", "replace"), 300)}
         if diagnostic:
             self.diagnostics[name] = {key: item for key, item in diagnostic.items() if item is not None}
 
@@ -1127,7 +1133,8 @@ def finish_summary(summary, runner, result, status):
     if diagnostic:
         summary["diagnosticCode"] = summary.get("diagnosticCode") or diagnostic.get("code")
         summary["failedChecks"] = diagnostic.get("failedChecks")
-        summary["hint"] = summary.get("hint") or diagnostic.get("hint") or HINTS.get(diagnostic.get("code"))
+        summary["hint"] = (summary.get("hint") or diagnostic.get("hint") or HINTS.get(diagnostic.get("code"))
+                           or ("Last evaluator output: " + diagnostic["output"] if diagnostic.get("output") else None))
         if diagnostic.get("nextAction") and not summary.get("nextAction"):
             summary["evaluatorNextAction"] = diagnostic["nextAction"]
     elif summary.get("diagnosticCode") and not summary.get("hint"):
@@ -1203,8 +1210,9 @@ def render_markdown(summary):
         lines += ["| " + " | ".join(code_span(row.get(key)) for key in ("caseId", "repetition", "side", "stage", "reason"))
                   + " |" for row in gaps["rows"][:10]]
     if summary.get("diagnosticCode") or summary.get("failedPhase"):
-        lines += ["", "**Diagnostic:** phase " + code_span(summary.get("failedPhase")) + ", code "
-                  + code_span(summary.get("diagnosticCode"))]
+        lines += ["", "**Diagnostic:** " + ", ".join(
+            label + " " + code_span(summary[key]) for label, key in (("phase", "failedPhase"), ("code", "diagnosticCode"))
+            if summary.get(key))]
         for check in summary.get("failedChecks") or []:
             lines.append("- failed check " + code_span(check.get("check")) + " " + code_span(check.get("code")))
         if summary.get("hint"):
@@ -1270,7 +1278,8 @@ def render_github(summary):
     elif result == "cancelled":
         lines.append(annotation("warning", "Acclimate quality gate cancelled", summary.get("nextAction") or ""))
     else:
-        detail = "Phase " + text(summary.get("failedPhase")) + ", code " + text(summary.get("diagnosticCode")) + "."
+        detail = " ".join(label + " " + text(summary[key]) + "." for label, key in
+                          (("Phase", "failedPhase"), ("Code", "diagnosticCode")) if summary.get(key))
         for check in summary.get("failedChecks") or []:
             detail += " Failed check " + text(check.get("check")) + " (" + text(check.get("code")) + ")."
         if summary.get("hint"):

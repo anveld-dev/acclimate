@@ -50,9 +50,12 @@
 .connection-detail {
   outline-offset: 4px;
 }
-.connection-identity {
-  border-block: 1px solid var(--border);
-  padding-block: 6px;
+/* One divider between settings rows; the panel border frames the list. */
+.connection-settings > [data-slot='disclosure'] {
+  padding: 8px 16px;
+}
+.connection-settings > [data-slot='disclosure'] + [data-slot='disclosure'] {
+  border-top: 1px solid var(--border);
 }
 .connection-credential-groups {
   display: grid;

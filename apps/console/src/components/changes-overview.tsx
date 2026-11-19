@@ -22,6 +22,8 @@ type OverviewProps = {
   state: Ready;
   search: Record<string, unknown>;
   board?: (model: EvaluationHistoryModel) => ReactNode;
+  /** Board-level view controls shown at the end of the Changes header row. */
+  toolbar?: ReactNode;
 };
 
 export function ChangesOverview(props: OverviewProps) {
@@ -35,7 +37,7 @@ export function ChangesOverview(props: OverviewProps) {
 }
 
 /** A scoped collection selects context; one ledger explains the selected run. */
-function ScopedChangesOverview({ state, search, board }: OverviewProps) {
+function ScopedChangesOverview({ state, search, board, toolbar }: OverviewProps) {
   const [historyFilters, setHistoryFilters] = useState<HistoryFilters>({ query: '', status: '' });
   const router = useRouter();
   const scope = {
@@ -271,6 +273,7 @@ function ScopedChangesOverview({ state, search, board }: OverviewProps) {
               </Button>
             </div>
           )}
+          {toolbar && <div className="changes-overview-view">{toolbar}</div>}
         </header>
       )}
       {!historyPage && board?.(model)}

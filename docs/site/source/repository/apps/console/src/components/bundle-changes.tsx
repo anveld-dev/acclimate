@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
+import { ListFilter } from 'lucide-react';
 import type { Draft, Proposal } from '@acclimate/sdk';
 import type { ConsoleState } from '../server/channel';
 import { runDraftCommand } from '../server/content-actions';
@@ -276,6 +277,18 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
     <ChangesOverview
       state={state}
       search={search}
+      toolbar={
+        <Button
+          size="sm"
+          variant={showClosedDrafts ? 'secondary' : 'outline'}
+          className="min-h-9"
+          aria-pressed={showClosedDrafts}
+          aria-label="Include closed drafts"
+          onClick={() => setShowClosedDrafts(!showClosedDrafts)}
+        >
+          <ListFilter aria-hidden="true" /> Include closed
+        </Button>
+      }
       board={(model) => (
         <ChangesPipeline
           state={state}
@@ -283,7 +296,6 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
           drafts={drafts}
           proposals={proposals}
           includeClosed={showClosedDrafts}
-          onIncludeClosed={() => setShowClosedDrafts(!showClosedDrafts)}
           loading={
             (draftBusy && !drafts.length) || (proposalBusy && !proposalsRead) || model.loading
           }

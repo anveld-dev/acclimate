@@ -11,14 +11,31 @@ import { ReceiptTime } from './receipt-time';
 import { StatusBadge } from './status-badge';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
-import { ArrowRight, ListFilter } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
 type Ready = Extract<ConsoleState, { status: 'ready' }>;
+
+const kindLabels = { draft: 'Draft', suggestion: 'Suggestion', candidate: 'Candidate' } as const;
+
+/** Paths the provider edited, or why it stopped, from the latest screening pass. */
+function suggestionMeta(proposal: Proposal) {
+  if (proposal.status === 'failed') return proposal.error || 'No candidate produced.';
+  const changes = proposal.screening?.at(-1)?.changes ?? [];
+  const paths = [...new Set(changes.map((change) => change.path))];
+  if (!paths.length) return undefined;
+  return (
+    'Edits ' + paths.slice(0, 2).join(', ') + (paths.length > 2 ? ` +${paths.length - 2}` : '')
+  );
+}
 
 type Candidate = {
   id: string;
   kind: 'draft' | 'suggestion' | 'candidate';
+  /** Accessible identity used in the card's link name. */
   title: string;
+  /** What a reader scans for: when it changed or what it proposes. */
+  heading: ReactNode;
+  meta?: ReactNode;
   candidate?: string | null;
   stale?: boolean;
   generation?: number;
@@ -34,7 +51,6 @@ export function ChangesPipeline({
   drafts,
   proposals,
   includeClosed,
-  onIncludeClosed,
   loading,
   errors,
   moreDrafts,
@@ -45,7 +61,6 @@ export function ChangesPipeline({
   drafts: Draft[];
   proposals: Proposal[];
   includeClosed: boolean;
-  onIncludeClosed: () => void;
   loading: boolean;
   errors: (string | null)[];
   moreDrafts: ReactNode;
@@ -89,6 +104,12 @@ export function ChangesPipeline({
         kind: 'draft',
         candidate: draft.snapshotVersion.id,
         title: 'Draft ' + draft.id.slice(0, 8),
+        heading: (
+          <>
+            Edited <ReceiptTime value={draft.updatedAt} relative />
+          </>
+        ),
+        meta: `${draft.generation} ${draft.generation === 1 ? 'save' : 'saves'}`,
         generation: draft.generation,
         status: draft.status,
         stale: draft.status === 'open' && draft.baseRevision !== resolution.revision,
@@ -122,6 +143,14 @@ export function ChangesPipeline({
       kind: 'suggestion',
       candidate: proposal.candidate?.id,
       title: proposal.rationale?.trim().split('\n')[0] || 'Suggestion ' + proposal.id.slice(0, 8),
+      heading:
+        proposal.rationale?.trim().split('\n')[0] ||
+        (proposal.status === 'failed'
+          ? 'Suggestion failed'
+          : proposal.status === 'succeeded'
+            ? 'Suggestion'
+            : 'Preparing suggestion'),
+      meta: suggestionMeta(proposal),
       stale: proposal.parentVersionId !== resolution.version.id,
       status:
         proposal.status === 'succeeded'
@@ -160,6 +189,7 @@ export function ChangesPipeline({
       kind: 'candidate',
       candidate,
       title: 'Candidate ' + candidate.slice(0, 8),
+      heading: 'Saved version',
       stale: request.parentVersionId !== resolution.version.id,
       href: bundleHref(scope, 'changes', { candidate }),
     });
@@ -184,43 +214,71 @@ export function ChangesPipeline({
           comparison: request.comparisonId ?? undefined,
         })
       : item.href;
+    const counts = comparison && pairCounts(evaluationPairs(comparison));
+    const verb = compared ? 'Review' : 'Open';
+    const rawStatus = !compared && (request?.status ?? item.status);
+    // A failed suggestion already says so in its heading; tint its reason instead.
+    const failed = rawStatus === 'failed';
+    const status = failed && item.kind === 'suggestion' ? undefined : rawStatus;
     return (
       <li key={item.id} data-change-kind={item.kind}>
         <Card size="sm" className="pipeline-card text-sm ring-0">
-          <h4 className="pipeline-card-title" title={item.title}>
-            {item.title}
-          </h4>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {item.generation !== undefined && (
-              <span className="text-muted-foreground">Generation {item.generation}</span>
-            )}
-            {item.stale && <StatusBadge tone="warning">Stale base</StatusBadge>}
-            {delta !== null && Number.isFinite(delta) && (
-              <StatusBadge
-                tone={delta < 0 ? 'warning' : delta > 0 ? 'success' : 'neutral'}
-                aria-label="Mean reward change"
-              >
-                {delta > 0 ? '+' : ''}
-                {formatReward(delta)} reward
-              </StatusBadge>
-            )}
-            {comparison && (
-              <StatusBadge>{pairCounts(evaluationPairs(comparison)).lower} worse</StatusBadge>
-            )}
-            {compared && !comparison && <StatusBadge>Comparison reported</StatusBadge>}
-            {/* An open draft's status repeats its Open action; show only other states. */}
-            {!compared &&
-              (request?.status ?? item.status) &&
-              (request?.status ?? item.status) !== 'open' && (
-                <StatusBadge className="capitalize">{request?.status ?? item.status}</StatusBadge>
-              )}
+          <div className="pipeline-card-eyebrow">
+            <span>{kindLabels[item.kind]}</span>
+            <code>{item.id.slice(0, 8)}</code>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-1">
-            <Button asChild variant="outline" size="sm" className="min-h-9">
-              <ConsoleLink href={href} aria-label={`${compared ? 'Review' : 'Open'} ${item.title}`}>
-                {compared ? 'Review' : 'Open'} <ArrowRight aria-hidden="true" />
-              </ConsoleLink>
-            </Button>
+          <h4 className="pipeline-card-title" title={item.title}>
+            <ConsoleLink
+              className="pipeline-card-link"
+              href={href}
+              aria-label={`${verb} ${item.title}`}
+            >
+              {item.heading}
+            </ConsoleLink>
+          </h4>
+          {item.meta && (
+            <p className="pipeline-card-meta" data-failed={failed || undefined}>
+              {item.meta}
+            </p>
+          )}
+          {(delta !== null && Number.isFinite(delta)) || counts ? (
+            <div className="pipeline-card-result">
+              {delta !== null && Number.isFinite(delta) && (
+                <StatusBadge
+                  tone={delta < 0 ? 'danger' : delta > 0 ? 'success' : 'neutral'}
+                  aria-label="Mean reward change"
+                >
+                  {delta > 0 ? '▲ +' : delta < 0 ? '▼ ' : ''}
+                  {formatReward(delta)}
+                </StatusBadge>
+              )}
+              {counts && (
+                <span className="pipeline-card-pairs">
+                  {counts.higher} higher · {counts.lower} lower
+                  {counts.unscored ? ` · ${counts.unscored} unscored` : ''}
+                </span>
+              )}
+            </div>
+          ) : null}
+          {(item.stale || (compared && !comparison) || (status && status !== 'open')) && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {item.stale && <StatusBadge tone="warning">Stale base</StatusBadge>}
+              {compared && !comparison && <StatusBadge>Comparison reported</StatusBadge>}
+              {/* An open draft's status repeats its Open action; show only other states. */}
+              {status && status !== 'open' && (
+                <StatusBadge
+                  tone={status === 'failed' ? 'danger' : 'neutral'}
+                  className="capitalize"
+                >
+                  {status}
+                </StatusBadge>
+              )}
+            </div>
+          )}
+          <div className="pipeline-card-foot">
+            <span className="pipeline-card-cta" aria-hidden="true">
+              {verb} <ArrowRight />
+            </span>
             {item.details}
           </div>
         </Card>
@@ -236,16 +294,6 @@ export function ChangesPipeline({
             Loading changes…
           </p>
         )}
-        <Button
-          size="sm"
-          variant={includeClosed ? 'secondary' : 'outline'}
-          className="ml-auto min-h-9"
-          aria-pressed={includeClosed}
-          aria-label="Include closed drafts"
-          onClick={onIncludeClosed}
-        >
-          <ListFilter aria-hidden="true" /> Include closed
-        </Button>
       </div>
       {errors.filter(Boolean).map((error, index) => (
         <p key={index} role="alert" className="text-destructive">
@@ -260,7 +308,13 @@ export function ChangesPipeline({
             ['Ready to review', ready, 'No completed comparisons to review.'],
           ] as const
         ).map(([label, items, empty]) => (
-          <section key={label} aria-label={label} className="pipeline-column">
+          <section
+            key={label}
+            aria-label={label}
+            className="pipeline-column"
+            data-stage={label === 'Ready to review' ? 'ready' : undefined}
+            data-empty={items.length ? undefined : true}
+          >
             <h3>
               {label} <StatusBadge>{items.length}</StatusBadge>
             </h3>
@@ -293,23 +347,30 @@ export function ChangesPipeline({
               {released.map((release) => (
                 <li key={release.id}>
                   <Card size="sm" className="pipeline-card text-sm ring-0">
-                    <h4>Revision {release.revision}</h4>
-                    <ReceiptTime value={release.createdAt} />
-                    <p>
-                      {release.policyOverride?.reason ||
-                        release.unevaluatedReason ||
-                        (release.comparisonId
-                          ? 'Recorded evaluation evidence.'
-                          : 'No release reason recorded.')}
-                    </p>
-                    <Button asChild variant="outline" size="sm" className="min-h-9">
+                    <div className="pipeline-card-eyebrow">
+                      <span>Revision {release.revision}</span>
+                    </div>
+                    <h4 className="pipeline-card-title">
                       <ConsoleLink
+                        className="pipeline-card-link"
                         href={releasesHref + '#revision-' + release.revision}
                         aria-label={`Open revision ${release.revision}`}
                       >
-                        Open <ArrowRight aria-hidden="true" />
+                        {release.policyOverride?.reason ||
+                          release.unevaluatedReason ||
+                          (release.comparisonId
+                            ? 'Released with evaluation evidence'
+                            : 'No release reason recorded')}
                       </ConsoleLink>
-                    </Button>
+                    </h4>
+                    <p className="pipeline-card-meta">
+                      <ReceiptTime value={release.createdAt} relative />
+                    </p>
+                    <div className="pipeline-card-foot">
+                      <span className="pipeline-card-cta" aria-hidden="true">
+                        Open <ArrowRight />
+                      </span>
+                    </div>
                   </Card>
                 </li>
               ))}

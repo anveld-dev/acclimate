@@ -192,6 +192,21 @@
   font-size: var(--type-20);
   font-weight: 650;
 }
+.case-review-identical td {
+  color: var(--muted-foreground);
+}
+.case-review-identical ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.case-review-identical li span {
+  color: var(--foreground);
+  font-weight: 550;
+}
 .case-review-tools {
   justify-content: flex-start;
 }

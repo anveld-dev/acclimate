@@ -1127,8 +1127,8 @@ function ConnectionWorkspace({
                   enabled={selected.enabled}
                 />
               </TabsContent>
-              <TabsContent value="settings" className="workspace-panel space-y-4 p-4">
-                <Disclosure className="connection-identity text-sm">
+              <TabsContent value="settings" className="workspace-panel connection-settings">
+                <Disclosure className="text-sm">
                   <DisclosureTrigger className="cursor-pointer font-medium">
                     Connection identity details
                   </DisclosureTrigger>
@@ -1162,7 +1162,7 @@ function ConnectionWorkspace({
                     </dl>
                   </DisclosureContent>
                 </Disclosure>
-                <Disclosure className="border-t pt-4">
+                <Disclosure>
                   <DisclosureTrigger className="cursor-pointer text-sm font-medium">
                     Revoke this connection
                   </DisclosureTrigger>

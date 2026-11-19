@@ -875,12 +875,7 @@ impl Connection {
         );
         let target = policies.development.target_effect;
         let audit_target = policies.audit.target_effect.or(target);
-        let plan = repetitions::Plan::new(
-            &self.development,
-            &self.audits,
-            &calibration,
-            target.or(audit_target),
-        );
+        let plan = repetitions::Plan::new(&self.development, &self.audits, &calibration);
         let development = plan.project(
             &self.development,
             None,

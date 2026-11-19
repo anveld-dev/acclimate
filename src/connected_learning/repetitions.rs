@@ -6,6 +6,9 @@ use crate::CaseKey;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub(super) const DEFAULT_MAX_REPETITIONS: u32 = 3;
+pub(super) const DEFAULT_PAIR_BUDGET: u32 = 1000;
+
 type Counts = BTreeMap<String, u32>;
 
 fn inventory(descriptor: &Descriptor) -> Counts {
@@ -84,32 +87,8 @@ pub(crate) fn calibration_keys(descriptor: &Descriptor) -> Vec<CaseKey> {
     keys(&counts)
 }
 
-// The greatest marginal reduction minimizes the sum of per-case variances.
-fn allocate(
-    mut counts: Counts,
-    variance: impl Fn(&String) -> f64,
-    fill: bool,
-    maximum: u32,
-    budget: u32,
-) -> Counts {
-    for _ in counts.values().sum::<u32>()..budget {
-        let next = counts
-            .iter()
-            .filter(|(_, r)| **r < maximum)
-            .map(|(id, &r)| (id, variance(id) / f64::from(r * (r + 1)), r))
-            .filter(|(_, gain, _)| *gain > 0.0 || fill)
-            .max_by(|a, b| {
-                a.1.total_cmp(&b.1)
-                    .then_with(|| b.2.cmp(&a.2))
-                    .then_with(|| b.0.cmp(a.0))
-            });
-        let Some((id, _, _)) = next else {
-            break;
-        };
-        let id = id.clone();
-        *counts.get_mut(&id).unwrap() += 1;
-    }
-    counts
+fn uniform_count(descriptor: &Descriptor, cases: usize, maximum: u32, budget: u32) -> u32 {
+    (budget.min(report_pair_limit(descriptor)) / cases.max(1) as u32).clamp(1, maximum)
 }
 
 #[derive(Deserialize, Serialize)]
@@ -117,6 +96,9 @@ fn allocate(
 pub(crate) struct Plan {
     development_repetitions: Counts,
     audit_repetitions: Vec<u32>,
+    // Earlier epochs stored a minimum for each audit rather than an exact count.
+    #[serde(default)]
+    uniform_audit_from: Option<usize>,
     flaky_case_count: usize,
     pair_budget: u32,
     trial_budget: u32,
@@ -164,10 +146,13 @@ impl Plan {
         development: &Descriptor,
         audits: &[Descriptor],
         calibration: &Calibration,
-        target: Option<f64>,
     ) -> Self {
-        let max_repetitions = setting("ACCLIMATE_LEARNING_MAX_REPETITIONS", 3, 5);
-        let pair_budget = setting("ACCLIMATE_LEARNING_PAIR_BUDGET", 1000, 1000).max(
+        let max_repetitions = setting(
+            "ACCLIMATE_LEARNING_MAX_REPETITIONS",
+            DEFAULT_MAX_REPETITIONS,
+            5,
+        );
+        let pair_budget = setting("ACCLIMATE_LEARNING_PAIR_BUDGET", DEFAULT_PAIR_BUDGET, 1000).max(
             std::iter::once(development)
                 .chain(audits)
                 .map(|d| d.expected_cases.len() as u32)
@@ -178,7 +163,6 @@ impl Plan {
             development,
             audits,
             calibration,
-            target.is_some(),
             max_repetitions,
             pair_budget,
         )
@@ -188,7 +172,6 @@ impl Plan {
         development: &Descriptor,
         audits: &[Descriptor],
         calibration: &Calibration,
-        use_full_budget: bool,
         max_repetitions: u32,
         pair_budget: u32,
     ) -> Self {
@@ -197,61 +180,37 @@ impl Plan {
             .values()
             .filter(|&&v| v > 0.0)
             .count();
-        let variance = |id: &String| calibration.case_variability.get(id).copied().unwrap_or(1.0);
-        let baseline = inventory(development);
-        let mut counts = baseline.clone();
+        let mut counts = inventory(development);
         if !fixed(development) {
-            let development_budget = pair_budget.min(report_pair_limit(development));
-            counts = allocate(
-                baseline.clone(),
-                variance,
-                use_full_budget,
-                max_repetitions,
-                development_budget,
-            );
-            if use_full_budget {
-                let balanced =
-                    allocate(baseline, |_| 1.0, true, max_repetitions, development_budget);
-                let noise = |counts: &Counts| {
-                    let empirical = counts
-                        .iter()
-                        .map(|(id, &r)| variance(id) / f64::from(r))
-                        .sum::<f64>()
-                        / counts.len() as f64;
-                    let floor = calibration.paired_standard_deviation.powi(2)
-                        * calibration.effective_repetitions
-                        / harmonic_repetitions(counts.values().map(|&r| r as usize));
-                    empirical.max(floor)
-                };
-                if noise(&balanced) < noise(&counts) {
-                    counts = balanced;
-                }
-            }
+            let repeats = uniform_count(development, counts.len(), max_repetitions, pair_budget);
+            counts.values_mut().for_each(|count| *count = repeats);
         }
         let mut plan = Self {
             development_repetitions: counts,
             audit_repetitions: Vec::new(),
+            uniform_audit_from: None,
             flaky_case_count,
             pair_budget,
             trial_budget: 2 * pair_budget,
             max_repetitions,
         };
-        plan.extend_audits(audits, use_full_budget);
+        plan.extend_audits(audits);
         plan
     }
 
-    pub(super) fn extend_audits(&mut self, audits: &[Descriptor], use_full_budget: bool) {
-        let repeat_audit = self.flaky_case_count * 4 >= self.development_repetitions.len();
+    pub(super) fn extend_audits(&mut self, audits: &[Descriptor]) {
+        self.uniform_audit_from
+            .get_or_insert(self.audit_repetitions.len());
         self.audit_repetitions.extend(audits.iter().map(|audit| {
-            if fixed(audit) || !(repeat_audit || use_full_budget) {
+            if fixed(audit) {
                 return 1;
             }
-            let counts = inventory(audit);
-            let budget = self.pair_budget.min(report_pair_limit(audit));
-            (2..=self.max_repetitions)
-                .rev()
-                .find(|&r| counts.values().map(|&n| n.max(r)).sum::<u32>() <= budget)
-                .unwrap_or(1)
+            uniform_count(
+                audit,
+                inventory(audit).len(),
+                self.max_repetitions,
+                self.pair_budget,
+            )
         }));
     }
 
@@ -260,8 +219,13 @@ impl Plan {
         if !fixed(descriptor) {
             if let Some(index) = audit {
                 let repeats = self.audit_repetitions.get(index).copied().unwrap_or(1);
+                let uniform = self.uniform_audit_from.is_some_and(|first| index >= first);
                 for count in counts.values_mut() {
-                    *count = (*count).max(repeats);
+                    *count = if uniform {
+                        repeats
+                    } else {
+                        (*count).max(repeats)
+                    };
                 }
             } else {
                 counts = self.development_repetitions.clone();

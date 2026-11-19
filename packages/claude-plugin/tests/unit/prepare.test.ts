@@ -42,7 +42,7 @@ test('Claude preparation selects project resources and maps content into native 
 test('Claude rejects skill metadata mismatch and case-insensitive duplicate names', async () => {
   const bad = structuredClone(verified);
   bad.payload.files[1]!.text = '---\nname: other\ndescription: wrong.\n---';
-  await assert.rejects(prepare(bad), /Skill metadata requires/);
+  await assert.rejects(prepare(bad), /\[skill_metadata\]/);
   const duplicate = structuredClone(verified);
   duplicate.payload.files.push({
     path: 'skills/LOOKUP/extra.md',

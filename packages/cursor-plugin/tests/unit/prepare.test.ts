@@ -54,7 +54,7 @@ test('rejects Cursor-incompatible skill names and invalid manifests', async () =
   await assert.rejects(prepare(invalid), /Cursor skill names require/);
   const mismatch = structuredClone(bundle);
   mismatch.payload.files[1]!.text = '---\nname: wrong\ndescription: Find values.\n---';
-  await assert.rejects(prepare(mismatch), /Skill metadata requires/);
+  await assert.rejects(prepare(mismatch), /\[skill_metadata\]/);
 });
 
 test('memory is absent unless explicitly approved', async () => {

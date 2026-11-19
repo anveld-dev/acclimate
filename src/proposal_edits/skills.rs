@@ -227,6 +227,9 @@ pub(crate) fn validate_changes(
             {
                 return Err("Invalid skill package".into());
             }
+            if file.kind == "skill" && grants_tools(&next.text) && !grants_tools(&file.text) {
+                return Err("Invalid skill package".into());
+            }
             changed |= file.text != next.text;
         } else {
             if file.kind == "memory"
@@ -287,6 +290,26 @@ pub(crate) fn validate_changes(
         };
         // A generic bundle also needs a usable SKILL.md in a newly created package.
         compatibility::validate(&package, "codex").map_err(|_| "Invalid skill package")?;
+        // Authored packages may bundle scripts and tool permissions; a model-written
+        // proposal may not add executable helpers or grant itself tools.
+        if package
+            .files
+            .iter()
+            .any(|file| !file.path.ends_with(".md") || grants_tools(&file.text))
+        {
+            return Err("Invalid skill package".into());
+        }
     }
     Ok(())
+}
+
+/// True when a SKILL.md frontmatter declares tool permissions (`allowed-tools:`).
+fn grants_tools(text: &str) -> bool {
+    let normalized = text.replace("\r\n", "\n");
+    let Some(rest) = normalized.strip_prefix("---\n") else {
+        return false;
+    };
+    rest.split('\n')
+        .take_while(|line| *line != "---")
+        .any(|line| line.to_ascii_lowercase().starts_with("allowed-tools:"))
 }

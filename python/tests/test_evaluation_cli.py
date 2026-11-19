@@ -321,6 +321,7 @@ class CommandTests(unittest.TestCase):
         code, result, _ = self.invoke(["check", "--read-config", str(self.reader), "--handoff",
                                       str(self.handoff), "--policy", str(self.policy)])
         self.assertEqual((code, result["policyReceipt"]["status"]), (0, "read_only"))
+        self.assertEqual(result["policyPin"], "unpinned")
         self.assertEqual(len(self.policy_receipts), 0)
         code, result, _ = self.invoke(args)
         self.assertEqual((code, result["policyReceipt"]["status"], len(self.policy_receipts)), (0, "recorded", 1))

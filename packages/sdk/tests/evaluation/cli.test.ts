@@ -718,6 +718,7 @@ test('installed app headless request -> run -> read-only policy check -> export 
     ]);
     assert.equal(checked.status, 0);
     assert.equal(checked.result.verdict, 'pass');
+    assert.equal(checked.result.policyPin, 'unpinned');
     await writeFile(f.policy, JSON.stringify({ ...f.quality, minimumMeanImprovement: 2 }));
     assert.equal(
       (

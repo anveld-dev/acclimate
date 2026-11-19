@@ -208,6 +208,7 @@ class _EvaluationTarget(EvaluationDescriptor):
 
 class EvaluationRequest(_EvaluationTarget):
     requireBoundEvidence: NotRequired[Literal[True]]
+    policyDigest: NotRequired[str]
 
 
 class Evaluation(_EvaluationTarget):

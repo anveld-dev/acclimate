@@ -143,6 +143,8 @@ export interface PolicyReceiptInference {
 }
 
 export interface ComparisonPolicyReceipt extends ComparisonPolicyReport {
+  /** Whether this policy is the one pinned on the evaluation request before the run. */
+  policyPin?: 'matched' | 'mismatched' | 'unpinned';
   comparisonId: string;
   reportedBy: string;
   receivedAt: string;
@@ -306,6 +308,8 @@ export interface EvaluationRequest {
   graderRevision: string;
   expectedCases: CaseKey[];
   proposalId?: string | null;
+  /** sha256 digest of the quality policy chosen before the run. Receipts record whether they match. */
+  policyDigest?: string;
 }
 export interface Evaluation extends EvaluationRequest {
   requireBoundEvidence: true;

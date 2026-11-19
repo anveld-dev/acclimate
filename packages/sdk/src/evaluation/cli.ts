@@ -424,13 +424,8 @@ async function dispatch(
       ? parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor)
       : null;
   if (command === 'request') {
-    const policyReadiness = flags.policy
-      ? policyReadinessFor(
-          parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor)
-            .policy,
-          app.descriptor,
-        )
-      : undefined;
+    if (flags.policy)
+      parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor);
     return createRequest(app, flags);
   }
   if (comparing && !flags.handoff) {
@@ -675,9 +670,15 @@ async function checkPolicyCommand(
     policyDigest: parsedPolicy.sha256,
   });
   const receipt = flags.config ? await recordPolicyReceipt(client, handoff, verdict) : { status: 'read_only' as const };
+  // A policy pinned on the request before the run flags policies chosen after seeing results.
+  const policyPin = !request.policyDigest
+    ? 'unpinned'
+    : request.policyDigest === parsedPolicy.sha256
+      ? 'matched'
+      : 'mismatched';
   return {
     status: policyExit(verdict.verdict) || (receipt.status === 'unconfirmed' ? 1 : 0),
-    result: { ...verdict, policyReceipt: receipt },
+    result: { ...verdict, policyPin, policyReceipt: receipt },
   };
 }
 

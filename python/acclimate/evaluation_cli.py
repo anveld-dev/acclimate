@@ -380,7 +380,10 @@ def _dispatch(app, command, flags, review):
             expected_binding=_comparison_binding(request),
             policy=policy["policy"], policy_digest=policy["sha256"])
         receipt = record_policy_receipt(client, handoff, verdict) if flags.get("config") else {"status": "read_only"}
-        return _policy_exit(verdict["verdict"]) or int(receipt["status"] == "unconfirmed"), {**verdict, "policyReceipt": receipt}
+        pinned = request.get("policyDigest")
+        pin = "unpinned" if not pinned else "matched" if pinned == policy["sha256"] else "mismatched"
+        return (_policy_exit(verdict["verdict"]) or int(receipt["status"] == "unconfirmed"),
+                {**verdict, "policyPin": pin, "policyReceipt": receipt})
     client, project_id = _connection(flags, handoff)
     request = client.get_evaluation(project_id, handoff["bundleId"], handoff["requestId"])
     _assert_request(request, handoff)

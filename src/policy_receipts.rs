@@ -88,6 +88,14 @@ fn valid(report: &Report) -> bool {
     }
 }
 
+fn pin_status(pinned: Option<&str>, digest: &str) -> &'static str {
+    match pinned {
+        None => "unpinned",
+        Some(pinned) if pinned == digest => "matched",
+        Some(_) => "mismatched",
+    }
+}
+
 fn receipt(row: PgRow) -> Value {
     let mut body: Value = row.get("body");
     body["comparisonId"] = json!(row.get::<Uuid, _>("comparison_id"));
@@ -184,7 +192,7 @@ async fn record(
     }
     let mut tx = s.db.begin().await.map_err(db)?;
     crate::auth::authorize_transaction(&mut tx, &actor, &p, "write").await?;
-    let candidate=sqlx::query_scalar::<_,Uuid>("SELECT (c.body->>'candidateVersionId')::uuid FROM comparisons c JOIN evaluation_requests e
+    let (candidate, pinned)=sqlx::query_as::<_,(Uuid, Option<String>)>("SELECT (c.body->>'candidateVersionId')::uuid, e.body->>'policyDigest' FROM comparisons c JOIN evaluation_requests e
           ON (e.project_id,e.bundle_id,e.comparison_id)=(c.project_id,c.bundle_id,c.id)
           WHERE c.project_id=$1 AND c.bundle_id=$2 AND c.id=$3 AND e.id=$4 AND e.attempt_id=$5 AND e.status IN ('completed','failed')
           AND c.submitter=$6 AND e.evaluator_principal=$6 AND c.body#>>'{evaluation,requestId}'=e.id::text AND c.body#>>'{evaluation,attemptId}'=e.attempt_id")
@@ -196,7 +204,9 @@ async fn record(
         .execute(&mut *tx)
         .await
         .map_err(db)?;
-    let body = serde_json::to_value(&q).map_err(db)?;
+    let mut body = serde_json::to_value(&q).map_err(db)?;
+    // A policy pinned on the request before the run makes later policy shopping visible.
+    body["policyPin"] = json!(pin_status(pinned.as_deref(), &q.policy.sha256));
     sqlx::query("INSERT INTO evaluation_policy_receipts(project_id,bundle_id,candidate_version_id,comparison_id,policy_digest,body,reported_by)
         VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (comparison_id,policy_digest) DO NOTHING")
         .bind(&p).bind(bundle).bind(candidate).bind(comparison).bind(&q.policy.sha256).bind(&body).bind(&actor.principal).execute(&mut *tx).await.map_err(db)?;
@@ -234,6 +244,13 @@ mod tests {
             "inference": inference,
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn receipts_compare_the_policy_with_the_pinned_digest() {
+        assert_eq!(pin_status(None, "sha256:a"), "unpinned");
+        assert_eq!(pin_status(Some("sha256:a"), "sha256:a"), "matched");
+        assert_eq!(pin_status(Some("sha256:a"), "sha256:b"), "mismatched");
     }
 
     #[test]

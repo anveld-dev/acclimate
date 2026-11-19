@@ -8790,6 +8790,11 @@
             "const": true,
             "default": true,
             "description": "Completing an evaluation requires a comparison bound to its request and attempt."
+          },
+          "policyDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "description": "Digest of the quality policy chosen before the run. Policy receipts record whether they match it."
           }
         },
         "required": [
@@ -8904,6 +8909,11 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "policyDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "description": "Digest of the quality policy chosen before the run. Policy receipts record whether they match it."
           }
         },
         "required": [
@@ -9359,6 +9369,14 @@
           "inference": {
             "type": "object",
             "description": "Statistics behind the mean-difference check as reported by the SDK verdict: method, estimand, confidence, n, sd, sdFloor, df, criticalValue, lowerBound, threshold and imputed counts. At most 4096 bytes."
+          },
+          "policyPin": {
+            "enum": [
+              "matched",
+              "mismatched",
+              "unpinned"
+            ],
+            "description": "Whether the receipt's policy digest matches the one pinned on the evaluation request."
           }
         },
         "required": [

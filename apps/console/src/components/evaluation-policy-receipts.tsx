@@ -115,6 +115,9 @@ export function PolicyReceiptList({ receipts }: { receipts: ComparisonPolicyRece
             <div key={code}>{checkNames[code] ?? code}</div>
           ))}
           <div className="text-muted-foreground">{receiptInferenceText(receipt)}</div>
+          {receipt.policyPin === 'mismatched' && (
+            <div>Checked with a policy other than the one pinned before the run</div>
+          )}
           <details className="mt-1 text-muted-foreground">
             <summary>Policy check details</summary>
             <p className="break-all">

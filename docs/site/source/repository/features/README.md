@@ -29,6 +29,8 @@ npm run test:bdd -- --dev-console --tags @UI-DRAFT-02
 
 `--skip-build` uses existing builds. Leave it off when checking a code change. Partial runs report the behaviors they didn't exercise; they don't count as complete coverage.
 
+CI uses `npm run test:bdd -- --parallel` to build once and run `console.feature` alongside the remaining features. Each process starts its own service and PostgreSQL cluster. The runner combines their results in `artifacts/bdd/` and checks every variant against the same inventory as the serial run.
+
 `--dev-console` runs the real Vite server and checks UI module imports before the story. This catches Node-only imports that production bundling can hide. CI runs that draft flow in development mode too. Its reports use `artifacts/bdd-dev/` so a focused dev run preserves the full suite's report.
 
 | Stories | What actually runs |

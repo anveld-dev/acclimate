@@ -783,11 +783,25 @@ def routes(context):
     p=page(context)
     from scripts.bdd.layout import capture_layout
     artifact_dir=Path(context.config.userdata['artifact_dir'])/'ui-layout'
-    routes=['/content','/improvement','/releases','/setup','/integrations','/connect']
+    # Wait for a data-backed result or route action before measuring each layout.
+    routes = {
+        '/content': lambda page: page.get_by_test_id('entry-content'),
+        '/improvement': lambda page: page.get_by_role('link', name='New draft', exact=True),
+        '/releases': lambda page: page.get_by_test_id('release-decision').first,
+        '/setup': lambda page: page.get_by_role('link', name='BDD bundle', exact=True),
+        '/integrations': lambda page: page.get_by_role('button', name='New connection', exact=True),
+        '/connect': lambda page: page.get_by_role('button', name='Copy install command', exact=True),
+    }
+
+    def visit_route(page, route):
+        w.browser_fixture.visit(route, page=page)
+        expect(routes[route](page)).to_be_visible()
+        page.evaluate('document.fonts.ready.then(() => true)')
+
     for width in (1440,1024,768,390,320):
         p.set_viewport_size(dict(width=width,height=1000))
         for route in routes:
-            w.browser_fixture.visit(route)
+            visit_route(p, route)
             capture_layout(p,artifact_dir,f'{width}-{route[1:]}')
         if width==390:
             trigger=p.get_by_role('button',name='Open navigation',exact=True)
@@ -797,7 +811,7 @@ def routes(context):
             expect(p).to_have_url(w.browser_fixture.base+w.browser_fixture.workspace_path())
     p.set_viewport_size(dict(width=1440,height=1000))
     for route in routes:
-        w.browser_fixture.visit(route)
+        visit_route(p, route)
         # Chromium's CSS zoom exercises 200% text/control scaling and reflow in
         # headless acceptance; native browser zoom is also checked interactively.
         p.evaluate("document.documentElement.style.zoom='2'")
@@ -812,7 +826,7 @@ def routes(context):
         touch_page=touch.new_page()
         touch_page.on('pageerror',lambda error:b.errors.append(str(error)))
         for route in routes:
-            touch_page.goto(b.base+b.canonical(route),wait_until='networkidle')
+            visit_route(touch_page, route)
             capture_layout(touch_page,artifact_dir,'coarse390-'+route[1:],coarse=True)
     finally:
         touch.close()

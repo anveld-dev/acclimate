@@ -19,6 +19,7 @@ import signal
 import ssl
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from urllib.request import urlopen
@@ -65,23 +66,34 @@ def wait_url(url, process, timeout=180, ca=None):
     raise RuntimeError('Owned process readiness timed out')
 
 
-def qualify(args):
-    from playwright.sync_api import sync_playwright
+def prepare_keycloak(args, home):
     source = args.keycloak_home.resolve()
     java = args.java_home.resolve()
     if not (source/'bin/kc.sh').is_file() or not (java/'bin/java').is_file():
         raise RuntimeError('Explicit Keycloak distribution and Java home are required')
+    theme = ROOT/'apps/keycloak-theme/dist_keycloak/acclimate-keycloak-theme.jar'
+    if not theme.is_file():
+        raise RuntimeError('Build the sign-in theme first: npm run build:theme')
+    shutil.copytree(source, home)
+    shutil.copyfile(theme, home/'providers/acclimate-keycloak-theme.jar')
+    # Build-time settings must match the optimized server. Realm imports,
+    # database URLs and credentials belong only in the per-runtime copies.
+    env = dict(PATH=os.environ['PATH'], JAVA_HOME=str(java),
+               JAVA_OPTS='-Xms64m -Xmx768m -XX:MaxMetaspaceSize=384m',
+               KC_DB='postgres', KC_HEALTH_ENABLED='true', KC_METRICS_ENABLED='true')
+    subprocess.run([str(home/'bin/kc.sh'), 'build'], env=env, check=True, timeout=180)
+    return env
+
+
+def qualify(args, prepared_home, build_env):
+    from playwright.sync_api import sync_playwright
     h = Harness(args.pg_bin)
     kc = console = auth_proxy = console_proxy = mailpit = None
     logs = []
     stage = 'prepare'
     try:
         home = h.dir/'keycloak'
-        shutil.copytree(source, home)
-        theme = ROOT/'apps/keycloak-theme/dist_keycloak/acclimate-keycloak-theme.jar'
-        if not theme.is_file():
-            raise RuntimeError('Build the sign-in theme first: npm run build:theme')
-        shutil.copyfile(theme, home/'providers/acclimate-keycloak-theme.jar')
+        shutil.copytree(prepared_home, home)
         kc_port, management_port, console_port = port(), port(), port()
         auth_proxy = TLSProxy(h.dir/'auth-tls', f'http://127.0.0.1:{kc_port}', forwarded=True)
         console_proxy = TLSProxy(h.dir/'console-tls', f'http://127.0.0.1:{console_port}')
@@ -116,25 +128,19 @@ def qualify(args):
         realm_path = imports/'acclimate-realm.json'
         realm_path.write_text(json.dumps(realm))
         realm_path.chmod(0o600)
-        env = {k: v for k, v in h.env.items()
-               if not k.startswith(('KC_', 'KEYCLOAK_', 'JAVA_', 'JDK_', 'CONSOLE_'))}
-        env.update(JAVA_HOME=str(java), KC_DB='postgres',
+        env = dict(build_env,
                    KC_DB_URL=f'jdbc:postgresql://127.0.0.1:{h.pg_port}/keycloak',
-                   KC_DB_USERNAME='qualification', KC_DB_PASSWORD='', KC_HEALTH_ENABLED='true',
-                   KC_METRICS_ENABLED='true', KC_HTTP_ENABLED='true', KC_HTTP_HOST='127.0.0.1',
+                   KC_DB_USERNAME='qualification', KC_DB_PASSWORD='',
+                   KC_HTTP_ENABLED='true', KC_HTTP_HOST='127.0.0.1',
                    KC_HTTP_PORT=str(kc_port), KC_HTTP_MANAGEMENT_HOST='127.0.0.1',
                    KC_HTTP_MANAGEMENT_PORT=str(management_port), KC_HTTP_MANAGEMENT_SCHEME='http',
                    KC_HOSTNAME=auth_proxy.base, KC_HOSTNAME_STRICT='true', KC_PROXY_HEADERS='xforwarded',
                    KC_BOOTSTRAP_ADMIN_USERNAME='fixture-bootstrap',
                    KC_BOOTSTRAP_ADMIN_PASSWORD=secrets.token_urlsafe(32),
                    ACCLIMATE_CONSOLE_ORIGIN=console_proxy.base,
-                   ACCLIMATE_OIDC_CLIENT_SECRET=client_secret,
-                   JAVA_OPTS='-Xms64m -Xmx768m -XX:MaxMetaspaceSize=384m')
+                   ACCLIMATE_OIDC_CLIENT_SECRET=client_secret)
         kc_log = open(h.dir/'keycloak.log', 'w')
         logs.append(kc_log)
-        stage = 'build-keycloak'
-        subprocess.run([str(home/'bin/kc.sh'), 'build'], env=env, stdout=kc_log,
-                       stderr=kc_log, check=True, timeout=180)
         stage = 'verify-keycloak-version'
         version = subprocess.run([str(home/'bin/kc.sh'), '--version'], env=env,
                                  capture_output=True, text=True, check=True, timeout=30)
@@ -407,9 +413,13 @@ def main():
     if args.report.exists():
         parser.error('Report already exists; use a fresh output path')
     results = {}
-    for runtime in (['built', 'vite'] if args.runtime == 'both' else [args.runtime]):
-        print('Checking real Keycloak with '+runtime+' console…', flush=True)
-        results[runtime] = qualify(argparse.Namespace(**dict(vars(args), runtime=runtime)))
+    with tempfile.TemporaryDirectory(prefix='acclimate-keycloak-build-') as directory:
+        prepared_home = Path(directory)/'keycloak'
+        build_env = prepare_keycloak(args, prepared_home)
+        for runtime in (['built', 'vite'] if args.runtime == 'both' else [args.runtime]):
+            print('Checking real Keycloak with '+runtime+' console…', flush=True)
+            runtime_args = argparse.Namespace(**dict(vars(args), runtime=runtime))
+            results[runtime] = qualify(runtime_args, prepared_home, build_env)
     evidence = dict(schemaVersion=2, passed=True, executedAt=datetime.now(timezone.utc).isoformat(),
                     runtimes=results, dockerExecuted=False, publicDeploymentQualified=False, modelCalls=0)
     args.report.parent.mkdir(parents=True, exist_ok=True, mode=0o700)

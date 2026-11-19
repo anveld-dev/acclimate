@@ -99,6 +99,7 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
     flip: boolean;
     writeEvaluation: boolean;
     runLabels: boolean;
+    policyPins: boolean;
     requestBodies: any[];
     receipts: Map<string, any>;
   } = {
@@ -117,6 +118,7 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
     flip: false,
     writeEvaluation: true,
     runLabels: false,
+    policyPins: false,
     requestBodies: [],
     receipts: new Map(),
   };
@@ -141,6 +143,7 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
           writeEvaluation: state.writeEvaluation,
           retainedEvaluationOperations: true,
           ...(state.runLabels && { runLabels: true }),
+          ...(state.policyPins && { policyPins: true }),
         });
       if (route.includes('/operations/')) {
         const key = route.split('/').at(-1)!;
@@ -1578,6 +1581,38 @@ test('a declared native harness rejects incompatible skills before any request o
         }),
       { code: 'definition.invalid', field: 'compatibilityTarget' },
     );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('compare --policy pins the policy digest on the request it creates, in the intent journal too', async () => {
+  const f = await fixture();
+  try {
+    f.state.policyPins = true;
+    const policyBytes = await readFile(f.policy);
+    const digest = 'sha256:' + createHash('sha256').update(policyBytes).digest('hex');
+    const inputs = [
+      'compare', '--config', f.config, '--bundle', bundleId, '--channel', 'stable', '--payload', f.payloadFile,
+      '--name', 'pinned',
+    ];
+    const pinned = await invoke(f.app, [...inputs, '--policy', f.policy]);
+    assert.equal(pinned.status, 0, pinned.err);
+    assert.equal(f.state.requestBodies[0].policyDigest, digest);
+    const intent = JSON.parse(
+      await readFile(path.join(f.directory, 'journals', 'comparisons', 'pinned', 'intent.json'), 'utf8'),
+    );
+    assert.equal(JSON.parse(intent.requestBody).policyDigest, digest);
+    // A different policy than the pinned one is a changed intent for the same run.
+    const other = path.join(f.directory, 'other-policy.json');
+    await writeFile(other, JSON.stringify({ ...f.quality, revision: '2' }));
+    const changed = await invoke(f.app, [...inputs, '--policy', other]);
+    assert.equal(changed.error?.error?.code, 'request.intent_mismatch');
+    // request --policy pins too; a service without policy pins gets no unknown field.
+    f.state.policyPins = false;
+    const unpinned = await invoke(f.app, [...f.requestArgs, '--policy', f.policy]);
+    assert.equal(unpinned.status, 0, unpinned.err);
+    assert.equal('policyDigest' in f.state.requestBodies.at(-1), false);
   } finally {
     await f.cleanup();
   }

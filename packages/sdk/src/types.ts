@@ -165,6 +165,8 @@ export interface EvaluationCapabilities {
   abandonment?: { explicit: boolean; inactivitySeconds: number };
   /** Requests accept `runName` and `retryOf`. Absent on older services. */
   runLabels?: true;
+  /** Requests accept `policyDigest`, pinning the quality policy before the run. Absent on older services. */
+  policyPins?: true;
 }
 /** Optional reported activity. Never a lease or evidence of external quiescence. */
 export interface EvaluationProgressRequest {

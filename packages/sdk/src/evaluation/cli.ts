@@ -604,7 +604,13 @@ async function readPayloadFile(file: string): Promise<BundlePayload | undefined>
   }
 }
 
-async function createRequest(app: EvaluationApp<any, any, any>, flags: Parsed['flags'], predecessor?: { handoffFile: string; request: Evaluation }) {
+/** Create a request. `policyDigest` pins the parsed `--policy` on the request before the run. */
+async function createRequest(
+  app: EvaluationApp<any, any, any>,
+  flags: Parsed['flags'],
+  predecessor?: { handoffFile: string; request: Evaluation },
+  policyDigest?: string,
+) {
   const configPath = required(flags, 'config');
   const config = await readEvaluatorConfig(configPath);
   const bundleId = required(flags, 'bundle'),
@@ -627,6 +633,7 @@ async function createRequest(app: EvaluationApp<any, any, any>, flags: Parsed['f
     outputFile: required(flags, 'out'),
     predecessor,
     runName: typeof flags.name === 'string' ? flags.name : undefined,
+    policyDigest,
   });
   return { status: 0, result };
 }
@@ -697,9 +704,10 @@ async function dispatch(
       ? parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor)
       : null;
   if (command === 'request') {
-    if (flags.policy)
-      parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor);
-    return createRequest(app, flags);
+    const pinned = flags.policy
+      ? parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor)
+      : null;
+    return createRequest(app, flags, undefined, pinned?.sha256);
   }
   if (comparing && !flags.handoff) {
     // Incompatible skills fail here, naming the rule, before a request or a paid run.
@@ -728,7 +736,7 @@ async function dispatch(
       ...flags,
       intent: join(dirname(handoff), 'intent.json'),
       out: handoff,
-    }, predecessor);
+    }, predecessor, policy?.sha256);
     if (created.status !== 0) {
       if (terminal && 'checks' in created.result) {
         const failures = created.result.checks

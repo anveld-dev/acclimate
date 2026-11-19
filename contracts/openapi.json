@@ -10369,6 +10369,14 @@
                 "minimum": 60
               }
             }
+          },
+          "runLabels": {
+            "const": true,
+            "description": "Evaluation requests accept runName and retryOf. Absent on older services."
+          },
+          "policyPins": {
+            "const": true,
+            "description": "Evaluation requests accept policyDigest, pinning the quality policy before the run. Absent on older services."
           }
         }
       },

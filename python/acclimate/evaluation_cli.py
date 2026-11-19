@@ -368,7 +368,8 @@ def _policy_exit(verdict):
     return EXIT_CODES["ok"] if verdict == "pass" else EXIT_CODES["gate_failed"] if verdict == "fail" else EXIT_CODES["indeterminate"]
 
 
-def _create_request(app, flags, predecessor=None):
+def _create_request(app, flags, predecessor=None, policy_digest=None):
+    """Create a request. policy_digest pins the parsed --policy on the request before the run."""
     config_path = _required(flags, "config")
     config = read_evaluator_config(config_path)
     bundle_id, channel = _required(flags, "bundle"), _required(flags, "channel")
@@ -378,7 +379,7 @@ def _create_request(app, flags, predecessor=None):
         return _readiness_status(preflight), preflight
     return 0, create_request_from_intent(app=app, config=config, bundle_id=bundle_id, channel=channel,
         payload_file=_required(flags, "payload"), intent_path=_required(flags, "intent"), output_file=_required(flags, "out"), predecessor=predecessor,
-        run_name=flags.get("name"))
+        run_name=flags.get("name"), policy_digest=policy_digest)
 
 
 def _dispatch(app, command, flags, review, cwd=None):
@@ -453,16 +454,17 @@ def _dispatch(app, command, flags, review, cwd=None):
                 flags.setdefault("name", "after-" + request["id"])
             root = _named_handoff(config["journalRoot"], _required(flags, "name")).parent
             flags["handoff"] = str(root / "request.json")
-            created = _create_request(app, {**flags, "intent": str(root / "intent.json"), "out": flags["handoff"]}, predecessor)
+            created = _create_request(app, {**flags, "intent": str(root / "intent.json"), "out": flags["handoff"]}, predecessor,
+                                      policy["sha256"] if policy else None)
             if created[0] != 0:
                 if terminal:
                     failures = "\n".join(" ".join(filter(None, (check["code"], check.get("hint")))) for check in created[1]["checks"] if check.get("code"))
                     return created[0], f'Comparison blocked before request creation.\n{failures}\nNext action: {created[1]["nextAction"]}'
                 return created
     if command == "request":
-        if flags.get("policy"):
-            parse_evaluation_policy(read_command_bytes(_required(flags, "policy")).decode(), app.descriptor)
-        return _create_request(app, flags)
+        pinned = (parse_evaluation_policy(read_command_bytes(_required(flags, "policy")).decode(), app.descriptor)
+                  if flags.get("policy") else None)
+        return _create_request(app, flags, policy_digest=pinned["sha256"] if pinned else None)
     if command == "status":
         _exactly_one(flags, "config", "read-config")
     handoff = _handoff(flags)

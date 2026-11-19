@@ -313,6 +313,7 @@ class EvaluationCapabilities(TypedDict):
     credential: NotRequired[dict[str, str]]
     abandonment: NotRequired[EvaluationAbandonmentPolicy]
     runLabels: NotRequired[Literal[True]]
+    policyPins: NotRequired[Literal[True]]
 
 
 class EvaluationProgressRequest(TypedDict):

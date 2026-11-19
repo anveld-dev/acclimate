@@ -243,6 +243,7 @@ async fn capabilities(
                 "inactivitySeconds": abandon_after_seconds(),
             },
             "runLabels": true,
+            "policyPins": true,
         })),
     ))
 }

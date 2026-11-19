@@ -114,7 +114,7 @@ Paths can be relative. The CLI resolves them against the current directory.
 | `--case ID[,ID…]` | `try` | Cases to try. Defaults to the first case. |
 | `--intent FILE` | `request` | Durable request intent, reused for recovery. |
 | `--out PATH` | `request`, `export`, `compare --local` | Handoff file to write, a new export directory, or a new local report folder. |
-| `--policy POLICY` | `compare`, `doctor`, `request`, `check`, `plan` | Quality policy JSON. |
+| `--policy POLICY` | `compare`, `doctor`, `request`, `check`, `plan` | Quality policy JSON. `compare` and `request` pin its digest on the request they create (`policyDigest`), so `check` can report `policyPin`. |
 | `--aa FILE`, `--effects LIST`, `--simulations N`, `--seed N` | `plan` | An A/A comparison to calibrate noise, effects to simulate, the simulation count (0–5000) and the random seed. |
 | `--selection FILE` | `export` | Artifact selection for `toReviewArtifact`. |
 | `--manifest FILE` | `verify-export` | Export manifest. |

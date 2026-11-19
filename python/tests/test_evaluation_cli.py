@@ -44,7 +44,7 @@ class CommandTests(unittest.TestCase):
             return {"id": identifier, "bundleId": BUNDLE, "parentVersionId": parent, "digest": "sha256:" + hashlib.sha256(encoded(payload)).hexdigest(), "createdAt": NOW}
         self.parent = version(PARENT, self.original, None)
         self.candidate = version(CANDIDATE, self.payload, PARENT)
-        self.state = {"request": None, "comparison": None, "revision": "1", "drafts": 0, "requests": 0, "executions": 0, "loseRequests": 0, "loseDrafts": 0, "receipts": {}, "failGrade": False, "flip": False, "runLabels": False, "requestBodies": []}
+        self.state = {"request": None, "comparison": None, "revision": "1", "drafts": 0, "requests": 0, "executions": 0, "loseRequests": 0, "loseDrafts": 0, "receipts": {}, "failGrade": False, "flip": False, "runLabels": False, "policyPins": False, "requestBodies": []}
         owner = self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_):
@@ -63,7 +63,7 @@ class CommandTests(unittest.TestCase):
                 if route.endswith("/policy-receipts"):
                     return self.reply({"items": list(owner.policy_receipts.values())})
                 if route.endswith("/evaluation-capabilities"):
-                    return self.reply({"schemaVersion": 1, "projectId": "project", "principalId": "evaluator", "checkedAt": NOW, "readUnpublished": True, "writeEvaluation": True, "retainedEvaluationOperations": True, **({"runLabels": True} if state["runLabels"] else {})})
+                    return self.reply({"schemaVersion": 1, "projectId": "project", "principalId": "evaluator", "checkedAt": NOW, "readUnpublished": True, "writeEvaluation": True, "retainedEvaluationOperations": True, **({"runLabels": True} if state["runLabels"] else {}), **({"policyPins": True} if state["policyPins"] else {})})
                 if route=="/v1/workspaces/project/bundles":
                     return self.reply({"items":[{"id":BUNDLE}],"nextCursor":None})
                 if "/operations/" in route:
@@ -264,6 +264,25 @@ class CommandTests(unittest.TestCase):
         inputs = ["compare", "--config", str(self.config), "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
         self.assertEqual(self.invoke([*inputs, "--name", "original"])[0], 0)
         self.assertNotIn("runName", self.state["requestBodies"][0])
+
+    def test_compare_policy_pins_its_digest_on_the_request_and_intent(self):
+        import hashlib
+        self.state["policyPins"] = True
+        digest = "sha256:" + hashlib.sha256(self.policy.read_bytes()).hexdigest()
+        inputs = ["compare", "--config", str(self.config), "--bundle", BUNDLE, "--channel", "stable", "--payload",
+                  str(self.payload_file), "--name", "pinned"]
+        self.assertEqual(self.invoke([*inputs, "--policy", str(self.policy)])[0], 0)
+        self.assertEqual(self.state["requestBodies"][0]["policyDigest"], digest)
+        intent = json.loads((self.root / "journals" / "comparisons" / "pinned" / "intent.json").read_bytes())
+        self.assertEqual(json.loads(intent["requestBody"])["policyDigest"], digest)
+        other = self.root / "other-policy.json"
+        other.write_bytes(encoded({**self.quality, "revision": "2"}))
+        self.assertEqual(self.invoke([*inputs, "--policy", str(other)])[2]["error"]["code"], "request.intent_mismatch")
+        # request --policy pins too; a service without policy pins gets no unknown field.
+        self.state["policyPins"] = False
+        self.assertEqual(self.invoke([*self.request_args, "--policy", str(self.policy)])[0], 0)
+        self.assertNotIn("policyDigest", self.state["requestBodies"][-1])
+
     def test_request_against_unpublished_channel_names_the_missing_baseline(self):
         args = list(self.request_args)
         args[args.index("--channel") + 1] = "unpublished"

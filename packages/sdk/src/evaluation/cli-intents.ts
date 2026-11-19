@@ -364,19 +364,28 @@ async function claimSuccessor(handoffFile: string, requestId: string, output: st
   }
 }
 
-/** Display labels for the console. Older services reject unknown request fields. */
-async function runLabels(
+/**
+ * Optional request fields: console display labels and the pinned policy digest. Older services
+ * reject unknown request fields, so each is sent only when the service advertises it.
+ */
+async function optionalRequestFields(
   transport: ReturnType<typeof createEvaluationTransport>,
   projectId: string,
   runName: string | undefined,
   retryOf: string | undefined,
-): Promise<{ runName?: string; retryOf?: string }> {
-  if (!runName && !retryOf) return {};
-  const supported = await transport.client
+  policyDigest: string | undefined,
+): Promise<{ runName?: string; retryOf?: string; policyDigest?: string }> {
+  if (!runName && !retryOf && !policyDigest) return {};
+  const capabilities = await transport.client
     .getEvaluationCapabilities(projectId)
-    .then((capabilities) => capabilities.runLabels === true)
-    .catch(() => false);
-  return supported ? { ...(runName && { runName }), ...(retryOf && { retryOf }) } : {};
+    .catch(() => undefined);
+  return {
+    ...(capabilities?.runLabels === true && {
+      ...(runName && { runName }),
+      ...(retryOf && { retryOf }),
+    }),
+    ...(capabilities?.policyPins === true && policyDigest && { policyDigest }),
+  };
 }
 
 export async function createRequestFromIntent(options: {
@@ -390,6 +399,11 @@ export async function createRequestFromIntent(options: {
   predecessor?: { handoffFile: string; request: Evaluation };
   /** The run's journal name, shown in the console when the service supports it. */
   runName?: string;
+  /**
+   * sha256 digest of the `--policy` chosen before the run. The request pins it, so a receipt
+   * for another policy is flagged. Recorded in the intent journal with the request body.
+   */
+  policyDigest?: string;
 }): Promise<{
   schemaVersion: 1;
   requestId: string;
@@ -498,6 +512,11 @@ export async function createRequestFromIntent(options: {
         })
     )
       throw fail();
+    // A run pinned to one policy is a different intent under another policy.
+    const pinnedDigest = fixed.requestBody
+      ? (JSON.parse(fixed.requestBody) as { policyDigest?: string }).policyDigest
+      : undefined;
+    if (pinnedDigest && options.policyDigest && pinnedDigest !== options.policyDigest) throw fail();
     // A committed request is recovered before checking a newer channel baseline.
     if (!fixed.request && fixed.requestBody) {
       fixed.request =
@@ -568,16 +587,26 @@ export async function createRequestFromIntent(options: {
         stable(candidate.payload) !== stable(payload)
       )
         throw fail();
-      // Labels chosen for a saved body stay fixed across recovery.
+      // Labels and the policy pin chosen for a saved body stay fixed across recovery. A
+      // different policy than the one pinned is a changed intent.
       const saved = fixed.requestBody
-        ? (JSON.parse(fixed.requestBody) as { runName?: string; retryOf?: string })
+        ? (JSON.parse(fixed.requestBody) as { runName?: string; retryOf?: string; policyDigest?: string })
         : undefined;
+      if (saved?.policyDigest && options.policyDigest && saved.policyDigest !== options.policyDigest)
+        throw fail();
       const labels = saved
         ? {
             ...(saved.runName !== undefined && { runName: saved.runName }),
             ...(saved.retryOf !== undefined && { retryOf: saved.retryOf }),
+            ...(saved.policyDigest !== undefined && { policyDigest: saved.policyDigest }),
           }
-        : await runLabels(transport, config.projectId, options.runName, fixed.retryAfterRequestId);
+        : await optionalRequestFields(
+            transport,
+            config.projectId,
+            options.runName,
+            fixed.retryAfterRequestId,
+            options.policyDigest,
+          );
       const requestBody = json({
         parentVersionId: fixed.base.versionId,
         parentDigest: fixed.base.digest,

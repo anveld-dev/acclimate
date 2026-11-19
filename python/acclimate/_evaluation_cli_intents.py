@@ -200,20 +200,32 @@ def _claim_successor(handoff_file, request_id, output):
         os.fsync(stream.fileno())
 
 
-def _run_labels(client, project_id, run_name, retry_of):
-    """Display labels for the console. Older services reject unknown request fields."""
-    if not run_name and not retry_of:
+def _optional_request_fields(client, project_id, run_name, retry_of, policy_digest=None):
+    """Console display labels and the pinned policy digest.
+
+    Older services reject unknown request fields, so each is sent only when the service advertises it.
+    """
+    if not run_name and not retry_of and not policy_digest:
         return {}
     try:
-        supported = client.get_evaluation_capabilities(project_id).get("runLabels") is True
+        capabilities = client.get_evaluation_capabilities(project_id)
     except Exception:
-        supported = False
-    if not supported:
-        return {}
-    return {**({"runName": run_name} if run_name else {}), **({"retryOf": retry_of} if retry_of else {})}
+        capabilities = {}
+    fields = {}
+    if capabilities.get("runLabels") is True:
+        fields.update({**({"runName": run_name} if run_name else {}), **({"retryOf": retry_of} if retry_of else {})})
+    if capabilities.get("policyPins") is True and policy_digest:
+        fields["policyDigest"] = policy_digest
+    return fields
 
 
-def create_request_from_intent(*, app, config, bundle_id, channel, payload_file, intent_path, output_file, predecessor=None, run_name=None):
+def create_request_from_intent(*, app, config, bundle_id, channel, payload_file, intent_path, output_file, predecessor=None, run_name=None,
+                               policy_digest=None):
+    """Create or recover one request from a durable intent.
+
+    policy_digest is the sha256 of the --policy chosen before the run. The request pins it so a receipt
+    for another policy is flagged, and the intent journal records it with the request body.
+    """
     filename = Path(intent_path)
     if not filename.is_absolute() or filename.resolve() != filename:
         raise EvaluationError("config.permissions")
@@ -269,6 +281,10 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
             draft_body = json_bytes({"baseVersionId": base["versionId"], "baseRevision": base["revision"], "payload": state["payload"]})
             if state.get("draftBody", "").encode() != draft_body or not state.get("keys", {}).get("draft") or not state["keys"].get("request"):
                 raise _fail()
+            # A run pinned to one policy is a different intent under another policy.
+            pinned = parse_json(state["requestBody"].encode()).get("policyDigest") if state.get("requestBody") else None
+            if pinned and policy_digest and pinned != policy_digest:
+                raise _fail()
             # Recover the original request before considering a newer baseline.
             if not state.get("request") and state.get("requestBody"):
                 request = _recover(client, "createRequest", scope, state["requestBody"].encode(), state["keys"]["request"])
@@ -296,12 +312,16 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
                 candidate = resolve_and_cache(client, config["projectId"], bundle_id, version_id=version["id"], cache_dir=str(Path(config["journalRoot"]) / "command-cache"))
                 if candidate["version"]["digest"] != version["digest"] or candidate["version"]["parentVersionId"] != base["versionId"] or candidate["payload"] != payload:
                     raise _fail()
-                # Labels chosen for a saved body stay fixed across recovery.
+                # Labels and the policy pin chosen for a saved body stay fixed across recovery. A
+                # different policy than the one pinned is a changed intent.
                 if state.get("requestBody"):
                     saved = parse_json(state["requestBody"].encode())
-                    labels = {key: saved[key] for key in ("runName", "retryOf") if key in saved}
+                    if saved.get("policyDigest") and policy_digest and saved["policyDigest"] != policy_digest:
+                        raise _fail()
+                    labels = {key: saved[key] for key in ("runName", "retryOf", "policyDigest") if key in saved}
                 else:
-                    labels = _run_labels(client, config["projectId"], run_name, state.get("retryAfterRequestId"))
+                    labels = _optional_request_fields(client, config["projectId"], run_name,
+                                                      state.get("retryAfterRequestId"), policy_digest)
                 body = json_bytes({"parentVersionId": base["versionId"], "parentDigest": base["digest"], "candidateVersionId": version["id"], "candidateDigest": version["digest"], **state["descriptor"], "requireBoundEvidence": True, **labels})
                 if state.get("requestBody") and state["requestBody"].encode() != body:
                     raise _fail()

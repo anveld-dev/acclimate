@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any
 from .client import AcclimateClient, ApiError, TransportError
-from .types import BundlePayload, VerifiedVersion
+from .types import BundlePayload, OfflinePolicy, VerifiedVersion
 from .receipts import BoundDeliveryReporter
 
 
@@ -182,6 +182,28 @@ def _fallback(exc: Exception) -> bool:
     )
 
 
+def _offline_policy(offline: Any) -> tuple[float | None, str | None]:
+    if offline is None:
+        return None, None
+    if not isinstance(offline, dict) or len(offline) != 1:
+        raise ValueError(
+            'offline must be {"max_age_ms": milliseconds} or {"pinned_version_id": version_id}'
+        )
+    if "max_age_ms" in offline:
+        age = offline["max_age_ms"]
+        if isinstance(age, bool) or not isinstance(age, (int, float)) or not 0 <= age <= 30 * 86400 * 1000:
+            raise ValueError("offline max_age_ms must be between 0 and 30 days")
+        return float(age), None
+    if "pinned_version_id" in offline:
+        pinned = offline["pinned_version_id"]
+        if not isinstance(pinned, str) or not pinned:
+            raise ValueError("offline pinned_version_id must be a version ID")
+        return None, pinned
+    raise ValueError(
+        'offline must be {"max_age_ms": milliseconds} or {"pinned_version_id": version_id}'
+    )
+
+
 def resolve_and_cache(
     client: AcclimateClient,
     project_id: str,
@@ -190,18 +212,20 @@ def resolve_and_cache(
     cache_dir: str,
     channel: str | None = None,
     version_id: str | None = None,
-    offline_max_age: float | None = None,
-    offline_pinned_version: str | None = None,
+    offline: OfflinePolicy | None = None,
     max_cache_bytes: int = 20 * 1024 * 1024,
     reporter=None,
 ) -> VerifiedVersion:
-    """Resolve online by default. Offline age is seconds; a pin permits that exact version."""
+    """Resolve online by default.
+
+    ``offline`` permits cached fallback only on a transport failure or HTTP 503.
+    Pass ``{"max_age_ms": n}`` to accept a cached channel resolution up to ``n``
+    milliseconds old, or ``{"pinned_version_id": id}`` to accept that exact
+    cached version. This matches the TypeScript ``offline`` option.
+    """
     if (channel is None) == (version_id is None):
         raise ValueError("Select exactly one channel or version_id")
-    if offline_max_age is not None and (not 0 <= offline_max_age <= 30 * 86400):
-        raise ValueError("offline_max_age must be between 0 and 30 days")
-    if offline_max_age is not None and offline_pinned_version is not None:
-        raise ValueError("Choose one offline policy")
+    offline_max_age_ms, offline_pinned_version = _offline_policy(offline)
     if not 1 <= max_cache_bytes <= 1024 * 1024 * 1024:
         raise ValueError("invalid max_cache_bytes")
     fd = _private_dir(cache_dir)
@@ -258,7 +282,7 @@ def resolve_and_cache(
                     raise DeliveryError("invalid_cache", "Malformed cached resolution")
                 age = max(0, now - old["resolvedAt"])
                 if not (
-                    (offline_max_age is not None and age <= offline_max_age)
+                    (offline_max_age_ms is not None and age * 1000 <= offline_max_age_ms)
                     or (
                         offline_pinned_version is not None
                         and resolution["version"]["id"] == offline_pinned_version

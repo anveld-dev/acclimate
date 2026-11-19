@@ -63,6 +63,15 @@ from acclimate import (
     OperationNotObserved,
     OperationClosed,
     Operation,
+    Page,
+    Workspace,
+    Channel,
+    BundleSetup,
+    BundleSetupRequest,
+    Connection,
+    LearningEnrollmentStatus,
+    LearningOutcomeReceipt,
+    LearningOutcomeRequest,
 )
 from acclimate.evaluation import (
     Case, EvaluationApp, ExecuteInput, ExecutionResult, GradeInput, GradeResult,
@@ -115,6 +124,23 @@ def delivery(client: AcclimateClient, api_error: ApiError) -> None:
     assert_type(bundle["payload"], BundlePayload)
     assert_type(prepare_files(bundle, "/private/workspace"), PreparedFiles)
     validate_payload(bundle["payload"])
+    stale = resolve_and_cache(client, "project", "bundle", channel="stable", cache_dir="/private/cache",
+                              offline={"max_age_ms": 300_000})
+    assert_type(stale["stale"], bool)
+    pinned = client.prepare("p", "b", version_id="v", offline={"pinned_version_id": "v"})
+    pinned.cleanup()
+    assert_type(api_error.request_id, str)
+
+
+def listings(client: AcclimateClient, setup: BundleSetupRequest, outcome: LearningOutcomeRequest) -> None:
+    workspaces = client.list_workspaces(limit=10)
+    assert_type(workspaces, Page[Workspace])
+    assert_type(workspaces["nextCursor"], str | None)
+    assert_type(client.list_channels("p", "b")["items"], list[Channel])
+    assert_type(client.list_connections("p")["items"], list[Connection])
+    assert_type(client.create_bundle_setup("p", setup, "key"), BundleSetup)
+    assert_type(client.get_learning_enrollment("p", "c"), LearningEnrollmentStatus)
+    assert_type(client.report_learning_outcome("p", "c", outcome), LearningOutcomeReceipt)
 
 
 def execute(run: ExecuteInput[dict[str, str]]) -> ExecutionResult[dict[str, str]]:

@@ -1,4 +1,12 @@
-from typing import Literal, NotRequired, TypedDict
+"""HTTP request and response dictionaries.
+
+Keys use the service's camelCase wire names. Python method arguments and
+attributes use snake_case.
+"""
+
+from typing import Any, Generic, Literal, NotRequired, TypedDict, TypeVar
+
+_T = TypeVar("_T")
 
 FileKind = Literal["instruction", "skill", "memory"]
 CompatibilityTarget = Literal["generic", "codex", "claude", "pi", "cursor"]
@@ -377,12 +385,374 @@ class DraftSnapshotPage(TypedDict):
     nextCursor: str | None
 
 
+class Page(TypedDict, Generic[_T]):
+    """A bounded service listing. Send ``nextCursor`` back unchanged as ``cursor``."""
+
+    items: list[_T]
+    nextCursor: str | None
+
+
+class Workspace(TypedDict):
+    id: str
+    name: str
+    role: str
+
+
+class Channel(TypedDict):
+    name: str
+    revision: str
+    versionId: str
+
+
+BundleOrigin = Literal["created", "example", "imported", "unknown"]
+
+
+class BundleSetupRequest(TypedDict):
+    name: str
+    origin: Literal["created", "example", "imported"]
+    channel: str
+    payload: BundlePayload
+    reason: str
+    compatibilityTarget: NotRequired[CompatibilityTarget]
+    sourceLabel: NotRequired[str]
+
+
+class BundleSetup(TypedDict):
+    bundle: Bundle
+    version: VersionMetadata
+    resolution: ChannelResolution
+    promotion: Release
+
+
+ConnectionCredentialKind = Literal["content-read", "receipt-write"]
+
+
+class ConnectionCredentialSummary(TypedDict):
+    id: str
+    kind: ConnectionCredentialKind
+    createdAt: str
+    revokedAt: str | None
+
+
+class Connection(TypedDict):
+    id: str
+    projectId: str
+    bundleId: str
+    channel: str
+    displayName: str
+    enabled: bool
+    createdAt: str
+    credentials: NotRequired[list[ConnectionCredentialSummary]]
+
+
+class CreateConnectionRequest(TypedDict):
+    bundleId: str
+    channel: str
+    displayName: str
+
+
+class ConnectionCredential(TypedDict):
+    id: str
+    kind: ConnectionCredentialKind
+    secret: str
+
+
+class DeliveryReceiptRequest(TypedDict):
+    eventId: str
+    integrationId: str
+    projectId: str
+    bundleId: str
+    versionId: str
+    digest: str
+    stage: Literal["resolved", "downloaded", "verified", "prepared", "started"]
+    occurredAt: str
+    source: Literal["network", "cache", "offline"]
+    channel: NotRequired[str | None]
+    revision: NotRequired[str | None]
+    resolvedAt: NotRequired[str | None]
+    stale: NotRequired[bool | None]
+
+
+class DeliveryReceipt(DeliveryReceiptRequest):
+    receivedAt: str
+    delayed: bool
+
+
+class OfflineMaxAge(TypedDict):
+    """Use a cached channel resolution up to this age after a transport failure or HTTP 503."""
+
+    max_age_ms: int
+
+
+class OfflinePinnedVersion(TypedDict):
+    """Use the cached copy of this exact version after a transport failure or HTTP 503."""
+
+    pinned_version_id: str
+
+
+OfflinePolicy = OfflineMaxAge | OfflinePinnedVersion
+
+
+class LearningEvaluationDescriptor(EvaluationDescriptor):
+    fixtureProtocol: NotRequired[Literal["installed-v1"]]
+    datasetDigest: NotRequired[str]
+    caseFingerprints: NotRequired[list[str]]
+    familyFingerprints: NotRequired[list[str]]
+
+
+class LearningSelectionPolicies(TypedDict):
+    development: dict[str, Any]
+    audit: dict[str, Any]
+
+
+class LearningSkillPackages(TypedDict):
+    createSkillNames: list[str]
+    retireSkillNames: list[str]
+
+
+class LearningEnrollmentRequest(TypedDict):
+    installationId: str
+    permittedPaths: list[str]
+    maxProposalAdmissions: int
+    development: LearningEvaluationDescriptor
+    audits: list[LearningEvaluationDescriptor]
+    automaticRollout: bool
+    outcomePrincipal: str
+    evaluatorPrincipal: str
+    selectionPolicies: NotRequired[LearningSelectionPolicies]
+    skillPackages: NotRequired[LearningSkillPackages]
+    maxCorrectionsPerRound: NotRequired[int]
+    expectedAutomaticRollout: NotRequired[bool]
+    automaticRollback: NotRequired[bool]
+
+
+class LearningEnrollment(TypedDict):
+    projectId: str
+    integrationId: str
+    bundleId: str
+    channel: str
+    installationId: str
+    permittedPaths: list[str]
+    maxProposalAdmissions: int
+    development: LearningEvaluationDescriptor
+    automaticRollout: bool
+    automaticRollback: bool
+    outcomePrincipal: str
+    evaluatorPrincipal: str
+    auditCount: int
+    authorizedBy: str
+    proposalAdmissions: int
+    renewalRevision: int
+    stoppedAt: str | None
+    enabled: bool
+    audits: NotRequired[list[LearningEvaluationDescriptor]]
+    selectionPolicies: NotRequired[LearningSelectionPolicies]
+    skillPackages: NotRequired[LearningSkillPackages]
+    maxCorrectionsPerRound: NotRequired[int]
+    policyEpoch: NotRequired[int]
+
+
+class LearningRestoreTarget(TypedDict):
+    kind: Literal["delivery", "source"]
+    revision: str
+    versionId: str
+
+
+class LearningEnrollmentStatus(LearningEnrollment):
+    """Enrollment plus recent rounds. Round, calibration and history entries follow the OpenAPI schema."""
+
+    rounds: list[dict[str, Any]]
+    remainingAudits: int
+    deliveredVersionId: str
+    deliveredRevision: str
+    developmentIncumbent: NotRequired[dict[str, Any]]
+    policyHistory: NotRequired[list[dict[str, Any]]]
+    noiseCalibration: NotRequired[dict[str, Any]]
+    restoreTargets: NotRequired[list[LearningRestoreTarget]]
+
+
+class LearningRestoreRequest(TypedDict):
+    restoreId: str
+    expectedRevision: str
+    target: LearningRestoreTarget
+    reason: str
+
+
+class LearningReviewReceipt(TypedDict):
+    roundId: str
+    state: Literal["promoted", "rejected"]
+    promotionId: NotRequired[str]
+
+
+class LearningRenewalRequest(TypedDict):
+    renewalId: str
+    expectedRevision: int
+    proposalAdmissions: int
+    audits: list[LearningEvaluationDescriptor]
+    development: NotRequired[LearningEvaluationDescriptor]
+    selectionPolicies: NotRequired[LearningSelectionPolicies]
+
+
+class LearningRenewalReceipt(LearningEnrollment):
+    appliedRenewalRevision: int
+
+
+class LearningLesson(TypedDict):
+    path: str
+    instruction: str
+
+
+class LearningFeedback(TypedDict):
+    expected: str
+    observed: str
+
+
+LearningReplayVerdict = Literal["pass", "regression", "unavailable"]
+
+
+class LearningIncidentReplay(TypedDict):
+    roundId: str
+    outcomeId: str
+    versionId: str
+    digest: str
+    baselineRevision: str
+    verdict: LearningReplayVerdict
+    attempts: NotRequired[list[LearningReplayVerdict]]
+
+
+class LearningOutcomeStatus(TypedDict):
+    """Outcome state and its corrections. Release lineage fields follow the OpenAPI schema."""
+
+    outcomeId: str
+    status: Literal["completed", "failed"]
+    versionId: str
+    deliveryRevision: str | None
+    receivedAt: str
+    corrections: list[dict[str, Any]]
+    bundleId: NotRequired[str]
+    channel: NotRequired[str]
+    currentDelivery: NotRequired[dict[str, str]]
+    servedRelease: NotRequired[dict[str, Any] | None]
+    fieldAudit: NotRequired[dict[str, Any] | None]
+
+
+class LearningOutcomeRequest(TypedDict):
+    outcomeId: str
+    versionId: str
+    digest: str
+    status: Literal["completed", "failed"]
+    requireIncidentReplay: NotRequired[bool]
+    startedReceiptId: NotRequired[str]
+    deliveryRevision: NotRequired[str]
+    lesson: NotRequired[LearningLesson]
+    feedback: NotRequired[LearningFeedback]
+
+
+class LearningCorrectionRequest(TypedDict):
+    correctionId: str
+    outcomeId: str
+    requireIncidentReplay: NotRequired[bool]
+    lesson: NotRequired[LearningLesson]
+    feedback: NotRequired[LearningFeedback]
+
+
+class LearningCorrectionReceipt(TypedDict):
+    correctionId: str
+    outcomeId: str
+    accepted: Literal[True]
+
+
+class LearningRecheck(LearningCorrectionRequest):
+    versionId: str
+    digest: str
+    revision: str
+
+
+LearningRecheckVerdict = Literal["reproduced", "resolved", "unavailable"]
+
+
+class LearningRecheckRequest(TypedDict):
+    correctionId: str
+    versionId: str
+    digest: str
+    revision: str
+    verdict: LearningRecheckVerdict
+
+
+class LearningRecheckReceipt(TypedDict):
+    correctionId: str
+    revision: str
+    verdict: LearningRecheckVerdict
+    accepted: Literal[True]
+
+
+class LearningOutcomeReceipt(TypedDict):
+    outcomeId: str
+    accepted: Literal[True]
+    eligible: bool
+    fieldAudit: NotRequired[dict[str, str]]
+
+
+class LearningFieldAuditRequest(TypedDict):
+    outcomeId: str
+    startedReceiptId: str
+    versionId: str
+    digest: str
+    revision: str
+    parentVersionId: str
+    parentDigest: str
+    verdict: Literal["pass", "regression", "win", "loss", "tie"]
+
+
+class LearningFieldRequalification(TypedDict):
+    versionId: str
+    digest: str
+    baselineRevision: str
+    pendingOutcomeIds: list[str]
+    failedOutcomeIds: list[str]
+
+
+class LearningFieldReplay(TypedDict):
+    versionId: str
+    digest: str
+    baselineRevision: str
+    outcomeId: str
+    verdict: Literal["pass", "regression"]
+    attempts: NotRequired[list[Literal["pass", "regression"]]]
+
+
+class LearningFieldAuditReceipt(TypedDict):
+    outcomeId: str
+    accepted: Literal[True]
+    regressions: int
+    windowSize: int
+    wins: NotRequired[int]
+    rollbackPromotionId: NotRequired[str]
+
+
+class LearningAccepted(TypedDict):
+    accepted: Literal[True]
+
+
+class LearningWork(TypedDict):
+    """Assigned evaluations and replays. Item shapes follow the OpenAPI schema."""
+
+    installationId: str
+    bundleId: str
+    active: bool
+    items: list[dict[str, Any]]
+    incidentReplays: NotRequired[list[dict[str, Any]]]
+    fieldReplays: NotRequired[list[dict[str, Any]]]
+    rechecks: NotRequired[list[LearningRecheck]]
+
+
+
 class OperationCommitted(TypedDict):
     status: Literal["committed"]
     operationId: str
     path: str
     requestFingerprint: NotRequired[str]
-    result: Draft | Evaluation | Comparison | Release | Proposal | dict
+    result: Draft | BundleSetup | Evaluation | Comparison | Release | Proposal | VersionMetadata | dict
 
 
 class OperationNotObserved(TypedDict):
@@ -413,3 +783,118 @@ IntegrationObservationPage = ConnectionObservationPage
 
 # Deprecated. Use VerifiedVersion.
 VerifiedBundle = VerifiedVersion
+
+__all__ = [
+    "FileKind",
+    "CompatibilityTarget",
+    "BundleFile",
+    "BundlePayload",
+    "CreateBundleRequest",
+    "Bundle",
+    "VersionMetadata",
+    "ChannelResolution",
+    "CreateVersionRequest",
+    "PolicyReceiptReference",
+    "PolicyOverride",
+    "CreateReleaseRequest",
+    "Release",
+    "ReleasePage",
+    "ProposalRequest",
+    "CriticVerdict",
+    "ProposalChange",
+    "ProposalScreen",
+    "Proposal",
+    "CaseKey",
+    "Usage",
+    "Outcome",
+    "CasePair",
+    "EvaluationBinding",
+    "ComparisonRequest",
+    "Comparison",
+    "VerifiedVersion",
+    "EvaluationDescriptor",
+    "EvaluationHandoff",
+    "EvaluationRequest",
+    "Evaluation",
+    "EvaluationPage",
+    "StartEvaluationRequest",
+    "FinishEvaluationRequest",
+    "InterruptEvaluationRequest",
+    "ComparisonPolicyIdentity",
+    "ComparisonPolicyCheck",
+    "ComparisonPolicyReport",
+    "ComparisonPolicyReceipt",
+    "ComparisonPolicyReceipts",
+    "EvaluationCapabilities",
+    "EvaluationProgressRequest",
+    "EvaluationProgressObservation",
+    "EvaluationProgressView",
+    "ConnectionLatestObservation",
+    "ConnectionObservation",
+    "ConnectionObservationPage",
+    "Draft",
+    "CreateDraftRequest",
+    "SaveDraftRequest",
+    "DiscardDraftRequest",
+    "PublishDraftRequest",
+    "DraftSnapshot",
+    "DraftPage",
+    "DraftSnapshotPage",
+    "Page",
+    "Workspace",
+    "Channel",
+    "BundleOrigin",
+    "BundleSetupRequest",
+    "BundleSetup",
+    "ConnectionCredentialKind",
+    "ConnectionCredentialSummary",
+    "Connection",
+    "CreateConnectionRequest",
+    "ConnectionCredential",
+    "DeliveryReceiptRequest",
+    "DeliveryReceipt",
+    "OfflineMaxAge",
+    "OfflinePinnedVersion",
+    "OfflinePolicy",
+    "LearningEvaluationDescriptor",
+    "LearningSelectionPolicies",
+    "LearningSkillPackages",
+    "LearningEnrollmentRequest",
+    "LearningEnrollment",
+    "LearningRestoreTarget",
+    "LearningEnrollmentStatus",
+    "LearningRestoreRequest",
+    "LearningReviewReceipt",
+    "LearningRenewalRequest",
+    "LearningRenewalReceipt",
+    "LearningLesson",
+    "LearningFeedback",
+    "LearningReplayVerdict",
+    "LearningIncidentReplay",
+    "LearningOutcomeStatus",
+    "LearningOutcomeRequest",
+    "LearningCorrectionRequest",
+    "LearningCorrectionReceipt",
+    "LearningRecheck",
+    "LearningRecheckVerdict",
+    "LearningRecheckRequest",
+    "LearningRecheckReceipt",
+    "LearningOutcomeReceipt",
+    "LearningFieldAuditRequest",
+    "LearningFieldRequalification",
+    "LearningFieldReplay",
+    "LearningFieldAuditReceipt",
+    "LearningAccepted",
+    "LearningWork",
+    "OperationCommitted",
+    "OperationNotObserved",
+    "OperationClosed",
+    "Operation",
+    "Promotion",
+    "PromotionPage",
+    "PromoteRequest",
+    "IntegrationObservation",
+    "IntegrationLatestObservation",
+    "IntegrationObservationPage",
+    "VerifiedBundle",
+]

@@ -1,5 +1,5 @@
 """These application mistakes must remain static errors; never execute this file."""
-from acclimate import Evaluation, FinishEvaluationRequest, StartEvaluationRequest
+from acclimate import AcclimateClient, Evaluation, FinishEvaluationRequest, StartEvaluationRequest
 from acclimate.evaluation import (
     Case, EvaluationApp, ExecuteInput, ExecutionResult, GradeInput, GradeResult, define_evaluation,
 )
@@ -48,3 +48,7 @@ bad_executor_app: EvaluationApp[dict[str, str], dict[str, str], dict[str, str]] 
     cases=[Case("case", {"category": "billing"}, {"queue": "billing"})],
     execute=bad_execute, grade=grade,  # reject: arg-type
 )
+
+
+def legacy_offline_option(client: AcclimateClient) -> None:
+    client.prepare("p", "b", channel="stable", offline_max_age=60)  # reject: call-arg

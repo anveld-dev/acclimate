@@ -105,7 +105,7 @@ services:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
       KC_DB_USERNAME: keycloak
-      KC_HOSTNAME: https://127.0.0.1:3445
+      KC_HOSTNAME: https://127.0.0.1:${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}
       KC_HOSTNAME_STRICT: "true"
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
@@ -134,7 +134,7 @@ services:
       MP_BLOCK_REMOTE_CSS_AND_FONTS: "true"
       MP_ALLOWED_HOSTS: localhost,127.0.0.1,mailpit
     ports:
-      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:${ACCLIMATE_LOCAL_MAIL_PORT:-8025}:8025"
     volumes: [mailpit-data:/data]
     networks: [backend, edge]
     healthcheck:
@@ -145,14 +145,18 @@ services:
 
   proxy:
     image: caddy:2-alpine
+    environment:
+      ACCLIMATE_LOCAL_CONSOLE_PORT: ${ACCLIMATE_LOCAL_CONSOLE_PORT:-3443}
+      ACCLIMATE_LOCAL_API_PORT: ${ACCLIMATE_LOCAL_API_PORT:-3444}
+      ACCLIMATE_LOCAL_KEYCLOAK_PORT: ${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}
     volumes:
       - ./deploy/local/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     ports:
-      - "127.0.0.1:3443:3443"
-      - "127.0.0.1:3444:3444"
-      - "127.0.0.1:3445:3445"
+      - "127.0.0.1:${ACCLIMATE_LOCAL_CONSOLE_PORT:-3443}:${ACCLIMATE_LOCAL_CONSOLE_PORT:-3443}"
+      - "127.0.0.1:${ACCLIMATE_LOCAL_API_PORT:-3444}:${ACCLIMATE_LOCAL_API_PORT:-3444}"
+      - "127.0.0.1:${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}:${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}"
     networks: [backend, edge]
     depends_on:
       keycloak:

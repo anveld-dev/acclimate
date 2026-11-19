@@ -127,6 +127,45 @@ class StackTests(unittest.TestCase):
         self.assertEqual([call.args[0].get_method() for call in opener.open.call_args_list],
                          ['POST', 'GET', 'GET'])
 
+    def test_ports_are_chosen_once_and_flow_into_every_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            ports = stack.endpoints(state, {'ACCLIMATE_LOCAL_PORT': '4443',
+                                            'ACCLIMATE_LOCAL_MAIL_PORT': '18025'})
+            self.assertEqual(ports, stack.Endpoints(4443, 18025))
+            self.assertEqual(stat.S_IMODE((state / 'ports.json').stat().st_mode), 0o600)
+            # Later runs reuse the saved ports without the variables.
+            self.assertEqual(stack.endpoints(state, {}), ports)
+            self.assertEqual(ports.environment(), {
+                'ACCLIMATE_LOCAL_CONSOLE_PORT': '4443', 'ACCLIMATE_LOCAL_API_PORT': '4444',
+                'ACCLIMATE_LOCAL_KEYCLOAK_PORT': '4445', 'ACCLIMATE_LOCAL_MAIL_PORT': '18025'})
+            values = stack.credentials(state)
+            stack.write_infrastructure(state, values, ports)
+            stack.write_application(state, values, SUBJECT, ports)
+            service = env_file(state / 'service.env')
+            console = env_file(state / 'console.env')
+            self.assertEqual(env_file(state / 'keycloak.env')['ACCLIMATE_CONSOLE_ORIGIN'],
+                             'https://localhost:4443')
+            self.assertEqual(console['CONSOLE_PUBLIC_API_URL'], 'https://127.0.0.1:4444')
+            self.assertEqual(service['ACCLIMATE_OIDC_ISSUER'], 'https://127.0.0.1:4445/realms/acclimate')
+            self.assertEqual(json.loads((state / 'evaluator.json').read_bytes())['serviceUrl'],
+                             'https://127.0.0.1:4444')
+
+    def test_ports_cannot_change_without_reset_and_are_validated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            self.assertEqual(stack.endpoints(state, {}), stack.DEFAULT)
+            with self.assertRaisesRegex(ValueError, 'local:reset'):
+                stack.endpoints(state, {'ACCLIMATE_LOCAL_PORT': '4443'})
+            self.assertEqual(stack.endpoints(state, {'ACCLIMATE_LOCAL_PORT': '3443'}), stack.DEFAULT)
+        with tempfile.TemporaryDirectory() as temporary:
+            for value in ('80', '65534', 'abc', '4443 '):
+                with self.assertRaisesRegex(ValueError, 'must be a port'):
+                    stack.endpoints(Path(temporary), {'ACCLIMATE_LOCAL_PORT': value}, save=False)
+            # down and reset never fix ports for a stack that was never started.
+            stack.endpoints(Path(temporary), {}, save=False)
+            self.assertFalse((Path(temporary) / 'ports.json').exists())
+
     def test_keycloak_rejects_replacement_operator_with_same_email(self):
         opener = Mock()
         opener.open.side_effect = [io.BytesIO(json.dumps(value).encode()) for value in

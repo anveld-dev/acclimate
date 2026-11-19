@@ -22,6 +22,8 @@ The first run builds the images and provisions a verified Keycloak operator in t
 | Keycloak issuer | `https://127.0.0.1:3445/realms/acclimate` |
 | Mailpit inbox | [http://localhost:8025](http://localhost:8025) |
 
+These are the default ports. To use others, see [Stop or reset](#stop-or-reset).
+
 All published ports bind to loopback. Caddy serves HTTPS with its internal CA. The console and service share Caddy's network namespace, so the issuer URL resolves to the same TLS listener from Docker and from the browser. Invitations, email verification links, and password resets arrive in Mailpit.
 
 ## Trust the local certificate
@@ -53,4 +55,10 @@ npm run local:reset
 
 `local:down` stops the stack and keeps its volumes and local configuration. `local:reset` asks you to type `reset` before deleting this checkout's stack volumes and `.local/stack/`, including its evaluator journal. It also deletes the local CA. Remove the old CA from your trust store if you imported it, and trust the new root after starting again.
 
-Each checkout has its own Compose project and volumes. The ports are fixed, so stop any other local stack or standalone Mailpit before starting.
+Each checkout has its own Compose project and volumes. If another process already uses one of the ports, choose different ones on the first start. `ACCLIMATE_LOCAL_PORT` sets the console port, and the API and Keycloak use the next two ports. `ACCLIMATE_LOCAL_MAIL_PORT` sets the Mailpit inbox port.
+
+```sh
+ACCLIMATE_LOCAL_PORT=4443 ACCLIMATE_LOCAL_MAIL_PORT=18025 npm run local:up
+```
+
+The stack saves its ports in `.local/stack/ports.json` and reuses them on later runs. Keycloak records the console address when it first imports the realm, so run `npm run local:reset` before switching to different ports.

@@ -1,6 +1,8 @@
 {
 	auto_https disable_redirects
 	skip_install_trust
+	# Clients send no SNI for IP addresses. Serve the API and Keycloak certificate.
+	default_sni 127.0.0.1
 }
 
 (local_proxy) {
@@ -17,15 +19,15 @@
 }
 
 # The console and service share this network namespace, including loopback.
-https://localhost:3443 {
-	import local_proxy 127.0.0.1:3100 localhost 3443
+https://localhost:{$ACCLIMATE_LOCAL_CONSOLE_PORT} {
+	import local_proxy 127.0.0.1:3100 localhost {$ACCLIMATE_LOCAL_CONSOLE_PORT}
 }
 
-https://127.0.0.1:3444 {
-	import local_proxy 127.0.0.1:3000 127.0.0.1 3444
+https://127.0.0.1:{$ACCLIMATE_LOCAL_API_PORT} {
+	import local_proxy 127.0.0.1:3000 127.0.0.1 {$ACCLIMATE_LOCAL_API_PORT}
 }
 
 # Keycloak applies its own authentication to admin endpoints on this local listener.
-https://127.0.0.1:3445 {
-	import local_proxy keycloak:8080 127.0.0.1 3445
+https://127.0.0.1:{$ACCLIMATE_LOCAL_KEYCLOAK_PORT} {
+	import local_proxy keycloak:8080 127.0.0.1 {$ACCLIMATE_LOCAL_KEYCLOAK_PORT}
 }

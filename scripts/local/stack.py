@@ -17,6 +17,7 @@ import tempfile
 import time
 from urllib.error import URLError
 from urllib.parse import urlencode
+from typing import NamedTuple
 from urllib.request import HTTPSHandler, ProxyHandler, Request, build_opener
 from uuid import UUID
 
@@ -24,11 +25,50 @@ from scripts.configure_dev_mail import mail_settings
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONSOLE = 'https://localhost:3443'
-API = 'https://127.0.0.1:3444'
-KEYCLOAK = 'https://127.0.0.1:3445'
-ISSUER = KEYCLOAK + '/realms/acclimate'
-DISCOVERY = ISSUER + '/.well-known/openid-configuration'
+DEFAULT_PORT = 3443
+DEFAULT_MAIL_PORT = 8025
+
+
+class Endpoints(NamedTuple):
+    """Loopback ports. Each one is identical inside the proxy namespace and on the host."""
+
+    port: int = DEFAULT_PORT
+    mail_port: int = DEFAULT_MAIL_PORT
+
+    @property
+    def console(self):
+        return f'https://localhost:{self.port}'
+
+    @property
+    def api(self):
+        return f'https://127.0.0.1:{self.port + 1}'
+
+    @property
+    def keycloak(self):
+        return f'https://127.0.0.1:{self.port + 2}'
+
+    @property
+    def issuer(self):
+        return self.keycloak + '/realms/acclimate'
+
+    @property
+    def mailpit(self):
+        return f'http://localhost:{self.mail_port}'
+
+    def environment(self):
+        return dict(
+            ACCLIMATE_LOCAL_CONSOLE_PORT=str(self.port),
+            ACCLIMATE_LOCAL_API_PORT=str(self.port + 1),
+            ACCLIMATE_LOCAL_KEYCLOAK_PORT=str(self.port + 2),
+            ACCLIMATE_LOCAL_MAIL_PORT=str(self.mail_port),
+        )
+
+
+DEFAULT = Endpoints()
+CONSOLE = DEFAULT.console
+API = DEFAULT.api
+KEYCLOAK = DEFAULT.keycloak
+ISSUER = DEFAULT.issuer
 ADMIN = 'bootstrap-admin'
 OPERATOR = 'operator@acclimate.invalid'
 CLIENT = 'acclimate-console'
@@ -111,67 +151,106 @@ def credentials(state):
     return values
 
 
-def write_infrastructure(state, values):
+def requested_port(environ, name, default):
+    raw = environ.get(name)
+    if raw is None or raw == '':
+        return None
+    if not re.fullmatch(r'[0-9]{4,5}', raw) or not 1024 <= int(raw) <= 65533:
+        raise ValueError(f'{name} must be a port between 1024 and 65533')
+    return int(raw)
+
+
+def endpoints(state, environ=os.environ, save=True):
+    """Return the stack's ports, fixing them on first use.
+
+    Keycloak stores the console redirect when it first imports the realm, so the
+    ports cannot change without a reset.
+    """
+    requested = Endpoints(
+        requested_port(environ, 'ACCLIMATE_LOCAL_PORT', DEFAULT_PORT) or DEFAULT_PORT,
+        requested_port(environ, 'ACCLIMATE_LOCAL_MAIL_PORT', DEFAULT_MAIL_PORT) or DEFAULT_MAIL_PORT,
+    )
+    path = state / 'ports.json'
+    saved = existing_file(path, 0o600) if state.exists() else None
+    if saved is None:
+        if save:
+            write_file(path, (json.dumps(requested._asdict(), indent=2) + '\n').encode())
+        return requested
+    data = json.loads(saved)
+    if (not isinstance(data, dict) or set(data) != set(Endpoints._fields)
+            or any(type(value) is not int for value in data.values())):
+        raise ValueError(f'Invalid local ports in {path}')
+    current = Endpoints(**data)
+    for name, field in (('ACCLIMATE_LOCAL_PORT', 'port'), ('ACCLIMATE_LOCAL_MAIL_PORT', 'mail_port')):
+        value = environ.get(name)
+        if value and int(value) != getattr(current, field):
+            raise ValueError(f'This stack uses {name}={getattr(current, field)}. '
+                             'Run npm run local:reset to change it.')
+    return current
+
+
+def write_infrastructure(state, values, ports=DEFAULT):
     for secret in ('postgres', 'keycloak_postgres'):
         write_file(state / (secret.replace('_', '-') + '-password'), values[secret].encode() + b'\n')
     write_env(state / 'keycloak.env', dict(
         KC_DB_PASSWORD=values['keycloak_postgres'],
         KC_BOOTSTRAP_ADMIN_USERNAME=ADMIN,
         KC_BOOTSTRAP_ADMIN_PASSWORD=values['keycloak_admin'],
-        ACCLIMATE_CONSOLE_ORIGIN=CONSOLE,
+        ACCLIMATE_CONSOLE_ORIGIN=ports.console,
         ACCLIMATE_OIDC_CLIENT_SECRET=values['oidc_client'],
     ))
 
 
-def write_application(state, values, subject):
+def write_application(state, values, subject, ports=DEFAULT):
     write_env(state / 'service.env', dict(
         DATABASE_URL=f"postgresql://acclimate:{values['postgres']}@postgres:5432/acclimate",
-        ACCLIMATE_OIDC_ISSUER=ISSUER,
+        ACCLIMATE_OIDC_ISSUER=ports.issuer,
         ACCLIMATE_LOGIN_TOKEN=values['login'],
         ACCLIMATE_CONSOLE_TOKEN=values['console'],
-        ACCLIMATE_OPERATORS=json.dumps([dict(issuer=ISSUER, subject=str(UUID(subject)))]),
+        ACCLIMATE_OPERATORS=json.dumps([dict(issuer=ports.issuer, subject=str(UUID(subject)))]),
         ACCLIMATE_AUTH=json.dumps([dict(token=values['evaluator'], principalId=PRINCIPAL,
                                         projectId=PROJECT, rights=['read', 'write'])]),
-        ACCLIMATE_CONSOLE_ORIGIN=CONSOLE,
+        ACCLIMATE_CONSOLE_ORIGIN=ports.console,
         ACCLIMATE_SMTP_HOST='mailpit',
         ACCLIMATE_SMTP_PORT=1025,
         ACCLIMATE_SMTP_FROM='Acclimate <noreply@acclimate.local>',
         ACCLIMATE_SMTP_TLS='none',
     ))
     write_env(state / 'console.env', dict(
-        CONSOLE_ORIGIN=CONSOLE,
+        CONSOLE_ORIGIN=ports.console,
         CONSOLE_SERVICE_URL='http://127.0.0.1:3000',
-        CONSOLE_PUBLIC_API_URL=API,
-        CONSOLE_OIDC_ISSUER=ISSUER,
+        CONSOLE_PUBLIC_API_URL=ports.api,
+        CONSOLE_OIDC_ISSUER=ports.issuer,
         CONSOLE_OIDC_CLIENT_ID=CLIENT,
         CONSOLE_OIDC_CLIENT_SECRET=values['oidc_client'],
         CONSOLE_LOGIN_TOKEN=values['login'],
         CONSOLE_SERVICE_TOKEN=values['console'],
         CONSOLE_ALLOW_EDITS='true',
     ))
-    config = dict(schemaVersion=1, serviceUrl=API, projectId=PROJECT,
+    config = dict(schemaVersion=1, serviceUrl=ports.api, projectId=PROJECT,
                   evaluatorPrincipalId=PRINCIPAL, evaluatorToken=values['evaluator'],
                   journalRoot=str(state / 'evaluator-journal'))
     write_file(state / 'evaluator.json', (json.dumps(config, indent=2) + '\n').encode())
 
 
-def compose(root, *args, capture=False):
+def compose(root, *args, capture=False, ports=DEFAULT):
     suffix = hashlib.sha256(os.fsencode(root)).hexdigest()[:12]
     return subprocess.run(
         ['docker', 'compose', '--env-file', os.devnull, '--project-name',
          f'acclimate-local-{suffix}', '-f', 'compose.local.yaml', *args],
         cwd=root, check=True, stdout=subprocess.PIPE if capture else None,
+        env={**os.environ, **ports.environment()},
     ).stdout
 
 
-def keycloak_operator(opener, values, expected_subject=None):
-    token_url = KEYCLOAK + '/realms/master/protocol/openid-connect/token'
+def keycloak_operator(opener, values, expected_subject=None, ports=DEFAULT):
+    token_url = ports.keycloak + '/realms/master/protocol/openid-connect/token'
     form = urlencode(dict(client_id='admin-cli', grant_type='password',
                          username=ADMIN, password=values['keycloak_admin'])).encode()
     with opener.open(Request(token_url, data=form), timeout=15) as response:
         token = json.load(response)['access_token']
     headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}
-    realm = KEYCLOAK + '/admin/realms/acclimate'
+    realm = ports.keycloak + '/admin/realms/acclimate'
     users = realm + '/users'
     exact_user = Request(users + '?' + urlencode(dict(username=OPERATOR, exact='true')), headers=headers)
 
@@ -221,32 +300,37 @@ def probe(opener, url, field, expected):
 
 def up(root, state):
     directory(state, private=True)
+    ports = endpoints(state)
     values = credentials(state)
-    write_infrastructure(state, values)
+    write_infrastructure(state, values, ports)
     # The service requires a nonempty operator list. Bring up identity first.
-    compose(root, 'up', '--build', '--wait', '--wait-timeout', '300', 'proxy', 'mailpit', 'postgres')
+    compose(root, 'up', '--build', '--wait', '--wait-timeout', '300', 'proxy', 'mailpit', 'postgres',
+            ports=ports)
+    # The Caddyfile is bind-mounted, so Compose keeps a running proxy after it changes.
+    compose(root, 'exec', '-T', 'proxy', 'caddy', 'reload', '--config', '/etc/caddy/Caddyfile',
+            '--adapter', 'caddyfile', ports=ports)
     ca = state / 'root.crt'
     certificate = compose(root, 'exec', '-T', 'proxy', 'cat',
-                          '/data/caddy/pki/authorities/local/root.crt', capture=True)
+                          '/data/caddy/pki/authorities/local/root.crt', capture=True, ports=ports)
     context = ssl.create_default_context(cadata=certificate.decode())
     write_file(ca, certificate, mode=0o644)
     opener = build_opener(ProxyHandler({}), HTTPSHandler(context=context))
-    probe(opener, DISCOVERY, 'issuer', ISSUER)
+    probe(opener, ports.issuer + '/.well-known/openid-configuration', 'issuer', ports.issuer)
     marker = state / 'operator-subject'
     saved_subject = existing_file(marker, 0o600)
     previous_subject = saved_subject.decode() if saved_subject is not None else None
-    subject = keycloak_operator(opener, values, previous_subject)
-    write_application(state, values, subject)
+    subject = keycloak_operator(opener, values, previous_subject, ports)
+    write_application(state, values, subject, ports)
     # Compose recreates the service when its effective environment changes.
-    compose(root, 'up', '--build', '--wait', '--wait-timeout', '300', 'console')
-    probe(opener, API + '/ready', 'ready', True)
-    probe(opener, CONSOLE + '/ready', 'status', 'ready')
-    with opener.open(CONSOLE + '/auth/login', timeout=15) as response:
-        if not response.geturl().startswith(ISSUER + '/protocol/openid-connect/auth?'):
+    compose(root, 'up', '--build', '--wait', '--wait-timeout', '300', 'console', ports=ports)
+    probe(opener, ports.api + '/ready', 'ready', True)
+    probe(opener, ports.console + '/ready', 'status', 'ready')
+    with opener.open(ports.console + '/auth/login', timeout=15) as response:
+        if not response.geturl().startswith(ports.issuer + '/protocol/openid-connect/auth?'):
             raise ValueError('The console did not redirect sign-in to the local Keycloak issuer.')
 
-    print(f'Console       {CONSOLE}\nLogin         {OPERATOR}\nAPI           {API}')
-    print(f'Mailpit       http://localhost:8025\nEvaluator     {state / "evaluator.json"}\n'
+    print(f'Console       {ports.console}\nLogin         {OPERATOR}\nAPI           {ports.api}')
+    print(f'Mailpit       {ports.mailpit}\nEvaluator     {state / "evaluator.json"}\n'
           f'Local CA      {ca}')
     if previous_subject is None:
         print(f'Initial login password (printed once)  {values["operator"]}', flush=True)
@@ -263,12 +347,12 @@ def main():
             if command == 'up':
                 up(ROOT, state)
             elif command == 'down':
-                compose(ROOT, 'down')
+                compose(ROOT, 'down', ports=endpoints(state, save=False))
             else:
                 if input(f'Delete this checkout’s local stack volumes and {state}? Type reset: ') != 'reset':
                     print('Reset canceled.')
                     return
-                compose(ROOT, 'down', '--volumes')
+                compose(ROOT, 'down', '--volumes', ports=endpoints(state, save=False))
                 if state.exists():
                     shutil.rmtree(state)
     except EOFError:

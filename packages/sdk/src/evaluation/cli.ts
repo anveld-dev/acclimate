@@ -83,7 +83,7 @@ function required(flags: Parsed['flags'], name: string): string {
 }
 const compareUsage = [
   'compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]',
-  'compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]',
+  'compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) [--live] [--policy POLICY] [--json]',
   'Live evaluators require --live. Use one input form and supply each flag once.',
 ].join('\n');
 class CompareUsageError extends EvaluationError {
@@ -100,8 +100,10 @@ function validateCompareFlags(flags: Parsed['flags'], live: boolean) {
   const creation = ['bundle', 'channel', 'payload', 'name', 'retry-after'];
   if (flags.handoff && creation.some((key) => flags[key]))
     throw new CompareUsageError('--handoff cannot be combined with candidate creation flags.');
-  if (!flags.handoff && !!flags.name === !!flags['retry-after'])
+  if (!flags.handoff && !flags.name && !flags['retry-after'])
     throw new CompareUsageError('Choose --name for a run or --retry-after for a fresh attempt.');
+  if (flags.name && flags.name === flags['retry-after'])
+    throw new CompareUsageError('Give the retry a new --name, or omit --name to use after-<request ID>.');
   for (const key of flags.handoff ? ['config'] : ['config', 'bundle', 'channel', 'payload'])
     if (!flags[key]) throw new CompareUsageError(`Missing --${key}.`);
   if (flags.name && !/^[a-zA-Z0-9_-]{1,80}$/.test(String(flags.name)))
@@ -371,6 +373,7 @@ async function createRequest(app: EvaluationApp<any, any, any>, flags: Parsed['f
     intentPath: required(flags, 'intent'),
     outputFile: required(flags, 'out'),
     predecessor,
+    runName: typeof flags.name === 'string' ? flags.name : undefined,
   });
   return { status: 0, result };
 }
@@ -422,7 +425,7 @@ async function dispatch(
       if (!['completed', 'failed'].includes(request.status) || !request.attemptId || !request.comparisonId)
         throw new EvaluationError('evidence.not_terminal', { phase: 'inspect', nextAction: 'inspect_external_app' });
       predecessor = { handoffFile, request };
-      flags.name = 'after-' + request.id;
+      if (!flags.name) flags.name = 'after-' + request.id;
     }
     const handoff = await namedHandoff(config.journalRoot, required(flags, 'name'));
     const created = await createRequest(app, {

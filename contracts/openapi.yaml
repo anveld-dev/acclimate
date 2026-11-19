@@ -8790,6 +8790,16 @@
             "const": true,
             "default": true,
             "description": "Completing an evaluation requires a comparison bound to its request and attempt."
+          },
+          "runName": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$",
+            "description": "The evaluator's label for this run, such as the CLI --name. Display only. Omitted when unset."
+          },
+          "retryOf": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An earlier request on the same parent and candidate content that this run supersedes. Omitted when unset."
           }
         },
         "required": [
@@ -8859,6 +8869,16 @@
             "const": true,
             "default": true,
             "description": "Completing an evaluation requires a comparison bound to its request and attempt."
+          },
+          "runName": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$",
+            "description": "The evaluator's label for this run, such as the CLI --name. Display only. Omitted when unset."
+          },
+          "retryOf": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An earlier request on the same parent and candidate content that this run supersedes. Omitted when unset."
           },
           "id": {
             "type": "string",

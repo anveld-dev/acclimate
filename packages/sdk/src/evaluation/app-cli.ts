@@ -31,7 +31,7 @@ Select a different entry with --app PATH, for example: acclimate-eval describe -
 Run coverage to inspect bound sources and packages. status and verify-export run without application code.
 
   acclimate-eval compare --config CONFIG --handoff HANDOFF --live [--policy POLICY] [--json]
-  acclimate-eval compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) --live [--policy POLICY] [--json]
+  acclimate-eval compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) --live [--policy POLICY] [--json]
 
 Reuse RUN_NAME to recover the same change. Use describe for your public descriptor,
 doctor to check setup, or request, run, check, status, interrupt, export and verify-export.`;

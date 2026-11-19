@@ -126,6 +126,8 @@ export interface EvaluationCapabilities {
   readUnpublished: true;
   writeEvaluation: boolean;
   retainedEvaluationOperations: true;
+  /** Requests accept `runName` and `retryOf`. Absent on older services. */
+  runLabels?: true;
 }
 /** Optional reported activity. Never a lease or evidence of external quiescence. */
 export interface EvaluationProgressRequest {
@@ -276,6 +278,10 @@ export interface EvaluationRequest {
   graderRevision: string;
   expectedCases: CaseKey[];
   proposalId?: string | null;
+  /** The evaluator's label for this run, such as the CLI `--name`. Display only. */
+  runName?: string;
+  /** An earlier request on the same parent and candidate content that this run supersedes. */
+  retryOf?: string;
 }
 export interface Evaluation extends EvaluationRequest {
   requireBoundEvidence: true;

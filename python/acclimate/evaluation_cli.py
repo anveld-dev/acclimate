@@ -67,7 +67,7 @@ def _parse(argv):
 
 _COMPARE_USAGE = (
     "compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]\n"
-    "compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]\n"
+    "compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) [--live] [--policy POLICY] [--json]\n"
     "Live evaluators require --live. Use one input form and supply each flag once."
 )
 
@@ -84,8 +84,10 @@ def _validate_compare_flags(flags, live):
     creation = ("bundle", "channel", "payload", "name", "retry-after")
     if flags.get("handoff") and any(key in flags for key in creation):
         raise _CompareUsageError("--handoff cannot be combined with candidate creation flags.")
-    if not flags.get("handoff") and bool(flags.get("name")) == bool(flags.get("retry-after")):
+    if not flags.get("handoff") and not flags.get("name") and not flags.get("retry-after"):
         raise _CompareUsageError("Choose --name for a run or --retry-after for a fresh attempt.")
+    if flags.get("name") and flags.get("name") == flags.get("retry-after"):
+        raise _CompareUsageError("Give the retry a new --name, or omit --name to use after-<request ID>.")
     for key in ("config",) if flags.get("handoff") else ("config", "bundle", "channel", "payload"):
         if not flags.get(key):
             raise _CompareUsageError("Missing --" + key + ".")
@@ -251,7 +253,8 @@ def _create_request(app, flags, predecessor=None):
     if preflight["status"] != "ready":
         return 1, preflight
     return 0, create_request_from_intent(app=app, config=config, bundle_id=bundle_id, channel=channel,
-        payload_file=_required(flags, "payload"), intent_path=_required(flags, "intent"), output_file=_required(flags, "out"), predecessor=predecessor)
+        payload_file=_required(flags, "payload"), intent_path=_required(flags, "intent"), output_file=_required(flags, "out"), predecessor=predecessor,
+        run_name=flags.get("name"))
 
 
 def _dispatch(app, command, flags, review):
@@ -294,7 +297,7 @@ def _dispatch(app, command, flags, review):
                 if request["status"] not in ("completed", "failed") or not request.get("attemptId") or not request.get("comparisonId"):
                     raise EvaluationError("evidence.not_terminal", phase="inspect", next_action="inspect_external_app")
                 predecessor = handoff_file, request
-                flags["name"] = "after-" + request["id"]
+                flags.setdefault("name", "after-" + request["id"])
             root = _named_handoff(config["journalRoot"], _required(flags, "name")).parent
             flags["handoff"] = str(root / "request.json")
             created = _create_request(app, {**flags, "intent": str(root / "intent.json"), "out": flags["handoff"]}, predecessor)

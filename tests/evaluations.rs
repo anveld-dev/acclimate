@@ -307,3 +307,74 @@ async fn evaluation_attempts_bind_principal_settings_inventory_and_terminal_stat
     assert_eq!(v["items"].as_array().unwrap().len(), 1);
     assert!(v["nextCursor"].is_string());
 }
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
+async fn evaluation_requests_keep_display_labels_and_validate_retries() {
+    let url = common::database_url();
+    let db = sqlx::PgPool::connect(&url).await.unwrap();
+    sqlx::migrate!("./migrations").run(&db).await.unwrap();
+    let p = format!("labels-{}", Uuid::new_v4());
+    sqlx::query("INSERT INTO projects(id,name) VALUES($1,$1)")
+        .bind(&p)
+        .execute(&db)
+        .await
+        .unwrap();
+    let b = Uuid::new_v4();
+    let parent = Uuid::new_v4();
+    let candidate = Uuid::new_v4();
+    sqlx::query("INSERT INTO bundles(id,project_id,name) VALUES($1,$2,'label test')")
+        .bind(b)
+        .bind(&p)
+        .execute(&db)
+        .await
+        .unwrap();
+    for (id, base, digest) in [
+        (parent, None, "parent"),
+        (candidate, Some(parent), "candidate"),
+    ] {
+        sqlx::query("INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload,created_by) VALUES($1,$2,$3,$4,$5,$6,'fixture-author')").bind(id).bind(&p).bind(b).bind(base).bind(digest).bind(b"{}".to_vec()).execute(&db).await.unwrap();
+    }
+    let app = router(AppState {
+        access: common::access(),
+        runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+        db: db.clone(),
+        grants: Arc::new(vec![Grant {
+            token: "one".into(),
+            principal_id: "evaluator-one".into(),
+            project_id: p.clone(),
+            rights: vec!["read".into(), "write".into()],
+        }]),
+        provider: None,
+    });
+    let collection = format!("/v1/projects/{p}/bundles/{b}/evaluation-requests");
+    let identity = json!({"parentVersionId":parent,"parentDigest":"parent","candidateVersionId":candidate,"candidateDigest":"candidate","datasetRevision":"fixtures-v1","runtime":{"model":"fixture"},"graderRevision":"grader-v1","expectedCases":[{"caseId":"a","repetition":0}]});
+    let (s, plain) = call(&app, "POST", &collection, "one", identity.clone()).await;
+    assert_eq!(s, StatusCode::CREATED, "{plain}");
+    assert!(plain.get("runName").is_none() && plain.get("retryOf").is_none());
+    let mut first = identity.clone();
+    first["runName"] = json!("first-run");
+    let (s, first) = call(&app, "POST", &collection, "one", first).await;
+    assert_eq!(s, StatusCode::CREATED, "{first}");
+    assert_eq!(first["runName"], "first-run");
+    let mut retry = identity.clone();
+    retry["runName"] = json!("fixed-grader");
+    retry["retryOf"] = first["id"].clone();
+    let (s, retried) = call(&app, "POST", &collection, "one", retry.clone()).await;
+    assert_eq!(s, StatusCode::CREATED, "{retried}");
+    assert_eq!(retried["retryOf"], first["id"]);
+    let (s, listed) = call(&app, "GET", &collection, "one", json!({})).await;
+    assert_eq!(s, StatusCode::OK, "{listed}");
+    assert_eq!(listed["items"][0]["runName"], "fixed-grader");
+    assert_eq!(listed["items"][0]["retryOf"], first["id"]);
+    for (field, value) in [
+        ("runName", json!("has space")),
+        ("runName", json!("x".repeat(81))),
+        ("retryOf", json!(Uuid::new_v4())),
+    ] {
+        let mut invalid = retry.clone();
+        invalid[field] = value;
+        let (s, v) = call(&app, "POST", &collection, "one", invalid).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST, "{field}: {v}");
+    }
+}

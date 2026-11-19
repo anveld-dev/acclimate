@@ -94,6 +94,8 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
     failGrade: boolean;
     flip: boolean;
     writeEvaluation: boolean;
+    runLabels: boolean;
+    requestBodies: any[];
     receipts: Map<string, any>;
   } = {
     request: null,
@@ -110,6 +112,8 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
     failGrade: false,
     flip: false,
     writeEvaluation: true,
+    runLabels: false,
+    requestBodies: [],
     receipts: new Map(),
   };
   const policyReceipts = new Map<string, object>();
@@ -132,6 +136,7 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
           readUnpublished: true,
           writeEvaluation: state.writeEvaluation,
           retainedEvaluationOperations: true,
+          ...(state.runLabels && { runLabels: true }),
         });
       if (route.includes('/operations/')) {
         const key = route.split('/').at(-1)!;
@@ -200,6 +205,7 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
         };
       } else if (route.endsWith('/evaluation-requests')) {
         state.requests++;
+        state.requestBodies.push(body);
         state.request = {
           ...body,
           id: requestId,
@@ -531,6 +537,77 @@ test('fresh attempt checks predecessor status, candidate payload and pinned base
     assert.equal((await invoke(f.app, retry)).error.error.code, 'request.intent_mismatch');
     assert.equal(f.state.drafts, 1);
     assert.equal(f.state.executions, 2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a named retry labels both runs for the console and keeps one successor', async () => {
+  const f = await fixture('live');
+  try {
+    f.state.runLabels = true;
+    const inputs = [
+      'compare',
+      '--config',
+      f.config,
+      '--bundle',
+      bundleId,
+      '--channel',
+      'stable',
+      '--payload',
+      f.payloadFile,
+      '--live',
+    ];
+    assert.equal((await invoke(f.app, [...inputs, '--name', 'original'])).status, 0);
+    const original = structuredClone(f.state.request);
+    assert.equal(f.state.requestBodies[0].runName, 'original');
+    assert.equal(f.state.requestBodies[0].retryOf, undefined);
+    const same = await invoke(
+      f.app,
+      [...inputs, '--retry-after', 'original', '--name', 'original'],
+      undefined,
+      true,
+    );
+    assert.equal(same.status, 1);
+    assert.match(same.err, /new --name/);
+    const retry = [...inputs, '--retry-after', 'original', '--name', 'fixed-grader'];
+    // This fixture serves one request ID, so only request creation is observed here.
+    await invoke(f.app, retry);
+    assert.equal(f.state.requests, 2);
+    assert.equal(f.state.requestBodies[1].runName, 'fixed-grader');
+    assert.equal(f.state.requestBodies[1].retryOf, requestId);
+    await invoke(f.app, retry);
+    assert.equal(f.state.requests, 2);
+    f.state.request = original;
+    const other = await invoke(f.app, [...inputs, '--retry-after', 'original', '--name', 'another']);
+    assert.equal(other.error.error.code, 'request.intent_mismatch');
+    const unnamed = await invoke(f.app, [...inputs, '--retry-after', 'original']);
+    assert.equal(unnamed.error.error.code, 'request.intent_mismatch');
+    assert.equal(f.state.requests, 2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('run labels are omitted for services that do not accept them', async () => {
+  const f = await fixture('live');
+  try {
+    const result = await invoke(f.app, [
+      'compare',
+      '--config',
+      f.config,
+      '--bundle',
+      bundleId,
+      '--channel',
+      'stable',
+      '--payload',
+      f.payloadFile,
+      '--name',
+      'original',
+      '--live',
+    ]);
+    assert.equal(result.status, 0);
+    assert.equal('runName' in f.state.requestBodies[0], false);
   } finally {
     await f.cleanup();
   }

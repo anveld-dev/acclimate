@@ -16,7 +16,7 @@ Export cases, execute and grade from that module. Run in the module's directory 
 Run coverage to inspect the fingerprinted files and build identities.
 
   python -m acclimate compare --config CONFIG --handoff HANDOFF --live [--policy POLICY] [--json]
-  python -m acclimate compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) --live [--policy POLICY] [--json]
+  python -m acclimate compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) --live [--policy POLICY] [--json]
 
 Reuse RUN_NAME to recover the same change. Use describe for your public descriptor,
 doctor to check setup, or request, run, check, status, interrupt, export and verify-export."""

@@ -169,7 +169,8 @@ async fn capabilities_are_machine_scoped_and_never_overstate_retention() {
         assert_eq!(value["writeEvaluation"], expected_write);
         assert_eq!(value["retainedEvaluationOperations"], true);
         assert_eq!(value["readUnpublished"], true);
-        assert_eq!(value.as_object().unwrap().len(), 7);
+        assert_eq!(value["runLabels"], true);
+        assert_eq!(value.as_object().unwrap().len(), 8);
         assert!(!value.to_string().contains("rotated"));
     }
     for (token, expected) in [

@@ -7,7 +7,7 @@ Ask Acclimate to suggest a change to an existing bundle file. Pin the parent ver
 
 ## Enable the proposer
 
-The deployment operator sets `ACCLIMATE_MODEL_ENDPOINT` to the full OpenAI-compatible chat-completions URL and privately supplies `ACCLIMATE_MODEL_TOKEN` and `ACCLIMATE_MODEL`. The service accepts `gpt-6.2-sol`, `gpt-6-luna`, or `gpt-5.6-luna` and refuses to start with any other value. The selected model drafts the proposed edits. Your application chooses the model and grader used for evaluation. This operation can incur model costs.
+The deployment operator sets `ACCLIMATE_MODEL_ENDPOINT` to the full OpenAI-compatible chat-completions URL and privately supplies `ACCLIMATE_MODEL_TOKEN` and `ACCLIMATE_MODEL`. Use `gpt-6.2-sol` for the documented example, or give the name your gateway accepts. The service trims the name and requires 1–256 UTF-8 bytes with no control characters. Check that the endpoint supports the [chat-completions request and response fields](/docs/reference/configuration#proposer-and-critic) the service uses. The selected model drafts the edits. Your application chooses the model and grader used for evaluation. This operation can incur model costs.
 
 ## Request and inspect the change
 

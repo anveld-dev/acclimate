@@ -26,7 +26,9 @@ The result shows the parent and candidate scores and how many pairs were graded.
 
 ## Operate or develop Acclimate
 
-The Rust API stores versions, evaluations and releases in PostgreSQL. The web console uses Keycloak sign-in. Operators distribute versioned SDK tarballs and a Python wheel, and provision credentials for evaluators.
+The Rust API stores versions, evaluations and releases in PostgreSQL. The web console uses Keycloak sign-in. Each release publishes service and console images to GHCR, and attaches the SDK tarballs and Python wheel to its GitHub Release. You can also build them from a checkout.
+
+To try Acclimate on a laptop, run `npm run local:up`. It starts PostgreSQL, Keycloak, the API and the console behind local HTTPS and prints the sign-in details. [Run Acclimate locally](apps/docs/content/docs/get-started/run-locally.mdx)
 
 [Self-host Acclimate](deploy/README.md) · [Evaluator access and recovery](docs/evaluator-operations.md) · [Local development and verification](docs/development.md) · [Contributing](CONTRIBUTING.md)
 

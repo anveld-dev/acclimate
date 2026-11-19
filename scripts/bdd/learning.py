@@ -16,7 +16,7 @@ def wait_for_round(w, state, *, attempt=1):
     raise AssertionError(f'Round for {w.outcome_id}, attempt {attempt}, did not reach {state}')
 
 
-def review_enrollment(w, *, automatic=False, development=None, audit=None):
+def review_enrollment(w, *, automatic=False, development=None, audit=None, audit_protected_thresholds=None):
     w.learning_path = w.integration_path + '/learning'
     w.cohorts = {
         'development': development or {'retry-review': 'retries', 'backoff-review': 'backoff'},
@@ -32,7 +32,8 @@ def review_enrollment(w, *, automatic=False, development=None, audit=None):
                    minimumMeanImprovement=-0.2, requiredCases=[])
     return dict(
         selectionPolicies=dict(development=quality,
-                               audit=dict(quality, id='review-audit', nonInferiorityMargin=0.75)),
+                               audit=dict(quality, id='review-audit', nonInferiorityMargin=0.75,
+                                          protectedCaseThresholds=audit_protected_thresholds or {})),
         installationId='review-fixture', permittedPaths=['AGENTS.md'], maxProposalAdmissions=4 if automatic else 1,
         automaticRollout=automatic, automaticRollback=True,
         development=descriptors['development'], audits=audits,
@@ -56,11 +57,23 @@ def calibrate(w):
     report = {k: w.started[k] for k in ('parentVersionId', 'parentDigest', 'candidateVersionId', 'candidateDigest',
                                        'runtime', 'datasetRevision', 'graderRevision', 'expectedCases')}
     assert report['parentVersionId'] == report['candidateVersionId']
+    repetitions = {}
+    for case in report['expectedCases']:
+        repetitions.setdefault(case['caseId'], []).append(case['repetition'])
+    assert repetitions and all(keys == [0, 1] for keys in repetitions.values()), repetitions
     outcome = dict(executionStatus='completed', gradingStatus='scored', reward=0)
     report['evaluation'] = dict(requestId=request_id, attemptId=w.attempt)
     report['results'] = [dict(**case, parent=outcome, candidate=outcome) for case in report['expectedCases']]
     w.report = w.call('POST', w.bundle + '/comparisons', report, actor='evaluator')
     assert w.finish()['status'] == 'completed'
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        calibration = w.call('GET', w.learning_path)['noiseCalibration']
+        if calibration['status'] == 'completed':
+            return
+        assert calibration['status'] == 'evaluated', calibration
+        time.sleep(0.05)
+    raise AssertionError(f'Baseline calibration did not settle: {calibration}')
 
 
 def install_enrollment(w, enrollment):
@@ -79,6 +92,7 @@ def install_enrollment(w, enrollment):
 
 def enroll_reviews(w, **cohorts):
     install_enrollment(w, review_enrollment(w, **cohorts))
+    w.provider.replacement = lambda request: 'Review retries, backoff, duplicated effects, and idempotency.'
 
 
 def report_failed_job(w, delivery, *, expected=None, **teaching):

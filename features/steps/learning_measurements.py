@@ -1,8 +1,13 @@
 """Application-reported measurements and the resulting managed selection decisions."""
+from math import isclose
+
 from behave import given, when, then
 from scripts.bdd.provider import proposal_prompt
 
 from scripts.bdd.learning import install_enrollment, report_failed_job, wait_for_round
+
+
+LATENCY_BUDGET_MS = 150
 
 
 def enroll_measured(w, grader, case_ids, *, admissions, policies=None):
@@ -24,9 +29,9 @@ def enroll_measured(w, grader, case_ids, *, admissions, policies=None):
 def partial_credit(context):
     quality = dict(schemaVersion=2, id='partial-credit', revision='1',
                    metric=dict(name='coverage', unit='reward', direction='higher'),
-                   aggregation='equal-case-means', minimumMeanImprovement=-0.5, maximumCaseRegression=0,
+                   aggregation='equal-case-means', minimumMeanImprovement=-0.6, maximumCaseRegression=0,
                    maximumCandidateTaskFailures=0, requiredCases=['retry-review'])
-    enroll_measured(context.world, 'partial-credit-v1', ['retry-review'], admissions=2,
+    enroll_measured(context.world, 'partial-credit-v1', ['retry-review', 'reference-review'], admissions=2,
                     policies=dict(development=quality, audit=dict(quality, requiredCases=[])))
 
 
@@ -41,13 +46,18 @@ def measured_pairs(context):
     report = {k: w.started[k] for k in ('parentVersionId', 'parentDigest', 'candidateVersionId', 'candidateDigest',
                                         'runtime', 'datasetRevision', 'graderRevision', 'expectedCases')}
     def scored(value, status):
-        return dict(reward=float(value), executionStatus=status, gradingStatus='scored', usage={'costUsd': 0})
+        reward = float(value)
+        if report['graderRevision'] == 'latency-budget-v1':
+            reward /= LATENCY_BUDGET_MS
+        return dict(reward=reward, executionStatus=status, gradingStatus='scored', usage={'costUsd': 0})
     report['evaluation'] = dict(requestId=request_id, attemptId=w.attempt)
     report['results'] = [dict(caseId=row['case'], repetition=int(row['repetition']),
                               parent=scored(row['parent'], 'completed'),
                               candidate=scored(row['candidate'], row['candidate status'])) for row in context.table]
     w.report = w.call('POST', w.bundle + '/comparisons', report, actor='evaluator')
-    assert w.finish()['status'] == 'completed'
+    assert w.report['complete'], (report['expectedCases'], w.report['results'])
+    finished = w.finish()
+    assert finished['status'] == 'completed', finished
 
 
 @then('the next proposal receives two score gains, zero score regressions and two task failures')
@@ -80,19 +90,20 @@ def no_audit_or_release(context):
 @given('development requires every critical request to finish within 100 milliseconds')
 def protected_latency(context):
     latency = dict(schemaVersion=1, id='request-latency', revision='1',
-                   metric=dict(name='Latency', unit='ms', direction='lower'), aggregation='equal-case-means',
-                   minimumMeanImprovement=1, maximumCaseRegression=0, requiredCases=[])
-    policies = dict(development=dict(latency, minimumRepetitionsPerCase=2, protectedCaseThresholds={'critical': 100}),
+                   metric=dict(name='Latency', unit='fraction of latency budget', direction='lower'), aggregation='equal-case-means',
+                   minimumMeanImprovement=1 / LATENCY_BUDGET_MS, maximumCaseRegression=0, requiredCases=[])
+    policies = dict(development=dict(latency, minimumRepetitionsPerCase=2, protectedCaseThresholds={'critical': 100 / LATENCY_BUDGET_MS}),
                     audit=dict(latency, minimumMeanImprovement=0))
-    enroll_measured(context.world, 'elapsed-ms-v1', ['fast', 'critical'], admissions=1, policies=policies)
+    enroll_measured(context.world, 'latency-budget-v1', ['fast', 'critical', 'search', 'update'], admissions=1, policies=policies)
 
 
 @then('the mean latency falls to 50 milliseconds and the round is {state} with {remaining:d} audits remaining')
 def latency_decision(context, state, remaining):
     w = context.world
     rows = w.report['results']
-    assert len(rows) == 4 and all(row['parent']['reward'] == 100 for row in rows)
-    assert sum(row['candidate']['reward'] for row in rows) / len(rows) == 50
+    assert len(rows) == 12
+    assert isclose(sum(row['parent']['reward'] for row in rows) / len(rows), 100 / LATENCY_BUDGET_MS)
+    assert isclose(sum(row['candidate']['reward'] for row in rows) / len(rows), 50 / LATENCY_BUDGET_MS)
     decision = wait_for_round(w, state)
     assert decision['developmentComparisonId'] == w.report['id']
     if state == 'rejected':

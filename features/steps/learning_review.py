@@ -36,7 +36,7 @@ def evaluate_connected_candidate(w):
 def audited_candidate(context):
     w = context.world
     w.round = evaluate_connected_candidate(w)
-    w.first_receipt = blocking_receipt(w, 'development', minimumMeanImprovement=0.75)
+    w.first_receipt = blocking_receipt(w, 'development', minimumMeanImprovement=1.01)
 
 
 def rollout_dialog(w):
@@ -68,7 +68,7 @@ def open_review(context):
 @when('the evaluator records another blocking policy before the reviewer confirms')
 def additional_policy(context):
     w = context.world
-    w.second_receipt = blocking_receipt(w, 'audit', minimumMeanImprovement=0, candidateThreshold=0.75)
+    w.second_receipt = blocking_receipt(w, 'audit', minimumMeanImprovement=0, candidateThreshold=1.01)
     expect_receipts(rollout_dialog(w), w.first_receipt)
 
 
@@ -307,15 +307,16 @@ def rejected_audit(context):
     enroll_reviews(w, automatic=True, audit={
         'duplicate-review': 'duplicated effects', 'idempotency-review': 'idempotency',
         'code-review': 'Review code.',
-    })
+    }, audit_protected_thresholds={'code-review': 1})
     grade_through_audit(w)
     assert w.finish()['status'] == 'completed'
     w.round = wait_for_round(w, 'rejected')
+    assert w.round['reason'] == 'Protected case threshold failed'
     development = w.call('GET', w.bundle + '/comparisons/' + w.round['developmentComparisonId'])
     gains = sorted((p['caseId'], p['repetition'], p['candidate']['reward'] - p['parent']['reward'])
                    for p in development['results'])
-    assert gains == [('backoff-review', 0, 0), ('backoff-review', 1, 0),
-                     ('retry-review', 0, 1), ('retry-review', 1, 1)], gains
+    assert gains == [(case, repetition, 1) for case in ('backoff-review', 'retry-review')
+                     for repetition in range(3)], gains
     assert w.round['auditComparisonId'] == w.report['id'] and w.round['promotionId'] is None
 
 
@@ -375,7 +376,7 @@ def pending_audit(context):
     assert w.call('GET', w.evaluation_path)['status'] == 'running'
     assert w.report['complete']
     scores = [(p['caseId'], p['parent']['reward'], p['candidate']['reward']) for p in w.report['results']]
-    assert sorted(scores) == [('duplicate-review', 0, 1)] * 2 + [('idempotency-review', 0, 0)] * 2, scores
+    assert sorted(scores) == [('duplicate-review', 0, 1)] * 3 + [('idempotency-review', 0, 1)] * 3, scores
 
 
 @when('I confirm Stop learning on the connection')

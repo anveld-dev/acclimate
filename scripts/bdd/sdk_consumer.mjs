@@ -81,6 +81,13 @@ async function evaluate() {
     const registered = connectedEvaluationDescriptor(defineEvaluation(definition));
     assert.equal(runtime['acclimate.fixtures.v1.dataset'], registered.datasetDigest);
   }
+  const casesById = new Map(definition.cases.map((testCase) => [testCase.caseId, testCase]));
+  const repetitionCounts = new Map();
+  for (const { caseId } of expectedCases) {
+    assert.ok(casesById.has(caseId), `Unexpected review case: ${caseId}`);
+    repetitionCounts.set(caseId, (repetitionCounts.get(caseId) ?? 0) + 1);
+  }
+  assert.equal(repetitionCounts.size, casesById.size);
   const report = await compare({
     parent: { version: parent.version },
     candidate: { version: candidate.version },
@@ -88,8 +95,8 @@ async function evaluate() {
     evaluation: input.settings.evaluation,
     runtime,
     graderRevision,
-    cases: definition.cases.map(({ caseId, repetitions, input }) => ({
-      caseId, repetitions, snapshot: input, settings: null,
+    cases: Array.from(repetitionCounts, ([caseId, repetitions]) => ({
+      caseId, repetitions, snapshot: casesById.get(caseId).input, settings: null,
     })),
     execute: ({ version, snapshot }) => definition.execute({ bundle: bundles.get(version.version.id), input: snapshot }),
     grade: ({ output, caseId }) => definition.grade({ output, expected: answers.get(caseId) }),

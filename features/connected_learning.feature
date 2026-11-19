@@ -33,15 +33,19 @@ Feature: Learning from application feedback
     When I register the same review task for development and audit under different case names
     Then the overlapping enrollment is refused before a release or proposal
     When I replace the audit with a different review task that has the same expected answer
-    Then both tasks independently improve and the connection releases the candidate
+    Then both cohorts independently improve and the connection releases the candidate
 
   @LEARNING-04
   Scenario: A retry distinguishes a better score from a failed execution
     Given a connection evaluates partial-credit review tasks and allows a second proposal
     When its evaluator reports these paired review results
-      | case         | repetition | parent | candidate | candidate status |
-      | retry-review | 0          | 0      | 0.5       | task_failed      |
-      | retry-review | 1          | 0      | 0.5       | task_failed      |
+      | case             | repetition | parent | candidate | candidate status |
+      | retry-review     | 0          | 0      | 0.5       | task_failed      |
+      | retry-review     | 1          | 0      | 0.5       | task_failed      |
+      | retry-review     | 2          | 0.5    | 0.5       | completed        |
+      | reference-review | 0          | 0.5    | 0.5       | completed        |
+      | reference-review | 1          | 0.5    | 0.5       | completed        |
+      | reference-review | 2          | 0.5    | 0.5       | completed        |
     Then the next proposal receives two score gains, zero score regressions and two task failures
     And the failed development round consumes no audit or release
 
@@ -61,10 +65,18 @@ Feature: Learning from application feedback
     Given development requires every critical request to finish within 100 milliseconds
     When its evaluator reports these paired review results
       | case     | repetition | parent | candidate | candidate status |
-      | fast     | 0          | 100    | 20        | completed        |
-      | fast     | 1          | 100    | 20        | completed        |
-      | critical | 0          | 100    | <first>   | completed        |
-      | critical | 1          | 100    | <second>  | completed        |
+      | fast     | 0          | 70     | 20        | completed        |
+      | fast     | 1          | 70     | 20        | completed        |
+      | fast     | 2          | 70     | 20        | completed        |
+      | critical | 0          | 130    | <first>   | completed        |
+      | critical | 1          | 130    | <second>  | completed        |
+      | critical | 2          | 130    | 80        | completed        |
+      | search   | 0          | 100    | 50        | completed        |
+      | search   | 1          | 100    | 50        | completed        |
+      | search   | 2          | 100    | 50        | completed        |
+      | update   | 0          | 100    | 50        | completed        |
+      | update   | 1          | 100    | 50        | completed        |
+      | update   | 2          | 100    | 50        | completed        |
     Then the mean latency falls to 50 milliseconds and the round is <state> with <remaining> audits remaining
     Examples:
       | first | second | state    | remaining |

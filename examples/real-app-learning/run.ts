@@ -63,7 +63,7 @@ async function waitFor<T>(label: string, probe: () => Promise<T | undefined>): P
     }
     const found = await probe();
     if (found !== undefined) return found;
-    await delay(100, undefined, { signal: controller.signal });
+    await delay(1_000, undefined, { signal: controller.signal });
   }
 }
 
@@ -436,7 +436,17 @@ try {
     console.error('Driver:', String(error));
     controller.abort();
   });
-  const view = () => api<LearningEnrollmentStatus>('GET', learning(connection));
+  async function view() {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await api<LearningEnrollmentStatus>('GET', learning(connection));
+      } catch (error) {
+        if (!(error instanceof DOMException) || error.name !== 'TimeoutError' || attempt >= 2) throw error;
+        console.error('Enrollment status timed out. Retrying the read.');
+        await delay(1_000, undefined, { signal });
+      }
+    }
+  }
   const calibration = await waitFor('noise calibration', async () => {
     signal.throwIfAborted();
     const status = (await view()).noiseCalibration;

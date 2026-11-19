@@ -60,7 +60,7 @@ class BrowserFixture:
             self.sign_in(self.context, subject)
             self.new_page()
             if dev:
-                self.page.goto(self.base, wait_until='networkidle')
+                self.page.goto(self.base)
                 # Dev ESM loads barrel exports eagerly; production tree shaking
                 # can hide Node-only SDK exports accidentally imported by UI.
                 self.page.evaluate('''async () => {
@@ -80,9 +80,9 @@ class BrowserFixture:
         response = page.goto(self.base + '/auth/login')
         assert response and response.status == 200, 'OIDC fixture authorization did not load'
         page.get_by_label('Fixture subject').fill(subject)
-        page.get_by_role('button', name='Sign in to fixture').click()
+        with page.expect_response(lambda response: response.url.startswith(self.base + '/auth/callback?')):
+            page.get_by_role('button', name='Sign in to fixture').click()
         page.wait_for_url(self.base + '/**', timeout=15000)
-        page.wait_for_load_state('networkidle')
         assert any(cookie['name'] == 'acclimate_session' and cookie.get('secure') and cookie.get('httpOnly')
                    for cookie in context.cookies(self.base)), 'Verified OIDC callback did not set a secure session'
         page.close()
@@ -115,11 +115,14 @@ class BrowserFixture:
         if path in ('/content','/releases','/connect'): return self.bundle_path(path[1:])
         return path
 
-    def visit(self, path):
-        path=self.canonical(path)
-        response=self.page.goto(self.base+path)
-        assert response and response.status==200, 'Console route did not load: '+path
-        self.page.wait_for_load_state('networkidle')
+    def visit(self, path, *, page=None):
+        page = page or self.page
+        path = self.canonical(path)
+        response = page.goto(self.base + path)
+        assert response and response.status == 200, 'Console route did not load: ' + path
+        # The rail exposes its expansion state only once React has hydrated.
+        page.locator('#desktop-workspace-rail[data-rail-expanded]').wait_for(state='attached')
+        expect(page.get_by_role('main')).to_be_visible()
 
     def select_bundle(self):
         path=self.bundle_path('content')

@@ -41,6 +41,7 @@ import type {
   EvaluationRequest,
   StartEvaluationRequest,
   FinishEvaluationRequest,
+  AbandonEvaluationRequest,
   InterruptEvaluationRequest,
 } from './types.js';
 import type {
@@ -889,6 +890,26 @@ export class AcclimateClient {
       this.path(
         projectId,
         `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/finish`,
+      ),
+      JSON.stringify(request),
+      key,
+    );
+  }
+  /** Abandon an attempt whose outcome is unknown. Its evidence never counts, and a
+   * new request for the same candidate may then start. This is not proof that the
+   * original worker stopped. */
+  abandonEvaluation(
+    projectId: string,
+    bundleId: string,
+    id: string,
+    request: AbandonEvaluationRequest,
+    key: string,
+  ): Promise<Evaluation> {
+    return this.request(
+      'POST',
+      this.path(
+        projectId,
+        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/abandon`,
       ),
       JSON.stringify(request),
       key,

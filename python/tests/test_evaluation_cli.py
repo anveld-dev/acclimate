@@ -211,6 +211,17 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(self.state["drafts"], 1)
         self.assertEqual(self.state["executions"], 2)
 
+    def test_fresh_attempt_may_follow_an_abandoned_predecessor(self):
+        inputs = ["compare", "--config", str(self.config), "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
+        self.assertEqual(self.invoke([*inputs, "--name", "original"])[0], 0)
+        # A cancelled CI job: the attempt started but never reported, then was abandoned.
+        self.state["request"].update({"status": "abandoned", "comparisonId": None, "error": "CI job cancelled",
+                                      "abandonedBy": "service:evaluation-expiry"})
+        _, _, error = self.invoke([*inputs, "--retry-after", "original"])
+        self.assertNotEqual((error or {}).get("error", {}).get("code"), "evidence.not_terminal")
+        # The predecessor gate accepts it and new work is created.
+        self.assertEqual(self.state["drafts"], 2)
+
     def test_first_policy_error_names_only_known_missing_fields(self):
         value = {**self.quality, "metric": {"name": "PRIVATE_CANARY"}, "PRIVATE_CANARY": "x"}
         del value["requiredCases"], value["id"]

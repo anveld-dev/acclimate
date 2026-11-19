@@ -124,8 +124,13 @@ export interface EvaluationCapabilities {
   principalId: string;
   checkedAt: string;
   readUnpublished: true;
+  /** True when the principal holds `evaluate` (or `write`, which implies it). */
   writeEvaluation: boolean;
   retainedEvaluationOperations: true;
+  /** Reported by services that support the narrow `evaluate` right. */
+  rights?: { read: boolean; evaluate: boolean; write: boolean; propose: boolean; promote: boolean };
+  credential?: { kind: 'static' } | { kind: 'machineToken'; id: string; expiresAt: string };
+  abandonment?: { explicit: boolean; inactivitySeconds: number };
 }
 /** Optional reported activity. Never a lease or evidence of external quiescence. */
 export interface EvaluationProgressRequest {
@@ -281,13 +286,20 @@ export interface Evaluation extends EvaluationRequest {
   requireBoundEvidence: true;
   id: string;
   proposalId: string | null;
-  status: 'requested' | 'running' | 'completed' | 'failed' | 'interrupted';
+  /** `abandoned` is a server-side terminal state: the attempt's outcome is unknown,
+   * its later reports are refused and its evidence never counts. */
+  status: 'requested' | 'running' | 'completed' | 'failed' | 'interrupted' | 'abandoned';
   evaluatorPrincipal: string | null;
   attemptId: string | null;
   comparisonId: string | null;
   error: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Last start, progress report or bound report from the current attempt. */
+  lastActivityAt?: string;
+  abandonedAt?: string;
+  /** The principal that abandoned it, or `service:evaluation-expiry` after inactivity. */
+  abandonedBy?: string;
 }
 export interface StartEvaluationRequest {
   attemptId: string;
@@ -295,6 +307,10 @@ export interface StartEvaluationRequest {
 export interface FinishEvaluationRequest {
   attemptId: string;
   comparisonId: string;
+}
+/** Abandon a requested or running attempt whose outcome is unknown, such as a cancelled CI job. */
+export interface AbandonEvaluationRequest {
+  reason: string;
 }
 export interface InterruptEvaluationRequest {
   reason: string;

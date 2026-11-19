@@ -536,6 +536,41 @@ test('fresh attempt checks predecessor status, candidate payload and pinned base
   }
 });
 
+test('a fresh attempt may follow a predecessor the service abandoned', async () => {
+  const f = await fixture('live');
+  try {
+    const inputs = [
+      'compare',
+      '--config',
+      f.config,
+      '--bundle',
+      bundleId,
+      '--channel',
+      'stable',
+      '--payload',
+      f.payloadFile,
+      '--live',
+    ];
+    assert.equal((await invoke(f.app, [...inputs, '--name', 'original'])).status, 0);
+    // A cancelled CI job: the attempt started but never reported, then was abandoned.
+    Object.assign(f.state.request, {
+      status: 'abandoned',
+      comparisonId: null,
+      error: 'No evaluator activity for 7200 seconds',
+      abandonedAt: now,
+      abandonedBy: 'service:evaluation-expiry',
+    });
+    const retried = await invoke(f.app, [...inputs, '--retry-after', 'original']);
+    // The predecessor gate accepts it and new work is created. (This fixture reuses one
+    // request ID, so the successor's run then meets the first run's journal.)
+    assert.notEqual(retried.error?.error?.code, 'evidence.not_terminal');
+    assert.equal(f.state.drafts, 2);
+    assert.equal(f.state.requests, 2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('an incomplete first policy reports only known missing schema fields before any execution', async () => {
   const f = await fixture('live');
   try {

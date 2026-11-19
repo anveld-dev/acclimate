@@ -413,6 +413,14 @@ class AcclimateClient:
     def finish_evaluation(self, project_id: str, bundle_id: str, evaluation_id: str, request: FinishEvaluationRequest, key: str) -> Evaluation:
         return self._request("POST", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/finish", request, key)
 
+    def abandon_evaluation(self, project_id: str, bundle_id: str, evaluation_id: str, request: AbandonEvaluationRequest, key: str) -> Evaluation:
+        """Abandon an attempt whose outcome is unknown, such as a cancelled CI job.
+
+        Its evidence never counts and a new request for the same candidate may then
+        start. This does not prove the original worker stopped.
+        """
+        return self._request("POST", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/abandon", request, key)
+
     def interrupt_evaluation(self, project_id: str, bundle_id: str, evaluation_id: str, request: InterruptEvaluationRequest, key: str) -> Evaluation:
         return self._request("POST", self._base(project_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/interrupt", request, key)
 

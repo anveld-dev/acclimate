@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { lstat, realpath } from 'node:fs/promises';
-import { assertUnaliasedPath, readPrivateJson } from './private-state.js';
+import { assertUnaliasedPath, readPrivateJson, readPrivateText } from './private-state.js';
 import { EvaluationError, type PathIssue } from './errors.js';
 import type { EvaluatorConfig, ReaderConfig } from './types.js';
 export type { EvaluatorConfig, ReaderConfig } from './types.js';
@@ -43,7 +43,10 @@ export function assertServiceUrl(value: unknown): asserts value is string {
   )
     throw new EvaluatorConfigError('config.url');
 }
-async function config(filename: string, reader: boolean): Promise<EvaluatorConfig | ReaderConfig> {
+/** Environment variable that supplies the evaluator token when the config names none. */
+export const EVALUATOR_TOKEN_ENV = 'ACCLIMATE_EVALUATOR_TOKEN';
+/** A private config or token file: absolute, unaliased, owner-only, in an owner-only directory. */
+async function assertPrivateFile(filename: string): Promise<void> {
   if (!path.isAbsolute(filename)) throw new EvaluatorConfigError('config.permissions');
   try {
     await assertUnaliasedPath(filename, 'configAlias');
@@ -73,6 +76,24 @@ async function config(filename: string, reader: boolean): Promise<EvaluatorConfi
       (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'config.missing' : 'config.permissions',
     );
   }
+}
+/** Read a token file with the config file's privacy checks. One trailing newline is allowed. */
+async function readTokenFile(filename: string): Promise<string> {
+  await assertPrivateFile(filename);
+  let text: string;
+  try {
+    text = await readPrivateText(filename, 8192);
+  } catch (error) {
+    if (error instanceof EvaluationError && error.code === 'config.permissions')
+      throw new EvaluatorConfigError('config.permissions');
+    throw new EvaluatorConfigError();
+  }
+  const token = text.replace(/\r?\n$/, '');
+  if (!bounded(token, 4096)) throw new EvaluatorConfigError();
+  return token;
+}
+async function config(filename: string, reader: boolean): Promise<EvaluatorConfig | ReaderConfig> {
+  await assertPrivateFile(filename);
   let value: Record<string, unknown>;
   try {
     value = await readPrivateJson(filename);
@@ -85,17 +106,18 @@ async function config(filename: string, reader: boolean): Promise<EvaluatorConfi
   }
   const fields = reader
     ? ['schemaVersion', 'serviceUrl', 'projectId', 'readToken']
-    : [
-        'schemaVersion',
-        'serviceUrl',
-        'projectId',
-        'evaluatorPrincipalId',
-        'evaluatorToken',
-        'journalRoot',
-      ];
+    : ['schemaVersion', 'serviceUrl', 'projectId', 'evaluatorPrincipalId', 'journalRoot'];
   if (!reader && Object.hasOwn(value, 'captureCallbackErrors')) {
     if (typeof value.captureCallbackErrors !== 'boolean') throw new EvaluatorConfigError();
     fields.push('captureCallbackErrors');
+  }
+  // The token is inline, in a private file, or in ACCLIMATE_EVALUATOR_TOKEN.
+  // Naming both an inline token and a token file is ambiguous and rejected.
+  if (!reader) {
+    if (Object.hasOwn(value, 'evaluatorToken') && Object.hasOwn(value, 'evaluatorTokenFile'))
+      throw new EvaluatorConfigError();
+    for (const field of ['evaluatorToken', 'evaluatorTokenFile'])
+      if (Object.hasOwn(value, field)) fields.push(field);
   }
   if (
     value.schemaVersion !== 1 ||
@@ -107,13 +129,23 @@ async function config(filename: string, reader: boolean): Promise<EvaluatorConfi
   assertServiceUrl(value.serviceUrl);
   if (reader) {
     if (!bounded(value.readToken, 4096)) throw new EvaluatorConfigError();
-  } else if (
-    !bounded(value.evaluatorPrincipalId, 1024) ||
-    !bounded(value.evaluatorToken, 4096) ||
-    !bounded(value.journalRoot, 4096) ||
-    !path.isAbsolute(value.journalRoot)
-  )
-    throw new EvaluatorConfigError();
+  } else {
+    if (
+      !bounded(value.evaluatorPrincipalId, 1024) ||
+      !bounded(value.journalRoot, 4096) ||
+      !path.isAbsolute(value.journalRoot)
+    )
+      throw new EvaluatorConfigError();
+    if (Object.hasOwn(value, 'evaluatorTokenFile')) {
+      if (!bounded(value.evaluatorTokenFile, 4096) || !path.isAbsolute(value.evaluatorTokenFile))
+        throw new EvaluatorConfigError();
+      const { evaluatorTokenFile, ...rest } = value;
+      value = { ...rest, evaluatorToken: await readTokenFile(evaluatorTokenFile) };
+    } else if (!Object.hasOwn(value, 'evaluatorToken')) {
+      value = { ...value, evaluatorToken: process.env[EVALUATOR_TOKEN_ENV] };
+    }
+    if (!bounded(value.evaluatorToken, 4096)) throw new EvaluatorConfigError();
+  }
   return value as unknown as EvaluatorConfig | ReaderConfig;
 }
 export async function readEvaluatorConfig(filename: string): Promise<EvaluatorConfig> {

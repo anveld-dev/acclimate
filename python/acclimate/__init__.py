@@ -49,6 +49,7 @@ from .types import (
     EvaluationPage as EvaluationPage,
     StartEvaluationRequest as StartEvaluationRequest,
     FinishEvaluationRequest as FinishEvaluationRequest,
+    AbandonEvaluationRequest as AbandonEvaluationRequest,
     InterruptEvaluationRequest as InterruptEvaluationRequest,
     ComparisonPolicyIdentity as ComparisonPolicyIdentity,
     ComparisonPolicyCheck as ComparisonPolicyCheck,

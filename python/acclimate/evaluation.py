@@ -232,7 +232,7 @@ def _request_snapshot(request: dict) -> dict:
 
 
 def _assert_request(request: dict, handoff: dict, app: EvaluationApp, frozen: dict | None=None):
-    if request.get("id")!=handoff["requestId"] or request.get("status") not in ("requested","running","completed","failed","interrupted"):
+    if request.get("id")!=handoff["requestId"] or request.get("status") not in ("requested","running","completed","failed","interrupted","abandoned"):
         raise EvaluationError("evidence.identity_mismatch",phase="verify")
     validate_descriptor(descriptor_from(request))
     assert_descriptor(request,app.descriptor)
@@ -540,7 +540,8 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                     raise EvaluationError("evidence.identity_mismatch",phase="claim")
 
             def terminal(current, reused_evidence):
-                if current["status"]=="interrupted":
+                # An abandoned attempt is settled like an interruption: nothing more is reported.
+                if current["status"] in ("interrupted","abandoned"):
                     return {"schemaVersion":1,"evaluation":current,"comparison":None,"executionState":"interrupted","callbacksStarted":callbacks_started,"reusedEvidence":False}
                 if current["status"] not in ("completed","failed"):
                     return None
@@ -586,7 +587,7 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                 # requested. Historical authority checks do not guard callbacks.
                 journal.assert_owned()
                 _assert_request(latest,handoff,app,state["request"])
-                if latest["status"]=="interrupted":
+                if latest["status"] in ("interrupted","abandoned"):
                     raise _Interrupted(latest)
                 if latest["status"]!="running" or latest.get("attemptId")!=state["attemptId"] or latest.get("evaluatorPrincipal")!=config["evaluatorPrincipalId"]:
                     raise EvaluationError("evidence.identity_mismatch",phase="verify")

@@ -230,7 +230,7 @@ function assertRequest(
 
   if (
     request.id !== handoff.requestId ||
-    !['requested', 'running', 'completed', 'failed', 'interrupted'].includes(request.status) ||
+    !['requested', 'running', 'completed', 'failed', 'interrupted', 'abandoned'].includes(request.status) ||
     (request.attemptId !== null &&
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(request.attemptId)) ||
     (request.comparisonId !== null &&
@@ -419,7 +419,11 @@ async function dispatch(
       const { client, projectId } = await readConnection(flags, prior);
       const request = await client.getEvaluation(projectId, prior.bundleId, prior.requestId);
       assertRequest(request, prior);
-      if (!['completed', 'failed'].includes(request.status) || !request.attemptId || !request.comparisonId)
+      // A settled predecessor, or one the service abandoned, may be retried. An
+      // abandoned attempt's evidence never counts, so it needs no comparison.
+      const settled =
+        ['completed', 'failed'].includes(request.status) && request.attemptId && request.comparisonId;
+      if (!settled && request.status !== 'abandoned')
         throw new EvaluationError('evidence.not_terminal', { phase: 'inspect', nextAction: 'inspect_external_app' });
       predecessor = { handoffFile, request };
       flags.name = 'after-' + request.id;

@@ -515,7 +515,8 @@ export async function runCapturedEvaluation(options: {
       if (state.comparisonId && request.comparisonId && state.comparisonId !== request.comparisonId)
         throw new EvaluationError('evidence.identity_mismatch');
     }
-    if (request.status === 'interrupted')
+    // An abandoned attempt is settled like an interruption: nothing more is reported.
+    if (request.status === 'interrupted' || request.status === 'abandoned')
       return {
         schemaVersion: 1,
         evaluation: request,
@@ -576,7 +577,8 @@ export async function runCapturedEvaluation(options: {
         latest.evaluatorPrincipal !== scope.evaluatorPrincipalId
       )
         throw new EvaluationError('auth.principal_mismatch');
-      if (latest.status === 'interrupted') throw new ObservedInterruption(latest);
+      if (latest.status === 'interrupted' || latest.status === 'abandoned')
+        throw new ObservedInterruption(latest);
       if (latest.status !== 'running') throw new EvaluationError('evidence.identity_mismatch');
       return latest;
     };
@@ -963,7 +965,8 @@ export async function runCapturedEvaluation(options: {
       throw new EvaluationError('evidence.identity_mismatch');
     request = await api.getEvaluation(scope.projectId, scope.bundleId, scope.requestId);
     assertFrozen(request, scope.requestId, state.request);
-    if (request.status === 'interrupted')
+    // An abandoned attempt is settled like an interruption: nothing more is reported.
+    if (request.status === 'interrupted' || request.status === 'abandoned')
       return {
         schemaVersion: 1,
         evaluation: request,

@@ -19,7 +19,8 @@ Run coverage to inspect the fingerprinted files and build identities.
   python -m acclimate compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) --live [--policy POLICY] [--json]
 
 Reuse RUN_NAME to recover the same change. Use describe for your public descriptor,
-doctor to check setup, or request, run, check, status, interrupt, export and verify-export."""
+doctor to check setup, or request, run, check, status, interrupt, export and verify-export.
+Use pull to save a published bundle as a payload file to edit."""
 
 
 def read_cases(filename):
@@ -170,6 +171,7 @@ _COMMAND_USAGE = {
     "request": "request --config CONFIG --bundle ID --channel CHANNEL --payload FILE --intent FILE --out HANDOFF [--policy POLICY]",
     "run": "run --config CONFIG (--handoff FILE | --name RUN_NAME) --live",
     "interrupt": "interrupt --config CONFIG (--handoff FILE | --name RUN_NAME) --reason REASON",
+    "pull": "pull --config CONFIG --bundle ID [--channel CHANNEL] --out FILE  Save the published bundle as a payload to edit.",
 }
 
 
@@ -187,6 +189,9 @@ def main(argv=None, directory=None):
         if not args or "--help" in args or "-h" in args:
             print(_COMMAND_USAGE.get(command, HELP))
             return 0
+        if command == "pull":
+            from ._evaluation_pull import pull_main
+            return pull_main(args)
         from .evaluation_cli import evaluation_main
         if command in ("status", "verify-export"):
             return evaluation_main(None, args)

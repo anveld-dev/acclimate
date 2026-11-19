@@ -229,6 +229,7 @@ const adapter = createServer((req, res) => {
 });
 
 let driver: Promise<void> | undefined;
+const statusReads: { milliseconds: number; succeeded: boolean }[] = [];
 try {
   const modelPort = await listen(adapter);
   const vacant = createServer();
@@ -438,13 +439,19 @@ try {
   });
   async function view() {
     for (let attempt = 0; ; attempt++) {
+      const started = performance.now();
+      let succeeded = false;
       try {
-        return await api<LearningEnrollmentStatus>('GET', learning(connection));
+        const status = await api<LearningEnrollmentStatus>('GET', learning(connection));
+        succeeded = true;
+        return status;
       } catch (error) {
         if (!(error instanceof DOMException) || error.name !== 'TimeoutError' || attempt >= 2) throw error;
         console.error('Enrollment status timed out. Retrying the read.');
-        await delay(1_000, undefined, { signal });
+      } finally {
+        statusReads.push({ milliseconds: performance.now() - started, succeeded });
       }
+      await delay(1_000, undefined, { signal });
     }
   }
   const calibration = await waitFor('noise calibration', async () => {
@@ -580,6 +587,15 @@ try {
     console.log(JSON.stringify({ final: await view() }));
   }
 } finally {
+  const sortedReads = statusReads.map((read) => read.milliseconds).sort((a, b) => a - b);
+  console.log(JSON.stringify({
+    enrollmentStatusReads: {
+      count: sortedReads.length,
+      failed: statusReads.filter((read) => !read.succeeded).length,
+      maxMs: sortedReads.at(-1) ?? null,
+      p99Ms: sortedReads[Math.ceil(0.99 * sortedReads.length) - 1] ?? null,
+    },
+  }));
   console.log(
     JSON.stringify({
       attempts: usage.length,

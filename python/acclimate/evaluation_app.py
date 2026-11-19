@@ -8,18 +8,29 @@ from contextlib import contextmanager
 from pathlib import Path
 import stat
 import sys
+import threading
 
 from ._application_imports import SetupError, load_adapter
 
 HELP = """Compare your agent using its installed application.py.
 Export cases, execute and grade from that module. Run in the module's directory or add --app PACKAGE.MODULE or --app FILE.py.
-Optional exports: revision_files, config_id, grader, runtime, to_review_artifact and
+Optional exports: revision_files, config_id, grader, runtime, to_review_artifact, concurrency, grade_retries and
 execution ("live" by default, or "model-free" for deterministic adapters that need no --live).
+
+Try it locally first. These need no service, config or handoff:
+
+  python -m acclimate try [--live] [--case ID] [--payload FILE|DIR]
+  python -m acclimate compare --local --parent FILE|DIR --candidate FILE|DIR [--live] [--policy POLICY]
+
+Then compare against the service to gate a release:
 
   python -m acclimate compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]
   python -m acclimate compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]
 
-Commands: compare, describe, coverage, doctor, request, run, check, status, interrupt, export, verify-export.
+Run controls for compare and run: --deadline 30m, --case-timeout 2m, --max-cost-usd 5,
+--cases ID,ID or --shard 1/4 (partial, never full coverage), --progress or --quiet.
+
+Commands: try, compare, describe, coverage, doctor, request, run, check, status, interrupt, export, verify-export.
 status, verify-export and interrupt run without loading application code.
 Run python -m acclimate COMMAND --help for one command's flags.
 
@@ -78,6 +89,48 @@ def case_inventory(rows, root="cases"):
                              code="definition.invalid", field=f"{at}.{unknown[0]}")
         cases.append(Case(row[key], row["input"], row["expected"], row.get("repetitions", 1)))
     return cases
+
+
+class _RunnerPool:
+    """One asyncio.Runner per calling thread.
+
+    The owning thread keeps its original runner. Concurrent pairs and timed
+    callbacks run on worker threads, and an asyncio.Runner is not thread-safe,
+    so each worker thread gets its own runner, closed when the pool closes.
+    """
+
+    def __init__(self):
+        self._owner = threading.get_ident()
+        self._main = asyncio.Runner()
+        self._local = threading.local()
+        self._extra = []
+        self._lock = threading.Lock()
+
+    def run(self, coroutine):
+        if threading.get_ident() == self._owner:
+            return self._main.run(coroutine)
+        runner = getattr(self._local, "runner", None)
+        if runner is None:
+            runner = self._local.runner = asyncio.Runner()
+            with self._lock:
+                self._extra.append(runner)
+        return runner.run(coroutine)
+
+    def close(self):
+        self._main.close()
+        with self._lock:
+            extra, self._extra = self._extra, []
+        for runner in extra:
+            try:
+                runner.close()
+            except RuntimeError:
+                pass  # An abandoned (timed-out) callback may still own this loop.
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
 
 
 def adapt_callback(callback, runner):
@@ -149,6 +202,10 @@ def _configure(adapter, filename, source, imported, imported_files, external, co
     except EvaluationError as error:
         raise SetupError(f"The application's evaluation definition is invalid. {error.field}: {error.reason}",
                          code="definition.invalid", field=error.field, reason=error.reason) from error
+    for name, low, high in (("concurrency", 1, 64), ("grade_retries", 0, 5)):
+        value = getattr(adapter, name, low)
+        if type(value) is not int or not low <= value <= high:
+            raise SetupError(f"{name} must be an integer from {low} to {high}.", code="definition.invalid", field=name)
     runtime = getattr(adapter, "runtime", {})
     if not isinstance(runtime, dict):
         raise SetupError("runtime must be a dict with optional settings and artifacts.", field="runtime")
@@ -177,12 +234,14 @@ def _configure(adapter, filename, source, imported, imported_files, external, co
         revision = hash_revision_files(directory, adapter.revision_files)
         artifacts["revisionFiles"] = revision
         grader_digest = "sha256:" + hashlib.sha256((grader_digest + "\n" + revision).encode()).hexdigest()
-    with asyncio.Runner() as runner:
+    with _RunnerPool() as runner:
         try:
             manifest = create_evaluation_manifest(
                 config_id=getattr(adapter, "config_id", "application"), execution=execution,
                 cases=cases, grader=getattr(adapter, "grader", {"artifactDigest": grader_digest}),
                 runtime={"settings": runtime.get("settings", {}), "artifacts": artifacts},
+                **({"concurrency": adapter.concurrency} if hasattr(adapter, "concurrency") else {}),
+                **({"grade_retries": adapter.grade_retries} if hasattr(adapter, "grade_retries") else {}),
             )
             app = define_evaluation(**manifest.definition, execute=adapt_callback(execute, runner),
                                     grade=adapt_callback(grade, runner))
@@ -207,6 +266,8 @@ def _configure(adapter, filename, source, imported, imported_files, external, co
 _COMMAND_USAGE = {
     "compare": HELP,
     "describe": "describe [--app MODULE|FILE.py]  Print the public descriptor for these callbacks and cases.",
+    "try": ("try [--case ID[,ID...]] [--payload PAYLOAD] [--live] [--case-timeout DURATION] [--json]\n"
+            "Runs execute and grade once for each case (default: the first case) and checks every returned shape."),
     "coverage": "coverage [--app MODULE|FILE.py]  Inspect the local sources, declared files and build artifacts bound by the adapter.",
     "status": "status (--config CONFIG | --read-config READER) --handoff FILE\nstatus --config CONFIG --name RUN_NAME\nRuns without loading application code.",
     "verify-export": "verify-export --manifest FILE [--read-config READER --handoff FILE]\nRuns without loading application code.",

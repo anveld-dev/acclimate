@@ -1336,3 +1336,58 @@ test('a failed callback is named in the compare summary with its private diagnos
     await f.cleanup();
   }
 });
+
+test('service compare binds run controls from flags, streams progress and flags identical outputs', async () => {
+  const f = await fixture();
+  try {
+    assert.equal((await invoke(f.app, f.requestArgs)).status, 0);
+    // Same descriptor as the fixture, but execute ignores the bundle.
+    const ignoring = defineEvaluation({
+      configId: 'app',
+      configRevision: '1',
+      datasetRevision: 'cases-1',
+      graderRevision: 'grader-1',
+      runtime: { model: 'none' },
+      execution: 'model-free',
+      cases: [{ caseId: 'case', input: { task: 'saved' }, expected: true }],
+      execute: async () => ({ output: { correct: true }, usage: { costUsd: 0.25 } }),
+      grade: async () => ({ reward: 1 }),
+    });
+    assert.deepEqual(ignoring.descriptor, f.app.descriptor);
+    const rejected = await invoke(ignoring, ['describe', '--deadline', '1m']);
+    assert.equal(rejected.status, 1);
+    assert.equal(rejected.error.error.code, 'usage.unknown_flag');
+    assert.equal(rejected.error.error.field, '"--deadline"');
+    const compared = await invoke(ignoring, [
+      'compare', '--config', f.config, '--handoff', f.handoff,
+      '--deadline', '1h', '--case-timeout', '5m', '--max-cost-usd', '10', '--progress', '--json',
+    ]);
+    assert.equal(compared.status, 0);
+    const progress = compared.err.trim().split('\n');
+    assert.equal(progress.length, 2);
+    assert.match(progress[0], /^\[1\/2\] "case" #0 parent {4}reward 1 · \$0\.2500 · /);
+    assert.equal(compared.result.run.stopReason, 'completed');
+    assert.equal(compared.result.run.costUsd, 0.5);
+    assert.equal(compared.result.run.deadlineMs, 3_600_000);
+    assert.deepEqual(compared.result.run.outputs, { comparedPairs: 1, identicalPairs: 1 });
+    assert.match(compared.result.warnings[0], /identical output on all 1 compared pair\. Check that execute uses the bundle/);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('service compare reports a shard selection without writing to stderr', async () => {
+  const f = await fixture();
+  try {
+    assert.equal((await invoke(f.app, f.requestArgs)).status, 0);
+    const compared = await invoke(f.app, [
+      'compare', '--config', f.config, '--handoff', f.handoff, '--policy', f.policy, '--shard', '1/1', '--json',
+    ]);
+    // A shard of one covers every case, so nothing is skipped, but the selection is still reported.
+    assert.equal(compared.result.run.partial, false);
+    assert.match(compared.result.warnings.join('\n'), /shard 1\/1 · 1 of 1 pairs/);
+    assert.equal(compared.err, '');
+  } finally {
+    await f.cleanup();
+  }
+});

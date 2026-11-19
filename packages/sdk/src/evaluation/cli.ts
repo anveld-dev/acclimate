@@ -37,9 +37,25 @@ import {
   readCommandJson,
   readCommandText,
 } from './cli-intents.js';
+import {
+  compareLocalCommand,
+  LOCAL_COMPARE_USAGE,
+  serviceRunNotices,
+  TRY_USAGE,
+  tryCommand,
+} from './local-cli.js';
+import {
+  progressLine,
+  RUN_CONTROL_FLAGS,
+  runControlsFromFlags,
+  selectedCaseIds,
+  wantsProgress,
+  type RunControls,
+} from './controls.js';
 
 type Command =
   | 'compare'
+  | 'try'
   | 'coverage'
   | 'describe'
   | 'doctor'
@@ -50,13 +66,30 @@ type Command =
   | 'interrupt'
   | 'export'
   | 'verify-export';
+/** Run controls accepted by compare (service and local) and run. */
+const runControlFlags: readonly string[] = [...RUN_CONTROL_FLAGS, 'progress', 'quiet'];
+/** compare --local flags that the service form rejects. */
+const localCompareFlags: readonly string[] = ['local', 'parent', 'candidate', 'out'];
 const allowed: Record<Command, readonly string[]> = {
-  compare: ['config', 'handoff', 'bundle', 'channel', 'payload', 'name', 'retry-after', 'live', 'policy'],
+  compare: [
+    'config',
+    'handoff',
+    'bundle',
+    'channel',
+    'payload',
+    'name',
+    'retry-after',
+    'live',
+    'policy',
+    ...localCompareFlags,
+    ...runControlFlags,
+  ],
+  try: ['case', 'payload', 'live', 'case-timeout'],
   coverage: [],
   describe: [],
   doctor: ['config', 'bundle', 'handoff', 'policy', 'name'],
   request: ['config', 'bundle', 'channel', 'payload', 'intent', 'out', 'policy'],
-  run: ['config', 'handoff', 'live', 'name'],
+  run: ['config', 'handoff', 'live', 'name', ...runControlFlags],
   check: ['config', 'read-config', 'handoff', 'policy', 'name'],
   status: ['config', 'read-config', 'handoff', 'name'],
   interrupt: ['config', 'handoff', 'reason', 'name'],
@@ -65,13 +98,15 @@ const allowed: Record<Command, readonly string[]> = {
 };
 /** Flags every command accepts. */
 const globalFlags = ['json', 'verbose'];
-const booleanFlags = new Set(['live', 'json', 'verbose']);
+const booleanFlags = new Set(['live', 'json', 'verbose', 'local', 'progress', 'quiet']);
 /** Flags whose values are file or directory paths, resolved against the working directory. */
 const pathFlags = new Set([
   'config',
   'read-config',
   'handoff',
   'payload',
+  'parent',
+  'candidate',
   'intent',
   'out',
   'policy',
@@ -168,11 +203,43 @@ function exactlyOne(flags: Parsed['flags'], first: string, second: string) {
 const compareUsage = [
   'compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]',
   'compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]',
+  'compare --local --parent PAYLOAD --candidate PAYLOAD [--live] [--policy POLICY] [--out DIR] [--json]  (no service; advisory)',
+  'Run controls: [--deadline DURATION] [--case-timeout DURATION] [--max-cost-usd USD] [--cases ID,ID | --shard I/N] [--progress | --quiet]',
   'Live evaluators require --live. Use one input form and supply each flag once.',
 ].join('\n');
-const usageFor: Partial<Record<Command, string>> = { compare: compareUsage };
+// Resolved lazily: local-cli imports this module, so its constants are read at call time.
+const usageFor = (command: string): string | undefined =>
+  command === 'compare'
+    ? `${compareUsage}\n${LOCAL_COMPARE_USAGE}`
+    : command === 'try'
+      ? TRY_USAGE
+      : undefined;
+
+/** Parse run-control flags and attach stderr progress unless --quiet. */
+function runControls(flags: Parsed['flags']): RunControls {
+  if (flags.quiet && flags.progress)
+    throw new EvaluationUsageError('usage.conflicting_flags', {
+      field: '--progress',
+      reason: 'Use --progress or --quiet, not both.',
+    });
+  const controls = runControlsFromFlags(flags);
+  const progress = wantsProgress(flags.quiet ? 'off' : flags.progress ? 'on' : 'auto');
+  return {
+    ...controls,
+    ...(progress
+      ? { progress: (event) => process.stderr.write(progressLine(event) + '\n') }
+      : {}),
+  };
+}
 
 function validateCompareFlags(flags: Parsed['flags'], live: boolean) {
+  const local = localCompareFlags.filter((key) => key !== 'local' && flags[key]);
+  if (local.length)
+    throw new EvaluationUsageError('usage.unknown_flag', {
+      field: '--' + local[0],
+      reason: `--${local[0]} belongs to compare --local.`,
+      hint: compareUsage,
+    });
   if (live !== (flags.live === true))
     throw new EvaluationUsageError(live ? 'usage.missing_flag' : 'usage.invalid_flag', {
       field: '--live',
@@ -216,7 +283,7 @@ function validateCompareFlags(flags: Parsed['flags'], live: boolean) {
     });
 }
 
-function comparisonText(
+export function comparisonText(
   request: Evaluation,
   comparison: Comparison | null,
   scores: Pick<MetricAnalysis, 'counts' | 'summary' | 'cases' | 'evidenceGaps'> | null,
@@ -468,13 +535,13 @@ function policyExit(verdict: string) {
       ? EXIT_CODES.gateFailed
       : EXIT_CODES.indeterminate;
 }
-/** completed → 0, failed (execution or infrastructure failure) → 4, interrupted → 5. */
+/** completed → 0, failed (execution or infrastructure failure) → 4, interrupted or abandoned → 5. */
 function runStatus(request: Evaluation) {
   return request.status === 'completed'
     ? EXIT_CODES.ok
     : request.status === 'failed'
       ? EXIT_CODES.infrastructure
-      : request.status === 'interrupted'
+      : request.status === 'interrupted' || request.status === 'abandoned'
         ? EXIT_CODES.recovery
         : EXIT_CODES.indeterminate;
 }
@@ -526,6 +593,8 @@ async function dispatch(
 ): Promise<{ status: number; result: unknown }> {
   const { command, flags } = parsed;
   if (command === 'describe') return { status: 0, result: app.descriptor };
+  if (command === 'try') return tryCommand(app, flags);
+  if (command === 'compare' && flags.local) return compareLocalCommand(app, flags, options.cwd);
   if (ADAPTER_FREE_COMMANDS.includes(command)) return readEvidence(parsed);
   if (command === 'coverage')
     throw new EvaluationUsageError('usage.unknown_command', {
@@ -548,6 +617,13 @@ async function dispatch(
   }
   const comparing = command === 'compare';
   if (comparing) validateCompareFlags(flags, app.descriptor.runtime.execution === 'live');
+  // Parse run controls before any request is created or callback starts.
+  const controls = command === 'run' || comparing ? runControls(flags) : undefined;
+  if (controls?.selection)
+    selectedCaseIds(
+      controls.selection,
+      [...new Set(app.descriptor.expectedCases.map((item) => item.caseId))],
+    );
   const terminal = comparing && process.stdout.isTTY && !flags.json;
   const policy =
     comparing && flags.policy
@@ -615,6 +691,7 @@ async function dispatch(
         handoff,
         allowLive: flags.live === true,
         signal: controller.signal,
+        controls,
       });
       if (comparing) {
         const request = result.evaluation;
@@ -655,14 +732,21 @@ async function dispatch(
         const status = policy ? policyExit(policyResult?.verdict ?? 'indeterminate') : runStatus(request);
         const runName = optional(flags, 'name');
         const invocation = { callbacksStarted: result.callbacksStarted, reusedEvidence: result.reusedEvidence };
+        const notices = serviceRunNotices(result, {
+          parent: request.parentDigest,
+          candidate: request.candidateDigest,
+        });
         const execution = result.reusedEvidence
           ? 'Reused saved evidence. No execution callbacks started.'
           : `Execution callbacks started this time: ${result.callbacksStarted}.`;
         const failure = result.firstCallbackFailure;
         return {
-          status: status || (receipt?.status === 'unconfirmed' ? EXIT_CODES.infrastructure : 0),
+          status:
+            status ||
+            (receipt?.status === 'unconfirmed' ? EXIT_CODES.infrastructure : 0) ||
+            notices.exitStatus,
           result: terminal
-            ? [comparisonText(request, result.comparison, scores, policyResult, !!policy), execution,
+            ? [comparisonText(request, result.comparison, scores, policyResult, !!policy), ...notices.lines, execution,
                 ...(failure ? [failureText(failure)] : []),
                 ...(receipt ? [receipt.status === 'recorded' ? 'Policy receipt recorded for release review.' : 'Policy receipt unconfirmed. Retry check with the evaluator config.'] : []),
                 ...(runName ? ['Run handle: --name ' + runName] : [])].join('\n')
@@ -677,6 +761,7 @@ async function dispatch(
                 scores,
                 policy: policyResult,
                 ...(receipt ? { policyReceipt: receipt } : {}),
+                ...notices.json,
               },
         };
       }
@@ -688,6 +773,7 @@ async function dispatch(
           ...(result.firstCallbackFailure
             ? { firstCallbackFailure: result.firstCallbackFailure }
             : {}),
+          ...(result.runSummary ? { run: result.runSummary } : {}),
         },
       };
     } finally {
@@ -838,6 +924,8 @@ async function checkPolicyCommand(
 
 export interface EvaluationMainOptions {
   review?: { toReviewArtifact: ReviewMapper };
+  /** Directory that relative paths and the default local report folder resolve against. */
+  cwd?: string;
 }
 
 /** Statically installed app command adapter. It never exits or discovers executable modules. */
@@ -846,7 +934,7 @@ export async function evaluationMain(
   argv: readonly string[],
   options: EvaluationMainOptions = {},
 ): Promise<number> {
-  return runCommand(argv, (parsed) => dispatch(app, parsed, options));
+  return runCommand(argv, (parsed) => dispatch(app, parsed, options), options.cwd);
 }
 
 /** Verify a recorded comparison using the installed descriptor and the caller's policy. */
@@ -981,8 +1069,8 @@ export function reportEvaluatorError(
         `  caused by: ${firstCause.name}${firstCause.code ? ` [${firstCause.code}]` : ''}: ${firstCause.message}`,
       );
     if (hint) lines.push(`  hint: ${hint.split('\n').join('\n        ')}`);
-    else if (Object.hasOwn(usageFor, command) && diagnostic.code.startsWith('usage.'))
-      lines.push('  usage:\n    ' + usageFor[command as Command]!.split('\n').join('\n    '));
+    else if (usageFor(command) && diagnostic.code.startsWith('usage.'))
+      lines.push('  usage:\n    ' + usageFor(command)!.split('\n').join('\n    '));
     lines.push(`  next: ${diagnostic.nextAction}`);
     if (verbose) {
       for (const item of new Set([error, ...causes]))
@@ -1011,6 +1099,7 @@ export function reportEvaluatorError(
 async function runCommand(
   argv: readonly string[],
   execute: (parsed: Parsed) => Promise<{ status: number; result: unknown }>,
+  cwd = process.cwd(),
 ): Promise<number> {
   let command: Command | 'invalid' = 'invalid';
   try {
@@ -1018,7 +1107,7 @@ async function runCommand(
       process.stdout.write(sdkVersion() + '\n');
       return EXIT_CODES.ok;
     }
-    const parsed = parseEvaluatorArguments(argv);
+    const parsed = parseEvaluatorArguments(argv, cwd);
     command = parsed.command;
     if (command !== 'compare' && parsed.flags.name) {
       if (parsed.flags.handoff || parsed.flags['read-config'])
@@ -1033,7 +1122,9 @@ async function runCommand(
     }
     const { status, result } = await execute(parsed);
     const output =
-      command === 'compare' && typeof result === 'string' ? result : JSON.stringify(result);
+      (command === 'compare' || command === 'try') && typeof result === 'string'
+        ? result
+        : JSON.stringify(result);
     if (Buffer.byteLength(output) > 4 * 1024 * 1024)
       throw new EvaluationError('transport.response_too_large');
     process.stdout.write(output + '\n');

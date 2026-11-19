@@ -15,8 +15,9 @@ The CLI checks your command line first. Then, for commands that run callbacks, i
 | --- | --- | --- |
 | `coverage` | Yes | Inspect local sources, package imports, and declared revision inputs. Keep the report private. |
 | `describe` | Yes | Print the public descriptor for the installed cases, runtime, and grader. |
+| `try` | Yes | Run `execute` and `grade` for one or a few cases with `--case`, print the output, and check every returned shape. It needs no service. |
 | `doctor` | Yes | Check setup with `--config` and a `--bundle`, `--handoff`, or named run. You can include `--policy`. |
-| `compare` | Yes | Run a downloaded handoff, or create and run a named comparison from a complete bundle payload. |
+| `compare` | Yes | Run a downloaded handoff, or create and run a named comparison from a complete bundle payload. Use `compare --local --parent PAYLOAD --candidate PAYLOAD` to compare two payload files or folders without a service. The local result is advisory. |
 | `request` | Yes | Create a handoff from a bundle, channel, payload, and durable `--intent`. Write the handoff with `--out`. |
 | `run` | Yes | Execute an existing request with the evaluator config and handoff or name. |
 | `check` | Yes | Apply a policy to the retained comparison. An evaluator config can record the verdict. |
@@ -70,16 +71,24 @@ Paths can be relative. The CLI resolves them against the current directory.
 | `--retry-after PRIOR_NAME` | `compare` | Start a fresh attempt after a finished run. Use instead of `--name`. |
 | `--bundle ID` | `compare`, `doctor`, `request` | Bundle ID. |
 | `--channel CHANNEL` | `compare`, `request` | Channel to propose the candidate on. |
-| `--payload FILE` | `compare`, `request` | Complete candidate bundle payload. |
+| `--payload FILE` | `compare`, `request`, `try` | Complete candidate bundle payload. `try` also accepts a folder. |
+| `--local` | `compare` | Compare two payloads without a service. Needs `--parent` and `--candidate`; rejects `--config` and `--handoff`. |
+| `--parent PAYLOAD`, `--candidate PAYLOAD` | `compare --local` | A payload JSON file or a folder of bundle files. |
+| `--case ID[,ID…]` | `try` | Cases to try. Defaults to the first case. |
 | `--intent FILE` | `request` | Durable request intent, reused for recovery. |
-| `--out PATH` | `request`, `export` | Handoff file to write, or a new export directory. |
+| `--out PATH` | `request`, `export`, `compare --local` | Handoff file to write, a new export directory, or a new local report folder. |
 | `--policy POLICY` | `compare`, `doctor`, `request`, `check` | Quality policy JSON. |
 | `--selection FILE` | `export` | Artifact selection for `toReviewArtifact`. |
 | `--manifest FILE` | `verify-export` | Export manifest. |
 | `--reason REASON` | `interrupt` | Why the run is interrupted. |
-| `--live` | `compare`, `run` | Authorize model calls. Required when the adapter's execution is `live`, rejected when it is `model-free`. |
+| `--live` | `compare`, `run`, `try` | Authorize model calls. Required when the adapter's execution is `live`, rejected when it is `model-free`. |
+| `--deadline DURATION` | `compare`, `run` | Stop starting work after this wall-clock budget, such as `30m`. The result is partial. |
+| `--case-timeout DURATION` | `compare`, `run`, `try` | Abort each execute or grade call after this long, such as `2m`. |
+| `--max-cost-usd USD` | `compare`, `run` | Stop starting pairs once reported `usage.costUsd` reaches this total. |
+| `--cases ID,ID`, `--shard I/N` | `compare`, `run` | Run part of the inventory. Unselected pairs are reported as `not_selected`. |
+| `--progress`, `--quiet` | `compare`, `run` | Force progress lines on stderr, or hide them. Progress shows on a terminal by default. |
 | `--app PATH` | commands that load your module | Application module to load. Python also accepts `PACKAGE.MODULE`. |
-| `--json` | all | Print errors as one JSON line on stderr, even on a terminal. `compare` and `coverage` also print JSON results. |
+| `--json` | all | Print errors as one JSON line on stderr, even on a terminal. `compare`, `try` and `coverage` also print JSON results. |
 | `--verbose` | all | Include stack traces and the chained cause in errors. `ACCLIMATE_DEBUG=1` does the same. |
 | `--version` | none | Print the SDK version. |
 | `--help` | any | Print usage. `COMMAND --help` prints one command's flags. |
@@ -108,6 +117,8 @@ export default defineApplication({
 | `execution` | `execution` | No | `'live'` (default) needs `--live`. `'model-free'` is for deterministic adapters and needs no `--live`. |
 | `revisionFiles` | `revision_files` | No | Files, relative to the module, whose bytes are part of the grader identity. |
 | `configId` | `config_id` | No | Configuration name. Defaults to `application`. |
+| `concurrency` | `concurrency` | No | Pairs in flight at once, 1–64. Defaults to 1. Part of the descriptor. |
+| `gradeRetries` | `grade_retries` | No | Extra grade attempts after a grader raises or times out, 0–5. Defaults to 0. Part of the descriptor. |
 | `grader` | `grader` | No | `{ sourceUtf8 }` or `{ artifactDigest: 'sha256:…' }`. Defaults to the bound module digest. |
 | `runtime` | `runtime` | No | `{ settings, artifacts }`. Settings are JSON. Artifacts map names to `sha256:` digests. |
 | `toReviewArtifact` | `to_review_artifact` | No | Allowlist fields for review exports. |
@@ -147,9 +158,9 @@ Without a terminal, or with `--json`, stderr gets one JSON line with `code`, `me
 | 0 | Success. With a policy, the candidate passed. | Nothing. |
 | 1 | Usage or setup error: the command line, config, application module or definition. | Fix it and rerun. |
 | 2 | The quality gate failed: the policy verdict is `fail`. | Review the candidate. |
-| 3 | Indeterminate: the policy cannot decide, the run has not finished, or exported evidence is missing. | Inspect the evidence gaps. |
+| 3 | Indeterminate: the policy cannot decide, the run has not finished or stopped early at a deadline or cost limit, or exported evidence is missing. | Inspect the evidence gaps. |
 | 4 | The run or the service failed: the request finished as `failed`, the service was unreachable, or a policy receipt was not confirmed. | Check the service and the first callback failure, then retry. |
-| 5 | Recovery required: execution may have started, a submission is unconfirmed, the journal needs attention, or the request was interrupted or has a newer parent. | Follow `nextAction` and [evaluation recovery](/docs/operate/upgrades-and-recovery#recover-an-evaluation). |
+| 5 | Recovery required: execution may have started, a submission is unconfirmed, the journal needs attention, or the request was interrupted, abandoned or has a newer parent. | Follow `nextAction` and [evaluation recovery](/docs/operate/upgrades-and-recovery#recover-an-evaluation). |
 
 See [error codes](/docs/reference/error-codes) for every diagnostic code with its exit code and next action.
 
@@ -167,3 +178,20 @@ First callback failure: "refund" [0] candidate · execute · execution_failed
 ```
 
 In JSON output, the same information is in `firstCallbackFailure`. Output that is not plain JSON is recorded in `output-validation.json` with the failing field.
+
+## Local runs
+
+`try` and `compare --local` load the same application adapter but never contact the service. `PAYLOAD` is a payload JSON file or a folder. In a folder, `skills/**` become skill files, `memory/**` become memory files, and other files become instructions.
+
+```sh
+acclimate-eval try [--live] [--case ID,ID] [--payload PAYLOAD] [--case-timeout 2m] [--json]
+acclimate-eval compare --local --parent PAYLOAD --candidate PAYLOAD [--live] \
+  [--policy POLICY] [--out DIR] [--json] [--cases ID,ID | --shard I/N] \
+  [--deadline 30m] [--case-timeout 2m] [--max-cost-usd 5] [--progress | --quiet]
+```
+
+`try` exits 0 when every shape is valid and 1 otherwise. `compare --local` exits with the advisory policy result when you pass `--policy`: 0 for pass, 2 for fail, and 3 for indeterminate. Without a policy, it exits 3 when a deadline, cost limit, or interruption stopped the run, and 0 otherwise. The report `local-report.json` has `"authoritative": false` and `"releaseReceipt": false`.
+
+## Run controls
+
+`compare` and `run` also accept `--deadline`, `--case-timeout`, `--max-cost-usd`, `--cases`, `--shard`, `--progress`, and `--quiet`. See [bound and split a run](/docs/guides/evaluate-a-change#bound-and-split-a-run). Without a terminal, stderr stays a single JSON diagnostic unless you pass `--progress`. A run that a deadline, cost limit or interruption stopped early exits 3, because its evidence is partial. Invalid control values are `usage.invalid_flag` errors that name the flag.

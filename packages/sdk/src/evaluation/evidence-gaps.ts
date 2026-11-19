@@ -26,7 +26,16 @@ export function scalarGap(outcome?: Outcome): [Stage, string] | undefined {
     return [
       'execute',
       code &&
-      ['output_invalid', 'output_reference_invalid', 'cancelled', 'execution_failed'].includes(code)
+      [
+        'output_invalid',
+        'output_reference_invalid',
+        'cancelled',
+        'execution_failed',
+        'not_selected',
+        'timeout',
+        'deadline_exceeded',
+        'cost_limit_reached',
+      ].includes(code)
         ? code
         : 'infrastructure_failed',
     ];

@@ -1,9 +1,8 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { AcclimateClient, ApiError } from '../client.js';
 import { resolveAndCache } from '../cache.js';
-import { TaskExecutionError } from '../compare.js';
 import type {
   CachedLearningParent,
   Comparison,
@@ -11,7 +10,6 @@ import type {
   Evaluation,
   EvaluationDescriptor,
   EvaluationHandoff,
-  Outcome,
   VerifiedVersion,
 } from '../types.js';
 import {
@@ -20,28 +18,16 @@ import {
   validateEvaluationHandoff,
 } from '../validation.js';
 import { createEvaluationTransport } from '../internal/evaluation-transport.js';
-import {
-  assertJson,
-  assertEvaluationOutput,
-  OutputValidationError,
-  captureDefinition,
-  deepFreeze,
-  MAX_ARTIFACT,
-  MAX_PRIVATE,
-  MAX_REQUEST,
-} from './definition.js';
+import { captureDefinition, deepFreeze, MAX_REQUEST } from './definition.js';
 import type { CapturedDefinition } from './definition.js';
 import { readEvaluatorConfig } from './config.js';
-import {
-  CallbackCancelled,
-  EvaluationError,
-  ExecutionUncertainError,
-  toSafeDiagnostic,
-} from './errors.js';
+import { EvaluationError, ExecutionUncertainError, toSafeDiagnostic } from './errors.js';
 import type { ExecutionState, EvaluationPhase } from './errors.js';
 import { acquireFileLock, openJournal, sha256 } from './journal.js';
 import type { ArtifactIndex, AttemptJournal, EvaluationJournal, JournalScope } from './journal.js';
 import { atomicPrivateWrite, privateDirectory } from './private-state.js';
+import { runTrials } from './trials.js';
+import type { RunControls, RunSummary } from './controls.js';
 import type {
   EvaluationRunResult,
   EvaluatorConfig,
@@ -446,36 +432,6 @@ export async function preflightEvaluation<I, E, O>(
   }
   return result;
 }
-const unavailable = (error = 'cancelled'): Outcome => ({
-  executionStatus: 'infrastructure_failed',
-  gradingStatus: 'missing',
-  reward: null,
-  outputRef: null,
-  error,
-  usage: null,
-});
-const usageKeys = ['inputTokens', 'outputTokens', 'costUsd'] as const;
-function usage(value: unknown): Outcome['usage'] {
-  if (value == null) return null;
-  if (typeof value !== 'object' || Array.isArray(value))
-    throw new OutputValidationError('usage', 'Return usage as { inputTokens, outputTokens, costUsd }.');
-  const unknown = Object.keys(value).find((key) => !(usageKeys as readonly string[]).includes(key));
-  if (unknown)
-    throw new OutputValidationError(
-      `usage.${unknown.slice(0, 64)}`,
-      'Unknown usage key. Use inputTokens, outputTokens and costUsd.',
-    );
-  const result: NonNullable<Outcome['usage']> = {};
-  for (const key of usageKeys) {
-    const n = (value as Record<string, unknown>)[key];
-    if (n !== undefined) {
-      if (typeof n !== 'number' || !Number.isFinite(n) || n < 0)
-        throw new OutputValidationError(`usage.${key}`, 'Use a finite, nonnegative number.');
-      result[key] = n;
-    }
-  }
-  return result;
-}
 export async function runEvaluation<I, E, O>(
   options: RunEvaluationOptions<I, E, O>,
 ): Promise<EvaluationRunResult> {
@@ -511,6 +467,7 @@ export async function runEvaluationRequest<I, E, O>(
     retryMissingTrial: options.retryMissingTrial,
     cachedParent: options.cachedParent,
     cumulative,
+    controls: options.controls,
   });
 }
 
@@ -527,6 +484,7 @@ export async function runCapturedEvaluation(options: {
   retryMissingTrial?: boolean;
   cachedParent?: () => Promise<CachedLearningParent | null | undefined>;
   cumulative?: boolean;
+  controls?: RunControls;
 }): Promise<EvaluationRunResult> {
   const { captured, config, handoff, transport } = options,
     api = transport.client;
@@ -542,11 +500,11 @@ export async function runCapturedEvaluation(options: {
     phase: EvaluationPhase = 'verify',
     certainty: ExecutionState = 'not_started';
   const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), journal.signal]);
-  let cancelled = false;
   let callbacksStarted = 0;
   let firstCallbackFailure: EvaluationRunResult['firstCallbackFailure'];
   const captureErrors = config.captureCallbackErrors !== false;
   const secrets = [(config as Partial<EvaluatorConfig>).evaluatorToken ?? ''];
+  let runSummary: RunSummary | undefined;
   try {
     // Recovery diagnostics must reflect durable work even if the first
     // authoritative read fails before we can reconcile the remote lifecycle.
@@ -691,312 +649,72 @@ export async function runCapturedEvaluation(options: {
         reportSha256: '',
         entries: [],
       };
-      let artifactBytes = 0;
+      // Concurrent arms share one index; serialize its updates in completion order.
+      let indexWrites: Promise<unknown> = Promise.resolve();
+      const updateIndex = <T>(change: () => Promise<T>): Promise<T> => {
+        const next = indexWrites.then(change);
+        indexWrites = next.catch(() => undefined);
+        return next;
+      };
+      const attemptId = state.attemptId;
+      const trials = await runTrials({
+        captured,
+        requestId: scope.requestId,
+        attemptId,
+        bundles,
+        jobsRoot: path.join(journal.directory, 'jobs'),
+        signal,
+        controls: { ...captured.controls, ...options.controls },
+        retryMissingTrial: options.retryMissingTrial,
+        captureCallbackErrors: captureErrors,
+        cachedParent: cachedParent ? cachedResults : undefined,
+        hooks: {
+          checkpoint: async () => {
+            await check();
+          },
+          assertOwned: () => journal.assertOwned(),
+          writeArtifact: (identity, value) =>
+            updateIndex(async () => {
+              const entry = await journal.writeArtifact(identity, value);
+              index.entries.push(entry);
+              await journal.saveArtifactIndex(index);
+              return entry;
+            }),
+          discardArtifacts: (entries) =>
+            updateIndex(async () => {
+              const discarded = new Set<unknown>(entries);
+              index.entries = index.entries.filter((entry) => !discarded.has(entry));
+              await journal.saveArtifactIndex(index);
+            }),
+          recordOutputError: async (directory, error) => {
+            journal.assertOwned();
+            // Keep field names inside the application's private job.
+            const file = path.join(directory, 'output-validation.json');
+            await atomicPrivateWrite(
+              file,
+              JSON.stringify({ field: error.field, reason: error.reason }),
+            );
+            return file;
+          },
+          saveCallbackError: (directory, phase, error) =>
+            saveCallbackError(directory, phase, error, secrets),
+          isFatal: (error) =>
+            error instanceof ExecutionUncertainError ||
+            (error instanceof EvaluationError && error.code === 'journal.ownership_lost'),
+          onCallbackStarted: () => {
+            callbacksStarted++;
+          },
+        },
+      });
+      await indexWrites;
+      runSummary = trials.summary;
+      firstCallbackFailure = trials.firstCallbackFailure;
       const report: ComparisonRequest = {
         ...frozen(request),
-        evaluation: { requestId: scope.requestId, attemptId: state.attemptId },
+        evaluation: { requestId: scope.requestId, attemptId },
         ...(cachedParent ? { parentSourceComparisonId: cachedParent.comparisonId } : {}),
-        results: [],
+        results: trials.results,
       };
-      let pairIndex = -1;
-      for (const item of captured.cases)
-        for (let repetition = 0; repetition < (item.repetitions ?? 1); repetition++) {
-          pairIndex++;
-          const pair = {
-            caseId: item.caseId,
-            repetition,
-            parent: unavailable(),
-            candidate: unavailable(),
-          };
-          if (cachedParent)
-            pair.parent = cachedResults.get(JSON.stringify([item.caseId, repetition]))!;
-          const firstSide = captured.collection?.pairs[pairIndex].firstSide ?? 'parent';
-          const order =
-            firstSide === 'parent'
-              ? (['parent', 'candidate'] as const)
-              : (['candidate', 'parent'] as const);
-          for (const [armIndex, side] of order.entries()) {
-            if (cachedParent && side === 'parent') continue;
-            const attempts = options.retryMissingTrial ? 2 : 1;
-            const firstArtifact = index.entries.length;
-            for (let retry = 0; retry < attempts; retry++) {
-              if (signal.aborted || cancelled) {
-                pair[side] = unavailable();
-                break;
-              }
-              if (retry && index.entries.length > firstArtifact) {
-                index.entries.length = firstArtifact;
-                await journal.saveArtifactIndex(index);
-              }
-              await check();
-              const bundle = bundles[side === 'parent' ? 0 : 1];
-              const jobId = createHash('sha256')
-                .update(
-                  JSON.stringify([
-                    scope.requestId,
-                    state.attemptId,
-                    side,
-                    bundle.version.id,
-                    item.caseId,
-                    repetition,
-                    ...(retry ? [retry] : []),
-                  ]),
-                )
-                .digest('hex');
-              const privateJobDirectory = path.join(journal.directory, 'jobs', jobId);
-              await privateDirectory(privateJobDirectory);
-              const context = {
-                requestId: scope.requestId,
-                attemptId: state.attemptId,
-                side,
-                jobId,
-                privateJobDirectory,
-                ...(captured.collection
-                  ? {
-                      collection: Object.freeze({
-                        protocol: captured.collection.protocol,
-                        scheduleDigest: captured.collection.digest,
-                        pairIndex,
-                        armIndex,
-                        firstSide,
-                      }),
-                    }
-                  : {}),
-              };
-              await atomicPrivateWrite(
-                path.join(privateJobDirectory, 'binding.json'),
-                JSON.stringify({
-                  ...context,
-                  privateJobDirectory: undefined,
-                  collection: undefined,
-                  caseId: item.caseId,
-                  repetition,
-                  versionId: bundle.version.id,
-                  digest: bundle.version.digest,
-                }) + '\n',
-              );
-              if (context.collection) {
-                await atomicPrivateWrite(
-                  path.join(privateJobDirectory, 'collection-binding.json'),
-                  JSON.stringify({
-                    schemaVersion: 1,
-                    jobId,
-                    caseId: item.caseId,
-                    repetition,
-                    side,
-                    ...context.collection,
-                  }) + '\n',
-                );
-              }
-              journal.assertOwned();
-              if (signal.aborted || cancelled) {
-                pair[side] = unavailable();
-                continue;
-              }
-              const noteFailure = (
-                stage: 'execute' | 'grade',
-                reason: NonNullable<EvaluationRunResult['firstCallbackFailure']>['reason'],
-                file?: string,
-              ) => {
-                firstCallbackFailure ??= {
-                  caseId: item.caseId,
-                  repetition,
-                  side,
-                  stage,
-                  reason,
-                  ...(file ? { diagnosticFile: file } : {}),
-                };
-              };
-              const recordOutputError = async (error: OutputValidationError) => {
-                journal.assertOwned();
-                // Keep field names inside the application's private job.
-                const file = path.join(privateJobDirectory, 'output-validation.json');
-                await atomicPrivateWrite(
-                  file,
-                  JSON.stringify({ field: error.field, reason: error.reason }),
-                );
-                noteFailure('execute', 'output_invalid', file);
-              };
-              let execution;
-              try {
-                callbacksStarted++;
-                execution = await captured.execute({
-                  bundle: structuredClone(bundle),
-                  caseId: item.caseId,
-                  repetition,
-                  input: structuredClone(item.input),
-                  signal,
-                  context: Object.freeze(context),
-                });
-                journal.assertOwned();
-              } catch (error) {
-                if (error instanceof ExecutionUncertainError) throw error;
-                if (error instanceof CallbackCancelled) {
-                  cancelled = true;
-                  pair[side] = unavailable();
-                  continue;
-                }
-                if (error instanceof EvaluationError && error.code === 'journal.ownership_lost')
-                  throw error;
-                if (error instanceof OutputValidationError) {
-                  await recordOutputError(error);
-                  pair[side] = unavailable('output_invalid');
-                  continue;
-                }
-                noteFailure(
-                  'execute',
-                  error instanceof TaskExecutionError ? 'task_failed' : 'execution_failed',
-                  captureErrors
-                    ? await saveCallbackError(privateJobDirectory, 'execute', error, secrets)
-                    : undefined,
-                );
-                pair[side] =
-                  error instanceof TaskExecutionError
-                    ? { ...unavailable('task_failed'), executionStatus: 'task_failed' }
-                    : unavailable('execution_failed');
-                continue;
-              }
-              let entry;
-              let capturedOutput: unknown;
-              let capturedExecutionStatus: 'completed' | 'task_failed' = 'completed';
-              let capturedReference: unknown;
-              let capturedUsage: Outcome['usage'] = null;
-              try {
-                const returnedOutput = execution.output;
-                assertEvaluationOutput(returnedOutput);
-                capturedOutput = structuredClone(returnedOutput);
-                const returnedStatus = execution.executionStatus;
-                if (!['completed', 'task_failed', undefined].includes(returnedStatus))
-                  throw new Error();
-                capturedExecutionStatus = returnedStatus ?? 'completed';
-                capturedReference = execution.outputRef;
-                capturedUsage = usage(execution.usage);
-                if (
-                  artifactBytes + Buffer.byteLength(JSON.stringify(capturedOutput)) + 16 * 1024 >
-                  MAX_PRIVATE
-                ) {
-                  cancelled = true;
-                  throw new Error();
-                }
-                entry = await journal.writeArtifact(
-                  {
-                    requestId: scope.requestId,
-                    attemptId: state.attemptId,
-                    caseId: item.caseId,
-                    repetition,
-                    side,
-                    versionId: bundle.version.id,
-                    digest: bundle.version.digest,
-                    role: 'output',
-                  },
-                  capturedOutput,
-                );
-                artifactBytes += entry.bytes;
-                index.entries.push(entry);
-                await journal.saveArtifactIndex(index);
-              } catch (error) {
-                if (error instanceof OutputValidationError) {
-                  await recordOutputError(error);
-                }
-                pair[side] = unavailable('output_invalid');
-                continue;
-              }
-              const reference = capturedReference ?? `acclimate:artifact:${entry.sha256}`;
-              if (
-                typeof reference !== 'string' ||
-                Buffer.byteLength(reference) > 1024 ||
-                /[\u0000-\u001f\u007f\ud800-\udfff]/u.test(reference)
-              ) {
-                pair[side] = unavailable('output_reference_invalid');
-                continue;
-              }
-              const outcome: Outcome = {
-                executionStatus: capturedExecutionStatus,
-                gradingStatus: 'missing',
-                reward: null,
-                outputRef: reference,
-                error: null,
-                usage: capturedUsage,
-              };
-              if (signal.aborted || cancelled) {
-                pair[side] = { ...outcome, error: 'cancelled' };
-                continue;
-              }
-              await check();
-              journal.assertOwned();
-              if (signal.aborted || cancelled) {
-                pair[side] = { ...outcome, error: 'cancelled' };
-                continue;
-              }
-              let gradeReturned = false;
-              try {
-                const grade = await captured.grade({
-                  output: structuredClone(capturedOutput),
-                  expected: structuredClone(item.expected),
-                  caseId: item.caseId,
-                  repetition,
-                  signal,
-                });
-                gradeReturned = true;
-                journal.assertOwned();
-                const reward = grade.reward;
-                if (typeof reward !== 'number' || !Number.isFinite(reward)) throw new Error();
-                const returnedExplanation = grade.explanation;
-                let capturedExplanation: unknown;
-                if (returnedExplanation !== undefined) {
-                  assertJson(returnedExplanation, MAX_ARTIFACT);
-                  capturedExplanation = structuredClone(returnedExplanation);
-                  if (
-                    artifactBytes +
-                      Buffer.byteLength(JSON.stringify(capturedExplanation)) +
-                      16 * 1024 >
-                    MAX_PRIVATE
-                  ) {
-                    cancelled = true;
-                    throw new Error();
-                  }
-                  const explanation = await journal.writeArtifact(
-                    {
-                      requestId: scope.requestId,
-                      attemptId: state.attemptId,
-                      caseId: item.caseId,
-                      repetition,
-                      side,
-                      versionId: bundle.version.id,
-                      digest: bundle.version.digest,
-                      role: 'grader-explanation',
-                    },
-                    capturedExplanation,
-                  );
-                  artifactBytes += explanation.bytes;
-                  index.entries.push(explanation);
-                  await journal.saveArtifactIndex(index);
-                }
-                pair[side] = { ...outcome, gradingStatus: 'scored', reward };
-                break;
-              } catch (error) {
-                if (error instanceof ExecutionUncertainError) throw error;
-                if (error instanceof EvaluationError && error.code === 'journal.ownership_lost')
-                  throw error;
-                if (error instanceof CallbackCancelled) cancelled = true;
-                else
-                  noteFailure(
-                    'grade',
-                    'grading_failed',
-                    !gradeReturned && captureErrors
-                      ? await saveCallbackError(privateJobDirectory, 'grade', error, secrets)
-                      : undefined,
-                  );
-                pair[side] = {
-                  ...outcome,
-                  gradingStatus: 'failed',
-                  error: error instanceof CallbackCancelled ? 'cancelled' : 'grading_failed',
-                };
-              }
-            }
-          }
-          report.results.push(pair);
-        }
       journal.assertOwned();
       assertReport(report, request, state.attemptId);
       const body = JSON.stringify(report);
@@ -1061,7 +779,11 @@ export async function runCapturedEvaluation(options: {
     const result = await terminal(api, scope, request, callbacksStarted, reusedEvidence, state);
     state.completed = true;
     await journal.save(state);
-    return firstCallbackFailure ? { ...result, firstCallbackFailure } : result;
+    const extras = {
+      ...(firstCallbackFailure ? { firstCallbackFailure } : {}),
+      ...(runSummary ? { runSummary } : {}),
+    };
+    return { ...result, ...extras };
   } catch (error) {
     if (error instanceof ObservedInterruption) {
       return {

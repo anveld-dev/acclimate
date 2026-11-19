@@ -49,7 +49,7 @@ test('no arguments is a usage error, while --help succeeds', async () => {
   const empty = await cli([]);
   assert.equal(empty.status, 1);
   assert.equal(empty.error.code, 'usage.missing_command');
-  assert.match(empty.err, /Commands: compare/);
+  assert.match(empty.err, /Commands: try, compare/);
   const help = await cli(['--help']);
   assert.equal(help.status, 0);
   assert.match(help.out, /defineApplication/);

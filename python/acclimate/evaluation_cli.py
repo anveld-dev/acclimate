@@ -27,17 +27,25 @@ from ._evaluation_cli_intents import (
 from .evaluation_analysis import analyze_comparison
 from ._evaluation_policy_receipt import record_policy_receipt
 from .evaluation_policy import check_comparison, parse_evaluation_policy
+from ._evaluation_local_cli import service_run_notices
+from ._evaluation_controls import RUN_CONTROL_FLAGS, RunControls, progress_line, run_controls_from_flags, selected_case_ids, wants_progress
 from .evaluation_artifacts import (
     export_review_evidence, verify_review_export, parse_artifact_selection,
 )
 
+#: Run controls accepted by compare (service and local) and run.
+_RUN_CONTROL_FLAGS = {*RUN_CONTROL_FLAGS, "progress", "quiet"}
+#: compare --local flags that the service form rejects.
+_LOCAL_COMPARE_FLAGS = {"local", "parent", "candidate", "out"}
 _FLAGS = {
-    "compare": {"config", "handoff", "bundle", "channel", "payload", "name", "retry-after", "live", "policy"},
+    "compare": {"config", "handoff", "bundle", "channel", "payload", "name", "retry-after", "live", "policy",
+                *_LOCAL_COMPARE_FLAGS, *_RUN_CONTROL_FLAGS},
+    "try": {"case", "payload", "live", "case-timeout"},
     "coverage": set(),
     "describe": set(),
     "doctor": {"config", "bundle", "handoff", "policy", "name"},
     "request": {"config", "bundle", "channel", "payload", "intent", "out", "policy"},
-    "run": {"config", "handoff", "live", "name"},
+    "run": {"config", "handoff", "live", "name", *_RUN_CONTROL_FLAGS},
     "check": {"config", "read-config", "handoff", "policy", "name"},
     "status": {"config", "read-config", "handoff", "name"},
     "interrupt": {"config", "handoff", "reason", "name"},
@@ -46,9 +54,10 @@ _FLAGS = {
 }
 #: Flags every command accepts.
 _GLOBAL_FLAGS = {"json", "verbose"}
-_BOOLEAN_FLAGS = {"live", "json", "verbose"}
+_BOOLEAN_FLAGS = {"live", "json", "verbose", "local", "progress", "quiet"}
 #: Flags whose values are paths, resolved against the working directory.
-_PATH_FLAGS = {"config", "read-config", "handoff", "payload", "intent", "out", "policy", "selection", "manifest"}
+_PATH_FLAGS = {"config", "read-config", "handoff", "payload", "parent", "candidate", "intent", "out", "policy",
+               "selection", "manifest"}
 #: Commands that never import the application module.
 ADAPTER_FREE_COMMANDS = ("status", "verify-export", "interrupt")
 EVALUATOR_COMMANDS = tuple(_FLAGS)
@@ -104,11 +113,40 @@ _parse = parse_evaluator_arguments
 _COMPARE_USAGE = (
     "compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]\n"
     "compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]\n"
+    "compare --local --parent PAYLOAD --candidate PAYLOAD [--live] [--policy POLICY] [--out DIR] [--json]  (no service; advisory)\n"
+    "Run controls: [--deadline DURATION] [--case-timeout DURATION] [--max-cost-usd USD] [--cases ID,ID | --shard I/N] [--progress | --quiet]\n"
     "Live evaluators require --live. Use one input form and supply each flag once."
 )
 
 
+def _usage_for(command):
+    from ._evaluation_local_cli import LOCAL_COMPARE_USAGE, TRY_USAGE
+    return {"compare": _COMPARE_USAGE + "\n" + LOCAL_COMPARE_USAGE, "try": TRY_USAGE}.get(command)
+
+
+def _write_progress(event):
+    sys.stderr.write(progress_line(event) + "\n")
+    sys.stderr.flush()
+
+
+def _run_controls(flags, case_ids):
+    """Parse run-control flags and attach stderr progress unless --quiet."""
+    if flags.get("quiet") and flags.get("progress"):
+        raise _usage_error("usage.conflicting_flags", field="--progress", reason="Use --progress or --quiet, not both.")
+    controls = run_controls_from_flags(flags)
+    if controls.selection:
+        selected_case_ids(controls.selection, case_ids)
+    progress = wants_progress("off" if flags.get("quiet") else "on" if flags.get("progress") else "auto")
+    return RunControls(deadline_ms=controls.deadline_ms, case_timeout_ms=controls.case_timeout_ms,
+                       max_cost_usd=controls.max_cost_usd, selection=controls.selection,
+                       progress=_write_progress if progress else None)
+
+
 def _validate_compare_flags(flags, live):
+    local = [key for key in ("parent", "candidate", "out") if flags.get(key)]
+    if local:
+        raise _usage_error("usage.unknown_flag", field="--" + local[0], reason=f"--{local[0]} belongs to compare --local.",
+                           hint=_COMPARE_USAGE)
     if live != (flags.get("live") is True):
         raise _usage_error("usage.missing_flag" if live else "usage.invalid_flag", field="--live",
                            reason="This evaluator is live. Add --live to authorize model calls." if live
@@ -285,9 +323,10 @@ def _readiness_status(result):
 
 
 def _run_status(evaluation):
-    """completed -> 0, failed (execution or infrastructure failure) -> 4, interrupted -> 5."""
+    """completed -> 0, failed (execution or infrastructure failure) -> 4, interrupted or abandoned -> 5."""
     return {"completed": EXIT_CODES["ok"], "failed": EXIT_CODES["infrastructure"],
-            "interrupted": EXIT_CODES["recovery"]}.get(evaluation["status"], EXIT_CODES["indeterminate"])
+            "interrupted": EXIT_CODES["recovery"], "abandoned": EXIT_CODES["recovery"]}.get(
+                evaluation["status"], EXIT_CODES["indeterminate"])
 
 
 def _failure_text(failure):
@@ -298,7 +337,7 @@ def _failure_text(failure):
     return text
 
 
-def _run(app, flags, handoff):
+def _run(app, flags, handoff, controls=None):
     cancel_event = threading.Event()
     originals = {}
     if threading.current_thread() is threading.main_thread():
@@ -309,7 +348,7 @@ def _run(app, flags, handoff):
             signal.signal(number, cancel)
     try:
         return run_evaluation(app=app, config_path=_required(flags, "config"), handoff=handoff,
-            allow_live=flags.get("live") is True, cancel_event=cancel_event)
+            allow_live=flags.get("live") is True, cancel_event=cancel_event, controls=controls)
     finally:
         for number, handler in originals.items():
             signal.signal(number, handler)
@@ -335,9 +374,15 @@ def _create_request(app, flags, predecessor=None):
         payload_file=_required(flags, "payload"), intent_path=_required(flags, "intent"), output_file=_required(flags, "out"), predecessor=predecessor)
 
 
-def _dispatch(app, command, flags, review):
+def _dispatch(app, command, flags, review, cwd=None):
     if command == "describe":
         return 0, app.descriptor
+    if command == "try":
+        from ._evaluation_local_cli import try_command
+        return try_command(app, flags)
+    if command == "compare" and flags.get("local"):
+        from ._evaluation_local_cli import compare_local_command
+        return compare_local_command(app, flags, cwd or os.getcwd())
     if command == "coverage":
         raise _usage_error("usage.unknown_command", field='"coverage"', hint="Run coverage through python -m acclimate.")
     if command == "interrupt":
@@ -367,8 +412,13 @@ def _dispatch(app, command, flags, review):
         return _readiness_status(result), result
     comparing = command == "compare"
     policy = None
+    controls = None
     if comparing:
         _validate_compare_flags(flags, app.execution == "live")
+    if comparing or command == "run":
+        # Parse run controls before any request is created or callback starts.
+        controls = _run_controls(flags, list(dict.fromkeys(item["caseId"] for item in app.descriptor["expectedCases"])))
+    if comparing:
         terminal = sys.stdout.isatty() and not flags.get("json")
         if flags.get("policy"):
             policy = parse_evaluation_policy(read_command_bytes(flags["policy"]).decode(), app.descriptor)
@@ -407,7 +457,7 @@ def _dispatch(app, command, flags, review):
         _exactly_one(flags, "config", "read-config")
     handoff = _handoff(flags)
     if command == "run" or comparing:
-        result = _run(app, flags, handoff)
+        result = _run(app, flags, handoff, controls)
         evaluation = result["evaluation"]
         status = _run_status(evaluation)
         failure = result.get("firstCallbackFailure")
@@ -430,9 +480,13 @@ def _dispatch(app, command, flags, review):
             if receipt and receipt["status"] == "unconfirmed" and status == 0:
                 status = EXIT_CODES["infrastructure"]
             run_name = flags.get("name")
+            notice_lines, notice_json = service_run_notices(result, {"parent": evaluation["parentDigest"], "candidate": evaluation["candidateDigest"]})
+            if status == 0 and (result.get("runSummary") or {}).get("stopReason", "completed") != "completed":
+                # A deadline, cost limit or interruption left pairs unrun: partial evidence is indeterminate.
+                status = EXIT_CODES["indeterminate"]
             invocation = {"callbacksStarted": result["callbacksStarted"], "reusedEvidence": result["reusedEvidence"]}
             if terminal:
-                summary = _comparison_text(evaluation, result.get("comparison"), scores, policy_result, bool(policy))
+                summary = "\n".join([_comparison_text(evaluation, result.get("comparison"), scores, policy_result, bool(policy)), *notice_lines])
                 activity = ("Reused saved evidence. No execution callbacks started." if result["reusedEvidence"]
                             else f'Execution callbacks started this time: {result["callbacksStarted"]}.')
                 summary += "\n" + activity
@@ -447,9 +501,10 @@ def _dispatch(app, command, flags, review):
                             **({"runName": run_name} if run_name else {}),
                             "parentVersionId": evaluation["parentVersionId"],
                             "candidateVersionId": evaluation["candidateVersionId"], "candidateDigest": evaluation["candidateDigest"],
-                            "scores": scores, "policy": policy_result, **({"policyReceipt": receipt} if receipt else {})}
+                            "scores": scores, "policy": policy_result, **({"policyReceipt": receipt} if receipt else {}), **notice_json}
         return status, {**_safe_request(evaluation), "executionState": result["executionState"],
-                        **({"firstCallbackFailure": failure} if failure else {})}
+                        **({"firstCallbackFailure": failure} if failure else {}),
+                        **({"run": result["runSummary"]} if result.get("runSummary") else {})}
     if command == "export":
         _exactly_one(flags, "config", "read-config")
         selection = parse_artifact_selection(read_command_json(_required(flags, "selection"))) if flags.get("selection") else None
@@ -545,8 +600,8 @@ def report_evaluator_error(error, argv, command="invalid") -> int:
                          + ": " + first_cause["message"])
         if hint:
             lines.append("  hint: " + hint.replace("\n", "\n        "))
-        elif command == "compare" and diagnostic["code"].startswith("usage."):
-            lines.append("  usage:\n    " + _COMPARE_USAGE.replace("\n", "\n    "))
+        elif _usage_for(command) and diagnostic["code"].startswith("usage."):
+            lines.append("  usage:\n    " + _usage_for(command).replace("\n", "\n    "))
         lines.append("  next: " + diagnostic["nextAction"])
         if verbose:
             lines.extend(["", "".join(traceback.format_exception(error)).rstrip()])
@@ -581,15 +636,20 @@ def sdk_version() -> str:
     return "unknown"
 
 
-def evaluation_main(app, argv=None, *, review=None) -> int:
-    """Run one command; review mapper is trusted installed code, never a path."""
-    command = "invalid"
+def evaluation_main(app, argv=None, *, review=None, cwd=None) -> int:
+    """Run one command; review mapper is trusted installed code, never a path.
+
+    compare --local and try run without a service. Run-control flags (--deadline,
+    --case-timeout, --max-cost-usd, --cases, --shard, --progress, --quiet) apply
+    to compare and run. cwd resolves relative paths and the default local report folder.
+    """
     args = list(sys.argv[1:] if argv is None else argv)
+    command = "invalid"
     try:
         if args in (["--version"], ["-V"]):
             sys.stdout.write(sdk_version() + "\n")
             return EXIT_CODES["ok"]
-        command, flags = parse_evaluator_arguments(args)
+        command, flags = parse_evaluator_arguments(args, cwd)
         if command != "compare" and flags.get("name"):
             if flags.get("handoff") or flags.get("read-config"):
                 raise _usage_error("usage.conflicting_flags", field="--name",
@@ -597,8 +657,14 @@ def evaluation_main(app, argv=None, *, review=None) -> int:
             config = read_evaluator_config(_required(flags, "config"))
             flags["handoff"] = str(_named_handoff(config["journalRoot"], flags["name"]))
             flags["run-name"] = flags["name"]
-        status, result = _dispatch(app, command, flags, review)
-        output = result.encode("utf-8") if command == "compare" and isinstance(result, str) else json_bytes(result)
+        status, result = _dispatch(app, command, flags, review, cwd)
+        if command in ("compare", "try") and isinstance(result, str):
+            output = result.encode("utf-8")
+        elif command == "try":
+            from ._evaluation_local_cli import json_safe_bytes
+            output = json_safe_bytes(result)
+        else:
+            output = json_bytes(result)
         if len(output) > 4 * 1024 * 1024:
             raise EvaluationError("transport.response_too_large")
         sys.stdout.write(output.decode() + "\n")

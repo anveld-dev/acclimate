@@ -13,6 +13,7 @@ import {
   reportEvaluatorError,
   sdkVersion,
 } from './cli.js';
+import { TRY_USAGE } from './local-cli.js';
 import { AppSetupError as SetupError, DefinitionError, EvaluationError, EXIT_CODES } from './errors.js';
 import type { ApplicationAdapter } from './application.js';
 import type { EvaluationCase } from './types.js';
@@ -26,6 +27,8 @@ const adapterExports = [
   'grade',
   'revisionFiles',
   'configId',
+  'concurrency',
+  'gradeRetries',
   'grader',
   'runtime',
   'toReviewArtifact',
@@ -37,10 +40,20 @@ Export cases, execute and grade from that module in your current directory, or e
 default object built with defineApplication({ cases, execute, grade }).
 Select a different entry with --app PATH, for example: acclimate-eval describe --app dist/application.mjs.
 
+Try it locally first. These need no service, config or handoff:
+
+  acclimate-eval try [--live] [--case ID] [--payload FILE|DIR]
+  acclimate-eval compare --local --parent FILE|DIR --candidate FILE|DIR [--live] [--policy POLICY]
+
+Then compare against the service to gate a release:
+
   acclimate-eval compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]
   acclimate-eval compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]
 
-Commands: compare, describe, coverage, doctor, request, run, check, status, interrupt, export, verify-export.
+Run controls for compare and run: --deadline 30m, --case-timeout 2m, --max-cost-usd 5,
+--cases ID,ID or --shard 1/4 (partial, never full coverage), --progress or --quiet.
+
+Commands: try, compare, describe, coverage, doctor, request, run, check, status, interrupt, export, verify-export.
 status, verify-export and interrupt run without loading application code.
 Run acclimate-eval COMMAND --help for one command's flags.
 
@@ -52,6 +65,7 @@ Exit codes: 0 ok, 1 fix command/config/application, 2 quality gate failed, 3 ind
 const commandHelp: Record<string, string> = {
   compare: help,
   describe: 'describe [--app PATH]  Print the public descriptor for these callbacks and cases.',
+  try: TRY_USAGE,
   coverage: 'coverage [--app PATH]  Inspect bound local sources, imported packages and declared revisions.',
   doctor: 'doctor --config CONFIG (--bundle ID | --handoff FILE | --name RUN_NAME) [--policy POLICY]',
   request: 'request --config CONFIG --bundle ID --channel CHANNEL --payload FILE --intent FILE --out HANDOFF [--policy POLICY]',
@@ -267,6 +281,8 @@ export async function loadApplication(directory = process.cwd(), appPath?: strin
     manifest = createEvaluationManifest({
       configId: adapter.configId ?? 'application',
       execution,
+      ...(adapter.concurrency !== undefined ? { concurrency: adapter.concurrency } : {}),
+      ...(adapter.gradeRetries !== undefined ? { gradeRetries: adapter.gradeRetries } : {}),
       cases,
       grader: adapter.grader ?? { artifactDigest: graderDigest },
       runtime: {

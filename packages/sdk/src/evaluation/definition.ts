@@ -15,6 +15,7 @@ import type {
 import { COLLECTION_RUNTIME_KEYS, collectionRuntime, collectionSchedule } from './collection.js';
 import type { CollectionSchedule } from './collection.js';
 export { OutputValidationError } from './errors.js';
+import type { RunControls } from './controls.js';
 export const MAX_ARTIFACT = 1024 * 1024,
   MAX_REQUEST = 2 * 1024 * 1024,
   MAX_PRIVATE = 128 * 1024 * 1024;
@@ -25,6 +26,8 @@ export interface CapturedDefinition<I = unknown, E = unknown, O = unknown> {
   execute: (input: Omit<ExecuteInput<I>, BundleHelper>) => Promise<EvaluationExecutionResult<O>>;
   grade: (input: Parameters<EvaluationDefinition<I, E, O>['grade']>[0]) => Promise<EvaluationGradeResult>;
   collection?: CollectionSchedule;
+  /** Invocation controls bound by the command line; never part of the descriptor. */
+  controls?: RunControls;
 }
 type BundleHelper = 'instructions' | 'instructionFiles' | 'skillFiles' | 'memoryFiles';
 const definitions = new WeakMap<object, CapturedDefinition<any, any, any>>();
@@ -329,8 +332,7 @@ export function defineEvaluation<I, E, O>(
       configId: definition.configId,
       configRevision: definition.configRevision,
       execution: definition.execution,
-      concurrency: '1',
-      gradeRetries: '0',
+      ...declaredScheduling(definition),
       ...(collection ? collectionRuntime(collection) : {}),
     },
     expectedCases,
@@ -357,6 +359,29 @@ export function defineEvaluation<I, E, O>(
     ...(collection ? { collection } : {}),
   });
   return app;
+}
+/** Bind invocation controls without changing the descriptor or the callbacks. */
+export function bindRunControls<I, E, O>(
+  app: EvaluationApp<I, E, O>,
+  controls: RunControls,
+): EvaluationApp<I, E, O> {
+  const captured = captureDefinition(app);
+  const bound = Object.freeze({ descriptor: app.descriptor }) as EvaluationApp<I, E, O>;
+  definitions.set(bound, { ...captured, controls: { ...captured.controls, ...controls } });
+  return bound;
+}
+/** Fingerprint declared scheduling. Defaults keep existing descriptors byte-identical. */
+export function declaredScheduling(definition: {
+  concurrency?: number;
+  gradeRetries?: number;
+}): { concurrency: string; gradeRetries: string } {
+  const concurrency = definition.concurrency ?? 1,
+    gradeRetries = definition.gradeRetries ?? 0;
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 64)
+    throw new DefinitionError('concurrency', 'Use an integer from 1 to 64.');
+  if (!Number.isInteger(gradeRetries) || gradeRetries < 0 || gradeRetries > 5)
+    throw new DefinitionError('gradeRetries', 'Use an integer from 0 to 5.');
+  return { concurrency: String(concurrency), gradeRetries: String(gradeRetries) };
 }
 export function assertReportBudget(descriptor: EvaluationDescriptor): void {
   const worst = {

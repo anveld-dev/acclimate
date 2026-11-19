@@ -11,7 +11,7 @@ Choose an entry point for your application from the installed `@acclimate/sdk` p
 | --- | --- |
 | `@acclimate/sdk` | `AcclimateClient`, `resolveAndCache`, `verifyPayloadBytes`, `prepareFiles`, `createReceiptReporter`, the lower-level `compare` and `submitComparison` helpers, and the `AcclimateError`, `AcclimateUsageError`, `TransportError`, `ApiError` and `DeliveryError` classes. |
 | `@acclimate/sdk/validation` | Bundle payload and native compatibility validation without the Node file preparation entry. |
-| `@acclimate/sdk/evaluation` | `defineEvaluation`, `defineApplication`, `preflightEvaluation`, `runEvaluation`, `assertEvaluationOutput`, the `ApplicationAdapter` type, and every evaluator error class. |
+| `@acclimate/sdk/evaluation` | `defineEvaluation`, `defineApplication`, `preflightEvaluation`, `runEvaluation`, `assertEvaluationOutput`, the `ApplicationAdapter` type, and every evaluator error class. `runLocalComparison`, `tryEvaluation`, and `loadLocalPayload` compare payloads or check callback shapes without a service. `runEvaluation` accepts `controls` for a deadline, case timeout, cost limit, case selection, and progress. |
 | `@acclimate/sdk/evaluation/policy` | Apply the application quality policy to comparison evidence. |
 | `@acclimate/sdk/evaluation/artifacts` | Export and verify review evidence. |
 | `@acclimate/sdk/evaluation/analysis` | Analyze saved comparison results. |

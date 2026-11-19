@@ -13,6 +13,10 @@ export interface ApplicationAdapter<I = Json, E = Json, O = Json>
   /** Files, relative to the module, whose bytes are part of the grader identity. */
   revisionFiles?: readonly string[];
   configId?: string;
+  /** Pairs in flight at once (1–64, default 1). Changes the descriptor fingerprint. */
+  concurrency?: number;
+  /** Extra grade attempts after a grader throws or times out (0–5, default 0). */
+  gradeRetries?: number;
   grader?: EvaluationManifestInput['grader'];
   runtime?: Partial<EvaluationManifestInput['runtime']>;
   toReviewArtifact?: ReviewMapper;

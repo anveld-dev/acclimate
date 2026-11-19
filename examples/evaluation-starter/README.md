@@ -54,9 +54,24 @@ The SDK hashes your cases, application module and local source imports reached a
 
 Supply plain bounded JSON as the gradeable output. Map SDK response objects to the fields your grader needs. `usage` accepts measured `inputTokens`, `outputTokens` and `costUsd`. Omit fields you cannot measure. The cost policy reports unknown when it requires a missing measurement. Return `executionStatus: 'task_failed'` (Python `execution_status="task_failed"`) for a failed task with gradeable output. Await the actual tool, stream or background job through termination and preserve its inputs if termination is uncertain. The SDK provides `ExecutionUncertainError` for that case.
 
-Python accepts synchronous and coroutine callbacks. The worker keeps one asyncio loop for all coroutine callbacks during a CLI invocation. Create loop-bound clients on that loop and await their work. To embed the synchronous evaluator lifetime in an existing async application, await `async_eval.run_evaluation_async(config_path=..., handoff=..., allow_live=True)`. Caller cancellation signals the worker and waits for it to finish. Your callback can observe `run.cancellation` while waiting on external work.
+Python accepts synchronous and coroutine callbacks. The worker keeps one asyncio loop per worker thread for the whole CLI invocation. With the default `concurrency = 1` and no `--case-timeout`, every coroutine callback shares one loop. Create loop-bound clients lazily per loop and await their work. To embed the evaluator in an existing async application, await `run_evaluation_async(app=..., config_path=..., handoff=..., allow_live=True)` from `acclimate.evaluation`. Caller cancellation signals the worker and waits for it to finish. Your callback can observe `run.cancellation` while waiting on external work. [async_eval.py](async_eval.py) shows the call with the installed application.
 
 TypeScript apps can implement `application.mts` with erasable types and run the same Node CLI directly. Import `ApplicationAdapter` from `@acclimate/sdk/evaluation` as a type for the callback signatures. The source loader resolves relative NodeNext imports such as `./agent.js` to `agent.ts` when the emitted file is absent. To run a compiled build or select a module outside the current directory, use `acclimate-eval describe --app dist/application.mjs` and pass the same `--app` to compare. Revision files resolve relative to that module. When both files exist, the CLI uses `application.mjs`. Run a fresh CLI process after rebuilding an imported dependency so the language runtime loads the new code.
+
+## Try it locally first
+
+Before you ask for a service config, check the adapter and score a change on your machine. These commands need no service, config or handoff. Put the current bundle in one folder and the change in another. Files under `skills/` become skills, files under `memory/` become memory, and other files become instructions. A payload JSON file also works.
+
+```sh
+# Node
+acclimate-eval try --live --payload candidate
+acclimate-eval compare --local --parent parent --candidate candidate --live --policy quality-policy.json
+# Python
+python -m acclimate try --live --payload candidate
+python -m acclimate compare --local --parent parent --candidate candidate --live --policy quality-policy.json
+```
+
+`try` runs one case (or `--case ID,ID`) through `execute` and `grade`. It prints the output and flags shapes a real run would drop, such as non-JSON output, unknown `usage` keys, a non-finite reward, or an invalid `executionStatus`. `compare --local` runs every case with the same pairing and grading as a service run. It prints the per-case table and writes an advisory `local-report.json` under `.acclimate/local/`. It warns when both arms return identical output on every pair, which usually means `execute` ignores `bundle`. The local report is never a release receipt. Replay its `candidate.payload.json` with the headless `compare` below to gate a release.
 
 ## Describe and run
 
@@ -92,6 +107,8 @@ acclimate-eval export --config "$EVALUATOR_CONFIG" --name "$RUN_NAME" --out "$NE
 ```
 
 For another machine or a read-only reviewer, share the public handoff at `comparisons/RUN_NAME/request.json` inside the evaluator's configured journal root. Copy that one JSON file and use `--handoff` with the reviewer's credentials.
+
+Bound a run with `--deadline 30m`, `--case-timeout 2m` or `--max-cost-usd 5`. Run part of the inventory with `--cases ID,ID` or `--shard 1/4`. A stopped or partial run never counts as complete coverage. Add `--progress` to stream one stderr line per finished arm in CI. To run pairs in parallel or retry a flaky judge, export `concurrency` and `gradeRetries` (Python `grade_retries`) from the application module. Both are part of the descriptor.
 
 Omit `--policy` when you only need paired evidence. `--live` authorizes both evaluation arms and their graders, including provider costs and tool side effects. For separately scheduled stages, the same CLI provides `request`, `run` and `check`. A complete comparison can contain a losing candidate. An authorized release reviewer decides whether to promote the change.
 

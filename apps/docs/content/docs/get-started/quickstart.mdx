@@ -5,6 +5,82 @@ description: Connect an existing agent and grader, then compare a saved candidat
 
 Connect an agent you already run and grade one bundle change on a saved task. You will get paired results for the parent and candidate in your workspace.
 
+## Try it locally (no server)
+
+Score a change on your own machine before you set up the service. A local run needs no workspace, evaluator config, handoff, or published bundle. It uses the same pairing, arm order, and grading as a service comparison, but the result is advisory and never release evidence.
+
+Put the current instructions in one folder and the changed instructions in another. Files under `skills/` become skill files, files under `memory/` become memory files, and every other file becomes an instruction. Hidden files are skipped. A payload JSON file such as `{"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":"..."}]}` also works.
+
+```text
+parent/AGENTS.md
+candidate/AGENTS.md
+candidate/skills/refunds/SKILL.md
+```
+
+Add an adapter next to them. `execute` must pass `bundle` to your agent. If it ignores the bundle, both arms behave the same, and the comparison warns that every output was identical.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```ts title="application.mjs"
+import { runAgent, scoreResult, savedCases } from './dist/support-agent.mjs';
+
+export const cases = savedCases;
+
+export async function execute({ bundle, input, signal }) {
+  const instructions = bundle.payload.files.filter((file) => file.kind === 'instruction');
+  const result = await runAgent({ instructions, task: input, signal });
+  return { output: result.answer, usage: { costUsd: result.costUsd } };
+}
+
+export async function grade({ output, expected }) {
+  return { reward: scoreResult(output, expected) };
+}
+```
+
+Check the adapter on one case, then compare the two folders:
+
+```sh
+./node_modules/.bin/acclimate-eval try --live --payload candidate
+./node_modules/.bin/acclimate-eval compare --local --parent parent --candidate candidate --live
+```
+
+</Tab>
+<Tab value="Python">
+
+```py title="application.py"
+from acclimate.evaluation import ExecutionResult, GradeResult
+from support_agent import run_agent, score_result, saved_cases
+
+cases = saved_cases
+
+def execute(run):
+    instructions = [f for f in run.bundle["payload"]["files"] if f["kind"] == "instruction"]
+    result = run_agent(instructions=instructions, task=run.input, cancellation=run.cancellation)
+    return ExecutionResult(output=result.answer, usage={"costUsd": result.cost_usd})
+
+def grade(run):
+    return GradeResult(reward=score_result(run.output, run.expected))
+```
+
+Check the adapter on one case, then compare the two folders:
+
+```sh
+python -m acclimate try --live --payload candidate
+python -m acclimate compare --local --parent parent --candidate candidate --live
+```
+
+</Tab>
+</Tabs>
+
+`try` runs `execute` and `grade` once and prints the output. It also checks every returned shape, including JSON-safe output, a finite reward, `usage` keys, and the `executionStatus` value. Problems that `try` reports would otherwise become missing scores in a paid run. Add `--case ID` to choose cases.
+
+`compare --local` prints the same per-case table as a service comparison. It writes `local-report.json`, the output artifacts, and both payloads to a private folder under `.acclimate/local/`, or to the folder you pass with `--out`. Add `.acclimate/` to `.gitignore`. Add `--policy quality-policy.json` for an advisory verdict, and `--max-cost-usd 2` or `--deadline 15m` to bound spend. `--live` is required only when the evaluator calls models or paid services. Installed `application` adapters always do.
+
+A local report can't be uploaded as release evidence. The service accepts results only for versions it stores and an attempt it issued. To gate a release, replay the same candidate against the service with the `compare` command printed at the end of the local run. That command passes `candidate.payload.json` from the report folder.
+
+## Compare against the service
+
 Have a published bundle and channel available in your workspace. In the console, use **Workspace → Bundles → New bundle** if you need to publish your starting instructions. [Install an SDK](/docs/get-started/install), and ask your operator for a [private evaluator config](/docs/operate/evaluator-access) for that workspace. The examples use `EVALUATOR_CONFIG` as a shell variable pointing to that file.
 
 <Steps>

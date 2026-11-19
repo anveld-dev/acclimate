@@ -247,6 +247,20 @@ class NamespaceTest(unittest.TestCase):
         self.assertFalse(hasattr(error, "requestId"))
 
 
+class OpenApiContractTest(unittest.TestCase):
+    def test_handoff_and_descriptor_schemas_match_both_sdks(self):
+        schemas = json.loads((ROOT / "contracts" / "openapi.json").read_text())["components"]["schemas"]
+        ts_types = (ROOT / "packages" / "sdk" / "src" / "types.ts").read_text()
+        for name, python_type in (("EvaluationHandoff", types.EvaluationHandoff),
+                                  ("EvaluationDescriptor", types.EvaluationDescriptor)):
+            with self.subTest(name=name):
+                schema = schemas[name]
+                self.assertEqual(set(schema["properties"]), set(python_type.__annotations__))
+                self.assertEqual(set(schema["required"]), set(python_type.__required_keys__))
+                body = re.search(r"export interface " + name + r" \{(.*?)\n\}", ts_types, re.S).group(1)
+                self.assertEqual(set(schema["properties"]), set(re.findall(r"^\s+(\w+)\??:", body, re.M)))
+
+
 class PythonVersionGuardTest(unittest.TestCase):
     def test_old_interpreters_get_a_readable_error(self):
         with self.assertRaises(ImportError) as caught:

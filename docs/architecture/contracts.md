@@ -2,13 +2,13 @@
 
 [Architecture guide](README.md)
 
-**R0 implementation contract.** Schemas, byte/digest fixtures, and matching Rust/TypeScript types now exist. `contracts/IMPLEMENTATION.md` settles the route and limit details. Update shared contracts before feature agents depend on changed shapes.
+**R0 implementation contract.** Schemas, byte/digest fixtures, and matching Rust/TypeScript types now exist. The [internal implementation record](../internal/contracts/IMPLEMENTATION.md) settled the original route and limit details. [`contracts/openapi.json`](../../contracts/openapi.json) is now the source of truth. Update shared contracts before feature agents depend on changed shapes.
 
 ## What the first shared baseline contains
 
 | File | Purpose |
 | --- | --- |
-| `contracts/openapi.yaml` | Exact routes, auth/header behavior, JSON field names, statuses, and error codes. |
+| `contracts/openapi.json` | Exact routes, auth/header behavior, JSON field names, statuses, and error codes. |
 | `contracts/bundle.schema.json` | UTF-8 file payload schema, supported kinds, and path/size validation rules. |
 | `contracts/fixtures/bundle-v1.json` | Exact stored payload bytes, including its documented trailing-newline policy. |
 | `contracts/fixtures/version-v1.json` | Version metadata and the actual SHA-256 of that payload fixture. |

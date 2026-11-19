@@ -1,10 +1,12 @@
 # Core implementation contract
 
+> **Internal development record.** This file coordinated parallel implementation work and is not a consumer contract. Routes now use `/v1/workspaces/{workspaceId}` and releases replace promotions. Use [`contracts/openapi.json`](../../../contracts/openapi.json) for the wire contract and the [versioning and compatibility reference](../../../apps/docs/content/docs/reference/versioning.mdx) for compatibility rules.
+
 The additive [installed evaluator and review contract](dx-evaluation.md) covers the DX release's public handoff, retained evaluator operations, capability checks, response budgets and read-authorized observations.
 
 The [remediation freeze](remediation.md) adds immutable bundle targets, opt-in durable console receipts/fences, request- and attempt-bound evaluation evidence and current effective replay authorization. Its reviewed ownership and rollout rules supersede the original R0 ownership/24-hour details below for those named paths.
 
-`packages/sdk/src/types.ts` is the frozen wire contract. Rust DTOs use camelCase and match it. No types are silently forked. Root owns shared changes.
+At R0, `packages/sdk/src/types.ts` was the frozen wire contract. [`contracts/openapi.json`](../../../contracts/openapi.json) is now the source of truth. Rust DTOs use camelCase and match it. No types are silently forked. Root owns shared changes.
 
 API prefix `/v1/projects/{projectId}`. POST `/bundles` takes `{name}` returns Bundle. POST `/bundles/{bundleId}/versions` takes CreateVersionRequest returns VersionMetadata. GET metadata and `/payload` use `/bundles/{bundleId}/versions/{versionId}`. GET `/bundles/{bundleId}/channels/{channel}` returns ChannelResolution, or 304 with ETag. POST same path plus `/promotions` takes PromoteRequest returns Promotion. POST/GET `/bundles/{bundleId}/proposals[/{id}]` returns Proposal. POST/GET `/bundles/{bundleId}/comparisons[/{id}]` returns Comparison. Mutations 201 except proposal 202. Errors ApiErrorBody: 400 invalid_content, 401 unauthenticated, 403 denied, 404 not_found, 409 revision_conflict/parent_conflict/idempotency_conflict, 413 payload_too_large, 503 unavailable. Other validation errors 400. GET /health is unauthenticated liveness.
 
@@ -23,4 +25,4 @@ SDK baseline exports: `AcclimateClient`, `ApiError`, `resolveAndCache`, `prepare
 
 File ownership for shared checkout: root contracts/types/manifests/docs/scripts/CI; Rust agent Cargo.toml,Cargo.lock,src/,migrations/,tests/; SDK agent packages/sdk/src/{client,cache,prepare,index}.ts + tests/delivery/; comparison agent compare.ts + tests/compare/ + examples/compare-review.ts; native agent packages/{codex,claude,pi}-plugin/src + own tests + examples/codex-smoke.ts + native-integration README. No worktrees required for these nonoverlapping directories. No implementation commits until tests pass unless root coordinates it.
 
-The [learning contract](learning.md) covers the Node-only private learner and service-managed connections, including fixture commitments, stage policies, correction rechecks, field verdicts and reviewed restores.
+The [learning contract](../../../contracts/learning.md) covers the Node-only private learner and service-managed connections, including fixture commitments, stage policies, correction rechecks, field verdicts and reviewed restores.

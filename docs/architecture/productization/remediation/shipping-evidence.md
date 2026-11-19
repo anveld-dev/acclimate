@@ -2,7 +2,7 @@
 
 > Pre-cutover remediation evidence. Local launcher, Compose bridge and evaluator state-root instructions here are retired. The [production evidence](../../production-only/evidence.md) is the current startup and identity record.
 
-Updated 2026-11-14. The later [UI implementation pass](../ui-improvements.md#implementation-evidence) passed 141 behaviors / 183 scenarios / 873 steps; the remediation-only counts below retain their original evidence scope. This records executed checks separately from runnable tooling and external availability. The reviewed [plan](plan.md) and [contract freeze](../../../../contracts/remediation.md) govern scope.
+Updated 2026-11-14. The later [UI implementation pass](../ui-improvements.md#implementation-evidence) passed 141 behaviors / 183 scenarios / 873 steps; the remediation-only counts below retain their original evidence scope. This records executed checks separately from runnable tooling and external availability. The reviewed [plan](plan.md) and [contract freeze](../../../internal/contracts/remediation.md) govern scope.
 
 | Area | Status | Actual evidence / remaining requirement |
 |---|---|---|

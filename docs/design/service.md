@@ -16,7 +16,7 @@ A workspace contains bundles and connections. Each bundle version has an ID and 
 - Submit proposals and comparisons for a bundle.
 - Create or list releases at `/v1/workspaces/{workspaceId}/bundles/{bundleId}/channels/{channel}/releases`.
 
-Each workspace grants read, edit and release access separately. A release checks the current revision and records its supporting comparison or the reason for releasing without one. When retrying a write after a lost response, send the same request bytes and key. The [HTTP contract](../../contracts/openapi.yaml) describes the routes and responses.
+Each workspace grants read, edit and release access separately. A release checks the current revision and records its supporting comparison or the reason for releasing without one. When retrying a write after a lost response, send the same request bytes and key. The [HTTP contract](../../contracts/openapi.json) describes the routes and responses.
 
 ## The proposal job
 

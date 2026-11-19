@@ -1,0 +1,44 @@
+---
+title: Deploy Acclimate
+description: Run the Rust service and console with PostgreSQL, Keycloak sign-in, and public TLS.
+---
+
+Deploy the Acclimate service and console on a single host with PostgreSQL 16, Keycloak sign-in, and Caddy for public HTTPS. The repository's `compose.yaml` runs one Rust process and one Node console. PostgreSQL and both app listeners stay on the private Docker network. Caddy publishes ports 80 and 443.
+
+## Configure Keycloak and DNS
+
+Point your console and API hostnames at the deployment. Set `CONSOLE_HOST` and `API_HOST` without a scheme or path, and set `ACME_EMAIL` for certificate issuance. Keep the API, console, and PostgreSQL listeners behind the proxy and allow outbound access to the issuer and any configured proposer endpoint.
+
+Use your existing Keycloak deployment or add `compose.keycloak.yaml` to co-host Keycloak. The co-hosted recipe pins Keycloak 26.8.2 and gives it a separate PostgreSQL instance and volume. Follow `deploy/keycloak/README.md` to set the identity hostname and private file paths, start Keycloak, and create the first user.
+
+Use a confidential OIDC client with authorization code flow and S256 PKCE. For the supplied `acclimate` realm template, use client ID `acclimate-console`. Register the exact public console origin plus `/auth/callback`. Copy the exact Keycloak realm issuer into both application issuer settings. Use the Keycloak user's subject UUID for each operator identity.
+
+## Supply private runtime files
+
+Keep the completed files outside the checkout in a private parent directory. Use mode 0600 and point Compose to each file with an absolute path.
+
+| Compose variable | File contents |
+| --- | --- |
+| `ACCLIMATE_SERVICE_ENV` | Complete `deploy/service.env.example` with the database URL, exact issuer, separate login and console transport credentials, operator identities, and any machine grants. |
+| `ACCLIMATE_CONSOLE_ENV` | Complete `apps/console/.env.example` with the public HTTPS console and API URLs, private service URL, issuer, confidential client credentials, and matching transport and login credentials. |
+| `ACCLIMATE_POSTGRES_PASSWORD_FILE` | Initial PostgreSQL role password. URL-encode the same password in the service's `DATABASE_URL`. |
+
+Use `http://service:3000` for the private console-to-service URL in Compose. Set `CONSOLE_ALLOW_EDITS=true` to enable authoring and connection mutations for authorized roles. Keep machine credentials separate from both console authority credentials.
+
+## Build and start
+
+With the file paths and hostnames set in the deployment shell, validate, build, and start the stack from the checkout.
+
+```sh
+docker compose config --quiet
+docker compose build service console
+docker compose up -d --wait
+```
+
+Caddy obtains certificates and forwards the canonical public console host. Open the public `CONSOLE_ORIGIN` to sign in. A verified deployment operator can create a workspace, or explicitly adopt an existing memberless workspace by exact ID and reason. Workspace administrators grant membership for subsequent access.
+
+On first start, the service applies its schema baseline to an empty database. For an existing database, follow [upgrades and recovery](/docs/operate/upgrades-and-recovery). Verify [readiness and authenticated access](/docs/operate/health-and-readiness) before sending traffic.
+
+<Callout type="info" title="Deployment qualification">
+The repository's fixture checks cover isolated test configurations only. Before sending traffic, run the [HTTPS and OIDC gates](/docs/operate/health-and-readiness#verify-access-and-activity) against your own issuer, certificates, and endpoints.
+</Callout>

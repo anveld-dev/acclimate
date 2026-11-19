@@ -1,0 +1,11 @@
+{
+  "title": "Guides",
+  "pages": [
+    "evaluate-a-change",
+    "ci-pr-check",
+    "deliver-content",
+    "connected-learning",
+    "review-and-release",
+    "service-generated-proposals"
+  ]
+}

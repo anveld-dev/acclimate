@@ -33,6 +33,6 @@ npm test
 npm run build
 ```
 
-[Architecture](docs/architecture/README.md) · [Wire contract](contracts/IMPLEMENTATION.md) · [Behavior tests](features/README.md) · [HTML documentation](docs/site/index.html) · [Qualification records](docs/implementation/full-roadmap.md) · [Connected-learning audit experiment](docs/research/real-app-learning-experiment/5-admission-rerun.md)
+[Architecture](docs/architecture/README.md) · [Wire contract](contracts/IMPLEMENTATION.md) · [Behavior tests](features/README.md) · [Product docs site](apps/docs/README.md) · [HTML documentation](docs/site/index.html) · [Qualification records](docs/implementation/full-roadmap.md) · [Connected-learning audit experiment](docs/research/real-app-learning-experiment/5-admission-rerun.md)
 
 Inspired by [AgentRun](https://github.com/Parcha-ai/agentrun) and [RRSI](https://github.com/google-research/rrsi).

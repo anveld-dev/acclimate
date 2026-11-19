@@ -1,0 +1,60 @@
+---
+title: Provision evaluator access
+description: Give a private worker the workspace access and persistent state it needs to run and recover comparisons.
+---
+
+Provision a dedicated machine principal for an evaluator that runs inside your application's environment. The service records requests and evidence. The evaluator runs with the application's private case data, provider credentials, and tool policy.
+
+## Grant access
+
+Choose a stable principal and exact workspace. Add a strong token to the private `ACCLIMATE_AUTH` array using these field names.
+
+```json
+[
+  {
+    "token": "REPLACE_PRIVATELY",
+    "principalId": "support-evaluator",
+    "projectId": "YOUR_WORKSPACE_ID",
+    "rights": ["read", "write"]
+  }
+]
+```
+
+The evaluator needs both `read` and `write` to fetch unpublished versions and submit evidence. The current workspace `write` grant also covers other workspace writes. Keep release authority and delivery credentials separate.
+
+Validate the explicit private grant file, then drain and restart the service with the updated runtime environment.
+
+```sh
+target/release/acclimate-service --check-grants < /absolute/private/machine-grants.json
+```
+
+## Configure the worker
+
+Provide this file privately to the worker with mode 0600. Keep its parent directory and the journal, cache, and workspace roots owner-only with mode 0700. Use canonical absolute paths on persistent local POSIX storage.
+
+```json title="evaluator.json"
+{
+  "schemaVersion": 1,
+  "serviceUrl": "https://api.example.com",
+  "projectId": "YOUR_WORKSPACE_ID",
+  "evaluatorPrincipalId": "support-evaluator",
+  "evaluatorToken": "REPLACE_PRIVATELY",
+  "journalRoot": "/absolute/private/evaluation-journals"
+}
+```
+
+Pass the path as `--config`. A remote service URL requires HTTPS. Use the exact URL, workspace, principal, canonical journal root, and originating SDK language and release when recovering an attempt. Keep the journal on one authoritative physical volume across worker restarts.
+
+Run preflight in the installed evaluator environment:
+
+```sh
+acclimate-eval doctor --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID"
+```
+
+Preflight checks current machine authority and service support. For a separate reader, provide a private config with `schemaVersion`, `serviceUrl`, `projectId`, and `readToken`. A read-only policy check sends no verdict. See the [CLI reference](/docs/reference/evaluator-cli).
+
+## Rotate a token
+
+Add a replacement token for the same principal and workspace, retaining the old grant during the transition. Restart the service with the overlapping grants. Replace only the token in the evaluator config, run `doctor`, and let old clients finish. After those workers are quiescent, remove the old token and restart the service.
+
+Revocation controls service access. Check the original application worker to establish whether model or tool work stopped. For recovery steps, see [recover an evaluation](/docs/operate/upgrades-and-recovery#recover-an-evaluation).

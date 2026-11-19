@@ -1,0 +1,9 @@
+{
+  "title": "Operate",
+  "pages": [
+    "deploy",
+    "evaluator-access",
+    "health-and-readiness",
+    "upgrades-and-recovery"
+  ]
+}

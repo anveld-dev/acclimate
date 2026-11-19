@@ -1,0 +1,41 @@
+---
+title: Python SDK
+description: Use the Python client to prepare a pinned version or run an application-owned evaluation.
+---
+
+Prepare bundle content in your Python application with `acclimate.AcclimateClient`. Install the [Python wheel](/docs/get-started/install) in the environment that runs your agent.
+
+## Prepare one job
+
+```py
+import os
+from acclimate import AcclimateClient
+from application import run_agent
+
+client = AcclimateClient(
+    os.environ["ACCLIMATE_URL"],
+    os.environ["ACCLIMATE_TOKEN"],
+    "support-agent",
+)
+with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
+    result = run_agent(task, instructions=prepared.instructions, skill_files=prepared.skill_files)
+    save_job_result(result, version=prepared.version["id"], digest=prepared.version["digest"])
+```
+
+In this recipe, the task, IDs, agent call, and result storage belong to the app. For background work, hold the prepared object and call `cleanup()` after the native job stops and its result is retained. Use `version_id` to request an exact version. Use `prepared.bundle` for the verified payload and resolution metadata, and `prepared.directory` for the staged files.
+
+The preparation cache defaults to `~/.cache/acclimate/python`. Override it with `cache_dir` and choose a job directory with `destination`. To enable fallback on transport failure or HTTP 503, set `offline_max_age` in seconds for a cached channel, or `offline_pinned_version` for a pinned version. The returned `stale` field identifies fallback. Keep a separate cache directory per SDK language.
+
+## Client and evaluator
+
+| Import | Use |
+| --- | --- |
+| `acclimate.AcclimateClient` | Read or create records, resolve a channel, and prepare delivered content. |
+| `acclimate.resolve_and_cache`, `acclimate.prepare_files` | Resolve and stage content as separate steps. |
+| `acclimate.ApiError`, `acclimate.TransportError`, `acclimate.DeliveryError` | Handle API, transport, and delivery errors. |
+| `acclimate.DeliveryReporter` | Report preparation and job startup when the app supplies a reporting credential. |
+| `acclimate.evaluation.ExecutionResult`, `acclimate.evaluation.GradeResult` | Return execution output and a grade from evaluator callbacks. |
+
+HTTP dictionaries use the wire contract's camelCase field names. Mutations need an explicit printable ASCII idempotency key. Reuse the same key and request for retries. `resolve_channel` returns `(resolution, etag, not_modified)`.
+
+The client, delivery helpers, and embedded runner are synchronous. In an async application, follow `examples/evaluation-starter/async_eval.py` to offload the whole run, signal cooperative cancellation, and drain the worker before cleanup. The installed [evaluator CLI](/docs/reference/evaluator-cli) also accepts synchronous or coroutine callbacks in your adapter.

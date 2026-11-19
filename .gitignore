@@ -33,3 +33,10 @@
 
 # Separate private manual Compose workspace
 /.compose-workspace/
+
+# Docs site (Next.js + Fumadocs) build outputs
+/apps/docs/.next/
+/apps/docs/.source/
+/apps/docs/out/
+/apps/docs/next-env.d.ts
+/apps/docs/*.tsbuildinfo

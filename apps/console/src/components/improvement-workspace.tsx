@@ -1317,7 +1317,13 @@ export function ImprovementWorkspace({
             )}
           </section>
           {comparison && comparison.candidateVersionId === candidate && (
-            <EvaluationOutcomeStrip comparison={comparison} />
+            <EvaluationOutcomeStrip
+              comparison={comparison}
+              inference={
+                [...(receipts?.comparison ?? [])].reverse().find((receipt) => receipt.inference)
+                  ?.inference
+              }
+            />
           )}
           {!settledWithoutCandidate && (
             <div className="review-decision-desk">

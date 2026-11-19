@@ -111,7 +111,35 @@ export interface ComparisonPolicyReport {
   verdict: 'pass' | 'fail' | 'indeterminate';
   checks: Array<{ code: string; result: 'pass' | 'fail' | 'unknown' }>;
   /** Statistics behind the mean-difference check (method, n, sd, floor, df, t, bound, threshold). */
-  inference?: Record<string, unknown>;
+  inference?: PolicyReceiptInference;
+}
+
+/** The inference block a policy verdict reports; see the evaluation policy module. */
+export interface PolicyReceiptInference {
+  method: 'paired-t' | 'none';
+  estimand: 'sampled-cases' | 'observed-cases';
+  status: 'estimated' | 'insufficient_data' | 'incomplete' | 'not_applicable';
+  stage: 'general' | 'development' | 'cumulative' | 'audit';
+  check: string;
+  confidence: number | null;
+  threshold: number;
+  thresholdSource: 'minimumMeanImprovement' | 'stepMargin' | 'nonInferiorityMargin';
+  n: number;
+  minCases: number;
+  minRepetitions: number;
+  repetitions: number;
+  meanDifference: number | null;
+  sd: number | null;
+  sdFloor: number | null;
+  sdFloorSource: 'declared' | 'scale' | 'observed-range' | null;
+  calibratedSd: number | null;
+  sdUsed: number | null;
+  standardError: number | null;
+  df: number | null;
+  criticalValue: number | null;
+  lowerBound: number | null;
+  imputed: { parent: number; candidate: number };
+  maximumMissingPercent: number;
 }
 
 export interface ComparisonPolicyReceipt extends ComparisonPolicyReport {

@@ -1,5 +1,5 @@
 import { isConfidenceLevel, studentTQuantile, type ConfidenceLevel } from './student-t.js';
-import type { Comparison, EvaluationDescriptor } from '../types.js';
+import type { Comparison, EvaluationDescriptor, PolicyReceiptInference } from '../types.js';
 import { addGap, scalarGap, type EvidenceGaps } from './evidence-gaps.js';
 import { validateEvaluationDescriptor, evaluationDescriptorDifferences } from '../validation.js';
 
@@ -140,44 +140,7 @@ export interface ExpectedComparisonBinding {
 }
 
 /** The statistics behind the mean-difference decision. Every field is reported, even when null. */
-export interface PolicyInferenceResult {
-  method: 'paired-t' | 'none';
-  /**
-   * `sampled-cases`: would the change hold on tasks like these (cases are a sample)?
-   * `observed-cases`: what happened on these exact tasks (no generalization claim)?
-   */
-  estimand: 'sampled-cases' | 'observed-cases';
-  status: 'estimated' | 'insufficient_data' | 'incomplete' | 'not_applicable';
-  stage: 'general' | 'development' | 'cumulative' | 'audit';
-  /** The check this statistic decides, for example `policy.minimum_mean_improvement`. */
-  check: string;
-  confidence: number | null;
-  /** Effective threshold the lower bound (or point estimate for `none`) must clear. */
-  threshold: number;
-  thresholdSource: 'minimumMeanImprovement' | 'stepMargin' | 'nonInferiorityMargin';
-  /** Distinct cases and the minimums that make the evidence sufficient. */
-  n: number;
-  minCases: number;
-  minRepetitions: number;
-  /** Smallest planned repetitions for any case. */
-  repetitions: number;
-  meanDifference: number | null;
-  /** Observed standard deviation of the oriented case differences. */
-  sd: number | null;
-  sdFloor: number | null;
-  sdFloorSource: 'declared' | 'scale' | 'observed-range' | null;
-  /** Calibrated standard deviation supplied by connected learning, after repetition scaling. */
-  calibratedSd: number | null;
-  /** max(sd, sdFloor, calibratedSd), the value used in the standard error. */
-  sdUsed: number | null;
-  standardError: number | null;
-  df: number | null;
-  criticalValue: number | null;
-  lowerBound: number | null;
-  /** Missing trials replaced by the worst (candidate) or best (parent) observed reward. */
-  imputed: { parent: number; candidate: number };
-  maximumMissingPercent: number;
-}
+export type PolicyInferenceResult = PolicyReceiptInference;
 
 export interface PolicyVerdict {
   evidenceGaps?: EvidenceGaps;

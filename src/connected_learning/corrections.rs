@@ -63,7 +63,7 @@ pub(super) async fn locked(
     project: &str,
     integration: Uuid,
 ) -> ApiResult<PgRow> {
-    enrollment(tx, project, integration).await?;
+    enrollment(tx, project, integration, true).await?;
     sqlx::query("SELECT e.*, i.enabled FROM connected_learning_enrollments e JOIN integrations i ON (i.project_id,i.id)=(e.project_id,e.integration_id)
                  WHERE e.project_id=$1 AND e.integration_id=$2 FOR UPDATE OF e")
         .bind(project).bind(integration).fetch_one(&mut **tx).await.map_err(db)

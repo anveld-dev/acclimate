@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -672,6 +672,119 @@ try {
     });
   }
 
+  async function explainEnrollmentReads(connection: string) {
+    const psql = process.env.EVALUATION_TEST_PSQL!;
+    const args = ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '--dbname', database!];
+    const queries = await Promise.all(
+      ['calibration_view', 'incumbent_view', 'round_view'].map(async (name) => {
+        const sql = await readFile(`src/connected_learning/${name}.sql`, 'utf8');
+        const query = sql
+          .replaceAll('$1', `'${project}'`)
+          .replaceAll('$2', `'${connection}'`)
+          .replaceAll(
+            '$3',
+            `(SELECT policy_epoch FROM connected_learning_enrollments
+              WHERE (project_id,integration_id)=('${project}','${connection}'))`,
+          );
+        return `SELECT '${name}'; EXPLAIN (ANALYZE, BUFFERS) ${query};`;
+      }),
+    );
+    const plan = execFileSync(
+      psql,
+      [
+        ...args,
+        '-c',
+        `BEGIN;
+       INSERT INTO comparisons(id,project_id,bundle_id,body,complete,submitter)
+       SELECT gen_random_uuid(),project_id,bundle_id,body,complete,submitter
+       FROM (SELECT * FROM comparisons WHERE project_id='${project}' LIMIT 1) c
+       CROSS JOIN generate_series(1,3000);
+       INSERT INTO connected_learning_replay_obligations
+           (project_id,integration_id,bundle_id,version_id,baseline_revision,correction_id)
+       SELECT project_id,integration_id,bundle_id,parent_version_id,n,correction_id
+       FROM (SELECT * FROM connected_learning_rounds
+             WHERE integration_id='${connection}' AND correction_id IS NOT NULL LIMIT 1) r
+       CROSS JOIN generate_series(10001,13000) n;
+       ANALYZE comparisons;
+       ANALYZE connected_learning_replay_obligations;
+       ${queries.join('\n')}
+       ROLLBACK;`,
+      ],
+      { encoding: 'utf8' },
+    );
+    console.log(plan);
+  }
+
+  async function checkEnrollmentReadLocks(connection: string) {
+    const psql = process.env.EVALUATION_TEST_PSQL!;
+    const args = ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '--dbname', database!];
+    for (const [table, key, concurrency] of [
+      ['connected_learning_enrollments', 'integration_id', 1],
+      ['integrations', 'id', 10],
+    ] as const) {
+      const locker = spawn(psql, args, { stdio: ['pipe', 'pipe', 'inherit'] });
+      const exited = once(locker, 'exit');
+      locker.stdin.write(`
+        BEGIN;
+        SELECT 'locked' FROM ${table}
+        WHERE project_id='${project}' AND ${key}='${connection}' FOR UPDATE;
+      `);
+      const samples: number[] = [];
+      try {
+        const [output] = await Promise.race([
+          once(locker.stdout, 'data'),
+          exited.then(([code]) =>
+            assert.fail(`psql exited before holding ${table} lock (${code})`),
+          ),
+        ]);
+        assert.equal(String(output).trim(), 'locked');
+        const reads = Promise.all(
+          Array.from({ length: concurrency }, async (_, index) => {
+            await delay(index * 100);
+            const start = performance.now();
+            await api('GET', learning(connection));
+            samples.push(performance.now() - start);
+          }),
+        );
+        try {
+          await Promise.race([reads, delay(concurrency * 100 + 500, undefined, { ref: false })]);
+          if (samples.length !== concurrency) {
+            const waits = execFileSync(
+              psql,
+              [
+                ...args,
+                '-c',
+                `SELECT wait_event_type, wait_event, count(*) FROM pg_stat_activity
+                 WHERE query LIKE 'SELECT e.*, i.enabled%' AND cardinality(pg_blocking_pids(pid)) > 0
+                 GROUP BY 1,2`,
+              ],
+              { encoding: 'utf8' },
+            );
+            console.log(`Enrollment read waits with ${table} locked: ${waits.trim()}`);
+          }
+          assert.equal(samples.length, concurrency, `GETs must finish while ${table} is locked`);
+          assert(Math.max(...samples) < 500, `GET p99 must stay below 500 ms with ${table} locked`);
+        } finally {
+          locker.stdin.end('ROLLBACK;\n');
+          await reads;
+          reportEnrollmentLatency(table, samples);
+        }
+      } finally {
+        if (!locker.stdin.writableEnded) locker.stdin.end();
+        await exited;
+      }
+    }
+  }
+
+  function reportEnrollmentLatency(label: string, samples: number[]) {
+    samples.sort((a, b) => a - b);
+    const percentile = (p: number) => samples[Math.ceil(p * samples.length) - 1]!.toFixed(1);
+    console.log(
+      `Enrollment GET ${label} (n=${samples.length}): p50=${percentile(0.5)} ms p95=${percentile(0.95)} ms p99=${percentile(0.99)} ms`,
+    );
+    return samples[Math.ceil(0.99 * samples.length) - 1]!;
+  }
+
   const alpha = 'refund = Quote the refund window.';
   const beta = 'refund-status = Ask for the receipt number.';
   function gradedOutcome(task: Task, installed: VerifiedBundle) {
@@ -758,10 +871,20 @@ try {
     executionsBeforeDrift,
     'drifted fixture must be rejected before executing a task',
   );
+  const developmentReads: number[] = [];
   const pauseAutoDriver = enableDriver(automatic, 'auto-refund-fixture', autoApps);
   enableDriver(manual, 'manual-refund-fixture', manualApps);
 
-  const promoted = await observe(automatic, first, 'promoted');
+  const promoted = await waitFor('first promotion under evaluator load', async () => {
+    const start = performance.now();
+    const view = await api<LearningEnrollmentStatus>('GET', learning(automatic));
+    developmentReads.push(performance.now() - start);
+    const round = view.rounds.find((item) => item.outcomeId === first);
+    return round?.state === 'promoted' ? round : undefined;
+  });
+  assert(reportEnrollmentLatency('active evaluator', developmentReads) < 500);
+  if (process.env.ACCLIMATE_EXPLAIN_ENROLLMENT === '1') await explainEnrollmentReads(automatic);
+  await checkEnrollmentReadLocks(automatic);
   assert.equal(promoted.id, pending.id);
   assert.equal(promoted.developmentRequestId, pending.developmentRequestId);
   assert(promoted.auditComparisonId && promoted.developmentComparisonId && promoted.promotionId);

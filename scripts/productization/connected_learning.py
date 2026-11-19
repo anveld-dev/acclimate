@@ -11,6 +11,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pg-bin')
     parser.add_argument('--skip-build', action='store_true')
+    parser.add_argument('--explain-enrollment', action='store_true',
+                        help='Print enrollment status query plans against seeded history.')
     args = parser.parse_args()
     if not args.skip_build:
         subprocess.run(['cargo', 'build', '--locked'], cwd=ROOT, check=True)
@@ -21,7 +23,8 @@ def main():
         subprocess.run(
             ['node', '--import', 'tsx', 'scripts/connected-learning-e2e.ts'],
             env=dict(harness.env, EVALUATION_TEST_DATABASE_URL=harness.env['DATABASE_URL'],
-                     EVALUATION_TEST_PSQL=bin_dir + '/psql'),
+                     EVALUATION_TEST_PSQL=bin_dir + '/psql',
+                     ACCLIMATE_EXPLAIN_ENROLLMENT='1' if args.explain_enrollment else '0'),
             # Uniform cohorts can execute three times as many trials at the default cap.
             cwd=ROOT, check=True, timeout=720,
         )

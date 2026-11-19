@@ -143,7 +143,8 @@ class CommandTests(unittest.TestCase):
         self.reader.chmod(0o600)
         self.payload_file, self.intent, self.handoff, self.policy = [self.root / name for name in ("candidate.json", "intent.json", "request.json", "policy.json")]
         self.payload_file.write_bytes(encoded(self.payload))
-        self.quality = {"schemaVersion": 1, "id": "quality", "revision": "1", "metric": {"name": "correct", "unit": "reward", "direction": "higher"}, "aggregation": "equal-case-means", "minimumMeanImprovement": 0.5, "maximumCaseRegression": 0, "requiredCases": ["case"]}
+        self.quality = {"schemaVersion": 1, "id": "quality", "revision": "1", "metric": {"name": "correct", "unit": "reward", "direction": "higher"}, "aggregation": "equal-case-means", "minimumMeanImprovement": 0.5, "maximumCaseRegression": 0, "requiredCases": ["case"],
+                        "inference": {"method": "none"}}  # one saved case: point-estimate check
         self.policy.write_bytes(encoded(self.quality))
         def execute(run):
             self.state["executions"] += 1

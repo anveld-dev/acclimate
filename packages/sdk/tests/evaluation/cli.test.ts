@@ -318,6 +318,8 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
     minimumMeanImprovement: 0.5,
     maximumCaseRegression: 0,
     requiredCases: ['case'],
+    // One saved case: a point-estimate check. The paired-t default would be indeterminate.
+    inference: { method: 'none' },
   };
   await writeFile(policy, JSON.stringify(quality));
   const app = defineEvaluation({

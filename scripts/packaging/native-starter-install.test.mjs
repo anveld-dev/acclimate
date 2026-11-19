@@ -18,7 +18,7 @@ const names = ['sdk', 'codex-plugin', 'claude-plugin', 'pi-plugin', 'cursor-plug
 
 async function checkNativeApplication(app, scratch) {
   const sourceRoot = path.join(scratch, 'repository');
-  await cp(path.join(app, 'test/fixture'), sourceRoot, { recursive: true });
+  await cp(path.join(app, 'fixture'), sourceRoot, { recursive: true });
   const config = {
     sourceRoot, stateRoot: path.join(scratch, 'state'), sourceRevision: 'retry-fixture-v1',
     sourceFiles: ['package.json', 'src/retry.js', 'tests/retry.test.mjs'],
@@ -139,8 +139,13 @@ for (const nested of [false, true]) {
       assert.equal(await readFile(path.join(enclosing, 'package-lock.json'), 'utf8'), parentLock);
       assert.deepEqual(await readdir(path.join(enclosing, 'node_modules')), ['canary']);
       const publicFiles = await readdir(app);
-      for (const name of ['demo.mjs', 'worker.mjs', 'fixture', 'test'])
-        assert.ok(!publicFiles.includes(name), `test fixture shipped: ${name}`);
+      for (const name of ['worker.mjs', 'test', 'QUALIFICATION.md'])
+        assert.ok(!publicFiles.includes(name), `internal test file shipped: ${name}`);
+      // The offline replay harness, its fixture and the smoke check ship with the starter.
+      for (const name of ['fixture', 'native.replay.json', 'smoke.mjs'])
+        assert.ok(publicFiles.includes(name), `offline path missing: ${name}`);
+      const { stdout: smoke } = await run(process.execPath, [path.join(app, 'smoke.mjs')], { cwd: app });
+      assert.equal(JSON.parse(smoke).candidate['request-scoped-retry'].reward, 1);
       await cp(path.join(root, 'examples/native-repository/test'), path.join(app, 'test'), { recursive: true });
       const { stdout: fixture } = await run(process.execPath, [path.join(app, 'test/run-fixture.mjs'), '--state-root', path.join(scratch, 'state'), '--harness', 'codex']);
       assert.equal(JSON.parse(fixture).cleaned, true);

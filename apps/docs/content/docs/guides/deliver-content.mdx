@@ -51,7 +51,19 @@ At the job's real start event, call `prepared.reportStarted()` (Python `prepared
 
 ## Choose a native integration
 
-Native plugins take a verified version and prepare a fresh private directory for the agent SDK. Each mapping accepts at most one instruction. A skill lives under `skills/<name>/` and needs a `SKILL.md` with a matching frontmatter name and a description. Supporting files stay beside the skill.
+Native plugins take a verified version, or the result of `client.prepare()` so its start receipt survives, and prepare a fresh private directory for the agent SDK. Each mapping accepts at most one instruction. A skill lives under `skills/<name>/` and needs a `SKILL.md` whose frontmatter has exactly one `name` matching the directory and one `description`. Other frontmatter keys such as `license` or `allowed-tools`, and folded `description: >` values, are kept as written. Supporting files of any text type, such as `scripts/check.py` or `config.json`, stay beside the skill. Each compatibility error names its rule, for example `[skill_metadata]`.
+
+To add a harness without a plugin, use `prepareNativeFiles` from `@acclimate/sdk/native-files` with your agent's layout:
+
+```ts
+import { prepareNativeFiles } from '@acclimate/sdk/native-files';
+
+const prepared = await prepareNativeFiles(verifiedVersion, {
+  mapping: { instructionPath: 'AGENTS.md', skillRoot: '.agents/skills', memoryRoot: '.acclimate/memory' },
+  prefix: 'my-agent-',
+  target: 'codex',
+});
+```
 
 | Agent SDK | Prepared layout |
 | --- | --- |
@@ -62,7 +74,7 @@ Native plugins take a verified version and prepare a fresh private directory for
 
 ## Stage a repository for evaluation
 
-Use the native repository starter from the release to compare a coding agent on an existing repository. Install the verified SDK and selected plugin together. This example uses Codex and release 0.1.0.
+Use the native repository starter from the release to compare a coding agent on an existing repository. Try it offline first: `node smoke.mjs` in the extracted starter compares two versions with the bundled replay harness and fixture repository, with no provider SDK or credentials. Then install the verified SDK and the plugin for your harness together. This example uses Codex and release 0.1.0.
 
 ```sh
 release=/absolute/path/to/verified-release
@@ -72,10 +84,11 @@ npm install --prefix "$app" --workspaces=false --offline --ignore-scripts --no-a
 node "$app/verify-install.mjs" codex
 ```
 
-Install the native SDK separately as described in its [integration guide](/docs/integrations/codex). In the starter's private `native.json`, set `sourceRoot` to your checkout and `stateRoot` to private persistent storage outside both the repository and evaluator journal. Set `model` to a model your app can access, and supply your own cases.
+Install the native SDK separately as described in its [integration guide](/docs/integrations/codex). In the starter's private `native.json`, set `harness` to `codex`, `claude`, `pi`, `cursor` or `replay`, `sourceRoot` to your checkout and `stateRoot` to private persistent storage outside both the repository and evaluator journal. The starter runs each built-in harness with explicit sandbox defaults, so you do not write an adapter. Set `model` to a model your app can access, and supply your own cases. List several harnesses in `harnesses` to compare them; the harness then becomes part of each case ID, such as `checkout-retry@claude`.
 
-- Include every original file your grader needs in `sourceFiles`. The starter copies an explicit list of regular text files and rejects symlinks, dot-prefixed paths, and existing `AGENTS.md` or `CLAUDE.md`.
-- List writable solution paths in `resultFiles` and original protected tests in `testFiles`. The default grader runs the frozen Node tests against retained solution files in a fresh tree.
+- Include every original file your grader needs in `sourceFiles`, or set `sourceInventory` with include and exclude globs to list them with `git ls-files`. The starter copies regular text files and rejects symlinks, existing `AGENTS.md` or `CLAUDE.md`, and dot-prefixed paths you have not listed in `allowDotPaths`. Each error names the path and rule.
+- List writable solution paths or globs, such as `src/**`, in `resultFiles` and original protected tests in `testFiles`. The default grader runs the frozen Node tests against retained solution files in a fresh tree and reports per-test counts. Set `reward` to `"fraction"` to score passed tests over total tests. Files the agent creates outside `resultFiles` are reported as undeclared changes.
+- Set `repetitions` on a case to run its pair more than once.
 - Set `approvedMemoryPaths` for memory the agent may receive. The version digest still identifies the whole verified bundle.
 - Set the worker's `TMPDIR` to the private persistent workspace parent before starting the evaluator. Keep the checkout fixed through evaluation or regrading.
 
@@ -87,4 +100,4 @@ The starter's case shape uses `caseId`, `input.prompt`, and `expected: null` whe
 ./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
 ```
 
-The starter retains declared results and a private patch. If native execution becomes uncertain, keep the workspace and verify termination before cleanup. The starter provides `inspectNativeJob` and `cleanupQuarantinedJob` for operator-reviewed recovery. See `examples/native-repository/README.md` and the [evaluator access guide](/docs/operate/evaluator-access).
+Each job runs with its own `HOME` that holds only authentication, so global harness configuration does not affect either version. Each agent turn runs in its own process group. When `turnTimeoutMs` expires, the starter kills the group and records a failed task with `reason: 'timeout'`, keeping the partial changes for grading. A provider error keeps its redacted message in a private `failure.json`. Only work whose stop cannot be confirmed is quarantined, and then only that case's result is lost; the rest of the comparison continues. Use `node native.mjs jobs list`, `jobs inspect JOB_ID` and `jobs cleanup JOB_ID --confirm-stopped` for recovery, and `node native.mjs check-bundle payload.json` to check a candidate's compatibility before a live run. See `examples/native-repository/README.md` and the [evaluator access guide](/docs/operate/evaluator-access).

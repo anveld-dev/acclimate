@@ -17,6 +17,10 @@ Each term has one meaning across the console, SDKs, CLI, and these docs. Where t
 | Connection | The link between one application and the workspace, bundle, and channel it uses. SDK arguments call its ID `integrationId`. |
 | Release | A decision to point a channel at a version. Restoring an earlier version creates a new release. Some console pages say *publish* for a bundle's first release. |
 | Outcome | Your application's result for one task on a specific version. It can carry a correction your application approves for future proposals. |
+| Verified version | A version whose bytes the SDK checked against its digest. `client.prepare()`, `resolveAndCache` and the evaluator's `bundle` argument all supply one. Older SDK types call it `VerifiedBundle`. |
+| Harness | The coding agent that runs a job, such as Codex, Claude, Cursor or Pi, together with the adapter that starts it. |
+| Native plugin | A package that stages a verified version where one harness discovers instructions and skills, for example `CLAUDE.md` and `.claude/skills/`. |
+| Quarantined job | A job whose agent process could not be confirmed stopped. Its files stay in place until an operator confirms termination and cleans it up. |
 
 ## Comparing a change
 

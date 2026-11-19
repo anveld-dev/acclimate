@@ -36,27 +36,32 @@ async function verifyCodexCli(sdk, entry, boundary, version) {
 export async function verifyInstalledArtifacts(names, { codexSdk = false } = {}) {
   const consumer = await realpath(fileURLToPath(new URL('.', import.meta.url)));
   const boundary = path.join(consumer, 'node_modules') + path.sep;
-  if (names.some(name => !harnesses.includes(name))) throw new Error('install.unsupported_harness');
+  if (names.some(name => !harnesses.includes(name)))
+    throw new Error(`install.unsupported_harness: use ${harnesses.join(', ')} or --all`);
   const specifiers = ['@acclimate/sdk', ...new Set(names.map(name => `@acclimate/${name}-plugin`))];
   if (codexSdk) specifiers.push('@openai/codex-sdk');
   const results = [];
   let releaseVersion;
   for (const specifier of specifiers) {
+    const tarball = `${specifier.slice(1).replace('/', '-')}-<version>.tgz`;
     const installedDirectory = await realpath(path.join(boundary, specifier)).catch(error => {
-      if (error.code === 'ENOENT') throw new Error(`install.package_missing: ${specifier}`);
+      if (error.code === 'ENOENT')
+        throw new Error(`install.package_missing: ${specifier}. Install it from your verified release: npm install --prefix "${consumer}" --workspaces=false --offline --ignore-scripts "$release/${tarball}"`);
       throw error;
     });
-    if (!installedDirectory.startsWith(boundary)) throw new Error(`install.outside_consumer: ${specifier}`);
+    const outside = `install.outside_consumer: ${specifier}. Reinstall it from the release tarball into ${boundary}; symlinked checkout packages are not supported`;
+    if (!installedDirectory.startsWith(boundary)) throw new Error(outside);
     const entry = await realpath(fileURLToPath(import.meta.resolve(specifier)));
-    if (!entry.startsWith(boundary)) throw new Error(`install.outside_consumer: ${specifier}`);
+    if (!entry.startsWith(boundary)) throw new Error(outside);
     // Resolve the manifest by filesystem path; public package exports need not expose it.
     const manifest = JSON.parse(await readFile(path.join(installedDirectory, 'package.json'), 'utf8'));
-    if (manifest.name !== specifier) throw new Error(`install.package_identity: ${specifier}`);
+    if (manifest.name !== specifier)
+      throw new Error(`install.package_identity: ${specifier}. node_modules/${specifier} contains ${manifest.name}; reinstall the release tarball`);
     if (specifier === '@acclimate/sdk') releaseVersion = manifest.version;
     else if (specifier.startsWith('@acclimate/') && manifest.version !== releaseVersion)
-      throw new Error(`install.release_version_mismatch: ${specifier}`);
+      throw new Error(`install.release_version_mismatch: ${specifier} ${manifest.version} with @acclimate/sdk ${releaseVersion}. Install the SDK and plugin tarballs from the same release`);
     if (specifier === '@openai/codex-sdk' && manifest.version !== '0.169.0')
-      throw new Error('install.codex_sdk_version: expected 0.169.0');
+      throw new Error(`install.codex_sdk_version: found ${manifest.version}, expected 0.169.0. Run npm install --prefix "${consumer}" --save-exact @openai/codex-sdk@0.169.0`);
     const api = await import(specifier);
     const result = { package: specifier, version: manifest.version, entrypoint: path.relative(consumer, entry) };
     if (specifier === '@openai/codex-sdk') result.cliVersion = await verifyCodexCli(api, entry, boundary, manifest.version);
@@ -66,11 +71,17 @@ export async function verifyInstalledArtifacts(names, { codexSdk = false } = {})
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const args = process.argv.slice(2);
-  if (args.some(arg => !['--all', '--codex-sdk', ...harnesses].includes(arg)))
-    throw new Error('Usage: node verify-install.mjs [codex|claude|pi|cursor|--all] [--codex-sdk]');
-  const selected = args.includes('--all') ? harnesses : args.filter(arg => harnesses.includes(arg));
-  console.log(JSON.stringify(await verifyInstalledArtifacts(selected.length ? selected : ['codex'], {
-    codexSdk: args.includes('--codex-sdk'),
-  })));
+  try {
+    const args = process.argv.slice(2);
+    if (args.some(arg => !['--all', '--codex-sdk', ...harnesses].includes(arg)))
+      throw new Error('install.usage: node verify-install.mjs [codex|claude|pi|cursor|--all] [--codex-sdk]');
+    const selected = args.includes('--all') ? harnesses : args.filter(arg => harnesses.includes(arg));
+    console.log(JSON.stringify(await verifyInstalledArtifacts(selected.length ? selected : ['codex'], {
+      codexSdk: args.includes('--codex-sdk'),
+    })));
+  } catch (error) {
+    // One line: the failing check, what was found and how to fix it. No stack trace.
+    console.error(String(error?.message ?? error).split('\n')[0]);
+    process.exitCode = 1;
+  }
 }

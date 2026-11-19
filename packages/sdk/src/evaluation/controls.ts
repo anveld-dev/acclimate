@@ -53,6 +53,8 @@ export interface RunSummary {
   deadlineMs: number | null;
   caseTimeoutMs: number | null;
   timedOutCallbacks: number;
+  /** Arms whose execute raised ExecutionUncertainError. Each left an `uncertain.json` marker. */
+  uncertainArms: number;
   gradeRetriesUsed: number;
   /**
    * Pairs where both arms returned output and the canonical JSON was identical.
@@ -237,6 +239,10 @@ export function runWarnings(
   if (summary.timedOutCallbacks)
     warnings.push(
       `${summary.timedOutCallbacks} callback${summary.timedOutCallbacks === 1 ? '' : 's'} exceeded the ${formatMs(summary.caseTimeoutMs)} case timeout. The SDK aborted their signal and stopped waiting; work that ignores the signal may still be running.`,
+    );
+  if (summary.uncertainArms)
+    warnings.push(
+      `${summary.uncertainArms} arm${summary.uncertainArms === 1 ? '' : 's'} could not confirm that execution stopped and ${summary.uncertainArms === 1 ? 'is' : 'are'} recorded as execution_uncertain. Inspect the quarantined jobs (uncertain.json) before reusing their resources.`,
     );
   if (summary.selection)
     warnings.push(

@@ -23,9 +23,20 @@
   "native-repository": [
     "README.md",
     "application.mjs",
+    "container-grader.mjs",
+    "fixture/package.json",
+    "fixture/replay.json",
+    "fixture/src/retry.js",
+    "fixture/tests/retry.test.mjs",
+    "harness-child.mjs",
+    "harness-process.mjs",
+    "harness-template.mjs",
     "harnesses.mjs",
+    "native.mjs",
+    "native.replay.json",
     "package.json",
     "repository-job.mjs",
+    "smoke.mjs",
     "verify-install.mjs"
   ]
 }

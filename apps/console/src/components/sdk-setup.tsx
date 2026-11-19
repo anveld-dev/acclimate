@@ -15,6 +15,7 @@ import {
   deliveryRecipes,
   nativeDeliveryRecipe,
   agentConnectionRecipes,
+  applicationModuleRecipes,
 } from './sdk-setup-recipes';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { NativeSelect } from './ui/native-select';
@@ -170,6 +171,7 @@ export function SdkSetup({
       : nativeDeliveryRecipe(selection, runtime);
   const reportingRecipe = deliveryRecipes(selection)[language];
   const agentRecipe = agentConnectionRecipes(selection)[language];
+  const moduleRecipe = applicationModuleRecipes()[language];
   const isTypeScript = language === 'typescript';
   const languageLabel = isTypeScript ? 'TypeScript' : 'Python';
   const filename =
@@ -201,9 +203,11 @@ export function SdkSetup({
   const agentInstructions = (
     <p>
       Connect your existing agent loop in{' '}
-      <code>{isTypeScript ? 'application.mjs' : 'application.py'}</code>. Export{' '}
-      <code>{isTypeScript ? 'runExistingAgent' : 'run_existing_agent'}</code> with the arguments
-      below. Set <code>ACCLIMATE_JOB_DIR</code> to an empty, private, persistent directory for this
+      <code>{isTypeScript ? 'application.mjs' : 'application.py'}</code>, the one module both
+      delivery and evaluation load. Export{' '}
+      <code>{isTypeScript ? 'runAgent' : 'run_agent'}</code> with the arguments below, plus the{' '}
+      <code>cases</code>, <code>execute</code> and <code>grade</code> the evaluator needs; the
+      application module recipe shows <code>execute</code> calling the same function. Set <code>ACCLIMATE_JOB_DIR</code> to an empty, private, persistent directory for this
       run. Supply the real task in <code>AGENT_TASK</code>, expose the supplied skill files through
       your tools, and return the result after the agent stops. Save the recipe beside the module as{' '}
       <code>{isTypeScript ? 'agent-connection.mjs' : 'agent_connection.py'}</code>. Run it with your
@@ -351,8 +355,8 @@ export function SdkSetup({
                   <EnvironmentSnippet apiUrl={state.publicApiUrl} />
                   {runtime !== 'custom' && (
                     <p>
-                      <code>ACCLIMATE_CACHE</code> is the absolute private cache directory for the
-                      native plugin check.
+                      Optional <code>ACCLIMATE_CACHE</code> selects the private cache directory. It
+                      defaults to <code>~/.cache/acclimate/typescript</code>.
                     </p>
                   )}
                 </>
@@ -384,7 +388,10 @@ export function SdkSetup({
                     {runtime !== 'custom' && (
                       <div>
                         <dt>ACCLIMATE_CACHE</dt>
-                        <dd>Absolute private cache directory for the native plugin check.</dd>
+                        <dd>
+                          Optional private cache directory. Defaults to{' '}
+                          <code>~/.cache/acclimate/typescript</code>.
+                        </dd>
                       </div>
                     )}
                   </dl>
@@ -572,6 +579,21 @@ export function SdkSetup({
                     className="sdk-recipe-code select-text"
                   />
                 </div>
+                <div className="sdk-recipe-file">
+                  <div className="sdk-recipe-toolbar">
+                    <code>{isTypeScript ? 'application.mjs' : 'application.py'}</code>
+                    <div className="flex flex-wrap gap-2">
+                      <CopyButton value={moduleRecipe} label="Copy application module recipe" />
+                    </div>
+                  </div>
+                  <SyntaxCode
+                    code={moduleRecipe}
+                    language={isTypeScript ? 'javascript' : 'python'}
+                    wrap={false}
+                    aria-label={`${languageLabel} application module recipe`}
+                    className="sdk-recipe-code select-text"
+                  />
+                </div>
               </>
             ) : (
               <>
@@ -584,14 +606,15 @@ export function SdkSetup({
                         .file
                     }
                   </code>{' '}
-                  from your release. Use its <code>runRepositoryJob</code> function inside your
-                  application to stage the repository and approved context. Install the compatible
-                  peer{' '}
+                  from your release. Its <code>application.mjs</code> already runs {runtimeLabel}{' '}
+                  through a built-in adapter with explicit sandbox defaults: set{' '}
+                  <code>&quot;harness&quot;: &quot;{runtime}&quot;</code> and your model in{' '}
+                  <code>native.json</code>, then install the tested peer{' '}
                   <code>
                     {nativePeer[runtime]}@{releaseMetadata.nativePeers[nativePeer[runtime]]}
                   </code>
-                  . In <code>runHarness</code>, start your installed agent in the provided working
-                  directory, await its actual termination, and retain its output before cleanup.
+                  . You do not write an adapter. Run <code>node smoke.mjs</code> first for an
+                  offline check with the replay harness.
                 </p>
               </>
             )}

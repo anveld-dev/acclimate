@@ -10,12 +10,14 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "QUALIFICATION.md"
   ],
   "engines": {
     "node": ">=22"
   },
-  "dependencies": {
-    "@acclimate/sdk": "0.1.0"
+  "peerDependencies": {
+    "@acclimate/sdk": "^0.1.0"
   }
 }

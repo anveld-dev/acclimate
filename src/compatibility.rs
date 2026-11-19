@@ -32,83 +32,164 @@ pub(crate) fn name_valid(name: &str) -> bool {
 fn js_whitespace(c: char) -> bool {
     matches!(c, '\u{0009}'..='\u{000d}' | ' ' | '\u{00a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}')
 }
-pub(crate) fn metadata_valid(text: &str, name: &str) -> bool {
-    let normalized = text.replace("\r\n", "\n");
-    let Some(rest) = normalized.strip_prefix("---\n") else {
+/// Returns the text inside one pair of matching quotes, ignoring trailing spaces or tabs.
+fn unquote(value: &str) -> Option<&str> {
+    let trimmed = value.trim_end_matches([' ', '\t']);
+    let bytes = trimmed.as_bytes();
+    (bytes.len() >= 2 && matches!(bytes[0], b'"' | b'\'') && bytes[bytes.len() - 1] == bytes[0])
+        .then(|| &trimmed[1..trimmed.len() - 1])
+}
+/// Splits a top-level `key: value` line whose key matches `[A-Za-z0-9_][A-Za-z0-9_.-]*`.
+fn key_line(line: &str) -> Option<(&str, &str)> {
+    let (key, value) = line.split_once(':')?;
+    let mut bytes = key.bytes();
+    let first = bytes.next()?;
+    ((first.is_ascii_alphanumeric() || first == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b)))
+    .then_some((key, value))
+}
+/// A YAML block scalar header: `>` or `|`, optional chomping and indentation indicators,
+/// then optional spaces and a `#` comment.
+fn block_scalar(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix(['>', '|']) else {
         return false;
     };
-    let mut metadata = Vec::new();
-    let mut closed = false;
-    for line in rest.split('\n') {
-        if line == "---" {
-            closed = true;
-            break;
+    let bytes = rest.as_bytes();
+    let chomp = |b: Option<&u8>| matches!(b, Some(b'-' | b'+'));
+    let digit = |b: Option<&u8>| matches!(b, Some(b'1'..=b'9'));
+    let skip = if chomp(bytes.first()) {
+        1 + usize::from(digit(bytes.get(1)))
+    } else if digit(bytes.first()) {
+        1 + usize::from(chomp(bytes.get(1)))
+    } else {
+        0
+    };
+    let rest = &rest[skip..];
+    let after = rest.trim_start_matches([' ', '\t']);
+    after.is_empty() || (after.starts_with('#') && after.len() < rest.len())
+}
+struct Entry<'a> {
+    key: &'a str,
+    value: &'a str,
+    continuation: Vec<&'a str>,
+}
+/// Explains why a SKILL.md frontmatter block is unusable, without quoting file text.
+pub(crate) fn metadata_problem(text: &str, name: &str) -> Option<String> {
+    let missing = || Some("SKILL.md must start with a --- frontmatter block closed by ---".into());
+    let normalized = text.replace("\r\n", "\n");
+    let Some(rest) = normalized.strip_prefix("---\n") else {
+        return missing();
+    };
+    let lines: Vec<_> = rest.split('\n').collect();
+    let Some(end) = lines.iter().position(|line| *line == "---") else {
+        return missing();
+    };
+    let mut entries = Vec::<Entry>::new();
+    for (index, line) in lines[..end].iter().enumerate() {
+        if line.chars().all(js_whitespace) || line.starts_with('#') {
+            continue;
         }
-        metadata.push(line);
+        let line_number = index + 2;
+        if line.starts_with([' ', '\t']) {
+            let Some(previous) = entries.last_mut() else {
+                return Some(format!(
+                    "SKILL.md frontmatter line {line_number} is indented but follows no key"
+                ));
+            };
+            previous.continuation.push(line);
+            continue;
+        }
+        let Some((key, value)) = key_line(line) else {
+            return Some(format!(
+                "SKILL.md frontmatter line {line_number} is not a key, an indented continuation, a comment or blank"
+            ));
+        };
+        entries.push(Entry {
+            key,
+            value,
+            continuation: Vec::new(),
+        });
     }
-    if !closed {
-        return false;
+    let names: Vec<_> = entries.iter().filter(|e| e.key == "name").collect();
+    let [declared] = names[..] else {
+        return Some(format!(
+            "SKILL.md frontmatter needs exactly one name: {name} (found {} name keys)",
+            names.len()
+        ));
+    };
+    let declared = declared.value.trim_start_matches([' ', '\t']);
+    let declared = unquote(declared).unwrap_or(declared.trim_end_matches([' ', '\t']));
+    if declared != name {
+        return Some(if name_valid(declared) {
+            format!("SKILL.md frontmatter needs exactly one name: {name} (found \"{declared}\")")
+        } else {
+            format!("SKILL.md frontmatter needs exactly one name: {name}")
+        });
     }
-    let metadata = metadata.join("\n");
-    let lines: Vec<_> = metadata
-        .split(['\n', '\r', '\u{2028}', '\u{2029}'])
-        .collect();
-    let declared_name = lines
-        .iter()
-        .filter_map(|line| line.strip_prefix("name:"))
-        .map(|value| value.trim_matches([' ', '\t']))
-        .find(|value| name_valid(value));
-    let matching_name = declared_name == Some(name);
-    let description = lines.iter().any(|line| {
-        line.strip_prefix("description:").is_some_and(|value| {
-            let value = value.trim_start_matches([' ', '\t']);
-            value.chars().next().is_some_and(|c| !js_whitespace(c))
-                && value.encode_utf16().count() >= 2
-        })
-    });
-    matching_name
-        && description
-        && lines
+    let descriptions: Vec<_> = entries.iter().filter(|e| e.key == "description").collect();
+    let [description] = descriptions[..] else {
+        return Some(format!(
+            "SKILL.md frontmatter needs exactly one non-empty description (found {})",
+            descriptions.len()
+        ));
+    };
+    let inline = description.value.trim_start_matches([' ', '\t']);
+    if block_scalar(inline) {
+        let has_text = description
+            .continuation
             .iter()
-            .filter(|line| line.starts_with("name:"))
-            .count()
-            == 1
-        && lines
-            .iter()
-            .filter(|line| line.starts_with("description:"))
-            .count()
-            == 1
-        && lines.iter().all(|line| {
-            line.trim().is_empty() || line.starts_with("name:") || line.starts_with("description:")
-        })
+            .any(|line| line.chars().any(|c| !js_whitespace(c)));
+        return (!has_text).then(|| {
+            "SKILL.md frontmatter needs exactly one non-empty description; the block scalar has no indented text".into()
+        });
+    }
+    let value = unquote(inline).unwrap_or(inline);
+    let valid = value.chars().next().is_some_and(|c| !js_whitespace(c))
+        && value.encode_utf16().count() >= 2;
+    (!valid).then(|| {
+        "SKILL.md frontmatter needs exactly one non-empty description of at least 2 characters"
+            .into()
+    })
+}
+pub(crate) fn metadata_valid(text: &str, name: &str) -> bool {
+    metadata_problem(text, name).is_none()
 }
 pub fn validate(payload: &BundlePayload, target: &str) -> Result<(), Vec<CompatibilityIssue>> {
     if target == "generic" {
         return Ok(());
     }
     let mut issues = Vec::new();
-    let mut add = |code: &str, message: &str, path: Option<&str>, package: Option<&str>| {
+    let mut add = |code: &str, message: String, path: Option<&str>, package: Option<&str>| {
         issues.push(CompatibilityIssue {
             code: code.into(),
-            message: message.into(),
+            message,
             path: path.map(str::to_owned),
             package: package.map(str::to_owned),
         })
     };
     if !valid_target(target) {
-        add("unknown_target", "Unknown compatibility target", None, None);
+        add(
+            "unknown_target",
+            "Unknown compatibility target; use generic, codex, claude, pi or cursor".into(),
+            None,
+            None,
+        );
         return Err(issues);
     }
-    if payload
+    let instructions: Vec<_> = payload
         .files
         .iter()
         .filter(|f| f.kind == "instruction")
-        .count()
-        > 1
-    {
+        .map(|f| f.path.as_str())
+        .collect();
+    if instructions.len() > 1 {
         add(
             "instruction_count",
-            "Native mapping supports at most one instruction file",
+            format!(
+                "Native mapping supports at most one instruction file; found {}: {}",
+                instructions.len(),
+                instructions.join(", ")
+            ),
             None,
             None,
         );
@@ -122,21 +203,13 @@ pub fn validate(payload: &BundlePayload, target: &str) -> Result<(), Vec<Compati
         if parts.len() < 3 || parts[0] != "skills" || !name_valid(parts[1]) || parts[2].is_empty() {
             add(
                 "skill_path",
-                "Skill files require skills/<name>/<file>",
+                "Skill files must be under skills/<name>/<file>, where <name> uses letters, digits, _ or - (max 64)".into(),
                 Some(&file.path),
                 None,
             );
             continue;
         }
         let name = parts[1];
-        if !file.path.ends_with(".md") {
-            add(
-                "skill_file_type",
-                "Skill packages may contain only Markdown files",
-                Some(&file.path),
-                Some(name),
-            );
-        }
         if target == "cursor"
             && !name
                 .bytes()
@@ -144,7 +217,9 @@ pub fn validate(payload: &BundlePayload, target: &str) -> Result<(), Vec<Compati
         {
             add(
                 "skill_name",
-                "Cursor skill names require lowercase letters, digits or hyphens",
+                format!(
+                    "Cursor skill names require lowercase letters, digits or - (max 64); rename \"{name}\""
+                ),
                 Some(&file.path),
                 Some(name),
             );
@@ -154,7 +229,9 @@ pub fn validate(payload: &BundlePayload, target: &str) -> Result<(), Vec<Compati
             if existing != name {
                 add(
                     "skill_case_collision",
-                    "Skill names differ only by case",
+                    format!(
+                        "Skill names differ only by case: \"{name}\" and \"{existing}\"; use one spelling"
+                    ),
                     Some(&file.path),
                     Some(name),
                 );
@@ -171,18 +248,16 @@ pub fn validate(payload: &BundlePayload, target: &str) -> Result<(), Vec<Compati
             .find(|f| f.path.to_ascii_lowercase() == format!("skills/{folded}/skill.md"));
         match manifest {
             Some(file) if file.path == manifest_path => {
-                if !metadata_valid(&file.text, &name) {
-                    add(
-                        "skill_metadata",
-                        "Skill metadata requires a matching name and description",
-                        Some(&file.path),
-                        Some(&name),
-                    );
+                if let Some(problem) = metadata_problem(&file.text, &name) {
+                    add("skill_metadata", problem, Some(&file.path), Some(&name));
                 }
             }
-            _ => add(
+            other => add(
                 "skill_manifest",
-                "Skill package requires an exact SKILL.md manifest",
+                format!(
+                    "Skill package requires an exact SKILL.md manifest at {manifest_path}{}",
+                    other.map_or(String::new(), |file| format!(" (found {})", file.path))
+                ),
                 Some(&manifest_path),
                 Some(&name),
             ),

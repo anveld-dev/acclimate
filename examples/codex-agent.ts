@@ -1,9 +1,7 @@
 import { Codex } from '@openai/codex-sdk';
-import { resolve, join } from 'node:path';
-import { realpath } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { AcclimateClient, resolveAndCache } from '../packages/sdk/src/index.js';
-import { prepare } from '../packages/codex-plugin/src/index.js';
+import { resolve } from 'node:path';
+import { AcclimateClient, defaultCacheDir, resolveAndCache } from '@acclimate/sdk';
+import { prepare } from '@acclimate/codex-plugin';
 import { withNativeSessionInputs } from './native-session-lifetime.js';
 import {
   optionalReceipts,
@@ -48,9 +46,7 @@ const verified = await resolveAndCache(
   },
   {
     reporter,
-    cacheDir: resolve(
-      process.env.ACCLIMATE_CACHE ?? join(await realpath(homedir()), '.cache', 'acclimate'),
-    ),
+    cacheDir: resolve(process.env.ACCLIMATE_CACHE ?? (await defaultCacheDir())),
   },
 );
 const prepared = await prepare(verified);

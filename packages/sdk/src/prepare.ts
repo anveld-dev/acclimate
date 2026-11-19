@@ -44,6 +44,15 @@ export interface PreparedDelivery extends PreparedFiles {
   [Symbol.asyncDispose](): Promise<void>;
 }
 
+/**
+ * The SDK's default bundle cache, `~/.cache/acclimate/typescript` under the real
+ * home directory. `client.prepare()` uses it when `cacheDir` is omitted; pass it
+ * to `resolveAndCache` so every entry point shares one cache.
+ */
+export async function defaultCacheDir(): Promise<string> {
+  return join(await realpath(homedir()), '.cache', 'acclimate', 'typescript');
+}
+
 export async function prepareDelivery(
   client: AcclimateClient,
   options: PrepareDeliveryOptions,
@@ -65,7 +74,7 @@ export async function prepareDelivery(
     ? { projectId, bundleId, channel: options.channel }
     : { projectId, bundleId, versionId: options.versionId };
   const bundle = await resolveAndCache(client, selection, {
-    cacheDir: cacheDir ?? join(await realpath(homedir()), '.cache', 'acclimate', 'typescript'),
+    cacheDir: cacheDir ?? (await defaultCacheDir()),
     reporter,
     offline,
     maxCacheBytes,

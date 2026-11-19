@@ -4,7 +4,11 @@ import { mkdtemp, mkdir, writeFile, readFile, stat, access, rm } from 'node:fs/p
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { agentConnectionRecipes } from '../src/components/sdk-setup-recipes';
+import {
+  agentConnectionRecipes,
+  applicationModuleRecipes,
+  nativeDeliveryRecipe,
+} from '../src/components/sdk-setup-recipes';
 
 // Execute exactly the copied application code against a minimal installed API seam.
 // No provider, service or repository implementation imports are needed.
@@ -51,7 +55,7 @@ export class AcclimateClient {
       await writeFile(
         join(root, 'application.mjs'),
         `
-export async function runExistingAgent({instruction, approvedMemory, task}) {
+export async function runAgent({instruction, approvedMemory, task}) {
   ${behavior === 'rejected' ? "throw new Error('Application did not settle');" : ''}
   return {stopped: ${behavior !== 'uncertain'}, result: {instructionProvided: Boolean(instruction), selectedMemory: approvedMemory.length, task}};
 }`,
@@ -80,7 +84,7 @@ class Prepared:
       await writeFile(
         join(root, 'application.py'),
         `
-def run_existing_agent(*, instruction, skill_files, approved_memory, task):
+def run_agent(*, instruction, skill_files, approved_memory, task):
     ${behavior === 'rejected' ? "raise RuntimeError('Application did not settle')" : ''}
     return dict(stopped=${behavior !== 'uncertain' ? 'True' : 'False'}, result=dict(instructionProvided=bool(instruction), selectedMemory=len(approved_memory), task=task))
 `,
@@ -135,3 +139,47 @@ for (const language of ['typescript', 'python'] as const) {
       await runFixture(language, behavior);
   });
 }
+
+test('the application module recipe exports one contract for delivery and evaluation', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'acclimate-console-module-'));
+  try {
+    const recipes = applicationModuleRecipes();
+    for (const name of ['runAgent', 'cases', 'execute', 'grade'])
+      assert.match(recipes.typescript, new RegExp(`export (?:async function|const) ${name}\\b`));
+    for (const name of ['run_agent', 'cases', 'execute', 'grade'])
+      assert.match(recipes.python, new RegExp(`^(?:def ${name}\\(|${name} = )`, 'm'));
+    assert.match(recipes.typescript, /await runAgent\(/);
+    assert.match(recipes.python, /run = run_agent\(/);
+    const sdk = join(root, 'node_modules', '@acclimate', 'sdk');
+    await mkdir(sdk, { recursive: true });
+    await writeFile(join(sdk, 'package.json'), JSON.stringify({ type: 'module', exports: { '.': './index.mjs', './evaluation': './evaluation.mjs' } }));
+    await writeFile(join(sdk, 'index.mjs'), `export async function prepareFiles() { return { files: [], cleanup: async () => {} }; }`);
+    await writeFile(join(sdk, 'evaluation.mjs'), `export class ExecutionUncertainError extends Error {}`);
+    await writeFile(join(root, 'application.mjs'), recipes.typescript.replace(
+      "throw new Error('Connect runAgent to your agent loop');",
+      "return { stopped: true, result: { answer: 'a phrase a good answer contains: ' + task } };",
+    ));
+    const check = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      const app = await import(${JSON.stringify(join(root, 'application.mjs'))});
+      const bundle = { payload: { files: [{ kind: 'instruction', text: 'Be brief.' }] } };
+      const [item] = app.cases;
+      const run = await app.execute({ bundle, input: item.input, signal: new AbortController().signal });
+      console.log(JSON.stringify(await app.grade({ output: run.output, expected: item.expected })));`], { encoding: 'utf8' });
+    assert.equal(check.status, 0, check.stderr);
+    assert.deepEqual(JSON.parse(check.stdout), { reward: 1 });
+    await writeFile(join(root, 'application.py'), recipes.python);
+    const compiled = spawnSync('python3', ['-m', 'py_compile', join(root, 'application.py')], { encoding: 'utf8' });
+    assert.equal(compiled.status, 0, compiled.stderr);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('native delivery recipe keeps receipts through the plugin and makes the cache optional', () => {
+  const recipe = nativeDeliveryRecipe({ projectId: 'p', bundleId: 'b', channel: 'stable' }, 'claude');
+  assert.match(recipe, /const delivery = await client\.prepare\(/);
+  assert.match(recipe, /await prepare\(delivery\)/);
+  assert.match(recipe, /~\/\.cache\/acclimate\/typescript/);
+  assert.doesNotMatch(recipe, /'ACCLIMATE_CACHE'\]/);
+  assert.match(recipe, /from '@acclimate\/claude-plugin'/);
+});

@@ -13,8 +13,8 @@
       "import": "./dist/validation.js"
     },
     "./native-files": {
-      "types": "./dist/internal/native-files.d.ts",
-      "import": "./dist/internal/native-files.js"
+      "types": "./dist/native-files.d.ts",
+      "import": "./dist/native-files.js"
     },
     "./evaluation": {
       "types": "./dist/evaluation/index.d.ts",

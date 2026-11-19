@@ -44,3 +44,16 @@ test('prepared Claude session options conform to the pinned native SDK', async (
     await prepared.cleanup();
   }
 });
+
+test('an empty skill list is omitted so the Agent SDK keeps its default skills', async () => {
+  const withoutSkills = structuredClone(bundle);
+  withoutSkills.payload.files = withoutSkills.payload.files.filter((file) => file.kind !== 'skill');
+  const prepared = await prepare(withoutSkills);
+  try {
+    const options: Options = claudeSessionOptions(prepared);
+    assert.deepEqual(options, { cwd: prepared.cwd, settingSources: ['project'] });
+    assert.equal('skills' in options, false);
+  } finally {
+    await prepared.cleanup();
+  }
+});

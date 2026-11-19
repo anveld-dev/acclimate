@@ -194,7 +194,12 @@ export interface EvaluationRunResult {
     repetition: number;
     side: 'parent' | 'candidate';
     stage: 'execute' | 'grade';
-    reason: 'execution_failed' | 'task_failed' | 'output_invalid' | 'grading_failed';
+    reason:
+      | 'execution_failed'
+      | 'task_failed'
+      | 'output_invalid'
+      | 'grading_failed'
+      | 'execution_uncertain';
     diagnosticFile?: string;
   };
   reusedEvidence: boolean;

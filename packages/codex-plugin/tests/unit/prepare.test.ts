@@ -99,9 +99,11 @@ test('keeps skill and original memory order when a bundle has no instruction', a
       'digest',
       'instructionPath',
       'memoryFiles',
+      'reportStarted',
       'skillPaths',
       'versionId',
     ]);
+    assert.equal(result.reportStarted(), null);
   } finally {
     await result.cleanup();
   }
@@ -151,4 +153,27 @@ test('preparing a refreshed version leaves an existing job workspace pinned', as
     await refreshed.cleanup();
     await pinned.cleanup();
   }
+});
+
+test('accepts client.prepare() output so start receipts survive native preparation', async () => {
+  const receipt = { stage: 'started' } as never;
+  let started = 0;
+  let released = 0;
+  const delivery = {
+    bundle: bundle(),
+    reportStarted() {
+      started++;
+      return receipt;
+    },
+    async cleanup() {
+      released++;
+    },
+  };
+  const prepared = await prepare(delivery);
+  assert.equal(prepared.versionId, 'v1');
+  assert.equal(await readFile(prepared.instructionPath!, 'utf8'), 'Use concise answers.');
+  assert.equal(prepared.reportStarted(), receipt);
+  assert.equal(started, 1);
+  await prepared.cleanup();
+  assert.equal(released, 1);
 });

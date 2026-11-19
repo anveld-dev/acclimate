@@ -29,7 +29,8 @@ test('Codex stream adapter carries observed handles, token usage and terminal st
       return { runStreamed: async prompt => ({ events: (async function* () {
         yield { type: 'thread.started', thread_id: 'example-thread' };
         if (prompt.startsWith('truncated')) return;
-        if (prompt.startsWith('failed')) { yield { type: 'turn.failed' }; return; }
+        if (prompt.startsWith('failed')) { yield { type: 'turn.failed', error: { message: 'model overloaded' } }; return; }
+        if (prompt.startsWith('stream-error')) { yield { type: 'error', message: 'reconnect budget exhausted' }; return; }
         yield { type: 'item.completed', item: { type: 'agent_message', text: prompt } };
         yield { type: 'turn.completed', usage: { input_tokens: 15, output_tokens: 3 } };
         if (prompt.startsWith('late-error')) throw new Error('stream disconnected');
@@ -55,7 +56,10 @@ test('Codex stream adapter carries observed handles, token usage and terminal st
     assert.match(completed.output, /User task\nApproved memory files:\n\/approved.md/);
     assert.deepEqual(completed.usage, { inputTokens: 15, outputTokens: 3 });
     assert.equal((await run('truncated')).stopped, false);
-    assert.equal((await run('failed')).infrastructureFailure, true);
+    const failed = await run('failed');
+    assert.equal(failed.infrastructureFailure, true);
+    assert.deepEqual(failed.error, { code: 'codex.turn_failed', message: 'model overloaded' });
+    await assert.rejects(run('stream-error'), { code: 'codex.stream_error', message: 'reconnect budget exhausted' });
     await assert.rejects(run('late-error'), /stream disconnected/);
   } finally {
     hook.deregister();

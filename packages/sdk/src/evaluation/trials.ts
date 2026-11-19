@@ -10,7 +10,7 @@ import {
   MAX_PRIVATE,
   OutputValidationError,
 } from './definition.js';
-import { CallbackCancelled } from './errors.js';
+import { CallbackCancelled, ExecutionUncertainError } from './errors.js';
 import { canonicalEvaluationJson } from './manifest.js';
 import { atomicPrivateWrite, privateDirectory } from './private-state.js';
 import {
@@ -86,7 +86,12 @@ export interface FirstCallbackFailure {
   repetition: number;
   side: Side;
   stage: 'execute' | 'grade';
-  reason: 'execution_failed' | 'task_failed' | 'output_invalid' | 'grading_failed';
+  reason:
+    | 'execution_failed'
+    | 'task_failed'
+    | 'output_invalid'
+    | 'grading_failed'
+    | 'execution_uncertain';
   diagnosticFile?: string;
 }
 
@@ -175,6 +180,7 @@ export async function runTrials(options: TrialRunOptions): Promise<TrialRunResul
   let artifactBytes = 0;
   let armsDone = 0;
   let timedOutCallbacks = 0;
+  let uncertainArms = 0;
   let gradeRetriesUsed = 0;
   let pairsStarted = 0;
   let comparedPairs = 0;
@@ -360,6 +366,28 @@ export async function runTrials(options: TrialRunOptions): Promise<TrialRunResul
         );
         hooks.assertOwned();
       } catch (error) {
+        if (error instanceof ExecutionUncertainError) {
+          // The application kept this job's work quarantined in its own private job
+          // directory. Record the arm as uncertain, never retry it while the earlier
+          // attempt may still run, and continue with the remaining pairs. This applies
+          // to live and local runs alike; uncertainty from grade still stops the run.
+          hooks.assertOwned();
+          const marker = path.join(privateJobDirectory, 'uncertain.json');
+          await atomicPrivateWrite(
+            marker,
+            JSON.stringify({ schemaVersion: 1, jobId, side, caseId: item.caseId, repetition }) + '\n',
+          );
+          noteFailure(
+            'execute',
+            'execution_uncertain',
+            options.captureCallbackErrors
+              ? await hooks.saveCallbackError(privateJobDirectory, 'execute', error)
+              : marker,
+          );
+          uncertainArms++;
+          result = unavailable('execution_uncertain');
+          break;
+        }
         if (hooks.isFatal(error)) throw error;
         if (error instanceof Abandoned) {
           if (error.reason === 'timeout') timedOutCallbacks++;
@@ -643,6 +671,7 @@ export async function runTrials(options: TrialRunOptions): Promise<TrialRunResul
       deadlineMs: controls.deadlineMs ?? null,
       caseTimeoutMs: controls.caseTimeoutMs ?? null,
       timedOutCallbacks,
+      uncertainArms,
       gradeRetriesUsed,
       outputs: { comparedPairs, identicalPairs },
     },

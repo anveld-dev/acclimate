@@ -47,7 +47,9 @@ export function agentConnectionRecipes(selection: {
   bundleId: string;
   channel: string;
 }) {
-  const typescript = `import { runExistingAgent } from './application.mjs';
+  const typescript = `// application.mjs exports runAgent for delivery and cases, execute and grade for
+// acclimate-eval. Its execute() calls the same runAgent, so both use one contract.
+import { runAgent } from './application.mjs';
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AcclimateClient } from '@acclimate/sdk';
@@ -64,7 +66,7 @@ const prepared = await client.prepare({ ...${JSON.stringify(selection, null, 2)}
 const { instructions: instruction, skillFiles } = prepared;
 const approvedMemory = [];
 // Keep inputs available until the real job has stopped and its output is retained.
-const run = await runExistingAgent({ instruction, skillFiles, approvedMemory,
+const run = await runAgent({ instruction, skillFiles, approvedMemory,
   task: process.env.AGENT_TASK });
 if (run.stopped !== true) throw new Error('Application termination is unknown; inspect the original job directory');
 const result = run.result;
@@ -84,7 +86,9 @@ console.log({ versionId: prepared.version.id, digest: prepared.version.digest,
 from pathlib import Path
 from acclimate import AcclimateClient
 
-from application import run_existing_agent
+# application.py defines run_agent for delivery and cases, execute and grade for
+# python -m acclimate. Its execute() calls the same run_agent.
+from application import run_agent
 
 for key in ('ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE',
             'ACCLIMATE_JOB_DIR', 'AGENT_TASK'):
@@ -93,7 +97,7 @@ client = AcclimateClient(os.environ['ACCLIMATE_URL'], os.environ['ACCLIMATE_TOKE
 prepared = client.prepare(${JSON.stringify(selection.projectId)}, ${JSON.stringify(selection.bundleId)},
     channel=${JSON.stringify(selection.channel)}, cache_dir=os.getenv('ACCLIMATE_CACHE'),
     destination=os.environ['ACCLIMATE_JOB_DIR'])
-run = run_existing_agent(instruction=prepared.instructions, skill_files=prepared.skill_files,
+run = run_agent(instruction=prepared.instructions, skill_files=prepared.skill_files,
     approved_memory=[], task=os.environ['AGENT_TASK'])
 if run.get('stopped') is not True:
     raise RuntimeError('Application termination is unknown; inspect the original job directory')
@@ -111,6 +115,84 @@ prepared.cleanup()
 print(json.dumps(dict(versionId=prepared.version['id'], digest=prepared.version['digest'],
     contextPolicy='explicit-no-memory-v1', appCallCompleted=True)))
 # In an async app, offload the complete fetch/prepare/run/cleanup lifetime to a worker.
+`;
+  return { typescript, python };
+}
+
+/**
+ * The one application module both paths load: delivery calls runAgent, and the
+ * evaluator calls execute, which stages the version and calls the same runAgent.
+ */
+export function applicationModuleRecipes() {
+  const typescript = `import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { prepareFiles } from '@acclimate/sdk';
+import { ExecutionUncertainError } from '@acclimate/sdk/evaluation';
+
+/** Delivery and evaluation both call this. Return stopped: true only after your agent ends. */
+export async function runAgent({ instruction, skillFiles, approvedMemory, task, signal }) {
+  // Start your existing agent loop with the instruction, skill files and task here.
+  throw new Error('Connect runAgent to your agent loop');
+}
+
+// Private saved tasks; ACCLIMATE_EVALUATOR_CASES can point to a JSON file instead.
+export const cases = [
+  { caseId: 'first-task', input: { task: 'A task your agent handles' },
+    expected: { includes: 'a phrase a good answer contains' } },
+];
+
+export async function execute({ bundle, input, signal }) {
+  const directory = await mkdtemp(join(tmpdir(), 'acclimate-eval-'));
+  const staged = await prepareFiles(bundle, directory);
+  const instruction = bundle.payload.files.filter((file) => file.kind === 'instruction')
+    .map((file) => file.text).join('\\n\\n');
+  const run = await runAgent({ instruction, approvedMemory: [], task: input.task, signal,
+    skillFiles: staged.files.filter((file) => file.kind === 'skill') });
+  // Keep the inputs when the agent's end is unknown.
+  if (run.stopped !== true) throw new ExecutionUncertainError();
+  await staged.cleanup();
+  await rm(directory, { recursive: true, force: true });
+  return { output: run.result };
+}
+
+export async function grade({ output, expected }) {
+  return { reward: Number(JSON.stringify(output).includes(expected.includes)) };
+}
+`;
+  const python = `import json, shutil, tempfile
+from acclimate import prepare_files
+from acclimate.evaluation import ExecutionResult, ExecutionUncertainError, GradeResult
+
+
+def run_agent(*, instruction, skill_files, approved_memory, task):
+    """Delivery and evaluation both call this. Return stopped=True only after your agent ends."""
+    raise NotImplementedError('Connect run_agent to your agent loop')
+
+
+# Private saved tasks; ACCLIMATE_EVALUATOR_CASES can point to a JSON file instead.
+cases = [
+    dict(caseId='first-task', input=dict(task='A task your agent handles'),
+         expected=dict(includes='a phrase a good answer contains')),
+]
+
+
+def execute(request):
+    directory = tempfile.mkdtemp(prefix='acclimate-eval-')
+    staged = prepare_files(request.bundle, directory)
+    instruction = '\\n\\n'.join(f['text'] for f in request.bundle['payload']['files']
+                               if f['kind'] == 'instruction')
+    run = run_agent(instruction=instruction, approved_memory=[], task=request.input['task'],
+                    skill_files=[f for f in staged.files if f['kind'] == 'skill'])
+    if run.get('stopped') is not True:
+        raise ExecutionUncertainError()  # keep the inputs for inspection
+    staged.cleanup()
+    shutil.rmtree(directory, ignore_errors=True)
+    return ExecutionResult(output=run['result'])
+
+
+def grade(request):
+    return GradeResult(reward=float(request.expected['includes'] in json.dumps(request.output)))
 `;
   return { typescript, python };
 }
@@ -168,10 +250,10 @@ export function nativeDeliveryRecipe(
   selection: { projectId: string; bundleId: string; channel: string },
   runtime: 'codex' | 'claude' | 'pi' | 'cursor',
 ) {
-  return `import { AcclimateClient, resolveAndCache } from '@acclimate/sdk';
+  return `import { AcclimateClient } from '@acclimate/sdk';
 import { prepare } from '@acclimate/${runtime}-plugin';
 
-for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE', 'ACCLIMATE_CACHE']) {
+for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE']) {
   if (!process.env[key]) throw new Error('Set ' + key);
 }
 const client = new AcclimateClient({
@@ -180,8 +262,10 @@ const client = new AcclimateClient({
   scope: process.env.ACCLIMATE_SCOPE,
 });
 const selection = ${JSON.stringify(selection, null, 2)};
-const bundle = await resolveAndCache(client, selection, { cacheDir: process.env.ACCLIMATE_CACHE });
-const prepared = await prepare(bundle);
+// ACCLIMATE_CACHE is optional; the default is ~/.cache/acclimate/typescript.
+const delivery = await client.prepare({ ...selection, cacheDir: process.env.ACCLIMATE_CACHE });
+// The plugin accepts the delivery, so prepared.reportStarted() still records start receipts.
+const prepared = await prepare(delivery);
 try {
   console.log({
     version: prepared.versionId,

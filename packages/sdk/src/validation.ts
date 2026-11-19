@@ -18,6 +18,7 @@ export type DeliveryErrorCode =
   | 'collision'
   | 'digest_mismatch'
   | 'invalid_cache'
+  | 'invalid_overlay'
   | 'invalid_payload'
   | 'invalid_response'
   | 'stale_resolution'

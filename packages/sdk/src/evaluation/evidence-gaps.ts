@@ -35,6 +35,7 @@ export function scalarGap(outcome?: Outcome): [Stage, string] | undefined {
         'timeout',
         'deadline_exceeded',
         'cost_limit_reached',
+        'execution_uncertain',
       ].includes(code)
         ? code
         : 'infrastructure_failed',

@@ -1,28 +1,33 @@
 ---
 title: Codex
-description: Stage verified instructions and skills for a fresh Codex SDK thread.
+description: Stage verified instructions and skills for a fresh Codex SDK thread with an explicit sandbox policy.
 ---
 
 Prepare a private workspace for a Codex thread using `@acclimate/codex-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install), then install the native SDK separately. The release manifest pins `@openai/codex-sdk` 0.169.0. The plugin has a preparation entry point and declares no Codex peer dependency.
 
 ## Prepare a thread
 
-The plugin maps the instruction to `AGENTS.md`, skills to `.agents/skills/<name>/`, and approved memory files to `.acclimate/memory/`. Use the prepared directory as the working directory for a fresh thread.
+The plugin maps the instruction to `AGENTS.md`, skills to `.agents/skills/<name>/` with their supporting files, and memory files to `.acclimate/memory/`. `prepare` accepts a verified version or the result of `client.prepare()`; with a delivery, `prepared.reportStarted()` keeps its start receipt. Use the prepared directory as the working directory for a fresh thread, and set the sandbox, approval and network policy explicitly. These are the defaults the native repository starter uses:
 
 ```ts
 import { prepare } from '@acclimate/codex-plugin';
 import { Codex } from '@openai/codex-sdk';
 
-const prepared = await prepare(verifiedVersion);
-const thread = new Codex().startThread({
+const prepared = await prepare(delivery);
+const thread = new Codex({ env }).startThread({
   workingDirectory: prepared.cwd,
   skipGitRepoCheck: true,
+  model,
+  sandboxMode: 'workspace-write',
+  approvalPolicy: 'never',
+  networkAccessEnabled: false,
+  webSearchMode: 'disabled',
 });
 ```
 
-Your app supplies model, tool permissions, credentials, and any selected memory context. Retain the prepared files until the thread has finished, then call `await prepared.cleanup()`.
+Your app supplies the model, credentials and any selected memory context. Codex also reads `CODEX_HOME`, which holds your global `config.toml`, MCP servers and `AGENTS.md`. Pass an `env` whose `CODEX_HOME` contains only `auth.json` if those must not affect the job; the native repository starter does this for each job. Retain the prepared files until the thread has finished, then call `await prepared.cleanup()`.
 
-For the [native repository starter](/docs/guides/deliver-content#stage-a-repository-for-evaluation), install the pinned SDK and matching platform executable from your approved npm cache. The starter's check prints the CLI version without requiring credentials.
+For the [native repository starter](/docs/guides/deliver-content#stage-a-repository-for-evaluation), Codex is the default harness and its adapter already runs the thread. Install the pinned SDK and matching platform executable from your approved npm cache. The starter's check prints the CLI version without requiring credentials.
 
 ```sh
 npm install --prefix "$app" --workspaces=false --offline --include=optional --ignore-scripts --no-audit --no-fund \

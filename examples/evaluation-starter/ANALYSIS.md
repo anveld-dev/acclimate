@@ -1,11 +1,23 @@
-# Named metrics and paired repeated-execution analysis
+# Named metrics and paired analysis
 
 Install `@acclimate/sdk` or the `acclimate-sdk` wheel in your application. The evaluation starter archive includes
 `analyze.mjs` and `analyze.py`; both scripts import only the installed package. They analyze saved evidence and execute no tasks.
 
+After a named run, let the script assemble the evidence from your evaluator journal and the service:
+
 ```sh
-node analyze.mjs comparison.json descriptor.json trusted-binding.json analysis-config.json > analysis.json
-python analyze.py comparison.json descriptor.json trusted-binding.json analysis-config.json > analysis.json
+node analyze.mjs --name "$RUN_NAME" --config "$EVALUATOR_CONFIG" [analysis-config.json] > analysis.json
+python analyze.py --name "$RUN_NAME" --config "$EVALUATOR_CONFIG" [analysis-config.json] > analysis.json
+```
+
+It reads the run's handoff from `journalRoot/comparisons/RUN_NAME/request.json`, fetches the request and
+comparison, and derives the descriptor and the seven-field trusted binding from the authoritative request.
+
+For saved files, pass them explicitly:
+
+```sh
+node analyze.mjs comparison.json descriptor.json trusted-binding.json [analysis-config.json] > analysis.json
+python analyze.py comparison.json descriptor.json trusted-binding.json [analysis-config.json] > analysis.json
 ```
 
 Save the authoritative comparison returned by your reader client as
@@ -24,6 +36,10 @@ comparison ID from the authoritative request result. Your trusted binding file i
   "comparisonId": "comparison-id"
 }
 ```
+
+Errors are one JSON line on stderr. `analysis.file_unreadable` and `analysis.file_not_json` name the
+file, `analysis.binding_invalid` lists the missing binding fields, and `analysis.invalid_config`
+appears only for an analysis config you supplied, with any unknown field names.
 
 Populate it from the app's retained request/attempt and authoritative service
 responses, separately from any untrusted downloaded analysis sidecar. Matching a
@@ -180,11 +196,36 @@ This calculation produces a descriptive suite summary. Evaluate any suite-wide
 policy from the combined cases and costs. Partition-level verdicts and interval
 endpoints apply only to their individual request.
 
-## Optional fixed-task uncertainty
+## Optional uncertainty: two questions
 
-Only opt in when you actually collected independent stochastic paired
+Each interval answers one question and is labeled with it in `uncertainty.estimand`.
+The policy verdict answers the first one by default.
+
+| `method` | Question | `estimand` | Minimum |
+| --- | --- | --- | --- |
+| `paired-t` | Would the candidate do as well on **tasks like these**? | `sampled-cases` | 2 cases |
+| `paired-within-case-bootstrap` | What happens if we run **these tasks again**? | `fixed-cases` | 3 repetitions per case |
+
+For tasks like these, add:
+
+```json
+{
+  "uncertainty": {
+    "method": "paired-t",
+    "estimand": "sampled-cases",
+    "samplingProtocol": "app-protocol-revision-that-documents-case-selection",
+    "confidenceLevel": 0.95
+  }
+}
+```
+
+It is a two-sided Student t interval on the equal-weight case means, at 0.80, 0.90, 0.95 or 0.98.
+It treats your cases as a sample from the tasks you care about, so it reflects both case-to-case
+variation and run-to-run noise. Identical case differences return `insufficient_data`.
+
+For these tasks again, only opt in when you actually collected independent stochastic paired
 repetitions, under a retained protocol that explains randomization, pairing and
-independence across repetitions and cases. Add this object to `analysis-config.json`:
+independence across repetitions and cases:
 
 ```json
 {
@@ -202,31 +243,49 @@ independence across repetitions and cases. Add this object to `analysis-config.j
 
 The analysis first averages paired parent/candidate repetitions within each case,
 then gives each distinct case equal weight. Repetitions do not increase a case's
-weight. For uncertainty it resamples whole paired differences within each case,
-keeping that case's original repetition count, and averages the resampled case
-means equally. It never pools repetitions as independent tasks or resamples the
-fixed inventory as if it were a sampled task population.
+weight. The bootstrap resamples whole paired differences within each case,
+keeping that case's original repetition count. Resampling `r` values understates the
+variance of a case mean by `(r - 1) / r`, so each resampled case mean `m*` is replaced by
+`d + sqrt(r / (r - 1)) * (m* - d)`, where `d` is the observed case mean. The resampled case
+means are then averaged equally. It never resamples the fixed inventory as if it were a sampled
+task population; use `paired-t` for that question.
 
-The result estimates an **approximate repeated-execution interval for these
-fixed tasks**, conditional on the declared protocol. It requires at least two
-cases and at least two complete pairs per case. Those are eligibility minima,
-not guarantees of adequate sample size or calibrated coverage. Very small
-samples, skewed distributions, dependence, order effects, adaptive stopping,
-reused outputs and unrepresentative draws can make bootstrap intervals
-misleading. The helper cannot validate the collection protocol. Collect enough
-independent repetitions and evaluate those assumptions in the application.
+Coverage at a nominal 95% in simulations with binary rewards (per-case success rates from
+U(0.2, 0.8), true effect around +0.05, 600 to 2,000 runs per cell):
 
-One case, one repetition, constant paired differences within every case, or
+| Cases × repetitions | Unscaled bootstrap (before) | Scaled bootstrap | `paired-t` |
+| --- | --- | --- | --- |
+| 10 × 2 | 78% | 91% | 95% |
+| 10 × 3 | 86% | 93% | 95% |
+| 30 × 2 | 80% | 93% | 97% |
+| 30 × 3 | 86% | 94% | 95% |
+| 30 × 5 | 92% | 94% | 94% |
+
+The scaled bootstrap still undercovers by one to four points with few repetitions, so it requires
+at least three repetitions per case. Treat its intervals as approximate. Very small samples, skewed
+distributions, dependence, order effects, adaptive stopping, reused outputs and unrepresentative
+draws can make any interval misleading. The helper cannot validate the collection protocol.
+
+One case, fewer than three repetitions for the bootstrap, constant paired differences, or
 degenerate resampled endpoints return `insufficient_data` with no interval.
 Deterministic convenience fixtures must use the descriptive default; setting a
 declaration does not turn them into stochastic evidence. Missingness is never
 zero-filled. Finite arithmetic overflow returns `indeterminate`.
 
+## How this relates to the policy verdict
+
+The policy gate uses the `paired-t` question with a one-sided lower bound, a minimum case count,
+an SD floor and conservative imputation of up to 15% missing trials per arm. Its default
+false-pass rate at zero true effect stays near the nominal 5% (4.3% to 5.7% across 10 to 60 cases
+in 2,000-run simulations), while a point-estimate comparison passes about half of such candidates.
+Run `acclimate-eval plan --policy quality-policy.json` to see the minimum detectable effect for your
+inventory. The Methodology page in the documentation (Concepts) has the full table.
+
 No interval supports a causal claim or a claim about general model quality,
 unseen tasks, or safety. The intervals are per metric without a simultaneous
 multiple-comparison guarantee. They neither apply an effect threshold nor
-produce a release/promotion verdict. The existing descriptive policy checker
-remains a separate explicit application decision.
+produce a release/promotion verdict. The policy checker remains a separate
+explicit application decision.
 
 The reproducible algorithm sorts case IDs by UTF-8 bytes and repetitions
 numerically; each metric starts the same independent stream. Its uint32 state is

@@ -1,0 +1,184 @@
+---
+title: Methodology
+description: The question each quality check answers, how scores are aggregated, the statistical test, missing data, error rates and how to size an evaluation.
+---
+
+A quality policy turns a paired comparison into a verdict: `pass`, `fail`, or `indeterminate`. This page describes exactly how, so you can choose thresholds and sample sizes deliberately.
+
+## Two questions
+
+Every number Acclimate reports answers one of two questions. Outputs carry a label so you can tell which.
+
+| Question | Label | Where it appears | Treats cases as |
+| --- | --- | --- | --- |
+| Would the candidate do as well on **tasks like these**? | `estimand: "sampled-cases"` | Policy verdicts (default `paired-t`), analysis `paired-t` intervals | A sample from the tasks you care about |
+| What happened on **these exact tasks**, if we ran them again? | `estimand: "observed-cases"` / `"fixed-cases"` | Policies with `inference.method: "none"`, the fixed-case bootstrap in analysis | The whole population |
+
+A release decision is usually about tasks like these, so the policy uses the sampled-cases test by default. The fixed-case question is narrower: it ignores how representative your cases are and only accounts for run-to-run noise.
+
+## Aggregation
+
+1. Within each case, average the repetitions for each arm.
+2. Take the case difference: candidate mean minus parent mean, oriented so a positive number is an improvement (`metric.direction`).
+3. Weight every case equally. A case with more repetitions is measured more precisely; it does not count more.
+
+The suite mean difference is the average of the case differences. The per-case means and the suite means appear in every verdict and in CLI text, rounded to four decimals in terminal output and at full precision in JSON.
+
+## The default test
+
+Unless a policy declares otherwise, every schema version runs a one-sided paired Student t test on the case differences:
+
+```text
+lowerBound = meanDifference - t(confidence, n - 1) * max(sd, sdFloor, calibratedSd) / sqrt(n)
+```
+
+- `n` is the number of distinct cases and `sd` the sample standard deviation of their differences.
+- `t(confidence, n - 1)` is the one-sided Student t quantile. Supported confidence levels are 0.80, 0.90, 0.95 (default), 0.975 and 0.99.
+- `sdFloor` keeps a lucky sample of near-identical differences from looking certain. By default it is 0.1 times the width of the declared reward scale (`metric.scale`), or of the observed reward range when no scale is declared.
+- `calibratedSd` applies only to connected learning, which passes its A/A calibration at check time.
+
+The mean-difference check passes when `lowerBound > minimumMeanImprovement`. Choose the threshold for the question you want answered:
+
+| Goal | `minimumMeanImprovement` | Reads as |
+| --- | --- | --- |
+| Evidence of improvement | `0` or a positive minimum effect | The candidate is better on tasks like these. |
+| No meaningful regression (non-inferiority) | A negative margin, such as `-0.05` | The candidate is unlikely to be more than 5 points worse. |
+
+A tie cannot prove improvement. With threshold `0`, a candidate identical to its parent fails. Use a non-inferiority margin for refactors that should not change quality.
+
+### Declaring the test
+
+Write the settings in an `inference` block. Omitted fields take the defaults shown.
+
+```json
+{
+  "inference": {
+    "method": "paired-t",
+    "confidence": 0.95,
+    "minCases": 10,
+    "minRepetitions": 1,
+    "sdFloor": 0.1,
+    "maximumMissingPercent": 15
+  }
+}
+```
+
+`method: "none"` compares the point estimate with the threshold for these exact cases. It has no noise model and its false-pass rate is not controlled; use it only for deterministic graders and fixture tests. With `none`, missing data makes the verdict indeterminate.
+
+The policy id never changes the calculation. The ids `connected-development` and `connected-audit` are reserved for the service's connected-learning defaults and are rejected in general policies.
+
+### Insufficient data is indeterminate
+
+The verdict is `indeterminate` (CLI exit 3) with code `inference.insufficient_data`, never `pass`, when:
+
+- there are fewer than `minCases` distinct cases (`inference.minimum_cases`);
+- any case has fewer than `minRepetitions` planned repetitions (`inference.minimum_repetitions`);
+- every case difference is identical and there is no floor, so the spread is unknown (`inference.zero_variance`). This includes runs where every task failed on both arms.
+
+A definite failure elsewhere, such as a cost cap, still makes the verdict `fail`.
+
+### The verdict shows its statistics
+
+Every verdict, policy receipt and CLI summary carries an `inference` block:
+
+| Field | Meaning |
+| --- | --- |
+| `method`, `estimand`, `stage` | The test, the question it answers, and the connected-learning stage if any |
+| `check`, `threshold`, `thresholdSource` | The check the bound decides and the effective threshold it must clear |
+| `confidence`, `df`, `criticalValue` | The one-sided level, degrees of freedom and t quantile |
+| `n`, `minCases`, `repetitions`, `minRepetitions` | Cases and repetitions observed and required |
+| `meanDifference`, `sd`, `sdFloor`, `sdFloorSource`, `calibratedSd`, `sdUsed`, `standardError` | The inputs to the bound |
+| `lowerBound` | The one-sided lower confidence bound |
+| `imputed` | Missing trials replaced on each arm (see below) |
+
+## Other checks
+
+These checks are the same in every schema version:
+
+- `policy.maximum_case_regression`: the largest oriented case regression is at most `maximumCaseRegression`. This is a point comparison per case, so noise alone can trigger it.
+- `policy.maximum_candidate_task_failures`: candidate trials that failed the task, failed in infrastructure or were not scored.
+- `policy.protected_case_threshold`: every repetition of a named case meets its threshold.
+- Candidate threshold and cost limits.
+
+`perCaseChecks` chooses which cases the regression and task-failure checks cover. The default `all-cases` covers every case. `protected-cases` covers only `requiredCases` and cases named in `protectedCaseThresholds`, which avoids failing a statistical gate on the noise of a single unimportant case. Verdicts report both `candidateTaskFailures` (all cases) and `protectedCandidateTaskFailures`, plus `parentTaskFailures`.
+
+## Reward scale
+
+Declare the reward range in `metric.scale`, for example `{ "minimum": 0, "maximum": 1 }`. A scored reward outside it is invalid evidence (`evidence.reward_out_of_range`), not a quality failure. The scale also sets the default SD floor.
+
+## Missing data
+
+A trial is missing when its arm failed in infrastructure or produced no finite score. Under `paired-t`:
+
+- Up to `maximumMissingPercent` (default 15%) of trials may be missing on each arm. More makes the evidence incomplete (`evidence.incomplete`).
+- A missing candidate trial is replaced with the worst observed reward and a missing parent trial with the best observed reward, oriented by `metric.direction`. Imputation can only make the candidate look worse.
+- The verdict reports the counts in `inference.imputed`. Missing pairs (no result at all) always make the evidence incomplete.
+
+Analysis never imputes: a metric with missing trials reports means only for complete cases and no interval.
+
+## Error rates
+
+The false-pass rate is the pass rate when the candidate is no better than the threshold. The table shows Monte Carlo pass rates for a superiority threshold of 0, from 2,000 simulated comparisons per cell. Each case's success rate is drawn from U(0.2, 0.8), rewards are binary, and the per-case regression check is disabled to isolate the mean-difference test. Monte Carlo error is about ±1 percentage point at 5%.
+
+| Policy | Cases × reps | Δ = 0 (false pass) | Δ = +0.05 | Δ = +0.10 | Indeterminate |
+| --- | --- | --- | --- | --- | --- |
+| paired-t 95% (default) | 5 × 1 | 0.0% | 0.0% | 0.0% | 100.0% |
+| paired-t 95% (default) | 10 × 1 | 5.0% | 7.6% | 12.7% | 0.0% |
+| paired-t 95% (default) | 10 × 3 | 4.3% | 10.8% | 19.2% | 0.0% |
+| paired-t 95% (default) | 30 × 1 | 5.0% | 11.8% | 19.2% | 0.0% |
+| paired-t 95% (default) | 30 × 3 | 5.1% | 19.4% | 39.7% | 0.0% |
+| paired-t 95% (default) | 60 × 3 | 5.7% | 26.7% | 63.0% | 0.0% |
+| point estimate (`method: "none"`) | 5 × 1 | 62.6% | 70.9% | 74.7% | 0.0% |
+| point estimate (`method: "none"`) | 10 × 3 | 50.6% | 68.3% | 79.3% | 0.0% |
+| point estimate (`method: "none"`) | 30 × 3 | 49.4% | 78.1% | 92.0% | 0.0% |
+| point estimate (`method: "none"`) | 60 × 3 | 50.1% | 83.5% | 97.7% | 0.0% |
+
+The default keeps false passes near the nominal 5%. The point-estimate rule passes a candidate that is no better about half the time. Regenerate the table with `tsx scripts/evaluation/policy-calibration.ts 2000` from a checkout; the SDK test suite checks a smaller version of the zero-effect row on every run.
+
+## Power and minimum detectable effect
+
+Small effects need many cases. The minimum detectable effect (MDE) with about 80% power is
+
+```text
+MDE = threshold + (t(confidence, n - 1) + t(0.80, n - 1)) * sd / sqrt(n)
+```
+
+Run `plan` before collecting evidence:
+
+```sh
+acclimate-eval plan --policy quality-policy.json
+acclimate-eval plan --policy quality-policy.json --aa aa-comparison.json --effects 0,0.05,0.1
+```
+
+Use `python -m acclimate plan` with the Python SDK. `plan` reads your installed case inventory and reports whether it meets the policy's minimums, the MDE, and simulated pass rates at each effect using the same check as real verdicts. Without `--aa` it assumes the worst case for binary rewards (both arms near 50%). With an A/A comparison (the same version on both arms) it uses the observed noise. `doctor --policy` reports the same readiness warnings, including runs with one repetition. The functions are `planEvaluation` in `@acclimate/sdk/evaluation` and `acclimate.evaluation_plan.plan_evaluation`.
+
+Repetitions reduce run-to-run noise within a case. They do not replace cases: the test's degrees of freedom come from cases. Use two or three repetitions when tasks are stochastic, and more cases when you need to detect small effects.
+
+## Analysis intervals
+
+`analyzeComparison` (Python `analyze_comparison`) can add an interval to each metric. It never makes a release decision.
+
+| Method | Question | Minimum | Notes |
+| --- | --- | --- | --- |
+| `paired-t` | Tasks like these | 2 cases | Two-sided t interval on case means at 0.80, 0.90, 0.95 or 0.98 |
+| `paired-within-case-bootstrap` | These tasks again | 3 repetitions per case | Resamples repetitions within each fixed case |
+
+Resampling `r` repetitions understates the variance of a case mean by `(r - 1) / r`. The bootstrap scales each resampled deviation by `sqrt(r / (r - 1))` to correct it. In simulations with binary rewards (nominal 95%, 600 to 2,000 runs per cell) coverage was:
+
+| Cases × reps | Unscaled bootstrap (before) | Scaled bootstrap | `paired-t` (tasks like these) |
+| --- | --- | --- | --- |
+| 10 × 2 | 78% | 91% | 95% |
+| 10 × 3 | 86% | 93% | 95% |
+| 30 × 2 | 80% | 93% | 97% |
+| 30 × 3 | 86% | 94% | 95% |
+| 30 × 5 | 92% | 94% | 94% |
+
+The bootstrap still undercovers slightly with few repetitions, which is why it requires at least three.
+
+## Caveats
+
+- The test assumes cases are independent and representative of the tasks you care about. Near-duplicate cases or cases chosen after seeing results inflate confidence.
+- Choosing a policy after seeing the result (forking paths) invalidates the error rates. Fix the policy before the run and keep its digest. Policy receipts record each policy digest checked against a comparison, with its inference block, so reviewers can see which policies were tried.
+- Checking several metrics or running many attempts on one candidate raises the chance that one passes by luck. The intervals are per metric with no multiple-comparison adjustment.
+- Graders are measurements. A noisy or biased grader limits what any test can show.
+- Neither a verdict nor an interval is causal evidence about model quality in general, unseen task types or safety.

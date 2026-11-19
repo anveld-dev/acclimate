@@ -11,7 +11,8 @@ Use `acclimate-eval` with the TypeScript SDK or `python -m acclimate` with the P
 | --- | --- |
 | `coverage` | Inspect local sources, package imports, and declared revision inputs. Keep the report private. |
 | `describe` | Print the public descriptor for the installed cases, runtime, and grader. |
-| `doctor` | Check setup with `--config` and a `--bundle`, `--handoff`, or named run. You can include `--policy`. |
+| `doctor` | Check setup with `--config` and a `--bundle`, `--handoff`, or named run. With `--policy`, `policyReadiness` reports whether the cases and repetitions meet the policy and its minimum detectable effect. |
+| `plan` | Size an evaluation for `--policy` before running it: minimum detectable effect and simulated pass rates. Accepts `--aa` with an A/A comparison, `--effects`, `--simulations` and `--seed`. Exits 3 when the inventory is too small for the policy. |
 | `compare` | Run a downloaded handoff, or create and run a named comparison from a complete bundle payload. |
 | `request` | Create a handoff from a bundle, channel, payload, and durable `--intent`. Write the handoff with `--out`. |
 | `run` | Execute an existing request with the evaluator config and handoff or name. |

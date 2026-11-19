@@ -13,27 +13,49 @@ Run `coverage` locally to see what contributes to the evaluator revision. Declar
 
 ## Check your quality policy
 
-This policy requires a non-decreasing equal-case mean and zero allowed regression per case. Adjust thresholds and add release-critical case IDs in `requiredCases`.
+This policy is a statistical non-inferiority gate. It passes when the one-sided 95% lower confidence bound on the equal-case mean difference is above −0.05: the candidate is unlikely to be more than 5 points worse on tasks like these. It needs at least 10 cases with 2 repetitions each. With less evidence the verdict is `indeterminate`, not `pass`. Set `minimumMeanImprovement` to `0` or above to require evidence of improvement instead. [Methodology](/docs/concepts/methodology) explains the test, the defaults and their error rates.
 
 ```json title="quality-policy.json"
 {
   "schemaVersion": 1,
-  "id": "no-regression",
+  "id": "quality-gate",
   "revision": "1",
-  "metric": { "name": "task reward", "unit": "reward", "direction": "higher" },
+  "metric": {
+    "name": "task reward",
+    "unit": "reward",
+    "direction": "higher",
+    "scale": { "minimum": 0, "maximum": 1 }
+  },
   "aggregation": "equal-case-means",
-  "minimumMeanImprovement": 0,
+  "minimumMeanImprovement": -0.05,
   "maximumCaseRegression": 0,
-  "requiredCases": []
+  "perCaseChecks": "protected-cases",
+  "requiredCases": [],
+  "inference": {
+    "method": "paired-t",
+    "confidence": 0.95,
+    "minCases": 10,
+    "minRepetitions": 2,
+    "sdFloor": 0.1,
+    "maximumMissingPercent": 15
+  }
 }
 ```
+
+List release-critical case IDs in `requiredCases`; the per-case regression and task-failure limits apply to them. Before collecting evidence, check that your cases can detect the effect you care about:
+
+```sh
+acclimate-eval plan --policy quality-policy.json
+```
+
+`plan` reports the minimum detectable effect and simulated pass rates, and exits 3 when the inventory is too small for the policy.
 
 ```sh
 acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json \
   --policy quality-policy.json --live
 ```
 
-Use `python -m acclimate` for the Python evaluator. Review pair coverage, per-case scores, and known usage. Missing required scores or cost measurements can make the verdict indeterminate. To apply a policy to retained results, use `check`. It reuses the comparison without calling the agent.
+Use `python -m acclimate` for the Python evaluator. Review pair coverage, per-case scores, known usage and the `Inference` lines, which show the lower bound, threshold, cases, SD and any imputed trials. Too few cases or repetitions, too many missing trials, or missing required cost measurements make the verdict indeterminate. To apply a policy to retained results, use `check`. It reuses the comparison without calling the agent.
 
 ```sh
 acclimate-eval check --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json \

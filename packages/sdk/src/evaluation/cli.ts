@@ -33,6 +33,7 @@ import {
   readCommandJson,
   readCommandText,
 } from './cli-intents.js';
+import { planCommand, policyReadinessFor } from './plan-command.js';
 
 type Command =
   | 'compare'
@@ -44,7 +45,8 @@ type Command =
   | 'status'
   | 'interrupt'
   | 'export'
-  | 'verify-export';
+  | 'verify-export'
+  | 'plan';
 const allowed: Record<Command, readonly string[]> = {
   compare: ['config', 'handoff', 'bundle', 'channel', 'payload', 'name', 'retry-after', 'live', 'policy', 'json'],
   describe: [],
@@ -56,6 +58,7 @@ const allowed: Record<Command, readonly string[]> = {
   interrupt: ['config', 'handoff', 'reason', 'name'],
   export: ['config', 'read-config', 'handoff', 'out', 'selection', 'name'],
   'verify-export': ['manifest', 'read-config', 'handoff'],
+  plan: ['policy', 'aa', 'effects', 'simulations', 'seed'],
 };
 interface Parsed {
   command: Command;
@@ -389,11 +392,17 @@ async function dispatch(
 ): Promise<{ status: number; result: unknown }> {
   const { command, flags } = parsed;
   if (command === 'describe') return { status: 0, result: app.descriptor };
+  if (command === 'plan') return planCommand(app.descriptor, flags);
   if (command === 'verify-export' || command === 'status') return readEvidence(parsed);
   if (command === 'doctor') {
     if (!!flags.bundle === !!flags.handoff) throw new EvaluationError('config.schema');
-    if (flags.policy)
-      parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor);
+    const policyReadiness = flags.policy
+      ? policyReadinessFor(
+          parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor)
+            .policy,
+          app.descriptor,
+        )
+      : undefined;
     const target = flags.handoff
       ? { handoff: await handoffFile(flags) }
       : { bundleId: required(flags, 'bundle') };
@@ -402,7 +411,10 @@ async function dispatch(
       configPath: required(flags, 'config'),
       target,
     });
-    return { status: readinessStatus(result), result };
+    return {
+      status: readinessStatus(result),
+      result: policyReadiness ? { ...result, policyReadiness } : result,
+    };
   }
   const comparing = command === 'compare';
   if (comparing) validateCompareFlags(flags, app.descriptor.runtime.execution === 'live');
@@ -412,8 +424,13 @@ async function dispatch(
       ? parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor)
       : null;
   if (command === 'request') {
-    if (flags.policy)
-      parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor);
+    const policyReadiness = flags.policy
+      ? policyReadinessFor(
+          parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor)
+            .policy,
+          app.descriptor,
+        )
+      : undefined;
     return createRequest(app, flags);
   }
   if (comparing && !flags.handoff) {

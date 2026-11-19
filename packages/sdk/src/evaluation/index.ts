@@ -34,3 +34,5 @@ export { createEvaluationProgressReporter } from './progress.js';
 export type { EvaluationProgressScope, EvaluationProgressUpdate } from './progress.js';
 
 export type { ApplicationAdapter } from './app-cli.js';
+export { planEvaluation, PlanError } from './plan.js';
+export type { EvaluationPlan, PlanOptions } from './plan.js';

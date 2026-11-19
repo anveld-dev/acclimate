@@ -431,6 +431,27 @@ test('status reports bound activity and preserves lifecycle status without an ob
   }
 });
 
+test('plan sizes the installed inventory for a policy without running callbacks', async () => {
+  const f = await fixture();
+  try {
+    const planned = await invoke(f.app, ['plan', '--policy', f.policy, '--simulations', '20']);
+    assert.equal(planned.status, 0);
+    assert.equal(planned.result.method, 'none');
+    assert.equal(planned.result.cases, 1);
+    assert.match(planned.result.warnings.join(' '), /point estimates/);
+    await writeFile(f.policy, JSON.stringify({ ...f.quality, inference: { method: 'paired-t' } }));
+    const insufficient = await invoke(f.app, ['plan', '--policy', f.policy, '--simulations', '5']);
+    assert.equal(insufficient.status, 3);
+    assert.equal(insufficient.result.sufficient, false);
+    assert.equal(insufficient.result.simulation.results[0].indeterminateRate, 1);
+    const invalid = await invoke(f.app, ['plan', '--policy', f.policy, '--effects', 'x']);
+    assert.equal(invalid.status, 1);
+    assert.equal(f.state.executions, 0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('closed CLI describe and usage errors never expose app data or config path', async () => {
   const f = await fixture();
   try {

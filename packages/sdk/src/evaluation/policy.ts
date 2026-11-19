@@ -684,9 +684,20 @@ function sha256(input: Uint8Array): string {
 
 const key = (value: { caseId: string; repetition: number }) =>
   JSON.stringify([value.caseId, value.repetition]);
+const utf8Cache = new Map<string, Uint8Array>();
+const utf8 = (value: string) => {
+  let bytes = utf8Cache.get(value);
+  if (!bytes) {
+    if (utf8Cache.size > 4096) utf8Cache.clear();
+    bytes = encoder.encode(value);
+    utf8Cache.set(value, bytes);
+  }
+  return bytes;
+};
 const compareUtf8 = (left: string, right: string): number => {
-  const a = encoder.encode(left),
-    b = encoder.encode(right);
+  if (left === right) return 0;
+  const a = utf8(left),
+    b = utf8(right);
   for (let index = 0; index < Math.min(a.length, b.length); index++)
     if (a[index] !== b[index]) return a[index] - b[index];
   return a.length - b.length;

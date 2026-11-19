@@ -34,7 +34,8 @@ Run coverage to inspect bound sources and packages. status and verify-export run
   acclimate-eval compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) --live [--policy POLICY] [--json]
 
 Reuse RUN_NAME to recover the same change. Use describe for your public descriptor,
-doctor to check setup, or request, run, check, status, interrupt, export and verify-export.`;
+doctor to check setup, plan to size the evaluation for your policy, or request, run, check,
+status, interrupt, export and verify-export.`;
 
 const commandHelp: Record<string, string> = {
   compare: help,
@@ -48,6 +49,7 @@ const commandHelp: Record<string, string> = {
   export: 'export (--config CONFIG | --read-config READER) --handoff FILE --out DIRECTORY [--selection FILE]\nexport --config CONFIG --name RUN_NAME --out DIRECTORY [--selection FILE]',
   interrupt: 'interrupt --config CONFIG (--handoff FILE | --name RUN_NAME) --reason REASON',
   'verify-export': 'verify-export --manifest FILE [--read-config READER --handoff FILE]',
+  plan: 'plan --policy POLICY [--aa A_A_COMPARISON.json] [--effects 0,0.05] [--simulations N] [--seed N]\nEstimate the minimum detectable effect and simulate pass rates before running anything.',
 };
 
 async function readCases(filename: string): Promise<EvaluationCase[]> {

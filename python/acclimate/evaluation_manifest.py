@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 from ._evaluation_shared import EvaluationError, validate_descriptor
-from .evaluation import Case
+from .evaluation import Case, declared_scheduling
 
 _SCHEMA = "acclimate-evaluation-manifest-v1"
 _LIMIT = 16 * 1024 * 1024
@@ -144,12 +144,15 @@ class EvaluationManifest:
 
 
 def create_evaluation_manifest(*, config_id: str, execution: str, cases: list[Case] | tuple[Case, ...],
-                               grader: dict, runtime: dict) -> EvaluationManifest:
+                               grader: dict, runtime: dict, concurrency: int | None = None,
+                               grade_retries: int | None = None) -> EvaluationManifest:
     """Capture the SAME Case inventory used to define execution; declare all artifacts.
 
     grader is exactly {"sourceUtf8": text} or {"artifactDigest": "sha256:..."}.
     runtime is {"settings": {...}, "artifacts": {"executor": "sha256:...", ...}}.
     Settings/artifacts are app assertions. This helper does not inspect callbacks/builds.
+    concurrency (1-64) and grade_retries (0-5) are fingerprinted in the descriptor;
+    omit them for the defaults 1 and 0.
     """
     if type(cases) not in (list, tuple) or not cases or len(cases) > 1000:
         _fail()
@@ -158,13 +161,22 @@ def create_evaluation_manifest(*, config_id: str, execution: str, cases: list[Ca
         if type(case) is not Case or set(vars(case)) != {"case_id", "input", "expected", "repetitions"}:
             _fail()
         wire_cases.append({"caseId": case.case_id, "input": case.input, "expected": case.expected, "repetitions": case.repetitions})
+    scheduling = {}
+    if concurrency is not None:
+        scheduling["concurrency"] = concurrency
+    if grade_retries is not None:
+        scheduling["gradeRetries"] = grade_retries
     captured = json.loads(canonical_evaluation_json({"configId": config_id, "execution": execution,
-        "cases": wire_cases, "grader": grader, "runtime": runtime}))
+        "cases": wire_cases, "grader": grader, "runtime": runtime, **scheduling}))
     return _capture(captured)
 
 
 def _capture(captured):
-    _record(captured, ("configId", "execution", "cases", "grader", "runtime"))
+    _record(captured, ("configId", "execution", "cases", "grader", "runtime"), ("concurrency", "gradeRetries"))
+    try:
+        scheduling = declared_scheduling(captured.get("concurrency", 1), captured.get("gradeRetries", 0))
+    except EvaluationError:
+        _fail()
     _identity(captured["configId"], 128)
     if captured["execution"] not in ("model-free", "live") or type(captured["cases"]) is not list or not captured["cases"]:
         _fail()
@@ -209,10 +221,12 @@ def _capture(captured):
     public_runtime = {"manifestSchema": _SCHEMA, "runtimeRevision": runtime_revision}
     definition = {"config_id": captured["configId"], "execution": captured["execution"],
         "cases": [Case(case["caseId"], case["input"], case["expected"], case["repetitions"]) for case in captured["cases"]],
-        "config_revision": config_revision, "dataset_revision": dataset_revision, "grader_revision": grader_revision, "runtime": public_runtime}
+        "config_revision": config_revision, "dataset_revision": dataset_revision, "grader_revision": grader_revision, "runtime": public_runtime,
+        **({"concurrency": captured["concurrency"]} if "concurrency" in captured else {}),
+        **({"grade_retries": captured["gradeRetries"]} if "gradeRetries" in captured else {})}
     descriptor = validate_descriptor({"datasetRevision": dataset_revision, "graderRevision": grader_revision,
         "runtime": {**public_runtime, "configId": captured["configId"], "configRevision": config_revision,
-            "execution": captured["execution"], "concurrency": "1", "gradeRetries": "0"},
+            "execution": captured["execution"], **scheduling},
         "expectedCases": [{"caseId": case["caseId"], "repetition": r} for case in captured["cases"] for r in range(case["repetitions"])]})
     return EvaluationManifest(private_json, descriptor, definition)
 
@@ -233,7 +247,7 @@ def restore_evaluation_manifest(text: str) -> EvaluationManifest:
         # Reparse canonical bytes so integral binary64 spellings capture exactly
         # the same values/types as create and JavaScript (including -0 -> 0).
         captured = json.loads(canonical_evaluation_json(captured))
-        _record(captured, ("schema", "configId", "execution", "cases", "grader", "runtime"))
+        _record(captured, ("schema", "configId", "execution", "cases", "grader", "runtime"), ("concurrency", "gradeRetries"))
         if captured.pop("schema") != _SCHEMA:
             _fail()
         return _capture(captured)

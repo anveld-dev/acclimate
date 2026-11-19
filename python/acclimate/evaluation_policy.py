@@ -74,7 +74,7 @@ def _scalar_gap(outcome):
         return "collection", "missing_pair"
     if outcome["executionStatus"] == "infrastructure_failed":
         code = outcome["error"]
-        return "execute", code if code in ("output_invalid", "output_reference_invalid", "cancelled", "execution_failed") else "infrastructure_failed"
+        return "execute", code if code in ("output_invalid", "output_reference_invalid", "cancelled", "execution_failed", "not_selected", "timeout", "deadline_exceeded", "cost_limit_reached") else "infrastructure_failed"
     if outcome["gradingStatus"] == "failed":
         return "grade", "grading_failed"
     if outcome["gradingStatus"] == "missing":

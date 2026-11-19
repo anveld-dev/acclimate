@@ -25,6 +25,7 @@ from ._evaluation_cli_intents import (
 from .evaluation_analysis import analyze_comparison
 from ._evaluation_policy_receipt import record_policy_receipt
 from .evaluation_policy import PolicyError, check_comparison, parse_evaluation_policy
+from ._evaluation_local_cli import route_evaluation_command, service_run_notices
 from .evaluation_artifacts import (
     export_review_evidence, verify_review_export, parse_artifact_selection,
 )
@@ -68,6 +69,7 @@ def _parse(argv):
 _COMPARE_USAGE = (
     "compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]\n"
     "compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]\n"
+    "compare --local --parent PAYLOAD --candidate PAYLOAD [--live] [--policy POLICY] [--json]  (no service; advisory)\n"
     "Live evaluators require --live. Use one input form and supply each flag once."
 )
 
@@ -331,9 +333,10 @@ def _dispatch(app, command, flags, review):
             if receipt and receipt["status"] == "unconfirmed" and status == 0:
                 status = 1
             run_name = flags.get("name")
+            notice_lines, notice_json = service_run_notices(result, {"parent": evaluation["parentDigest"], "candidate": evaluation["candidateDigest"]})
             invocation = {"callbacksStarted": result["callbacksStarted"], "reusedEvidence": result["reusedEvidence"]}
             if terminal:
-                summary = _comparison_text(evaluation, result.get("comparison"), scores, policy_result, bool(policy))
+                summary = "\n".join([_comparison_text(evaluation, result.get("comparison"), scores, policy_result, bool(policy)), *notice_lines])
                 activity = ("Reused saved evidence. No execution callbacks started." if result["reusedEvidence"]
                             else f'Execution callbacks started this time: {result["callbacksStarted"]}.')
                 if receipt:
@@ -343,7 +346,7 @@ def _dispatch(app, command, flags, review):
             return status, {**_safe_request(evaluation), "invocation": invocation, **({"runName": run_name} if run_name else {}),
                             "parentVersionId": evaluation["parentVersionId"],
                             "candidateVersionId": evaluation["candidateVersionId"], "candidateDigest": evaluation["candidateDigest"],
-                            "scores": scores, "policy": policy_result, **({"policyReceipt": receipt} if receipt else {})}
+                            "scores": scores, "policy": policy_result, **({"policyReceipt": receipt} if receipt else {}), **notice_json}
         return status, {**_safe_request(evaluation), "executionState": result["executionState"]}
     if command == "export":
         if bool(flags.get("config")) == bool(flags.get("read-config")):
@@ -382,9 +385,18 @@ def _dispatch(app, command, flags, review):
 
 
 def evaluation_main(app, argv=None, *, review=None) -> int:
-    """Run one command; review mapper is trusted installed code, never a path."""
-    command = "invalid"
+    """Run one command; review mapper is trusted installed code, never a path.
+
+    compare --local and try run without a service. Run-control flags (--deadline,
+    --case-timeout, --max-cost-usd, --cases, --shard, --progress, --quiet) bind
+    to compare and run before the service parser sees the command.
+    """
     args = list(sys.argv[1:] if argv is None else argv)
+    return route_evaluation_command(app, args, lambda bound, rest: _evaluation_main(bound, rest, review))
+
+
+def _evaluation_main(app, args, review) -> int:
+    command = "invalid"
     try:
         command, flags = _parse(args)
         if command != "compare" and flags.get("name"):

@@ -1,7 +1,6 @@
 """Installed, application-owned paired evaluation with conservative durable recovery."""
 from __future__ import annotations
 
-from concurrent.futures import Future as ConcurrentFuture
 import copy
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -21,12 +20,14 @@ from .client import ApiError
 from .types import VerifiedVersion
 from ._evaluation_shared import (
     MIB, DIGEST_RE, EvaluationError, ExecutionUncertainError, CallbackCancelled,
-    PrivateJsonError, TaskExecutionError, _text, assert_descriptor, atomic_private_write, clone_json, descriptor_from,
+    PrivateJsonError, TaskExecutionError, assert_descriptor, atomic_private_write, clone_json, descriptor_from,
     ensure_private_directory, guided_uuid, json_bytes, make_client, mutate,
     parse_json, read_evaluator_config, safe_error, scope_from, sha256,
     validate_descriptor, validate_handoff,
 )
 from ._evaluation_journal import Journal
+from ._evaluation_trials import TrialHooks, run_trials
+from ._evaluation_controls import RunControls, merge_controls, validate_run_controls
 
 I = TypeVar("I")
 E = TypeVar("E")
@@ -48,9 +49,11 @@ EvaluationCase = Case
 @dataclass(frozen=True)
 class CancellationContext:
     _event: threading.Event
+    # Per-callback stops (case timeout, run deadline). They never cancel the run.
+    _extra: tuple[threading.Event, ...] = ()
 
     def is_cancelled(self) -> bool:
-        return self._event.is_set()
+        return self._event.is_set() or any(event.is_set() for event in self._extra)
 
     def raise_if_cancelled(self) -> None:
         if self.is_cancelled():
@@ -120,6 +123,7 @@ class EvaluationApp(Generic[I,E,O]):
         self._cases, self._execute, self._grade = cases,execute,grade
         self._execution = execution
         self._collection = collection
+        self._controls: RunControls | None = None
 
     @property
     def descriptor(self) -> dict:
@@ -167,7 +171,14 @@ def define_evaluation(*, config_id: str, config_revision: str, dataset_revision:
                       cases: list[Case[I,E]] | tuple[Case[I,E],...],
                       execute: Callable[[ExecuteInput[I]],ExecutionResult[O]],
                       grade: Callable[[GradeInput[E,O]],GradeResult],
-                      collection: dict[str,str] | None = None) -> EvaluationApp[I,E,O]:
+                      collection: dict[str,str] | None = None,
+                      concurrency: int = 1, grade_retries: int = 0) -> EvaluationApp[I,E,O]:
+    """Define an evaluation.
+
+    concurrency (1-64) is the number of pairs in flight; arms within a pair keep
+    schedule order. grade_retries (0-5) repeats a grade call that raised or timed
+    out; execution is never repeated. Both are fingerprinted in the descriptor.
+    """
     if _async_function(execute) or _async_function(grade):
         error = EvaluationError("config.async_callback", next_action="use_async_callback_adapter")
         error.add_note("The durable runner requires synchronous callbacks. Use the installed "
@@ -180,6 +191,7 @@ def define_evaluation(*, config_id: str, config_revision: str, dataset_revision:
     reserved={"configId","configRevision","execution","concurrency","gradeRetries"} | _COLLECTION_KEYS
     if reserved.intersection(runtime):
         raise EvaluationError("config.schema")
+    scheduling = declared_scheduling(concurrency, grade_retries)
     captured=[]
     inventory=[]
     seen=set()
@@ -199,7 +211,7 @@ def define_evaluation(*, config_id: str, config_revision: str, dataset_revision:
     }
     descriptor=validate_descriptor({"datasetRevision":dataset_revision,"graderRevision":grader_revision,
         "runtime":{**runtime,"configId":config_id,"configRevision":config_revision,"execution":execution,
-            "concurrency":"1","gradeRetries":"0",**collection_runtime},"expectedCases":inventory})
+            **scheduling,**collection_runtime},"expectedCases":inventory})
     if len(json_bytes([{"input":case.input,"expected":case.expected} for case in captured]))>16*MIB:
         raise EvaluationError("config.schema")
     # Bound the actual report envelope, including escaped refs, before paid work.
@@ -224,6 +236,24 @@ def define_evaluation(*, config_id: str, config_revision: str, dataset_revision:
                       f"Partition the cases into groups of at most {max_pairs} pairs using this configuration.",)
         raise error
     return EvaluationApp(descriptor,tuple(captured),execute,grade,execution,collection=schedule,_token=_APP_TOKEN)
+
+
+def declared_scheduling(concurrency: Any = 1, grade_retries: Any = 0) -> dict[str, str]:
+    """Fingerprint declared scheduling. Defaults keep existing descriptors byte-identical."""
+    if (type(concurrency) is not int or not 1 <= concurrency <= 64
+            or type(grade_retries) is not int or not 0 <= grade_retries <= 5):
+        raise EvaluationError("config.schema")
+    return {"concurrency": str(concurrency), "gradeRetries": str(grade_retries)}
+
+
+def bind_run_controls(app: EvaluationApp, controls: RunControls) -> EvaluationApp:
+    """Bind invocation controls without changing the descriptor or the callbacks."""
+    if not isinstance(app, EvaluationApp):
+        raise EvaluationError("config.schema")
+    bound = EvaluationApp(app._descriptor, app._cases, app._execute, app._grade, app._execution,
+                          collection=app._collection, _token=_APP_TOKEN)
+    bound._controls = merge_controls(app._controls, validate_run_controls(controls))
+    return bound
 
 
 def _request_snapshot(request: dict) -> dict:
@@ -374,40 +404,6 @@ def preflight_evaluation(*, app: EvaluationApp, config_path: str,
             shutil.rmtree(probe)
 
 
-def _async_value(value: Any,seen: set[int] | None=None) -> bool:
-    if inspect.isawaitable(value) or isinstance(value,ConcurrentFuture):
-        return True
-    if isinstance(value,(ExecutionResult,GradeResult)):
-        value=vars(value)
-    # Invalid JSON containers may still own active work. Inspect their contents
-    # before ordinary JSON validation, including mapping keys and subclasses.
-    if not isinstance(value,(list,dict,tuple,set,frozenset)):
-        return False
-    seen=set() if seen is None else seen
-    if id(value) in seen:
-        return False
-    seen.add(id(value))
-    children = (*value.keys(), *value.values()) if isinstance(value,dict) else value
-    return any(_async_value(v,seen) for v in children)
-
-
-def _usage(value: Any):
-    if value is None:
-        return None
-    if type(value) is not dict or set(value)-{"inputTokens","outputTokens","costUsd"}:
-        return None
-    if any(type(v) not in (int,float) or not math.isfinite(v) or v<0 for v in value.values()):
-        return None
-    return copy.deepcopy(value)
-
-
-def _role_value(value, field):
-    result = clone_json(value, field=field)
-    if len(json_bytes(result)) > MIB:
-        raise PrivateJsonError(field, "Return at most 1 MiB of JSON. Store larger evidence privately and return a digest.")
-    return result
-
-
 def _record_diagnostic(journal, directory, phase, error, capture_callback_errors):
     if isinstance(error, PrivateJsonError):
         filename = "output-validation.json"
@@ -426,11 +422,6 @@ def _record_diagnostic(journal, directory, phase, error, capture_callback_errors
         # A diagnostic is optional. Keep the original callback outcome and let
         # the durable report follow its normal journal/ownership checks.
         journal.assert_owned()
-
-
-def _empty(error: str="cancelled",execution_status="infrastructure_failed") -> dict:
-    return {"executionStatus":execution_status,"gradingStatus":"missing","reward":None,
-        "outputRef":None,"error":error,"usage":None}
 
 
 class _Interrupted(Exception):
@@ -505,9 +496,15 @@ def _reports_equal(saved: dict, comparison: dict) -> bool:
 
 
 def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
-                   allow_live: bool=False, cancel_event: threading.Event | None=None) -> dict:
-    """Run or reconcile one bound request. Never replay ambiguous callbacks."""
+                   allow_live: bool=False, cancel_event: threading.Event | None=None,
+                   controls: RunControls | None=None) -> dict:
+    """Run or reconcile one bound request. Never replay ambiguous callbacks.
+
+    controls adds a deadline, per-callback timeout, cost limit, case selection
+    and progress callback. When trials run, the result includes "runSummary".
+    """
     state=None
+    run_summary=None
     callbacks_started=0
     phase="configure"
     request=None
@@ -516,6 +513,7 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
             raise EvaluationError("config.schema")
         if cancel_event is not None and not isinstance(cancel_event,threading.Event):
             raise EvaluationError("config.schema")
+        controls=merge_controls(app._controls, validate_run_controls(controls))
         cancellation=CancellationContext(cancel_event or threading.Event())
         handoff=validate_handoff(handoff)
         config=read_evaluator_config(config_path)
@@ -608,107 +606,30 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                     phase="execute"
                     index={"schemaVersion":1,"requestId":request["id"],"attemptId":state["attemptId"],
                         "reportSha256":"","entries":[]}
-                    results=[]
-                    for case in app._cases:
-                        for repetition in range(case.repetitions):
-                            pair={"caseId":case.case_id,"repetition":repetition}
-                            pair_index = len(results)
-                            first = schedule["pairs"][pair_index]["firstSide"] if schedule is not None else "parent"
-                            order = ("parent", "candidate") if first == "parent" else ("candidate", "parent")
-                            for arm_index, side in enumerate(order):
-                                if cancellation.is_cancelled():
-                                    pair[side]=_empty()
-                                    continue
-                                current_request()
-                                version=bundles[side]["version"]
-                                job_id,job_dir=journal.job_directory(request["id"],state["attemptId"],case.case_id,repetition,side,version)
-                                collection_context = None
-                                if schedule is not None:
-                                    collection_context = CollectionContext(schedule["protocol"], schedule["digest"],
-                                        pair_index, arm_index, first)
-                                    atomic_private_write(job_dir / "collection-binding.json", json_bytes({
-                                        "schemaVersion": 1, "jobId": job_id, "caseId": case.case_id,
-                                        "repetition": repetition, "side": side, "protocol": schedule["protocol"],
-                                        "scheduleDigest": schedule["digest"], "pairIndex": pair_index,
-                                        "armIndex": arm_index, "firstSide": first,
-                                    }) + b"\n")
-                                context=ExecutionContext(request["id"],state["attemptId"],side,job_id,str(job_dir),collection_context)
-                                identity={"caseId":case.case_id,"repetition":repetition,"side":side,
-                                    "versionId":version["id"],"digest":version["digest"]}
-                                execute_input=ExecuteInput(clone_json(bundles[side]),clone_json(case.input),case.case_id,repetition,cancellation,context)
-                                journal.assert_owned()
-                                if cancellation.is_cancelled():
-                                    pair[side]=_empty()
-                                    continue
-                                try:
-                                    callbacks_started += 1
-                                    execution=app._execute(execute_input)
-                                    if _async_value(execution) or (isinstance(execution,ExecutionResult) and _async_value(execution.output)):
-                                        if inspect.iscoroutine(execution):
-                                            execution.close()
-                                        raise ExecutionUncertainError()
-                                    if not isinstance(execution,ExecutionResult) or execution.execution_status not in ("completed","task_failed"):
-                                        raise PrivateJsonError("output", "Return ExecutionResult with a completed or task_failed status.")
-                                    output=_role_value(execution.output, "output")
-                                    entry=journal.write_artifact({**identity,"role":"output"},output)
-                                    index["entries"].append(entry)
-                                    journal.save_artifact_index(index)
-                                    ref=execution.output_ref
-                                    if ref is None:
-                                        ref="acclimate:artifact:"+entry["sha256"]
-                                    if not _text(ref,1024):
-                                        raise ValueError()
-                                    outcome={"executionStatus":execution.execution_status,"gradingStatus":"missing","reward":None,
-                                        "outputRef":ref,"error":"task_failed" if execution.execution_status=="task_failed" else None,"usage":_usage(execution.usage)}
-                                except ExecutionUncertainError:
-                                    raise
-                                except CallbackCancelled:
-                                    cancellation._event.set()
-                                    pair[side]=_empty()
-                                    continue
-                                except TaskExecutionError:
-                                    pair[side]=_empty("task_failed","task_failed")
-                                    continue
-                                except Exception as error:
-                                    _record_diagnostic(journal, job_dir, "execute", error, config.get("captureCallbackErrors", False))
-                                    pair[side]=_empty("output_invalid" if isinstance(error, PrivateJsonError) else "execution_failed")
-                                    continue
-                                if cancellation.is_cancelled():
-                                    outcome["error"]="cancelled"
-                                    pair[side]=outcome
-                                    continue
-                                current_request()
-                                grade_input=GradeInput(clone_json(output),clone_json(case.expected),case.case_id,repetition,cancellation)
-                                journal.assert_owned()
-                                if cancellation.is_cancelled():
-                                    outcome["error"]="cancelled"
-                                    pair[side]=outcome
-                                    continue
-                                try:
-                                    grade=app._grade(grade_input)
-                                    if _async_value(grade) or (isinstance(grade,GradeResult) and _async_value(grade.explanation)):
-                                        if inspect.iscoroutine(grade):
-                                            grade.close()
-                                        raise ExecutionUncertainError()
-                                    if not isinstance(grade,GradeResult) or type(grade.reward) not in (int,float) or not math.isfinite(grade.reward):
-                                        raise PrivateJsonError("grade.reward", "Return GradeResult with a finite numeric reward.")
-                                    if grade.explanation is not None:
-                                        explanation=journal.write_artifact({**identity,"role":"grader-explanation"},_role_value(grade.explanation, "grade.explanation"))
-                                        index["entries"].append(explanation)
-                                        journal.save_artifact_index(index)
-                                    outcome.update(gradingStatus="scored",reward=float(grade.reward))
-                                    if grade.error is not None:
-                                        outcome["error"]="grading_reported_error"
-                                except ExecutionUncertainError:
-                                    raise
-                                except CallbackCancelled:
-                                    cancellation._event.set()
-                                    outcome.update(gradingStatus="missing",error="cancelled")
-                                except Exception as error:
-                                    _record_diagnostic(journal, job_dir, "grade", error, config.get("captureCallbackErrors", False))
-                                    outcome.update(gradingStatus="failed",error="grading_failed")
-                                pair[side]=outcome
-                            results.append(pair)
+                    index_lock=threading.Lock()
+
+                    def job_directory(case_id,repetition,side,version):
+                        with index_lock:
+                            return journal.job_directory(request["id"],state["attemptId"],case_id,repetition,side,version)
+
+                    def write_artifact(identity,value):
+                        # Concurrent arms share one index; serialize its updates.
+                        with index_lock:
+                            entry=journal.write_artifact(identity,value)
+                            index["entries"].append(entry)
+                            journal.save_artifact_index(index)
+                            return entry
+
+                    def started():
+                        nonlocal callbacks_started
+                        callbacks_started += 1
+
+                    capture=config.get("captureCallbackErrors", False)
+                    results,run_summary=run_trials(app=app,request_id=request["id"],attempt_id=state["attemptId"],
+                        bundles=bundles,cancellation=cancellation,controls=controls,on_callback_started=started,
+                        hooks=TrialHooks(checkpoint=current_request,assert_owned=journal.assert_owned,
+                            job_directory=job_directory,write_artifact=write_artifact,
+                            record_diagnostic=lambda directory,phase,error: _record_diagnostic(journal,directory,phase,error,capture)))
                     report={**state["request"],"evaluation":{"requestId":request["id"],"attemptId":state["attemptId"]},"results":results}
                     body=json_bytes(report)
                     if len(body)>2*MIB:
@@ -743,7 +664,7 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
                     raise EvaluationError("submission.unconfirmed",phase="finish",execution_state="report_saved",next_action="retry_same_command")
                 state["completed"]=True
                 journal.save(state)
-                return done
+                return {**done,"runSummary":run_summary} if run_summary is not None else done
             except _Interrupted as interrupted:
                 return {"schemaVersion":1,"evaluation":interrupted.request,"comparison":None,"executionState":"interrupted","callbacksStarted":callbacks_started,"reusedEvidence":False}
     except EvaluationError:
@@ -758,4 +679,13 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: dict,
 
 __all__=["Case","EvaluationCase","EvaluationApp","CollectionContext","ExecutionContext","ExecuteInput","GradeInput",
     "ExecutionResult","GradeResult","EvaluationError","ExecutionUncertainError","CallbackCancelled",
-    "TaskExecutionError","CancellationContext","define_evaluation","preflight_evaluation","run_evaluation"]
+    "TaskExecutionError","CancellationContext","define_evaluation","preflight_evaluation","run_evaluation",
+    "RunControls","bind_run_controls"]
+
+
+def __getattr__(name):
+    # Lazy: the async helper imports this module.
+    if name == "run_evaluation_async":
+        from .evaluation_async import run_evaluation_async
+        return run_evaluation_async
+    raise AttributeError(name)

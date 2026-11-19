@@ -81,7 +81,7 @@
     "docs/research/archive/runtime-platform/research/evaluation-orchestration-notes.md": "00574dd8ffdaed879a4ba0b3c13f091e637d25243118e679d7594aa598952442",
     "docs/research/archive/runtime-platform/research/harness-integrations.md": "66d2051a9fb735ff248da6c924c58ec02a7c10e40b52f9b608269f28bd7e77a8",
     "docs/research/archive/runtime-platform/research/rust-runtime-options.md": "95d8bb29f308e73b92dad68148adef51c1984ebb61dea6b889d47b8c85f6f21c",
-    ".github/workflows/ci.yaml": "f3c7d54d731e7b460868fa9b8072be04c07ccde1217b5be5afef1b1a5a5d92ce",
+    ".github/workflows/ci.yaml": "0c7e7c73ff75774ad2b77c5d1e94183ef5e6d0f1710b6b83cf4a3ec0c9566095",
     "apps/console/src/components/bundle-changes.tsx": "b26c8d70b43d01981e95e6d40e322e889054377682db1096732633aea66143e0",
     "apps/console/src/components/bundle-content.tsx": "450de19f37d875f2f22451cf619180ab575e9dee58d8e704f3867fa268c66585",
     "apps/console/src/components/bundle-library.tsx": "937d89f08926a94154acadf482c9c480de981bb639d56791dafad15f0129284f",

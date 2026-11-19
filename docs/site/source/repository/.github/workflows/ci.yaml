@@ -112,9 +112,16 @@ jobs:
       - run: python -m playwright install --with-deps --only-shell chromium
       - run: python -m unittest scripts.bdd.test_editor -v
       - run: npm run test:bdd -- --parallel --pg-bin /usr/lib/postgresql/16/bin
-      - run: python scripts/test_console_browser.py --pg-bin /usr/lib/postgresql/16/bin > artifacts/bdd/console-readonly.log
-      - run: python scripts/testing/console_protocol.py --pg-bin /usr/lib/postgresql/16/bin --report artifacts/production-only/console-protocol.json
-      - run: npm run test:bdd -- --skip-build --dev-console --pg-bin /usr/lib/postgresql/16/bin --tags @UI-DRAFT-02
+      - name: Check the read-only console, sign-in protocol and Vite draft flow
+        run: |
+          python scripts/test_console_browser.py --pg-bin /usr/lib/postgresql/16/bin > artifacts/bdd/console-readonly.log &
+          readonly_pid=$!
+          status=0
+          # Both checks below start Vite against the same workspace cache.
+          python scripts/testing/console_protocol.py --pg-bin /usr/lib/postgresql/16/bin --report artifacts/production-only/console-protocol.json || status=$?
+          npm run test:bdd -- --skip-build --dev-console --pg-bin /usr/lib/postgresql/16/bin --tags @UI-DRAFT-02 || status=$?
+          wait "$readonly_pid" || status=$?
+          exit "$status"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

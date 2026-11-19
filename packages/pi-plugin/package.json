@@ -2,6 +2,15 @@
   "name": "@acclimate/pi-plugin",
   "version": "0.1.0",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anveld-dev/acclimate.git",
+    "directory": "packages/pi-plugin"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "exports": {
     ".": {

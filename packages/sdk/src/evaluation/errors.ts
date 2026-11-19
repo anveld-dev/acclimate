@@ -33,6 +33,7 @@ export type SafeCode =
   | 'submission.unconfirmed'
   | 'request.interrupted'
   | 'request.base_conflict'
+  | 'request.channel_empty'
   | 'request.intent_mismatch'
   | 'policy.invalid'
   | 'policy.inventory_incompatible'
@@ -113,6 +114,7 @@ const nextAction = (code: SafeCode): SafeNextAction => {
   if (['submission.unconfirmed', 'service.unavailable', 'journal.busy'].includes(code))
     return 'retry_same_command';
   if (code === 'request.interrupted') return 'interrupt_then_new_request';
+  if (code === 'request.channel_empty') return 'ask_operator';
   return 'fix_config';
 };
 const allowedFields = new Set([

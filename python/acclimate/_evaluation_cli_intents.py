@@ -92,6 +92,30 @@ def _command_failure(error):
     return _fail("submission.unconfirmed")
 
 
+def _published_base(client, project_id, bundle_id, channel):
+    """The channel's current release, or a diagnostic that names the missing baseline."""
+    empty = EvaluationError("request.channel_empty", phase="claim", next_action="ask_operator")
+    try:
+        current = client.resolve_channel(project_id, bundle_id, channel)[0]
+    except ApiError as error:
+        # Preflight already found the bundle, so a missing resolution is an unpublished channel.
+        if error.status == 404 and error.code == "not_found":
+            raise empty from None
+        raise
+    if not current:
+        raise empty
+    return current
+
+
+def assert_settled_predecessor(request):
+    """A predecessor is settled with a bound comparison, or once the service records an interruption."""
+    if request["status"] == "interrupted":
+        return
+    if request["status"] in ("completed", "failed") and request.get("attemptId") and request.get("comparisonId"):
+        return
+    raise EvaluationError("evidence.not_terminal", phase="inspect", next_action="inspect_external_app")
+
+
 def _read_intent(filename):
     path = Path(filename)
     try:
@@ -193,9 +217,7 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
             if state is not None and (state.get("schemaVersion") != 1 or state.get("kind") != "acclimate-request-intent" or state.get("identity") != _identity(config) or state.get("bundleId") != bundle_id or state.get("channel") != channel or state.get("output") != output or state.get("payload") != payload or state.get("descriptor") != app.descriptor):
                 raise _fail()
             if state is None:
-                current = client.resolve_channel(config["projectId"], bundle_id, channel)[0]
-                if not current:
-                    raise _fail("request.base_conflict")
+                current = _published_base(client, config["projectId"], bundle_id, channel)
                 if prior and (current["version"]["id"] != prior["base"]["versionId"]
                               or current["version"]["digest"] != prior["base"]["digest"]
                               or current["revision"] != prior["base"]["revision"]):

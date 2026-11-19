@@ -512,14 +512,18 @@ test('fresh attempt checks predecessor status, candidate payload and pinned base
     ];
     assert.equal((await invoke(f.app, [...inputs, '--name', 'original'])).status, 0);
     const retry = [...inputs, '--retry-after', 'original'];
-    for (const status of ['requested', 'running', 'interrupted']) {
+    for (const status of ['requested', 'running']) {
       Object.assign(f.state.request, { status });
       const blocked = await invoke(f.app, retry);
       assert.equal(blocked.status, 3);
       assert.equal(blocked.error.error.code, 'evidence.not_terminal');
+      assert.match(blocked.error.error.hint, /or an interrupted request/);
     }
-    Object.assign(f.state.request, { status: 'completed' });
+    // An interrupted predecessor (for example, one the service expired) is settled.
     f.state.revision = '2';
+    Object.assign(f.state.request, { status: 'interrupted' });
+    assert.equal((await invoke(f.app, retry)).error.error.code, 'request.base_conflict');
+    Object.assign(f.state.request, { status: 'completed' });
     assert.equal((await invoke(f.app, retry)).error.error.code, 'request.base_conflict');
     await writeFile(
       f.payloadFile,
@@ -1043,6 +1047,22 @@ for (const status of ['running', 'interrupted'] as const)
       await f.cleanup();
     }
   });
+
+test('a request against a channel without a release names the missing baseline', async () => {
+  const f = await fixture();
+  try {
+    const args = [...f.requestArgs];
+    args[args.indexOf('--channel') + 1] = 'unpublished';
+    const result = await invoke(f.app, args);
+    assert.equal(result.status, 1);
+    assert.equal(result.error.error.code, 'request.channel_empty');
+    assert.equal(result.error.error.nextAction, 'ask_operator');
+    assert.match(result.error.error.hint, /Publish a baseline release/);
+    assert.equal(f.state.drafts, 0);
+  } finally {
+    await f.cleanup();
+  }
+});
 
 test('request denial uses input/access exit 1 while doctor uses failed-check exit 2', async () => {
   const f = await fixture();

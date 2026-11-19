@@ -19,7 +19,7 @@ from ._evaluation_shared import (
     guided_uuid, DIGEST_RE,
 )
 from ._evaluation_cli_intents import (
-    create_request_from_intent, interrupt_from_intent, read_command_bytes,
+    assert_settled_predecessor, create_request_from_intent, interrupt_from_intent, read_command_bytes,
     read_command_json,
 )
 from .evaluation_analysis import analyze_comparison
@@ -291,8 +291,7 @@ def _dispatch(app, command, flags, review):
                 client, project_id = _connection(flags, prior)
                 request = client.get_evaluation(project_id, prior["bundleId"], prior["requestId"])
                 _assert_request(request, prior)
-                if request["status"] not in ("completed", "failed") or not request.get("attemptId") or not request.get("comparisonId"):
-                    raise EvaluationError("evidence.not_terminal", phase="inspect", next_action="inspect_external_app")
+                assert_settled_predecessor(request)
                 predecessor = handoff_file, request
                 flags["name"] = "after-" + request["id"]
             root = _named_handoff(config["journalRoot"], _required(flags, "name")).parent
@@ -409,10 +408,11 @@ def evaluation_main(app, argv=None, *, review=None) -> int:
         hints = {
             "request.intent_mismatch": "Restore the original evaluator and candidate to recover this run. To measure a changed evaluator on the same settled candidate, replace --name with --retry-after and the prior name.",
             "request.base_conflict": "The published parent changed. Review the new parent and choose a new name for a comparison against it.",
-            "evidence.not_terminal": "Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison.",
+            "evidence.not_terminal": "Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison, or an interrupted request.",
+            "request.channel_empty": "The channel has no release yet. Publish a baseline release to this channel, then run the comparison again.",
             "policy.invalid": "Use the editable quality-policy.example.json from the evaluator starter or copy the policy in the getting-started guide.",
         }
-        if (command == "compare" or diagnostic["code"] == "policy.invalid") and diagnostic["code"] in hints:
+        if (command == "compare" or diagnostic["code"] in ("policy.invalid", "request.channel_empty")) and diagnostic["code"] in hints:
             diagnostic = {**diagnostic, "hint": hints[diagnostic["code"]]}
         if missing:
             diagnostic = {**diagnostic, "missingFields": missing}

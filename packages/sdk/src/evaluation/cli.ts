@@ -21,6 +21,7 @@ import {
   type ReviewMapper,
 } from './artifacts.js';
 import {
+  assertSettledPredecessor,
   createRequestFromIntent,
   interruptFromIntent,
   readCommandJson,
@@ -419,8 +420,7 @@ async function dispatch(
       const { client, projectId } = await readConnection(flags, prior);
       const request = await client.getEvaluation(projectId, prior.bundleId, prior.requestId);
       assertRequest(request, prior);
-      if (!['completed', 'failed'].includes(request.status) || !request.attemptId || !request.comparisonId)
-        throw new EvaluationError('evidence.not_terminal', { phase: 'inspect', nextAction: 'inspect_external_app' });
+      assertSettledPredecessor(request);
       predecessor = { handoffFile, request };
       flags.name = 'after-' + request.id;
     }
@@ -731,11 +731,13 @@ async function runCommand(
       'request.base_conflict':
         'The published parent changed. Review the new parent and choose a new name for a comparison against it.',
       'evidence.not_terminal':
-        'Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison.',
+        'Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison, or an interrupted request.',
+      'request.channel_empty':
+        'The channel has no release yet. Publish a baseline release to this channel, then run the comparison again.',
       'policy.invalid':
         'Use the editable quality-policy.example.json from the evaluator starter or copy the policy in the getting-started guide.',
     };
-    const hint = (command === 'compare' || diagnostic.code === 'policy.invalid') && recoveryHints[diagnostic.code];
+    const hint = (command === 'compare' || ['policy.invalid', 'request.channel_empty'].includes(diagnostic.code)) && recoveryHints[diagnostic.code];
     const publicDiagnostic = { ...diagnostic, ...(missing?.length && { missingFields: missing }), ...(hint && { hint }) };
     if (
       argv[0] === 'compare' &&

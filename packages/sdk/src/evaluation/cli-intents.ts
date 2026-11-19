@@ -290,6 +290,40 @@ async function recover<T>(
   return receipt.result;
 }
 
+/** The channel's current release, or a diagnostic that names the missing baseline. */
+async function publishedBase(
+  transport: ReturnType<typeof createEvaluationTransport>,
+  projectId: string,
+  bundleId: string,
+  channel: string,
+) {
+  const empty = () =>
+    new EvaluationError('request.channel_empty', { phase: 'claim', nextAction: 'ask_operator' });
+  const current = await transport.client
+    .resolveChannel(projectId, bundleId, channel)
+    .catch((error: unknown) => {
+      // Preflight already found the bundle, so a missing resolution is an unpublished channel.
+      if (error instanceof ApiError && error.status === 404 && error.code === 'not_found') throw empty();
+      throw error;
+    });
+  if (!current.resolution) throw empty();
+  return current.resolution;
+}
+
+/**
+ * A predecessor is settled when the service records a bound comparison, or records that it
+ * was interrupted (by an operator, a CI wrapper or server-side expiry of an abandoned attempt).
+ */
+export function assertSettledPredecessor(request: Evaluation) {
+  if (request.status === 'interrupted') return;
+  if (['completed', 'failed'].includes(request.status) && request.attemptId && request.comparisonId)
+    return;
+  throw new EvaluationError('evidence.not_terminal', {
+    phase: 'inspect',
+    nextAction: 'inspect_external_app',
+  });
+}
+
 function assertRequest(request: Evaluation, intent: RequestIntent) {
   if (!intent.requestBody) throw fail();
   const body = JSON.parse(intent.requestBody) as Record<string, unknown>;
@@ -378,9 +412,7 @@ export async function createRequestFromIntent(options: {
     )
       throw fail();
     if (!state) {
-      const current = await transport.client.resolveChannel(config.projectId, bundleId, channel);
-      if (!current.resolution) throw fail('request.base_conflict');
-      const base = current.resolution;
+      const base = await publishedBase(transport, config.projectId, bundleId, channel);
       if (prior && (base.version.id !== prior.base.versionId || base.version.digest !== prior.base.digest ||
           base.revision !== prior.base.revision))
         throw fail('request.base_conflict');

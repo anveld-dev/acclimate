@@ -36,6 +36,9 @@ pub struct CreateEvaluationRequest {
     /// An earlier request on the same parent and candidate content that this run supersedes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_of: Option<String>,
+    /// Digest of the quality policy chosen before the run. Receipts for other policies are flagged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_digest: Option<String>,
 }
 fn bound_evidence() -> bool {
     true
@@ -300,6 +303,13 @@ pub(crate) async fn enqueue_evaluation(
 ) -> ApiResult<Evaluation> {
     if !q.require_bound_evidence {
         return Err(invalid("Evaluation requests require bound evidence"));
+    }
+    if q.policy_digest.as_deref().is_some_and(|digest| {
+        !digest.strip_prefix("sha256:").is_some_and(|hex| {
+            hex.len() == 64 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        })
+    }) {
+        return Err(invalid("policyDigest must be a sha256: digest"));
     }
     if !bounded(q) {
         return Err(invalid(

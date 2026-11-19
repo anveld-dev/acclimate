@@ -3,7 +3,7 @@ use super::{
     learning_admin,
     repetitions::Plan,
     selection::{Policies, Stage},
-    statistics::{AUDIT_Z, Calibration},
+    statistics::Calibration,
     validate_descriptors,
 };
 use crate::{ApiErr, ApiResult, AppState, db};
@@ -397,7 +397,7 @@ async fn extend_repetition_plan(
             Some(previous_count + offset),
             (&calibration, observations),
             policies.audit.threshold(Stage::Audit),
-            AUDIT_Z,
+            policies.audit.z(),
             target,
         );
         let stage = format!("Audit {}", previous_count + offset + 1);

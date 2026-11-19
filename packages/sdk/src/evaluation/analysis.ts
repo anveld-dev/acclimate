@@ -2,6 +2,7 @@ import type { Comparison, EvaluationDescriptor } from '../types.js';
 import { EvaluationError } from './errors.js';
 import { addGap, scalarGap, type EvidenceGaps } from './evidence-gaps.js';
 import { checkComparison, type ExpectedComparisonBinding } from './policy.js';
+import { studentTQuantile } from './student-t.js';
 
 /** App assertions, not execution attestation. Nothing here releases or promotes a version. */
 export interface AnalysisMetric {
@@ -23,7 +24,11 @@ export interface ComponentObservation {
   bundleDigest: string;
   values: Record<string, number | null>;
 }
-export interface PairedUncertainty {
+/**
+ * "These tasks again": resample repetitions within each fixed case. The resampled deviation is
+ * scaled by sqrt(r / (r - 1)) so the interval does not undercover; at least 3 repetitions.
+ */
+export interface FixedCaseBootstrap {
   method: 'paired-within-case-bootstrap';
   estimand: 'fixed-cases';
   /** Retained application protocol describing collection, pairing and independence. */
@@ -33,6 +38,27 @@ export interface PairedUncertainty {
   resamples: number;
   seed: number;
 }
+/**
+ * "Tasks like these": a two-sided Student t interval on case means, treating cases as a sample.
+ * It answers the same question as the default policy test. At least 2 cases.
+ */
+export interface SampledCaseT {
+  method: 'paired-t';
+  estimand: 'sampled-cases';
+  samplingProtocol: string;
+  /** Two-sided level: 0.8, 0.9, 0.95 or 0.98. */
+  confidenceLevel: 0.8 | 0.9 | 0.95 | 0.98;
+}
+export type PairedUncertainty = FixedCaseBootstrap | SampledCaseT;
+/** One-sided quantile behind each supported two-sided t interval level. */
+const twoSidedT = new Map([
+  [0.8, 0.9],
+  [0.9, 0.95],
+  [0.95, 0.975],
+  [0.98, 0.99],
+] as const);
+/** Minimum repetitions per case for the fixed-case bootstrap. */
+export const minimumBootstrapRepetitions = 3;
 export interface AnalysisComparisonBinding extends ExpectedComparisonBinding {
   comparisonId: string;
 }
@@ -67,11 +93,13 @@ export interface MetricAnalysis {
     status: 'not_requested' | 'insufficient_data' | 'estimated' | 'indeterminate';
     code: string;
     interval: null | { lower: number; upper: number };
+    /** `fixed-cases`: these tasks again. `sampled-cases`: tasks like these. */
+    estimand: 'fixed-cases' | 'sampled-cases' | null;
   };
 }
 export interface ComparisonAnalysis {
   schemaVersion: 1;
-  interpretation: 'app-asserted-fixed-case-analysis';
+  interpretation: 'app-asserted-fixed-case-analysis' | 'app-asserted-sampled-case-analysis';
   executionAttested: false;
   aggregation: 'equal-case-means';
   expectedBinding: AnalysisOptions['expectedBinding'];
@@ -134,9 +162,10 @@ const mean = (values: number[]) => {
 };
 
 /**
- * Default: descriptive scalar reward. Optional intervals condition on the fixed task
- * inventory and caller-declared independent stochastic paired repetitions. They are
- * approximate percentile bootstrap intervals, not population or causal evidence.
+ * Default: descriptive scalar reward. Optional intervals are labeled by question:
+ * `paired-within-case-bootstrap` answers "these tasks again" (fixed cases, caller-declared
+ * independent stochastic repetitions); `paired-t` answers "tasks like these" (cases sampled
+ * from the tasks you care about), like the default policy test. Neither is causal evidence.
  */
 export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis {
   const metrics = options.metrics ?? [
@@ -163,30 +192,35 @@ export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis 
   if (
     protocol !== undefined &&
     (!record(protocol) ||
-      !fields(protocol, [
-        'method',
-        'estimand',
-        'samplingProtocol',
-        'independentStochasticPairs',
-        'confidenceLevel',
-        'resamples',
-        'seed',
-      ]) ||
-      protocol.method !== 'paired-within-case-bootstrap' ||
-      protocol.estimand !== 'fixed-cases' ||
       !string(protocol.samplingProtocol) ||
-      protocol.independentStochasticPairs !== true ||
-      !finite(protocol.confidenceLevel) ||
-      protocol.confidenceLevel < 0.8 ||
-      protocol.confidenceLevel > 0.99 ||
-      !Number.isInteger(protocol.resamples) ||
-      protocol.resamples < 100 ||
-      protocol.resamples > 10000 ||
-      !Number.isInteger(protocol.seed) ||
-      protocol.seed < 0 ||
-      protocol.seed > 0xffffffff)
+      (protocol.method === 'paired-t'
+        ? !fields(protocol, ['method', 'estimand', 'samplingProtocol', 'confidenceLevel']) ||
+          protocol.estimand !== 'sampled-cases' ||
+          !twoSidedT.has(protocol.confidenceLevel)
+        : !fields(protocol, [
+            'method',
+            'estimand',
+            'samplingProtocol',
+            'independentStochasticPairs',
+            'confidenceLevel',
+            'resamples',
+            'seed',
+          ]) ||
+          protocol.method !== 'paired-within-case-bootstrap' ||
+          protocol.estimand !== 'fixed-cases' ||
+          protocol.independentStochasticPairs !== true ||
+          !finite(protocol.confidenceLevel) ||
+          protocol.confidenceLevel < 0.8 ||
+          protocol.confidenceLevel > 0.99 ||
+          !Number.isInteger(protocol.resamples) ||
+          protocol.resamples < 100 ||
+          protocol.resamples > 10000 ||
+          !Number.isInteger(protocol.seed) ||
+          protocol.seed < 0 ||
+          protocol.seed > 0xffffffff))
   )
     fail('analysis.invalid_config');
+  const estimand = protocol?.estimand ?? null;
   // Reuse the supported strict descriptor, inventory, outcome and identity validation.
   // Its descriptive policy verdict is deliberately ignored; analysis never becomes a gate.
   checkComparison({
@@ -200,6 +234,7 @@ export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis 
       minimumMeanImprovement: 0,
       maximumCaseRegression: 0,
       requiredCases: [],
+      inference: { method: 'none' },
     },
   });
   const { comparison, expectedDescriptor: descriptor, expectedBinding: binding } = options;
@@ -303,6 +338,7 @@ export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis 
         status: protocol ? 'indeterminate' : 'not_requested',
         code: protocol ? 'evidence.incomplete' : 'uncertainty.not_requested',
         interval: null,
+        estimand,
       },
     };
     const direction = metric.direction === 'higher' ? 1 : -1;
@@ -332,31 +368,61 @@ export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis 
       result.status = 'descriptive';
       result.code = 'analysis.descriptive';
       if (!protocol) return result;
-      if (groups.size < 2 || differences.some((rows) => rows.length < 2)) {
+      const insufficient = (code: string) => {
+        result.uncertainty = { status: 'insufficient_data', code, interval: null, estimand };
+        return result;
+      };
+      if (protocol.method === 'paired-t') {
+        const means = result.cases.map((row) => row.orientedMeanImprovement);
+        if (means.length < 2) return insufficient('uncertainty.insufficient_cases');
+        if (means.every((value) => value === means[0]))
+          return insufficient('uncertainty.no_observed_paired_variation');
+        const center = result.summary.orientedMeanImprovement;
+        let squares = 0;
+        for (const value of means)
+          squares = arithmetic(squares + arithmetic((value - center) * (value - center)));
+        const halfWidth = arithmetic(
+          (studentTQuantile(twoSidedT.get(protocol.confidenceLevel)!, means.length - 1) *
+            Math.sqrt(squares / (means.length - 1))) /
+            Math.sqrt(means.length),
+        );
         result.uncertainty = {
-          status: 'insufficient_data',
-          code: 'uncertainty.insufficient_repetitions',
-          interval: null,
+          status: 'estimated',
+          code: 'uncertainty.sampled_case_t_interval',
+          interval: {
+            lower: arithmetic(center - halfWidth),
+            upper: arithmetic(center + halfWidth),
+          },
+          estimand,
         };
         return result;
       }
-      if (differences.every((rows) => rows.every((value) => value === rows[0]))) {
-        result.uncertainty = {
-          status: 'insufficient_data',
-          code: 'uncertainty.no_observed_paired_variation',
-          interval: null,
-        };
-        return result;
-      }
+      if (groups.size < 2 || differences.some((rows) => rows.length < minimumBootstrapRepetitions))
+        return insufficient('uncertainty.insufficient_repetitions');
+      if (differences.every((rows) => rows.every((value) => value === rows[0])))
+        return insufficient('uncertainty.no_observed_paired_variation');
       // Independent stream per metric: input metric ordering cannot change an interval.
       let state = protocol.seed;
       const draw = (length: number) => {
         state = (Math.imul(1664525, state) + 1013904223) >>> 0;
         return Math.floor((state / 4294967296) * length);
       };
+      // Resampling r values understates the case-mean variance by (r - 1) / r. Scale each
+      // resampled deviation from the case mean back up so intervals keep their coverage.
+      const centers = differences.map((rows) => mean(rows));
+      const factors = differences.map((rows) => Math.sqrt(rows.length / (rows.length - 1)));
       const draws: number[] = [];
       for (let i = 0; i < protocol.resamples; i++)
-        draws.push(mean(differences.map((rows) => mean(rows.map(() => rows[draw(rows.length)])))));
+        draws.push(
+          mean(
+            differences.map((rows, index) =>
+              arithmetic(
+                centers[index] +
+                  factors[index] * (mean(rows.map(() => rows[draw(rows.length)])) - centers[index]),
+              ),
+            ),
+          ),
+        );
       draws.sort((a, b) => a - b);
       const quantile = (p: number) => draws[Math.max(0, Math.ceil(p * draws.length) - 1)];
       const alpha = (1 - protocol.confidenceLevel) / 2;
@@ -368,11 +434,13 @@ export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis 
               status: 'insufficient_data',
               code: 'uncertainty.degenerate_resamples',
               interval: null,
+              estimand,
             }
           : {
               status: 'estimated',
               code: 'uncertainty.approximate_fixed_case_interval',
               interval: { lower, upper },
+              estimand,
             };
     } catch (error) {
       if (!(error instanceof RangeError)) throw error;
@@ -384,13 +452,17 @@ export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis 
         status: protocol ? 'indeterminate' : 'not_requested',
         code: protocol ? 'analysis.nonfinite' : 'uncertainty.not_requested',
         interval: null,
+        estimand,
       };
     }
     return result;
   });
   return {
     schemaVersion: 1,
-    interpretation: 'app-asserted-fixed-case-analysis',
+    interpretation:
+      estimand === 'sampled-cases'
+        ? 'app-asserted-sampled-case-analysis'
+        : 'app-asserted-fixed-case-analysis',
     executionAttested: false,
     aggregation: 'equal-case-means',
     expectedBinding: { ...binding },

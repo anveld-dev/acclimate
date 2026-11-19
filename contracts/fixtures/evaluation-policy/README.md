@@ -13,4 +13,6 @@ node_modules/.bin/tsx --test packages/sdk/tests/evaluation/policy.test.ts
 PYTHONPATH=python python3.11 -m unittest discover -s python/tests -p test_evaluation_policy.py -v
 ```
 
-These are deterministic policy/contract checks. They do not run a service, model, release, or provider and make no statistical-confidence claim.
+`vectors.json` vectors declare `inference.method: "none"` because they test point-estimate arithmetic on one or two cases. `inference-vectors.json` covers the default paired Student t test: insufficient cases and repetitions, zero variance, the SD floor, declared confidence levels and reward scales, imputation, per-case scope across schema versions, reserved ids, and connected development and audit stages. Each case lists per-repetition rewards; both test suites expand them the same way and compare the full `inference` block bit for bit. `plan-vectors.json` fixes the simulated plans from `planEvaluation`, which both SDKs must reproduce exactly. `../evaluation-analysis/student-t.json` is the Student t table every implementation embeds.
+
+These are deterministic policy/contract checks. They do not run a service, model, release, or provider. The statistical properties of the default test are measured separately by `scripts/evaluation/policy-calibration.ts`.

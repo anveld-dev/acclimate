@@ -1324,6 +1324,8 @@ try {
       minimumMeanImprovement: 1,
       maximumCaseRegression: 0,
       requiredCases: [],
+      // A small fixture inventory: compare point estimates so the receipt flow is deterministic.
+      inference: { method: 'none' },
     }),
     expectedDescriptor,
   );

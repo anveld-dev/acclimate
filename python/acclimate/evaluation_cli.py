@@ -27,6 +27,7 @@ from ._evaluation_cli_intents import (
 from .evaluation_analysis import analyze_comparison
 from ._evaluation_policy_receipt import record_policy_receipt
 from .evaluation_policy import check_comparison, parse_evaluation_policy
+from .evaluation_plan import PLAN_USAGE, plan_command, policy_readiness
 from ._evaluation_local_cli import service_run_notices
 from ._evaluation_controls import RUN_CONTROL_FLAGS, RunControls, progress_line, run_controls_from_flags, selected_case_ids, wants_progress
 from .evaluation_artifacts import (
@@ -52,12 +53,13 @@ _FLAGS = {
     "export": {"config", "read-config", "handoff", "out", "selection", "name"},
     "verify-export": {"manifest", "read-config", "handoff"},
     "pull": {"config", "bundle", "channel", "out"},
+    "plan": {"policy", "aa", "effects", "simulations", "seed"},
 }
 #: Flags every command accepts.
 _GLOBAL_FLAGS = {"json", "verbose"}
 _BOOLEAN_FLAGS = {"live", "json", "verbose", "local", "progress", "quiet"}
 #: Flags whose values are paths, resolved against the working directory.
-_PATH_FLAGS = {"config", "read-config", "handoff", "payload", "parent", "candidate", "intent", "out", "policy",
+_PATH_FLAGS = {"config", "read-config", "handoff", "payload", "aa", "parent", "candidate", "intent", "out", "policy",
                "selection", "manifest"}
 #: Commands that never import the application module.
 ADAPTER_FREE_COMMANDS = ("status", "verify-export", "interrupt", "pull")
@@ -123,7 +125,8 @@ _COMPARE_USAGE = (
 def _usage_for(command):
     from ._evaluation_local_cli import LOCAL_COMPARE_USAGE, TRY_USAGE
     from ._evaluation_pull import USAGE as PULL_USAGE
-    return {"compare": _COMPARE_USAGE + "\n" + LOCAL_COMPARE_USAGE, "try": TRY_USAGE, "pull": PULL_USAGE}.get(command)
+    return {"compare": _COMPARE_USAGE + "\n" + LOCAL_COMPARE_USAGE, "try": TRY_USAGE, "pull": PULL_USAGE,
+            "plan": PLAN_USAGE}.get(command)
 
 
 def _write_progress(event):
@@ -412,11 +415,15 @@ def _dispatch(app, command, flags, review, cwd=None):
         return 0, verify_review_export(**options)
     if command == "doctor":
         _exactly_one(flags, "bundle", "handoff")
+        readiness = None
         if flags.get("policy"):
-            parse_evaluation_policy(read_command_bytes(_required(flags, "policy")).decode(), app.descriptor)
+            readiness = policy_readiness(parse_evaluation_policy(
+                read_command_bytes(_required(flags, "policy")).decode(), app.descriptor)["policy"], app.descriptor)
         target = {"handoff": _handoff(flags)} if flags.get("handoff") else {"bundleId": _required(flags, "bundle")}
         result = preflight_evaluation(app=app, config_path=_required(flags, "config"), target=target)
-        return _readiness_status(result), result
+        return _readiness_status(result), ({**result, "policyReadiness": readiness} if readiness else result)
+    if command == "plan":
+        return plan_command(app.descriptor, flags, read_command_bytes, read_command_json, EvaluationError)
     comparing = command == "compare"
     policy = None
     controls = None
@@ -531,7 +538,10 @@ def _dispatch(app, command, flags, review, cwd=None):
             expected_binding=_comparison_binding(request),
             policy=policy["policy"], policy_digest=policy["sha256"])
         receipt = record_policy_receipt(client, handoff, verdict) if flags.get("config") else {"status": "read_only"}
-        return _policy_exit(verdict["verdict"]) or (EXIT_CODES["infrastructure"] if receipt["status"] == "unconfirmed" else 0), {**verdict, "policyReceipt": receipt}
+        pinned = request.get("policyDigest")
+        pin = "unpinned" if not pinned else "matched" if pinned == policy["sha256"] else "mismatched"
+        return (_policy_exit(verdict["verdict"]) or (EXIT_CODES["infrastructure"] if receipt["status"] == "unconfirmed" else 0),
+                {**verdict, "policyPin": pin, "policyReceipt": receipt})
     client, project_id = _connection(flags, handoff)
     request = client.get_evaluation(project_id, handoff["bundleId"], handoff["requestId"])
     _assert_request(request, handoff)
@@ -547,6 +557,7 @@ _RECOVERY_HINTS = {
     "config.missing": "Check the --config path. Relative paths resolve against the current directory.",
 }
 _FORWARDED_CODES = {"policy.invalid", "policy.inventory_incompatible", "evidence.identity_mismatch", "evidence.malformed",
+                    "evidence.reward_out_of_range",
                     "artifact.missing", "artifact.hash_mismatch", "artifact.integrity", "artifact.selection_invalid",
                     "artifact.mapper_failed"}
 

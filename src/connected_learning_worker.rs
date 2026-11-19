@@ -1,11 +1,7 @@
 use crate::WorkspaceRoutes;
 use crate::{
     ApiResult, AppState, CaseKey, ComparisonRequest, PromoteRequest, ProposalRequest,
-    connected_learning::{
-        Descriptor, repetitions,
-        selection::Stage,
-        statistics::{AUDIT_Z, DEVELOPMENT_Z},
-    },
+    connected_learning::{Descriptor, repetitions, selection::Stage},
     db, err,
     evaluations::{CreateEvaluationRequest, decode, enqueue_evaluation, validate_report},
     improvement::{enqueue_managed_proposal, validate_comparison},
@@ -690,6 +686,7 @@ impl Connection {
             require_bound_evidence: true,
             run_name: None,
             retry_of: None,
+            policy_digest: None,
         })
     }
 
@@ -798,6 +795,7 @@ impl Connection {
                 require_bound_evidence: true,
                 run_name: None,
                 retry_of: None,
+                policy_digest: None,
             };
             let evaluation =
                 enqueue_evaluation(tx, &self.project, self.bundle, WORKER, &request).await?;
@@ -944,7 +942,7 @@ impl Connection {
             policies.development.threshold(Stage::Development {
                 replay_passed: false,
             }),
-            DEVELOPMENT_Z,
+            policies.development.z(),
             target,
         );
         let cumulative = plan.project(
@@ -952,7 +950,7 @@ impl Connection {
             None,
             noise,
             policies.development.threshold(Stage::Cumulative),
-            DEVELOPMENT_Z,
+            policies.development.z(),
             target,
         );
         let audits: Vec<_> = self
@@ -965,7 +963,7 @@ impl Connection {
                     Some(index),
                     noise,
                     policies.audit.threshold(Stage::Audit),
-                    AUDIT_Z,
+                    policies.audit.z(),
                     audit_target,
                 )
             })
@@ -2369,16 +2367,16 @@ mod tests {
                 .collect(),
         };
         let policy = crate::connected_learning::selection::Policies::default().development;
-        assert!(policy.check(&comparison).is_err());
+        assert!(policy.check(&comparison, false).is_err());
         comparison.results[0].candidate.reward = Some(1.0);
         comparison.results[1].candidate.reward = Some(1.0);
-        assert!(policy.check(&comparison).is_ok());
+        assert!(policy.check(&comparison, false).is_ok());
         comparison.results[1].candidate.reward = Some(0.0);
-        assert!(policy.check(&comparison).is_err());
+        assert!(policy.check(&comparison, false).is_err());
         comparison.results[1].candidate = scored(0.5, "task_failed");
-        assert!(policy.check(&comparison).is_err());
+        assert!(policy.check(&comparison, false).is_err());
         comparison.results[1].candidate = scored(0.5, "completed");
         comparison.results[1].candidate.reward = None;
-        assert!(policy.check(&comparison).is_err());
+        assert!(policy.check(&comparison, false).is_err());
     }
 }

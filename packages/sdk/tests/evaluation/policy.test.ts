@@ -4,10 +4,16 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   checkComparison,
+  connectedPolicyDefaults,
+  describePolicyInference,
+  formatStatistic,
   parseEvaluationPolicy,
   PolicyError,
+  reservedPolicyIds,
   validateEvaluationPolicy,
 } from '../../src/evaluation/policy.js';
+import { studentTQuantile, studentTTable } from '../../src/evaluation/student-t.js';
+import { expandInferenceVector, inferenceVectors, summaryFields } from './policy-vectors.js';
 
 const fixtures = JSON.parse(
   readFileSync(
@@ -24,7 +30,10 @@ const selectionPolicies = JSON.parse(
 );
 for (const { name, policy, valid } of selectionPolicies.cases) {
   test(`connected selection policy conformance: ${name}`, () => {
-    const parse = () => parseEvaluationPolicy(JSON.stringify(policy), selectionPolicies.descriptor);
+    const parse = () =>
+      parseEvaluationPolicy(JSON.stringify(policy), selectionPolicies.descriptor, {
+        connected: true,
+      });
     if (valid) {
       const parsed = parse().policy;
       for (const field of [
@@ -60,6 +69,7 @@ for (const vector of fixtures.vectors) {
       if ('improvement' in vector.expected)
         assert.equal(result.summary.orientedMeanImprovement, vector.expected.improvement);
       assert.equal(result.interpretation, 'descriptive-policy-check');
+      assert.equal(result.inference.method, 'none');
       assert.equal(result.policy.sha256, null);
       assert.deepEqual(result.expectedBinding, vector.binding);
     }
@@ -279,6 +289,7 @@ const confidence = JSON.parse(
 for (const decision of confidence) {
   test(`shared confidence decision: ${decision.name}`, () => {
     const { comparison, binding, descriptor, policy } = structuredClone(fixtures.vectors[0]);
+    const connected = connectedPolicyDefaults[decision.stage === 'audit' ? 'audit' : 'development'];
     const template = comparison.results[0];
     const offset = decision.rewardOffset ?? 0;
     comparison.results = decision.gains.flatMap((gain: number, index: number) =>
@@ -312,9 +323,14 @@ for (const decision of confidence) {
       expectedDescriptor: descriptor,
       policy: {
         ...policy,
+        id: decision.stage === 'audit' ? 'connected-audit' : 'connected-development',
+        metric: { ...policy.metric, scale: connected.scale },
         schemaVersion: decision.schemaVersion ?? 2,
+        minimumMeanImprovement: decision.minimumMeanImprovement ?? policy.minimumMeanImprovement,
         auditMode: decision.auditMode,
         nonInferiorityMargin: decision.nonInferiorityMargin,
+        inference: connected.inference,
+        perCaseChecks: connected.perCaseChecks,
       },
       replayPassed: decision.replayPassed,
       stage: decision.stage,
@@ -324,3 +340,111 @@ for (const decision of confidence) {
     assert.equal(result.verdict === 'pass', decision.pass);
   });
 }
+
+for (const vector of inferenceVectors.vectors) {
+  test(`shared inference vector: ${vector.name}`, () => {
+    const execute = () => checkComparison(expandInferenceVector(vector) as any);
+    if (vector.expected.error) {
+      assert.throws(
+        execute,
+        (error: unknown) => error instanceof PolicyError && error.code === vector.expected.error,
+      );
+      return;
+    }
+    const result = execute();
+    assert.deepEqual(
+      {
+        verdict: result.verdict,
+        code: result.code,
+        checks: result.checks,
+        summary: Object.fromEntries(summaryFields.map((field) => [field, result.summary[field]])),
+        perCaseChecks: result.perCaseChecks,
+        interpretation: result.interpretation,
+        inference: result.inference,
+      },
+      vector.expected,
+    );
+  });
+}
+
+test('the embedded Student t table matches the shared fixture', () => {
+  const shared = JSON.parse(
+    readFileSync(
+      new URL('../../../../contracts/fixtures/evaluation-analysis/student-t.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.deepEqual([...studentTTable.confidenceLevels], shared.confidenceLevels);
+  assert.deepEqual(studentTTable.normalQuantiles, shared.normalQuantiles);
+  assert.deepEqual(studentTTable.quantiles, shared.quantiles);
+  for (const { df, confidence, value } of shared.checks)
+    assert.ok(Math.abs(studentTQuantile(confidence, df) - value) < 5e-7, `${confidence} ${df}`);
+});
+
+test('the policy id never changes the calculation', () => {
+  const vector = inferenceVectors.vectors.find(
+    (item: any) => item.name === 'audit-stage-non-inferiority',
+  );
+  const input = expandInferenceVector(vector) as any;
+  const renamed = checkComparison({ ...input, policy: { ...input.policy, id: 'my-audit' } });
+  const original = checkComparison(input);
+  assert.deepEqual(renamed.checks, original.checks);
+  assert.deepEqual(renamed.inference, original.inference);
+  for (const id of reservedPolicyIds)
+    assert.throws(
+      () => validateEvaluationPolicy({ ...input.policy, id }),
+      (error: unknown) => error instanceof PolicyError && error.code === 'policy.invalid',
+    );
+});
+
+test('inference block validation rejects unknown, fractional and out-of-range settings', () => {
+  const base = { ...fixtures.vectors[0].policy };
+  for (const inference of [
+    { method: 'bootstrap' },
+    { confidence: 0.95 },
+    { method: 'paired-t', minCases: 1 },
+    { method: 'paired-t', minCases: 2.5 },
+    { method: 'paired-t', minRepetitions: 0 },
+    { method: 'paired-t', sdFloor: -0.1 },
+    { method: 'paired-t', maximumMissingPercent: 51 },
+    { method: 'none', sdFloor: 0.1 },
+    { method: 'paired-t', extra: true },
+  ])
+    assert.throws(() => validateEvaluationPolicy({ ...base, inference }), PolicyError);
+  for (const scale of [{ minimum: 1, maximum: 1 }, { minimum: 0 }, { minimum: 0, maximum: 'x' }])
+    assert.throws(
+      () => validateEvaluationPolicy({ ...base, metric: { ...base.metric, scale } }),
+      PolicyError,
+    );
+  assert.throws(() => validateEvaluationPolicy({ ...base, perCaseChecks: 'some' }), PolicyError);
+  const parsed = validateEvaluationPolicy({
+    ...base,
+    inference: { method: 'paired-t', confidence: 0.975, minCases: 20, sdFloor: 0 },
+    perCaseChecks: 'protected-cases',
+    metric: { ...base.metric, scale: { minimum: 0, maximum: 1 } },
+  });
+  assert.deepEqual(parsed.inference, {
+    method: 'paired-t',
+    confidence: 0.975,
+    minCases: 20,
+    sdFloor: 0,
+  });
+  assert.equal(parsed.perCaseChecks, 'protected-cases');
+});
+
+test('terminal statistics use fixed precision and state the method, bound and minimums', () => {
+  assert.equal(formatStatistic(0.30999999999999994), '0.31');
+  assert.equal(formatStatistic(0), '0');
+  assert.equal(formatStatistic(0.00001234), '1.23e-5');
+  assert.equal(formatStatistic(null), 'unknown');
+  const vector = inferenceVectors.vectors.find(
+    (item: any) => item.name === 'default-five-cases-is-insufficient',
+  );
+  const text = describePolicyInference(
+    checkComparison(expandInferenceVector(vector) as any).inference,
+  ).join('\n');
+  assert.match(text, /paired-t 95% one-sided/);
+  assert.match(text, /n 5 \(minimum 10\)/);
+  assert.match(text, /lower bound 0.9047 vs threshold 0/);
+  assert.match(text, /insufficient data: the verdict is indeterminate/);
+});

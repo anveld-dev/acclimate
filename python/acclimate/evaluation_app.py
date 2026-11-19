@@ -29,9 +29,11 @@ Then compare against the service to gate a release:
 
 Run controls for compare and run: --deadline 30m, --case-timeout 2m, --max-cost-usd 5,
 --cases ID,ID or --shard 1/4 (partial, never full coverage), --progress or --quiet.
-Use pull to save a published bundle as a payload file to edit.
+Use plan to size the evaluation for your policy before running it, and pull to save a
+published bundle as a payload file to edit.
 
-Commands: try, compare, describe, coverage, doctor, request, run, check, status, interrupt, export, verify-export, pull.
+Commands: try, compare, describe, coverage, doctor, plan, request, run, check, status, interrupt,
+export, verify-export, pull.
 status, verify-export, interrupt and pull run without loading application code.
 Run python -m acclimate COMMAND --help for one command's flags.
 
@@ -279,6 +281,8 @@ _COMMAND_USAGE = {
     "run": "run --config CONFIG (--handoff FILE | --name RUN_NAME) [--live]",
     "interrupt": "interrupt --config CONFIG (--handoff FILE | --name RUN_NAME) --reason REASON\nRuns without loading application code.",
     "pull": "pull --config CONFIG --bundle ID [--channel CHANNEL] --out FILE  Save the published bundle as a payload to edit.\nRuns without loading application code.",
+    "plan": ("plan --policy POLICY [--aa A_A_COMPARISON.json] [--effects 0,0.05] [--simulations N] [--seed N]\n"
+             "Estimate the minimum detectable effect and simulate pass rates before running anything."),
 }
 
 

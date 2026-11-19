@@ -9203,6 +9203,11 @@
             "type": "string",
             "format": "uuid",
             "description": "An earlier request on the same parent and candidate content that this run supersedes. Omitted when unset."
+          },
+          "policyDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "description": "Digest of the quality policy chosen before the run. Policy receipts record whether they match it."
           }
         },
         "required": [
@@ -9341,6 +9346,11 @@
           "abandonedBy": {
             "type": "string",
             "description": "Abandoning principal, or `service:evaluation-expiry` after inactivity."
+          },
+          "policyDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "description": "Digest of the quality policy chosen before the run. Policy receipts record whether they match it."
           }
         },
         "required": [
@@ -9677,7 +9687,7 @@
           "checks": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 16,
+            "maxItems": 2048,
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -9699,6 +9709,10 @@
                 "result"
               ]
             }
+          },
+          "inference": {
+            "type": "object",
+            "description": "Statistics behind the mean-difference check as reported by the SDK verdict: method, estimand, confidence, n, sd, sdFloor, df, criticalValue, lowerBound, threshold and imputed counts. At most 4096 bytes."
           }
         },
         "required": [
@@ -9754,7 +9768,7 @@
           "checks": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 16,
+            "maxItems": 2048,
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -9788,6 +9802,18 @@
           "receivedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "inference": {
+            "type": "object",
+            "description": "Statistics behind the mean-difference check as reported by the SDK verdict: method, estimand, confidence, n, sd, sdFloor, df, criticalValue, lowerBound, threshold and imputed counts. At most 4096 bytes."
+          },
+          "policyPin": {
+            "enum": [
+              "matched",
+              "mismatched",
+              "unpinned"
+            ],
+            "description": "Whether the receipt's policy digest matches the one pinned on the evaluation request."
           }
         },
         "required": [

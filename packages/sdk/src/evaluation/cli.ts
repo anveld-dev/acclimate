@@ -24,7 +24,13 @@ import {
   type ExitCode,
   type SafeCode,
 } from './errors.js';
-import { checkComparison, parseEvaluationPolicy, type PolicyVerdict } from './policy.js';
+import {
+  checkComparison,
+  describePolicyInference,
+  formatStatistic,
+  parseEvaluationPolicy,
+  type PolicyVerdict,
+} from './policy.js';
 import {
   exportReviewEvidence,
   verifyReviewExport,
@@ -54,6 +60,7 @@ import {
   wantsProgress,
   type RunControls,
 } from './controls.js';
+import { PLAN_USAGE, planCommand, policyReadinessFor } from './plan-command.js';
 
 type Command =
   | 'compare'
@@ -68,7 +75,8 @@ type Command =
   | 'interrupt'
   | 'export'
   | 'verify-export'
-  | 'pull';
+  | 'pull'
+  | 'plan';
 /** Run controls accepted by compare (service and local) and run. */
 const runControlFlags: readonly string[] = [...RUN_CONTROL_FLAGS, 'progress', 'quiet'];
 /** compare --local flags that the service form rejects. */
@@ -99,6 +107,7 @@ const allowed: Record<Command, readonly string[]> = {
   export: ['config', 'read-config', 'handoff', 'out', 'selection', 'name'],
   'verify-export': ['manifest', 'read-config', 'handoff'],
   pull: ['config', 'bundle', 'channel', 'out'],
+  plan: ['policy', 'aa', 'effects', 'simulations', 'seed'],
 };
 /** Flags every command accepts. */
 const globalFlags = ['json', 'verbose'];
@@ -109,6 +118,7 @@ const pathFlags = new Set([
   'read-config',
   'handoff',
   'payload',
+  'aa',
   'parent',
   'candidate',
   'intent',
@@ -219,7 +229,9 @@ const usageFor = (command: string): string | undefined =>
       ? TRY_USAGE
       : command === 'pull'
         ? pullHelp
-        : undefined;
+        : command === 'plan'
+          ? PLAN_USAGE
+          : undefined;
 
 /** Parse run-control flags and attach stderr progress unless --quiet. */
 function runControls(flags: Parsed['flags']): RunControls {
@@ -301,8 +313,7 @@ export function comparisonText(
   policy: PolicyVerdict | null,
   policyRequested: boolean,
 ) {
-  const value = (number: number | null | undefined) =>
-    number == null ? 'unknown' : String(number);
+  const value = formatStatistic;
   // JSON quoting keeps line breaks and escape sequences out of terminal control flow.
   const label = (id: string) =>
     JSON.stringify(id).replace(
@@ -320,6 +331,7 @@ export function comparisonText(
   ];
   for (const check of policy?.checks ?? [])
     if (check.result !== 'pass') lines.push(`  ${check.result}  ${check.code}`);
+  if (policy?.inference) lines.push(...describePolicyInference(policy.inference));
   const gaps = policy?.evidenceGaps ?? scores?.evidenceGaps;
   if (gaps) {
     lines.push(`Evidence gaps       showing ${gaps.rows.length} of ${gaps.total}`);
@@ -606,6 +618,7 @@ async function dispatch(
   const { command, flags } = parsed;
   if (command === 'describe') return { status: 0, result: app.descriptor };
   if (command === 'try') return tryCommand(app, flags);
+  if (command === 'plan') return planCommand(app.descriptor, flags);
   if (command === 'compare' && flags.local) return compareLocalCommand(app, flags, options.cwd);
   if (ADAPTER_FREE_COMMANDS.includes(command)) return readEvidence(parsed);
   if (command === 'coverage')
@@ -615,8 +628,13 @@ async function dispatch(
     });
   if (command === 'doctor') {
     exactlyOne(flags, 'bundle', 'handoff');
-    if (flags.policy)
-      parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor);
+    const policyReadiness = flags.policy
+      ? policyReadinessFor(
+          parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor)
+            .policy,
+          app.descriptor,
+        )
+      : undefined;
     const target = flags.handoff
       ? { handoff: await handoffFile(flags) }
       : { bundleId: required(flags, 'bundle') };
@@ -625,7 +643,10 @@ async function dispatch(
       configPath: required(flags, 'config'),
       target,
     });
-    return { status: readinessStatus(result), result };
+    return {
+      status: readinessStatus(result),
+      result: policyReadiness ? { ...result, policyReadiness } : result,
+    };
   }
   const comparing = command === 'compare';
   if (comparing) validateCompareFlags(flags, app.descriptor.runtime.execution === 'live');
@@ -924,9 +945,15 @@ async function checkPolicyCommand(
     policyDigest: parsedPolicy.sha256,
   });
   const receipt = flags.config ? await recordPolicyReceipt(client, handoff, verdict) : { status: 'read_only' as const };
+  // A policy pinned on the request before the run flags policies chosen after seeing results.
+  const policyPin = !request.policyDigest
+    ? 'unpinned'
+    : request.policyDigest === parsedPolicy.sha256
+      ? 'matched'
+      : 'mismatched';
   return {
     status: policyExit(verdict.verdict) || (receipt.status === 'unconfirmed' ? EXIT_CODES.infrastructure : 0),
-    result: { ...verdict, policyReceipt: receipt },
+    result: { ...verdict, policyPin, policyReceipt: receipt },
   };
 }
 
@@ -978,6 +1005,7 @@ const safeForwardedCodes = new Set([
   'policy.inventory_incompatible',
   'evidence.identity_mismatch',
   'evidence.malformed',
+  'evidence.reward_out_of_range',
   'artifact.missing',
   'artifact.hash_mismatch',
   'artifact.integrity',

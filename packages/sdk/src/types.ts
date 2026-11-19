@@ -110,9 +110,41 @@ export interface ComparisonPolicyReport {
   policy: { id: string; revision: string; sha256: string };
   verdict: 'pass' | 'fail' | 'indeterminate';
   checks: Array<{ code: string; result: 'pass' | 'fail' | 'unknown' }>;
+  /** Statistics behind the mean-difference check (method, n, sd, floor, df, t, bound, threshold). */
+  inference?: PolicyReceiptInference;
+}
+
+/** The inference block a policy verdict reports; see the evaluation policy module. */
+export interface PolicyReceiptInference {
+  method: 'paired-t' | 'none';
+  estimand: 'sampled-cases' | 'observed-cases';
+  status: 'estimated' | 'insufficient_data' | 'incomplete' | 'not_applicable';
+  stage: 'general' | 'development' | 'cumulative' | 'audit';
+  check: string;
+  confidence: number | null;
+  threshold: number;
+  thresholdSource: 'minimumMeanImprovement' | 'stepMargin' | 'nonInferiorityMargin';
+  n: number;
+  minCases: number;
+  minRepetitions: number;
+  repetitions: number;
+  meanDifference: number | null;
+  sd: number | null;
+  sdFloor: number | null;
+  sdFloorSource: 'declared' | 'scale' | 'observed-range' | null;
+  calibratedSd: number | null;
+  sdUsed: number | null;
+  standardError: number | null;
+  df: number | null;
+  criticalValue: number | null;
+  lowerBound: number | null;
+  imputed: { parent: number; candidate: number };
+  maximumMissingPercent: number;
 }
 
 export interface ComparisonPolicyReceipt extends ComparisonPolicyReport {
+  /** Whether this policy is the one pinned on the evaluation request before the run. */
+  policyPin?: 'matched' | 'mismatched' | 'unpinned';
   comparisonId: string;
   reportedBy: string;
   receivedAt: string;
@@ -287,6 +319,8 @@ export interface EvaluationRequest {
   runName?: string;
   /** An earlier request on the same parent and candidate content that this run supersedes. */
   retryOf?: string;
+  /** sha256 digest of the quality policy chosen before the run. Receipts record whether they match. */
+  policyDigest?: string;
 }
 export interface Evaluation extends EvaluationRequest {
   requireBoundEvidence: true;

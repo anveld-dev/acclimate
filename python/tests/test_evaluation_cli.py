@@ -144,7 +144,8 @@ class CommandTests(unittest.TestCase):
         self.reader.chmod(0o600)
         self.payload_file, self.intent, self.handoff, self.policy = [self.root / name for name in ("candidate.json", "intent.json", "request.json", "policy.json")]
         self.payload_file.write_bytes(encoded(self.payload))
-        self.quality = {"schemaVersion": 1, "id": "quality", "revision": "1", "metric": {"name": "correct", "unit": "reward", "direction": "higher"}, "aggregation": "equal-case-means", "minimumMeanImprovement": 0.5, "maximumCaseRegression": 0, "requiredCases": ["case"]}
+        self.quality = {"schemaVersion": 1, "id": "quality", "revision": "1", "metric": {"name": "correct", "unit": "reward", "direction": "higher"}, "aggregation": "equal-case-means", "minimumMeanImprovement": 0.5, "maximumCaseRegression": 0, "requiredCases": ["case"],
+                        "inference": {"method": "none"}}  # one saved case: point-estimate check
         self.policy.write_bytes(encoded(self.quality))
         def execute(run):
             self.state["executions"] += 1
@@ -167,6 +168,16 @@ class CommandTests(unittest.TestCase):
         with redirect_stdout(output), redirect_stderr(errors):
             status = evaluation_main(self.app, args, review=review)
         return status, json.loads(output.getvalue()) if output.getvalue() else None, json.loads(errors.getvalue()) if errors.getvalue() else None
+
+    def test_plan_sizes_the_inventory_without_running_callbacks(self):
+        status, plan, _ = self.invoke(["plan", "--policy", str(self.policy), "--simulations", "20"])
+        self.assertEqual((status, plan["method"], plan["cases"]), (0, "none", 1))
+        self.policy.write_bytes(encoded({**self.quality, "inference": {"method": "paired-t"}}))
+        status, plan, _ = self.invoke(["plan", "--policy", str(self.policy), "--simulations", "5"])
+        self.assertEqual((status, plan["sufficient"]), (3, False))
+        self.assertEqual(plan["simulation"]["results"][0]["indeterminateRate"], 1)
+        status, _, error = self.invoke(["plan", "--policy", str(self.policy), "--effects", "x"])
+        self.assertEqual((status, error["error"]["code"]), (1, "usage.invalid_flag"))
 
     def test_closed_usage_and_descriptor(self):
         status, value, _ = self.invoke(["describe"])
@@ -364,6 +375,7 @@ class CommandTests(unittest.TestCase):
         code, result, _ = self.invoke(["check", "--read-config", str(self.reader), "--handoff",
                                       str(self.handoff), "--policy", str(self.policy)])
         self.assertEqual((code, result["policyReceipt"]["status"]), (0, "read_only"))
+        self.assertEqual(result["policyPin"], "unpinned")
         self.assertEqual(len(self.policy_receipts), 0)
         code, result, _ = self.invoke(args)
         self.assertEqual((code, result["policyReceipt"]["status"], len(self.policy_receipts)), (0, "recorded", 1))

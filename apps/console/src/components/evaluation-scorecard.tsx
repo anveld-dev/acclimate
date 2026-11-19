@@ -3,7 +3,17 @@ import { StatusBadge } from './status-badge';
 import { evaluationScoreSummary } from '../lib/evaluation-score-summary';
 import { evaluationEvidenceSummary } from '../lib/evaluation-history';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from './ui/disclosure';
-import { evaluationPairs, pairCounts, pairLabels, pairSymbols } from '../lib/evaluation-pairs';
+import { caseCounts, pairLabels, pairSymbols } from '../lib/evaluation-pairs';
+
+/** The statistic a recorded policy verdict computed for this comparison, if any. */
+export interface ScorecardInference {
+  method: string;
+  confidence?: number | null;
+  n?: number;
+  lowerBound?: number | null;
+  threshold?: number;
+  status?: string;
+}
 
 function reward(value: number) {
   return Math.abs(value) >= 10000 || (value !== 0 && Math.abs(value) < 0.001)
@@ -11,11 +21,31 @@ function reward(value: number) {
     : value.toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
 
-/** The headline of a comparison: the mean reward change and how paired cases moved. */
-export function EvaluationOutcomeStrip({ comparison }: { comparison: Comparison }) {
+function inferenceNote(inference: ScorecardInference | undefined) {
+  if (!inference || inference.method !== 'paired-t')
+    return 'No confidence interval · observed means for these cases';
+  if (inference.lowerBound == null || inference.status !== 'estimated')
+    return `Policy test: insufficient data (${inference.n ?? 0} cases)`;
+  return `Policy lower bound ${reward(inference.lowerBound)} vs threshold ${reward(
+    inference.threshold ?? 0,
+  )} · ${Math.round((inference.confidence ?? 0) * 1000) / 10}% one-sided · ${inference.n} cases`;
+}
+
+/**
+ * The headline of a comparison: the mean reward change and how cases moved. The change is shown
+ * in a neutral tone because the metric direction is not known here; a higher reward is not
+ * necessarily better.
+ */
+export function EvaluationOutcomeStrip({
+  comparison,
+  inference,
+}: {
+  comparison: Comparison;
+  inference?: ScorecardInference;
+}) {
   const summary = evaluationScoreSummary(comparison);
   const evidence = evaluationEvidenceSummary(comparison);
-  const counts = pairCounts(evaluationPairs(comparison));
+  const counts = caseCounts(comparison);
   const { parentMean, candidateMean } = summary;
   const delta = parentMean === null || candidateMean === null ? null : candidateMean - parentMean;
   const direction =
@@ -28,7 +58,9 @@ export function EvaluationOutcomeStrip({ comparison }: { comparison: Comparison 
           : 'flat';
   const total = counts.higher + counts.same + counts.lower + counts.unscored;
   const segments = (['higher', 'same', 'lower', 'unscored'] as const).filter((key) => counts[key]);
-  const breakdown = segments.map((key) => `${counts[key]} ${pairLabels[key].toLowerCase()}`);
+  const caseLabel = (key: keyof typeof counts) =>
+    `${counts[key]} ${counts[key] === 1 ? 'case' : 'cases'} ${pairLabels[key].toLowerCase()}`;
+  const breakdown = segments.map(caseLabel);
   return (
     <section className="evaluation-outcome-strip" aria-label="Result summary">
       <div className="outcome-metric">
@@ -45,10 +77,12 @@ export function EvaluationOutcomeStrip({ comparison }: { comparison: Comparison 
         <span className="outcome-note">
           Parent {parentMean === null ? '—' : reward(parentMean)} · equal-case mean
         </span>
+        <span className="outcome-note outcome-inference">{inferenceNote(inference)}</span>
       </div>
       <div className="outcome-pairs">
         <span className="outcome-label">
-          Paired outcomes · {summary.pairedCount} of {summary.expectedCount} scored
+          Cases · {summary.comparableCaseCount} of {summary.expectedCaseCount} fully scored ·{' '}
+          {summary.pairedCount} of {summary.expectedCount} pairs
         </span>
         {total > 0 && (
           <div className="outcome-bar" role="img" aria-label={breakdown.join(', ')}>
@@ -57,7 +91,7 @@ export function EvaluationOutcomeStrip({ comparison }: { comparison: Comparison 
                 key={key}
                 data-change={key}
                 style={{ flexGrow: counts[key] }}
-                title={`${counts[key]} ${pairLabels[key].toLowerCase()}`}
+                title={caseLabel(key)}
               />
             ))}
           </div>
@@ -65,8 +99,7 @@ export function EvaluationOutcomeStrip({ comparison }: { comparison: Comparison 
         <ul className="outcome-legend" aria-hidden="true">
           {segments.map((key) => (
             <li key={key} data-change={key}>
-              <span aria-hidden="true">{pairSymbols[key]}</span> {counts[key]}{' '}
-              {pairLabels[key].toLowerCase()}
+              <span aria-hidden="true">{pairSymbols[key]}</span> {caseLabel(key)}
             </li>
           ))}
         </ul>
@@ -74,6 +107,15 @@ export function EvaluationOutcomeStrip({ comparison }: { comparison: Comparison 
       <StatusBadge tone={evidence.partial ? 'warning' : 'success'} className="outcome-completeness">
         {evidence.partial ? 'Partial evidence' : 'Complete evidence'}
       </StatusBadge>
+      {evidence.partial && (
+        <p className="outcome-missing">
+          Unscored outcomes · parent {summary.parentUnusable} · candidate{' '}
+          {summary.candidateUnusable}
+          {summary.oneSidedMissing
+            ? ' · missing on one arm only, so means of the complete pairs may be biased'
+            : ''}
+        </p>
+      )}
     </section>
   );
 }
@@ -101,6 +143,10 @@ export function EvaluationScorecard({
           <dd>{evidence.expectedMissingGrades}</dd>
           <dt>Execution failures</dt>
           <dd>{evidence.expectedExecutionFailures}</dd>
+          <dt>Unscored · parent / candidate</dt>
+          <dd>
+            {summary.parentUnusable} / {summary.candidateUnusable}
+          </dd>
           <dt>Reported cost</dt>
           <dd>
             {evidence.expectedCostUsd === null ? 'Unknown' : '$' + reward(evidence.expectedCostUsd)}
@@ -178,6 +224,13 @@ export function EvaluationScorecard({
           <dd>{evidence.expectedExecutionFailures}</dd>
         </div>
         <div>
+          <dt>Unscored · parent / candidate</dt>
+          <dd>
+            {summary.parentUnusable} / {summary.candidateUnusable}
+            {summary.oneSidedMissing ? ' · one-sided' : ''}
+          </dd>
+        </div>
+        <div>
           <dt>Reported cost · expected outcomes</dt>
           <dd>
             {evidence.expectedCostUsd === null ? 'Unknown' : `$${reward(evidence.expectedCostUsd)}`}
@@ -198,8 +251,9 @@ export function EvaluationScorecard({
             {evidence.partial
               ? 'This partial view is not an overall result.'
               : 'Complete evidence alone is not a win or release approval.'}{' '}
-            Metric direction and application policy are not available here; a higher reward does not
-            establish better quality or a passing policy.
+            These are observed means with no confidence interval. A recorded policy verdict shows
+            its lower bound and threshold. Metric direction is not available here; a higher reward
+            does not establish better quality or a passing policy.
           </p>
         </DisclosureContent>
       </Disclosure>

@@ -32,7 +32,7 @@
     "name": "v3 tied audit at default margin",
     "schemaVersion": 3,
     "stage": "audit",
-    "calibratedStandardDeviation": 0,
+    "calibratedStandardDeviation": 0.005,
     "gains": [0, 0],
     "pass": true
   },
@@ -41,7 +41,7 @@
     "schemaVersion": 3,
     "auditMode": "superiority",
     "stage": "audit",
-    "calibratedStandardDeviation": 0,
+    "calibratedStandardDeviation": 0.005,
     "gains": [0, 0],
     "pass": false
   },
@@ -50,7 +50,7 @@
     "schemaVersion": 3,
     "replayPassed": true,
     "stage": "development",
-    "calibratedStandardDeviation": 0,
+    "calibratedStandardDeviation": 0.005,
     "gains": [0, 0],
     "pass": true
   },
@@ -58,7 +58,7 @@
     "name": "v3 tied step needs a benefit",
     "schemaVersion": 3,
     "stage": "development",
-    "calibratedStandardDeviation": 0,
+    "calibratedStandardDeviation": 0.005,
     "gains": [0, 0],
     "pass": false
   },
@@ -66,7 +66,7 @@
     "name": "v3 tied cumulative cohort requires improvement",
     "schemaVersion": 3,
     "stage": "cumulative",
-    "calibratedStandardDeviation": 0,
+    "calibratedStandardDeviation": 0.005,
     "gains": [0, 0],
     "pass": false
   },
@@ -116,5 +116,22 @@
     "evaluationRepetitions": 16,
     "gains": [0, 0, 0, 0],
     "pass": true
+  },
+  {
+    "name": "zero observed variance without a floor is insufficient evidence",
+    "schemaVersion": 3,
+    "stage": "audit",
+    "calibratedStandardDeviation": 0,
+    "gains": [0.2, 0.2, 0.2],
+    "pass": false
+  },
+  {
+    "name": "v3 step benefit honors a positive minimum mean improvement",
+    "schemaVersion": 3,
+    "stage": "development",
+    "minimumMeanImprovement": 0.5,
+    "calibratedStandardDeviation": 0.005,
+    "gains": [0.1, 0.1],
+    "pass": false
   }
 ]

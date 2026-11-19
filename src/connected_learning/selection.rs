@@ -1,14 +1,63 @@
-use super::statistics::{AUDIT_Z, DEVELOPMENT_Z, lower_bound};
+use super::statistics::{critical_value, normal_quantile, sample_sd};
 use super::{Descriptor, bounded, invalid};
 use crate::{ApiResult, ComparisonRequest};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
+/// Stored and submitted connected policies. Omitted inference, per-case scope and reward scale
+/// settings are filled with the connected defaults so every stored policy states them explicitly.
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, from = "PoliciesWire")]
 pub(crate) struct Policies {
     pub development: SelectionPolicy,
     pub audit: SelectionPolicy,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PoliciesWire {
+    development: SelectionPolicy,
+    audit: SelectionPolicy,
+}
+
+impl From<PoliciesWire> for Policies {
+    fn from(wire: PoliciesWire) -> Self {
+        Self {
+            development: wire.development.with_defaults(0.9),
+            audit: wire.audit.with_defaults(0.95),
+        }
+    }
+}
+
+/// The statistical settings a connected policy declares. Only `paired-t` is supported here.
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct Inference {
+    method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    confidence: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_cases: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_repetitions: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sd_floor: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    maximum_missing_percent: Option<usize>,
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+enum PerCaseChecks {
+    AllCases,
+    ProtectedCases,
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct Scale {
+    minimum: f64,
+    maximum: f64,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
@@ -42,6 +91,10 @@ pub(crate) struct SelectionPolicy {
     minimum_cost_savings_usd: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     minimum_repetitions_per_case: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inference: Option<Inference>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    per_case_checks: Option<PerCaseChecks>,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
@@ -50,6 +103,8 @@ struct Metric {
     name: String,
     unit: String,
     direction: Direction,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scale: Option<Scale>,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize, PartialEq)]
@@ -92,6 +147,7 @@ impl Default for Policies {
                 name: "reward".into(),
                 unit: "reward".into(),
                 direction: Direction::Higher,
+                scale: None,
             },
             aggregation: "equal-case-means".into(),
             minimum_mean_improvement: 0.0,
@@ -107,6 +163,8 @@ impl Default for Policies {
             protected_case_thresholds: BTreeMap::new(),
             minimum_cost_savings_usd: None,
             minimum_repetitions_per_case: None,
+            inference: None,
+            per_case_checks: None,
         };
         let development = SelectionPolicy {
             id: "connected-development".into(),
@@ -114,7 +172,10 @@ impl Default for Policies {
             non_inferiority_margin: None,
             ..audit.clone()
         };
-        Self { development, audit }
+        Self {
+            development: development.with_defaults(0.9),
+            audit: audit.with_defaults(0.95),
+        }
     }
 }
 
@@ -131,9 +192,24 @@ impl SelectionPolicy {
                     .flatten()
                     .all(|n| n.is_finite() && n >= 0.0)
         });
-        if self
-            .minimum_repetitions_per_case
-            .is_some_and(|n| !(1..=1000).contains(&n))
+        let inference_ok = self.inference.as_ref().is_none_or(|i| {
+            i.method == "paired-t"
+                && i.confidence.is_none_or(|c| normal_quantile(c).is_some())
+                && i.min_cases.is_none_or(|n| (2..=1000).contains(&n))
+                && i.min_repetitions.is_none_or(|n| (1..=1000).contains(&n))
+                && i.sd_floor.is_none_or(|v| v.is_finite() && v >= 0.0)
+                && i.maximum_missing_percent.is_none_or(|n| n <= 50)
+        });
+        // Connected rewards are always on the [0,1] scale.
+        let scale_ok = self
+            .metric
+            .scale
+            .is_none_or(|s| s.minimum == 0.0 && s.maximum == 1.0);
+        if !inference_ok
+            || !scale_ok
+            || self
+                .minimum_repetitions_per_case
+                .is_some_and(|n| !(1..=1000).contains(&n))
             || !matches!(self.schema_version, 1..=3)
             || (self.schema_version < 3
                 && (self.step_margin.is_some()
@@ -205,6 +281,54 @@ impl SelectionPolicy {
         Ok(())
     }
 
+    /// Fill omitted connected settings so stored policies state them explicitly.
+    fn with_defaults(mut self, confidence: f64) -> Self {
+        let inference = self.inference.get_or_insert(Inference {
+            method: "paired-t".into(),
+            confidence: None,
+            min_cases: None,
+            min_repetitions: None,
+            sd_floor: None,
+            maximum_missing_percent: None,
+        });
+        inference.confidence.get_or_insert(confidence);
+        inference.min_cases.get_or_insert(2);
+        inference.min_repetitions.get_or_insert(1);
+        inference.sd_floor.get_or_insert(0.0);
+        inference
+            .maximum_missing_percent
+            .get_or_insert(super::statistics::MAX_MISSING_PERCENT);
+        self.per_case_checks
+            .get_or_insert(PerCaseChecks::ProtectedCases);
+        self.metric.scale.get_or_insert(Scale {
+            minimum: 0.0,
+            maximum: 1.0,
+        });
+        self
+    }
+
+    /// Resolved (confidence, minimum cases, minimum repetitions, SD floor, missing percent).
+    fn settings(&self) -> (f64, usize, usize, f64, usize) {
+        let i = self.inference.as_ref();
+        (
+            i.and_then(|i| i.confidence).unwrap_or(0.95),
+            i.and_then(|i| i.min_cases).unwrap_or(2),
+            i.and_then(|i| i.min_repetitions).unwrap_or(1),
+            i.and_then(|i| i.sd_floor).unwrap_or(0.0),
+            i.and_then(|i| i.maximum_missing_percent)
+                .unwrap_or(super::statistics::MAX_MISSING_PERCENT),
+        )
+    }
+
+    /// The normal quantile for the policy's declared one-sided confidence.
+    pub(crate) fn z(&self) -> f64 {
+        normal_quantile(self.settings().0).unwrap_or(super::statistics::AUDIT_Z)
+    }
+
+    fn checked(&self, case: &str) -> bool {
+        self.per_case_checks == Some(PerCaseChecks::AllCases) || self.protected(case)
+    }
+
     fn protected(&self, case: &str) -> bool {
         self.protected_case_thresholds.contains_key(case)
             || self.required_cases.iter().any(|id| id == case)
@@ -232,8 +356,14 @@ impl SelectionPolicy {
     }
 
     #[cfg(test)]
-    pub(crate) fn check(&self, comparison: &ComparisonRequest) -> Result<(), &'static str> {
-        self.check_calibrated(comparison, self.id == "connected-audit", 0.0)
+    pub(crate) fn check(
+        &self,
+        comparison: &ComparisonRequest,
+        audit: bool,
+    ) -> Result<(), &'static str> {
+        // Connected checks always carry an A/A calibration floor; a small one keeps tied
+        // fixtures informative instead of insufficient.
+        self.check_calibrated(comparison, audit, 0.005)
     }
 
     #[cfg(test)]
@@ -269,6 +399,7 @@ impl SelectionPolicy {
         } else {
             -1.0
         };
+        let (_, min_cases, min_repetitions, sd_floor, missing_percent) = self.settings();
         // Evaluate in the same stable UTF-8 case/repetition order as the SDK.
         let mut pairs: Vec<_> = comparison.results.iter().collect();
         pairs.sort_by_key(|p| (&p.key.case_id, p.key.repetition));
@@ -301,7 +432,7 @@ impl SelectionPolicy {
                 })
                 .count()
                 * 100
-                > pairs.len() * super::statistics::MAX_MISSING_PERCENT
+                > pairs.len() * missing_percent
         }) {
             return Err("Evidence is incomplete");
         }
@@ -313,7 +444,7 @@ impl SelectionPolicy {
         for pair in pairs {
             let p = super::statistics::scored_reward(&pair.parent).unwrap_or(best);
             let c = super::statistics::scored_reward(&pair.candidate).unwrap_or(worst);
-            if self.protected(&pair.key.case_id)
+            if self.checked(&pair.key.case_id)
                 && (pair.candidate.execution_status == "task_failed"
                     || super::statistics::scored_reward(&pair.candidate).is_none())
             {
@@ -343,16 +474,20 @@ impl SelectionPolicy {
         }
         let case_count = means.len() as f64;
         let (mut gains, mut candidates) = (Vec::new(), 0.0);
+        if means.len() < min_cases {
+            return Err("Evidence has too few cases for the declared inference");
+        }
         for (id, (parent, candidate, count)) in means {
             if self
                 .minimum_repetitions_per_case
                 .is_some_and(|n| (count as usize) < n)
+                || (count as usize) < min_repetitions
             {
                 return Err("Case inventory has too few paired repetitions");
             }
             let candidate_mean = candidate / f64::from(count);
             let gain = sign * (candidate_mean - parent / f64::from(count));
-            if !gain.is_finite() || (self.protected(id) && -gain > self.maximum_case_regression) {
+            if !gain.is_finite() || (self.checked(id) && -gain > self.maximum_case_regression) {
                 return Err("Maximum case regression exceeded");
             }
             gains.push(gain);
@@ -361,19 +496,24 @@ impl SelectionPolicy {
         if !candidates.is_finite() {
             return Err("Nonfinite selection arithmetic");
         }
-        let z = if matches!(stage, Stage::Audit) {
-            AUDIT_Z
-        } else {
-            DEVELOPMENT_Z
-        };
         let threshold = self.threshold(stage);
         let estimate = gains.iter().sum::<f64>() / case_count;
-        let bound = lower_bound(&gains, calibrated_sd, z);
+        let used = sample_sd(&gains).max(sd_floor).max(calibrated_sd);
+        if used == 0.0 {
+            return Err("Zero observed variance without an SD floor is insufficient evidence");
+        }
+        let bound = estimate - critical_value(gains.len(), self.z()) * used / case_count.sqrt();
         if bound.is_finite() {
             *summary = Some((estimate, bound));
         }
         if !bound.is_finite() || bound <= threshold {
-            return Err("Minimum mean improvement was not reached");
+            return Err(match (stage, self.modern()) {
+                (Stage::Audit, _) if self.audit_mode != Some(AuditMode::Superiority) => {
+                    "Audit non-inferiority bound was not reached"
+                }
+                (Stage::Development { .. }, true) => "Step non-inferiority bound was not reached",
+                _ => "Minimum mean improvement was not reached",
+            });
         }
         if self
             .candidate_threshold
@@ -387,9 +527,11 @@ impl SelectionPolicy {
         {
             return Err("Maximum candidate task failures exceeded");
         }
+        // A step needs a benefit beyond non-inferiority: a positive point gain that reaches
+        // minimumMeanImprovement, an attested replay, or a cost saving.
         if let Stage::Development { replay_passed } = stage
             && self.modern()
-            && estimate <= 0.0
+            && !(estimate > 0.0 && estimate >= self.minimum_mean_improvement)
             && !replay_passed
         {
             let savings = parent_cost.zip(candidate_cost).map(|(p, c)| p - c);
@@ -532,6 +674,7 @@ mod tests {
             calibration_effective_repetitions: Option<f64>,
             evaluation_repetitions: Option<usize>,
             non_inferiority_margin: Option<f64>,
+            minimum_mean_improvement: Option<f64>,
             gains: Vec<f64>,
             #[serde(default)]
             reward_offset: f64,
@@ -552,6 +695,7 @@ mod tests {
             policy.schema_version = decision.schema_version.unwrap_or(2);
             policy.audit_mode = decision.audit_mode;
             policy.non_inferiority_margin = decision.non_inferiority_margin;
+            policy.minimum_mean_improvement = decision.minimum_mean_improvement.unwrap_or(0.0);
             let ids: Vec<_> = (0..decision.gains.len())
                 .map(|index| index.to_string())
                 .collect();
@@ -609,22 +753,62 @@ mod tests {
     fn default_stages_require_positive_evidence() {
         let policies = Policies::default();
         let tied = comparison(&[("ordinary", 1., 1.), ("other", 1., 1.)]);
-        assert!(policies.development.check(&tied).is_err());
-        assert!(policies.audit.check(&tied).is_ok());
+        assert!(policies.development.check(&tied, false).is_err());
+        assert!(policies.audit.check(&tied, true).is_ok());
         let regressed = comparison(&[("ordinary", 0., 1.), ("invariant", 1., 0.)]);
-        assert!(policies.audit.check(&regressed).is_err());
+        assert!(policies.audit.check(&regressed, true).is_err());
+        // Without any SD floor, identical case differences are insufficient evidence.
+        assert!(policies.audit.check_calibrated(&tied, true, 0.0).is_err());
+    }
+
+    #[test]
+    fn stored_policies_state_their_inference_explicitly() {
+        let stored: Policies = serde_json::from_value(serde_json::json!({
+            "development": {"schemaVersion": 1, "id": "connected-development", "revision": "1",
+                "metric": {"name": "reward", "unit": "reward", "direction": "higher"},
+                "aggregation": "equal-case-means", "minimumMeanImprovement": 0,
+                "maximumCaseRegression": 0, "requiredCases": []},
+            "audit": {"schemaVersion": 1, "id": "connected-audit", "revision": "1",
+                "metric": {"name": "reward", "unit": "reward", "direction": "higher"},
+                "aggregation": "equal-case-means", "minimumMeanImprovement": 0,
+                "maximumCaseRegression": 0, "requiredCases": [],
+                "inference": {"method": "paired-t", "confidence": 0.975}}
+        }))
+        .unwrap();
+        let value = serde_json::to_value(&stored).unwrap();
+        assert_eq!(
+            value["development"]["inference"],
+            serde_json::json!({"method": "paired-t", "confidence": 0.9, "minCases": 2,
+                "minRepetitions": 1, "sdFloor": 0.0, "maximumMissingPercent": 15})
+        );
+        assert_eq!(value["audit"]["inference"]["confidence"], 0.975);
+        assert_eq!(value["audit"]["perCaseChecks"], "protected-cases");
+        assert_eq!(
+            value["audit"]["metric"]["scale"],
+            serde_json::json!({"minimum": 0.0, "maximum": 1.0})
+        );
+        assert!(stored.audit.z() > stored.development.z());
+        let mut invalid = stored.audit.clone();
+        invalid.inference.as_mut().unwrap().confidence = Some(0.93);
+        assert!(invalid.validate(&[], None).is_err());
+        invalid.inference.as_mut().unwrap().confidence = Some(0.95);
+        invalid.metric.scale = Some(Scale {
+            minimum: 0.0,
+            maximum: 10.0,
+        });
+        assert!(invalid.validate(&[], None).is_err());
     }
 
     #[test]
     fn repetitions_average_per_case_and_protected_threshold_applies_to_each_repeat() {
         let mut policy = Policies::default().development;
         let measurements = comparison(&[("a", 0., 0.), ("a", 0., 1.), ("b", 0., 1.)]);
-        assert!(policy.check(&measurements).is_ok());
+        assert!(policy.check(&measurements, false).is_ok());
         policy.minimum_repetitions_per_case = Some(2);
-        assert!(policy.check(&measurements).is_err());
+        assert!(policy.check(&measurements, false).is_err());
         policy.minimum_repetitions_per_case = None;
         policy.protected_case_thresholds.insert("a".into(), 1.);
-        assert!(policy.check(&measurements).is_err());
+        assert!(policy.check(&measurements, false).is_err());
     }
 
     #[test]
@@ -645,7 +829,7 @@ mod tests {
         let mut policy = Policies::default().development;
         policy.schema_version = 2;
         policy.minimum_mean_improvement = 0.8;
-        assert!(policy.check(&evidence).is_err());
+        assert!(policy.check(&evidence, false).is_err());
         evidence.results[3].candidate.reward = None;
         evidence.results[3].candidate.grading_status = "missing".into();
         assert_eq!(
@@ -666,16 +850,16 @@ mod tests {
         policy.minimum_cost_savings_usd = Some(0.5);
         policy.non_inferiority_margin = Some(0.1);
         let mut results = comparison(&[("a", 1., 1.), ("b", 1., 1.)]);
-        assert!(policy.check(&results).is_err());
+        assert!(policy.check(&results, true).is_err());
         results.results[0]
             .candidate
             .usage
             .as_mut()
             .unwrap()
             .cost_usd = Some(0.5);
-        assert!(policy.check(&results).is_ok());
+        assert!(policy.check(&results, true).is_ok());
         results.results[0].parent.usage = None;
-        assert!(policy.check(&results).is_err());
+        assert!(policy.check(&results, true).is_err());
     }
 
     #[test]
@@ -687,14 +871,14 @@ mod tests {
         });
         policy.minimum_cost_savings_usd = Some(0.5);
         let mut evidence = comparison(&[("a", 1., 1.), ("b", 1., 1.)]);
-        assert!(policy.check(&evidence).is_err());
+        assert!(policy.check(&evidence, false).is_err());
         evidence.results[0]
             .candidate
             .usage
             .as_mut()
             .unwrap()
             .cost_usd = Some(0.5);
-        assert!(policy.check(&evidence).is_ok());
+        assert!(policy.check(&evidence, false).is_ok());
         assert!(
             policy
                 .check_with_summary(&evidence, Stage::Cumulative, 0.0, &mut None)
@@ -856,7 +1040,7 @@ mod tests {
     fn admission_guard_handles_noisy_boundary_and_pools_matching_epochs() {
         use super::super::{
             repetitions::Plan,
-            statistics::{calibrate, pool_calibrations, scored_reward, sd_interval},
+            statistics::{DEVELOPMENT_Z, calibrate, pool_calibrations, scored_reward, sd_interval},
         };
 
         for (cases, se, decision) in [
@@ -934,20 +1118,20 @@ mod tests {
         policy.candidate_threshold = Some(0.5);
         assert!(
             policy
-                .check(&comparison(&[("a", 1., 0.5), ("b", 1., 0.5)]))
+                .check(&comparison(&[("a", 1., 0.5), ("b", 1., 0.5)]), true)
                 .is_ok()
         );
         assert!(
             policy
-                .check(&comparison(&[("a", 1., 1.), ("b", 1., 1.)]))
+                .check(&comparison(&[("a", 1., 1.), ("b", 1., 1.)]), true)
                 .is_err()
         );
         assert!(
             policy
-                .check(&comparison(&[
-                    ("b", f64::MAX, f64::MAX),
-                    ("b", f64::MAX, f64::MAX)
-                ]))
+                .check(
+                    &comparison(&[("b", f64::MAX, f64::MAX), ("b", f64::MAX, f64::MAX)]),
+                    true
+                )
                 .is_err()
         );
     }

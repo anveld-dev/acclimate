@@ -58,6 +58,7 @@ export type SafeCode =
   | 'evidence.not_terminal'
   | 'evidence.identity_mismatch'
   | 'evidence.malformed'
+  | 'evidence.reward_out_of_range'
   | 'evidence.incomplete'
   | 'cost.unknown'
   | 'analysis.nonfinite'
@@ -188,6 +189,7 @@ export const EVALUATION_ERROR_CODES: Readonly<Record<SafeCode, Readonly<CodeInfo
   'evidence.not_terminal': { message: 'The request has not finished, so there is no complete evidence yet.', nextAction: 'fix_config', exitCode: 3 },
   'evidence.identity_mismatch': config('The evidence does not match the expected request, attempt or submitter.'),
   'evidence.malformed': config('The service returned evidence in an unexpected shape.'),
+  'evidence.reward_out_of_range': config('A scored reward is outside the reward scale declared by the policy. Fix the grader or the policy metric.scale.'),
   'evidence.incomplete': { message: 'The service returned incomplete evidence.', nextAction: 'fix_config', exitCode: 3 },
   'cost.unknown': { message: 'Cost evidence is missing for some outcomes.', nextAction: 'fix_config', exitCode: 3 },
   'analysis.nonfinite': config('An analysis input or result is not a finite number.'),

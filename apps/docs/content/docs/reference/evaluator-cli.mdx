@@ -16,7 +16,8 @@ The CLI checks your command line first. Then, for commands that run callbacks, i
 | `coverage` | Yes | Inspect local sources, package imports, and declared revision inputs. Keep the report private. |
 | `describe` | Yes | Print the public descriptor for the installed cases, runtime, and grader. |
 | `try` | Yes | Run `execute` and `grade` for one or a few cases with `--case`, print the output, and check every returned shape. It needs no service. |
-| `doctor` | Yes | Check setup with `--config` and a `--bundle`, `--handoff`, or named run. You can include `--policy`. |
+| `doctor` | Yes | Check setup with `--config` and a `--bundle`, `--handoff`, or named run. With `--policy`, `policyReadiness` reports whether the cases and repetitions meet the policy and its minimum detectable effect. |
+| `plan` | Yes | Size an evaluation for `--policy` before running it: minimum detectable effect and simulated pass rates. Accepts `--aa` with an A/A comparison, `--effects`, `--simulations` and `--seed`. Exits 3 when the inventory is too small for the policy. |
 | `compare` | Yes | Run a downloaded handoff, or create and run a named comparison from a complete bundle payload. Use `compare --local --parent PAYLOAD --candidate PAYLOAD` to compare two payload files or folders without a service. The local result is advisory. |
 | `request` | Yes | Create a handoff from a bundle, channel, payload, and durable `--intent`. Write the handoff with `--out`. |
 | `run` | Yes | Execute an existing request with the evaluator config and handoff or name. |
@@ -25,6 +26,7 @@ The CLI checks your command line first. Then, for commands that run callbacks, i
 | `status` | No | Inspect request state and optional reported activity. |
 | `interrupt` | No | Record interruption with an explicit `--reason`. Check the original worker separately for termination. |
 | `verify-export` | No | Validate a review export through its `--manifest`. |
+| `pull` | No | Save a channel's published version as a payload file to edit, with `--config`, `--bundle`, optional `--channel` (default `stable`) and `--out`. |
 
 ## Common invocations
 
@@ -77,7 +79,8 @@ Paths can be relative. The CLI resolves them against the current directory.
 | `--case ID[,ID…]` | `try` | Cases to try. Defaults to the first case. |
 | `--intent FILE` | `request` | Durable request intent, reused for recovery. |
 | `--out PATH` | `request`, `export`, `compare --local` | Handoff file to write, a new export directory, or a new local report folder. |
-| `--policy POLICY` | `compare`, `doctor`, `request`, `check` | Quality policy JSON. |
+| `--policy POLICY` | `compare`, `doctor`, `request`, `check`, `plan` | Quality policy JSON. |
+| `--aa FILE`, `--effects LIST`, `--simulations N`, `--seed N` | `plan` | An A/A comparison to calibrate noise, effects to simulate, the simulation count (0–5000) and the random seed. |
 | `--selection FILE` | `export` | Artifact selection for `toReviewArtifact`. |
 | `--manifest FILE` | `verify-export` | Export manifest. |
 | `--reason REASON` | `interrupt` | Why the run is interrupted. |

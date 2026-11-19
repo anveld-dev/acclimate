@@ -4,12 +4,49 @@ import json
 from pathlib import Path
 import unittest
 
+from acclimate._student_t import CONFIDENCE_LEVELS, NORMAL_QUANTILES, QUANTILES, student_t_quantile
 from acclimate.evaluation_policy import (
-    PolicyError, check_comparison, parse_evaluation_policy, validate_evaluation_policy,
+    CONNECTED_POLICY_DEFAULTS, RESERVED_POLICY_IDS, PolicyError, check_comparison, parse_evaluation_policy,
+    validate_evaluation_policy,
 )
 
 
-FIXTURES = json.loads((Path(__file__).resolve().parents[2] / "contracts/fixtures/evaluation-policy/vectors.json").read_text())
+CONTRACTS = Path(__file__).resolve().parents[2] / "contracts/fixtures"
+FIXTURES = json.loads((CONTRACTS / "evaluation-policy/vectors.json").read_text())
+INFERENCE = json.loads((CONTRACTS / "evaluation-policy/inference-vectors.json").read_text())
+CONFIDENCE = json.loads((CONTRACTS / "connected-confidence-decisions.json").read_text())
+STUDENT_T = json.loads((CONTRACTS / "evaluation-analysis/student-t.json").read_text())
+SUMMARY_FIELDS = ("parentMean", "candidateMean", "orientedMeanImprovement", "worstCaseRegression",
+                  "candidateTaskFailures", "protectedCandidateTaskFailures", "parentTaskFailures")
+
+
+def _outcome(value):
+    if value is None:
+        return {"executionStatus": "infrastructure_failed", "gradingStatus": "missing", "reward": None,
+                "outputRef": None, "error": "execution_failed", "usage": None}
+    if isinstance(value, dict):
+        return {"executionStatus": "task_failed", "gradingStatus": "scored", "reward": value["taskFailed"],
+                "outputRef": None, "error": None, "usage": None}
+    return {"executionStatus": "completed", "gradingStatus": "scored", "reward": value,
+            "outputRef": None, "error": None, "usage": None}
+
+
+def expand_inference_vector(vector):
+    """Expand a compact shared inference vector into check_comparison keyword arguments."""
+    base = copy.deepcopy(FIXTURES["vectors"][0])
+    base["policy"].pop("inference")
+    results = [{"caseId": case["id"], "repetition": repetition, "parent": _outcome(parent),
+                "candidate": _outcome(case["candidate"][repetition])}
+               for case in vector["cases"] for repetition, parent in enumerate(case["parent"])]
+    keys = [{"caseId": row["caseId"], "repetition": row["repetition"]} for row in results]
+    base["comparison"].update(results=results, expectedCases=keys)
+    base["descriptor"]["expectedCases"] = keys
+    options = {"stage": "stage", "replayPassed": "replay_passed",
+               "calibratedStandardDeviation": "calibrated_standard_deviation",
+               "calibrationEffectiveRepetitions": "calibration_effective_repetitions"}
+    return {"comparison": base["comparison"], "expected_descriptor": base["descriptor"],
+            "expected_binding": base["binding"], "policy": {**base["policy"], **vector["policy"]},
+            **{options[name]: value for name, value in vector.get("options", {}).items()}}
 
 
 def run(vector):
@@ -133,6 +170,99 @@ class EvaluationPolicyTests(unittest.TestCase):
         source["comparison"]["runtime"]["privateName"] = "secret-canary"
         source["descriptor"]["runtime"]["privateName"] = "secret-canary"
         self.assertNotIn("secret-canary", json.dumps(run(source)))
+
+
+    def test_shared_inference_vectors_match_typescript_exactly(self):
+        for vector in INFERENCE["vectors"]:
+            with self.subTest(vector=vector["name"]):
+                expected = vector["expected"]
+                if "error" in expected:
+                    with self.assertRaises(PolicyError) as caught:
+                        check_comparison(**expand_inference_vector(vector))
+                    self.assertEqual(caught.exception.code, expected["error"])
+                    continue
+                result = check_comparison(**expand_inference_vector(vector))
+                self.assertEqual({
+                    "verdict": result["verdict"], "code": result["code"], "checks": result["checks"],
+                    "summary": {name: result["summary"][name] for name in SUMMARY_FIELDS},
+                    "perCaseChecks": result["perCaseChecks"], "interpretation": result["interpretation"],
+                    "inference": result["inference"],
+                }, expected)
+                # Exact float identity, not just numeric equality within a tolerance.
+                for name in ("lowerBound", "sd", "standardError", "criticalValue", "meanDifference"):
+                    actual, wanted = result["inference"][name], expected["inference"][name]
+                    self.assertEqual(None if actual is None else float(actual).hex(),
+                                     None if wanted is None else float(wanted).hex(), name)
+
+    def test_shared_connected_confidence_decisions(self):
+        for decision in CONFIDENCE:
+            with self.subTest(decision=decision["name"]):
+                connected = CONNECTED_POLICY_DEFAULTS["audit" if decision["stage"] == "audit" else "development"]
+                base = copy.deepcopy(FIXTURES["vectors"][0])
+                template = base["comparison"]["results"][0]
+                offset = decision.get("rewardOffset", 0)
+                rows = []
+                for index, gain in enumerate(decision["gains"]):
+                    for repetition in range(decision.get("evaluationRepetitions", 1)):
+                        missing_parent = index in decision.get("missingParent", [])
+                        missing_candidate = index in decision.get("missingCandidate", [])
+                        parent = {**template["parent"], "reward": None if missing_parent else offset + max(0, -gain)}
+                        candidate = {**template["candidate"], "reward": 1 if missing_parent else (
+                            None if missing_candidate else offset + max(0, gain))}
+                        if missing_parent:
+                            parent["gradingStatus"] = "missing"
+                        if missing_candidate:
+                            candidate["gradingStatus"] = "missing"
+                        rows.append({"caseId": str(index), "repetition": repetition, "parent": parent, "candidate": candidate})
+                keys = [{"caseId": row["caseId"], "repetition": row["repetition"]} for row in rows]
+                base["comparison"].update(results=rows, expectedCases=keys)
+                base["descriptor"]["expectedCases"] = keys
+                policy = {**base["policy"], "id": "connected-audit" if decision["stage"] == "audit" else "connected-development",
+                          "metric": {**base["policy"]["metric"], "scale": connected["scale"]},
+                          "schemaVersion": decision.get("schemaVersion", 2),
+                          "minimumMeanImprovement": decision.get("minimumMeanImprovement", 0),
+                          "inference": connected["inference"], "perCaseChecks": connected["perCaseChecks"]}
+                for name in ("auditMode", "nonInferiorityMargin"):
+                    if name in decision:
+                        policy[name] = decision[name]
+                result = check_comparison(
+                    comparison=base["comparison"], expected_descriptor=base["descriptor"],
+                    expected_binding=base["binding"], policy=policy, stage=decision["stage"],
+                    replay_passed=decision.get("replayPassed"),
+                    calibrated_standard_deviation=decision["calibratedStandardDeviation"],
+                    calibration_effective_repetitions=decision.get("calibrationEffectiveRepetitions"))
+                self.assertEqual(result["verdict"] == "pass", decision["pass"])
+
+    def test_student_t_table_matches_shared_fixture(self):
+        self.assertEqual(list(CONFIDENCE_LEVELS), STUDENT_T["confidenceLevels"])
+        self.assertEqual(list(NORMAL_QUANTILES), STUDENT_T["normalQuantiles"])
+        self.assertEqual([list(row) for row in QUANTILES], STUDENT_T["quantiles"])
+        for item in STUDENT_T["checks"]:
+            self.assertAlmostEqual(student_t_quantile(item["confidence"], item["df"]), item["value"], delta=5e-7)
+
+    def test_reserved_ids_need_the_connected_flag(self):
+        for policy_id in RESERVED_POLICY_IDS:
+            policy = {**FIXTURES["vectors"][0]["policy"], "id": policy_id}
+            with self.assertRaises(PolicyError):
+                validate_evaluation_policy(policy)
+            self.assertEqual(validate_evaluation_policy(policy, connected=True)["id"], policy_id)
+
+    def test_inference_block_validation(self):
+        base = {key: value for key, value in FIXTURES["vectors"][0]["policy"].items() if key != "inference"}
+        for inference in [{"method": "bootstrap"}, {"confidence": 0.95}, {"method": "paired-t", "minCases": 1},
+                          {"method": "paired-t", "minCases": 2.5}, {"method": "paired-t", "minRepetitions": 0},
+                          {"method": "paired-t", "sdFloor": -0.1}, {"method": "paired-t", "maximumMissingPercent": 51},
+                          {"method": "none", "sdFloor": 0.1}, {"method": "paired-t", "extra": True},
+                          {"method": "paired-t", "confidence": True}]:
+            with self.subTest(inference=inference), self.assertRaises(PolicyError):
+                validate_evaluation_policy({**base, "inference": inference})
+        for scale in [{"minimum": 1, "maximum": 1}, {"minimum": 0}, {"minimum": 0, "maximum": "x"}]:
+            with self.subTest(scale=scale), self.assertRaises(PolicyError):
+                validate_evaluation_policy({**base, "metric": {**base["metric"], "scale": scale}})
+        parsed = validate_evaluation_policy({**base, "perCaseChecks": "protected-cases",
+                                             "inference": {"method": "paired-t", "confidence": 0.975, "minCases": 20, "sdFloor": 0}})
+        self.assertEqual(parsed["inference"], {"method": "paired-t", "confidence": 0.975, "minCases": 20, "sdFloor": 0})
+        self.assertEqual(parsed["perCaseChecks"], "protected-cases")
 
 
 if __name__ == "__main__":

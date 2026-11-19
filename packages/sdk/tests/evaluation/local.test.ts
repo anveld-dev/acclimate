@@ -41,6 +41,8 @@ const policy = JSON.stringify({
   minimumMeanImprovement: 0,
   maximumCaseRegression: 0,
   requiredCases: [],
+  // A four-case fixture: compare point estimates instead of the paired-t default.
+  inference: { method: 'none' },
 });
 
 type Definition = EvaluationDefinition<number, number, { text: string; n: number }>;

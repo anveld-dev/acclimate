@@ -143,7 +143,9 @@ class LocalComparisonTests(LocalTestCase):
         policy = json.dumps({"schemaVersion": 1, "id": "no-regression", "revision": "1",
                              "metric": {"name": "reward", "unit": "reward", "direction": "higher"},
                              "aggregation": "equal-case-means", "minimumMeanImprovement": 0,
-                             "maximumCaseRegression": 0, "requiredCases": []})
+                             "maximumCaseRegression": 0, "requiredCases": [],
+                             # A small fixture: compare point estimates instead of the paired-t default.
+                             "inference": {"method": "none"}})
         scored = score_local_comparison(self.run_local(make_app()), policy)
         self.assertEqual(scored["policy"]["verdict"], "pass")
         self.assertTrue(scored["policy"]["advisory"])

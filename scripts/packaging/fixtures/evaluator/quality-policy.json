@@ -9,5 +9,6 @@
   "candidateThreshold": 1,
   "requiredCases": ["lost-response", "clean"],
   "maximumCandidateTaskFailures": 0,
-  "cost": { "maximumCandidateUsd": 0 }
+  "cost": { "maximumCandidateUsd": 0 },
+  "inference": { "method": "none" }
 }

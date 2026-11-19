@@ -1,16 +1,47 @@
-import { studentTCritical } from './student-t.js';
+import { isConfidenceLevel, studentTQuantile, type ConfidenceLevel } from './student-t.js';
 import { EvaluationError } from './errors.js';
-import type { Comparison, EvaluationDescriptor } from '../types.js';
+import type { Comparison, EvaluationDescriptor, PolicyReceiptInference } from '../types.js';
 import { addGap, scalarGap, type EvidenceGaps } from './evidence-gaps.js';
 import { validateEvaluationDescriptor, evaluationDescriptorDifferences } from '../validation.js';
 
-/** Pure, descriptive policy calculation. It neither fetches nor authenticates evidence. */
+/**
+ * How the policy turns paired case means into a decision.
+ *
+ * `paired-t` (the default) treats the cases as a sample from the tasks you care about and
+ * requires a one-sided Student t lower confidence bound on the equal-case mean difference to
+ * clear the threshold. `none` compares point estimates for these exact cases and has no noise
+ * model; use it only for deterministic graders or fixture tests.
+ */
+export interface PolicyInference {
+  method: 'paired-t' | 'none';
+  /** One-sided confidence level for the lower bound. Default 0.95. paired-t only. */
+  confidence?: ConfidenceLevel;
+  /** Fewer distinct cases make the verdict indeterminate. Default 10 (paired-t) or 1 (none). */
+  minCases?: number;
+  /** Fewer planned repetitions for any case make the verdict indeterminate. Default 1. */
+  minRepetitions?: number;
+  /** Lower limit on the case-difference standard deviation. Default 0.1 x reward-scale width. */
+  sdFloor?: number;
+  /** Missing or infrastructure-failed trials allowed per arm before evidence is incomplete. */
+  maximumMissingPercent?: number;
+}
+
+export interface PolicyMetric {
+  name: string;
+  unit: string;
+  direction: 'higher' | 'lower';
+  /** Declared reward range. Scored rewards outside it are invalid evidence. */
+  scale?: { minimum: number; maximum: number };
+}
+
+/** Pure policy calculation. It neither fetches nor authenticates evidence. */
 export interface EvaluationPolicyV1 {
   schemaVersion: 1;
   id: string;
   revision: string;
-  metric: { name: string; unit: string; direction: 'higher' | 'lower' };
+  metric: PolicyMetric;
   aggregation: 'equal-case-means';
+  /** Threshold for the lower confidence bound (or the point estimate when method is none). */
   minimumMeanImprovement: number;
   maximumCaseRegression: number;
   candidateThreshold?: number;
@@ -23,6 +54,13 @@ export interface EvaluationPolicyV1 {
   minimumCostSavingsUsd?: number;
   /** Minimum paired repetitions required for every case in the stage inventory. */
   minimumRepetitionsPerCase?: number;
+  /** Statistical method and data requirements. Omitted means the paired-t defaults. */
+  inference?: PolicyInference;
+  /**
+   * Cases covered by the per-case regression and task-failure checks. Default `all-cases` in every
+   * schema version. `protected-cases` limits them to required and threshold-protected cases.
+   */
+  perCaseChecks?: 'all-cases' | 'protected-cases';
 }
 
 export interface EvaluationPolicyV2 extends Omit<EvaluationPolicyV1, 'schemaVersion'> {
@@ -39,6 +77,58 @@ export interface EvaluationPolicyV3 extends Omit<EvaluationPolicyV2, 'schemaVers
 
 export type EvaluationPolicy = EvaluationPolicyV1 | EvaluationPolicyV2 | EvaluationPolicyV3;
 
+/** Policy ids used by the service's connected-learning defaults. General policies cannot use them. */
+/**
+ * The explicit settings the service's connected-learning default policies declare. Development
+ * and cumulative checks use a 90% bound; audits use 95%. Both rely on the A/A calibration floor
+ * passed at check time instead of a fixed SD floor.
+ */
+export const connectedPolicyDefaults = {
+  development: {
+    inference: {
+      method: 'paired-t',
+      confidence: 0.9,
+      minCases: 2,
+      minRepetitions: 1,
+      sdFloor: 0,
+      maximumMissingPercent: 15,
+    },
+    perCaseChecks: 'protected-cases',
+    scale: { minimum: 0, maximum: 1 },
+  },
+  audit: {
+    inference: {
+      method: 'paired-t',
+      confidence: 0.95,
+      minCases: 2,
+      minRepetitions: 1,
+      sdFloor: 0,
+      maximumMissingPercent: 15,
+    },
+    perCaseChecks: 'protected-cases',
+    scale: { minimum: 0, maximum: 1 },
+  },
+} as const satisfies Record<
+  'development' | 'audit',
+  {
+    inference: PolicyInference;
+    perCaseChecks: 'protected-cases';
+    scale: { minimum: number; maximum: number };
+  }
+>;
+
+export const reservedPolicyIds = ['connected-development', 'connected-audit'] as const;
+
+/** Inference settings applied when a policy omits a field. */
+export const defaultInference = {
+  method: 'paired-t',
+  confidence: 0.95,
+  minCases: 10,
+  minRepetitions: 1,
+  sdFloorScaleFraction: 0.1,
+  maximumMissingPercent: 15,
+} as const;
+
 export interface ExpectedComparisonBinding {
   parentVersionId: string;
   candidateVersionId: string;
@@ -49,6 +139,9 @@ export interface ExpectedComparisonBinding {
   comparisonId?: string;
   submitter?: string;
 }
+
+/** The statistics behind the mean-difference decision. Every field is reported, even when null. */
+export type PolicyInferenceResult = PolicyReceiptInference;
 
 export interface PolicyVerdict {
   evidenceGaps?: EvidenceGaps;
@@ -64,15 +157,22 @@ export interface PolicyVerdict {
     parentMean: number | null;
     candidateMean: number | null;
     orientedMeanImprovement: number | null;
+    /** Largest oriented case regression over all cases. */
     worstCaseRegression: number | null;
+    /** Candidate task failures over all cases (task failed, infrastructure failed or unscored). */
     candidateTaskFailures: number;
+    /** The same count for required and threshold-protected cases only. */
+    protectedCandidateTaskFailures: number;
+    parentTaskFailures: number;
     parentCostUsd: number | null;
     candidateCostUsd: number | null;
     costIncreaseUsd: number | null;
     parentUnknownCosts: number;
     candidateUnknownCosts: number;
   };
-  interpretation: 'descriptive-policy-check';
+  perCaseChecks: 'all-cases' | 'protected-cases';
+  inference: PolicyInferenceResult;
+  interpretation: 'descriptive-policy-check' | 'statistical-policy-check';
 }
 
 const requiredPolicyFields = [
@@ -95,7 +195,8 @@ type PolicyErrorCode =
   | 'policy.invalid'
   | 'policy.inventory_incompatible'
   | 'evidence.identity_mismatch'
-  | 'evidence.malformed';
+  | 'evidence.malformed'
+  | 'evidence.reward_out_of_range';
 export class PolicyError extends EvaluationError {
   declare readonly code: PolicyErrorCode;
   readonly phase = 'policy';
@@ -130,7 +231,9 @@ export class PolicyError extends EvaluationError {
             ? 'The evaluation policy or trusted inventory is invalid.'
             : code === 'evidence.identity_mismatch'
               ? 'The comparison does not match the expected evaluation identity.'
-              : 'The comparison evidence is malformed.') +
+              : code === 'evidence.reward_out_of_range'
+                ? 'A scored reward is outside the reward scale declared by the policy.'
+                : 'The comparison evidence is malformed.') +
         (detail.field ? ` ${detail.field}${detail.reason ? `: ${detail.reason}` : ''}` : ''),
     });
     this.name = 'PolicyError';
@@ -163,9 +266,51 @@ function invalid(): never {
   throw new PolicyError('policy.invalid');
 }
 
+const integerIn = (value: unknown, minimum: number, maximum: number): value is number =>
+  Number.isInteger(value) && (value as number) >= minimum && (value as number) <= maximum;
+
+function validateInference(value: unknown): PolicyInference {
+  if (
+    !record(value) ||
+    !fields(
+      value,
+      ['method', 'confidence', 'minCases', 'minRepetitions', 'sdFloor', 'maximumMissingPercent'],
+      ['method'],
+    ) ||
+    (value.method !== 'paired-t' && value.method !== 'none') ||
+    (value.method === 'none' && (own(value, 'confidence') || own(value, 'sdFloor'))) ||
+    (own(value, 'confidence') && !isConfidenceLevel(value.confidence)) ||
+    (own(value, 'minCases') &&
+      !integerIn(value.minCases, value.method === 'paired-t' ? 2 : 1, 1000)) ||
+    (own(value, 'minRepetitions') && !integerIn(value.minRepetitions, 1, 1000)) ||
+    (own(value, 'sdFloor') && !nonnegative(value.sdFloor)) ||
+    (own(value, 'maximumMissingPercent') && !integerIn(value.maximumMissingPercent, 0, 50))
+  )
+    invalid();
+  return {
+    method: value.method,
+    ...(own(value, 'confidence') && { confidence: value.confidence as ConfidenceLevel }),
+    ...(own(value, 'minCases') && { minCases: value.minCases as number }),
+    ...(own(value, 'minRepetitions') && { minRepetitions: value.minRepetitions as number }),
+    ...(own(value, 'sdFloor') && { sdFloor: value.sdFloor as number }),
+    ...(own(value, 'maximumMissingPercent') && {
+      maximumMissingPercent: value.maximumMissingPercent as number,
+    }),
+  };
+}
+
+export interface PolicyValidationOptions {
+  /**
+   * Accept the service's reserved connected-learning ids. Only offline checks of a connected
+   * selection policy need this; the id never changes how the policy is evaluated.
+   */
+  connected?: boolean;
+}
+
 export function validateEvaluationPolicy(
   value: unknown,
   expectedDescriptor?: EvaluationDescriptor,
+  options: PolicyValidationOptions = {},
 ): EvaluationPolicy {
   if (!record(value)) invalid();
   const missing = requiredPolicyFields.filter((key) => !own(value, key));
@@ -189,6 +334,8 @@ export function validateEvaluationPolicy(
         'stepMargin',
         'auditMode',
         'targetEffect',
+        'inference',
+        'perCaseChecks',
       ],
       [],
     ) ||
@@ -202,15 +349,26 @@ export function validateEvaluationPolicy(
     (value.nonInferiorityMargin != null &&
       (value.schemaVersion === 1 || !nonnegative(value.nonInferiorityMargin))) ||
     !policyString(value.id, 128) ||
+    (!options.connected && (reservedPolicyIds as readonly unknown[]).includes(value.id)) ||
     !policyString(value.revision) ||
     value.aggregation !== 'equal-case-means' ||
     !finite(value.minimumMeanImprovement) ||
     !nonnegative(value.maximumCaseRegression) ||
     !record(metric) ||
-    !fields(metric, requiredMetricFields, []) ||
+    !fields(metric, [...requiredMetricFields, 'scale'], []) ||
     !policyString(metric.name, 128) ||
     !policyString(metric.unit, 128) ||
     !['higher', 'lower'].includes(metric.direction as string) ||
+    (own(metric, 'scale') &&
+      (!record(metric.scale) ||
+        !fields(metric.scale, ['minimum', 'maximum'], ['minimum', 'maximum']) ||
+        !finite(metric.scale.minimum) ||
+        !finite(metric.scale.maximum) ||
+        !(metric.scale.maximum > metric.scale.minimum) ||
+        !Number.isFinite(metric.scale.maximum - metric.scale.minimum))) ||
+    (value.perCaseChecks != null &&
+      value.perCaseChecks !== 'all-cases' &&
+      value.perCaseChecks !== 'protected-cases') ||
     !Array.isArray(value.requiredCases) ||
     value.requiredCases.length > 1000 ||
     value.requiredCases.some((caseId) => !policyString(caseId)) ||
@@ -227,6 +385,7 @@ export function validateEvaluationPolicy(
         value.minimumRepetitionsPerCase > 1000))
   )
     invalid();
+  const inference = value.inference != null ? validateInference(value.inference) : undefined;
   let cost: EvaluationPolicyV1['cost'];
   if (value.cost != null) {
     if (
@@ -270,6 +429,9 @@ export function validateEvaluationPolicy(
     )
       throw new PolicyError('policy.inventory_incompatible');
   }
+  const scale = record(metric.scale)
+    ? { minimum: metric.scale.minimum as number, maximum: metric.scale.maximum as number }
+    : undefined;
   return {
     ...(value.schemaVersion !== 1
       ? {
@@ -292,6 +454,7 @@ export function validateEvaluationPolicy(
       name: metric.name as string,
       unit: metric.unit as string,
       direction: metric.direction as 'higher' | 'lower',
+      ...(scale && { scale }),
     },
     aggregation: 'equal-case-means',
     minimumMeanImprovement: value.minimumMeanImprovement as number,
@@ -313,6 +476,10 @@ export function validateEvaluationPolicy(
     ...(typeof minimumRepetitions === 'number'
       ? { minimumRepetitionsPerCase: minimumRepetitions }
       : {}),
+    ...(inference && { inference }),
+    ...(value.perCaseChecks != null && {
+      perCaseChecks: value.perCaseChecks as 'all-cases' | 'protected-cases',
+    }),
   };
 }
 
@@ -320,6 +487,7 @@ export function validateEvaluationPolicy(
 export function parseEvaluationPolicy(
   text: string,
   expectedDescriptor?: EvaluationDescriptor,
+  options: PolicyValidationOptions = {},
 ): {
   policy: EvaluationPolicy;
   sha256: string;
@@ -332,7 +500,7 @@ export function parseEvaluationPolicy(
     return invalid();
   }
   return {
-    policy: validateEvaluationPolicy(value, expectedDescriptor),
+    policy: validateEvaluationPolicy(value, expectedDescriptor, options),
     sha256: sha256(encoder.encode(text)),
   };
 }
@@ -484,14 +652,32 @@ function sha256(input: Uint8Array): string {
 
 const key = (value: { caseId: string; repetition: number }) =>
   JSON.stringify([value.caseId, value.repetition]);
+const utf8Cache = new Map<string, Uint8Array>();
+const utf8 = (value: string) => {
+  let bytes = utf8Cache.get(value);
+  if (!bytes) {
+    if (utf8Cache.size > 4096) utf8Cache.clear();
+    bytes = encoder.encode(value);
+    utf8Cache.set(value, bytes);
+  }
+  return bytes;
+};
 const compareUtf8 = (left: string, right: string): number => {
-  const a = encoder.encode(left),
-    b = encoder.encode(right);
+  if (left === right) return 0;
+  const a = utf8(left),
+    b = utf8(right);
   for (let index = 0; index < Math.min(a.length, b.length); index++)
     if (a[index] !== b[index]) return a[index] - b[index];
   return a.length - b.length;
 };
 
+/**
+ * Check a comparison against a policy.
+ *
+ * Without `stage`, the mean-difference check compares the bound with `minimumMeanImprovement`.
+ * Connected learning passes `stage` to select its development, cumulative or audit threshold;
+ * the policy id never changes the calculation.
+ */
 export function checkComparison(options: {
   comparison: Comparison;
   expectedDescriptor: EvaluationDescriptor;
@@ -511,12 +697,15 @@ export function checkComparison(options: {
   } catch {
     return invalid();
   }
-  const policy = validateEvaluationPolicy(options.policy, descriptor);
-  const confidenceGate =
-    policy.schemaVersion !== 1 ||
-    options.stage !== undefined ||
-    policy.id === 'connected-development' ||
-    policy.id === 'connected-audit';
+  const policy = validateEvaluationPolicy(options.policy, descriptor, {
+    connected: options.stage !== undefined,
+  });
+  if (
+    (options.stage !== undefined &&
+      !['development', 'cumulative', 'audit'].includes(options.stage)) ||
+    (options.replayPassed !== undefined && typeof options.replayPassed !== 'boolean')
+  )
+    invalid();
   const binding = options.expectedBinding;
   if (
     !record(binding) ||
@@ -669,19 +858,21 @@ export function checkComparison(options: {
   const ordered = [...expected.values()].sort(
     (a, b) => compareUtf8(a.caseId, b.caseId) || a.repetition - b.repetition,
   );
+  const usable = (outcome: Comparison['results'][number]['parent'] | undefined) =>
+    !!outcome && outcome.executionStatus !== 'infrastructure_failed' && finite(outcome.reward);
   const comparable = ordered.filter((item) => {
     const pair = pairs.get(key(item));
     return (
       pair &&
       [pair.parent, pair.candidate].every(
-        (outcome) =>
-          outcome.executionStatus !== 'infrastructure_failed' &&
-          outcome.gradingStatus === 'scored' &&
-          finite(outcome.reward),
+        (outcome) => usable(outcome) && outcome.gradingStatus === 'scored',
       )
     );
   });
-  const distinctCases = new Set(ordered.map((item) => item.caseId)).size;
+  const repetitionsByCase = new Map<string, number>();
+  for (const item of ordered)
+    repetitionsByCase.set(item.caseId, (repetitionsByCase.get(item.caseId) ?? 0) + 1);
+  const distinctCases = repetitionsByCase.size;
   const gaps: EvidenceGaps = { total: 0, rows: [] };
   for (const item of ordered) {
     const pair = pairs.get(key(item));
@@ -698,6 +889,32 @@ export function checkComparison(options: {
         addGap(gaps, item, side, 'usage', 'missing_cost');
     }
   }
+  const settings = resolveInference(policy);
+  const statistical = settings.method === 'paired-t';
+  const stage = options.stage ?? 'general';
+  const audit = stage === 'audit';
+  const modern = policy.schemaVersion === 3;
+  const decision: Pick<PolicyInferenceResult, 'check' | 'threshold' | 'thresholdSource'> =
+    audit && (!modern || policy.auditMode !== 'superiority')
+      ? {
+          check: 'policy.non_inferiority',
+          threshold: -(policy.schemaVersion === 1
+            ? 0
+            : (policy.nonInferiorityMargin ?? (modern ? 0.03 : 0))),
+          thresholdSource: 'nonInferiorityMargin',
+        }
+      : modern && stage === 'development'
+        ? {
+            check: 'policy.step_non_inferiority',
+            threshold: -(policy.stepMargin ?? 0.03),
+            thresholdSource: 'stepMargin',
+          }
+        : {
+            check: 'policy.minimum_mean_improvement',
+            threshold: policy.minimumMeanImprovement,
+            thresholdSource: 'minimumMeanImprovement',
+          };
+  const perCaseChecks = policy.perCaseChecks ?? 'all-cases';
   const result: PolicyVerdict = {
     ...(gaps.total ? { evidenceGaps: gaps } : {}),
     schemaVersion: 1,
@@ -714,13 +931,40 @@ export function checkComparison(options: {
       orientedMeanImprovement: null,
       worstCaseRegression: null,
       candidateTaskFailures: 0,
+      protectedCandidateTaskFailures: 0,
+      parentTaskFailures: 0,
       parentCostUsd: null,
       candidateCostUsd: null,
       costIncreaseUsd: null,
       parentUnknownCosts: 0,
       candidateUnknownCosts: 0,
     },
-    interpretation: 'descriptive-policy-check',
+    perCaseChecks,
+    inference: {
+      method: settings.method,
+      estimand: statistical ? 'sampled-cases' : 'observed-cases',
+      status: 'incomplete',
+      stage,
+      ...decision,
+      confidence: statistical ? settings.confidence : null,
+      n: distinctCases,
+      minCases: settings.minCases,
+      minRepetitions: settings.minRepetitions,
+      repetitions: Math.min(...repetitionsByCase.values()),
+      meanDifference: null,
+      sd: null,
+      sdFloor: null,
+      sdFloorSource: null,
+      calibratedSd: null,
+      sdUsed: null,
+      standardError: null,
+      df: null,
+      criticalValue: null,
+      lowerBound: null,
+      imputed: { parent: 0, candidate: 0 },
+      maximumMissingPercent: settings.maximumMissingPercent,
+    },
+    interpretation: statistical ? 'statistical-policy-check' : 'descriptive-policy-check',
   };
   for (const side of ['parent', 'candidate'] as const) {
     const unknown = ordered.filter(
@@ -730,30 +974,25 @@ export function checkComparison(options: {
   }
   const protectedCase = (id: string) =>
     policy.requiredCases.includes(id) || own(policy.protectedCaseThresholds ?? {}, id);
-  result.summary.candidateTaskFailures = ordered.filter((item) => {
-    const outcome = pairs.get(key(item))?.candidate;
-    return (
-      outcome &&
-      (confidenceGate
-        ? protectedCase(item.caseId) &&
-          (outcome.executionStatus === 'task_failed' ||
-            outcome.executionStatus === 'infrastructure_failed' ||
-            !finite(outcome.reward))
-        : outcome.executionStatus === 'task_failed')
-    );
-  }).length;
-  const missingOverCap = (['parent', 'candidate'] as const).some(
-    (side) =>
-      ordered.filter((item) => {
-        const outcome = pairs.get(key(item))?.[side];
-        return (
-          !outcome || outcome.executionStatus === 'infrastructure_failed' || !finite(outcome.reward)
-        );
-      }).length *
-        100 >
-      ordered.length * (confidenceGate ? 15 : 0),
-  );
-  if (pairs.size !== ordered.length || missingOverCap) {
+  const taskFailed = (outcome: Comparison['results'][number]['parent'] | undefined) =>
+    !!outcome && (outcome.executionStatus === 'task_failed' || !usable(outcome));
+  const failures = (side: 'parent' | 'candidate', only?: (id: string) => boolean) =>
+    ordered.filter(
+      (item) => (!only || only(item.caseId)) && taskFailed(pairs.get(key(item))?.[side]),
+    ).length;
+  result.summary.candidateTaskFailures = failures('candidate');
+  result.summary.protectedCandidateTaskFailures = failures('candidate', protectedCase);
+  result.summary.parentTaskFailures = failures('parent');
+  const missing = (side: 'parent' | 'candidate') =>
+    ordered.filter((item) => !usable(pairs.get(key(item))?.[side])).length;
+  result.inference.imputed = { parent: missing('parent'), candidate: missing('candidate') };
+  if (
+    pairs.size !== ordered.length ||
+    (['parent', 'candidate'] as const).some(
+      (side) => missing(side) * 100 > ordered.length * settings.maximumMissingPercent,
+    )
+  ) {
+    result.inference.imputed = { parent: 0, candidate: 0 };
     result.checks.push({ code: 'evidence.incomplete', result: 'unknown' });
     return result;
   }
@@ -781,8 +1020,22 @@ export function checkComparison(options: {
   };
   const check = (code: string, passed: boolean) =>
     result.checks.push({ code, result: passed ? 'pass' : 'fail' });
+  const scale = policy.metric.scale;
+  let minimum = Infinity;
+  let maximum = -Infinity;
+  for (const item of ordered) {
+    const pair = pairs.get(key(item))!;
+    for (const outcome of [pair.parent, pair.candidate]) {
+      if (!usable(outcome)) continue;
+      const reward = outcome.reward as number;
+      if (scale && (reward < scale.minimum || reward > scale.maximum))
+        throw new PolicyError('evidence.reward_out_of_range');
+      minimum = Math.min(minimum, reward);
+      maximum = Math.max(maximum, reward);
+    }
+  }
   try {
-    const groups = new Map<string, typeof comparison.results>();
+    const groups = new Map<string, Array<(typeof comparison.results)[number]>>();
     for (const item of ordered) {
       const rows = groups.get(item.caseId) ?? [];
       rows.push(pairs.get(key(item))!);
@@ -792,36 +1045,20 @@ export function checkComparison(options: {
       candidateMeans: number[] = [],
       improvements: number[] = [];
     const orientation = policy.metric.direction === 'higher' ? 1 : -1;
-    const scored = (outcome: Comparison['results'][number]['parent']) =>
-      outcome.executionStatus === 'infrastructure_failed' ? null : outcome.reward;
-    let minimum = Infinity;
-    let maximum = -Infinity;
-    for (const pair of pairs.values()) {
-      for (const outcome of [pair.parent, pair.candidate]) {
-        const reward = scored(outcome);
-        if (reward !== null) {
-          minimum = Math.min(minimum, reward);
-          maximum = Math.max(maximum, reward);
-        }
-      }
-    }
-    if (confidenceGate && (minimum < 0 || maximum > 1)) {
-      result.checks.push({ code: 'evidence.reward_out_of_range', result: 'fail' });
-      result.code = 'policy.fail';
-      result.verdict = 'fail';
-      return result;
-    }
     const worstReward = orientation > 0 ? minimum : maximum;
     const bestReward = orientation > 0 ? maximum : minimum;
-    let protectedRegression = 0;
+    const reward = (outcome: Comparison['results'][number]['parent'], fallback: number) =>
+      usable(outcome) ? (outcome.reward as number) : fallback;
+    let checkedRegression = 0;
     for (const [id, rows] of groups) {
-      const parent = mean(rows.map((pair) => scored(pair.parent) ?? bestReward));
-      const candidate = mean(rows.map((pair) => scored(pair.candidate) ?? worstReward));
+      const parent = mean(rows.map((pair) => reward(pair.parent, bestReward)));
+      const candidate = mean(rows.map((pair) => reward(pair.candidate, worstReward)));
       const gain = arithmetic(orientation * arithmetic(candidate - parent));
       parentMeans.push(parent);
       candidateMeans.push(candidate);
       improvements.push(gain);
-      if (protectedCase(id)) protectedRegression = Math.max(protectedRegression, -gain);
+      if (perCaseChecks === 'all-cases' || protectedCase(id))
+        checkedRegression = Math.max(checkedRegression, -gain);
       const thresholds = policy.protectedCaseThresholds ?? {};
       if (own(thresholds, id))
         check(
@@ -829,56 +1066,82 @@ export function checkComparison(options: {
           rows.every(
             ({ candidate: outcome }) =>
               outcome.executionStatus === 'completed' &&
-              outcome.reward !== null &&
-              orientation * outcome.reward >= orientation * thresholds[id],
+              usable(outcome) &&
+              orientation * (outcome.reward as number) >= orientation * thresholds[id],
           ),
         );
     }
     const parentMean = mean(parentMeans),
       candidateMean = mean(candidateMeans),
       improvement = mean(improvements);
-    const worstRegression = Math.max(0, ...improvements.map((value) => -value));
     result.summary.parentMean = parentMean;
     result.summary.candidateMean = candidateMean;
     result.summary.orientedMeanImprovement = improvement;
-    result.summary.worstCaseRegression = worstRegression;
-    const stage = options.stage ?? (policy.id === 'connected-audit' ? 'audit' : 'development');
-    const audit = stage === 'audit';
-    const modern = policy.schemaVersion === 3;
-    const threshold =
-      audit && (!modern || policy.auditMode !== 'superiority')
-        ? -(policy.schemaVersion === 1 ? 0 : (policy.nonInferiorityMargin ?? (modern ? 0.03 : 0)))
-        : modern && stage === 'development'
-          ? -(policy.stepMargin ?? 0.03)
-          : policy.minimumMeanImprovement;
-    const variance =
-      total(improvements.map((gain) => (gain - improvement) ** 2)) /
-      Math.max(1, improvements.length - 1);
-    let calibrated = options.calibratedStandardDeviation ?? 0;
-    if (!nonnegative(calibrated)) throw new RangeError();
-    if (options.calibrationEffectiveRepetitions !== undefined) {
-      if (!nonnegative(options.calibrationEffectiveRepetitions)) throw new RangeError();
-      const inverseRepetitions = total([...groups.values()].map((rows) => 1 / rows.length));
-      const evaluated = groups.size / inverseRepetitions;
-      calibrated *= Math.sqrt(options.calibrationEffectiveRepetitions / evaluated);
+    result.summary.worstCaseRegression = Math.max(0, ...improvements.map((value) => -value));
+    const inference = result.inference;
+    const n = improvements.length;
+    inference.meanDifference = improvement;
+    // Identical case differences have exactly zero observed variance, whatever the rounding of
+    // their mean, so the check is on the values themselves.
+    const sd =
+      n < 2
+        ? null
+        : improvements.every((gain) => gain === improvements[0])
+          ? 0
+          : Math.sqrt(
+              total(improvements.map((gain) => (gain - improvement) * (gain - improvement))) /
+                (n - 1),
+            );
+    inference.sd = sd;
+    const insufficient: string[] = [];
+    if (n < settings.minCases) insufficient.push('inference.minimum_cases');
+    if (inference.repetitions < settings.minRepetitions)
+      insufficient.push('inference.minimum_repetitions');
+    let passed: boolean | null;
+    if (!statistical) {
+      inference.status = 'not_applicable';
+      passed = improvement >= decision.threshold;
+    } else {
+      let calibrated = options.calibratedStandardDeviation ?? 0;
+      if (!nonnegative(calibrated)) throw new RangeError();
+      if (options.calibrationEffectiveRepetitions !== undefined) {
+        if (!nonnegative(options.calibrationEffectiveRepetitions)) throw new RangeError();
+        const inverseRepetitions = total([...groups.values()].map((rows) => 1 / rows.length));
+        const evaluated = groups.size / inverseRepetitions;
+        calibrated *= Math.sqrt(options.calibrationEffectiveRepetitions / evaluated);
+      }
+      inference.calibratedSd =
+        options.calibratedStandardDeviation === undefined ? null : calibrated;
+      const floor =
+        settings.sdFloor !== undefined
+          ? { value: settings.sdFloor, source: 'declared' as const }
+          : scale
+            ? { value: 0.1 * (scale.maximum - scale.minimum), source: 'scale' as const }
+            : { value: 0.1 * arithmetic(maximum - minimum), source: 'observed-range' as const };
+      inference.sdFloor = floor.value;
+      inference.sdFloorSource = floor.source;
+      if (n >= 2) {
+        const used = Math.max(sd ?? 0, floor.value, calibrated);
+        inference.sdUsed = used;
+        inference.df = n - 1;
+        inference.criticalValue = studentTQuantile(settings.confidence, n - 1);
+        inference.standardError = used / Math.sqrt(n);
+        if (used === 0) insufficient.push('inference.zero_variance');
+        else
+          inference.lowerBound = arithmetic(
+            improvement - (inference.criticalValue * used) / Math.sqrt(n),
+          );
+      }
+      inference.status = insufficient.length ? 'insufficient_data' : 'estimated';
+      passed = insufficient.length ? null : inference.lowerBound! > decision.threshold;
     }
-    const bound =
-      improvements.length < 2
-        ? -Infinity
-        : improvement -
-          (studentTCritical(improvements.length, audit) *
-            Math.max(Math.sqrt(variance), calibrated)) /
-            Math.sqrt(improvements.length);
-    check(
-      'policy.minimum_mean_improvement',
-      confidenceGate
-        ? Number.isFinite(bound) && bound > threshold
-        : improvement >= policy.minimumMeanImprovement,
-    );
-    check(
-      'policy.maximum_case_regression',
-      (confidenceGate ? protectedRegression : worstRegression) <= policy.maximumCaseRegression,
-    );
+    if (insufficient.length) {
+      passed = null;
+      for (const code of insufficient) result.checks.push({ code, result: 'unknown' });
+      inference.status = 'insufficient_data';
+    }
+    if (passed !== null) check(decision.check, passed);
+    check('policy.maximum_case_regression', checkedRegression <= policy.maximumCaseRegression);
     if (policy.candidateThreshold !== undefined)
       check(
         'policy.candidate_threshold',
@@ -888,7 +1151,9 @@ export function checkComparison(options: {
     if (policy.maximumCandidateTaskFailures !== undefined)
       check(
         'policy.maximum_candidate_task_failures',
-        result.summary.candidateTaskFailures <= policy.maximumCandidateTaskFailures,
+        (perCaseChecks === 'all-cases'
+          ? result.summary.candidateTaskFailures
+          : result.summary.protectedCandidateTaskFailures) <= policy.maximumCandidateTaskFailures,
       );
     for (const side of ['parent', 'candidate'] as const) {
       if (result.summary[side === 'parent' ? 'parentUnknownCosts' : 'candidateUnknownCosts'] === 0)
@@ -918,14 +1183,18 @@ export function checkComparison(options: {
           result.summary.costIncreaseUsd <= policy.cost.maximumIncreaseUsd,
         );
     }
-    if (modern && stage === 'development' && improvement <= 0 && options.replayPassed !== true) {
+    if (modern && stage === 'development') {
+      // A step needs a benefit beyond non-inferiority: a point gain that reaches the policy's
+      // minimumMeanImprovement (and is positive), an attested replay, or a cost saving.
       const increase = result.summary.costIncreaseUsd;
       check(
         'policy.development_benefit',
-        policy.cost !== undefined &&
-          increase !== null &&
-          increase < 0 &&
-          -increase >= (policy.minimumCostSavingsUsd ?? 0),
+        (improvement > 0 && improvement >= policy.minimumMeanImprovement) ||
+          options.replayPassed === true ||
+          (policy.cost !== undefined &&
+            increase !== null &&
+            increase < 0 &&
+            -increase >= (policy.minimumCostSavingsUsd ?? 0)),
       );
     }
     if (!modern && policy.minimumCostSavingsUsd !== undefined) {
@@ -937,19 +1206,76 @@ export function checkComparison(options: {
           -result.summary.costIncreaseUsd >= policy.minimumCostSavingsUsd,
         );
     }
-  } catch {
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
     result.code = 'analysis.nonfinite';
     result.checks.push({ code: 'analysis.nonfinite', result: 'unknown' });
     return result;
   }
-  if (
-    !result.checks.some((check) => check.result === 'fail') &&
-    result.checks.some((check) => check.result === 'unknown')
-  ) {
-    result.code = 'cost.unknown';
+  const failed = result.checks.some((check) => check.result === 'fail');
+  if (!failed && result.checks.some((check) => check.result === 'unknown')) {
+    result.code = result.checks.some(
+      (check) => check.result === 'unknown' && check.code.startsWith('inference.'),
+    )
+      ? 'inference.insufficient_data'
+      : 'cost.unknown';
     return result;
   }
-  result.verdict = result.checks.some((check) => check.result === 'fail') ? 'fail' : 'pass';
+  result.verdict = failed ? 'fail' : 'pass';
   result.code = result.verdict === 'pass' ? 'policy.pass' : 'policy.fail';
   return result;
+}
+
+interface ResolvedInference {
+  method: 'paired-t' | 'none';
+  confidence: ConfidenceLevel;
+  minCases: number;
+  minRepetitions: number;
+  sdFloor?: number;
+  maximumMissingPercent: number;
+}
+
+/** Fill omitted inference fields with the documented defaults. */
+export function resolveInference(policy: EvaluationPolicy): ResolvedInference {
+  const declared = policy.inference ?? { method: 'paired-t' as const };
+  const statistical = declared.method === 'paired-t';
+  return {
+    method: declared.method,
+    confidence: declared.confidence ?? defaultInference.confidence,
+    minCases: declared.minCases ?? (statistical ? defaultInference.minCases : 1),
+    minRepetitions: declared.minRepetitions ?? defaultInference.minRepetitions,
+    ...(declared.sdFloor !== undefined && { sdFloor: declared.sdFloor }),
+    maximumMissingPercent:
+      declared.maximumMissingPercent ?? (statistical ? defaultInference.maximumMissingPercent : 0),
+  };
+}
+
+/** Fixed-precision terminal number. JSON output keeps full precision. */
+export function formatStatistic(value: number | null | undefined): string {
+  if (value == null) return 'unknown';
+  if (!Number.isFinite(value)) return String(value);
+  if (value !== 0 && Math.abs(value) < 1e-4) return value.toExponential(2);
+  return String(Number(value.toFixed(4)));
+}
+
+/** Terminal lines describing the statistic behind a verdict. */
+export function describePolicyInference(inference: PolicyInferenceResult): string[] {
+  const f = formatStatistic;
+  if (inference.method === 'none')
+    return [
+      `Inference           none: point estimates for these cases, no noise model`,
+      `  mean difference ${f(inference.meanDifference)} vs threshold ${f(inference.threshold)} (${inference.check})`,
+    ];
+  const lines = [
+    `Inference           paired-t ${f((inference.confidence ?? 0) * 100)}% one-sided · cases treated as a sample (${inference.check})`,
+    `  n ${inference.n} (minimum ${inference.minCases}) · repetitions ${inference.repetitions} (minimum ${inference.minRepetitions}) · imputed parent ${inference.imputed.parent}, candidate ${inference.imputed.candidate}`,
+  ];
+  if (inference.meanDifference !== null)
+    lines.push(
+      `  mean difference ${f(inference.meanDifference)} · sd ${f(inference.sd)} · floor ${f(inference.sdFloor)} (${inference.sdFloorSource ?? 'none'})${inference.calibratedSd !== null ? ` · calibrated ${f(inference.calibratedSd)}` : ''} · df ${inference.df ?? 'none'} · t ${f(inference.criticalValue)}`,
+      `  lower bound ${f(inference.lowerBound)} vs threshold ${f(inference.threshold)} (${inference.thresholdSource})`,
+    );
+  if (inference.status === 'insufficient_data')
+    lines.push('  insufficient data: the verdict is indeterminate, not a pass');
+  return lines;
 }

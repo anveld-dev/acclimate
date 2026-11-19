@@ -123,6 +123,7 @@ Execution state overrides the default exit: a diagnostic with `executionState` `
 | `evidence.not_terminal` | 3 | `fix_config` | The request has not finished, so there is no complete evidence yet. |
 | `evidence.identity_mismatch` | 1 | `fix_config` | The evidence does not match the expected request, attempt or submitter. |
 | `evidence.malformed` | 1 | `fix_config` | The service returned evidence in an unexpected shape. |
+| `evidence.reward_out_of_range` | 1 | `fix_config` | A scored reward is outside the reward scale declared by the policy. Fix the grader or the policy metric.scale. |
 | `evidence.incomplete` | 3 | `fix_config` | The service returned incomplete evidence. |
 | `cost.unknown` | 3 | `fix_config` | Cost evidence is missing for some outcomes. |
 | `analysis.nonfinite` | 1 | `fix_config` | An analysis input or result is not a finite number. |

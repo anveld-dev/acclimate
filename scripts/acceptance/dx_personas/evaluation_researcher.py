@@ -123,7 +123,9 @@ def policy(direction="higher", cost=False):
     value = {"schemaVersion": 1, "id": "researcher-label-quality", "revision": "1-" + direction,
              "metric": {"name": "positional-label-match" if direction == "higher" else "alternate-loss-interpretation", "unit": "fraction", "direction": direction},
              "aggregation": "equal-case-means", "minimumMeanImprovement": 0.1,
-             "maximumCaseRegression": 1.0, "requiredCases": ["routine", "critical"]}
+             "maximumCaseRegression": 1.0, "requiredCases": ["routine", "critical"],
+             # A tiny fixture: name the point-estimate method explicitly instead of the paired-t default.
+             "inference": {"method": "none"}}
     if cost:
         value["cost"] = {"maximumCandidateUsd": 1.0}
     return value

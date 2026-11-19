@@ -328,6 +328,8 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
     minimumMeanImprovement: 0.5,
     maximumCaseRegression: 0,
     requiredCases: ['case'],
+    // One saved case: a point-estimate check. The paired-t default would be indeterminate.
+    inference: { method: 'none' },
   };
   await writeFile(policy, JSON.stringify(quality));
   const app = defineEvaluation({
@@ -434,6 +436,27 @@ test('status reports bound activity and preserves lifecycle status without an ob
     });
     f.state.progress = { ...view, status: 'running', attemptId: candidateId };
     assert.equal((await status()).progress.reason, 'unavailable');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('plan sizes the installed inventory for a policy without running callbacks', async () => {
+  const f = await fixture();
+  try {
+    const planned = await invoke(f.app, ['plan', '--policy', f.policy, '--simulations', '20']);
+    assert.equal(planned.status, 0);
+    assert.equal(planned.result.method, 'none');
+    assert.equal(planned.result.cases, 1);
+    assert.match(planned.result.warnings.join(' '), /point estimates/);
+    await writeFile(f.policy, JSON.stringify({ ...f.quality, inference: { method: 'paired-t' } }));
+    const insufficient = await invoke(f.app, ['plan', '--policy', f.policy, '--simulations', '5']);
+    assert.equal(insufficient.status, 3);
+    assert.equal(insufficient.result.sufficient, false);
+    assert.equal(insufficient.result.simulation.results[0].indeterminateRate, 1);
+    const invalid = await invoke(f.app, ['plan', '--policy', f.policy, '--effects', 'x']);
+    assert.equal(invalid.status, 1);
+    assert.equal(f.state.executions, 0);
   } finally {
     await f.cleanup();
   }
@@ -719,6 +742,7 @@ test('compare terminal and JSON modes render the same bound run without extra ca
     assert.match(first.out, /"case"\s+parent 0\s+candidate 1/);
     assert.match(first.out, /Policy\s+fail/);
     assert.match(first.out, /fail\s+policy.minimum_mean_improvement/);
+    assert.match(first.out, /Inference\s+none: point estimates for these cases, no noise model/);
     const before = f.traffic.length;
     const piped = await invoke(f.app, args);
     const readCalls = f.traffic.slice(before);
@@ -816,6 +840,7 @@ test('installed app headless request -> run -> read-only policy check -> export 
     ]);
     assert.equal(checked.status, 0);
     assert.equal(checked.result.verdict, 'pass');
+    assert.equal(checked.result.policyPin, 'unpinned');
     await writeFile(f.policy, JSON.stringify({ ...f.quality, minimumMeanImprovement: 2 }));
     assert.equal(
       (

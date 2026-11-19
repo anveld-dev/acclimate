@@ -26,6 +26,7 @@ export async function recordPolicyReceipt(
     policy: { ...policy, sha256: policy.sha256 },
     verdict: verdict.verdict,
     checks: verdict.checks,
+    ...(verdict.inference && { inference: verdict.inference }),
   };
   try {
     const receipts = await client.listComparisonPolicyReceipts(

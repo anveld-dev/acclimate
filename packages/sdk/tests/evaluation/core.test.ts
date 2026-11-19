@@ -1449,3 +1449,47 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('the live runner applies declared concurrency and case selection with a complete artifact index', async () => {
+  const definition = defaultDefinition();
+  definition.concurrency = 2;
+  definition.cases = [
+    { caseId: 'one', input: { task: 'execute' }, expected: { answer: 'private-answer' }, repetitions: 2 },
+    { caseId: 'two', input: { task: 'execute' }, expected: { answer: 'private-answer' } },
+  ];
+  let active = 0,
+    peak = 0;
+  definition.execute = async () => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    active--;
+    return { output: { answer: 'private-answer' } };
+  };
+  const s = await setup(definition);
+  try {
+    const progress: string[] = [];
+    const result = await runCapturedEvaluation({
+      ...s.options,
+      controls: {
+        selection: { kind: 'cases', caseIds: ['one'] },
+        progress: (event) => progress.push(`${event.completed}/${event.total} ${event.caseId}#${event.repetition} ${event.side}`),
+      },
+    });
+    assert.equal(peak, 2);
+    assert.equal(result.callbacksStarted, 4);
+    assert.equal(progress.length, 4);
+    assert.ok(progress.every((line) => line.endsWith('parent') || line.endsWith('candidate')));
+    const two = result.comparison!.results.find((row) => row.caseId === 'two')!;
+    assert.deepEqual([two.parent.error, two.candidate.error], ['not_selected', 'not_selected']);
+    assert.equal(result.comparison!.complete, false);
+    assert.equal(result.runSummary?.partial, true);
+    assert.deepEqual(result.runSummary?.outputs, { comparedPairs: 2, identicalPairs: 2 });
+    assert.equal(result.evaluation.runtime.concurrency, '2');
+    const index = JSON.parse(await readFile(path.join(s.directory, 'artifact-index.json'), 'utf8'));
+    // Two pairs × two arms = four indexed outputs, none lost to concurrent index writes.
+    assert.equal(index.entries.filter((entry: { role: string }) => entry.role === 'output').length, 4);
+  } finally {
+    await s.cleanup();
+  }
+});

@@ -3,6 +3,7 @@ import { types as nodeTypes } from 'node:util';
 import { validateEvaluationDescriptor } from '../evaluation-validation.js';
 import type { EvaluationDescriptor } from '../types.js';
 import { EvaluationError } from './errors.js';
+import { declaredScheduling } from './definition.js';
 import type { EvaluationCase, EvaluationDefinition, Json } from './types.js';
 
 const SCHEMA = 'acclimate-evaluation-manifest-v1';
@@ -19,6 +20,10 @@ export interface EvaluationManifestInput<I = Json, E = Json> {
   cases: readonly EvaluationCase<I, E>[];
   grader: GraderIdentity;
   runtime: { settings: Record<string, Json>; artifacts: Record<string, string> };
+  /** Pairs in flight at once (1–64). Omit for 1. Fingerprinted in the descriptor runtime. */
+  concurrency?: number;
+  /** Extra grade attempts after a grader throws or times out (0–5). Omit for 0. */
+  gradeRetries?: number;
 }
 export interface PrivateEvaluationManifest<I = Json, E = Json>
   extends EvaluationManifestInput<I, E> {
@@ -167,7 +172,13 @@ export function createEvaluationManifest<I = Json, E = Json>(
 ): EvaluationManifest<I, E> {
   // Validate descriptors before reading fields or cloning, including getters/proxies.
   const captured = JSON.parse(canonicalEvaluationJson(input));
-  record(captured, ['configId', 'execution', 'cases', 'grader', 'runtime']);
+  record(captured, ['configId', 'execution', 'cases', 'grader', 'runtime'], ['concurrency', 'gradeRetries']);
+  let declared: { concurrency: string; gradeRetries: string };
+  try {
+    declared = declaredScheduling(captured);
+  } catch {
+    fail();
+  }
   identity(captured.configId, 128);
   if (
     !['live', 'model-free'].includes(captured.execution) ||
@@ -247,6 +258,8 @@ export function createEvaluationManifest<I = Json, E = Json>(
     datasetRevision,
     graderRevision,
     runtime,
+    ...(captured.concurrency !== undefined ? { concurrency: captured.concurrency } : {}),
+    ...(captured.gradeRetries !== undefined ? { gradeRetries: captured.gradeRetries } : {}),
   };
   const descriptor = validateEvaluationDescriptor({
     datasetRevision,
@@ -256,8 +269,7 @@ export function createEvaluationManifest<I = Json, E = Json>(
       configId: captured.configId,
       configRevision,
       execution: captured.execution,
-      concurrency: '1',
-      gradeRetries: '0',
+      ...declared!,
     },
     expectedCases: captured.cases.flatMap((item: EvaluationCase) =>
       Array.from({ length: item.repetitions! }, (_, repetition) => ({

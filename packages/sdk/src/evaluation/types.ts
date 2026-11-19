@@ -58,6 +58,16 @@ export interface EvaluationDefinition<I = Json, E = Json, O = Json> {
   execution: 'model-free' | 'live';
   cases: readonly EvaluationCase<I, E>[];
   collection?: EvaluationCollection;
+  /**
+   * Pairs in flight at once (1–64, default 1). Arms within a pair still run in
+   * schedule order. Fingerprinted as `runtime.concurrency`.
+   */
+  concurrency?: number;
+  /**
+   * Extra grade attempts after a grader throws or times out (0–5, default 0).
+   * Execution is never repeated. Fingerprinted as `runtime.gradeRetries`.
+   */
+  gradeRetries?: number;
   execute(input: {
     bundle: VerifiedVersion;
     caseId: string;
@@ -124,6 +134,8 @@ export interface EvaluationRunResult {
   evaluation: Evaluation;
   comparison: Comparison | null;
   executionState: 'finished' | 'interrupted';
+  /** Present when this invocation executed trials: stop reason, cost and coverage. */
+  runSummary?: import('./controls.js').RunSummary;
 }
 export interface PreflightOptions<I = Json, E = Json, O = Json> {
   app: EvaluationApp<I, E, O>;
@@ -139,4 +151,6 @@ export interface RunEvaluationOptions<I = Json, E = Json, O = Json> {
   allowLive?: boolean;
   retryMissingTrial?: boolean;
   signal?: AbortSignal;
+  /** Deadline, per-callback timeout, cost limit, case selection and progress. */
+  controls?: import('./controls.js').RunControls;
 }

@@ -290,44 +290,6 @@
   }
 }
 
-.connection-switcher-trigger {
-  width: 100%;
-  min-height: 36px;
-  height: auto;
-  text-align: left;
-  font-size: var(--type-14);
-}
-.connection-switcher-options {
-  width: min(640px, calc(100vw - 24px));
-  max-height: min(440px, var(--radix-select-content-available-height));
-}
-.connection-switcher-option {
-  padding: 10px 30px 10px 12px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  line-height: 1.5;
-}
-.connection-switcher-option > [data-radix-collection-item] {
-  min-width: 0;
-}
-@media (pointer: coarse) {
-  .connection-switcher-trigger,
-  .connection-switcher-option {
-    min-height: 44px;
-  }
-}
-
-.connection-switcher-choice {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  width: 100%;
-}
-.connection-switcher-option > span:last-child {
-  min-width: 0;
-  width: 100%;
-}
-
 .connection-identities {
   display: grid;
   gap: 0.5rem;

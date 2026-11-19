@@ -90,7 +90,20 @@ function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
   return (
     <article className="connection-report-row" data-testid="delivery-report">
       <Disclosure>
-        <DisclosureTrigger className="connection-report-trigger">
+        <DisclosureTrigger
+          className="connection-report-trigger"
+          aria-label={[
+            stage,
+            `source ${r.source}`,
+            r.stale && 'Stale mapping',
+            r.delayed && 'Delayed report',
+            `version ${r.versionId}`,
+            `received ${r.receivedAt}`,
+            `event ${r.eventId}`,
+          ]
+            .filter(Boolean)
+            .join(', ')}
+        >
           <span className="connection-report-summary">
             <span className="connection-report-stage">
               <span className="font-medium">{stage}</span>
@@ -104,9 +117,6 @@ function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
             <span className="connection-report-version font-mono break-all">
               Version {r.versionId.slice(0, 8)}
             </span>
-          </span>
-          <span className="sr-only">
-            Received <ReceiptTime value={r.receivedAt} />. Event {r.eventId}.
           </span>
         </DisclosureTrigger>
         <DisclosureContent className="connection-report-details">

@@ -103,6 +103,8 @@ def verify(w,b,p,routes,out,checks):
     for _ in range(22):
         w.call('POST',w.integration_path+'/receipts',w.delivery_event(),actor='receipt-writer')
     p.reload(wait_until='networkidle')
+    expect(p.get_by_test_id('delivery-report')).to_have_count(3)
+    p.get_by_role('button',name='Show all 20 loaded reports',exact=True).click()
     expect(p.get_by_test_id('delivery-report')).to_have_count(20)
     p.get_by_role('button',name='Load older reports',exact=True).click()
     expect(p.get_by_test_id('delivery-report')).to_have_count(25)

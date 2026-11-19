@@ -22,7 +22,9 @@ def verify(w,b,p,route,out,checks):
     assert trigger.get_attribute('aria-controls')==detail.get_attribute('id')
     expect(detail).to_contain_text('task_failed');expect(detail).to_contain_text('-0.5')
     expect(detail).to_contain_text('long-error-');expect(detail).to_contain_text('artifact://fixture/reference-')
-    expect(detail.get_by_role('link')).to_have_count(0)
+    # Evidence references stay inert text; the internal case permalink is the only link.
+    expect(detail.get_by_role('link')).to_have_count(1)
+    expect(detail.get_by_role('link',name='Case permalink',exact=True)).to_have_count(1)
     capture_layout(p,out,'paired-details-1440')
     p.keyboard.press('Enter');expect(detail).to_be_hidden();expect(trigger).to_be_focused()
     assert not detail.evaluate("e=>[...e.querySelectorAll('a,button,input,[tabindex]')].some(n=>n.getClientRects().length)")
@@ -124,7 +126,7 @@ def verify(w,b,p,route,out,checks):
     expect(p.get_by_role('region',name='Observed paired rewards',exact=True)).to_contain_text(f'0 / {count}')
     capture_layout(p,out,'all-missing-evidence')
     visit(p,b,b.bundle_path('changes',candidate=w.draft['snapshotVersion']['id'],request=w.queued['id']))
-    expect(p.locator('.evaluation-request').filter(has_text=w.queued['id'])).to_contain_text('Ready')
+    expect(p.locator('.evaluation-request').filter(has_text=w.queued['id'])).to_contain_text('Requested')
     checks.append('Full provenance, unchanged partial-evidence release block, new immutable report resets inspection, zero-gradeable and queued states')
 
     w.sign_in('viewer','evaluation-layout-viewer')

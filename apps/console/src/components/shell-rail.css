@@ -144,6 +144,11 @@
     border: 1px solid var(--sidebar-border);
     padding-inline: 8px;
     gap: 8px;
+    /* Two-line workspace names grow the control instead of spilling past its border. */
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 44px;
+    padding-block: 6px;
   }
   .workspace-desktop-rail .workspace-scope-indicator {
     display: block;
@@ -155,7 +160,7 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
     overflow: hidden;
     font-weight: 600;
   }

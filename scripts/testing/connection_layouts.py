@@ -41,7 +41,7 @@ def run(args):
         for width in (1440, 1024, 390, 320):
             p.set_viewport_size(dict(width=width, height=900))
             visit(p, b, selected)
-            expect(p.get_by_label('App connection', exact=True)).to_be_visible()
+            expect(p.get_by_role('heading', name=w.integration['displayName'], exact=True)).to_be_visible()
             expect(p.get_by_role('link', name='Back to connections', exact=True)).to_be_visible()
             assert p.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), width
             report = p.get_by_test_id('delivery-report').first
@@ -50,13 +50,15 @@ def run(args):
             assert geometry['columns']==(2 if geometry['width']>=1000 else 1),geometry
             if width == 1440: assert report.bounding_box()['y'] < 900, width
             if width in (1440,320):
-                p.get_by_label('App connection',exact=True).click()
+                # Duplicate display names stay distinguishable by ID in the directory.
+                visit(p, b, directory)
                 for item in duplicates:
-                    option=p.get_by_role('option').filter(has_text=item['id'])
-                    expect(option).to_be_visible()
-                    assert option.evaluate('e=>e.scrollWidth<=e.clientWidth+1')
-                p.screenshot(path=str(out/f'switcher-duplicate-{width}.png'),full_page=True,mask=[p.locator('[data-sensitive=true]')])
-                p.keyboard.press('Escape')
+                    entry=p.locator('[id="connection-entry-'+item['id']+'"]')
+                    expect(entry).to_be_visible()
+                    expect(entry).to_contain_text(item['id'][:8])
+                    assert entry.evaluate('e=>e.scrollWidth<=e.clientWidth+1')
+                p.screenshot(path=str(out/f'directory-duplicate-{width}.png'),full_page=True,mask=[p.locator('[data-sensitive=true]')])
+                visit(p, b, selected)
             p.screenshot(path=str(out / f'selected-{width}.png'), full_page=True,
                          mask=[p.locator('[data-sensitive=true]')])
             checks.append(f'Selected connection fits {width}px with readable report access')
@@ -72,28 +74,27 @@ def run(args):
         p.get_by_role('link', name='Back to connections', exact=True).click()
         expect(p).to_have_url(b.base + directory)
         p.go_back(wait_until='networkidle')
-        expect(p.get_by_label('App connection', exact=True)).to_be_visible()
+        expect(p.get_by_role('heading', name=w.integration['displayName'], exact=True)).to_be_visible()
         p.go_forward(wait_until='networkidle')
         expect(p).to_have_url(b.base + directory)
         checks.append('Back to directory and browser history restore views')
         scoped=selected+'&bundleId='+w.setup['bundle']['id']+'&channel=stable'
         visit(p,b,scoped)
-        switcher=p.get_by_label('App connection',exact=True)
-        switcher.click()
-        p.get_by_role('option').filter(has_text=w.empty_connection['id']).click()
-        expect(switcher).to_contain_text(w.empty_connection['displayName'])
-        expect(switcher).to_be_focused()
-        query=parse_qs(urlsplit(p.url).query);assert query['bundleId']==[w.setup['bundle']['id']] and query['channel']==['stable']
+        p.get_by_role('link',name='Back to connections',exact=True).click()
+        query=parse_qs(urlsplit(p.url).query);assert 'integration' not in query and query['bundleId']==[w.setup['bundle']['id']]
+        p.locator('[id="connection-entry-'+w.empty_connection['id']+'"]').click()
+        expect(p.get_by_role('heading', name=w.empty_connection['displayName'], exact=True)).to_be_visible()
+        query=parse_qs(urlsplit(p.url).query);assert query['integration']==[w.empty_connection['id']] and query['bundleId']==[w.setup['bundle']['id']] and query['channel']==['stable']
         p.get_by_role('link',name='Back to connections',exact=True).click()
         query=parse_qs(urlsplit(p.url).query);assert 'integration' not in query and query['bundleId']==[w.setup['bundle']['id']]
         other=next(item for item in w.call('GET',w.root+'/bundles')['items'] if item['id']!=w.setup['bundle']['id'])
         outside=selected+'&bundleId='+other['id']+'&channel=stable'
-        visit(p,b,outside);expect(switcher).to_contain_text(w.integration['displayName'])
+        visit(p,b,outside);expect(p.get_by_role('heading', name=w.integration['displayName'], exact=True)).to_be_visible()
         expect(p.get_by_text('The selected connection is outside the current directory filters.',exact=True)).to_be_visible()
         expect(p.get_by_role('link',name='Open app setup',exact=True)).to_have_attribute('href',b.bundle_path('connect'))
         p.get_by_role('link',name='Clear filters',exact=True).click()
         query=parse_qs(urlsplit(p.url).query);assert query.get('integration')==[w.integration['id']] and 'bundleId' not in query and 'channel' not in query
-        checks.append('Switcher and Back retain origin filters; outside-filter selection and its setup binding remain explicit; clear filters retains selection')
+        checks.append('Directory selection and Back retain origin filters; outside-filter selection and its setup binding remain explicit; clear filters retains selection')
 
         visit(p, b, selected)
         reporting = p.get_by_role('button', name='Optional delivery reports & credentials', exact=True)
@@ -151,8 +152,9 @@ def run(args):
                 p.get_by_role('button',name='Load older reports',exact=True).click()
             expect(p.get_by_role('button',name='Create read credential',exact=True)).to_be_disabled()
             assert held,'Paging request was not intercepted'
-            switcher.click();p.get_by_role('option').filter(has_text=w.empty_connection['id']).click()
-            expect(switcher).to_contain_text(w.empty_connection['displayName'])
+            p.get_by_role('link',name='Back to connections',exact=True).click()
+            p.locator('[id="connection-entry-'+w.empty_connection['id']+'"]').click()
+            expect(p.get_by_role('heading',name=w.empty_connection['displayName'],exact=True)).to_be_visible()
             assert held,'Paging request was not intercepted'
             for route in held:route.fulfill(response=route.fetch())
             expect(p.get_by_text('No delivery report received; status unknown.',exact=False)).to_be_visible()
@@ -162,16 +164,19 @@ def run(args):
             for route in held:
                 try:route.abort('failed')
                 except Exception:pass
-        checks.append('Switching connection during a held report response keeps the new connection empty and restores switcher focus')
+        checks.append('Switching connection during a held report response keeps the new connection empty')
         visit(p, b, directory + '?integration=' + w.empty_connection['id'])
         expect(p.get_by_text('No delivery report received; status unknown.', exact=False)).to_be_visible()
         checks.append('Empty reports show unknown status')
+        # New connection lives in the directory header; the detail view leads with the selected app.
+        visit(p, b, directory)
         new_trigger=p.get_by_role('button',name='New connection',exact=True)
         new_trigger.click();dialog=p.get_by_role('dialog',name='New connection',exact=True)
         dialog.get_by_label('Display name',exact=True).fill('Unsaved connection fixture')
         expect(dialog.get_by_label('Bundle',exact=True)).to_be_visible()
         for _ in range(8):p.keyboard.press('Tab');assert dialog.evaluate('e=>e.contains(document.activeElement)')
         p.keyboard.press('Escape');expect(dialog).to_be_hidden();expect(new_trigger).to_be_focused()
+        visit(p, b, directory + '?integration=' + w.empty_connection['id'])
         create_read=p.get_by_role('button',name='Create read credential',exact=True)
         create_read.click();secret_dialog=p.get_by_role('dialog',name='Save this credential now',exact=True)
         secret=secret_dialog.get_by_label('One-time credential secret',exact=True)
@@ -199,7 +204,7 @@ def run(args):
         reader=b.browser.new_context(ignore_https_errors=True,viewport=dict(width=1440,height=900))
         try:
             b.sign_in(reader,'opaque-member');rp=reader.new_page();visit(rp,b,directory+'?integration='+w.empty_connection['id'])
-            expect(rp.get_by_role('alert')).to_be_visible()
+            expect(rp.get_by_text('A workspace administrator manages app connections.',exact=False)).to_be_visible()
             expect(rp.get_by_role('button',name='Create read credential',exact=True)).to_have_count(0)
             expect(rp.get_by_role('region',name='App-reported delivery',exact=True)).to_have_count(0)
             rp.screenshot(path=str(out/'readonly-connection.png'),full_page=True,mask=[rp.locator('[data-sensitive=true]')])

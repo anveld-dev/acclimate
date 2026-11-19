@@ -13,7 +13,6 @@ import { ArrowUpRight, ChevronRight, Plus, Radio } from 'lucide-react';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { NativeSelect } from './ui/native-select';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
 import { ConnectionReports } from './connection-reports';
 import { ConnectionLearning } from './connection-learning';
 import {
@@ -464,50 +463,10 @@ function ConnectionWorkspace({
           }
           aria-label="Workspace connections"
         >
-          {selected && (
-            <div className="space-y-2">
-              <Label htmlFor="selected-app-connection">App connection</Label>
-              <Select
-                value={selected.id}
-                onValueChange={(id) => {
-                  if (id !== selected.id)
-                    void navigate(consoleDestination(connectionHref(id))).then(() => {
-                      document.getElementById('selected-app-connection')?.focus();
-                    });
-                }}
-              >
-                <SelectTrigger id="selected-app-connection" className="connection-switcher-trigger">
-                  <SelectValue>{selected.displayName}</SelectValue>
-                </SelectTrigger>
-                <SelectContent position="popper" className="connection-switcher-options">
-                  {(!rows.some((item) => item.id === selected.id) ? [selected, ...rows] : rows).map(
-                    (item) => (
-                      <SelectItem
-                        key={item.id}
-                        value={item.id}
-                        textValue={item.displayName}
-                        className="connection-switcher-option"
-                      >
-                        <span className="connection-switcher-choice">
-                          <span className="block font-medium">{item.displayName}</span>
-                          <span className="block text-muted-foreground">
-                            {bundleName(item.bundleId)} / {item.channel} ·{' '}
-                            {item.enabled ? 'Access enabled' : 'Access revoked'}
-                            {!rows.some((row) => row.id === item.id) ? ' · Outside filters' : ''}
-                          </span>
-                          <code className="block text-xs">{item.id}</code>
-                        </span>
-                      </SelectItem>
-                    ),
-                  )}
-                </SelectContent>
-              </Select>
-              {!rows.some((item) => item.id === selected.id) && (
-                <p className="text-sm">
-                  The selected connection is outside the current directory filters.
-                </p>
-              )}
-            </div>
+          {selected && !rows.some((item) => item.id === selected.id) && (
+            <p className="text-sm">
+              The selected connection is outside the current directory filters.
+            </p>
           )}
           {(filterBundle || filterChannel || (selected && (query || access !== 'all'))) && (
             <div className="text-sm">

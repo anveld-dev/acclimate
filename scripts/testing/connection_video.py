@@ -88,7 +88,6 @@ def main():
         run('wait', '1500')
         view(routes['members']); click('Invite member'); click('Cancel')
         view(routes['connections']); view(routes['detail'])
-        run('snapshot','-i');run('find','label','App connection','click');run('wait','1200');run('press','Escape')
         click('Connection identity details'); click('Connection identity details')
         click('Optional delivery reports & credentials')
         run('scroll', 'down', '450'); run('wait', '1200')

@@ -1,5 +1,7 @@
 # Acclimate
 
+Acclimate is open source under Apache-2.0 and self-hosted. You run the service, console and database on your own infrastructure. Your agents, prompts, cases and model credentials stay in your environment.
+
 Acclimate versions the instructions, skills and approved memory your agent uses. When you change them, your application runs the old and new versions on the same saved tasks and grades the results. Your team can review the evidence before releasing the change.
 
 ## Evaluate a change
@@ -24,7 +26,9 @@ The result shows the parent and candidate scores and how many pairs were graded.
 
 ## Operate or develop Acclimate
 
-The Rust API stores versions, evaluations and releases in PostgreSQL. The web console uses Keycloak sign-in. Operators distribute versioned SDK tarballs and a Python wheel, and provision credentials for evaluators. [Deployment](deploy/README.md) · [Evaluator access and recovery](docs/evaluator-operations.md) · [Local development and verification](docs/development.md)
+The Rust API stores versions, evaluations and releases in PostgreSQL. The web console uses Keycloak sign-in. Operators distribute versioned SDK tarballs and a Python wheel, and provision credentials for evaluators.
+
+[Self-host Acclimate](deploy/README.md) · [Evaluator access and recovery](docs/evaluator-operations.md) · [Local development and verification](docs/development.md) · [Contributing](CONTRIBUTING.md)
 
 ```sh
 npm ci --ignore-scripts
@@ -33,6 +37,10 @@ npm test
 npm run build
 ```
 
-[Architecture](docs/architecture/README.md) · [Wire contract](contracts/IMPLEMENTATION.md) · [Behavior tests](features/README.md) · [Product docs site](apps/docs/README.md) · [HTML documentation](docs/site/index.html) · [Qualification records](docs/implementation/full-roadmap.md) · [Connected-learning audit experiment](docs/research/real-app-learning-experiment/5-admission-rerun.md)
+[Architecture](docs/architecture/README.md) · [Wire contract](contracts/IMPLEMENTATION.md) · [Behavior tests](features/README.md) · [Product docs site](apps/docs/README.md) · [HTML documentation](docs/site/index.html)
 
 Inspired by [AgentRun](https://github.com/Parcha-ai/agentrun) and [RRSI](https://github.com/google-research/rrsi).
+
+## License
+
+Acclimate is licensed under the [Apache License 2.0](LICENSE).

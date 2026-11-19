@@ -92,9 +92,23 @@ For native execution, build `cargo build --locked --release` and `npm ci --ignor
 
 ## Qualification boundaries
 
-`python3 scripts/productization/external.py` only prints the unrun gate ledger. Explicit `--execute --gate https` verifies live TLS, liveness, readiness and a machine-scoped read against a configured endpoint. `--execute --gate oidc --interactive` checks the actual supplied issuer/console through a disposable browser sign-in and logout. Supply `--url`, `--issuer` or `--project --token-env` as relevant, and a new private `--output` file for evidence. It never saves browser cookies.
+Run `python3 scripts/productization/external.py --help` from the repository root to list the gates and their options. Each run with `--execute --gate` checks one gate. The optional `--output` flag writes the result to a new file. Choose a path in a private directory.
 
-`--execute --gate container` alone owns a random disposable project, private volume, test-only HTTPS issuer/certificates and the two deployment images. It qualifies only that isolated fixture stack, never a live provider or public certificate. No image is published and no other Compose project is stopped/pruned. Docker daemon execution was unavailable during implementation; manifest and source checks are not executed container qualification. Real deployment still requires the operator's issuer/client/origins/secrets. Paid model/native gates additionally require `--live`, use Luna only and remain distinct from application startup and model-free checks.
+After starting your deployment, use the HTTPS gate to verify the API certificate and hostname, liveness, database and worker readiness, and an authenticated workspace read. Set `ACCLIMATE_CHECK_TOKEN` in your environment to a machine token with read access to the test workspace. Pass the variable name to the script.
+
+```sh
+python3 scripts/productization/external.py --execute --gate https \
+  --url https://api.example.com --project test-workspace --token-env ACCLIMATE_CHECK_TOKEN
+```
+
+With Playwright and its Chromium browser installed, use the OIDC gate to check sign-in with your configured issuer, secure console session cookies and logout. Sign in with a disposable test account when the browser opens. The script discards the browser session after the check.
+
+```sh
+python3 scripts/productization/external.py --execute --gate oidc --interactive \
+  --url https://console.example.com --issuer https://id.example.com/realms/acclimate
+```
+
+The `container` gate builds and checks the deployment images in a disposable Docker Compose project with a private volume, fixture issuer and test certificates. Use the `https` and `oidc` gates to verify your deployment's own endpoints. The `remote-model` gate checks a bounded Luna completion against your configured endpoint, and the `native-*` gates exercise prepared files and version pinning with an installed native provider SDK. Those gates require `--live` and can incur model charges.
 
 ## Private backup and restore
 

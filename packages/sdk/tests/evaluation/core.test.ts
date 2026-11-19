@@ -659,14 +659,49 @@ test('comparison/index crash window is repaired before finish and on terminal re
   }
 });
 
-for (const stage of ['execute', 'grade'] as const)
+test('uncertainty from one execute fails that arm only, is never retried and leaves a marker', async () => {
+  const definition = defaultDefinition();
+  let executions = 0;
+  definition.execute = async () => {
+    executions++;
+    if (executions === 1)
+      throw new ExecutionUncertainError({ cause: new Error('turn timed out; stop unconfirmed') });
+    return { output: { answer: 'private-answer' } };
+  };
+  const s = await setup(definition);
+  try {
+    const result = await runCapturedEvaluation({ ...s.options, retryMissingTrial: true });
+    assert.equal(executions, 4);
+    assert.equal(s.submitted.length, 1);
+    const report = JSON.parse(s.submitted[0].body) as ComparisonRequest;
+    const first = report.results.find((pair) => pair.repetition === 0)!;
+    const uncertainSide = first.parent.error === 'execution_uncertain' ? first.parent : first.candidate;
+    assert.equal(uncertainSide.executionStatus, 'infrastructure_failed');
+    assert.equal(uncertainSide.error, 'execution_uncertain');
+    assert.equal(
+      report.results.flatMap((pair) => [pair.parent, pair.candidate]).filter((arm) => arm.reward === 1)
+        .length,
+      3,
+    );
+    assert.ok(result.comparison);
+    const jobs = path.join(s.directory, 'jobs');
+    const markers = [];
+    for (const job of await readdir(jobs))
+      if (await readFile(path.join(jobs, job, 'uncertain.json'), 'utf8').catch(() => null))
+        markers.push(job);
+    assert.equal(markers.length, 1);
+  } finally {
+    await s.cleanup();
+  }
+});
+
+for (const stage of ['grade'] as const)
   test(`uncertainty from ${stage} stops every later callback and leaves an unreplayable marker`, async () => {
     const definition = defaultDefinition();
     let executions = 0,
       grades = 0;
     definition.execute = async () => {
       executions++;
-      if (stage === 'execute') throw new ExecutionUncertainError();
       return { output: { answer: 'x' } };
     };
     definition.grade = async () => {
@@ -694,7 +729,7 @@ for (const stage of ['execute', 'grade'] as const)
           error.diagnostic.executionState === 'may_have_started',
       );
       assert.equal(executions, 1);
-      assert.equal(grades, stage === 'grade' ? 1 : 0);
+      assert.equal(grades, 1);
     } finally {
       await s.cleanup();
     }
@@ -706,9 +741,13 @@ test('recovery diagnostics preserve durable certainty when the initial lifecycle
     let executions = 0;
     definition.execute = async () => {
       executions++;
-      if (!sealed) throw new ExecutionUncertainError();
       return { output: { answer: 'private-answer' } };
     };
+    // An uncertain grade leaves started work without a sealed report.
+    if (!sealed)
+      definition.grade = async () => {
+        throw new ExecutionUncertainError();
+      };
     const s = await setup(definition);
     const mutate = s.options.transport.mutate;
     s.options.transport.mutate = async <T>(...args: Parameters<typeof mutate>) => {

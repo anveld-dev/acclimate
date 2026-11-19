@@ -756,7 +756,21 @@ export async function runCapturedEvaluation(options: {
                 });
                 journal.assertOwned();
               } catch (error) {
-                if (error instanceof ExecutionUncertainError) throw error;
+                if (error instanceof ExecutionUncertainError) {
+                  // The application kept this job's work quarantined in its own private
+                  // job directory. Record the arm as uncertain, never retry it while the
+                  // earlier attempt may still run, and continue with the remaining pairs.
+                  journal.assertOwned();
+                  await atomicPrivateWrite(
+                    path.join(privateJobDirectory, 'uncertain.json'),
+                    JSON.stringify({ schemaVersion: 1, jobId, side, caseId: item.caseId, repetition }) +
+                      '\n',
+                  );
+                  if (config.captureCallbackErrors)
+                    await saveCallbackError(privateJobDirectory, 'execute', error);
+                  pair[side] = unavailable('execution_uncertain');
+                  break;
+                }
                 if (error instanceof CallbackCancelled) {
                   cancelled = true;
                   pair[side] = unavailable();

@@ -32,10 +32,11 @@ The preparation cache defaults to `~/.cache/acclimate/python`. Override it with 
 | --- | --- |
 | `acclimate.AcclimateClient` | Read or create records, resolve a channel, and prepare delivered content. |
 | `acclimate.resolve_and_cache`, `acclimate.prepare_files` | Resolve and stage content as separate steps. |
-| `acclimate.ApiError`, `acclimate.TransportError`, `acclimate.DeliveryError` | Handle API, transport, and delivery errors. |
+| `acclimate.ApiError`, `acclimate.TransportError`, `acclimate.DeliveryError` | Handle API, transport, and delivery errors. All extend `acclimate.errors.AcclimateError` and have a `code`. Invalid arguments raise `acclimate.errors.UsageError`, a `ValueError` subclass. |
 | `acclimate.DeliveryReporter` | Report preparation and job startup when the app supplies a reporting credential. |
-| `acclimate.evaluation.ExecutionResult`, `acclimate.evaluation.GradeResult` | Return execution output and a grade from evaluator callbacks. |
+| `acclimate.evaluation.ExecutionResult`, `acclimate.evaluation.GradeResult` | Return execution output and a grade from evaluator callbacks. `execution_status` is `"completed"` or `"task_failed"`, and `usage` is an `acclimate.Usage` dict. |
+| `acclimate.evaluation.DefinitionError` | Raised by `define_evaluation` with the invalid `field`, such as `cases[1].case_id`. See [error codes](/docs/reference/error-codes). |
 
 HTTP dictionaries use the wire contract's camelCase field names. Mutations need an explicit printable ASCII idempotency key. Reuse the same key and request for retries. `resolve_channel` returns `(resolution, etag, not_modified)`.
 
-The client, delivery helpers, and embedded runner are synchronous. In an async application, follow `examples/evaluation-starter/async_eval.py` to offload the whole run, signal cooperative cancellation, and drain the worker before cleanup. The installed [evaluator CLI](/docs/reference/evaluator-cli) also accepts synchronous or coroutine callbacks in your adapter.
+The client, delivery helpers, and embedded runner are synchronous. In an async application, follow `examples/evaluation-starter/async_eval.py` to offload the whole run, signal cooperative cancellation, and drain the worker before cleanup. `define_evaluation` and the installed [evaluator CLI](/docs/reference/evaluator-cli) accept synchronous or coroutine callbacks. Coroutine callbacks run to completion on one private event loop per evaluation. `run.instructions`, `run.skill_files` and `run.memory_files` read the verified bundle's content.

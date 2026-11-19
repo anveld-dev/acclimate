@@ -43,7 +43,7 @@ Provide this file privately to the worker with mode 0600. Keep its parent direct
 }
 ```
 
-Pass the path as `--config`. A remote service URL requires HTTPS. Use the exact URL, workspace, principal, canonical journal root, and originating SDK language and release when recovering an attempt. Keep the journal on one authoritative physical volume across worker restarts.
+Pass the path as `--config`. Relative paths resolve against the current directory. A remote service URL requires HTTPS. The worker records a failed callback's redacted message and stack trace in its private job directory. Add `"captureCallbackErrors": false` to opt out. Use the exact URL, workspace, principal, canonical journal root, and originating SDK language and release when recovering an attempt. Keep the journal on one authoritative physical volume across worker restarts.
 
 Run preflight in the installed evaluator environment:
 

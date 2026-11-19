@@ -9,9 +9,9 @@ Choose an entry point for your application from the installed `@acclimate/sdk` p
 
 | Entry point | Use |
 | --- | --- |
-| `@acclimate/sdk` | `AcclimateClient`, `resolveAndCache`, `verifyPayloadBytes`, `prepareFiles`, `createReceiptReporter`, and the lower-level `compare` and `submitComparison` helpers. |
+| `@acclimate/sdk` | `AcclimateClient`, `resolveAndCache`, `verifyPayloadBytes`, `prepareFiles`, `createReceiptReporter`, the lower-level `compare` and `submitComparison` helpers, and the `AcclimateError`, `AcclimateUsageError`, `TransportError`, `ApiError` and `DeliveryError` classes. |
 | `@acclimate/sdk/validation` | Bundle payload and native compatibility validation without the Node file preparation entry. |
-| `@acclimate/sdk/evaluation` | `defineEvaluation`, `preflightEvaluation`, `runEvaluation`, `assertEvaluationOutput`, and the `ApplicationAdapter` type. |
+| `@acclimate/sdk/evaluation` | `defineEvaluation`, `defineApplication`, `preflightEvaluation`, `runEvaluation`, `assertEvaluationOutput`, the `ApplicationAdapter` type, and every evaluator error class. |
 | `@acclimate/sdk/evaluation/policy` | Apply the application quality policy to comparison evidence. |
 | `@acclimate/sdk/evaluation/artifacts` | Export and verify review evidence. |
 | `@acclimate/sdk/evaluation/analysis` | Analyze saved comparison results. |
@@ -27,3 +27,7 @@ Construct `AcclimateClient` with `baseUrl`, `token`, and a stable `scope` that i
 The default preparation cache is `~/.cache/acclimate/typescript`. Set `cacheDir` to override it and `destination` to select an application-owned staging directory. Start jobs with an online resolution by default. For a bounded cached channel fallback, pass `offline: { maxAgeMs: ... }`. For exact version fallback, pass `offline: { pinnedVersionId: ... }`. Access denial and integrity errors fail preparation.
 
 Use `resolveAndCache` when you want a verified version for a native plugin or your own preparation. See [deliver content to jobs](/docs/guides/deliver-content) for a complete job flow and [configuration](/docs/reference/configuration) for app and worker settings.
+
+## Handle errors
+
+Every error the SDK throws on purpose extends `AcclimateError` and has a typed `code`. An invalid argument throws `AcclimateUsageError` with the argument's name in `field`. A network failure or timeout throws `TransportError`, which keeps the native error as `cause` and the service origin as `serviceUrl`. An HTTP error response throws `ApiError`. `defineEvaluation` throws `DefinitionError` naming the invalid `field`, such as `cases[1].caseId`. See [error codes](/docs/reference/error-codes).

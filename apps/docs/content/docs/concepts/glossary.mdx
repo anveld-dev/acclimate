@@ -1,0 +1,20 @@
+---
+title: Glossary
+description: Learn the terms used in the console, SDKs, and Acclimate documentation.
+---
+
+Use these terms to identify the records you create when you deliver content, compare versions, or release a change.
+
+| Term | Meaning |
+| --- | --- |
+| Workspace | The scope for bundles, connections, and the people who can access them. |
+| Bundle | A named collection of agent instructions, skills, and approved memory. |
+| Version | An immutable snapshot of a bundle. Its digest identifies the exact bytes a client verifies before preparing content for a job. |
+| Channel | A named reference, such as `stable`, to the version jobs should use. |
+| Proposal | A request for changes to a bundle, with a candidate version when the changes are ready. |
+| Comparison | The outcomes of running two versions on the same cases with the same grading rules. |
+| Release | A decision to make a version available on a channel or connection. Restoring an earlier version creates a new release. |
+| Connection | The link between an application and the workspace, bundle, and channel it uses. |
+| Outcome | The application's result for a task on a specific version. It may carry a correction the application approves for future proposals. |
+
+Some SDK arguments use `projectId` or `project_id` for the workspace ID and `integrationId` for the connection ID. The [HTTP API overview](/docs/reference/http-api) explains the corresponding routes.

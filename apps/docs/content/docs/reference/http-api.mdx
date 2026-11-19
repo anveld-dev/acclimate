@@ -1,0 +1,37 @@
+---
+title: HTTP API and wire contract
+description: Locate the workspace routes and understand payload verification, authentication, and write retries.
+---
+
+Use the HTTP contract when integrating without an SDK or inspecting a response. The repository's `contracts/openapi.yaml` describes request and response shapes. `contracts/bundle.schema.json` describes bundle payloads. The TypeScript wire types live in `packages/sdk/src/types.ts` and Python mirrors them in `python/acclimate/types.py`.
+
+## Workspace routes
+
+The canonical prefix is `/v1/workspaces/{workspaceId}`. Some SDK arguments and wire fields still use `projectId`. The server also supports the earlier `/v1/projects` routes, including the older `integrations` and `promotions` path spellings on those routes.
+
+| Operation | Method and path relative to the workspace prefix |
+| --- | --- |
+| List or create bundles | `GET` or `POST /bundles` |
+| Create a version | `POST /bundles/{bundleId}/versions` |
+| Read metadata or exact bytes | `GET /bundles/{bundleId}/versions/{versionId}` or the same path with `/payload` |
+| Resolve a channel | `GET /bundles/{bundleId}/channels/{channel}` |
+| List or create releases | `GET` or `POST /bundles/{bundleId}/channels/{channel}/releases` |
+| List or create proposals | `GET` or `POST /bundles/{bundleId}/proposals` |
+| List or create comparisons | `GET` or `POST /bundles/{bundleId}/comparisons` |
+| List or create evaluation requests | `GET` or `POST /bundles/{bundleId}/evaluation-requests` |
+| Check evaluator authority | `GET /evaluation-capabilities` |
+| List connections | `GET /connections` |
+
+Machine requests carry an `Authorization: Bearer …` header and need the appropriate workspace grant. Use HTTPS for remote access. The unauthenticated [health endpoints](/docs/operate/health-and-readiness) sit outside the workspace prefix.
+
+## Read and verify a version
+
+Channel resolution returns a revision and immutable version metadata. Send the last ETag in `If-None-Match` for a conditional channel read. An HTTP 304 means the selected mapping was unchanged. Obtain the exact stored payload from `/payload`, verify its SHA-256 digest against the metadata before parsing, then validate the bundle schema. Re-encoding a JSON object can change the bytes.
+
+Bundle entries are UTF-8 text with a portable relative path and a kind of `instruction`, `skill`, or `memory`. The contract allows up to 128 files, 256 KiB of text per file, and a 1 MiB bundle payload. Paths reject traversal and file or directory collisions.
+
+## Retry a mutation
+
+For scoped content writes, provide an `Idempotency-Key` of 1–128 printable ASCII characters. Retry with the same key and exact request bytes. A different body with that key can return a 409 conflict. Retained evaluator operations use additional recovery semantics. See `contracts/dx-evaluation.md` and [evaluation recovery](/docs/operate/upgrades-and-recovery#recover-an-evaluation).
+
+Release writes check the expected revision. An evidence-based release also checks that the current channel version is the candidate's evaluated parent. On a revision or parent conflict, re-read the channel and review the current state.

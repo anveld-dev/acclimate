@@ -1,0 +1,11 @@
+{
+  "title": "Reference",
+  "pages": [
+    "typescript-sdk",
+    "python-sdk",
+    "evaluator-cli",
+    "operator-cli",
+    "configuration",
+    "http-api"
+  ]
+}

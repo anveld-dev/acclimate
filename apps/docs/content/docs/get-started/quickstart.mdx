@@ -1,0 +1,115 @@
+---
+title: Run your first comparison
+description: Connect an existing agent and grader, then compare a saved candidate with its parent.
+---
+
+Connect an agent you already run and grade one bundle change on a saved task. You will get paired results for the parent and candidate in your workspace.
+
+Have a published bundle and channel available in your workspace. In the console, use **Workspace → Bundles → New bundle** if you need to publish your starting instructions. [Install an SDK](/docs/get-started/install), and ask your operator for a [private evaluator config](/docs/operate/evaluator-access) for that workspace. The examples use `EVALUATOR_CONFIG` as a shell variable pointing to that file.
+
+<Steps>
+<Step>
+
+## Connect the evaluator to your agent
+
+Create `application.mjs` or `application.mts` for Node.js, or `application.py` for Python, in the evaluator's working directory. Export `cases`, `execute`, and `grade`. Each case has a unique public `caseId`, private `input` and private `expected` answer. Give each arm a fresh isolated job if the agent's tools have side effects.
+
+Replace the application imports in these recipes with your own agent, cases, and grader.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```ts title="application.mjs"
+import { runAgent, scoreResult, savedCases } from './dist/support-agent.mjs';
+
+export const cases = savedCases;
+export const revisionFiles = ['package-lock.json'];
+
+export async function execute({ bundle, input, signal, context }) {
+  const result = await runAgent({ bundle, task: input, signal, job: context });
+  return { output: result.answer, usage: result.measuredUsage };
+}
+
+export async function grade({ output, expected }) {
+  return scoreResult(output, expected);
+}
+```
+
+</Tab>
+<Tab value="Python">
+
+```py title="application.py"
+from acclimate.evaluation import ExecutionResult, GradeResult
+from support_agent import run_agent, score_result, saved_cases
+
+cases = saved_cases
+revision_files = ["support_agent.py", "requirements.lock"]
+
+async def execute(run):
+    result = await run_agent(bundle=run.bundle, task=run.input, cancellation=run.cancellation)
+    return ExecutionResult(output=result.answer, usage=result.measured_usage)
+
+def grade(run):
+    verdict = score_result(run.output, run.expected)
+    return GradeResult(reward=verdict.reward, explanation=verdict.explanation)
+```
+
+</Tab>
+</Tabs>
+
+Set the revision file list to the paths your app actually uses. Return bounded JSON as the gradeable output and a finite numeric reward from the grader. Your application chooses how to pass the pinned bundle to the agent.
+
+</Step>
+<Step>
+
+## Describe the installed evaluator and save a candidate
+
+From the directory containing the adapter, inspect its coverage and print its public descriptor. Use the commands for your installed SDK.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+./node_modules/.bin/acclimate-eval coverage
+./node_modules/.bin/acclimate-eval describe
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+python -m acclimate coverage
+python -m acclimate describe
+```
+
+</Tab>
+</Tabs>
+
+The local coverage report can contain private paths. Paste the **describe** JSON into **Review release** for your saved candidate under **Changes** in the console. Create the evaluation request and download `evaluation-request.json` into the application's environment.
+
+</Step>
+<Step>
+
+## Run the comparison
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+python -m acclimate compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+```
+
+</Tab>
+</Tabs>
+
+The live flag authorizes model-backed execution with your application's own credentials. Inspect the parent and candidate means, pair coverage, and individual case scores in the result and console. When you are ready to set thresholds, [add a quality policy](/docs/guides/evaluate-a-change).
+
+</Step>
+</Steps>

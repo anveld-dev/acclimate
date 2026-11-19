@@ -8,7 +8,10 @@
     "docs/design/**/experiments/**",
     "packages/vendor/**",
     "apps/console/src/routeTree.gen.ts",
-    "apps/keycloak-theme/src/kc.gen.tsx"
+    "apps/keycloak-theme/src/kc.gen.tsx",
+    "apps/docs/.next/**",
+    "apps/docs/.source/**",
+    "apps/docs/out/**"
   ],
   "settings": { "jsx-a11y": { "components": { "NativeSelect": "select" } } },
   "rules": {

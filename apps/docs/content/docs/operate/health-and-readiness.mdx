@@ -1,0 +1,41 @@
+---
+title: Check health and readiness
+description: Probe the deployed API and console, then verify machine access and actual sign-in.
+---
+
+Verify that the service and console are ready to receive traffic, then check authenticated access through the same HTTPS endpoints your users and workers use.
+
+## Probe the stack
+
+| Probe | What it checks |
+| --- | --- |
+| API `GET /health` | Process liveness. A running API returns HTTP 200 with `ok`. |
+| API `GET /ready` | Bounded database probe, singleton ownership, initialized running worker, and non-draining state. Returns HTTP 200 with `{"ready":true}` or HTTP 503 with `{"ready":false}`. |
+| Console `GET /ready` | Console configuration and upstream service readiness. |
+| Caddy container health | Proxy process and configuration liveness. Its application dependencies require both backends to be ready. |
+
+When the API receives SIGTERM, it withdraws readiness before draining requests and work and releasing the ownership lock. If readiness stays unavailable during normal operation, check database reachability, schema initialization, and single-process ownership.
+
+## Verify access and activity
+
+Run a scoped authenticated workspace read after deployment. Run the installed evaluator's `doctor` to verify the worker can access the target workspace. Sign in and out through the public console to check the actual Keycloak issuer and client.
+
+The repository includes explicit probes for live deployment. Run the following from the checkout with your public API URL, workspace ID, and a scoped token in `ACCLIMATE_TOKEN`. Give `--output` a new private evidence path.
+
+```sh
+python3 scripts/productization/external.py --execute --gate https \
+  --url "$ACCLIMATE_URL" --project "$WORKSPACE_ID" --token-env ACCLIMATE_TOKEN \
+  --output /absolute/private/https-check.json
+```
+
+For the interactive OIDC gate, use the public console URL and exact Keycloak issuer. Complete sign-in with a disposable qualification account when prompted.
+
+```sh
+python3 scripts/productization/external.py --execute --gate oidc --interactive \
+  --url "$CONSOLE_ORIGIN" --issuer "$CONSOLE_OIDC_ISSUER" \
+  --output /absolute/private/oidc-check.json
+```
+
+See `deploy/README.md` for the limits of each gate.
+
+To inspect a comparison's reported activity, use [evaluator status](/docs/reference/evaluator-cli). The service can report activity as unknown when progress is unavailable. Check the original worker to establish whether a model or tool invocation is still running.

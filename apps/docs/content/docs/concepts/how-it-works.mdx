@@ -1,0 +1,29 @@
+---
+title: How Acclimate works
+description: Follow one bundle version from your workspace to an agent job, comparison, and release.
+---
+
+Follow one bundle version through delivery and evaluation so you can decide where to connect Acclimate to your application.
+
+## Prepare content for a job
+
+Store the instructions, skills, and approved memory for a job in a **bundle**. Each **version** is an immutable snapshot. Its SHA-256 digest identifies the exact JSON payload bytes stored by the service. A **channel** such as `stable` selects the version for new jobs.
+
+At job start, your app resolves the channel, gets the version and digest, and prepares the verified files. The SDK can reuse verified cached bytes for that version and stages files for the job. Save the version ID and digest with the result. A release updates what a fresh resolution returns. Jobs with already prepared files keep the content they started with.
+
+## Compare and release a change
+
+Save an edit as a candidate version with a parent. Your evaluator calls the agent on both versions using the same cases and grading rules. Acclimate records which versions were compared and the paired results your application reported. Your team can check the candidate against its quality policy and review the changes before releasing it. A release or restore advances the channel revision.
+
+A **connection** ties an application to its workspace, bundle, and channel. If you enable [connected learning](/docs/guides/connected-learning), your application can report outcomes and approved corrections. The service can use them to propose changes and schedule comparisons for the application's evaluator.
+
+## Responsibilities
+
+| Component | Responsibility |
+| --- | --- |
+| Acclimate service | Stores workspace content and access rules, serves versions, and records proposals, comparisons, and releases. |
+| Acclimate SDK | Resolves versions, verifies and caches payloads, prepares local files, and provides evaluation helpers. |
+| Native plugin | Maps verified bundle content to files or options for a particular agent SDK. |
+| Your application | Owns agent execution, model and tool access, session lifecycle, private task data, and grading. |
+
+[Learn the workspace vocabulary](/docs/concepts/glossary) or [prepare content for a job](/docs/guides/deliver-content).

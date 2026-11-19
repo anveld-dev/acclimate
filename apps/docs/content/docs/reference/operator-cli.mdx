@@ -1,0 +1,33 @@
+---
+title: Operator CLI
+description: Inspect proposals and comparison evidence, then release or restore a version on a channel.
+---
+
+Use the operator CLI from the Acclimate checkout to read evidence and make authorized channel changes. Set `ACCLIMATE_URL`, `ACCLIMATE_TOKEN`, and `ACCLIMATE_SCOPE` for a scoped principal on a trusted TLS endpoint.
+
+```sh
+npm run operator -- history --project PROJECT --bundle BUNDLE --channel live --limit 20
+npm run operator -- review --project PROJECT --bundle BUNDLE --channel live \
+  --comparison COMPARISON --proposal PROPOSAL
+```
+
+## Commands
+
+All commands need `--project` and `--bundle`. Channel commands also need `--channel`.
+
+| Command | Command-specific options |
+| --- | --- |
+| `request-proposal` | `--parent`, repeatable `--path`, `--hypothesis`, repeatable `--evidence`. |
+| `proposal` | `--id` for the proposal. |
+| `review` | `--comparison`, plus optional `--proposal` to verify the proposal binding. |
+| `history` | Optional `--limit` and `--before` revision for pagination. |
+| `promote` | `--version`, `--comparison`, and `--expected-revision`. |
+| `rollback` | `--version`, `--reason`, and `--expected-revision`. |
+
+`review` verifies both immutable payload digests and shows the current channel revision, bounded before-and-after text, and recorded comparison evidence. If a candidate has blocking policy receipts, review each one. To record an override on `promote`, use `--override-reason "$REASON"` and repeat `--ack-policy "$COMPARISON_ID@$POLICY_DIGEST"` for each receipt.
+
+## Output and retries
+
+The CLI writes JSON to stdout and errors to stderr. Use `--json` for compact JSON. Use `--output PATH` to create a new report file with mode 0600. The existing parent must belong to the current user, have mode 0700 or stricter, and have a symlink-free path.
+
+Supply `--key KEY` to a mutation if you need to retry the same request with the same key. The command generates a fresh key when omitted. Use a new key when changing the request. See [review, release, and roll back](/docs/guides/review-and-release) for the release workflow.

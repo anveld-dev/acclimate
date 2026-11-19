@@ -1,0 +1,40 @@
+---
+title: Run a pull request check
+description: Evaluate the bundle from a specific Git commit and publish your application's quality verdict in CI.
+---
+
+Run a PR check against the exact committed agent files. Use the CI starter from your [SDK release](/docs/get-started/install) and a separately installed, trusted evaluator with private cases and a quality policy.
+
+## Evaluate a commit
+
+Run from the PR checkout. Set `CI_EXPECTED_SHA` to the full commit ID the check represents. If the check represents a merge commit, check out that commit and pass its SHA. The wrapper verifies HEAD and reads the committed files. Use `--repo "$PR_CHECKOUT"` to run from another directory.
+
+```sh
+sh "$ACCLIMATE_CI/ci.sh" \
+  --commit "$CI_EXPECTED_SHA" --bundle-dir agent \
+  --app "$EVALUATOR_APP" --policy "$EVALUATOR_APP/quality-policy.json" \
+  --bundle "$BUNDLE_ID" --channel stable --config "$WORKER_CONFIG" \
+  --output-dir "$PRIVATE_PR_STATE" --live
+```
+
+- `ACCLIMATE_CI` points to the extracted CI starter. The wrapper needs Git and Python 3.
+- `EVALUATOR_APP` points to the trusted app's directory, with its SDK installed. The wrapper runs the app from there. If both adapter languages are present, pass `--language javascript` or `--language python`. Set `ACCLIMATE_CI_PYTHON` when you need a specific interpreter.
+- Use a dedicated bundle directory. Paths under `skills/` become skills. Paths outside `skills/` and `memory/` become instructions. For memory, repeat `--memory memory/approved-fact.md` for each approved file, or pass `--no-memory`. If you commit a complete bundle payload, use `--payload agent/bundle.json` in place of `--bundle-dir agent`.
+- Keep the evaluator config, output directory, and journal private and persistent. The evaluator needs workspace read/write access.
+
+## Report the result
+
+The wrapper writes one JSON summary to stdout and sends phase diagnostics to stderr. Associate its verified `commit`, `candidateVersionId`, and `candidateDigest` with the PR. Use `result` to distinguish a policy verdict from a failed execution. Both can have the same exit code.
+
+| Result | CI action |
+| --- | --- |
+| `pass` | Mark the check successful and link it to the evaluated commit and candidate. |
+| `quality_failed` or `quality_indeterminate` | Show the policy verdict and the relevant evidence in `quality`. |
+| `execution_unresolved`, `prior_execution_unresolved`, or `prior_status_unavailable` | Reconcile the original worker before starting another execution. |
+| Other failure | Inspect `phaseExitCodes` and stderr for the failing phase. |
+
+Share only the verified `reviewDirectory` within the private output directory. Use `--selection` and an installed review mapper if you want to share selected app artifacts. Release remains a [separate review decision](/docs/guides/review-and-release).
+
+## Retry on the original worker
+
+Repeat the command with the original journal and output directory to recover the existing request or its saved result. If you repaired the evaluator after a completed or failed request, run the same command with `--retry-after` and the predecessor's handoff. The wrapper accepts one successor for that predecessor and pins the current channel baseline. Retrying the successor command recovers it. For a lost or unresolved worker, follow [evaluation recovery](/docs/operate/upgrades-and-recovery#recover-an-evaluation).

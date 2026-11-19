@@ -1,0 +1,24 @@
+---
+title: Claude Agent SDK
+description: Prepare project instructions and skills, then pass the generated options to a fresh Claude Agent SDK session.
+---
+
+Prepare a Claude project workspace using `@acclimate/claude-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install). The `/native` entry targets the optional peer `@anthropic-ai/claude-agent-sdk` 0.3.325.
+
+## Prepare project resources
+
+The plugin writes the instruction to `CLAUDE.md`, skills to `.claude/skills/<name>/`, and memory files to `.acclimate/memory/`. Use the main entry for staging and the native entry for session options.
+
+```ts
+import { prepare } from '@acclimate/claude-plugin';
+import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
+
+const prepared = await prepare(verifiedVersion);
+const options = claudeSessionOptions(prepared);
+```
+
+Pass the returned `cwd`, `settingSources: ['project']`, and skill names to a fresh Claude Agent SDK session. Supply your own model, prompt, and permissions. Add selected approved memory through your app's context. Call `await prepared.cleanup()` after the session stops using the files.
+
+## Qualification
+
+Offline checks verify staged files and typecheck the options against SDK 0.3.325. Live Claude provider sessions remain unqualified.

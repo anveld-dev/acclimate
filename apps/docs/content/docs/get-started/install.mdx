@@ -1,0 +1,38 @@
+---
+title: Install the SDKs
+description: Install an operator-distributed TypeScript SDK tarball or Python wheel in your application.
+---
+
+Install a verified Acclimate release in the environment that runs your agent. Ask your workspace operator for the release manifest, artifacts, and `SHA256SUMS`. Verify the files against the checksums before installing SDKs or extracting starter archives. Distribution is operator-managed.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+Use Node.js 22.22 or later. The durable evaluator also needs Python 3 with `fcntl`. Run the install command from your app directory with the matching artifact path. This example uses release 0.1.0.
+
+```sh
+npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
+./node_modules/.bin/acclimate-eval --help
+```
+
+The SDK includes `acclimate-eval` and `acclimate-learning`. Install a matching plugin tarball alongside the SDK when you need [native preparation](/docs/guides/deliver-content#choose-a-native-integration).
+
+</Tab>
+<Tab value="Python">
+
+Use Python 3.11 or later. The SDK uses the standard library. Install the matching wheel in your virtual environment. This example uses release 0.1.0.
+
+```sh
+python3.11 -m venv .venv
+.venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
+.venv/bin/python -m acclimate --help
+```
+
+The distribution is named `acclimate-sdk`. Import it as `acclimate` and run the CLI with `python -m acclimate` in the installed environment.
+
+</Tab>
+</Tabs>
+
+Private file preparation and durable evaluation use POSIX on Linux or macOS. Give an evaluator a private local persistent journal. See [evaluator access](/docs/operate/evaluator-access) for permissions and recovery requirements.
+
+[Connect your application and compare a change](/docs/get-started/quickstart).

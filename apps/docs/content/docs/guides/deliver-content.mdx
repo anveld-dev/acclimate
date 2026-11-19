@@ -1,0 +1,90 @@
+---
+title: Deliver content to jobs
+description: Prepare a pinned version for each job and stage an existing repository for a native coding agent.
+---
+
+Prepare a verified bundle version when your application starts a job. In the console, open the bundle's **App setup** guide for the API URL, workspace ID, bundle ID, channel, and SDK recipe. Use a scoped read credential.
+
+## Prepare the job's content
+
+Select a channel for a fresh resolution, or select an exact version with `versionId` (Python `version_id`). Give your agent the prepared instructions and skill files, and choose which approved memory to include. Save the version ID and digest with the result.
+
+```ts
+import { AcclimateClient } from '@acclimate/sdk';
+
+const { ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE } = process.env;
+if (!ACCLIMATE_URL || !ACCLIMATE_TOKEN || !ACCLIMATE_SCOPE) {
+  throw new Error('Set ACCLIMATE_URL, ACCLIMATE_TOKEN, and ACCLIMATE_SCOPE');
+}
+const client = new AcclimateClient({
+  baseUrl: ACCLIMATE_URL,
+  token: ACCLIMATE_TOKEN,
+  scope: ACCLIMATE_SCOPE,
+});
+const prepared = await client.prepare({ projectId, bundleId, channel: 'stable' });
+```
+
+The snippet uses app-provided IDs and environment values. For a job that runs to completion in this call, await its work and result retention in a `try` block and await `prepared.cleanup()` in `finally`. For background work, keep the files available until the actual job stops. The [Python SDK recipe](/docs/reference/python-sdk) uses a context manager for a job that completes before the block exits.
+
+## Report job starts
+
+If your connection tracks deliveries, give the app a separate receipt credential in `ACCLIMATE_RECEIPT_TOKEN` and the connection ID in `ACCLIMATE_INTEGRATION`. Build a reporter with its own client, using the receipt token and connection ID your app reads from those variables, and pass it to `prepare` as `reporter`. The console's **App setup** recipe shows the same pattern for Python with `DeliveryReporter`.
+
+```ts
+import { AcclimateClient, createReceiptReporter } from '@acclimate/sdk';
+
+const reporter = createReceiptReporter({
+  projectId,
+  integrationId,
+  client: new AcclimateClient({
+    baseUrl: ACCLIMATE_URL,
+    token: receiptToken,
+    scope: ACCLIMATE_SCOPE + ':receipts',
+    timeoutMs: 1000,
+    retries: 0,
+  }),
+});
+const prepared = await client.prepare({ projectId, bundleId, channel: 'stable', reporter });
+```
+
+At the job's real start event, call `prepared.reportStarted()` (Python `prepared.report_started()`) and retain the returned receipt with its job ID. It returns `null` when reporting is unavailable. When the job ends, `await reporter.flush()` and call `reporter.close()`. [Connected learning](/docs/guides/connected-learning) can use that receipt to bind later field evidence to the release.
+
+## Choose a native integration
+
+Native plugins take a verified version and prepare a fresh private directory for the agent SDK. Each mapping accepts at most one instruction. A skill lives under `skills/<name>/` and needs a `SKILL.md` with a matching frontmatter name and a description. Supporting files stay beside the skill.
+
+| Agent SDK | Prepared layout |
+| --- | --- |
+| [Codex](/docs/integrations/codex) | `AGENTS.md` and `.agents/skills/` |
+| [Claude Agent SDK](/docs/integrations/claude-agent-sdk) | `CLAUDE.md` and `.claude/skills/` |
+| [Pi](/docs/integrations/pi) | `AGENTS.md`, `.agents/skills/`, and resource descriptors |
+| [Cursor](/docs/integrations/cursor) | `AGENTS.md` and `.cursor/skills/` |
+
+## Stage a repository for evaluation
+
+Use the native repository starter from the release to compare a coding agent on an existing repository. Install the verified SDK and selected plugin together. This example uses Codex and release 0.1.0.
+
+```sh
+release=/absolute/path/to/verified-release
+app=/absolute/path/to/native-repository-starter
+npm install --prefix "$app" --workspaces=false --offline --ignore-scripts --no-audit --no-fund --save-exact \
+  "$release/acclimate-sdk-0.1.0.tgz" "$release/acclimate-codex-plugin-0.1.0.tgz"
+node "$app/verify-install.mjs" codex
+```
+
+Install the native SDK separately as described in its [integration guide](/docs/integrations/codex). In the starter's private `native.json`, set `sourceRoot` to your checkout and `stateRoot` to private persistent storage outside both the repository and evaluator journal. Set `model` to a model your app can access, and supply your own cases.
+
+- Include every original file your grader needs in `sourceFiles`. The starter copies an explicit list of regular text files and rejects symlinks, dot-prefixed paths, and existing `AGENTS.md` or `CLAUDE.md`.
+- List writable solution paths in `resultFiles` and original protected tests in `testFiles`. The default grader runs the frozen Node tests against retained solution files in a fresh tree.
+- Set `approvedMemoryPaths` for memory the agent may receive. The version digest still identifies the whole verified bundle.
+- Set the worker's `TMPDIR` to the private persistent workspace parent before starting the evaluator. Keep the checkout fixed through evaluation or regrading.
+
+The starter's case shape uses `caseId`, `input.prompt`, and `expected: null` when the expected behavior lives in the frozen tests. Run these commands from the starter directory. Use the public descriptor to create and download a request before running `doctor` or `compare`.
+
+```sh
+./node_modules/.bin/acclimate-eval describe
+./node_modules/.bin/acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
+./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+```
+
+The starter retains declared results and a private patch. If native execution becomes uncertain, keep the workspace and verify termination before cleanup. The starter provides `inspectNativeJob` and `cleanupQuarantinedJob` for operator-reviewed recovery. See `examples/native-repository/README.md` and the [evaluator access guide](/docs/operate/evaluator-access).

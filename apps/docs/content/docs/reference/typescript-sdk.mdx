@@ -1,0 +1,29 @@
+---
+title: TypeScript SDK
+description: Choose the public entry point for delivery, validation, evaluation, or connected learning.
+---
+
+Choose an entry point for your application from the installed `@acclimate/sdk` package. Use the Node entry for delivery and the validation entry when you only need to check content.
+
+## Public entry points
+
+| Entry point | Use |
+| --- | --- |
+| `@acclimate/sdk` | `AcclimateClient`, `resolveAndCache`, `verifyPayloadBytes`, `prepareFiles`, `createReceiptReporter`, and the lower-level `compare` and `submitComparison` helpers. |
+| `@acclimate/sdk/validation` | Bundle payload and native compatibility validation without the Node file preparation entry. |
+| `@acclimate/sdk/evaluation` | `defineEvaluation`, `preflightEvaluation`, `runEvaluation`, `assertEvaluationOutput`, and the `ApplicationAdapter` type. |
+| `@acclimate/sdk/evaluation/policy` | Apply the application quality policy to comparison evidence. |
+| `@acclimate/sdk/evaluation/artifacts` | Export and verify review evidence. |
+| `@acclimate/sdk/evaluation/analysis` | Analyze saved comparison results. |
+| `@acclimate/sdk/evaluation/manifest` | Build revision-bound evaluation metadata. |
+| `@acclimate/sdk/evaluation/progress` | Report optional evaluation activity. |
+| `@acclimate/sdk/evaluation/cli` and `@acclimate/sdk/evaluation/app-cli` | Evaluator CLI entry points for installed adapters. |
+| `@acclimate/sdk/learning` | `connectedEvaluationDescriptor`, `createLearningOutcomeReporter`, `createLearningFieldAuditor`, and `serveConnectedLearning`. |
+
+## Deliver a pinned version
+
+Construct `AcclimateClient` with `baseUrl`, `token`, and a stable `scope` that identifies the authenticated application. Use the connection UUID as `integrationId` when resolving for a connection. Call `client.prepare` with `projectId`, `bundleId`, and exactly one of `channel` or `versionId`. It returns the pinned `version`, the verified `bundle`, `directory`, `instructions`, `skillFiles`, and `cleanup()`.
+
+The default preparation cache is `~/.cache/acclimate/typescript`. Set `cacheDir` to override it and `destination` to select an application-owned staging directory. Start jobs with an online resolution by default. For a bounded cached channel fallback, pass `offline: { maxAgeMs: ... }`. For exact version fallback, pass `offline: { pinnedVersionId: ... }`. Access denial and integrity errors fail preparation.
+
+Use `resolveAndCache` when you want a verified version for a native plugin or your own preparation. See [deliver content to jobs](/docs/guides/deliver-content) for a complete job flow and [configuration](/docs/reference/configuration) for app and worker settings.

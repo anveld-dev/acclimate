@@ -1,0 +1,40 @@
+---
+title: Evaluator CLI
+description: Describe an installed evaluator, run a comparison, and inspect or export its retained evidence.
+---
+
+Use `acclimate-eval` with the TypeScript SDK or `python -m acclimate` with the Python SDK. The CLI loads your application callbacks from `application.mjs`, `application.mts`, or `application.py` in the working directory. Choose another entry with `--app`. Python accepts a module name or a source file.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `coverage` | Inspect local sources, package imports, and declared revision inputs. Keep the report private. |
+| `describe` | Print the public descriptor for the installed cases, runtime, and grader. |
+| `doctor` | Check setup with `--config` and a `--bundle`, `--handoff`, or named run. You can include `--policy`. |
+| `compare` | Run a downloaded handoff, or create and run a named comparison from a complete bundle payload. |
+| `request` | Create a handoff from a bundle, channel, payload, and durable `--intent`. Write the handoff with `--out`. |
+| `run` | Execute an existing request with the evaluator config and handoff or name. |
+| `status` | Inspect request state and optional reported activity. |
+| `check` | Apply a policy to the retained comparison. An evaluator config can record the verdict. |
+| `interrupt` | Record interruption with an explicit `--reason`. Check the original worker separately for termination. |
+| `export` | Write review evidence to a new private directory. |
+| `verify-export` | Validate a review export through its `--manifest`. |
+
+## Common invocations
+
+Run from the installed application environment. Use `--live` to authorize model-backed callbacks.
+
+```sh
+acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
+acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+acclimate-eval status --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
+```
+
+A separate reviewer can inspect status without installing the application adapter. Use the private reader config and public handoff.
+
+```sh
+python -m acclimate status --read-config "$READER_CONFIG" --handoff "$HANDOFF"
+```
+
+Use `--name` to refer to a headless run using its original evaluator config. For a deliberate repeat after a terminal run, see [run from a payload](/docs/guides/evaluate-a-change#run-from-a-payload). For uncertain execution or lost responses, see [evaluation recovery](/docs/operate/upgrades-and-recovery#recover-an-evaluation).

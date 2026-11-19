@@ -1,0 +1,38 @@
+---
+title: Upgrade and recover
+description: Back up and restore PostgreSQL, verify a service upgrade, and recover an interrupted evaluation.
+---
+
+Preserve stored content and release history when changing service releases, and recover evaluator attempts using their original worker state.
+
+## Upgrade the deployment
+
+This release uses a fresh schema baseline. An installation using the former migration chain has no in-place upgrade to this baseline. Keep the existing database with its matching service build. Use a separate empty PostgreSQL database to try this release alongside it.
+
+For an installation already on the current baseline, stop incoming traffic and both application containers before changing service versions. Take a backup and rehearse its restoration in a separate database with the matching service build. Verify readiness and an authenticated read before restoring traffic. A normal `docker compose down` preserves volumes. The `--volumes` option deletes them.
+
+## Back up and restore PostgreSQL
+
+Use the backup script with `psql`, `pg_dump`, and `pg_restore` from the PostgreSQL server's major version. Point `DATABASE_URL` at the source database for the dump, then at a separate empty database for the restore. Provision the target owner and grants separately.
+
+```sh
+python3 scripts/operations/backup.py dump /private/backups/acclimate.dump \
+  --pg-bin /path/to/postgresql-16/bin
+python3 scripts/operations/backup.py restore /private/backups/acclimate.dump \
+  --pg-bin /path/to/postgresql-16/bin
+```
+
+Choose a new archive path within a private parent directory. The script writes a PostgreSQL custom-format snapshot with mode 0600. Protect the archive in transit and at rest. Restore refuses a populated database and runs in one transaction. Verify payload bytes, revisions, release history, and application access in the isolated restore before switching the stopped service to it.
+
+## Recover an evaluation
+
+Keep the evaluator journal and private artifacts in separate protected backups. When restoring worker state, confirm the original worker has stopped and use one authoritative physical volume. A copied journal has its own kernel locks even at the same path.
+
+| What you observe | Recovery |
+| --- | --- |
+| Start response lost before callbacks | Retry with the original journal, request, and evaluator config. The runner recovers the retained start and checks current request state. |
+| Exact report saved and submission or finish response lost | Retry with the original config and journal. The runner resends saved bytes with the original key. |
+| Execution started with no complete sealed report | Inspect the original app and external tasks. Confirm their state before explicitly interrupting and deciding whether to start a new request. |
+| Original journal absent, relocated, or from another runtime | Restore supported ownership and the original canonical root, or inspect the external effects and record interruption. |
+
+Use [evaluator status and interrupt](/docs/reference/evaluator-cli) to inspect and record the lifecycle. A stale heartbeat, an interrupted request, or a credential revocation cannot establish that an external job terminated.

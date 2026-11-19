@@ -1,0 +1,24 @@
+---
+title: Pi
+description: Stage a verified version and load its resources for a fresh Pi coding-agent session.
+---
+
+Prepare resources for a Pi session with `@acclimate/pi-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install). The `/native` entry uses optional peer `@earendil-works/pi-coding-agent` 1.5.2 and requires Node.js 22.19 or later. Preparation-only imports do not load the Pi SDK.
+
+## Load the prepared resources
+
+The main entry returns a private working directory and resource descriptors for the instruction, skills, and memory. The native entry builds and reloads Pi's resource loader. Pass source paths for the memory you approve as appended context. The default list is empty.
+
+```ts
+import { prepare } from '@acclimate/pi-plugin';
+import { createPiResourceLoader } from '@acclimate/pi-plugin/native';
+
+const prepared = await prepare(verifiedVersion);
+const loader = await createPiResourceLoader(prepared, ['memory/selected.md']);
+```
+
+Use the returned loader when your app creates a fresh session. Replace the example memory path with one in your bundle or omit the list. Keep the working directory until the session stops using it, then call `await prepared.cleanup()`.
+
+## Qualification
+
+Offline checks exercise Pi's actual resource loader, including explicit memory selection. Live Pi provider sessions remain unqualified.

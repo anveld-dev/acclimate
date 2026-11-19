@@ -1,0 +1,35 @@
+---
+title: Codex
+description: Stage verified instructions and skills for a fresh Codex SDK thread.
+---
+
+Prepare a private workspace for a Codex thread using `@acclimate/codex-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install), then install the native SDK separately. The release manifest pins `@openai/codex-sdk` 0.169.0. The plugin has a preparation entry point and declares no Codex peer dependency.
+
+## Prepare a thread
+
+The plugin maps the instruction to `AGENTS.md`, skills to `.agents/skills/<name>/`, and approved memory files to `.acclimate/memory/`. Use the prepared directory as the working directory for a fresh thread.
+
+```ts
+import { prepare } from '@acclimate/codex-plugin';
+import { Codex } from '@openai/codex-sdk';
+
+const prepared = await prepare(verifiedVersion);
+const thread = new Codex().startThread({
+  workingDirectory: prepared.cwd,
+  skipGitRepoCheck: true,
+});
+```
+
+Your app supplies model, tool permissions, credentials, and any selected memory context. Retain the prepared files until the thread has finished, then call `await prepared.cleanup()`.
+
+For the [native repository starter](/docs/guides/deliver-content#stage-a-repository-for-evaluation), install the pinned SDK and matching platform executable from your approved npm cache. The starter's check prints the CLI version without requiring credentials.
+
+```sh
+npm install --prefix "$app" --workspaces=false --offline --include=optional --ignore-scripts --no-audit --no-fund \
+  --save-exact @openai/codex-sdk@0.169.0
+node "$app/verify-install.mjs" codex --codex-sdk
+```
+
+## Qualification
+
+The repository records a live `gpt-6-luna` check on SDK 0.169.0. Fresh threads returned markers from their prepared versions. A thread resumed with its original workspace returned the original markers. The result captures responses, without a direct SDK resource-discovery event. In-place hot reload was outside the check.

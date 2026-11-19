@@ -1,0 +1,66 @@
+---
+title: Evaluate a change
+description: Bind a candidate to your installed evaluator, apply a quality policy, and share the retained evidence.
+---
+
+Compare a change on a fixed inventory of cases and apply your own quality policy before a release. Start with the [application adapter](/docs/get-started/quickstart) and a [workspace evaluator config](/docs/operate/evaluator-access).
+
+## Freeze the comparison inputs
+
+In **Changes**, save the exact candidate you want to evaluate. Use the installed evaluator's `describe` output to create the request from **Review release**. When the worker runs it, the parent and candidate use the same case inputs, grader, and repetition inventory. Use fixtures or read-only tools for tasks with external effects.
+
+Run `coverage` locally to see what contributes to the evaluator revision. Declare deferred imports, lockfiles, prompts, and runtime-read files in `revisionFiles` (Python `revision_files`). File paths are relative to the adapter. Use `runtime.settings` for app-owned settings such as model deployment and `runtime.artifacts` for external build digests. Start a fresh process after rebuilding dependencies, and create a fresh request when covered inputs change.
+
+## Check your quality policy
+
+This policy requires a non-decreasing equal-case mean and zero allowed regression per case. Adjust thresholds and add release-critical case IDs in `requiredCases`.
+
+```json title="quality-policy.json"
+{
+  "schemaVersion": 1,
+  "id": "no-regression",
+  "revision": "1",
+  "metric": { "name": "task reward", "unit": "reward", "direction": "higher" },
+  "aggregation": "equal-case-means",
+  "minimumMeanImprovement": 0,
+  "maximumCaseRegression": 0,
+  "requiredCases": []
+}
+```
+
+```sh
+acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json \
+  --policy quality-policy.json --live
+```
+
+Use `python -m acclimate` for the Python evaluator. Review pair coverage, per-case scores, and known usage. Missing required scores or cost measurements can make the verdict indeterminate. To apply a policy to retained results, use `check`. It reuses the comparison without calling the agent.
+
+```sh
+acclimate-eval check --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json \
+  --policy quality-policy.json
+```
+
+With the evaluator config, `compare --policy` and `check` submit the verdict for release review. If `policyReceipt.status` is `unconfirmed`, retry `check` with the same evaluator config and policy. An independent reader can use `check --read-config` with the handoff for a local verdict.
+
+## Run from a payload
+
+To compare without a console handoff, pass a complete bundle payload and give the change a stable name. Keep the same name, inputs, and evaluator journal when retrying that operation.
+
+```sh
+python -m acclimate compare --config "$EVALUATOR_CONFIG" \
+  --bundle "$BUNDLE_ID" --channel stable --payload agent/bundle.json \
+  --name "$CHANGE_ID" --live
+```
+
+After a completed or failed named comparison, you can measure the same candidate again with `--retry-after "$CHANGE_ID"` in place of `--name "$CHANGE_ID"`. The successor keeps the original parent and candidate. Use a new name for different content. An unresolved attempt requires [reconciliation](/docs/operate/upgrades-and-recovery#recover-an-evaluation).
+
+## Export evidence for review
+
+Export scalar evidence to a fresh private directory. An application can separately allowlist review artifacts through `toReviewArtifact` (Python `to_review_artifact`) and name the case, repetition, side, and role in a selection file.
+
+```sh
+acclimate-eval export --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --out review
+acclimate-eval verify-export --manifest review/manifest.json
+```
+
+Share the verified export with authorized reviewers and continue to [review and release](/docs/guides/review-and-release).

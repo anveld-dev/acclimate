@@ -311,6 +311,9 @@ export const { execute, grade } = adapter;
 `);
     run(process.execPath, [
       join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--allowJs',
+      // Load only Node's ambient types, as an installed consumer would; workspace
+      // @types packages hoisted into the checkout must not leak into this check.
+      '--types', 'node',
       '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', 'application.mts',
     ], app);
     const typed = describe('acclimate-eval.mjs');

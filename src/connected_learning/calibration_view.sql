@@ -9,7 +9,7 @@ SELECT jsonb_build_object(
     'failedAttempts', p.calibration_failures,
     'stoppedReason', p.calibration_stopped_reason
 ) || CASE WHEN p.noise_calibration IS NOT NULL AND p.repetition_plan IS NOT NULL THEN
-    p.noise_calibration || (p.repetition_plan #- '{plan,uniformAuditFrom}')
+    p.noise_calibration || ((p.repetition_plan #- '{plan,uniformAuditFrom}') - 'powerGuardNoise')
     ELSE '{}'::jsonb
 END
 FROM connected_learning_policy_epochs p

@@ -368,7 +368,12 @@ async fn extend_repetition_plan(
     let Some((calibration, mut view)) = stored else {
         return Ok(());
     };
-    let calibration: Calibration = serde_json::from_value(calibration).map_err(db)?;
+    let calibration: Calibration =
+        serde_json::from_value(view.get("powerGuardNoise").cloned().unwrap_or(calibration))
+            .map_err(db)?;
+    let observations = view["powerGuardObservations"]
+        .as_u64()
+        .map_or(calibration.case_count, |n| n as usize);
     let mut plan: Plan = serde_json::from_value(view["plan"].take()).map_err(db)?;
     let defaults = Policies::default();
     let policies = policies.unwrap_or(&defaults);
@@ -377,6 +382,11 @@ async fn extend_repetition_plan(
         .target_effect
         .or(policies.development.target_effect);
     plan.extend_audits(audits);
+    let mut warnings: Vec<_> = view["warning"]
+        .as_str()
+        .map(str::to_owned)
+        .into_iter()
+        .collect();
     let projections = view["auditProjections"]
         .as_array_mut()
         .ok_or_else(|| db("Missing audit power projections"))?;
@@ -385,15 +395,18 @@ async fn extend_repetition_plan(
         let projection = plan.project(
             audit,
             Some(previous_count + offset),
-            &calibration,
+            (&calibration, observations),
             policies.audit.threshold(Stage::Audit),
             AUDIT_Z,
             target,
         );
-        stopped = stopped.or_else(|| projection.stop_reason(target, "Audit"));
+        let stage = format!("Audit {}", previous_count + offset + 1);
+        stopped = stopped.or_else(|| projection.stop_reason(&stage));
+        warnings.extend(projection.warning(&stage));
         projections.push(json!(projection));
     }
     view["plan"] = json!(plan);
+    view["warning"] = json!((!warnings.is_empty()).then(|| warnings.join("\n")));
     sqlx::query(
         "UPDATE connected_learning_policy_epochs
          SET repetition_plan=$4,calibration_stopped_reason=COALESCE(calibration_stopped_reason,$5)

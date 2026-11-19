@@ -842,15 +842,69 @@ mod tests {
         let projection = plan.project(
             &descriptor,
             None,
-            &calibration,
+            (&calibration, 2),
             0.0,
             DEVELOPMENT_Z,
             Some(0.05),
         );
-        let reason = projection.stop_reason(Some(0.05), "Cumulative").unwrap();
+        let reason = projection.stop_reason("Cumulative").unwrap();
         assert!(reason.contains("2 cases, 4 pairs"));
         assert!(reason.contains("cases at the same repetition mix are needed"));
-        assert!(projection.stop_reason(None, "Cumulative").is_none());
+    }
+
+    #[test]
+    fn admission_guard_handles_noisy_boundary_and_pools_matching_epochs() {
+        use super::super::{
+            repetitions::Plan,
+            statistics::{calibrate, pool_calibrations, scored_reward, sd_interval},
+        };
+
+        for (cases, se, decision) in [
+            (40, 0.0428, "admit"),
+            (40, 0.0428, "admit"),
+            (40, 0.0552, "warn"),
+            (10, 0.30, "stop"),
+        ] {
+            let ids: Vec<_> = (0..cases).map(|id| id.to_string()).collect();
+            let difference =
+                ((se * se * cases as f64 * (cases + 1) as f64 - 0.5) / cases as f64).sqrt();
+            let comparison = comparison(
+                &ids.iter()
+                    .flat_map(|id| [(id.as_str(), 0.0, difference); 2])
+                    .collect::<Vec<_>>(),
+            );
+            let descriptor: Descriptor = serde_json::from_value(serde_json::json!({
+                "datasetRevision": "test",
+                "graderRevision": "grader",
+                "runtime": {},
+                "expectedCases": comparison.expected_cases,
+            }))
+            .unwrap();
+            let calibration = calibrate(&comparison, 0.0, scored_reward);
+            let plan = Plan::with_budget(&descriptor, &[], &calibration, 2, 1000);
+            let (guard, observations) = pool_calibrations(&calibration, &[]);
+            let projection = serde_json::to_value(plan.project(
+                &descriptor,
+                None,
+                (&guard, observations),
+                0.0,
+                DEVELOPMENT_Z,
+                Some(0.10),
+            ))
+            .unwrap();
+            assert_eq!(projection["decision"], decision, "{projection}");
+            if cases == 40 {
+                let original = guard.paired_standard_deviation;
+                let (pooled, total) =
+                    pool_calibrations(&calibration, std::slice::from_ref(&calibration));
+                assert_eq!(total, 80);
+                assert!(pooled.paired_standard_deviation < original);
+                let (lower, upper) = sd_interval(original, observations).unwrap();
+                let (pooled_lower, pooled_upper) =
+                    sd_interval(pooled.paired_standard_deviation, total).unwrap();
+                assert!(pooled_upper - pooled_lower < upper - lower);
+            }
+        }
     }
 
     #[test]

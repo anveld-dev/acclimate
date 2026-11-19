@@ -98,10 +98,10 @@ pub(crate) fn scored_reward(outcome: &crate::Outcome) -> Option<f64> {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Calibration {
-    case_count: usize,
+    pub(super) case_count: usize,
     flip_rate: f64,
     pub(crate) paired_standard_deviation: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -110,6 +110,64 @@ pub(crate) struct Calibration {
     pub(crate) minimum_detectable_effect: Option<f64>,
     pub(crate) effective_repetitions: f64,
     pub(crate) case_variability: std::collections::BTreeMap<String, f64>,
+}
+
+/// Pool independent A/A draws at the same case and repetition precision.
+pub(crate) fn pool_calibrations(
+    current: &Calibration,
+    history: &[Calibration],
+) -> (Calibration, usize) {
+    let mut pooled = current.clone();
+    let pseudo_variance = 1.0 / current.effective_repetitions.max(1.0);
+    let sum_squares = |sample: &Calibration| {
+        (sample.paired_standard_deviation.powi(2) * (sample.case_count + 1) as f64
+            - pseudo_variance)
+            .max(0.0)
+    };
+    let mut squares = sum_squares(current);
+    let mut observations = current.case_count;
+    for sample in history {
+        squares += sum_squares(sample);
+        observations += sample.case_count;
+        for (id, variance) in &sample.case_variability {
+            *pooled.case_variability.entry(id.clone()).or_default() += variance;
+        }
+    }
+    for variance in pooled.case_variability.values_mut() {
+        *variance /= (history.len() + 1) as f64;
+    }
+    pooled.paired_standard_deviation =
+        ((squares + pseudo_variance) / (observations + 1) as f64).sqrt();
+    (pooled, observations)
+}
+
+/// Approximate two-sided 95% interval, using the A/A null mean of zero.
+pub(crate) fn sd_interval(sd: f64, observations: usize) -> Option<(f64, f64)> {
+    use statrs::distribution::{ChiSquared, ContinuousCDF};
+    let df = observations as f64;
+    let distribution = ChiSquared::new(df).ok()?;
+    // Bracket and bisect the CDF. Newton iteration can leave the positive
+    // domain in the lower tail at small degrees of freedom.
+    let quantile = |probability| {
+        let mut low = 0.0;
+        let mut high = df;
+        while distribution.cdf(high) < probability {
+            high *= 2.0;
+        }
+        for _ in 0..64 {
+            let middle = (low + high) / 2.0;
+            if distribution.cdf(middle) < probability {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        (low + high) / 2.0
+    };
+    Some((
+        sd * (df / quantile(0.975)).sqrt(),
+        sd * (df / quantile(0.025)).sqrt(),
+    ))
 }
 
 pub(crate) fn calibrate(
@@ -191,6 +249,15 @@ pub(crate) fn valid_replays(verdict: &str, attempts: &[String], allow_unavailabl
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chi_square_sd_interval_matches_reference_quantiles() {
+        for (df, q025, q975) in [(1, 0.000982069, 5.023886), (40, 24.43304, 59.34171)] {
+            let (lower, upper) = sd_interval(2.0, df).unwrap();
+            assert!(((2.0 / lower).powi(2) * df as f64 - q975).abs() < 0.00001);
+            assert!(((2.0 / upper).powi(2) * df as f64 - q025).abs() < 0.00001);
+        }
+    }
 
     #[test]
     fn calibrated_floor_and_large_gain() {

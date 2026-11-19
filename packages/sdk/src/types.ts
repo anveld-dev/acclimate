@@ -459,6 +459,7 @@ export interface LearningEnrollmentStatus extends LearningEnrollment {
     effectiveRepetitions?: number;
     standardError?: number;
     minimumDetectableEffect?: number;
+    powerGuardObservations?: number;
     caseVariability?: Record<string, number>;
     plan?: {
       /** Assigned repetitions per development case, shared with cumulative comparisons. */
@@ -484,6 +485,10 @@ export interface LearningPowerProjection {
   caseCount: number;
   effectiveRepetitions: number;
   projectedMde: number | null;
+  lowerMde?: number | null;
+  upperMde?: number | null;
+  decision?: 'stop' | 'warn' | 'admit';
+  reason?: string;
   powerAtEffect: number | null;
   effect: number;
   casesNeededAtTarget: number | null;

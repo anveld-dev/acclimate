@@ -370,15 +370,23 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         // The API test's private input is the cohort string itself; the driver qualification
         // separately uses connectedEvaluationDescriptor() on executing app fixtures.
         use sha2::{Digest, Sha256};
-        let fingerprint = hex::encode(Sha256::digest(serde_json::to_vec(cohort).unwrap()));
+        let ids = if cohort == "dev" {
+            vec![cohort, "dev-extra"]
+        } else {
+            vec![cohort]
+        };
+        let fingerprints: Vec<_> = ids
+            .iter()
+            .map(|id| hex::encode(Sha256::digest(serde_json::to_vec(id).unwrap())))
+            .collect();
         let expected = hex::encode(Sha256::digest(b"true"));
-        let cases =
-            json!([{"caseId":cohort,"input":fingerprint,"expected":expected,"repetitions":1}]);
+        let cases: Vec<_> = ids.iter().zip(&fingerprints).map(|(id, fingerprint)|
+            json!({"caseId":id,"input":fingerprint,"expected":expected,"repetitions":1})).collect();
         let dataset = hex::encode(Sha256::digest(serde_json::to_vec(&cases).unwrap()));
         json!({
             "datasetRevision":cohort,"runtime":{"fixture":"local"},"graderRevision":"grader",
-            "expectedCases":[{"caseId":cohort,"repetition":0}],
-            "fixtureProtocol":"installed-v1","datasetDigest":dataset,"caseFingerprints":[fingerprint],
+            "expectedCases":ids.iter().map(|id| json!({"caseId":id,"repetition":0})).collect::<Vec<_>>(),
+            "fixtureProtocol":"installed-v1","datasetDigest":dataset,"caseFingerprints":fingerprints,
         })
     };
     let settings = json!({
@@ -1149,38 +1157,77 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         assert_eq!(status, StatusCode::OK, "{view}");
         view["noiseCalibration"].clone()
     };
-    let evaluated = read_calibration().await;
-    assert_eq!(evaluated["status"], "evaluated");
-    for field in ["plan", "pairedStandardDeviation", "cumulativeProjection"] {
-        assert!(evaluated.get(field).is_none(), "{evaluated}");
-    }
-    assert!(evaluated["stoppedReason"].is_null());
-
-    state.runtime.ownership_acquired();
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        loop {
-            let published = read_calibration().await;
-            if published["status"] == "completed" {
-                assert!(published["plan"].is_object(), "{published}");
-                assert!(
-                    published["pairedStandardDeviation"].is_number(),
-                    "{published}"
-                );
-                assert!(
-                    published["developmentProjection"].is_object(),
-                    "{published}"
-                );
-                assert!(published["cumulativeProjection"].is_object(), "{published}");
-                assert!(published["auditProjections"].is_array(), "{published}");
-                assert!(published["stoppedReason"].is_null(), "{published}");
-                break;
+    for (target, decision, status) in [
+        (Some(0.10), "stop", "stopped"),
+        (Some(0.80), "warn", "completed"),
+        (None, "admit", "completed"),
+    ] {
+        state.runtime.ownership_uncertain();
+        state.runtime.settle_claims().await;
+        sqlx::query(
+            "UPDATE connected_learning_policy_epochs SET noise_calibration=NULL,
+             repetition_plan=NULL, calibration_stopped_reason=NULL,
+             selection_policies=CASE WHEN $2::float8 IS NULL THEN selection_policies #- '{development,targetEffect}'
+               ELSE jsonb_set(selection_policies, '{development,targetEffect}', to_jsonb($2::float8)) END
+             WHERE integration_id=$1 AND epoch=0",
+        )
+        .bind(enrollment_id)
+        .bind(target)
+        .execute(&db)
+        .await
+        .unwrap();
+        let check_evaluated = |view: &Value| {
+            assert_eq!(view["status"], "evaluated", "{view}");
+            for field in [
+                "plan",
+                "pairedStandardDeviation",
+                "cumulativeProjection",
+                "powerGuardObservations",
+            ] {
+                assert!(view.get(field).is_none(), "{view}");
             }
-            assert_eq!(published["status"], "evaluated", "{published}");
-            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-        }
-    })
-    .await
-    .unwrap();
+            assert!(view["stoppedReason"].is_null());
+        };
+        check_evaluated(&read_calibration().await);
+        state.runtime.ownership_acquired();
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                let published = read_calibration().await;
+                if published["status"] == status {
+                    assert!(published["plan"].is_object(), "{published}");
+                    assert!(
+                        published["pairedStandardDeviation"].is_number(),
+                        "{published}"
+                    );
+                    assert_eq!(published["powerGuardObservations"], 2, "{published}");
+                    if decision == "warn" {
+                        assert!(
+                            published["warning"]
+                                .as_str()
+                                .unwrap()
+                                .contains("Cumulative")
+                        );
+                    }
+                    let cumulative = &published["cumulativeProjection"];
+                    assert_eq!(cumulative["decision"], decision, "{published}");
+                    assert!(cumulative["lowerMde"].is_number(), "{published}");
+                    assert!(cumulative["upperMde"].is_number(), "{published}");
+                    assert!(cumulative["reason"].is_string(), "{published}");
+                    assert!(published["auditProjections"].is_array(), "{published}");
+                    assert_eq!(
+                        published["stoppedReason"].is_string(),
+                        status == "stopped",
+                        "{published}"
+                    );
+                    break;
+                }
+                check_evaluated(&published);
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
     let malformed = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             let reason: Option<String> = sqlx::query_scalar(

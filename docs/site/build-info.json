@@ -38,7 +38,7 @@
     "docs/architecture/productization/ui-improvements.md": "86d33ba3f1c23b890a619bd204ef52f53d4975696c39489f76c1a58b1e2c9cd8",
     "apps/console/README.md": "02fee889998d5c946fd89ca1fdfb63555449f33b4f516c971d3a4ab3cc5ec415",
     "tools/operator/README.md": "d5e68415a80dba108c15da6601bccc22e50697e8ab69773fce6c09ab05a96e71",
-    "deploy/README.md": "615a5338eb9e4ee8ed73fe37ab95bca9691331afb9ee13282063658d1b2131c6",
+    "deploy/README.md": "033a3a4055b448d150e9431dad2ac8b2398d5ccf9a2336ce0bd01b85a55ba9dd",
     "docs/evaluator-operations.md": "209de6aec1402ced26ae13b34a65a3c4ae1f4fbdc911327c93c266b9a4abd6bb",
     "deploy/sign-in.md": "db494df67f59fb10a600e73a6f1611d19caba840a7d405913b3cb62c8bb04899",
     "deploy/keycloak/README.md": "ac618a5e239a39dbee115bf6f05f601308d7ba959c5d09547426771b32e4223a",
@@ -107,8 +107,8 @@
     "apps/console/src/server/selection.ts": "bca4ad06a73e6273b9662fe23f7daa73e7cfdd936f93754e8d4ed1cb20b88c0e",
     "apps/console/src/server/setup.ts": "8562d5c7c841c3078c648ba5b30e45976549ff0ef36c3facbfac04ed61f964ff",
     "apps/keycloak-theme/package.json": "880b0c5e6be4d88fb3315b14f6418435eb03923c67ddb3433046b1364b5b0de2",
-    "contracts/learning.md": "8e0a139b9541fb6da5a7fbb39cec3954030f962147b9b153c734192405be7d34",
-    "contracts/openapi.yaml": "926ebcbee7367327dbbd49fbefa2a6812a4276aa5896f99b1c4942f2bc858cdf",
+    "contracts/learning.md": "ee3b692f955bc954a5c7f9fda89f67f0be1993b3f213ec82f1f2cef2158c8488",
+    "contracts/openapi.yaml": "35252fa863045aac26be75963684ad70e64e3097ddcb4943adc0e3f3b792daf5",
     "contracts/remediation.md": "29c5434e50a280098280d5972565863160ab6e339e83922e1779c4cfb2892f43",
     "deploy/keycloak/acclimate-realm.json": "cfbde0e6cf14f0c903bcb45b0e2746ead36ca254a7b25536f6b5b5fea46a92fc",
     "deploy/mailpit.md": "ecc3402d40cdbe99da3b21d8d523bd95308bcd2b03ab39e6342ce3f3019ee8a4",
@@ -341,7 +341,7 @@
     "src/pagination.rs": "2a2c15df1ce3b9929959a9e0a4320753e753b35c77db87b94e3aeea53c570d64",
     "src/types.rs": "68c41bfb619df28cb7b246297c0dea09152592edc6b480aeaa7355de3faef2b6",
     "src/workspaces.rs": "9440aceaac1bd9dae84fd5a44181a80fa39cc6bfa482ae220d920c8d2d8cd72c",
-    "tests/integrations.rs": "72a1529d88657b6a06dc9b1dedad2dec065e02af0dc58e6a5304b6d7c98d1a50",
+    "tests/integrations.rs": "ad19c53817cf260791cb3f3c5ffde32f2958014a11b317b6a8e645a4fa2f2402",
     "tests/productization_regressions.rs": "a4bd5699c4e02cd8a8afaa4b7b4c27845f128828a6db2156b9db453d37e67c68"
   }
 }

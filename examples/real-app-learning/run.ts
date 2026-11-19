@@ -427,7 +427,11 @@ try {
   const calibration = await waitFor('noise calibration', async () => {
     signal.throwIfAborted();
     const status = (await view()).noiseCalibration;
-    return status && ['failed', 'completed', 'interrupted', 'stopped'].includes(status.status)
+    if (status?.status === 'completed') {
+      // The evaluator completes its request before the worker publishes the power decision.
+      return status.plan ? status : undefined;
+    }
+    return status && ['failed', 'interrupted', 'stopped'].includes(status.status)
       ? status
       : undefined;
   });
@@ -445,7 +449,7 @@ try {
         }),
       );
   }
-  if (replication && calibration.stoppedReason) {
+  if (calibration.stoppedReason) {
     console.log(JSON.stringify({ final: await view() }));
   } else {
     assert.equal(calibration.status, 'completed');

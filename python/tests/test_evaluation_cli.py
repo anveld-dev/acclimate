@@ -200,13 +200,17 @@ class CommandTests(unittest.TestCase):
         inputs = ["compare", "--config", str(self.config), "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
         self.assertEqual(self.invoke([*inputs, "--name", "original"])[0], 0)
         retry = [*inputs, "--retry-after", "original"]
-        for status in ("requested", "running", "interrupted"):
+        for status in ("requested", "running"):
             self.state["request"]["status"] = status
             code, _, error = self.invoke(retry)
             self.assertEqual(code, 3)
             self.assertEqual(error["error"]["code"], "evidence.not_terminal")
-        self.state["request"]["status"] = "completed"
+            self.assertIn("an interrupted or abandoned request", error["error"]["hint"])
+        # An interrupted predecessor (for example, one the service expired) is settled.
         self.state["revision"] = "2"
+        self.state["request"]["status"] = "interrupted"
+        self.assertEqual(self.invoke(retry)[2]["error"]["code"], "request.base_conflict")
+        self.state["request"]["status"] = "completed"
         self.assertEqual(self.invoke(retry)[2]["error"]["code"], "request.base_conflict")
         self.payload_file.write_bytes(encoded(self.original))
         self.assertEqual(self.invoke(retry)[2]["error"]["code"], "request.intent_mismatch")
@@ -249,6 +253,15 @@ class CommandTests(unittest.TestCase):
         inputs = ["compare", "--config", str(self.config), "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
         self.assertEqual(self.invoke([*inputs, "--name", "original"])[0], 0)
         self.assertNotIn("runName", self.state["requestBodies"][0])
+    def test_request_against_unpublished_channel_names_the_missing_baseline(self):
+        args = list(self.request_args)
+        args[args.index("--channel") + 1] = "unpublished"
+        code, _, error = self.invoke(args)
+        self.assertEqual(code, 1)
+        self.assertEqual(error["error"]["code"], "request.channel_empty")
+        self.assertEqual(error["error"]["nextAction"], "ask_operator")
+        self.assertIn("Publish a baseline release", error["error"]["hint"])
+        self.assertEqual(self.state["drafts"], 0)
 
     def test_first_policy_error_names_only_known_missing_fields(self):
         value = {**self.quality, "metric": {"name": "PRIVATE_CANARY"}, "PRIVATE_CANARY": "x"}

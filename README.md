@@ -10,27 +10,19 @@ Acclimate is open source under Apache-2.0 and self-hosted. Your agents, prompts,
 
 ## Try it locally, no server
 
-Install the SDK in your agent's project (Node.js 22.22+ or Python 3.11+; see [install](apps/docs/content/docs/get-started/install.mdx)). Save the current instructions as `p.json` and your edit as `c.json`. Each is a [payload](apps/docs/content/docs/concepts/glossary.mdx), the JSON form of an agent's files:
-
-```json
-{
-  "schemaVersion": 1,
-  "files": [
-    { "path": "instructions.md", "kind": "instruction", "text": "Answer in two short paragraphs." }
-  ]
-}
-```
-
-`try` runs a built-in sample comparison. `compare --local` compares your two versions on your laptop. Nothing is sent to a server.
+Install the SDK in your agent's project (Node.js 22.22+, or Python 3.11+ for the Python SDK; see [install](apps/docs/content/docs/get-started/install.mdx)). Add an application module, `application.mjs` or `application.py`, that exports your saved `cases`, an `execute` function that calls your agent with the bundle it is given, and a `grade` function that returns a numeric reward. Put the current instructions in a `parent` folder and your edit in a `candidate` folder. Each folder is a [payload](apps/docs/content/docs/concepts/glossary.mdx): files under `skills/` become skills, files under `memory/` become memory, and the rest become instructions.
 
 ```sh
-./node_modules/.bin/acclimate-eval try
-./node_modules/.bin/acclimate-eval compare --local --parent p.json --candidate c.json
+./node_modules/.bin/acclimate-eval try --live --payload candidate
+./node_modules/.bin/acclimate-eval compare --local --parent parent --candidate candidate --live
+# Python: python -m acclimate try … and python -m acclimate compare --local …
 ```
+
+`try` runs one case and checks every value your callbacks return. `compare --local` grades both versions on the same cases with the same pairing as a service comparison and prints the parent and candidate scores. Nothing is sent to a server, and the advisory report is never release evidence. Omit `--live` when your adapter exports `execution` as `model-free`. [Quickstart](apps/docs/content/docs/get-started/quickstart.mdx)
 
 ## Run the local stack
 
-To record comparisons and review them in the console, start Acclimate on your laptop. You need Docker with Compose v2.24+, Node.js with npm, and Python 3.9+.
+To record comparisons and review them in the console, start Acclimate on your laptop. You need Docker with Compose v2.24+, Node.js with npm, and Python 3.9+ for the stack scripts.
 
 ```sh
 npm run local:up
@@ -54,8 +46,8 @@ Python users run the same commands with `python -m acclimate`. The result shows 
 
 ## After the first comparison
 
-- **Gate releases.** Add a quality policy with `--policy` to check thresholds and measured costs, and run the same check on pull requests. [Evaluate a change](apps/docs/content/docs/guides/evaluate-a-change.mdx) · [PR checks](examples/ci/README.md)
-- **Review and release.** Inspect comparisons in the console, release a version to a channel, or roll back to an earlier one. [Review and release](tools/operator/README.md)
+- **Gate releases.** Add a quality policy with `--policy` to check thresholds and measured costs, and run the same check on pull requests. [Evaluate a change](apps/docs/content/docs/guides/evaluate-a-change.mdx) · [Gate pull requests with the GitHub Action or CI wrapper](examples/ci/README.md)
+- **Review and release.** Inspect comparisons in the console, release a version to a channel, or roll back to an earlier one. From a terminal, `acclimate-operator` ships in the SDK. [Review and release](tools/operator/README.md)
 - **Deliver content to jobs.** The SDK fetches and verifies the released version when your application starts a job, and prepares files for agents such as Codex or the Claude Agent SDK. In the console, **App setup** shows the client configuration for a bundle and channel. [Native integration](examples/native-repository/README.md)
 - **Learn from outcomes.** A connection can report job outcomes and approved corrections so the service proposes changes and schedules comparisons. [Connected learning](deploy/README.md#operate-connected-learning)
 

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { execFileSync, spawn } from 'node:child_process';
-import { chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -286,6 +286,9 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
     const descriptor = describe('acclimate-eval.mjs');
     const bin = join(temp, 'node_modules/.bin/acclimate-eval');
     run(bin, ['--help'], app);
+    // The operator CLI runs from an installed SDK, outside any checkout.
+    const operatorHelp = execFileSync(join(temp, 'node_modules/.bin/acclimate-operator'), ['--help'], { cwd: app, encoding: 'utf8' });
+    if (!operatorHelp.startsWith('Usage: acclimate-operator')) throw new Error('Installed SDK lacks the operator CLI');
     const installedDescriptor = JSON.parse(execFileSync(bin, ['describe'], { cwd: app, env: appEnv, encoding: 'utf8' }));
     if (!isDeepStrictEqual(installedDescriptor, descriptor))
       throw new Error('SDK binary and starter describe different installed applications');
@@ -338,6 +341,9 @@ export const { execute, grade } = adapter;
 
     run('sh', ['-n', 'ci.sh'], join(extractedStarters, 'ci-starter'));
     run(pythonExecutable, ['ci.py', '--help'], join(extractedStarters, 'ci-starter'));
+    for (const name of ['action.yml', 'workflows/pr-check.yml', 'workflows/release.yml'])
+      if (!(await stat(join(extractedStarters, 'ci-starter', name)).catch(() => null))?.isFile())
+        throw new Error(`CI starter is missing ${name}`);
     const native = join(extractedStarters, 'native-repository-starter');
     await cp(join(root, 'examples/native-repository/test'), join(native, 'test'), { recursive: true });
     run(process.execPath, ['--test', 'test/installed.test.mjs'], native);

@@ -1,6 +1,6 @@
 # Operator commands
 
-Set `ACCLIMATE_URL`, `ACCLIMATE_TOKEN`, and `ACCLIMATE_SCOPE` in the environment. Use a scoped service principal and a trusted TLS endpoint. Each command needs `--project` and `--bundle`; commands involving a channel also need `--channel`. Run with `npm run operator -- COMMAND ...` (or `npx tsx tools/operator/cli.ts COMMAND ...`). All output is JSON: pretty by default, compact and stable in structure with `--json`. Errors go to stderr and return a nonzero exit status. Terminal controls in displayed strings are escaped.
+Set `ACCLIMATE_URL`, `ACCLIMATE_TOKEN`, and `ACCLIMATE_SCOPE` in the environment. Use a scoped service principal and a trusted TLS endpoint. Each command needs `--project` and `--bundle`; commands involving a channel also need `--channel`. The CLI ships in `@acclimate/sdk` as `acclimate-operator`, so it runs outside a checkout wherever the SDK is installed (`npx acclimate-operator COMMAND ...`; `--help` lists the commands). From a checkout, run `npm run operator -- COMMAND ...`. The source lives in `packages/sdk/src/operator/`. All output is JSON: pretty by default, compact and stable in structure with `--json`. Errors go to stderr and return a nonzero exit status. Terminal controls in displayed strings are escaped.
 
 ```sh
 npm run operator -- request-proposal --project PROJECT --bundle BUNDLE --parent VERSION --path skills/retry-review/SKILL.md --hypothesis 'Improve review' --evidence 'Observed failure'

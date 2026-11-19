@@ -7,7 +7,10 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
+import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
@@ -23,6 +26,7 @@ CRITERIA = [
     'C4 copied evidence verified in separately installed reader project after journal removal',
     'C5 same CI intent after committed response loss and synthetic expiry beyond 24h',
     'C6 distributed optional analysis recipe uses installed SDK and remains descriptive',
+    'C7 wrapper summary names result and phase; cancelling a run prints a cancelled summary and a rerun starts a fresh request',
 ]
 
 
@@ -46,8 +50,14 @@ def acceptance(output):
         # reachable through payload bytes while instrumenting execution count.
         agent = app / 'agent.mjs'
         source = agent.read_text()
-        source = "import { appendFileSync } from 'node:fs';\n" + source
-        source = source.replace("  const reuseKey =", "  appendFileSync(new URL('./execution-count.log', import.meta.url), 'execute\\n', {mode:0o600});\n  if (instruction.includes('CI_INCOMPLETE')) throw new Error('Controlled private fixture infrastructure failure');\n  const reuseKey =")
+        source = "import { appendFileSync, existsSync, rmSync } from 'node:fs';\n" + source
+        source = source.replace("  const reuseKey =", "  appendFileSync(new URL('./execution-count.log', import.meta.url), 'execute\\n', {mode:0o600});\n  if (instruction.includes('CI_INCOMPLETE')) throw new Error('Controlled private fixture infrastructure failure');\n"
+                                "  if (instruction.includes('CI_SLOW') && existsSync(new URL('./slow-once.flag', import.meta.url))) {\n"
+                                "    rmSync(new URL('./slow-once.flag', import.meta.url));\n"
+                                "    appendFileSync(new URL('./slow-started.log', import.meta.url), 'slow\\n', {mode:0o600});\n"
+                                "    await new Promise((resolve, reject) => { const timer = setTimeout(resolve, 120000);\n"
+                                "      signal?.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason); }, { once: true }); });\n"
+                                "  }\n  const reuseKey =")
         agent.write_text(source)
         entry = app / 'application.mjs'
         adapter = entry.read_text().replace(
@@ -65,19 +75,25 @@ def acceptance(output):
             reader_path = f.write_json('private/config/ci-reader.json', reader)
             evidence = []
 
-            def pipeline(name, payload, expected, target_bundle=bundle):
+            def pipeline(name, payload, expected, target_bundle=bundle, result='pass'):
                 result_dir = f.root / 'jobs' / name
                 intent = f.root / 'private/intents' / (name + '.json')
+                summary_file = f.root / 'private/summaries' / (name + '.json')
+                f.write_json(summary_file, None)
                 repo = f.root / ('checkout-' + name)
                 revision = commit_candidate(repo, payload)
                 cmd = ['sh', str(ci / 'ci.sh'), '--language', 'javascript', '--app', str(app / 'acclimate-eval.mjs'),
                        '--config', str(config_path), '--bundle', target_bundle, '--channel', 'stable',
                        '--intent', str(intent), '--output-dir', str(result_dir), '--live',
                        '--repo', str(repo), '--commit', revision, '--payload', 'candidate.json',
-                       '--policy', str(app / 'quality-policy.json'), '--selection', str(app / 'share-selection.json')]
+                       '--policy', str(app / 'quality-policy.json'), '--selection', str(app / 'share-selection.json'),
+                       '--summary-json', str(summary_file)]
                 f._execute(cmd, ci, expected, parse_json=False)
                 handoff = json.loads((result_dir / 'evaluation-request.json').read_text())
                 request = f.h.call('GET', '/v1/projects/' + f.project + '/bundles/' + target_bundle + '/evaluation-requests/' + handoff['requestId'], actor='evaluator')
+                summary = json.loads(summary_file.read_text())
+                assert summary['result'] == result and summary['exitCode'] == expected, summary
+                assert summary['requestId'] == handoff['requestId'], summary
                 return result_dir, handoff, request, cmd
 
             passed_dir, passed_handoff, passed, retry_cmd = pipeline('passing', app / 'candidate.json', 0)
@@ -102,21 +118,56 @@ def acceptance(output):
                                  executionCallsBefore=before_count, executionCallsAfter=before_count, verdict=verdict))
             losing_payload = f.write_json('private/losing.json', json.loads((app / 'baseline.json').read_text()))
             losing_setup = f.bootstrap(payload=json.loads((app / 'candidate.json').read_text()), name='Known-good baseline for concrete regression')
-            losing_dir, losing_handoff, losing, _ = pipeline('losing', losing_payload, 2, losing_setup['bundle']['id'])
+            losing_dir, losing_handoff, losing, _ = pipeline('losing', losing_payload, 2, losing_setup['bundle']['id'], 'quality_failed')
             assert losing['status'] == 'completed'
             losing_verdict = f.run(command + ['check', '--config', str(config_path), '--handoff', str(losing_dir / 'evaluation-request.json'), '--policy', str(app / 'quality-policy.json')], cwd=app, expected=2)
             assert losing_verdict['summary']['orientedMeanImprovement'] < 0
             evidence.append(dict(id='CI-LOSING', exitCode=2, requestId=losing['id'], comparisonId=losing['comparisonId'], status=losing['status'], verdict=losing_verdict))
             incomplete_payload = f.write_json('private/incomplete.json', dict(schemaVersion=1, files=[dict(path='instructions.md',kind='instruction',text='CI_INCOMPLETE')]))
-            incomplete_dir, _, incomplete, _ = pipeline('incomplete', incomplete_payload, 2)
+            incomplete_dir, _, incomplete, _ = pipeline('incomplete', incomplete_payload, 2, result='execution_failed')
             assert incomplete['status'] == 'failed'
             incomplete_verdict = f.run(command + ['check', '--config', str(config_path), '--handoff', str(incomplete_dir / 'evaluation-request.json'), '--policy', str(app / 'quality-policy.json')], cwd=app, expected=3)
             evidence.append(dict(id='CI-INCOMPLETE', exitCode=2, checkExitCode=3, requestId=incomplete['id'], comparisonId=incomplete['comparisonId'], status=incomplete['status'], verdict=incomplete_verdict))
             (app / 'deny-review.flag').write_text('Private application declines required review artifact')
-            failed_export_dir, _, export_request, _ = pipeline('required-export-unavailable', app / 'candidate.json', 3)
+            failed_export_dir, _, export_request, _ = pipeline('required-export-unavailable', app / 'candidate.json', 3,
+                                                              result='export_failed')
             assert export_request['status'] == 'completed'
-            assert not list(failed_export_dir.glob('review-*/manifest.json'))
+            assert not list(failed_export_dir.glob('reviews/*/manifest.json'))
             evidence.append(dict(id='CI-EXPORT-FAILURE', exitCode=3, requestId=export_request['id'], comparisonId=export_request['comparisonId'], status=export_request['status'], committedManifestCount=0))
+            (app / 'deny-review.flag').unlink()
+
+            # Cancel a CI-managed run while a case executes, as GitHub's cancel-in-progress does.
+            slow_repo = f.root / 'checkout-cancelled'
+            slow_payload = f.write_json('private/slow.json', dict(schemaVersion=1, files=[
+                dict(path='instructions.md', kind='instruction', text='CI_SLOW')]))
+            slow_revision = commit_candidate(slow_repo, slow_payload)
+            slow_dir = f.root / 'jobs' / 'cancelled'
+            slow_cmd = ['sh', str(ci / 'ci.sh'), '--language', 'javascript', '--app', str(app / 'acclimate-eval.mjs'),
+                        '--config', str(config_path), '--bundle', bundle, '--channel', 'stable',
+                        '--output-dir', str(slow_dir), '--live', '--repo', str(slow_repo), '--commit', slow_revision,
+                        '--payload', 'candidate.json', '--policy', str(app / 'quality-policy.json')]
+            (app / 'slow-once.flag').write_text('cancel the first slow case')
+            started = app / 'slow-started.log'
+            child = subprocess.Popen(slow_cmd, cwd=ci, env=f.clean_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            deadline = time.monotonic() + 120
+            while not started.exists():
+                assert child.poll() is None and time.monotonic() < deadline, 'slow case did not start'
+                time.sleep(0.2)
+            child.send_signal(signal.SIGINT)
+            stdout, _ = child.communicate(timeout=60)
+            cancelled = json.loads(stdout)
+            assert child.returncode == 130 and cancelled['result'] == 'cancelled', cancelled
+            assert cancelled['cancellation'] == {'signal': 'SIGINT', 'phase': 'run', 'forced': False}, cancelled
+            cancelled_request = f.h.call('GET', route + '/evaluation-requests/' + cancelled['requestId'], actor='evaluator')
+            assert cancelled_request['status'] in ('failed', 'completed'), cancelled_request
+            rerun = subprocess.run(slow_cmd, cwd=ci, env=f.clean_env, capture_output=True, text=True)
+            fresh = json.loads(rerun.stdout)
+            assert fresh['requestId'] != cancelled['requestId'] and fresh['previousRequestId'] == cancelled['requestId'], fresh
+            assert fresh['result'] in ('pass', 'quality_failed') and fresh['executionStatus'] == 'completed', fresh
+            evidence.append(dict(id='CI-CANCEL-RERUN', cancelledExitCode=child.returncode, cancelledRequestId=cancelled['requestId'],
+                                 cancelledStatus=cancelled_request['status'], rerunRequestId=fresh['requestId'],
+                                 rerunResult=fresh['result'], rerunExitCode=rerun.returncode))
+
             assert f.h.call('GET', channel) == initial
             evidence.append(dict(id='NO-AUTOPROMOTION', channelRevision=initial['revision'], versionId=initial['version']['id']))
 
@@ -169,7 +220,7 @@ def acceptance(output):
                                  revisions=[initial['revision'],promoted['revision'],rolled['revision']], pinnedVersion=old_pin, promotedVersionId=promoted['version']['id'], rollbackVersionId=rolled['version']['id']))
             # Copy a committed selected artifact, remove only terminal owned worker state,
             # then independently verify using a distinct read-only principal.
-            export = sorted(passed_dir.glob('review-*/manifest.json'))[0].parent
+            export = sorted(passed_dir.glob('reviews/*/manifest.json'))[0].parent
             reader_app = f.install_js(name='separate-reviewer', starter='evaluation')
             f.clean_env['ACCLIMATE_EVALUATOR_CASES'] = install_test_application(reader_app, 'javascript')
             assert not reader_app.is_relative_to(ci) and reader_app != app

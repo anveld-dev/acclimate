@@ -51,6 +51,7 @@ export type SafeCode =
   | 'submission.unconfirmed'
   | 'request.interrupted'
   | 'request.base_conflict'
+  | 'request.channel_empty'
   | 'request.intent_mismatch'
   | 'policy.invalid'
   | 'policy.inventory_incompatible'
@@ -180,6 +181,7 @@ export const EVALUATION_ERROR_CODES: Readonly<Record<SafeCode, Readonly<CodeInfo
   'submission.unconfirmed': recovery('The report was saved locally, but the service has not confirmed the submission.', 'retry_same_command'),
   'request.interrupted': recovery('The request was interrupted.', 'interrupt_then_new_request'),
   'request.base_conflict': recovery('The published parent changed after this request was created.', 'fix_config'),
+  'request.channel_empty': operator('The channel has no published release, so there is no parent to compare with.'),
   'request.intent_mismatch': config('The saved run intent differs from this command. Reuse the original inputs, or start a new run name.'),
   'policy.invalid': config('The quality policy is invalid.'),
   'policy.inventory_incompatible': config('The policy requires cases that are not in the evaluation inventory.'),

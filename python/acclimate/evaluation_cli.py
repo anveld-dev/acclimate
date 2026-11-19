@@ -21,7 +21,7 @@ from ._evaluation_shared import (
     guided_uuid, DIGEST_RE,
 )
 from ._evaluation_cli_intents import (
-    create_request_from_intent, interrupt_from_intent, read_command_bytes,
+    assert_settled_predecessor, create_request_from_intent, interrupt_from_intent, read_command_bytes,
     read_command_json,
 )
 from .evaluation_analysis import analyze_comparison
@@ -441,11 +441,7 @@ def _dispatch(app, command, flags, review, cwd=None):
                 client, project_id = _connection(flags, prior)
                 request = client.get_evaluation(project_id, prior["bundleId"], prior["requestId"])
                 _assert_request(request, prior)
-                # A settled predecessor, or one the service abandoned, may be retried.
-                # An abandoned attempt's evidence never counts, so it needs no comparison.
-                settled = request["status"] in ("completed", "failed") and request.get("attemptId") and request.get("comparisonId")
-                if not settled and request["status"] != "abandoned":
-                    raise EvaluationError("evidence.not_terminal", phase="inspect", next_action="inspect_external_app")
+                assert_settled_predecessor(request)
                 predecessor = handoff_file, request
                 flags.setdefault("name", "after-" + request["id"])
             root = _named_handoff(config["journalRoot"], _required(flags, "name")).parent
@@ -545,7 +541,8 @@ def _dispatch(app, command, flags, review, cwd=None):
 _RECOVERY_HINTS = {
     "request.intent_mismatch": "Restore the original evaluator and candidate to recover this run. To measure a changed evaluator on the same settled candidate, replace --name with --retry-after and the prior name.",
     "request.base_conflict": "The published parent changed. Review the new parent and choose a new name for a comparison against it.",
-    "evidence.not_terminal": "Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison.",
+    "evidence.not_terminal": "Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison, or an interrupted or abandoned request.",
+    "request.channel_empty": "The channel has no release yet. Publish a baseline release to this channel, then run the comparison again.",
     "policy.invalid": "Use the editable quality-policy.example.json from the evaluator starter or copy the policy in the getting-started guide.",
     "config.missing": "Check the --config path. Relative paths resolve against the current directory.",
 }
@@ -583,7 +580,7 @@ def report_evaluator_error(error, argv, command="invalid") -> int:
     safe = safe_error(error, phase="configure")
     diagnostic = dict(safe.diagnostic)
     hint = diagnostic.get("hint")
-    if hint is None and (command == "compare" or diagnostic["code"] in ("policy.invalid", "config.missing")):
+    if hint is None and (command == "compare" or diagnostic["code"] in ("policy.invalid", "request.channel_empty", "config.missing")):
         hint = _RECOVERY_HINTS.get(diagnostic["code"])
     message = str(safe) if isinstance(error, EvaluationError) else ERROR_CODES.get(diagnostic["code"], ERROR_CODES["internal.error"])[0]
     # An unexpected exception is itself the cause; an evaluator error names its chained cause.

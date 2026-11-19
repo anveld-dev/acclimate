@@ -32,6 +32,7 @@ import {
   type ReviewMapper,
 } from './artifacts.js';
 import {
+  assertSettledPredecessor,
   createRequestFromIntent,
   interruptFromIntent,
   readCommandJson,
@@ -660,12 +661,7 @@ async function dispatch(
       const { client, projectId } = await readConnection(flags, prior);
       const request = await client.getEvaluation(projectId, prior.bundleId, prior.requestId);
       assertRequest(request, prior);
-      // A settled predecessor, or one the service abandoned, may be retried. An
-      // abandoned attempt's evidence never counts, so it needs no comparison.
-      const settled =
-        ['completed', 'failed'].includes(request.status) && request.attemptId && request.comparisonId;
-      if (!settled && request.status !== 'abandoned')
-        throw new EvaluationError('evidence.not_terminal', { phase: 'inspect', nextAction: 'inspect_external_app' });
+      assertSettledPredecessor(request);
       predecessor = { handoffFile, request };
       if (!flags.name) flags.name = 'after-' + request.id;
     }
@@ -970,7 +966,9 @@ const recoveryHints: Partial<Record<SafeCode, string>> = {
   'request.base_conflict':
     'The published parent changed. Review the new parent and choose a new name for a comparison against it.',
   'evidence.not_terminal':
-    'Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison.',
+    'Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison, or an interrupted or abandoned request.',
+  'request.channel_empty':
+    'The channel has no release yet. Publish a baseline release to this channel, then run the comparison again.',
   'policy.invalid':
     'Use the editable quality-policy.example.json from the evaluator starter or copy the policy in the getting-started guide.',
   'config.missing': 'Check the --config path. Relative paths resolve against the current directory.',
@@ -1051,6 +1049,7 @@ export function reportEvaluatorError(
     diagnostic.hint ??
     ((command === 'compare' ||
       diagnostic.code === 'policy.invalid' ||
+      diagnostic.code === 'request.channel_empty' ||
       diagnostic.code === 'config.missing') &&
       recoveryHints[diagnostic.code]) ??
     undefined;

@@ -3,6 +3,17 @@ title: Install the SDKs
 description: Verify and install an Acclimate TypeScript SDK tarball or Python wheel.
 ---
 
+## Prerequisites
+
+| To use | You need |
+| --- | --- |
+| TypeScript SDK and `acclimate-eval` | Node.js 22.22 or later, plus Python 3 with `fcntl` for the durable evaluator's locks |
+| Python SDK and `python -m acclimate` | Python 3.11 or later |
+| Comparisons and file preparation | Linux or macOS, and a private local directory for the evaluator journal |
+| The [local stack](/docs/get-started/run-locally) | Docker with Compose v2.24 or later, an Acclimate checkout, Node.js with npm, and Python 3.9 or later |
+
+You do not need a server to [try a comparison locally](/docs/get-started/quickstart#try-it-locally-no-server).
+
 ## Get a release
 
 **Download a published release.** Choose a version on the [GitHub Releases page](https://github.com/anveld-dev/acclimate/releases). Download the attached assets into one directory, including `manifest.json`, `SHA256SUMS`, and every file listed in `SHA256SUMS`. Your workspace operator can also distribute these files directly.
@@ -52,4 +63,4 @@ The distribution is named `acclimate-sdk`. Import it as `acclimate` and run the 
 
 Private file preparation and durable evaluation use POSIX on Linux or macOS. Give an evaluator a private local persistent journal. See [evaluator access](/docs/operate/evaluator-access) for permissions and recovery requirements.
 
-[Connect your application and compare a change](/docs/get-started/quickstart).
+[Try a comparison on your laptop](/docs/get-started/quickstart), or [join a team's workspace](/docs/get-started/join-a-team).

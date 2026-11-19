@@ -27,7 +27,7 @@ const entries = [
   {
     title: 'Quickstart',
     href: '/docs/get-started/quickstart',
-    body: 'Connect an existing agent and run its first comparison.',
+    body: 'Grade a change on your laptop with no server, then run it through a local stack.',
   },
   {
     title: 'Guides',
@@ -52,12 +52,12 @@ export default function HomePage() {
       <section className="flex flex-col gap-6">
         <p className="text-sm font-medium text-fd-muted-foreground">Acclimate documentation</p>
         <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance md:text-5xl">
-          Change what your agent knows, with evidence before you ship it.
+          Ship changes to your agent&apos;s prompts and skills like code.
         </h1>
         <p className="max-w-2xl text-lg text-fd-muted-foreground text-pretty">
-          Acclimate versions the instructions, skills and approved memory your agent uses. When you
-          change them, your application runs the old and new versions on the same saved tasks and
-          grades the results. Your team reviews the evidence before releasing the change.
+          Every change is a version. Your agent runs the old and new versions on the same saved
+          tasks, your grader scores both, and the change ships only when the evidence clears your
+          bar. Roll back by releasing an earlier version.
         </p>
         <div className="flex flex-wrap gap-3">
           <Link

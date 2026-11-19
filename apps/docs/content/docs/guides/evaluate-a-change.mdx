@@ -44,7 +44,16 @@ With the evaluator config, `compare --policy` and `check` submit the verdict for
 
 ## Run from a payload
 
-To compare without a console handoff, pass a complete bundle payload and give the change a stable name. Keep the same name, inputs, and evaluator journal when retrying that operation.
+To compare without a console handoff, pass a complete bundle payload and give the change a stable name. Keep the same name, inputs, and evaluator journal when retrying that operation. A payload lists every file in the candidate. `acclimate-eval pull` (or `python -m acclimate pull`) saves the published version in this format for you to edit.
+
+```json title="agent/bundle.json"
+{
+  "schemaVersion": 1,
+  "files": [
+    { "path": "instructions.md", "kind": "instruction", "text": "Answer in two short paragraphs." }
+  ]
+}
+```
 
 ```sh
 python -m acclimate compare --config "$EVALUATOR_CONFIG" \
@@ -52,7 +61,7 @@ python -m acclimate compare --config "$EVALUATOR_CONFIG" \
   --name "$CHANGE_ID" --live
 ```
 
-After a completed or failed named comparison, you can measure the same candidate again with `--retry-after "$CHANGE_ID"` in place of `--name "$CHANGE_ID"`. The successor keeps the original parent and candidate. Use a new name for different content. An unresolved attempt requires [reconciliation](/docs/operate/upgrades-and-recovery#recover-an-evaluation).
+After a completed or failed named comparison, you can measure the same change again with `--retry-after "$CHANGE_ID"`. Add `--name` to name the new attempt, or the CLI names it `after-<request ID>`. The new attempt uses the same parent and the same candidate content, saved as a new candidate version. Each comparison has at most one retry, and the console shows the earlier attempt under the retry. Use a new name for different content. An unresolved attempt requires [reconciliation](/docs/operate/upgrades-and-recovery#recover-an-evaluation).
 
 ## Export evidence for review
 

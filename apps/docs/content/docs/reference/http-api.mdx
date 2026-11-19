@@ -30,6 +30,17 @@ Channel resolution returns a revision and immutable version metadata. Send the l
 
 Bundle entries are UTF-8 text with a portable relative path and a kind of `instruction`, `skill`, or `memory`. The contract allows up to 128 files, 256 KiB of text per file, and a 1 MiB bundle payload. Paths reject traversal and file or directory collisions.
 
+```json title="Bundle payload"
+{
+  "schemaVersion": 1,
+  "files": [
+    { "path": "instructions.md", "kind": "instruction", "text": "Answer in two short paragraphs." }
+  ]
+}
+```
+
+`POST /bundles/{bundleId}/versions` takes this object as `payload`, with an optional `parentVersionId`.
+
 ## Retry a mutation
 
 For scoped content writes, provide an `Idempotency-Key` of 1–128 printable ASCII characters. Retry with the same key and exact request bytes. A different body with that key can return a 409 conflict. Retained evaluator operations use additional recovery semantics. See `contracts/dx-evaluation.md` and [evaluation recovery](/docs/operate/upgrades-and-recovery#recover-an-evaluation).

@@ -1,0 +1,80 @@
+---
+title: Join a team's workspace
+description: Connect your agent to a workspace someone else runs and compare a saved change from the console.
+---
+
+Use this path when your team already runs an Acclimate service. You connect your agent, then compare a change someone saved in the console. To try Acclimate on your own first, see [try it on your laptop](/docs/get-started/quickstart).
+
+## What to ask for
+
+The person who runs your Acclimate service, the **operator**, gives you:
+
+- **A workspace login.** An administrator invites you by email.
+- **An evaluator config.** A private JSON file that lets an evaluator in your environment read unpublished changes and submit scores for one workspace. See [evaluator access](/docs/operate/evaluator-access). The examples below use `EVALUATOR_CONFIG` for its path.
+- **The SDK release**, unless you install it from a registry. See [install the SDKs](/docs/get-started/install).
+
+The workspace needs a published bundle to compare against. If it has none, open **Workspace → Bundles → New bundle** in the console, write the starting instructions, and select **Create and publish**.
+
+<Steps>
+<Step>
+
+## Connect your agent
+
+Create `application.mjs` or `application.mts` for Node.js, or `application.py` for Python, in the directory you run the evaluator from. Export `cases`, `execute`, and `grade`, as in the [quickstart](/docs/get-started/quickstart#connect-your-agent). Each case has a unique public `caseId`, a private `input`, and a private `expected` answer.
+
+</Step>
+<Step>
+
+## Describe your evaluator
+
+From that directory, print the evaluator's **descriptor**, the public summary of its case IDs and code revisions. `coverage` lists the local files it fingerprints and can include private paths, so keep that output to yourself.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+./node_modules/.bin/acclimate-eval coverage
+./node_modules/.bin/acclimate-eval describe
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+python -m acclimate coverage
+python -m acclimate describe
+```
+
+</Tab>
+</Tabs>
+
+In the console, open the saved change under **Changes**, select **Review release**, and paste the `describe` output. Download the **evaluation request**, `evaluation-request.json`. The CLI calls this file a handoff.
+
+</Step>
+<Step>
+
+## Run the comparison
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+python -m acclimate compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+```
+
+</Tab>
+</Tabs>
+
+`--live` allows the evaluator to call your agent with your application's own credentials. The result shows the parent and candidate means, how many pairs were scored, and each case's scores. The comparison also appears on the change in the console. When you are ready to set thresholds, [add a quality policy](/docs/guides/evaluate-a-change).
+
+</Step>
+</Steps>
+
+To compare a change from the command line instead of the console, use `pull` and `compare --payload` as the [quickstart](/docs/get-started/quickstart#run-your-first-live-comparison) shows.

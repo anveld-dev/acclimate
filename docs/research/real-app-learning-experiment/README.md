@@ -6,6 +6,8 @@ The [replication on policy v3](replication.md) used two repetitions per arm and 
 
 The [40-case experiment](40-case.md) cleared the power guard and ended at critic screening.
 
+The [five-admission experiment](5-admission.md) reached development before an interruption, then stopped at the power guard on a fresh restart.
+
 ## Setup
 
 LLM 0.38 at `46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f`, Click 8.5.1 and Python 3.13.1. Acclimate service source `c542f0435ba7d2828c8c4b7baa6c2d03afc0e4e7`, Rust 1.89.0 and a disposable PostgreSQL 18.6 database. The validation turn used Codex CLI 0.169.1. The SDK used @openai/codex-sdk 0.169.0 with its bundled Codex CLI 0.169.0. Each turn explicitly requested `gpt-6-luna` at low reasoning effort. The protocol records the frozen task, grader and baseline SHA-256 digests. [Pinned LLM source](https://github.com/simonw/llm/tree/46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f)

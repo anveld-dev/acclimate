@@ -11,8 +11,9 @@ Use `acclimate-eval` with the TypeScript SDK or `python -m acclimate` with the P
 | --- | --- |
 | `coverage` | Inspect local sources, package imports, and declared revision inputs. Keep the report private. |
 | `describe` | Print the public descriptor for the installed cases, runtime, and grader. |
+| `try` | Run `execute` and `grade` for one or a few cases with `--case`, print the output, and check every returned shape. It needs no service. |
 | `doctor` | Check setup with `--config` and a `--bundle`, `--handoff`, or named run. You can include `--policy`. |
-| `compare` | Run a downloaded handoff, or create and run a named comparison from a complete bundle payload. |
+| `compare` | Run a downloaded handoff, or create and run a named comparison from a complete bundle payload. Use `compare --local --parent PAYLOAD --candidate PAYLOAD` to compare two payload files or folders without a service. The local result is advisory. |
 | `request` | Create a handoff from a bundle, channel, payload, and durable `--intent`. Write the handoff with `--out`. |
 | `run` | Execute an existing request with the evaluator config and handoff or name. |
 | `status` | Inspect request state and optional reported activity. |
@@ -38,3 +39,20 @@ python -m acclimate status --read-config "$READER_CONFIG" --handoff "$HANDOFF"
 ```
 
 Use `--name` to refer to a headless run using its original evaluator config. For a deliberate repeat after a terminal run, see [run from a payload](/docs/guides/evaluate-a-change#run-from-a-payload). For uncertain execution or lost responses, see [evaluation recovery](/docs/operate/upgrades-and-recovery#recover-an-evaluation).
+
+## Local runs
+
+`try` and `compare --local` load the same application adapter but never contact the service. `PAYLOAD` is a payload JSON file or a folder. In a folder, `skills/**` become skill files, `memory/**` become memory files, and other files become instructions.
+
+```sh
+acclimate-eval try --live [--case ID,ID] [--payload PAYLOAD] [--case-timeout 2m] [--json]
+acclimate-eval compare --local --parent PAYLOAD --candidate PAYLOAD --live \
+  [--policy POLICY] [--out DIR] [--json] [--cases ID,ID | --shard I/N] \
+  [--deadline 30m] [--case-timeout 2m] [--max-cost-usd 5] [--progress | --quiet]
+```
+
+`try` exits 0 when every shape is valid and 1 otherwise. `compare --local` exits with the advisory policy result when you pass `--policy`: 0 for pass, 2 for fail, and 3 for indeterminate. Without a policy, it exits 3 when a deadline, cost limit, or interruption stopped the run, and 0 otherwise. The report `local-report.json` has `"authoritative": false` and `"releaseReceipt": false`.
+
+## Run controls
+
+`compare` and `run` also accept `--deadline`, `--case-timeout`, `--max-cost-usd`, `--cases`, `--shard`, `--progress`, and `--quiet`. See [bound and split a run](/docs/guides/evaluate-a-change#bound-and-split-a-run). Without a terminal, stderr stays a single JSON diagnostic unless you pass `--progress`.

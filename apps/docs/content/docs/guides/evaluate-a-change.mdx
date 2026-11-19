@@ -5,6 +5,33 @@ description: Bind a candidate to your installed evaluator, apply a quality polic
 
 Compare a change on a fixed inventory of cases and apply your own quality policy before a release. Start with the [application adapter](/docs/get-started/quickstart) and a [workspace evaluator config](/docs/operate/evaluator-access).
 
+## Compare locally first
+
+Before you create a request, run the change on your machine. A local comparison needs no service, config, or handoff, and nothing in it is release evidence. [Try it locally](/docs/get-started/quickstart#try-it-locally-no-server) explains the folder layout and the advisory report.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+acclimate-eval try --live --case refund-late --payload candidate
+acclimate-eval compare --local --parent parent --candidate candidate \
+  --policy quality-policy.json --max-cost-usd 2 --live
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+python -m acclimate try --live --case refund-late --payload candidate
+python -m acclimate compare --local --parent parent --candidate candidate \
+  --policy quality-policy.json --max-cost-usd 2 --live
+```
+
+</Tab>
+</Tabs>
+
+If both arms return identical output on every pair, the comparison prints a warning. This usually means `execute` doesn't pass `bundle` to the agent. The exception is when the parent and candidate payloads are the same.
+
 ## Freeze the comparison inputs
 
 In **Changes**, save the exact candidate you want to evaluate. Use the installed evaluator's `describe` output to create the request from **Review release**. When the worker runs it, the parent and candidate use the same case inputs, grader, and repetition inventory. Use fixtures or read-only tools for tasks with external effects.
@@ -42,15 +69,69 @@ acclimate-eval check --config "$EVALUATOR_CONFIG" --handoff evaluation-request.j
 
 With the evaluator config, `compare --policy` and `check` submit the verdict for release review. If `policyReceipt.status` is `unconfirmed`, retry `check` with the same evaluator config and policy. An independent reader can use `check --read-config` with the handoff for a local verdict.
 
+## Bound and split a run
+
+`compare` and `run` accept run controls. Local runs accept them too. They change when the runner stops, not what a trial measures, so they don't change the descriptor.
+
+| Flag | Effect |
+| --- | --- |
+| `--deadline 30m` | Wall-clock limit for the run. At the deadline, the runner aborts the signal of running callbacks, stops waiting for them, and starts no further work. |
+| `--case-timeout 2m` | Limit for each `execute` call and each grade attempt. A callback that runs too long is recorded with the `timeout` gap. |
+| `--max-cost-usd 5` | Stops starting new pairs once the sum of reported `usage.costUsd` reaches the limit. Pairs that have already started finish. |
+| `--cases ID,ID` or `--shard 2/4` | Runs a subset. Shards deal whole cases round-robin in inventory order. |
+| `--progress` or `--quiet` | Prints or hides one stderr line per finished arm. Progress lines appear by default only when stderr is a terminal. |
+
+A run that stops at a deadline or cost limit is partial. Its unrun pairs are recorded with `deadline_exceeded` or `cost_limit_reached`, so a policy verdict is indeterminate. A subset or shard keeps the full inventory. Unselected pairs are recorded as `not_selected`, so the comparison is never complete and can't release a version. Use shards to spread local or exploratory runs across CI jobs, then run the full comparison for the release. The result JSON includes a `run` summary with the stop reason, reported cost, selection, and identical-output count.
+
+Declare throughput settings in the adapter. They are part of the descriptor, so changing them requires a fresh request.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```ts title="application.mjs"
+export const concurrency = 4; // pairs in flight, 1–64
+export const gradeRetries = 2; // extra grade attempts after a judge throws or times out, 0–5
+```
+
+</Tab>
+<Tab value="Python">
+
+```py title="application.py"
+concurrency = 4  # pairs in flight, 1–64
+grade_retries = 2  # extra grade attempts after a judge raises or times out, 0–5
+```
+
+</Tab>
+</Tabs>
+
+Arms within a pair still run one after the other in the scheduled order. Retries never repeat `execute`. Your application still owns fixture isolation when pairs overlap. `defineEvaluation` (Python `define_evaluation`) and the evaluation manifest accept the same `concurrency` and `gradeRetries` (Python `grade_retries`) settings.
+
 ## Run from a payload
 
 To compare without a console handoff, pass a complete bundle payload and give the change a stable name. Keep the same name, inputs, and evaluator journal when retrying that operation.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+acclimate-eval compare --config "$EVALUATOR_CONFIG" \
+  --bundle "$BUNDLE_ID" --channel stable --payload agent/bundle.json \
+  --name "$CHANGE_ID" --live
+```
+
+</Tab>
+<Tab value="Python">
 
 ```sh
 python -m acclimate compare --config "$EVALUATOR_CONFIG" \
   --bundle "$BUNDLE_ID" --channel stable --payload agent/bundle.json \
   --name "$CHANGE_ID" --live
 ```
+
+</Tab>
+</Tabs>
+
+To replay a local comparison, pass the `candidate.payload.json` file from its report folder as `--payload`. The service compares it with the channel's current parent. Check that the parent digest in `local-report.json` matches if you want the same comparison.
 
 After a completed or failed named comparison, you can measure the same candidate again with `--retry-after "$CHANGE_ID"` in place of `--name "$CHANGE_ID"`. The successor keeps the original parent and candidate. Use a new name for different content. An unresolved attempt requires [reconciliation](/docs/operate/upgrades-and-recovery#recover-an-evaluation).
 

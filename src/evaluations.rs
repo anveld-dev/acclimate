@@ -30,6 +30,12 @@ pub struct CreateEvaluationRequest {
     pub proposal_id: Option<String>,
     #[serde(default = "bound_evidence")]
     pub require_bound_evidence: bool,
+    /// The evaluator's own label for this run, such as a CLI `--name`. Display only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_name: Option<String>,
+    /// An earlier request on the same parent and candidate content that this run supersedes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_of: Option<String>,
 }
 fn bound_evidence() -> bool {
     true
@@ -233,6 +239,7 @@ async fn capabilities(
                 "explicit": evaluate,
                 "inactivitySeconds": abandon_after_seconds(),
             },
+            "runLabels": true,
         })),
     ))
 }
@@ -257,6 +264,13 @@ fn bounded(q: &CreateEvaluationRequest) -> bool {
             .iter()
             .all(|k| !k.case_id.trim().is_empty() && k.case_id.len() <= 1024)
         && q.expected_cases.iter().collect::<HashSet<_>>().len() == q.expected_cases.len()
+        && q.run_name.as_deref().is_none_or(|name| {
+            !name.is_empty()
+                && name.len() <= 80
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
 }
 async fn create(
     State(s): State<AppState>,
@@ -319,6 +333,14 @@ pub(crate) async fn enqueue_evaluation(
         let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM proposals WHERE project_id=$1 AND bundle_id=$2 AND id=$3 AND parent_version_id=$4 AND candidate_version_id=$5 AND status='succeeded')").bind(project).bind(bid).bind(path(proposal)?).bind(parent).bind(candidate).fetch_one(&mut **tx).await.map_err(db)?;
         if !valid {
             return Err(invalid("Proposal does not match candidate"));
+        }
+    }
+    if let Some(prior) = &q.retry_of {
+        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM evaluation_requests WHERE project_id=$1 AND bundle_id=$2 AND id=$3 AND body->>'parentVersionId'=$4 AND body->>'candidateDigest'=$5)").bind(project).bind(bid).bind(path(prior)?).bind(&q.parent_version_id).bind(&q.candidate_digest).fetch_one(&mut **tx).await.map_err(db)?;
+        if !valid {
+            return Err(invalid(
+                "Retried request must share the parent and candidate content",
+            ));
         }
     }
     let row=sqlx::query("INSERT INTO evaluation_requests(id,project_id,bundle_id,body,requested_by,status) VALUES($1,$2,$3,$4,$5,'requested') RETURNING *").bind(Uuid::new_v4()).bind(project).bind(bid).bind(serde_json::to_value(q).map_err(db)?).bind(principal).fetch_one(&mut **tx).await.map_err(db)?;

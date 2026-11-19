@@ -156,7 +156,39 @@ def _assert_request(request, state):
         raise _fail()
 
 
-def create_request_from_intent(*, app, config, bundle_id, channel, payload_file, intent_path, output_file, predecessor=None):
+def _claim_successor(handoff_file, request_id, output):
+    """A settled run has at most one retry, whatever name the retry was given."""
+    # Retries made before --retry-after accepted --name always used after-<request ID>.
+    legacy = handoff_file.parent.parent / ("after-" + request_id) / "request.json"
+    if str(legacy) != output and (legacy.parent / "intent.json").exists():
+        raise _fail()
+    marker = handoff_file.parent / "successor.json"
+    try:
+        fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+    except FileExistsError:
+        if parse_json(read_private_bytes(marker)).get("output") != output:
+            raise _fail() from None
+        return
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(json_bytes({"schemaVersion": 1, "output": output}) + b"\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _run_labels(client, project_id, run_name, retry_of):
+    """Display labels for the console. Older services reject unknown request fields."""
+    if not run_name and not retry_of:
+        return {}
+    try:
+        supported = client.get_evaluation_capabilities(project_id).get("runLabels") is True
+    except Exception:
+        supported = False
+    if not supported:
+        return {}
+    return {**({"runName": run_name} if run_name else {}), **({"retryOf": retry_of} if retry_of else {})}
+
+
+def create_request_from_intent(*, app, config, bundle_id, channel, payload_file, intent_path, output_file, predecessor=None, run_name=None):
     filename = Path(intent_path)
     if not filename.is_absolute() or filename.resolve() != filename:
         raise EvaluationError("config.permissions")
@@ -200,6 +232,8 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
                               or current["version"]["digest"] != prior["base"]["digest"]
                               or current["revision"] != prior["base"]["revision"]):
                     raise _fail("request.base_conflict")
+                if prior:
+                    _claim_successor(Path(prior["output"]), prior["request"]["id"], output)
                 state = {"schemaVersion": 1, "kind": "acclimate-request-intent", "identity": _identity(config), "bundleId": bundle_id, "channel": channel, "output": output, "payload": payload, "descriptor": app.descriptor,
                     "base": {"versionId": current["version"]["id"], "digest": current["version"]["digest"], "revision": current["revision"]},
                     "keys": {"draft": str(uuid.uuid4()), "request": str(uuid.uuid4())},
@@ -239,7 +273,13 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
                 candidate = resolve_and_cache(client, config["projectId"], bundle_id, version_id=version["id"], cache_dir=str(Path(config["journalRoot"]) / "command-cache"))
                 if candidate["version"]["digest"] != version["digest"] or candidate["version"]["parentVersionId"] != base["versionId"] or candidate["payload"] != payload:
                     raise _fail()
-                body = json_bytes({"parentVersionId": base["versionId"], "parentDigest": base["digest"], "candidateVersionId": version["id"], "candidateDigest": version["digest"], **state["descriptor"], "requireBoundEvidence": True})
+                # Labels chosen for a saved body stay fixed across recovery.
+                if state.get("requestBody"):
+                    saved = parse_json(state["requestBody"].encode())
+                    labels = {key: saved[key] for key in ("runName", "retryOf") if key in saved}
+                else:
+                    labels = _run_labels(client, config["projectId"], run_name, state.get("retryAfterRequestId"))
+                body = json_bytes({"parentVersionId": base["versionId"], "parentDigest": base["digest"], "candidateVersionId": version["id"], "candidateDigest": version["digest"], **state["descriptor"], "requireBoundEvidence": True, **labels})
                 if state.get("requestBody") and state["requestBody"].encode() != body:
                     raise _fail()
                 state["requestBody"] = body.decode()

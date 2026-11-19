@@ -303,6 +303,47 @@ function assertRequest(request: Evaluation, intent: RequestIntent) {
     throw fail();
 }
 
+/** A settled run has at most one retry, whatever name the retry was given. */
+async function claimSuccessor(handoffFile: string, requestId: string, output: string) {
+  const runs = path.dirname(path.dirname(handoffFile));
+  // Retries made before --retry-after accepted --name always used after-<request ID>.
+  const legacy = path.join(runs, 'after-' + requestId, 'request.json');
+  if (legacy !== output && (await lstat(path.join(path.dirname(legacy), 'intent.json')).catch(() => null)))
+    throw fail();
+  const marker = path.join(path.dirname(handoffFile), 'successor.json');
+  try {
+    const handle = await open(
+      marker,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await handle.writeFile(json({ schemaVersion: 1, output }) + '\n');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    if ((await readPrivateJson(marker)).output !== output) throw fail();
+  }
+}
+
+/** Display labels for the console. Older services reject unknown request fields. */
+async function runLabels(
+  transport: ReturnType<typeof createEvaluationTransport>,
+  projectId: string,
+  runName: string | undefined,
+  retryOf: string | undefined,
+): Promise<{ runName?: string; retryOf?: string }> {
+  if (!runName && !retryOf) return {};
+  const supported = await transport.client
+    .getEvaluationCapabilities(projectId)
+    .then((capabilities) => capabilities.runLabels === true)
+    .catch(() => false);
+  return supported ? { ...(runName && { runName }), ...(retryOf && { retryOf }) } : {};
+}
+
 export async function createRequestFromIntent(options: {
   app: EvaluationApp<any, any, any>;
   config: EvaluatorConfig;
@@ -312,6 +353,8 @@ export async function createRequestFromIntent(options: {
   intentPath: string;
   outputFile: string;
   predecessor?: { handoffFile: string; request: Evaluation };
+  /** The run's journal name, shown in the console when the service supports it. */
+  runName?: string;
 }): Promise<{
   schemaVersion: 1;
   requestId: string;
@@ -384,6 +427,7 @@ export async function createRequestFromIntent(options: {
       if (prior && (base.version.id !== prior.base.versionId || base.version.digest !== prior.base.digest ||
           base.revision !== prior.base.revision))
         throw fail('request.base_conflict');
+      if (prior) await claimSuccessor(prior.output, prior.request!.id, output);
       state = {
         schemaVersion: 1,
         kind: 'acclimate-request-intent',
@@ -491,6 +535,16 @@ export async function createRequestFromIntent(options: {
         stable(candidate.payload) !== stable(payload)
       )
         throw fail();
+      // Labels chosen for a saved body stay fixed across recovery.
+      const saved = fixed.requestBody
+        ? (JSON.parse(fixed.requestBody) as { runName?: string; retryOf?: string })
+        : undefined;
+      const labels = saved
+        ? {
+            ...(saved.runName !== undefined && { runName: saved.runName }),
+            ...(saved.retryOf !== undefined && { retryOf: saved.retryOf }),
+          }
+        : await runLabels(transport, config.projectId, options.runName, fixed.retryAfterRequestId);
       const requestBody = json({
         parentVersionId: fixed.base.versionId,
         parentDigest: fixed.base.digest,
@@ -498,6 +552,7 @@ export async function createRequestFromIntent(options: {
         candidateDigest: draft.snapshotVersion.digest,
         ...fixed.descriptor,
         requireBoundEvidence: true,
+        ...labels,
       });
       if (fixed.requestBody && fixed.requestBody !== requestBody) throw fail();
       fixed.requestBody = requestBody;

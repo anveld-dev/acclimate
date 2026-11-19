@@ -44,7 +44,7 @@ class CommandTests(unittest.TestCase):
             return {"id": identifier, "bundleId": BUNDLE, "parentVersionId": parent, "digest": "sha256:" + hashlib.sha256(encoded(payload)).hexdigest(), "createdAt": NOW}
         self.parent = version(PARENT, self.original, None)
         self.candidate = version(CANDIDATE, self.payload, PARENT)
-        self.state = {"request": None, "comparison": None, "revision": "1", "drafts": 0, "requests": 0, "executions": 0, "loseRequests": 0, "loseDrafts": 0, "receipts": {}, "failGrade": False, "flip": False}
+        self.state = {"request": None, "comparison": None, "revision": "1", "drafts": 0, "requests": 0, "executions": 0, "loseRequests": 0, "loseDrafts": 0, "receipts": {}, "failGrade": False, "flip": False, "runLabels": False, "requestBodies": []}
         owner = self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_):
@@ -63,7 +63,7 @@ class CommandTests(unittest.TestCase):
                 if route.endswith("/policy-receipts"):
                     return self.reply({"items": list(owner.policy_receipts.values())})
                 if route.endswith("/evaluation-capabilities"):
-                    return self.reply({"schemaVersion": 1, "projectId": "project", "principalId": "evaluator", "checkedAt": NOW, "readUnpublished": True, "writeEvaluation": True, "retainedEvaluationOperations": True})
+                    return self.reply({"schemaVersion": 1, "projectId": "project", "principalId": "evaluator", "checkedAt": NOW, "readUnpublished": True, "writeEvaluation": True, "retainedEvaluationOperations": True, **({"runLabels": True} if state["runLabels"] else {})})
                 if route=="/v1/workspaces/project/bundles":
                     return self.reply({"items":[{"id":BUNDLE}],"nextCursor":None})
                 if "/operations/" in route:
@@ -105,6 +105,7 @@ class CommandTests(unittest.TestCase):
                         result = {"id": DRAFT, "channel": "stable", "baseVersionId": PARENT, "baseRevision": "1", "snapshotVersion": owner.candidate, "generation": 1, "status": "open", "createdAt": NOW, "updatedAt": NOW, "promotionId": None}
                     elif route.endswith("/evaluation-requests"):
                         state["requests"] += 1
+                        state["requestBodies"].append(body)
                         state["request"] = {**body, "id": REQUEST, "status": "requested", "attemptId": None, "evaluatorPrincipal": None, "comparisonId": None, "error": None, "createdAt": NOW, "updatedAt": NOW}
                         result = state["request"]
                     elif route.endswith("/start"):
@@ -222,6 +223,32 @@ class CommandTests(unittest.TestCase):
         self.assertNotEqual((error or {}).get("error", {}).get("code"), "evidence.not_terminal")
         # The predecessor gate accepts it and new work is created.
         self.assertEqual(self.state["drafts"], 2)
+
+    def test_named_retry_labels_runs_and_keeps_one_successor(self):
+        self.state["runLabels"] = True
+        inputs = ["compare", "--config", str(self.config), "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
+        self.assertEqual(self.invoke([*inputs, "--name", "original"])[0], 0)
+        original = deepcopy(self.state["request"])
+        self.assertEqual(self.state["requestBodies"][0]["runName"], "original")
+        self.assertNotIn("retryOf", self.state["requestBodies"][0])
+        code, _, _ = self.invoke([*inputs, "--retry-after", "original", "--name", "original"])
+        self.assertEqual(code, 1)
+        retry = [*inputs, "--retry-after", "original", "--name", "fixed-grader"]
+        # This fixture serves one request ID, so only request creation is observed here.
+        self.invoke(retry)
+        self.invoke(retry)
+        self.assertEqual(self.state["requests"], 2)
+        self.assertEqual(self.state["requestBodies"][1]["runName"], "fixed-grader")
+        self.assertEqual(self.state["requestBodies"][1]["retryOf"], REQUEST)
+        self.state["request"] = original
+        for other in ([*inputs, "--retry-after", "original", "--name", "another"], [*inputs, "--retry-after", "original"]):
+            self.assertEqual(self.invoke(other)[2]["error"]["code"], "request.intent_mismatch")
+        self.assertEqual(self.state["requests"], 2)
+
+    def test_run_labels_are_omitted_for_older_services(self):
+        inputs = ["compare", "--config", str(self.config), "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
+        self.assertEqual(self.invoke([*inputs, "--name", "original"])[0], 0)
+        self.assertNotIn("runName", self.state["requestBodies"][0])
 
     def test_first_policy_error_names_only_known_missing_fields(self):
         value = {**self.quality, "metric": {"name": "PRIVATE_CANARY"}, "PRIVATE_CANARY": "x"}

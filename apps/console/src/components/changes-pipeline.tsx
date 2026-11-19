@@ -5,6 +5,7 @@ import type { EvaluationHistoryModel } from '../lib/changes-workspace';
 import { bundleHref } from '../navigation';
 import { evaluationScoreSummary } from '../lib/evaluation-score-summary';
 import { evaluationPairs, formatReward, pairCounts } from '../lib/evaluation-pairs';
+import { groupAttempts, runLabel } from '../lib/run-attempts';
 import { ConsoleLink } from './console-link';
 import { ChangeRecordDetails } from './change-record-details';
 import { ReceiptTime } from './receipt-time';
@@ -43,6 +44,8 @@ type Candidate = {
   href: string;
   details?: ReactNode;
   request?: Evaluation;
+  /** Older attempts at the same parent and candidate content, newest first. */
+  earlier?: Candidate[];
 };
 
 export function ChangesPipeline({
@@ -76,9 +79,14 @@ export function ChangesPipeline({
   const evaluating: Candidate[] = [];
   const ready: Candidate[] = [];
   const knownVersions = new Set(drafts.map((draft) => draft.snapshotVersion.id));
-  const candidateRequests = new Map<string, { active?: Evaluation; compared?: Evaluation }>();
+  const candidateRequests = new Map<
+    string,
+    { active?: Evaluation; compared?: Evaluation; latest?: Evaluation }
+  >();
   for (const request of model.requests) {
     const row = candidateRequests.get(request.candidateVersionId) ?? {};
+    if (!row.latest || Date.parse(request.createdAt) > Date.parse(row.latest.createdAt))
+      row.latest = request;
     if (!row.active && (request.status === 'requested' || request.status === 'running'))
       row.active = request;
     if (!row.compared && request.status === 'completed' && request.comparisonId)
@@ -195,8 +203,41 @@ export function ChangesPipeline({
     });
   }
 
+  // A retry saves the same content as a new version. Show it once, with its earlier attempts,
+  // including a failed attempt that would otherwise wait in Drafting.
+  const settled = (item: Candidate) =>
+    item.candidate && !releasedVersions.has(item.candidate)
+      ? candidateRequests.get(item.candidate)?.latest
+      : undefined;
+  const pool = [
+    ...evaluating.map((item) => ({ item, column: evaluating, request: item.request })),
+    ...ready.map((item) => ({ item, column: ready, request: item.request })),
+    ...drafting.map((item) => ({ item, column: drafting, request: settled(item) })),
+  ];
+  const attempts = groupAttempts(pool, (entry) => entry.request);
+  evaluating.length = 0;
+  ready.length = 0;
+  drafting.length = 0;
+  for (const { item: entry, earlier } of attempts)
+    entry.column.push({
+      ...entry.item,
+      earlier: earlier.map((attempt) => ({ ...attempt.item, request: attempt.request })),
+    });
+
+  function requestHref(item: Candidate, request: Evaluation) {
+    return bundleHref(scope, 'changes', {
+      ...Object.fromEntries(new URL(item.href, 'https://console.invalid').searchParams),
+      candidate: request.candidateVersionId,
+      generation: item.generation,
+      request: request.id,
+      comparison: request.comparisonId ?? undefined,
+    });
+  }
+
   function card(item: Candidate) {
     const request = item.request;
+    const name = runLabel(request);
+    const title = name ? `run ${name}` : item.title;
     const compared = request?.status === 'completed';
     const evidence = request && model.evidence[request.id];
     const comparison = evidence?.status === 'bound' ? evidence.comparison : null;
@@ -205,15 +246,7 @@ export function ChangesPipeline({
       score && score.parentMean !== null && score.candidateMean !== null
         ? score.candidateMean - score.parentMean
         : null;
-    const href = request
-      ? bundleHref(scope, 'changes', {
-          ...Object.fromEntries(new URL(item.href, 'https://console.invalid').searchParams),
-          candidate: request.candidateVersionId,
-          generation: item.generation,
-          request: request.id,
-          comparison: request.comparisonId ?? undefined,
-        })
-      : item.href;
+    const href = request ? requestHref(item, request) : item.href;
     const counts = comparison && pairCounts(evaluationPairs(comparison));
     const verb = compared ? 'Review' : 'Open';
     const rawStatus = !compared && (request?.status ?? item.status);
@@ -227,15 +260,12 @@ export function ChangesPipeline({
             <span>{kindLabels[item.kind]}</span>
             <code>{item.id.slice(0, 8)}</code>
           </div>
-          <h4 className="pipeline-card-title" title={item.title}>
-            <ConsoleLink
-              className="pipeline-card-link"
-              href={href}
-              aria-label={`${verb} ${item.title}`}
-            >
-              {item.heading}
+          <h4 className="pipeline-card-title" title={title}>
+            <ConsoleLink className="pipeline-card-link" href={href} aria-label={`${verb} ${title}`}>
+              {name ?? item.heading}
             </ConsoleLink>
           </h4>
+          {name && <p className="pipeline-card-meta">{item.heading}</p>}
           {item.meta && (
             <p className="pipeline-card-meta" data-failed={failed || undefined}>
               {item.meta}
@@ -275,6 +305,28 @@ export function ChangesPipeline({
               )}
             </div>
           )}
+          {item.earlier?.length ? (
+            <div className="pipeline-card-meta" data-earlier-attempts>
+              <span>
+                Supersedes {item.earlier.length} earlier{' '}
+                {item.earlier.length === 1 ? 'attempt' : 'attempts'}:
+              </span>{' '}
+              {item.earlier.map((attempt, index) => {
+                const label = runLabel(attempt.request) ?? attempt.id.slice(0, 8);
+                return (
+                  <span key={attempt.id}>
+                    {index > 0 && ', '}
+                    <ConsoleLink
+                      href={attempt.request ? requestHref(attempt, attempt.request) : attempt.href}
+                      aria-label={`Open earlier attempt ${label}`}
+                    >
+                      {label}
+                    </ConsoleLink>
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
           <div className="pipeline-card-foot">
             <span className="pipeline-card-cta" aria-hidden="true">
               {verb} <ArrowRight />

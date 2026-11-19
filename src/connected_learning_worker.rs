@@ -688,6 +688,8 @@ impl Connection {
                     .map(|id| id.to_string())
             },
             require_bound_evidence: true,
+            run_name: None,
+            retry_of: None,
         })
     }
 
@@ -794,6 +796,8 @@ impl Connection {
                 expected_cases: repetitions::calibration_keys(d),
                 proposal_id: None,
                 require_bound_evidence: true,
+                run_name: None,
+                retry_of: None,
             };
             let evaluation =
                 enqueue_evaluation(tx, &self.project, self.bundle, WORKER, &request).await?;

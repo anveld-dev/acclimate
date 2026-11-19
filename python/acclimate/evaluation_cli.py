@@ -51,6 +51,7 @@ _FLAGS = {
     "interrupt": {"config", "handoff", "reason", "name"},
     "export": {"config", "read-config", "handoff", "out", "selection", "name"},
     "verify-export": {"manifest", "read-config", "handoff"},
+    "pull": {"config", "bundle", "channel", "out"},
 }
 #: Flags every command accepts.
 _GLOBAL_FLAGS = {"json", "verbose"}
@@ -59,7 +60,7 @@ _BOOLEAN_FLAGS = {"live", "json", "verbose", "local", "progress", "quiet"}
 _PATH_FLAGS = {"config", "read-config", "handoff", "payload", "parent", "candidate", "intent", "out", "policy",
                "selection", "manifest"}
 #: Commands that never import the application module.
-ADAPTER_FREE_COMMANDS = ("status", "verify-export", "interrupt")
+ADAPTER_FREE_COMMANDS = ("status", "verify-export", "interrupt", "pull")
 EVALUATOR_COMMANDS = tuple(_FLAGS)
 
 
@@ -112,7 +113,7 @@ _parse = parse_evaluator_arguments
 
 _COMPARE_USAGE = (
     "compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]\n"
-    "compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]\n"
+    "compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) [--live] [--policy POLICY] [--json]\n"
     "compare --local --parent PAYLOAD --candidate PAYLOAD [--live] [--policy POLICY] [--out DIR] [--json]  (no service; advisory)\n"
     "Run controls: [--deadline DURATION] [--case-timeout DURATION] [--max-cost-usd USD] [--cases ID,ID | --shard I/N] [--progress | --quiet]\n"
     "Live evaluators require --live. Use one input form and supply each flag once."
@@ -121,7 +122,8 @@ _COMPARE_USAGE = (
 
 def _usage_for(command):
     from ._evaluation_local_cli import LOCAL_COMPARE_USAGE, TRY_USAGE
-    return {"compare": _COMPARE_USAGE + "\n" + LOCAL_COMPARE_USAGE, "try": TRY_USAGE}.get(command)
+    from ._evaluation_pull import USAGE as PULL_USAGE
+    return {"compare": _COMPARE_USAGE + "\n" + LOCAL_COMPARE_USAGE, "try": TRY_USAGE, "pull": PULL_USAGE}.get(command)
 
 
 def _write_progress(event):
@@ -166,11 +168,12 @@ def _validate_compare_flags(flags, live):
     for key in ("bundle", "channel", "payload"):
         if not flags.get(key):
             raise _usage_error("usage.missing_flag", field="--" + key, hint=_COMPARE_USAGE)
-    if bool(flags.get("name")) == bool(flags.get("retry-after")):
-        raise _usage_error("usage.conflicting_flags" if flags.get("name") else "usage.missing_flag", field="--name",
-                           hint=_COMPARE_USAGE,
-                           reason="Use --name or --retry-after, not both." if flags.get("name") else
-                           "Name the run with --name RUN_NAME, or repeat a finished run with --retry-after PRIOR_NAME.")
+    if not flags.get("name") and not flags.get("retry-after"):
+        raise _usage_error("usage.missing_flag", field="--name", hint=_COMPARE_USAGE,
+                           reason="Name the run with --name RUN_NAME, or repeat a finished run with --retry-after PRIOR_NAME.")
+    if flags.get("name") and flags.get("name") == flags.get("retry-after"):
+        raise _usage_error("usage.conflicting_flags", field="--name", hint=_COMPARE_USAGE,
+                           reason="Give the retry a new --name, or omit --name to use after-<request ID>.")
     if "name" in flags and not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", flags["name"]):
         raise _usage_error("usage.invalid_flag", field="--name", reason="Use 1–80 letters, digits, underscores or hyphens.")
 
@@ -371,10 +374,14 @@ def _create_request(app, flags, predecessor=None):
     if preflight["status"] != "ready":
         return _readiness_status(preflight), preflight
     return 0, create_request_from_intent(app=app, config=config, bundle_id=bundle_id, channel=channel,
-        payload_file=_required(flags, "payload"), intent_path=_required(flags, "intent"), output_file=_required(flags, "out"), predecessor=predecessor)
+        payload_file=_required(flags, "payload"), intent_path=_required(flags, "intent"), output_file=_required(flags, "out"), predecessor=predecessor,
+        run_name=flags.get("name"))
 
 
 def _dispatch(app, command, flags, review, cwd=None):
+    if command == "pull":
+        from ._evaluation_pull import pull_command
+        return pull_command(flags)
     if command == "describe":
         return 0, app.descriptor
     if command == "try":
@@ -440,7 +447,7 @@ def _dispatch(app, command, flags, review, cwd=None):
                 if not settled and request["status"] != "abandoned":
                     raise EvaluationError("evidence.not_terminal", phase="inspect", next_action="inspect_external_app")
                 predecessor = handoff_file, request
-                flags["name"] = "after-" + request["id"]
+                flags.setdefault("name", "after-" + request["id"])
             root = _named_handoff(config["journalRoot"], _required(flags, "name")).parent
             flags["handoff"] = str(root / "request.json")
             created = _create_request(app, {**flags, "intent": str(root / "intent.json"), "out": flags["handoff"]}, predecessor)

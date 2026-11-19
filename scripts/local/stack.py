@@ -10,23 +10,29 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import socket
 import ssl
 import stat
 import subprocess
+import sys
 import tempfile
 import time
-from urllib.error import URLError
-from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode
 from typing import NamedTuple
 from urllib.request import HTTPSHandler, ProxyHandler, Request, build_opener
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from scripts.configure_dev_mail import mail_settings
 
 
 ROOT = Path(__file__).resolve().parents[2]
+# Stacks saved before automatic port selection used these defaults.
 DEFAULT_PORT = 3443
 DEFAULT_MAIL_PORT = 8025
+# Automatic selection starts at a per-checkout block below the usual ephemeral ranges.
+AUTO_PORTS = (10000, 30000)
+AUTO_ATTEMPTS = 200
 
 
 class Endpoints(NamedTuple):
@@ -34,6 +40,9 @@ class Endpoints(NamedTuple):
 
     port: int = DEFAULT_PORT
     mail_port: int = DEFAULT_MAIL_PORT
+
+    def ports(self):
+        return (self.port, self.port + 1, self.port + 2, self.mail_port)
 
     @property
     def console(self):
@@ -74,6 +83,16 @@ OPERATOR = 'operator@acclimate.invalid'
 CLIENT = 'acclimate-console'
 PROJECT = 'local-demo'
 PRINCIPAL = 'local-evaluator'
+ADOPTION_REASON = 'local stack bootstrap'
+EXAMPLE_BUNDLE = 'Example agent'
+EXAMPLE_CHANNEL = 'stable'
+EXAMPLE_PAYLOAD = dict(schemaVersion=1, files=[dict(
+    path='instructions.md', kind='instruction',
+    text='You are a support agent for a small software company.\n\n'
+         'Answer in two short paragraphs. Ask one clarifying question when the request is ambiguous.\n',
+)])
+RELEASE_IMAGES = dict(service='ghcr.io/anveld-dev/acclimate-service',
+                      console='ghcr.io/anveld-dev/acclimate-console')
 SECRET_NAMES = (
     'postgres', 'keycloak_postgres', 'keycloak_admin', 'operator',
     'oidc_client', 'login', 'console', 'evaluator',
@@ -151,42 +170,117 @@ def credentials(state):
     return values
 
 
-def requested_port(environ, name, default):
+def requested_port(environ, name):
     raw = environ.get(name)
     if raw is None or raw == '':
         return None
-    if not re.fullmatch(r'[0-9]{4,5}', raw) or not 1024 <= int(raw) <= 65533:
-        raise ValueError(f'{name} must be a port between 1024 and 65533')
+    if not re.fullmatch(r'[0-9]{4,5}', raw) or not 1024 <= int(raw) <= 65532:
+        raise ValueError(f'{name} must be a port between 1024 and 65532')
     return int(raw)
 
 
-def endpoints(state, environ=os.environ, save=True):
-    """Return the stack's ports, fixing them on first use.
+def project_suffix(root):
+    return hashlib.sha256(os.fsencode(root)).hexdigest()[:12]
 
-    Keycloak stores the console redirect when it first imports the realm, so the
-    ports cannot change without a reset.
-    """
-    requested = Endpoints(
-        requested_port(environ, 'ACCLIMATE_LOCAL_PORT', DEFAULT_PORT) or DEFAULT_PORT,
-        requested_port(environ, 'ACCLIMATE_LOCAL_MAIL_PORT', DEFAULT_MAIL_PORT) or DEFAULT_MAIL_PORT,
-    )
+
+def derived_port(root):
+    """Start each checkout at its own block so parallel checkouts rarely collide."""
+    low, high = AUTO_PORTS
+    blocks = (high - low) // 10
+    return low + int(project_suffix(root), 16) % blocks * 10
+
+
+def port_free(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe_socket:
+        try:
+            probe_socket.bind(('127.0.0.1', port))
+        except OSError:
+            return False
+    return True
+
+
+def busy(candidate, is_free):
+    return [port for port in candidate.ports() if not is_free(port)]
+
+
+def describe_ports(ports):
+    return ('port ' if len(ports) == 1 else 'ports ') + ', '.join(str(port) for port in ports)
+
+
+def free_block(start, is_free, mail_port=None):
+    low, high = AUTO_PORTS
+    port = start
+    for _ in range(AUTO_ATTEMPTS):
+        candidate = Endpoints(port, port + 3 if mail_port is None else mail_port)
+        if not busy(candidate, is_free):
+            return candidate
+        port = port + 10 if port + 13 <= high else low
+    raise ValueError('Could not find four free loopback ports. '
+                     'Set ACCLIMATE_LOCAL_PORT and ACCLIMATE_LOCAL_MAIL_PORT to free ports.')
+
+
+def saved_endpoints(state):
     path = state / 'ports.json'
     saved = existing_file(path, 0o600) if state.exists() else None
     if saved is None:
-        if save:
-            write_file(path, (json.dumps(requested._asdict(), indent=2) + '\n').encode())
-        return requested
+        return None
     data = json.loads(saved)
     if (not isinstance(data, dict) or set(data) != set(Endpoints._fields)
             or any(type(value) is not int for value in data.values())):
         raise ValueError(f'Invalid local ports in {path}')
-    current = Endpoints(**data)
-    for name, field in (('ACCLIMATE_LOCAL_PORT', 'port'), ('ACCLIMATE_LOCAL_MAIL_PORT', 'mail_port')):
-        value = environ.get(name)
-        if value and int(value) != getattr(current, field):
-            raise ValueError(f'This stack uses {name}={getattr(current, field)}. '
-                             'Run npm run local:reset to change it.')
-    return current
+    return Endpoints(**data)
+
+
+def current_endpoints(state):
+    """Ports for down and reset. Compose finds containers by project, so defaults suffice."""
+    return saved_endpoints(state) or DEFAULT
+
+
+def select_endpoints(root, state, environ=os.environ, is_free=port_free, running=False):
+    """Choose the stack's ports without saving them.
+
+    Keycloak and the service record the console and issuer addresses after the first
+    successful start, so saved ports cannot change without a reset. Before that,
+    every start checks its ports and an explicit request always wins.
+    """
+    port = requested_port(environ, 'ACCLIMATE_LOCAL_PORT')
+    mail_port = requested_port(environ, 'ACCLIMATE_LOCAL_MAIL_PORT')
+    saved = saved_endpoints(state)
+    if saved is not None:
+        for name, field, value in (('ACCLIMATE_LOCAL_PORT', 'port', port),
+                                   ('ACCLIMATE_LOCAL_MAIL_PORT', 'mail_port', mail_port)):
+            if value is not None and value != getattr(saved, field):
+                raise ValueError(
+                    f'This stack was first started with {name}={getattr(saved, field)}, and Keycloak '
+                    'recorded that address. Unset the variable to keep it, or run npm run local:reset '
+                    'to start over with new ports.')
+        taken = [] if running else busy(saved, is_free)
+        if taken:
+            raise ValueError(
+                f'Another process is using {describe_ports(taken)}. This stack keeps the ports from its '
+                f'first start ({saved.console}). Stop that process, or run npm run local:reset and start '
+                'again to choose new ports.')
+        return saved
+    if port is not None:
+        candidate = Endpoints(port, port + 3 if mail_port is None else mail_port)
+        taken = busy(candidate, is_free)
+        if taken:
+            free = free_block(derived_port(root), is_free)
+            raise ValueError(
+                f'Another process is using {describe_ports(taken)}. Run '
+                f'ACCLIMATE_LOCAL_PORT={free.port} ACCLIMATE_LOCAL_MAIL_PORT={free.mail_port} npm run local:up, '
+                'or unset both variables to pick free ports automatically.')
+        return candidate
+    if mail_port is not None and not is_free(mail_port):
+        free = free_block(derived_port(root), is_free)
+        raise ValueError(
+            f'Another process is using port {mail_port}. Run ACCLIMATE_LOCAL_MAIL_PORT={free.mail_port} '
+            'npm run local:up, or unset it to pick a free port automatically.')
+    return free_block(derived_port(root), is_free, mail_port)
+
+
+def save_endpoints(state, ports):
+    write_file(state / 'ports.json', (json.dumps(ports._asdict(), indent=2) + '\n').encode())
 
 
 def write_infrastructure(state, values, ports=DEFAULT):
@@ -233,14 +327,67 @@ def write_application(state, values, subject, ports=DEFAULT):
     write_file(state / 'evaluator.json', (json.dumps(config, indent=2) + '\n').encode())
 
 
-def compose(root, *args, capture=False, ports=DEFAULT):
-    suffix = hashlib.sha256(os.fsencode(root)).hexdigest()[:12]
+def release_version(root):
+    metadata = json.loads((root / 'scripts' / 'packaging' / 'release-metadata.json').read_text())
+    return metadata['version']
+
+
+def image_environment(root, source):
+    """Use published images, or tag source builds for this checkout only."""
+    if source == 'release':
+        version = release_version(root)
+        return dict(ACCLIMATE_LOCAL_SERVICE_IMAGE=f"{RELEASE_IMAGES['service']}:{version}",
+                    ACCLIMATE_LOCAL_CONSOLE_IMAGE=f"{RELEASE_IMAGES['console']}:{version}",
+                    ACCLIMATE_LOCAL_PULL_POLICY='missing')
+    name = f'acclimate-local-{project_suffix(root)}'
+    return dict(ACCLIMATE_LOCAL_SERVICE_IMAGE=f'{name}-service:source',
+                ACCLIMATE_LOCAL_CONSOLE_IMAGE=f'{name}-console:source',
+                ACCLIMATE_LOCAL_PULL_POLICY='build')
+
+
+def compose(root, *args, capture=False, ports=DEFAULT, source='build'):
     return subprocess.run(
         ['docker', 'compose', '--env-file', os.devnull, '--project-name',
-         f'acclimate-local-{suffix}', '-f', 'compose.local.yaml', *args],
+         f'acclimate-local-{project_suffix(root)}', '-f', 'compose.local.yaml', *args],
         cwd=root, check=True, stdout=subprocess.PIPE if capture else None,
-        env={**os.environ, **ports.environment()},
+        env={**os.environ, **ports.environment(), **image_environment(root, source)},
     ).stdout
+
+
+def saved_source(state):
+    saved = existing_file(state / 'images.json', 0o600) if state.exists() else None
+    if saved is None:
+        return None
+    source = json.loads(saved).get('source')
+    if source not in ('release', 'build'):
+        raise ValueError(f'Invalid image source in {state / "images.json"}')
+    return source
+
+
+def choose_source(requested, saved):
+    if requested is not None:
+        return requested
+    return saved or 'release'
+
+
+def prepare_images(root, ports, source, saved):
+    """Pull released images, falling back to a source build when none is published."""
+    if source == 'build':
+        print('Building the service and console from this checkout. '
+              'A cold build takes about 10-20 minutes.', flush=True)
+        return 'build'
+    if saved == 'build':
+        print('Switching from source builds to released images. If this checkout added database '
+              'migrations, run npm run local:up -- --build instead.', flush=True)
+    version = release_version(root)
+    try:
+        compose(root, 'pull', 'service', 'console', ports=ports, source='release')
+    except subprocess.CalledProcessError:
+        print(f'Released images for {version} are not available. Building from source instead; '
+              'a cold build takes about 10-20 minutes. Pass --build to skip the download attempt.',
+              flush=True)
+        return 'build'
+    return 'release'
 
 
 def keycloak_operator(opener, values, expected_subject=None, ports=DEFAULT):
@@ -279,6 +426,21 @@ def keycloak_operator(opener, values, expected_subject=None, ports=DEFAULT):
         update = Request(realm, data=json.dumps(settings).encode(), headers=headers, method='PUT')
         with opener.open(update, timeout=15):
             pass
+
+    # Keycloak keeps the redirect from its first realm import. An earlier start that
+    # failed before saving its ports may have imported a different console address.
+    clients = Request(realm + '/clients?' + urlencode(dict(clientId=CLIENT)), headers=headers)
+    with opener.open(clients, timeout=15) as response:
+        found = json.load(response)
+    if len(found) != 1 or found[0].get('clientId') != CLIENT:
+        raise ValueError('Could not find the local console client in Keycloak.')
+    redirect = [ports.console + '/auth/callback']
+    if found[0].get('redirectUris') != redirect:
+        client = {**found[0], 'redirectUris': redirect}
+        update = Request(realm + '/clients/' + quote(found[0]['id'], safe=''),
+                         data=json.dumps(client).encode(), headers=headers, method='PUT')
+        with opener.open(update, timeout=15):
+            pass
     return subject
 
 
@@ -298,20 +460,143 @@ def probe(opener, url, field, expected):
         raise ValueError(f'Unexpected {field} from {url}')
 
 
-def up(root, state):
+def api(opener, ports, method, route, token, session=None, body=None, mutation=False):
+    headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/json'}
+    if session is not None:
+        headers['X-Acclimate-Session'] = session
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers['Content-Type'] = 'application/json'
+    if mutation:
+        headers['Idempotency-Key'] = str(uuid4())
+    with opener.open(Request(ports.api + route, data=data, headers=headers, method=method),
+                     timeout=30) as response:
+        raw = response.read()
+    return json.loads(raw) if raw else None
+
+
+def seed_example(call):
+    """Publish a small example bundle so the first comparison has a parent."""
+    scope = f'/v1/projects/{PROJECT}/bundles'
+    bundles = call('GET', scope + '?limit=100')['items']
+    bundle = next((item for item in bundles if item['name'] == EXAMPLE_BUNDLE), None)
+    if bundle is None:
+        if bundles:
+            return None
+        bundle = call('POST', scope, body=dict(name=EXAMPLE_BUNDLE), mutation=True)
+    bundle_scope = scope + '/' + quote(bundle['id'], safe='')
+    channels = call('GET', bundle_scope + '/channels?limit=100')['items']
+    if not any(channel['name'] == EXAMPLE_CHANNEL for channel in channels):
+        version = call('POST', bundle_scope + '/versions', body=dict(payload=EXAMPLE_PAYLOAD), mutation=True)
+        call('POST', f'{bundle_scope}/channels/{EXAMPLE_CHANNEL}/promotions', mutation=True, body=dict(
+            versionId=version['id'], expectedRevision='0',
+            unevaluatedReason='Example bundle published by npm run local:up'))
+    return bundle['id']
+
+
+def bootstrap_workspace(opener, values, subject, ports):
+    """Adopt local-demo for the bootstrap operator and publish an example bundle.
+
+    This uses the console's own server path: a login-token session for the verified
+    Keycloak operator, then the audited adoption route with a recorded reason.
+    """
+    session = api(opener, ports, 'POST', '/v1/auth/sessions', values['login'], body=dict(
+        issuer=ports.issuer, subject=subject, email=OPERATOR, emailVerified=True,
+        displayName='Local Operator'))['secret']
+
+    def call(method, route, body=None, mutation=False):
+        return api(opener, ports, method, route, values['console'], session, body, mutation)
+
+    try:
+        try:
+            call('POST', '/v1/auth/workspace-adoptions', dict(projectId=PROJECT, reason=ADOPTION_REASON))
+        except HTTPError as error:
+            if error.code != 409:
+                raise
+            return dict(adopted=False, bundle=None)
+        return dict(adopted=True, bundle=seed_example(call))
+    finally:
+        try:
+            call('DELETE', '/v1/auth/session')
+        except (HTTPError, URLError):
+            pass
+
+
+CA_BUNDLE_CANDIDATES = (
+    '/etc/ssl/cert.pem',
+    '/etc/ssl/certs/ca-certificates.crt',
+    '/etc/pki/tls/certs/ca-bundle.crt',
+    '/etc/ssl/ca-bundle.pem',
+    '/opt/homebrew/etc/ca-certificates/cert.pem',
+    '/usr/local/etc/ca-certificates/cert.pem',
+)
+
+
+def system_ca_bundle():
+    paths = ssl.get_default_verify_paths()
+    for candidate in (os.environ.get('SSL_CERT_FILE'), paths.cafile, paths.openssl_cafile,
+                      *CA_BUNDLE_CANDIDATES):
+        if not candidate:
+            continue
+        path = Path(candidate)
+        try:
+            text = path.read_bytes()
+        except OSError:
+            continue
+        if b'BEGIN CERTIFICATE' in text:
+            return path, text
+    return None, b''
+
+
+def write_client_files(state, ports, certificate, bundle):
+    """Write a merged CA bundle and ready-to-source client variables."""
+    source, system = system_ca_bundle()
+    if source is not None and source.resolve() == (state / 'ca-bundle.pem').resolve():
+        source, system = None, b''
+    merged = system.rstrip(b'\n') + b'\n' + certificate if system else certificate
+    write_file(state / 'ca-bundle.pem', merged, mode=0o644)
+    lines = {
+        'EVALUATOR_CONFIG': state / 'evaluator.json',
+        'NODE_EXTRA_CA_CERTS': state / 'root.crt',
+        'SSL_CERT_FILE': state / 'ca-bundle.pem',
+        'ACCLIMATE_API': ports.api,
+    }
+    if bundle:
+        lines['BUNDLE_ID'] = bundle
+    text = ''.join(f"export {key}='{value}'\n" for key, value in lines.items())
+    write_file(state / 'env.sh', text.encode(), mode=0o600)
+    return text, source
+
+
+def stack_running(root):
+    return bool(compose(root, 'ps', '--status', 'running', '--quiet', capture=True).strip())
+
+
+def up(root, state, requested_source=None):
     directory(state, private=True)
-    ports = endpoints(state)
+    saved_ports = saved_endpoints(state)
+    running = stack_running(root)
+    if running and saved_ports is None:
+        # Containers from a start that never finished may hold ports this run would choose.
+        print('Stopping containers left by an earlier incomplete start.', flush=True)
+        compose(root, 'down')
+        running = False
+    ports = select_endpoints(root, state, running=running)
     values = credentials(state)
+    previous_source = saved_source(state)
+    source = prepare_images(root, ports, choose_source(requested_source, previous_source), previous_source)
     write_infrastructure(state, values, ports)
     # The service requires a nonempty operator list. Bring up identity first.
-    compose(root, 'up', '--build', '--wait', '--wait-timeout', '300', 'proxy', 'mailpit', 'postgres',
-            ports=ports)
+    compose(root, 'up', '--wait', '--wait-timeout', '600', 'proxy', 'mailpit', 'postgres',
+            ports=ports, source=source)
     # The Caddyfile is bind-mounted, so Compose keeps a running proxy after it changes.
     compose(root, 'exec', '-T', 'proxy', 'caddy', 'reload', '--config', '/etc/caddy/Caddyfile',
-            '--adapter', 'caddyfile', ports=ports)
+            '--adapter', 'caddyfile', ports=ports, source=source)
     ca = state / 'root.crt'
     certificate = compose(root, 'exec', '-T', 'proxy', 'cat',
-                          '/data/caddy/pki/authorities/local/root.crt', capture=True, ports=ports)
+                          '/data/caddy/pki/authorities/local/root.crt', capture=True, ports=ports,
+                          source=source)
     context = ssl.create_default_context(cadata=certificate.decode())
     write_file(ca, certificate, mode=0o644)
     opener = build_opener(ProxyHandler({}), HTTPSHandler(context=context))
@@ -322,44 +607,98 @@ def up(root, state):
     subject = keycloak_operator(opener, values, previous_subject, ports)
     write_application(state, values, subject, ports)
     # Compose recreates the service when its effective environment changes.
-    compose(root, 'up', '--build', '--wait', '--wait-timeout', '300', 'console', ports=ports)
+    compose(root, 'up', '--wait', '--wait-timeout', '600', 'console', ports=ports, source=source)
     probe(opener, ports.api + '/ready', 'ready', True)
     probe(opener, ports.console + '/ready', 'status', 'ready')
     with opener.open(ports.console + '/auth/login', timeout=15) as response:
         if not response.geturl().startswith(ports.issuer + '/protocol/openid-connect/auth?'):
             raise ValueError('The console did not redirect sign-in to the local Keycloak issuer.')
+    save_endpoints(state, ports)
+    write_file(state / 'images.json', (json.dumps(dict(source=source)) + '\n').encode())
 
-    print(f'Console       {ports.console}\nLogin         {OPERATOR}\nAPI           {ports.api}')
+    saved_workspace = existing_file(state / 'workspace.json', 0o600)
+    workspace = json.loads(saved_workspace) if saved_workspace is not None else None
+    bootstrap_error = None
+    if workspace is None:
+        try:
+            workspace = bootstrap_workspace(opener, values, subject, ports)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            workspace, bootstrap_error = dict(adopted=False, bundle=None), error
+        if workspace['adopted']:
+            write_file(state / 'workspace.json', (json.dumps(workspace) + '\n').encode())
+    env, ca_source = write_client_files(state, ports, certificate, workspace.get('bundle'))
+
+    print(f'\nConsole       {ports.console}\nLogin         {OPERATOR}\nAPI           {ports.api}')
     print(f'Mailpit       {ports.mailpit}\nEvaluator     {state / "evaluator.json"}\n'
           f'Local CA      {ca}')
+    if workspace['adopted']:
+        print(f'Workspace     {PROJECT}, adopted for {OPERATOR} ("{ADOPTION_REASON}")')
+        if workspace.get('bundle'):
+            print(f'Example       bundle {workspace["bundle"]} on channel {EXAMPLE_CHANNEL}')
+    elif bootstrap_error is not None:
+        print(f'Workspace     Could not adopt {PROJECT} automatically ({bootstrap_error}). '
+              'Run npm run local:up again, or adopt it in the console under Operator tools.')
+    else:
+        print(f'Workspace     {PROJECT} already belongs to another account. Adopt it from Operator tools.')
     if previous_subject is None:
         print(f'Initial login password (printed once)  {values["operator"]}', flush=True)
         write_file(marker, subject.encode())
     print(f'Initial password is stored as "operator" in {state / "credentials.json"}.')
+    print(f'\nClient settings for this shell, also saved in {state / "env.sh"}:\n')
+    print(env.rstrip())
+    if ca_source is None:
+        print('\nNo system CA bundle was found, so ca-bundle.pem trusts only the local CA. '
+              'Point SSL_CERT_FILE at a merged bundle before calling an external model provider.')
+    print('\nTo trust the local CA in your browser, run npm run local:trust.')
 
 
-def main():
+def down(root, state):
+    compose(root, 'down', ports=current_endpoints(state))
+
+
+def reset(root, state):
+    if (state / 'trust.json').exists():
+        print('Your system trusts this checkout’s local CA. Run npm run local:trust -- --remove '
+              'first to remove it.')
+    if input(f'Delete this checkout’s local stack volumes and {state}? Type reset: ') != 'reset':
+        print('Reset canceled.')
+        return
+    compose(root, 'down', '--volumes', ports=current_endpoints(state))
+    if state.exists():
+        shutil.rmtree(state)
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('up', 'down', 'reset'))
-    command = parser.parse_args().command
+    images = parser.add_mutually_exclusive_group()
+    images.add_argument('--build', dest='source', action='store_const', const='build',
+                        help='build the service and console images from this checkout')
+    images.add_argument('--release', dest='source', action='store_const', const='release',
+                        help='use the published images for this checkout’s release version')
+    arguments = parser.parse_args(argv)
+    command = arguments.command
+    if arguments.source and command != 'up':
+        parser.error('--build and --release apply only to up')
     try:
         with locked_state(ROOT) as state:
             if command == 'up':
-                up(ROOT, state)
+                up(ROOT, state, arguments.source)
             elif command == 'down':
-                compose(ROOT, 'down', ports=endpoints(state, save=False))
+                down(ROOT, state)
             else:
-                if input(f'Delete this checkout’s local stack volumes and {state}? Type reset: ') != 'reset':
-                    print('Reset canceled.')
-                    return
-                compose(ROOT, 'down', '--volumes', ports=endpoints(state, save=False))
-                if state.exists():
-                    shutil.rmtree(state)
+                reset(ROOT, state)
     except EOFError:
         raise SystemExit('Reset canceled. Run interactively to confirm.') from None
-    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+    except subprocess.CalledProcessError as error:
+        hint = ''
+        if command == 'up':
+            hint = (' If Docker reported a port that is already allocated, run '
+                    'ACCLIMATE_LOCAL_PORT=<free port> npm run local:up, or stop the other process.')
+        raise SystemExit(f'Local stack {command} failed: {error}.{hint}') from None
+    except (OSError, ValueError) as error:
         raise SystemExit(f'Local stack {command} failed: {error}') from None
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])

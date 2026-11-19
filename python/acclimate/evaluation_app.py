@@ -25,13 +25,14 @@ Try it locally first. These need no service, config or handoff:
 Then compare against the service to gate a release:
 
   python -m acclimate compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]
-  python -m acclimate compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]
+  python -m acclimate compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) [--live] [--policy POLICY] [--json]
 
 Run controls for compare and run: --deadline 30m, --case-timeout 2m, --max-cost-usd 5,
 --cases ID,ID or --shard 1/4 (partial, never full coverage), --progress or --quiet.
+Use pull to save a published bundle as a payload file to edit.
 
-Commands: try, compare, describe, coverage, doctor, request, run, check, status, interrupt, export, verify-export.
-status, verify-export and interrupt run without loading application code.
+Commands: try, compare, describe, coverage, doctor, request, run, check, status, interrupt, export, verify-export, pull.
+status, verify-export, interrupt and pull run without loading application code.
 Run python -m acclimate COMMAND --help for one command's flags.
 
 Global flags: --json (machine-readable errors on stderr), --verbose (tracebacks; or set
@@ -277,6 +278,7 @@ _COMMAND_USAGE = {
     "request": "request --config CONFIG --bundle ID --channel CHANNEL --payload FILE --intent FILE --out HANDOFF [--policy POLICY]",
     "run": "run --config CONFIG (--handoff FILE | --name RUN_NAME) [--live]",
     "interrupt": "interrupt --config CONFIG (--handoff FILE | --name RUN_NAME) --reason REASON\nRuns without loading application code.",
+    "pull": "pull --config CONFIG --bundle ID [--channel CHANNEL] --out FILE  Save the published bundle as a payload to edit.\nRuns without loading application code.",
 }
 
 

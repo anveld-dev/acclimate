@@ -14,6 +14,7 @@ import {
   sdkVersion,
 } from './cli.js';
 import { TRY_USAGE } from './local-cli.js';
+import { pullHelp } from './pull.js';
 import { AppSetupError as SetupError, DefinitionError, EvaluationError, EXIT_CODES } from './errors.js';
 import type { ApplicationAdapter } from './application.js';
 import type { EvaluationCase } from './types.js';
@@ -48,13 +49,14 @@ Try it locally first. These need no service, config or handoff:
 Then compare against the service to gate a release:
 
   acclimate-eval compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]
-  acclimate-eval compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]
+  acclimate-eval compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) [--live] [--policy POLICY] [--json]
 
 Run controls for compare and run: --deadline 30m, --case-timeout 2m, --max-cost-usd 5,
 --cases ID,ID or --shard 1/4 (partial, never full coverage), --progress or --quiet.
+Use pull to save a published bundle as a payload file to edit.
 
-Commands: try, compare, describe, coverage, doctor, request, run, check, status, interrupt, export, verify-export.
-status, verify-export and interrupt run without loading application code.
+Commands: try, compare, describe, coverage, doctor, request, run, check, status, interrupt, export, verify-export, pull.
+status, verify-export, interrupt and pull run without loading application code.
 Run acclimate-eval COMMAND --help for one command's flags.
 
 Global flags: --json (machine-readable errors on stderr), --verbose (stack traces; or set
@@ -75,6 +77,7 @@ const commandHelp: Record<string, string> = {
   export: 'export (--config CONFIG | --read-config READER) --handoff FILE --out DIRECTORY [--selection FILE]\nexport --config CONFIG --name RUN_NAME --out DIRECTORY [--selection FILE]',
   interrupt: 'interrupt --config CONFIG (--handoff FILE | --name RUN_NAME) --reason REASON\nRuns without loading application code.',
   'verify-export': 'verify-export --manifest FILE [--read-config READER --handoff FILE]\nRuns without loading application code.',
+  pull: pullHelp + '\nRuns without loading application code.',
 };
 
 async function readCases(filename: string): Promise<EvaluationCase[]> {

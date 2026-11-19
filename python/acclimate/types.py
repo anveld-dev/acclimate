@@ -204,6 +204,8 @@ class _EvaluationTarget(EvaluationDescriptor):
     candidateVersionId: str
     candidateDigest: str
     proposalId: NotRequired[str | None]
+    runName: NotRequired[str]
+    retryOf: NotRequired[str]
 
 
 class EvaluationRequest(_EvaluationTarget):
@@ -301,6 +303,7 @@ class EvaluationCapabilities(TypedDict):
     rights: NotRequired[EvaluationRights]
     credential: NotRequired[dict[str, str]]
     abandonment: NotRequired[EvaluationAbandonmentPolicy]
+    runLabels: NotRequired[Literal[True]]
 
 
 class EvaluationProgressRequest(TypedDict):

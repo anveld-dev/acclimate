@@ -37,6 +37,7 @@ import {
   readCommandJson,
   readCommandText,
 } from './cli-intents.js';
+import { pullCommand, pullHelp } from './pull.js';
 import {
   compareLocalCommand,
   LOCAL_COMPARE_USAGE,
@@ -65,7 +66,8 @@ type Command =
   | 'status'
   | 'interrupt'
   | 'export'
-  | 'verify-export';
+  | 'verify-export'
+  | 'pull';
 /** Run controls accepted by compare (service and local) and run. */
 const runControlFlags: readonly string[] = [...RUN_CONTROL_FLAGS, 'progress', 'quiet'];
 /** compare --local flags that the service form rejects. */
@@ -95,6 +97,7 @@ const allowed: Record<Command, readonly string[]> = {
   interrupt: ['config', 'handoff', 'reason', 'name'],
   export: ['config', 'read-config', 'handoff', 'out', 'selection', 'name'],
   'verify-export': ['manifest', 'read-config', 'handoff'],
+  pull: ['config', 'bundle', 'channel', 'out'],
 };
 /** Flags every command accepts. */
 const globalFlags = ['json', 'verbose'];
@@ -114,7 +117,7 @@ const pathFlags = new Set([
   'manifest',
 ]);
 /** Commands that never import the application module. */
-export const ADAPTER_FREE_COMMANDS: readonly string[] = ['status', 'verify-export', 'interrupt'];
+export const ADAPTER_FREE_COMMANDS: readonly string[] = ['status', 'verify-export', 'interrupt', 'pull'];
 export const EVALUATOR_COMMANDS = Object.keys(allowed) as readonly Command[];
 interface Parsed {
   command: Command;
@@ -202,7 +205,7 @@ function exactlyOne(flags: Parsed['flags'], first: string, second: string) {
 }
 const compareUsage = [
   'compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]',
-  'compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]',
+  'compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) [--live] [--policy POLICY] [--json]',
   'compare --local --parent PAYLOAD --candidate PAYLOAD [--live] [--policy POLICY] [--out DIR] [--json]  (no service; advisory)',
   'Run controls: [--deadline DURATION] [--case-timeout DURATION] [--max-cost-usd USD] [--cases ID,ID | --shard I/N] [--progress | --quiet]',
   'Live evaluators require --live. Use one input form and supply each flag once.',
@@ -213,7 +216,9 @@ const usageFor = (command: string): string | undefined =>
     ? `${compareUsage}\n${LOCAL_COMPARE_USAGE}`
     : command === 'try'
       ? TRY_USAGE
-      : undefined;
+      : command === 'pull'
+        ? pullHelp
+        : undefined;
 
 /** Parse run-control flags and attach stderr progress unless --quiet. */
 function runControls(flags: Parsed['flags']): RunControls {
@@ -268,12 +273,17 @@ function validateCompareFlags(flags: Parsed['flags'], live: boolean) {
   for (const key of ['bundle', 'channel', 'payload'])
     if (!flags[key])
       throw new EvaluationUsageError('usage.missing_flag', { field: '--' + key, hint: compareUsage });
-  if (!!flags.name === !!flags['retry-after'])
-    throw new EvaluationUsageError(flags.name ? 'usage.conflicting_flags' : 'usage.missing_flag', {
+  if (!flags.name && !flags['retry-after'])
+    throw new EvaluationUsageError('usage.missing_flag', {
       field: '--name',
-      reason: flags.name
-        ? 'Use --name or --retry-after, not both.'
-        : 'Name the run with --name RUN_NAME, or repeat a finished run with --retry-after PRIOR_NAME.',
+      reason:
+        'Name the run with --name RUN_NAME, or repeat a finished run with --retry-after PRIOR_NAME.',
+      hint: compareUsage,
+    });
+  if (flags.name && flags.name === flags['retry-after'])
+    throw new EvaluationUsageError('usage.conflicting_flags', {
+      field: '--name',
+      reason: 'Give the retry a new --name, or omit --name to use after-<request ID>.',
       hint: compareUsage,
     });
   if (flags.name && !/^[a-zA-Z0-9_-]{1,80}$/.test(String(flags.name)))
@@ -582,6 +592,7 @@ async function createRequest(app: EvaluationApp<any, any, any>, flags: Parsed['f
     intentPath: required(flags, 'intent'),
     outputFile: required(flags, 'out'),
     predecessor,
+    runName: typeof flags.name === 'string' ? flags.name : undefined,
   });
   return { status: 0, result };
 }
@@ -656,7 +667,7 @@ async function dispatch(
       if (!settled && request.status !== 'abandoned')
         throw new EvaluationError('evidence.not_terminal', { phase: 'inspect', nextAction: 'inspect_external_app' });
       predecessor = { handoffFile, request };
-      flags.name = 'after-' + request.id;
+      if (!flags.name) flags.name = 'after-' + request.id;
     }
     const handoff = await namedHandoff(config.journalRoot, required(flags, 'name'));
     const created = await createRequest(app, {
@@ -810,6 +821,7 @@ async function dispatch(
 }
 
 async function readEvidence({ command, flags }: Parsed) {
+  if (command === 'pull') return pullCommand(flags);
   if (command === 'interrupt') {
     // Check every flag before reading any file.
     const configPath = required(flags, 'config');

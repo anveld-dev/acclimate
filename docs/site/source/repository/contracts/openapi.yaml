@@ -7545,10 +7545,12 @@
                 "format": "uuid"
               },
               "status": {
+                "description": "Evaluated means the comparison was submitted and the worker decision is pending. Completed includes calibration statistics, the repetition plan and power projections. A power guard rejection publishes those fields with stopped and stoppedReason.",
                 "enum": [
                   "queued",
                   "requested",
                   "running",
+                  "evaluated",
                   "completed",
                   "failed",
                   "interrupted",

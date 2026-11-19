@@ -107,8 +107,8 @@
     "apps/console/src/server/selection.ts": "bca4ad06a73e6273b9662fe23f7daa73e7cfdd936f93754e8d4ed1cb20b88c0e",
     "apps/console/src/server/setup.ts": "8562d5c7c841c3078c648ba5b30e45976549ff0ef36c3facbfac04ed61f964ff",
     "apps/keycloak-theme/package.json": "880b0c5e6be4d88fb3315b14f6418435eb03923c67ddb3433046b1364b5b0de2",
-    "contracts/learning.md": "e3eca18036db35ef817e790add531e3de3b5eef6271e8c1d7ff9fb2e8c306e28",
-    "contracts/openapi.yaml": "2f78f56702580165a5ddf9b45b6a29827a517d7136b1f44583aec46ddb9e4758",
+    "contracts/learning.md": "8e0a139b9541fb6da5a7fbb39cec3954030f962147b9b153c734192405be7d34",
+    "contracts/openapi.yaml": "926ebcbee7367327dbbd49fbefa2a6812a4276aa5896f99b1c4942f2bc858cdf",
     "contracts/remediation.md": "29c5434e50a280098280d5972565863160ab6e339e83922e1779c4cfb2892f43",
     "deploy/keycloak/acclimate-realm.json": "cfbde0e6cf14f0c903bcb45b0e2746ead36ca254a7b25536f6b5b5fea46a92fc",
     "deploy/mailpit.md": "ecc3402d40cdbe99da3b21d8d523bd95308bcd2b03ab39e6342ce3f3019ee8a4",
@@ -337,7 +337,7 @@
     "src/pagination.rs": "2a2c15df1ce3b9929959a9e0a4320753e753b35c77db87b94e3aeea53c570d64",
     "src/types.rs": "68c41bfb619df28cb7b246297c0dea09152592edc6b480aeaa7355de3faef2b6",
     "src/workspaces.rs": "9440aceaac1bd9dae84fd5a44181a80fa39cc6bfa482ae220d920c8d2d8cd72c",
-    "tests/integrations.rs": "4abee44b83fc05d194ff8b98ec8358f9a52f413c898c02664717e8ffcad95a2a",
+    "tests/integrations.rs": "72a1529d88657b6a06dc9b1dedad2dec065e02af0dc58e6a5304b6d7c98d1a50",
     "tests/productization_regressions.rs": "a4bd5699c4e02cd8a8afaa4b7b4c27845f128828a6db2156b9db453d37e67c68"
   }
 }

@@ -26,7 +26,7 @@ Never evaluate forked or otherwise untrusted pull requests on a self-hosted runn
   with:
     persist-credentials: false
 - id: gate
-  uses: anveld-dev/acclimate/examples/ci@v0.1.0 # or ./.github/actions/acclimate when vendored
+  uses: anveld-dev/acclimate/examples/ci@v0.2.0 # the first release with the action, or ./.github/actions/acclimate when vendored
   with:
     app: /opt/acclimate/evaluator
     policy: /opt/acclimate/evaluator/quality-policy.json

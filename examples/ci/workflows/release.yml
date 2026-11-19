@@ -27,7 +27,7 @@ jobs:
         with:
           persist-credentials: false
       - id: gate
-        uses: anveld-dev/acclimate/examples/ci@v0.1.0
+        uses: anveld-dev/acclimate/examples/ci@v0.2.0
         with:
           app: /opt/acclimate/evaluator
           policy: /opt/acclimate/evaluator/quality-policy.json
@@ -53,7 +53,7 @@ jobs:
       - name: Install the operator CLI from an SDK release
         env:
           GH_TOKEN: ${{ github.token }}
-          ACCLIMATE_VERSION: 0.1.0
+          ACCLIMATE_VERSION: 0.2.0 # the first SDK release with acclimate-operator
         run: |
           release="$RUNNER_TEMP/acclimate-release"
           gh release download "v$ACCLIMATE_VERSION" --repo anveld-dev/acclimate --dir "$release" \

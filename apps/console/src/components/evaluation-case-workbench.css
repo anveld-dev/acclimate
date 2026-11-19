@@ -342,3 +342,10 @@ tr[data-reference] > td {
   word-break: break-all;
   color: var(--muted-foreground);
 }
+
+@media (pointer: coarse) {
+  .case-browser-controls select,
+  .case-browser-search input {
+    min-height: 44px;
+  }
+}

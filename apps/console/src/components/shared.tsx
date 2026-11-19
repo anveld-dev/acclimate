@@ -1,3 +1,4 @@
+import { ReceiptTime } from './receipt-time';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { Link } from '@tanstack/react-router';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
@@ -48,7 +49,7 @@ export function ConnectionNotice({ state }: { state: Exclude<ConsoleState, { sta
           <p>{state.message} The connection will retry automatically.</p>
           <p>
             {state.lastSuccessfulRead
-              ? `Last read at ${state.lastSuccessfulRead}. Content is hidden until a verified refresh succeeds.`
+              ? <>Last read at <ReceiptTime value={state.lastSuccessfulRead} />. Content is hidden until a verified refresh succeeds.</>
               : 'No successful read yet. Current state is unknown.'}
           </p>
         </AlertDescription>
@@ -236,7 +237,7 @@ export function ContextStrip({ state }: { state: ReadyConsole }) {
           </span>
         </div>
         <p className="context-read-status mt-2">
-          Last successful read: {state.lastSuccessfulRead ?? 'Not read yet'}. No app report
+          Last successful read: {state.lastSuccessfulRead ? <ReceiptTime value={state.lastSuccessfulRead} /> : 'Not read yet'}. No app report
           received; delivery unknown.
         </p>
       </div>

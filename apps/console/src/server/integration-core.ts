@@ -875,6 +875,7 @@ export type ConnectionBundle = {
 };
 export type ConnectionsState = {
   projectId: string;
+  publicApiUrl: string;
   projectName: string;
   actorScope: string;
   canManage: boolean;
@@ -888,6 +889,7 @@ export type ConnectionsState = {
     integration: Connection;
     receipts: Page<DeliveryReceipt>;
     currentVersionId: string;
+    currentDigest: string;
     currentRevision: string;
   };
 };
@@ -955,6 +957,7 @@ export async function readConnectionsState(
         integration,
         receipts,
         currentVersionId: result.resolution.version.id,
+        currentDigest: result.resolution.version.digest,
         currentRevision: result.resolution.revision,
       };
     }
@@ -962,6 +965,7 @@ export async function readConnectionsState(
       ok: true,
       state: {
         projectId: c.projectId,
+        publicApiUrl: env.CONSOLE_PUBLIC_API_URL!,
         projectName: c.project.name,
         actorScope: actorScope(env),
         canManage: c.canManage,

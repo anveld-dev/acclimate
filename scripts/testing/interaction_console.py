@@ -185,7 +185,7 @@ def evaluation(w,b,p,e,prefix,coarse):
     route=b.bundle_path('changes',draft=w.draft['id'],candidate=w.draft['snapshotVersion']['id'],generation=1)
     visit(p,b,route)
     for label, comparison in [('incomplete',w.incomplete),('mismatched',w.mismatched)]:
-        open_details(p,'Comparison lookup and details')
+        p.get_by_role('tab',name='Details',exact=True).click()
         p.get_by_label('Comparison ID',exact=True).fill(comparison['id'])
         p.get_by_role('button',name='Inspect comparison',exact=True).click()
         expect(p.get_by_text('Selected comparison: '+comparison['id'],exact=True)).to_be_visible()
@@ -193,7 +193,7 @@ def evaluation(w,b,p,e,prefix,coarse):
         if label=='mismatched':
             expect(p.get_by_role('alert').filter(has_text='This evidence does not match the saved candidate')).to_be_visible()
             expect(p.get_by_role('region',name='Observed paired rewards',exact=True)).to_have_count(0)
-        p.get_by_role('heading',name='Reported evidence',exact=True).scroll_into_view_if_needed()
+        p.get_by_role('tab',name='Details',exact=True).scroll_into_view_if_needed()
         e.capture(p,prefix+'-evidence-'+label,coarse)
         review=p.get_by_role('button',name='Review release with this evidence',exact=True)
         expect(review).to_be_visible()
@@ -248,7 +248,8 @@ def connections(w,b,p,e,prefix,coarse,secret=False):
     escape(e,p,trigger,prefix+'-connection-new')
     p.get_by_role('link').filter(has_text='BDD application').first.click()
     expect(p.get_by_role('heading',name='BDD application',exact=True)).to_be_visible()
-    open_details(p,'Connection ID')
+    p.get_by_role('tab',name='Settings',exact=True).click()
+    open_details(p,'Connection identity details')
     p.get_by_role('heading',name='BDD application',exact=True).scroll_into_view_if_needed()
     e.capture(p,prefix+'-connection-selected-id',coarse)
     open_details(p,'Revoke this connection')
@@ -260,6 +261,7 @@ def connections(w,b,p,e,prefix,coarse,secret=False):
     e.check(prefix+'-revoke-names-target',all(part in target for part in ('BDD application','BDD bundle','stable',w.integration['id'])))
     escape(e,p,trigger,prefix+'-connection-revoke')
     if secret:
+        p.get_by_role('tab',name='Credentials',exact=True).click()
         p.get_by_role('button',name='Create read credential',exact=True).click()
         expect(p.get_by_label('One-time credential secret',exact=True)).to_be_visible()
         e.capture(p,prefix+'-credential-once-MASKED',coarse)

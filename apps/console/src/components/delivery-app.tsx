@@ -1,10 +1,11 @@
+import { isCurrentDelivery } from '../lib/delivery-release';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Check, GitBranch, Radio } from 'lucide-react';
 import type { ConnectionObservation } from '@acclimate/sdk';
 import type { DeliveryDetail, Report } from '../server/delivery-detail-core';
 import { readDeliveryDetail } from '../server/delivery-observations-actions';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
+import { StatusBadge } from './status-badge';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { VersionInspector } from './version-inspector';
 import { ReceiptTime } from './receipt-time';
@@ -79,8 +80,7 @@ export function DeliveryApp({
     detail?.receipts.items ?? (app.latestObservation ? [app.latestObservation] : []);
   const report = receipts.find((item) => item.eventId === event) ?? receipts[0];
   const current = detail?.current;
-  const same =
-    report && current && report.versionId === current.versionId && report.digest === current.digest;
+  const same = report && current && isCurrentDelivery(report, current);
   const scope = { projectId, bundleId: app.bundleId, channel: app.channel };
   return (
     <section
@@ -94,7 +94,7 @@ export function DeliveryApp({
           <div className="delivery-app-heading">
             <Radio size={18} aria-hidden="true" />
             <h2>{app.displayName}</h2>
-            <Badge variant="outline">{app.enabled ? 'Enabled' : 'Disabled'}</Badge>
+            <StatusBadge>{app.enabled ? 'Enabled' : 'Disabled'}</StatusBadge>
           </div>
           <span className="delivery-channel">
             <GitBranch size={13} aria-hidden="true" />
@@ -121,11 +121,19 @@ export function DeliveryApp({
           )}
         </div>
       </header>
+      {report && current && (
+        <div className="delivery-comparison-status">
+          <StatusBadge tone={same ? 'success' : 'warning'}>
+            {same && <Check aria-hidden="true" />}
+            {same ? 'Versions match' : 'Versions differ'}
+          </StatusBadge>
+        </div>
+      )}
       <div className="delivery-versions">
         <section aria-label="Reported version" ref={reportedPanel} tabIndex={-1}>
           <div className="delivery-version-heading">
             <span>Reported version</span>
-            {report && <Badge variant="outline">{report.stage}</Badge>}
+            {report && <StatusBadge>{report.stage}</StatusBadge>}
           </div>
           {report ? (
             <>
@@ -158,12 +166,6 @@ export function DeliveryApp({
         <section aria-label="Current channel version">
           <div className="delivery-version-heading">
             <span>Current channel version</span>
-            {report && current && (
-              <Badge variant={same ? 'secondary' : 'outline'}>
-                {same && <Check aria-hidden="true" />}
-                {same ? 'Versions match' : 'Versions differ'}
-              </Badge>
-            )}
           </div>
           {current ? (
             <>
@@ -205,7 +207,7 @@ export function DeliveryApp({
         <header>
           <div>
             <h3>Report history</h3>
-            <p>Most recently received first · UTC · retained for 30 days</p>
+            <p>Most recently received first · retained for 30 days</p>
           </div>
           <span>{receipts.length} loaded</span>
         </header>

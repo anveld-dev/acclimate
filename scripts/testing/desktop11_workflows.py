@@ -144,26 +144,34 @@ def creation(w,b,e,f):
 
 
 def changes(w,b,e,f):
-    p=b.page;p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,b.bundle_path('changes'));drafts=p.get_by_role('region',name='Saved drafts',exact=True);suggestions=p.get_by_role('region',name='Suggestions',exact=True)
-    expect(drafts.get_by_text('Loading saved drafts…',exact=True)).to_have_count(0);expect(drafts).to_contain_text('No open drafts on the loaded pages. Load more drafts to check older entries.');expect(drafts.get_by_role('button',name='Load more drafts',exact=True)).to_be_visible();capture(e,p,'1440-changes-closed-first-page-has-older-open-cursor')
-    drafts.get_by_role('button',name='Include closed drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(20);expect(drafts.get_by_role('button',name='Include closed drafts',exact=True)).to_have_attribute('aria-pressed','true');capture(e,p,'1440-changes-twenty-real-discarded-rows')
-    drafts.get_by_role('button',name='Load more drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(22);drafts.get_by_role('button',name='Include closed drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(2)
+    p=b.page;p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,b.bundle_path('changes'))
+    drafting=p.get_by_role('region',name='Drafting',exact=True)
+    drafts=drafting.locator('[data-change-kind=draft]');suggestions=drafting.locator('[data-change-kind=suggestion]')
+    include=p.get_by_role('button',name='Include closed drafts',exact=True)
+    more=drafting.get_by_role('button',name='Load more drafts',exact=True)
+    expect(more).to_be_visible();expect(drafts).to_have_count(0);capture(e,p,'1440-changes-closed-first-page-has-older-open-cursor')
+    include.click();expect(drafts).to_have_count(20);expect(include).to_have_attribute('aria-pressed','true');capture(e,p,'1440-changes-twenty-real-discarded-rows')
+    more.click();expect(drafts).to_have_count(22);include.click();expect(drafts).to_have_count(2)
     for draft in f['openDrafts']:
-        row=drafts.locator('li').filter(has=p.get_by_role('link',name='Draft '+draft['id'][:8],exact=True));row.get_by_role('button',name='Draft details',exact=True).click()
-        for value in (draft['id'],draft['baseVersionId'],draft['snapshotVersion']['id']):expect(row).to_contain_text(value)
-        expect(row.get_by_role('link')).to_have_attribute('href',b.bundle_path('changes',draft=draft['id']))
-    expect(drafts.get_by_role('link',name='Draft '+f['previewDraft']['id'][:8],exact=True)).to_have_count(0)
-    expect(suggestions.locator('li')).to_have_count(3)
+        action=drafts.get_by_role('link',name='Open Draft '+draft['id'][:8],exact=True)
+        expect(action).to_have_attribute('href',b.bundle_path('changes',draft=draft['id']))
+        drafts.get_by_role('button',name='Draft details for '+draft['id'],exact=True).click()
+        dialog=p.get_by_role('dialog')
+        for value in (draft['id'],draft['baseVersionId'],draft['snapshotVersion']['id']):expect(dialog).to_contain_text(value)
+        p.keyboard.press('Escape')
+    expect(drafts.get_by_role('link',name='Open Draft '+f['previewDraft']['id'][:8],exact=True)).to_have_count(0)
+    expect(suggestions).to_have_count(3)
     for proposal in f['proposals']:
-        row=suggestions.locator('li').filter(has=p.get_by_role('link',name='Suggestion '+proposal['id'][:8],exact=True));row.get_by_role('button',name='Suggestion details',exact=True).click();expect(row).to_contain_text(proposal['id']);expect(row).to_contain_text(proposal['parentVersionId'])
-        expect(row).to_contain_text('Ready to review' if proposal['status']=='succeeded' else 'Failed')
-        if proposal.get('error'):expect(row).to_contain_text(proposal['error'])
+        suggestions.get_by_role('button',name='Suggestion details for '+proposal['id'],exact=True).click()
+        dialog=p.get_by_role('dialog')
+        for value in (proposal['id'],proposal['parentVersionId'],proposal['status']):expect(dialog).to_contain_text(value)
+        if proposal.get('error'):expect(dialog).to_contain_text(proposal['error'])
+        p.keyboard.press('Escape')
     for width in (1440,1920,1024):
-        p.set_viewport_size(dict(width=width,height=1000));g=capture(e,p,f'{width}-changes-full-identities-independent-details');assert g['changes'] and g['changes']['width']<=1024+1,g
-        for item in g['detailFields']:
-            if item['dt'] and item['dd']:assert item['dd']['x']>=item['dt']['right'],item
-    drafts.get_by_role('button',name='Include closed drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(22);drafts.get_by_role('button',name='Include closed drafts',exact=True).click();expect(drafts.locator('li')).to_have_count(2)
-    visit(p,b,b.bundle_path('changes',channel='preview'));drafts=p.get_by_role('region',name='Saved drafts',exact=True);expect(drafts.locator('li')).to_have_count(1);expect(drafts).to_contain_text('Draft '+f['previewDraft']['id'][:8]);expect(p.get_by_role('region',name='Suggestions',exact=True).locator('li')).to_have_count(3);capture(e,p,'1024-preview-drafts-scope-suggestions-all-channels')
+        p.set_viewport_size(dict(width=width,height=1000));capture(e,p,f'{width}-changes-pipeline')
+        expect(p.get_by_role('region',name='Change pipeline',exact=True)).to_be_visible()
+    include.click();expect(drafts).to_have_count(22);include.click();expect(drafts).to_have_count(2)
+    visit(p,b,b.bundle_path('changes',channel='preview'));expect(drafts).to_have_count(1);expect(drafts).to_contain_text('Draft '+f['previewDraft']['id'][:8]);expect(suggestions).to_have_count(3);capture(e,p,'1024-preview-drafts-scope-suggestions-all-channels')
     return dict(closedFirstPage=20,olderOpenDrafts=2,allDrafts=22,paginationReal=True,toggleBothWays=True,draftChannelScope=True,suggestionsAllChannels=True,terminalSuggestionStatuses=[proposal['status'] for proposal in f['proposals']],naturalRejectedWritePathError=True,fullIdsAndIndependentDetails=True)
 
 
@@ -205,7 +213,7 @@ def native(w,b,e,f):
             b.sign_in(context);p=context.pages[0];p.set_default_timeout(10000);p.on('pageerror',lambda error:b.errors.append(str(error)));visit(p,b,b.workspace_path());before=p.evaluate('({width:innerWidth,dpr:devicePixelRatio})');p.goto('chrome://settings/appearance',wait_until='domcontentloaded');p.evaluate('chrome.settingsPrivate.setDefaultZoom(2)');visit(p,b,b.workspace_path());p.wait_for_function('w=>Math.abs(innerWidth-w)<2',arg=before['width']/2);assert p.evaluate('devicePixelRatio')==before['dpr']*2
             p.get_by_role('button',name='New bundle',exact=True).click();form=p.get_by_role('region',name='Create a bundle',exact=True);form.get_by_label('Bundle name',exact=True).fill('Native browser-only fixture');form.get_by_label('Instructions',exact=True).fill('# Native creation draft\n');capture(e,p,'native200-inline-creation-source-modes');form.get_by_role('button',name='Cancel',exact=True).click();guard=p.get_by_role('alertdialog');p.keyboard.press('Escape');expect(guard).to_have_count(0);expect(form.get_by_label('Bundle name',exact=True)).to_have_value('Native browser-only fixture');form.get_by_role('button',name='Cancel',exact=True).click();guard.get_by_role('button',name='Leave editor',exact=True).click()
             proposal_form(w,b,e,p,b.bundle_path('changes',bundle_id=f['long']['bundle']['id'],proposal='new'),'native200-long-path')
-            visit(p,b,b.bundle_path('changes'));drafts=p.get_by_role('region',name='Saved drafts',exact=True);expect(drafts).to_contain_text('No open drafts on the loaded pages.');capture(e,p,'native200-closed-first-page-older-open-cursor')
+            visit(p,b,b.bundle_path('changes'));drafts=p.get_by_role('region',name='Drafting',exact=True);expect(drafts.get_by_role('button',name='Load more drafts',exact=True)).to_be_visible();expect(drafts.locator('[data-change-kind=draft]')).to_have_count(0);capture(e,p,'native200-closed-first-page-older-open-cursor')
             return dict(nativeZoom=2,baseline=before,dpr=p.evaluate('devicePixelRatio'),cssViewport=p.evaluate('({width:innerWidth,height:innerHeight})'),inlineCreation=True,dirtyCancelRetains=True,longPathAndConsent=True,realClosedPagination=True)
         finally:context.close()
 

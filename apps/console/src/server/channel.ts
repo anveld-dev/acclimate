@@ -1,5 +1,5 @@
 import { consoleClient } from './console-client';
-import { actorScope, requireSession } from './selection';
+import { actorScope, creationRecoveryServiceIdentity, requireSession } from './selection';
 import { allPages } from './listing';
 import { createHash } from 'node:crypto';
 import { ApiError, DeliveryError, verifyPayloadBytes } from '@acclimate/sdk';
@@ -19,6 +19,7 @@ export type ConsoleState =
       publicApiUrl: string;
       actorScope: string;
       serviceIdentity: string;
+      creationRecoveryServiceIdentity: string;
       compatibilityTarget: CompatibilityTarget;
       lastSuccessfulRead: string;
       source: {
@@ -83,6 +84,7 @@ export async function readChannel(
       status: 'ready',
       publicApiUrl: env.CONSOLE_PUBLIC_API_URL!,
       actorScope: actorScope(env),
+      creationRecoveryServiceIdentity: creationRecoveryServiceIdentity(env),
       serviceIdentity: createHash('sha256')
         .update(env.CONSOLE_SERVICE_URL || '')
         .digest('hex')

@@ -135,12 +135,11 @@ def strict_helper_release(context):
     assert any(pair['parent']['reward'] == 0 for pair in report['results'])
     assert w.call('GET', w.channel)['revision'] == '1', 'App evaluation must not promote automatically'
     review_publish(context, expected_verdict='pass')
-    open_details(p,'Case map and all outcomes')
+    p.get_by_role('tab',name='Details',exact=True).click()
     open_details(p,'Evidence details')
     expect(p.locator('.comparison-evidence-binding').get_by_text(request['id'],exact=True)).to_be_visible()
     expect(p.locator('.comparison-evidence-provenance')).to_contain_text('Attempt '+request['attemptId'])
-    open_details(p,'Comparison lookup and details')
-    frozen=json.loads(p.locator('[data-slot=disclosure-trigger]').filter(has_text='Comparison lookup and details').locator('..').locator('pre').inner_text())
+    frozen=json.loads(p.get_by_role('region',name='Comparison lookup',exact=True).locator('pre').inner_text())
     assert frozen['evaluation']==dict(requestId=request['id'],attemptId=request['attemptId'])
     current = w.call('GET', w.channel)
     assert current['revision'] == '2' and current['version'] == w.browser_saved['snapshotVersion']

@@ -6,6 +6,7 @@ import { setupRequest } from '../lib/content-operation';
 import type { BundleSetup, CompatibilityTarget, BundlePayload } from '@acclimate/sdk';
 import {
   actorScope,
+  creationRecoveryServiceIdentity,
   requireSession,
   SessionRequiredError,
   validSelection,
@@ -59,11 +60,7 @@ export async function listSetup(
     return {
       ok: true as const,
       actorScope: actorScope(env),
-      serviceIdentity: actorScope({
-        ...env,
-        CONSOLE_SESSION_TOKEN: undefined,
-        CONSOLE_SERVICE_TOKEN: undefined,
-      }),
+      serviceIdentity: creationRecoveryServiceIdentity(env),
       projects,
       projectId: selectedProject,
       entries: channels,

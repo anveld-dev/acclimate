@@ -96,11 +96,10 @@ export function channelSwitchSearch(view: BundleView, search: Record<string, unk
   ) as Record<string, string | number>;
 }
 
-export const bundleViewLabels: Record<BundleView, string> = {
+export const bundleViewLabels: Record<Exclude<BundleView, 'connect'>, string> = {
   content: 'Content',
   changes: 'Changes',
   releases: 'Releases',
-  connect: 'App setup',
 };
 
 /** Short breadcrumb only; the detail surface retains the complete path or identity. */

@@ -71,12 +71,17 @@ function CaseInspector({
           </tr>
         </tbody>
       </table>
+      <ConsoleLink className="triage-case-permalink" href={evaluationCaseHref(reviewHref, row)}>
+        <Link2 aria-hidden="true" />
+        Case permalink
+        <ArrowUpRight aria-hidden="true" />
+      </ConsoleLink>
       <h4>Output references</h4>
       <dl className="triage-case-outputs">
         {(['parent', 'candidate'] as const).map((side) => (
           <div key={side}>
             <dt>{side === 'parent' ? 'Parent' : 'Candidate'}</dt>
-            <dd>{pair?.[side]?.outputRef || 'None reported'}</dd>
+            <dd>{pair?.[side]?.outputRef ? <code>{pair[side].outputRef}</code> : 'None reported'}</dd>
           </div>
         ))}
       </dl>
@@ -94,11 +99,6 @@ function CaseInspector({
           <CopyButton value={json} label="Copy case JSON" />
         </DisclosureContent>
       </Disclosure>
-      <ConsoleLink className="triage-case-permalink" href={evaluationCaseHref(reviewHref, row)}>
-        <Link2 aria-hidden="true" />
-        Case permalink
-        <ArrowUpRight aria-hidden="true" />
-      </ConsoleLink>
     </>
   );
 }

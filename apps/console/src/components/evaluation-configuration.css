@@ -1,5 +1,5 @@
 .evaluation-workspace .configuration-studio .evaluation-setup-title {
-  font: 600 clamp(1rem, 1.6vw, 1.32rem) / 1.3 var(--font-editorial, Georgia, serif);
+  font: var(--section-heading);
 }
 .configuration-studio .evaluation-configuration-form .evaluation-setup-grid {
   gap: 20px;
@@ -44,7 +44,7 @@
   font-family: var(--font-mono, monospace);
 }
 .configuration-studio .config-preview-identity span {
-  font-size: 12px;
+  font-size: var(--type-12);
   color: var(--muted-foreground);
 }
 .configuration-studio .evaluation-configuration-form .evaluation-setup-preview dl {
@@ -55,7 +55,7 @@
 .configuration-studio .evaluation-configuration-form .evaluation-setup-preview dd {
   margin: 0;
   font-family: var(--font-mono, monospace);
-  font-size: 12px;
+  font-size: var(--type-12);
 }
 .configuration-studio .config-case-manifest {
   max-height: 220px;
@@ -72,7 +72,7 @@
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
-  font-size: 12px;
+  font-size: var(--type-12);
 }
 .configuration-studio table th,
 .configuration-studio table td {
@@ -112,7 +112,7 @@
 }
 .configuration-studio .config-preview-empty p {
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: var(--type-13);
 }
 .configuration-studio .config-issue {
   display: flex;
@@ -136,7 +136,7 @@
 }
 .configuration-studio .evaluation-setup-footer .config-blocked {
   color: var(--foreground);
-  font-size: 13px;
+  font-size: var(--type-13);
 }
 @container evaluation-setup (min-width:900px) {
   .configuration-studio .evaluation-configuration-form .evaluation-setup-grid {
@@ -162,7 +162,7 @@
   align-items: center;
   gap: 4px;
   margin-inline-start: auto;
-  font-size: 11px;
+  font-size: var(--type-12);
   font-weight: 500;
   color: var(--foreground);
 }
@@ -181,7 +181,7 @@
   border-bottom: 1px solid var(--border);
 }
 .configuration-studio .config-lineage [data-slot='disclosure-trigger'] {
-  font-size: 14px;
+  font-size: var(--type-14);
   overflow-wrap: anywhere;
 }
 .configuration-studio .config-lineage code {

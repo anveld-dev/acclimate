@@ -1,3 +1,4 @@
+import { ReceiptTime } from './receipt-time';
 import { useEffect, useState } from 'react';
 import type { ComparisonPolicyReceipt } from '@acclimate/sdk';
 import { runImprovement } from '../server/improvement-actions';
@@ -89,7 +90,7 @@ export function PolicyReceiptList({ receipts }: { receipts: ComparisonPolicyRece
           <details className="mt-1 text-muted-foreground">
             <summary>Policy check details</summary>
             <p className="break-all">
-              Reported by {receipt.reportedBy} · {receipt.receivedAt}
+              Reported by {receipt.reportedBy} · <ReceiptTime value={receipt.receivedAt} />
             </p>
             <p className="break-all">Comparison {receipt.comparisonId}</p>
             <p className="break-all">Policy digest {receipt.policy.sha256}</p>

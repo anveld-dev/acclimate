@@ -250,7 +250,7 @@ def overlays(w, b, e, routes, candidate):
 
     visit(p,b,routes['review'])
     activate(p,p.get_by_role('link',name=re.compile(r'^Inspect evidence for ')))
-    expect(p.get_by_role('heading',name='Reported evidence',exact=True)).to_be_visible()
+    expect(p.get_by_role('region',name='Evaluation case comparison',exact=True)).to_be_visible()
     evidence = p.get_by_role('button',name='Review release with this evidence',exact=True)
     activate(p,evidence)
     expect(p.get_by_role('dialog')).to_contain_text(w.report['id'])

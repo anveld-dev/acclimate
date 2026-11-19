@@ -201,7 +201,7 @@ export function BundleContent({
                       <h2 className="break-words text-sm font-semibold">{fileTitle(selected)}</h2>
                       <div className="content-entry-metadata flex flex-wrap items-center gap-2">
                         <a
-                          className="published-revision-link text-xs text-muted-foreground"
+                          className="published-revision-link text-sm text-muted-foreground"
                           href={
                             bundleHref(scope, 'releases') +
                             '#revision-' +

@@ -116,8 +116,8 @@
 
 @container members (min-width: 720px) {
   .members-section-heading {
-    font-family: var(--font-editorial);
-    font-size: 21px;
+
+    font-size: var(--type-20);
     font-weight: 550;
     line-height: 1.2;
     background: var(--card);
@@ -168,32 +168,19 @@
   padding: 2px 6px;
   background: var(--muted);
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--type-12);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-.members-directory-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-}
-.members-directory-toolbar > :first-child {
-  flex: 1;
-  max-width: 400px;
-  min-width: 0;
-}
-.members-directory-toolbar > :last-child {
-  flex: 0 1 auto;
-  min-width: 100px;
 }
 .members-role-guide {
   display: contents;
 }
 .members-role-guide > [data-slot='disclosure-trigger'] {
-  min-height: 28px;
-  font-size: 13px;
+  min-height: 36px;
+  font-size: var(--type-14);
+}
+@media (pointer: coarse) {
+  .members-role-guide > [data-slot='disclosure-trigger'] { min-height: 44px; }
 }
 .members-role-guide > [data-slot='disclosure-content'] {
   grid-column: 1/-1;
@@ -209,7 +196,7 @@
 }
 .members-role-guide :is(dt, dd) {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--type-13);
 }
 .members-role-guide dt {
   font-weight: 650;
@@ -230,20 +217,14 @@
   border-radius: 8px;
   background: var(--accent);
   color: var(--accent-foreground);
-  font-size: 13px;
+  font-size: var(--type-13);
   font-weight: 650;
 }
 .member-own-badge {
-  font-size: 11px;
+  font-size: var(--type-12);
 }
 .member-role-trigger[data-slot='button'] {
-  background: var(--muted);
-  color: var(--foreground);
-  border: 1px solid var(--border);
-}
-.member-role-trigger[data-role='admin'] {
-  background: var(--accent);
-  color: var(--accent-foreground);
+  padding-inline: 0;
 }
 .member-role-trigger[data-slot='button']:hover {
   border-color: var(--ring);
@@ -254,7 +235,7 @@
   align-items: center;
   gap: 10px 16px;
   padding: 16px;
-  font-size: 14px;
+  font-size: var(--type-14);
   color: var(--muted-foreground);
 }
 .members-invitations-title {
@@ -290,10 +271,14 @@
   .members-role-guide > [data-slot='disclosure-trigger'] {
     justify-self: start;
   }
-  .members-directory-toolbar {
-    flex-wrap: wrap;
-  }
-  .members-directory-toolbar > :first-child {
-    flex-basis: 180px;
-  }
+}
+
+.member-invite-action {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+.member-invite-action p {
+  max-width: 30ch;
+  text-align: end;
 }

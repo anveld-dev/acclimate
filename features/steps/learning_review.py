@@ -9,7 +9,8 @@ from scripts.bdd.learning import enroll_reviews, grade_through_audit, report_fai
 
 def open_learning(w):
     browser = w.browser()
-    browser.visit(browser.workspace_path('connections') + '?integration=' + w.integration['id'])
+    browser.visit(browser.workspace_path('connections') + '?integration=' + w.integration['id']
+                  + '&connectionTab=learning')
     return browser.page.get_by_role('region', name='Continuous learning')
 
 

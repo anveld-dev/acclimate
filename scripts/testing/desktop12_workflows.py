@@ -177,12 +177,12 @@ def review_case(w,b,e,p,f,mode,width,height,coarse):
     name=f'{mode}-{width}x{height}'+('-coarse' if coarse else '')+'-review';case=dict(name=name,mode=mode,viewport=[width,height],coarse=coarse,tasks=[]);e.results.append(case)
     visit(p,b,b.bundle_path('changes',channel=CHANNEL,draft=f['draft']['id'],candidate=f['draft']['snapshotVersion']['id'],generation=f['draft']['generation']));e.apply(p,mode)
     def loaded():
-        p.get_by_role('link',name=re.compile(r'^Inspect evidence for ')).click(timeout=2500);expect(p.get_by_role('heading',name='Reported evidence',exact=True)).to_be_visible();evidence=p.locator('.comparison-evidence');expect(evidence.get_by_role('row')).to_have_count(4)
+        p.get_by_role('link',name=re.compile(r'^Inspect evidence for ')).click(timeout=2500);p.get_by_role('tab',name='Details',exact=True).click();evidence=p.locator('.comparison-evidence');expect(evidence.get_by_role('row')).to_have_count(4)
         for value in ('Incomplete evidence; not a win','Reward 0 · cost $0','Reward missing · cost unknown','Missing outcome · grade missing · cost unknown',f['report']['parentVersionId'],f['report']['candidateVersionId'],f['request']['id']):expect(evidence).to_contain_text(value)
-        expect(p.get_by_role('button',name='Review release with this evidence',exact=True)).to_be_disabled();p.get_by_role('heading',name='Reported evidence',exact=True).scroll_into_view_if_needed();case['loadedEvidence']=e.capture(p,name+'-incomplete-evidence');return True
+        expect(p.get_by_role('button',name='Review release with this evidence',exact=True)).to_be_disabled();evidence.scroll_into_view_if_needed();case['loadedEvidence']=e.capture(p,name+'-incomplete-evidence');return True
     e.attempt(p,case,'actual-inspect-fully-loaded-incomplete-evidence',loaded)
     def diff():
-        open_details(p,'Review file changes');expect(p.locator('.content-diff').get_by_role('heading')).to_have_count(2);expect(p.locator('.content-diff')).to_contain_text('+ Desktop12 candidate change.');p.locator('.content-diff').scroll_into_view_if_needed();case['expandedDiff']=e.capture(p,name+'-expanded-full-diff');return True
+        p.get_by_role('tab',name='Files changed',exact=False).click();expect(p.locator('.content-diff').get_by_role('heading')).to_have_count(2);expect(p.locator('.content-diff')).to_contain_text('+ Desktop12 candidate change.');p.locator('.content-diff').scroll_into_view_if_needed();case['expandedDiff']=e.capture(p,name+'-expanded-full-diff');return True
     e.attempt(p,case,'expanded-two-file-real-diff',diff);e.cleanup(p);return case
 
 

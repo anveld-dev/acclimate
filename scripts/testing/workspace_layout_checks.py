@@ -44,10 +44,14 @@ def verify(w,b,p,routes,out,checks):
         full_id=row.locator('.member-id').inner_text().removeprefix('User ID: ')
         assert full_id in row.locator('.member-role-trigger').get_attribute('aria-label')
         labels.append(row.locator('.member-actions-trigger').get_attribute('aria-label'))
-        row.get_by_role('button',name='Identity details',exact=True).click()
-        expect(row.locator('.member-details')).to_contain_text('Issuer:')
-        expect(row.locator('.member-details')).to_contain_text('Subject:')
-        row.get_by_role('button',name='Identity details',exact=True).click()
+        actions=row.locator('.member-actions-trigger')
+        actions.click()
+        p.get_by_role('menuitem',name='Identity details',exact=True).click()
+        identity=p.get_by_role('dialog',name='Identity details',exact=True)
+        expect(identity).to_contain_text('Issuer')
+        expect(identity).to_contain_text('Subject')
+        identity.press('Escape')
+        expect(actions).to_be_focused()
     assert labels[0]!=labels[1]
     row=duplicates.first
     user_id=row.locator('.member-id').inner_text().removeprefix('User ID: ')
@@ -77,6 +81,7 @@ def verify(w,b,p,routes,out,checks):
     expect(p.get_by_role('button',name='Invite member',exact=True)).to_be_focused()
     checks.append('Invite email validity, role guidance, cancel and focus return')
     visit(p,b,routes['connection-detail'])
+    p.get_by_role('tab',name='Credentials',exact=True).click()
     expect(p.get_by_label('Issued read credentials',exact=True).get_by_text('Read credential · Active',exact=True)).to_be_visible()
     reporting=p.get_by_role('button',name='Optional delivery reports & credentials',exact=True)
     expect(reporting).to_have_attribute('aria-expanded','false')
@@ -84,6 +89,7 @@ def verify(w,b,p,routes,out,checks):
     expect(p.get_by_label('Issued reporting credentials',exact=True)).to_be_visible()
     capture_layout(p,out,'connection-reporting-open')
     reporting.click()
+    p.get_by_role('tab',name='Delivery reports',exact=True).click()
     report=p.get_by_test_id('delivery-report').first
     trigger=report.get_by_role('button')
     expect(trigger).to_have_attribute('aria-expanded','false')
@@ -99,6 +105,8 @@ def verify(w,b,p,routes,out,checks):
     for _ in range(22):
         w.call('POST',w.integration_path+'/receipts',w.delivery_event(),actor='receipt-writer')
     p.reload(wait_until='networkidle')
+    expect(p.get_by_test_id('delivery-report')).to_have_count(3)
+    p.get_by_role('button',name='Show all 20 loaded reports',exact=True).click()
     expect(p.get_by_test_id('delivery-report')).to_have_count(20)
     p.get_by_role('button',name='Load older reports',exact=True).click()
     expect(p.get_by_test_id('delivery-report')).to_have_count(25)
@@ -107,8 +115,32 @@ def verify(w,b,p,routes,out,checks):
     checks.append('25 independent reports page in received-time order')
     empty=b.workspace_path('connections')+'?integration='+w.empty_connection['id']
     visit(p,b,empty)
+    expect(p.get_by_role('tab',name='Setup',exact=True)).to_have_attribute('aria-selected','true')
+    p.get_by_role('tab',name='Delivery reports',exact=True).click()
     expect(p.get_by_text('No delivery report received; status unknown.',exact=False)).to_be_visible()
     checks.append('No reports retains explicit unknown status and setup link')
+    for width in (1440, 320):
+        p.set_viewport_size(dict(width=width,height=900))
+        visit(p,b,b.bundle_path('changes'))
+        board=p.get_by_role('region',name='Change pipeline',exact=True)
+        for column in ('Drafting','Evaluating','Ready to review','Released'):
+            expect(board.get_by_role('region',name=column,exact=True)).to_be_visible()
+        assert board.locator('.changes-pipeline').evaluate("e=>getComputedStyle(e).gridTemplateColumns.split(' ').length")==(4 if width==1440 else 1)
+        assert p.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+        quick=p.get_by_role('button',name='Use in an app',exact=True)
+        quick.click()
+        popover=p.get_by_role('dialog',name='Use this bundle in an app',exact=True)
+        for variable in ('ACCLIMATE_URL','ACCLIMATE_TOKEN','ACCLIMATE_SCOPE'):
+            expect(popover).to_contain_text(variable)
+        popover.get_by_role('radio',name='Python',exact=True).click()
+        expect(popover).to_contain_text('python3 -m pip install')
+        assert p.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+        popover.get_by_role('link',name='Full setup guide',exact=True).click()
+        expect(p.get_by_role('heading',name='App setup',exact=True)).to_be_visible()
+        expect(p.get_by_role('navigation',name='Bundle navigation',exact=True).locator('[aria-current=page]')).to_have_count(0)
+        expect(p.get_by_role('link',name='Back to content',exact=True)).to_be_visible()
+    p.set_viewport_size(dict(width=1440,height=1000))
+    checks.append('Pipeline columns and SDK popover reflow at desktop and 320px, and the full guide retains its standalone route')
     # A genuinely narrow content container inside a wide viewport exercises container rules.
     for name in ['bundles','members','connection-detail']:
         visit(p,b,routes[name])

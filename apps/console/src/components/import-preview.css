@@ -19,14 +19,14 @@
 .import-review > header h3,
 .import-source > header strong,
 .import-conflict h3 {
-  font-size: 14px;
+  font-size: var(--type-14);
   font-weight: 650;
 }
 .import-review > header span,
 .import-source > header span,
 .import-review li small {
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--type-12);
 }
 .import-review-layout {
   display: grid;
@@ -86,7 +86,7 @@
 }
 .import-source > p,
 .import-source > .syntax-code {
-  font-size: 12px;
+  font-size: var(--type-12);
   padding: 10px 12px;
 }
 .import-source > .syntax-code {
@@ -115,7 +115,7 @@
 .import-conflict p,
 .import-conflict li,
 .import-problem {
-  font-size: 13px;
+  font-size: var(--type-13);
 }
 .import-conflict ul {
   list-style: none;
@@ -131,7 +131,7 @@
   flex-wrap: wrap;
 }
 .import-conflict li code {
-  font-size: 12px;
+  font-size: var(--type-12);
   font-weight: 600;
 }
 @media (min-width: 640px) and (min-height: 680px) {

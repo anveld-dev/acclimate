@@ -1,3 +1,4 @@
+import { ReceiptTime } from './receipt-time';
 import { ReleaseComparison } from './release-comparison';
 import './release-comparison.css';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
@@ -453,13 +454,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
                       {showLinked && linkedRelease?.id === item.id && (
                         <Badge variant="outline">Linked revision</Badge>
                       )}
-                      <time dateTime={item.createdAt}>
-                        {new Date(item.createdAt).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </time>
+                      <ReceiptTime value={item.createdAt} />
                       <code>{item.version.id.slice(0, 8)}</code>
                     </button>
                   </article>
@@ -504,7 +499,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
                           value={JSON.stringify(selected, null, 2)}
                           fields={[
                             ['Revision', selected.revision],
-                            ['Published', new Date(selected.createdAt).toLocaleString()],
+                            ['Published', <ReceiptTime value={selected.createdAt} />],
                             ['Reviewer', selected.reviewer],
                             [
                               'Reason',

@@ -1141,6 +1141,16 @@
     "kind": "source"
   },
   {
+    "source": "docs/research/real-app-learning-experiment/5-admission-rerun-preregistration.md",
+    "route": "source/research/real-app-learning-experiment/5-admission-rerun-preregistration.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/5-admission-rerun.md",
+    "route": "source/research/real-app-learning-experiment/5-admission-rerun.md",
+    "kind": "source"
+  },
+  {
     "source": "docs/research/real-app-learning-experiment/5-admission.md",
     "route": "source/research/real-app-learning-experiment/5-admission.md",
     "kind": "source"

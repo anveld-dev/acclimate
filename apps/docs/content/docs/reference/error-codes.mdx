@@ -87,6 +87,7 @@ Execution state overrides the default exit: a diagnostic with `executionState` `
 | `definition.report_budget_exceeded` | 1 | `fix_application` | The case inventory exceeds the comparison report size limit. Split the cases into smaller evaluations. |
 | `application.invalid` | 1 | `fix_application` | The application module does not export a valid adapter. |
 | `application.import_failed` | 1 | `fix_application` | The application module could not be imported. |
+| `payload.incompatible` | 1 | `fix_command` | The payload breaks a compatibility rule of a native harness the application declares. |
 | `output.invalid` | 1 | `fix_application` | A callback returned a value that is not plain JSON. |
 | `runtime.unsupported` | 1 | `fix_config` | This platform cannot run the durable evaluator. Use Linux or macOS with python3 available. |
 | `capabilities.unsupported` | 1 | `upgrade_service` | The service does not support retained evaluation operations. |

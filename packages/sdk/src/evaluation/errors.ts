@@ -23,6 +23,7 @@ export type SafeCode =
   | 'application.invalid'
   | 'application.import_failed'
   | 'output.invalid'
+  | 'payload.incompatible'
   | 'runtime.unsupported'
   | 'capabilities.unsupported'
   | 'bundle.missing'
@@ -153,6 +154,7 @@ export const EVALUATION_ERROR_CODES: Readonly<Record<SafeCode, Readonly<CodeInfo
   'definition.report_budget_exceeded': app('The case inventory exceeds the comparison report size limit. Split the cases into smaller evaluations.'),
   'application.invalid': app('The application module does not export a valid adapter.'),
   'application.import_failed': app('The application module could not be imported.'),
+  'payload.incompatible': { message: 'The payload breaks a compatibility rule of a native harness the application declares.', nextAction: 'fix_command', exitCode: 1 },
   'output.invalid': app('A callback returned a value that is not plain JSON.'),
   'runtime.unsupported': config('This platform cannot run the durable evaluator. Use Linux or macOS with python3 available.'),
   'capabilities.unsupported': { message: 'The service does not support retained evaluation operations.', nextAction: 'upgrade_service', exitCode: 1 },

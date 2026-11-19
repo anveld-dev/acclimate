@@ -1,4 +1,4 @@
-import type { BundleFile, EvaluationDescriptor } from '../types.js';
+import type { BundleFile, CompatibilityTarget, EvaluationDescriptor } from '../types.js';
 import { types as nodeTypes } from 'node:util';
 import { validateEvaluationDescriptor } from '../validation.js';
 import { DefinitionError, EvaluationError, OutputValidationError } from './errors.js';
@@ -28,6 +28,20 @@ export interface CapturedDefinition<I = unknown, E = unknown, O = unknown> {
   collection?: CollectionSchedule;
   /** Invocation controls bound by the command line; never part of the descriptor. */
   controls?: RunControls;
+  /** Native harnesses whose compatibility rules payloads must meet. Never part of the descriptor. */
+  compatibilityTargets?: readonly CompatibilityTarget[];
+}
+const COMPATIBILITY_TARGETS: readonly CompatibilityTarget[] = ['generic', 'codex', 'claude', 'pi', 'cursor'];
+/** Normalize a declared compatibility target or list. */
+export function compatibilityTargets(value: unknown): readonly CompatibilityTarget[] | undefined {
+  if (value === undefined) return undefined;
+  const list = Array.isArray(value) ? value : [value];
+  if (!list.length || list.some((target) => !COMPATIBILITY_TARGETS.includes(target as CompatibilityTarget)))
+    throw new DefinitionError(
+      'compatibilityTarget',
+      'Use generic, codex, claude, pi or cursor, or a list of them.',
+    );
+  return Object.freeze([...new Set(list as CompatibilityTarget[])]);
 }
 type BundleHelper = 'instructions' | 'instructionFiles' | 'skillFiles' | 'memoryFiles';
 const definitions = new WeakMap<object, CapturedDefinition<any, any, any>>();
@@ -350,7 +364,9 @@ export function defineEvaluation<I, E, O>(
   }) as EvaluationApp<I, E, O>;
   const execute = definition.execute.bind(definition);
   const grade = definition.grade.bind(definition);
+  const targets = compatibilityTargets(definition.compatibilityTarget);
   definitions.set(app, {
+    ...(targets ? { compatibilityTargets: targets } : {}),
     descriptor: deepFreeze(descriptor),
     execution: definition.execution,
     cases: deepFreeze(cases),

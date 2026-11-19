@@ -1513,3 +1513,72 @@ test('service compare reports a shard selection without writing to stderr', asyn
     await f.cleanup();
   }
 });
+
+test('a declared native harness rejects incompatible skills before any request or callback', async () => {
+  const f = await fixture();
+  try {
+    const native = defineEvaluation({
+      configId: 'app',
+      configRevision: '1',
+      datasetRevision: 'cases-1',
+      graderRevision: 'grader-1',
+      runtime: { model: 'none' },
+      execution: 'model-free',
+      compatibilityTarget: 'claude',
+      cases: [{ caseId: 'case', input: { task: 'saved' }, expected: true }],
+      execute: async () => {
+        f.state.executions++;
+        return { output: { correct: true } };
+      },
+      grade: async () => ({ reward: 1 }),
+    });
+    // The target is not part of the descriptor, so existing requests keep their identity.
+    assert.deepEqual(native.descriptor, f.app.descriptor);
+    const broken = path.join(f.directory, 'broken.json');
+    await writeFile(
+      broken,
+      JSON.stringify({
+        schemaVersion: 1,
+        files: [
+          { path: 'instruction.md', kind: 'instruction', text: 'good' },
+          { path: 'skills/refunds/SKILL.md', kind: 'skill', text: 'No frontmatter.' },
+        ],
+      }),
+    );
+    const doctor = await invoke(native, ['doctor', '--config', f.config, '--bundle', bundleId, '--payload', broken]);
+    assert.equal(doctor.status, 1);
+    assert.deepEqual(doctor.result.compatibility.targets, ['claude']);
+    assert.equal(doctor.result.compatibility.issues[0].code, 'skill_metadata');
+    const compared = await invoke(native, [
+      'compare', '--config', f.config, '--bundle', bundleId, '--channel', 'stable', '--payload', broken,
+      '--name', 'native-change',
+    ]);
+    assert.equal(compared.status, 1);
+    assert.equal(compared.error.error.code, 'payload.incompatible');
+    assert.equal(compared.error.error.field, '--payload');
+    assert.match(compared.error.error.reason, /claude \[skill_metadata\] skills\/refunds\/SKILL\.md/);
+    const local = await invoke(native, ['compare', '--local', '--parent', f.payloadFile, '--candidate', broken]);
+    assert.equal(local.status, 1);
+    assert.equal(local.error.error.field, '--candidate');
+    const tried = await invoke(native, ['try', '--payload', broken]);
+    assert.equal(tried.error.error.code, 'payload.incompatible');
+    assert.equal(f.state.drafts, 0);
+    assert.equal(f.state.executions, 0);
+    // A compatible payload passes the same checks.
+    const fine = await invoke(native, ['doctor', '--config', f.config, '--bundle', bundleId, '--payload', f.payloadFile]);
+    assert.equal(fine.status, 0);
+    assert.deepEqual(fine.result.compatibility.issues, []);
+    assert.throws(
+      () =>
+        defineEvaluation({
+          configId: 'app', configRevision: '1', datasetRevision: 'cases-1', graderRevision: 'grader-1',
+          runtime: { model: 'none' }, execution: 'model-free', compatibilityTarget: 'vim' as 'claude',
+          cases: [{ caseId: 'case', input: null, expected: null }],
+          execute: () => ({ output: null }), grade: () => ({ reward: 1 }),
+        }),
+      { code: 'definition.invalid', field: 'compatibilityTarget' },
+    );
+  } finally {
+    await f.cleanup();
+  }
+});

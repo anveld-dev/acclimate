@@ -30,6 +30,7 @@ const adapterExports = [
   'configId',
   'concurrency',
   'gradeRetries',
+  'compatibilityTarget',
   'grader',
   'runtime',
   'toReviewArtifact',
@@ -71,7 +72,7 @@ const commandHelp: Record<string, string> = {
   describe: 'describe [--app PATH]  Print the public descriptor for these callbacks and cases.',
   try: TRY_USAGE,
   coverage: 'coverage [--app PATH]  Inspect bound local sources, imported packages and declared revisions.',
-  doctor: 'doctor --config CONFIG (--bundle ID | --handoff FILE | --name RUN_NAME) [--policy POLICY]',
+  doctor: 'doctor --config CONFIG (--bundle ID | --handoff FILE | --name RUN_NAME) [--policy POLICY] [--payload FILE]\nWith --payload, check it against the native harness rules of compatibilityTarget.',
   request: 'request --config CONFIG --bundle ID --channel CHANNEL --payload FILE --intent FILE --out HANDOFF [--policy POLICY]',
   run: 'run --config CONFIG (--handoff FILE | --name RUN_NAME) [--live]',
   status: 'status (--config CONFIG | --read-config READER) --handoff FILE\nstatus --config CONFIG --name RUN_NAME\nRuns without loading application code.',
@@ -319,6 +320,7 @@ export async function loadApplication(directory = process.cwd(), appPath?: strin
   try {
     app = defineEvaluation({
       ...manifest.definition,
+      ...(adapter.compatibilityTarget !== undefined && { compatibilityTarget: adapter.compatibilityTarget }),
       execute: adapter.execute,
       grade: adapter.grade,
     });

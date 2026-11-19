@@ -73,7 +73,7 @@ Paths can be relative. The CLI resolves them against the current directory.
 | `--retry-after PRIOR_NAME` | `compare` | Start a fresh attempt after a finished run. Use instead of `--name`. |
 | `--bundle ID` | `compare`, `doctor`, `request` | Bundle ID. |
 | `--channel CHANNEL` | `compare`, `request` | Channel to propose the candidate on. |
-| `--payload FILE` | `compare`, `request`, `try` | Complete candidate bundle payload. `try` also accepts a folder. |
+| `--payload FILE` | `compare`, `request`, `try`, `doctor` | Complete candidate bundle payload. `try` also accepts a folder. With `doctor`, check it against the adapter's `compatibilityTarget` and report `compatibility`. |
 | `--local` | `compare` | Compare two payloads without a service. Needs `--parent` and `--candidate`; rejects `--config` and `--handoff`. |
 | `--parent PAYLOAD`, `--candidate PAYLOAD` | `compare --local` | A payload JSON file or a folder of bundle files. |
 | `--case ID[,ID…]` | `try` | Cases to try. Defaults to the first case. |
@@ -122,6 +122,7 @@ export default defineApplication({
 | `configId` | `config_id` | No | Configuration name. Defaults to `application`. |
 | `concurrency` | `concurrency` | No | Pairs in flight at once, 1–64. Defaults to 1. Part of the descriptor. |
 | `gradeRetries` | `grade_retries` | No | Extra grade attempts after a grader raises or times out, 0–5. Defaults to 0. Part of the descriptor. |
+| `compatibilityTarget` | — | No | Native harnesses the adapter prepares bundles for: `'codex'`, `'claude'`, `'pi'`, `'cursor'` or a list. `doctor --payload`, `compare --payload`, `compare --local` and `try --payload` check payloads against their [compatibility rules](/docs/guides/deliver-content#choose-a-native-integration) before any request or callback, and fail with `payload.incompatible` naming the rule. Not part of the descriptor. |
 | `grader` | `grader` | No | `{ sourceUtf8 }` or `{ artifactDigest: 'sha256:…' }`. Defaults to the bound module digest. |
 | `runtime` | `runtime` | No | `{ settings, artifacts }`. Settings are JSON. Artifacts map names to `sha256:` digests. |
 | `toReviewArtifact` | `to_review_artifact` | No | Allowlist fields for review exports. |

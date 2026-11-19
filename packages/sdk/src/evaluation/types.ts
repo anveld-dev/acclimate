@@ -1,5 +1,6 @@
 import type {
   BundleFile,
+  CompatibilityTarget,
   Comparison,
   Evaluation,
   EvaluationDescriptor,
@@ -121,6 +122,12 @@ export interface EvaluationDefinition<I = Json, E = Json, O = Json> {
   execution: 'model-free' | 'live';
   cases: readonly EvaluationCase<I, E>[];
   collection?: EvaluationCollection;
+  /**
+   * Native harnesses this evaluation prepares bundles for, such as `'claude'`. `doctor --payload`,
+   * `compare --payload`, `compare --local` and `try --payload` check payloads against their
+   * compatibility rules before any callback runs. Not part of the descriptor.
+   */
+  compatibilityTarget?: CompatibilityTarget | readonly CompatibilityTarget[];
   /**
    * Pairs in flight at once (1–64, default 1). Arms within a pair still run in
    * schedule order. Fingerprinted as `runtime.concurrency`.

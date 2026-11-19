@@ -17,6 +17,11 @@ export interface ApplicationAdapter<I = Json, E = Json, O = Json>
   concurrency?: number;
   /** Extra grade attempts after a grader throws or times out (0–5, default 0). */
   gradeRetries?: number;
+  /**
+   * Native harnesses this adapter prepares bundles for, such as `'claude'` or `['codex', 'pi']`.
+   * Payloads are checked against their compatibility rules before any callback runs.
+   */
+  compatibilityTarget?: EvaluationDefinition<I, E, O>['compatibilityTarget'];
   grader?: EvaluationManifestInput['grader'];
   runtime?: Partial<EvaluationManifestInput['runtime']>;
   toReviewArtifact?: ReviewMapper;

@@ -13,6 +13,7 @@ import {
   wantsProgress,
 } from './controls.js';
 import { EvaluationUsageError, EXIT_CODES } from './errors.js';
+import { assertPayloadCompatible } from './compatibility-check.js';
 import {
   createLocalRunDirectory,
   loadLocalPayload,
@@ -135,6 +136,9 @@ export async function compareLocalCommand(
     parent: await payloadFrom(parentPath, '--parent'),
     candidate: await payloadFrom(candidatePath, '--candidate'),
   };
+  // Both arms must meet the native harness rules the application declares.
+  assertPayloadCompatible(app, sources.parent.payload, '--parent');
+  assertPayloadCompatible(app, sources.candidate.payload, '--candidate');
   // Parse the policy before any callback runs so a typo costs nothing.
   if (policyText !== undefined) parseEvaluationPolicy(policyText, app.descriptor);
   const runDirectory = await createLocalRunDirectory(text(flags, 'out'), directory);
@@ -257,6 +261,7 @@ export async function tryCommand(app: EvaluationApp<any, any, any>, flags: Flags
   assertLiveFlag(app, flags);
   const controls = runControlsFromFlags({ cases: text(flags, 'case'), 'case-timeout': text(flags, 'case-timeout') });
   const payload = text(flags, 'payload') ? await payloadFrom(text(flags, 'payload')!, '--payload') : undefined;
+  if (payload) assertPayloadCompatible(app, payload.payload, '--payload');
   const directory = await mkdtemp(path.join(await realpath(tmpdir()), 'acclimate-try-'));
   try {
     const result = await withSignals((signal) =>

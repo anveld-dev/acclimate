@@ -4,11 +4,18 @@ import { dirname, join, resolve } from 'node:path';
 import { analyzeComparison, type MetricAnalysis } from './analysis.js';
 import { recordPolicyReceipt } from './policy-receipt.js';
 import { AcclimateClient } from '../client.js';
-import type { Evaluation, EvaluationDescriptor, EvaluationHandoff, Comparison } from '../types.js';
+import type {
+  BundlePayload,
+  Evaluation,
+  EvaluationDescriptor,
+  EvaluationHandoff,
+  Comparison,
+} from '../types.js';
 import {
   validateEvaluationHandoff,
   evaluationDescriptorDifferences,
   assertGuidedTarget,
+  validatePayload,
 } from '../validation.js';
 import { preflightEvaluation, runEvaluation } from './index.js';
 import type { EvaluationApp, EvaluationRunResult } from './types.js';
@@ -45,6 +52,7 @@ import {
   readCommandText,
 } from './cli-intents.js';
 import { pullCommand, pullHelp } from './pull.js';
+import { assertPayloadCompatible, payloadCompatibility } from './compatibility-check.js';
 import {
   compareLocalCommand,
   LOCAL_COMPARE_USAGE,
@@ -98,7 +106,7 @@ const allowed: Record<Command, readonly string[]> = {
   try: ['case', 'payload', 'live', 'case-timeout'],
   coverage: [],
   describe: [],
-  doctor: ['config', 'bundle', 'handoff', 'policy', 'name'],
+  doctor: ['config', 'bundle', 'handoff', 'policy', 'name', 'payload'],
   request: ['config', 'bundle', 'channel', 'payload', 'intent', 'out', 'policy'],
   run: ['config', 'handoff', 'live', 'name', ...runControlFlags],
   check: ['config', 'read-config', 'handoff', 'policy', 'name'],
@@ -583,6 +591,19 @@ function readinessStatus(result: {
   return EXIT_CODES.usage;
 }
 
+/** Read a payload for a pre-run check. Invalid payloads are left for request creation to report. */
+async function readPayloadFile(file: string): Promise<BundlePayload | undefined> {
+  try {
+    const value = await readCommandJson(file);
+    validatePayload(value);
+    return value;
+  } catch (error) {
+    if (error instanceof EvaluationError && error.code === 'config.missing')
+      throw new EvaluationError('config.missing', { field: '--payload' });
+    return undefined;
+  }
+}
+
 async function createRequest(app: EvaluationApp<any, any, any>, flags: Parsed['flags'], predecessor?: { handoffFile: string; request: Evaluation }) {
   const configPath = required(flags, 'config');
   const config = await readEvaluatorConfig(configPath);
@@ -635,6 +656,14 @@ async function dispatch(
           app.descriptor,
         )
       : undefined;
+    // A payload is checked against the native harnesses the application declares.
+    const payload = flags.payload ? await readPayloadFile(required(flags, 'payload')) : undefined;
+    if (flags.payload && !payload)
+      throw new EvaluationUsageError('usage.invalid_flag', {
+        field: '--payload',
+        reason: 'Supply a bundle payload JSON file: {"schemaVersion":1,"files":[{"path","kind","text"}]}.',
+      });
+    const compatibility = payload ? payloadCompatibility(app, payload) : undefined;
     const target = flags.handoff
       ? { handoff: await handoffFile(flags) }
       : { bundleId: required(flags, 'bundle') };
@@ -643,9 +672,14 @@ async function dispatch(
       configPath: required(flags, 'config'),
       target,
     });
+    const status = readinessStatus(result);
     return {
-      status: readinessStatus(result),
-      result: policyReadiness ? { ...result, policyReadiness } : result,
+      status: status || (compatibility?.issues.length ? EXIT_CODES.usage : EXIT_CODES.ok),
+      result: {
+        ...result,
+        ...(policyReadiness ? { policyReadiness } : {}),
+        ...(compatibility ? { compatibility } : {}),
+      },
     };
   }
   const comparing = command === 'compare';
@@ -668,6 +702,9 @@ async function dispatch(
     return createRequest(app, flags);
   }
   if (comparing && !flags.handoff) {
+    // Incompatible skills fail here, naming the rule, before a request or a paid run.
+    const payload = await readPayloadFile(required(flags, 'payload'));
+    if (payload) assertPayloadCompatible(app, payload, '--payload');
     const config = await readEvaluatorConfig(required(flags, 'config'));
     let predecessor;
     if (flags['retry-after']) {

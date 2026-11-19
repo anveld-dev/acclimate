@@ -1,0 +1,27 @@
+[
+  {
+    "caseId": "refund-window",
+    "input": {"question": "How do I get my money back for an order?"},
+    "expected": {"article": "kb-refunds", "escalate": false, "mustMention": ["30 days"]}
+  },
+  {
+    "caseId": "password-reset",
+    "input": {"question": "I forgot my password and I'm locked out"},
+    "expected": {"article": "kb-password", "escalate": false, "mustMention": ["reset link"]}
+  },
+  {
+    "caseId": "shipping-time",
+    "input": {"question": "When will my package arrive?"},
+    "expected": {"article": "kb-shipping", "escalate": false, "mustMention": ["business days"]}
+  },
+  {
+    "caseId": "cancel-plan",
+    "input": {"question": "How can I cancel my subscription?"},
+    "expected": {"article": "kb-cancel", "escalate": false, "mustMention": ["Billing"]}
+  },
+  {
+    "caseId": "unknown-topic",
+    "input": {"question": "Can you help me with my tax filing?"},
+    "expected": {"article": null, "escalate": true, "mustMention": ["human"]}
+  }
+]

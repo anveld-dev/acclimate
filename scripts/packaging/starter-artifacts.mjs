@@ -79,12 +79,12 @@ export async function archiveStarters(root, output, metadata) {
   const produced = [];
   try {
     for (const starter of metadata.starters) {
-      if (!['evaluation', 'ci', 'native-repository'].includes(starter.name) ||
+      if (!['evaluation', 'python-evaluation', 'ci', 'native-repository'].includes(starter.name) ||
           basename(starter.file) !== starter.file || !/^acclimate-[a-z-]+-starter-[0-9A-Za-z.+-]+\.tgz$/.test(starter.file))
         throw new Error('Invalid starter artifact identity');
       const dirname = `${starter.name}-starter`;
       const destination = join(workspace, dirname);
-      const source = starter.name === 'evaluation' ? 'evaluation-starter' : starter.name;
+      const source = starter.name.endsWith('evaluation') ? dirname : starter.name;
       const omitted = starter.name === 'native-repository' ? new Set(['QUALIFICATION.md', 'test']) : new Set();
       await copyStarter(join(root, 'examples', source), destination, inventories[starter.name], omitted);
       const packageFile = join(destination, 'package.json');

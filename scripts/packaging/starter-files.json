@@ -12,6 +12,15 @@
     "quality-policy.example.json",
     "test/test_async_lifetime.py"
   ],
+  "python-evaluation": [
+    "README.md",
+    "acclimate_eval.py",
+    "analyze.py",
+    "application.example.py",
+    "async_eval.py",
+    "quality-policy.example.json",
+    "test/test_async_lifetime.py"
+  ],
   "ci": [
     "README.md",
     "ci.py",

@@ -1126,6 +1126,36 @@
     "kind": "source"
   },
   {
+    "source": "docs/research/real-app-learning-experiment/40-case-preregistration.md",
+    "route": "source/research/real-app-learning-experiment/40-case-preregistration.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/40-case.md",
+    "route": "source/research/real-app-learning-experiment/40-case.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/README.md",
+    "route": "source/research/real-app-learning-experiment/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/preregistration.md",
+    "route": "source/research/real-app-learning-experiment/preregistration.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/replication-preregistration.md",
+    "route": "source/research/real-app-learning-experiment/replication-preregistration.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/replication.md",
+    "route": "source/research/real-app-learning-experiment/replication.md",
+    "kind": "source"
+  },
+  {
     "source": "docs/research/self-improvement-qualification.md",
     "route": "source/research/self-improvement-qualification.md",
     "kind": "source"

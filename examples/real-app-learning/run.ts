@@ -83,9 +83,18 @@ type Case = { caseId: string; input: string; expected: string };
 const fixtures = JSON.parse(
   execFileSync(python, [grader, '--cases'], { encoding: 'utf8' }),
 ) as Record<'development' | 'audit' | 'field', Case[]>;
-const replication = process.env.LLM_REPLICATION === '1';
+const expanded = process.env.LLM_REPLICATION === '40';
+const replication = expanded || process.env.LLM_REPLICATION === '1';
 if (replication) {
   fixtures.audit = JSON.parse(await readFile(path.join(home, 'replication-audit.json'), 'utf8'));
+}
+if (expanded) {
+  const additions = JSON.parse(await readFile(path.join(home, '40-case-additions.json'), 'utf8')) as
+    Record<'development' | 'audit', Case[]>;
+  for (const split of ['development', 'audit'] as const) {
+    fixtures[split].push(...additions[split]);
+    assert.equal(fixtures[split].length, 40);
+  }
 }
 const codex = new Codex();
 const signal = controller.signal;
@@ -169,7 +178,7 @@ function cohort(split: 'development' | 'audit') {
   return defineEvaluation<string, string, string[]>({
     configId: 'llm-cli-support',
     configRevision: '1',
-    datasetRevision: replication && split === 'audit' ? 'audit-replication-1' : split + '-1',
+    datasetRevision: expanded ? split + '-40-case-1' : replication && split === 'audit' ? 'audit-replication-1' : split + '-1',
     graderRevision: 'click-argv-v2',
     runtime: { app: 'llm-0.38', model: modelId, effort: 'low' },
     execution: 'live',
@@ -250,7 +259,7 @@ try {
         ...(replication
           ? {
               ACCLIMATE_LEARNING_MAX_REPETITIONS: '2',
-              ACCLIMATE_LEARNING_PAIR_BUDGET: '60',
+              ACCLIMATE_LEARNING_PAIR_BUDGET: expanded ? '80' : '60',
               ACCLIMATE_LEARNING_CALIBRATION_REPETITIONS: '2',
               ACCLIMATE_LEARNING_CALIBRATION_ATTEMPTS: '1',
             }
@@ -282,6 +291,7 @@ try {
   ): Promise<T> {
     const response = await fetch(`${serviceUrl}${projectPath}${route}`, {
       method,
+      signal: AbortSignal.timeout(15_000),
       headers: {
         authorization: `Bearer ${role === 'admin' ? consoleToken : tokens[role]}`,
         ...(role === 'admin' && browserSession ? { 'x-acclimate-session': browserSession } : {}),
@@ -427,7 +437,9 @@ try {
   const calibration = await waitFor('noise calibration', async () => {
     signal.throwIfAborted();
     const status = (await view()).noiseCalibration;
-    return status?.status === 'completed' || status?.status === 'stopped' ? status : undefined;
+    return (status?.status === 'completed' && status.plan) || status?.status === 'stopped'
+      ? status
+      : undefined;
   });
   console.log(JSON.stringify({ calibration, baseline }));
   if (calibration.requestId) {
@@ -443,7 +455,7 @@ try {
         }),
       );
   }
-  if (calibration.stoppedReason) {
+  if (calibration.status === 'stopped') {
     console.log(JSON.stringify({ final: await view() }));
   } else {
     assert.equal(calibration.status, 'completed');
@@ -488,7 +500,8 @@ try {
         return (await view()).rounds.find(
           (item) =>
             item.outcomeId === outcomeId &&
-            ['developed', 'awaiting_review', 'rejected', 'promoted'].includes(item.state),
+            (['awaiting_review', 'rejected', 'promoted'].includes(item.state) ||
+              (!expanded && item.state === 'developed')),
         );
       });
       console.log(JSON.stringify({ round }));

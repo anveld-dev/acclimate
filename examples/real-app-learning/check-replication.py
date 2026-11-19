@@ -16,6 +16,11 @@ def main():
     targets = [parse(shlex.split(case["expected"])) for case in previous]
     rows = json.loads(Path(__file__).with_name("replication-audit.json").read_text())
     assert len(rows) == 30
+    additions = json.loads(Path(__file__).with_name("40-case-additions.json").read_text())
+    assert set(additions) == {"development", "audit"}
+    assert all(len(split) == 10 for split in additions.values())
+    rows.extend(additions["development"])
+    rows.extend(additions["audit"])
     for case in rows:
         expected = case["expected"]
         argv = shlex.split(expected)
@@ -29,7 +34,7 @@ def main():
         ids.add(case["caseId"])
         inputs.add(case["input"])
         targets.append(target)
-    print("Verified 30 disjoint audit references and 60 negative controls")
+    print("Verified 50 disjoint references and 100 negative controls across both replications")
 
 
 if __name__ == "__main__":

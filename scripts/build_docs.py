@@ -314,6 +314,7 @@ def build():
     source_notes |= set((ROOT / 'docs/implementation').rglob('*.md'))
     source_notes |= set((ROOT / 'docs/research').glob('*.md'))
     source_notes |= set((ROOT / 'docs/research/continuous-harness-review').rglob('*.md'))
+    source_notes |= set((ROOT / 'docs/research/real-app-learning-experiment').rglob('*.md'))
     published_sources = {ROOT / src for src, *_ in PAGES}
     note_manifest = []
     for source_path in sorted(source_notes - published_sources):

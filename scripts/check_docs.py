@@ -102,6 +102,7 @@ def main():
     expected |= {str(p.resolve()) for p in (ROOT / 'docs/implementation').rglob('*.md')}
     expected |= {str(p.resolve()) for p in (ROOT / 'docs/research').glob('*.md')}
     expected |= {str(p.resolve()) for p in (ROOT / 'docs/research/continuous-harness-review').rglob('*.md')}
+    expected |= {str(p.resolve()) for p in (ROOT / 'docs/research/real-app-learning-experiment').rglob('*.md')}
     expected.add(str((ROOT / 'docs/research/archive/README.md').resolve()))
     expected.add(str((ROOT / 'CONTEXT.md').resolve()))
     expected.add(str((ROOT / 'docs/development.md').resolve()))

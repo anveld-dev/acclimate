@@ -1,0 +1,106 @@
+{
+  "development": [
+    {
+      "caseId": "40-case-development-01",
+      "input": "Show the latest log entry for model cedar with token usage.",
+      "expected": "llm logs list --latest --model cedar --usage"
+    },
+    {
+      "caseId": "40-case-development-02",
+      "input": "List the three newest logs from conversation roadmap-8 as JSON.",
+      "expected": "llm logs list --count 3 --conversation roadmap-8 --json"
+    },
+    {
+      "caseId": "40-case-development-03",
+      "input": "Show options for tool-capable models matching cobalt.",
+      "expected": "llm models list --options --tools --query cobalt"
+    },
+    {
+      "caseId": "40-case-development-04",
+      "input": "List async schema-capable models as JSON.",
+      "expected": "llm models list --async --schemas --json"
+    },
+    {
+      "caseId": "40-case-development-05",
+      "input": "Show full schema definitions matching warehouse and pallet as newline-delimited JSON.",
+      "expected": "llm schemas list --full --query warehouse --query pallet --nl"
+    },
+    {
+      "caseId": "40-case-development-06",
+      "input": "Show the stored schema with ID delivery-v3.",
+      "expected": "llm schemas show delivery-v3"
+    },
+    {
+      "caseId": "40-case-development-07",
+      "input": "Search aliased fragments for travel and policy as JSON.",
+      "expected": "llm fragments list --aliases --query travel --query policy --json"
+    },
+    {
+      "caseId": "40-case-development-08",
+      "input": "Print the fragment saved under alias triage-guide.",
+      "expected": "llm fragments show triage-guide"
+    },
+    {
+      "caseId": "40-case-development-09",
+      "input": "Find seven neighbors of item sheet-14 in worksheets as plain text.",
+      "expected": "llm similar worksheets sheet-14 --number 7 --plain"
+    },
+    {
+      "caseId": "40-case-development-10",
+      "input": "Back up the logs database to lab-history.db.",
+      "expected": "llm logs backup lab-history.db"
+    }
+  ],
+  "audit": [
+    {
+      "caseId": "40-case-audit-01",
+      "input": "List five log entries matching refund window, with token usage.",
+      "expected": "llm logs list --count 5 --query 'refund window' --usage"
+    },
+    {
+      "caseId": "40-case-audit-02",
+      "input": "Export conversation sprint-91 as JSON with long strings truncated.",
+      "expected": "llm logs list --conversation sprint-91 --json --truncate"
+    },
+    {
+      "caseId": "40-case-audit-03",
+      "input": "Show options for schema-capable models matching spring and edge.",
+      "expected": "llm models list --options --schemas --query spring --query edge"
+    },
+    {
+      "caseId": "40-case-audit-04",
+      "input": "List only model IDs west and east as JSON.",
+      "expected": "llm models list --model west --model east --json"
+    },
+    {
+      "caseId": "40-case-audit-05",
+      "input": "Find schemas matching packing slip and destination, as JSON.",
+      "expected": "llm schemas list --query 'packing slip' --query destination --json"
+    },
+    {
+      "caseId": "40-case-audit-06",
+      "input": "Show full stored schemas matching warranty claim in the default output format.",
+      "expected": "llm schemas list --full --query 'warranty claim'"
+    },
+    {
+      "caseId": "40-case-audit-07",
+      "input": "Search all fragments for grant deadline and budget using the default output format.",
+      "expected": "llm fragments list --query 'grant deadline' --query budget"
+    },
+    {
+      "caseId": "40-case-audit-08",
+      "input": "Show aliased fragments matching staff rota using the default output format.",
+      "expected": "llm fragments list --aliases --query 'staff rota'"
+    },
+    {
+      "caseId": "40-case-audit-09",
+      "input": "Find five neighbors in recipes for the text lemon tart, restricted to item IDs starting with dessert-.",
+      "expected": "llm similar recipes --content 'lemon tart' --number 5 --prefix dessert-"
+    },
+    {
+      "caseId": "40-case-audit-10",
+      "input": "Display saved options for model meadow-chat.",
+      "expected": "llm models options show meadow-chat"
+    }
+  ]
+}

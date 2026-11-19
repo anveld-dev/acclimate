@@ -1,49 +1,141 @@
-# Run an agent evaluation for a pull request
+# Gate pull requests on agent quality
 
-From the PR checkout, point CI at the directory containing your bundle's source files and the trusted evaluator installed on the worker.
+This starter evaluates the agent files committed at one Git commit, compares them with the channel's current release using your installed evaluator, and fails the check when your quality policy fails. It never releases. A separate job with a separate credential releases after merge.
+
+| File | Use |
+| --- | --- |
+| `ci.sh`, `ci.py` | The wrapper. It needs Git and Python 3.8 or later. |
+| `action.yml` | A GitHub composite action around the wrapper. |
+| `workflows/pr-check.yml` | A fork-safe `pull_request` workflow to copy. |
+| `workflows/release.yml` | A post-merge job that releases the evaluated candidate with a separate credential. |
+
+The full guide covers runner choice, credentials, cancellation, forks and releasing: [Run a pull request check](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/guides/ci-pr-check.mdx).
+
+## Runner requirements
+
+Use a **self-hosted runner with a persistent journal**: one host, a persistent owner-only POSIX volume (not NFS), and the same journal and output directory on every run. Then the wrapper reuses unchanged results across commits and resumes or replaces cancelled work.
+
+Ephemeral runners, including GitHub-hosted ones, work in a degraded mode. Each attempt creates a fresh request and runs every case. Cancelled or lost attempts stay `running` until the service expires them. `actions/cache` can't carry the journal, because the journal is locked while in use and must stay on one host.
+
+Never evaluate forked or otherwise untrusted pull requests on a self-hosted runner, and don't use `pull_request_target`. Keep `--live` off for code you don't trust.
+
+## GitHub Action
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    persist-credentials: false
+- id: gate
+  uses: anveld-dev/acclimate/examples/ci@v0.1.0 # or ./.github/actions/acclimate when vendored
+  with:
+    app: /opt/acclimate/evaluator
+    policy: /opt/acclimate/evaluator/quality-policy.json
+    bundle: ${{ vars.ACCLIMATE_BUNDLE_ID }}
+    config-json: ${{ vars.ACCLIMATE_EVALUATOR_CONFIG }}
+    token: ${{ secrets.ACCLIMATE_EVALUATE_TOKEN }}
+    live: true
+    comment: true
+```
+
+`config-json` holds the non-secret config fields `serviceUrl`, `projectId`, `evaluatorPrincipalId` and optionally `journalRoot` (default `~/.acclimate-ci/journal`). Alternatively, set `config` to a config file on the runner. The token comes from a secret, ideally an evaluate-only grant. The action writes a step summary and annotations, optionally keeps one PR comment up to date, and outputs `result`, `verdict`, `comparison-id`, `request-id`, `candidate-version-id`, `candidate-digest`, `parent-version-id`, `exit-code` and `summary-json`. See `action.yml` for every input.
+
+## Wrapper
 
 ```sh
 sh "$ACCLIMATE_CI/ci.sh" \
-  --commit "$CI_EXPECTED_SHA" --bundle-dir agent \
+  --commit "$CI_EXPECTED_SHA" --bundle-dir agent --no-memory \
   --app "$EVALUATOR_APP" --policy "$EVALUATOR_APP/quality-policy.json" \
-  --bundle "$BUNDLE_ID" --channel stable --config "$WORKER_CONFIG" \
+  --bundle "$BUNDLE_ID" --channel stable --config "$WORKER_CONFIG" --token-env ACCLIMATE_TOKEN \
   --output-dir "$PRIVATE_PR_STATE" --live
 ```
 
-Set `CI_EXPECTED_SHA` from the CI event to the full commit ID the check represents. If the job checks a merge commit, check out that merge commit and pass its SHA. The wrapper verifies HEAD and reads the exact committed files. It can run from a different directory with `--repo "$PR_CHECKOUT"`.
+Run `sh ci.sh --help` for every option.
 
-Use a dedicated bundle directory. Relative paths are preserved. Files under `skills/` become skill files and other files outside `memory/` become instructions. When the directory contains memory, repeat `--memory memory/approved-fact.md` for the files approved for this candidate, or pass `--no-memory`. The evaluator still owns the choice of memory to apply to an individual job. For a repository that already stores a complete bundle payload, replace `--bundle-dir agent` with `--payload agent/bundle.json`.
+**Commit.** `--commit` is the full commit ID the check represents, and it must be checked out in `--repo` (default: the current directory). The wrapper reads the committed files, never the working tree. On GitHub `pull_request` events, `actions/checkout` checks out the test merge commit, `github.sha`. Pass that, or check out `pull_request.head.sha` and pass it. `--base-commit SHA` adds the list of bundle files changed since that commit to the summary.
 
-Point `--app` at the trusted evaluator directory with its SDK installed. For `application.mjs` or `application.mts`, CI invokes the application or workspace's installed `acclimate-eval`. For `application.py`, CI invokes `python -m acclimate`. Both run inside that directory. If it contains both languages, select `--language javascript` or `--language python`. Existing executable JavaScript and Python CLI files are supported as `--app` entries.
+**Bundle source.** Use a dedicated bundle directory with `--bundle-dir`. Files under `skills/` become skills, files under `memory/` are memory, and other files become instructions. When the directory contains memory, repeat `--memory memory/approved-fact.md` for the approved files, or pass `--no-memory`. For a committed bundle payload, use `--payload agent/bundle.json` instead.
 
-Keep the evaluator's agent, grader and private cases installed there. Git and Python 3 are required for the CI wrapper. Python evaluators require 3.11+. Set `ACCLIMATE_CI_PYTHON` to select a specific interpreter. Otherwise a Python app uses its own `.venv/bin/python` when present or the interpreter running the wrapper, including an activated virtual environment. The config, policy and optional selection paths resolve from the directory where you launch CI. Pass `--live` for model-backed execution.
+**Evaluator.** Point `--app` at the trusted evaluator directory with its SDK installed. For `application.mjs` or `application.mts`, the wrapper runs the installed `acclimate-eval`. For `application.py`, it runs `python -m acclimate` with the app's `.venv/bin/python` when present, otherwise `ACCLIMATE_CI_PYTHON` or the interpreter running the wrapper. Python evaluators need Python 3.11 or later, and the wrapper says so instead of failing with an import error. If the directory contains both languages, pass `--language`. An executable JavaScript or Python CLI file also works as `--app`.
 
-Use a private persistent output directory and an owner-only evaluator config with a workspace-scoped credential and stable journal. By default the wrapper stores the request intent and handoff together under `requests/` inside that directory. A retry with the same commit, target and candidate reuses its intent. A new commit or different candidate receives a separate path. If your pipeline manages an existing intent, supply its absolute path with `--intent` and keep its original output directory. A new runner without the original journal needs an operator to reconcile uncertain work before scheduling another attempt.
+**Parent.** The parent is the channel's current release. A channel with no release fails with `request.channel_empty`. Publish a baseline release first.
 
-### Rerun after repairing a terminal evaluation
+**Credentials.** `--config` is an owner-only evaluator config. With `--token-env NAME` or `--token-file FILE` (mode 0600), the config may omit `evaluatorToken`. The wrapper writes a temporary owner-only copy with the token inside the output directory and deletes it when the run ends. The config, policy and selection paths resolve from the directory where you launch the wrapper.
 
-Use the same command to recover an interrupted CI process or read its saved result. If you change the evaluator code or case definition for the same PR commit, the old intent belongs to the original evaluator. A mismatch reports the original `priorHandoff` and lifecycle state when available. To deliberately evaluate the repaired build, repeat the command with one additional option:
+**Cost and time.** `--deadline`, `--max-cost-usd`, `--concurrency`, `--shard` and `--cases` are passed to the evaluator's `run` command. Also set a CI job timeout.
+
+**Reuse.** The wrapper reuses a request when the bundle content, the channel's release, the evaluator descriptor and the selected cases are unchanged, even across commits. It reads the channel with the evaluator token to decide. When it can't, or with `--no-reuse`, it keeps one request per commit. The summary's `reuse` field records the decision and, when reused, the commit that created the request.
+
+## Cancellation
+
+On `SIGINT`, `SIGTERM` or `SIGHUP`, the wrapper forwards the signal to the evaluator's process group, so the evaluator stops starting cases and closes the request with the cases it finished. If the evaluator is still running after `--cancel-grace` seconds (default 20), or 1.5 seconds after a second signal, the wrapper kills the process group. Nothing is orphaned or left holding the journal. It then prints the summary with `result: cancelled` and exits with 128 plus the signal number: 130 for `SIGINT` and 143 for `SIGTERM`.
+
+GitHub's `cancel-in-progress` sends `SIGINT`, `SIGTERM` 7.5 seconds later, and kills the step 2.5 seconds after that. The second signal makes the wrapper stop the evaluator before GitHub kills the step.
+
+A cancelled run isn't a verdict. Running the same command again for that commit starts a fresh request. If the evaluator had to be killed mid-execution, the next run reports `execution_unresolved`. Either wait until the service expires the abandoned attempt, or pass `--abandon-uncertain` to interrupt it now and start a fresh request.
+
+## Output
+
+By default, stdout is one JSON object, and stderr carries the evaluator's output.
+
+| Option | Output |
+| --- | --- |
+| `--format json` | One JSON summary on stdout (default). |
+| `--format github` | Log lines and workflow annotations on stdout. `::error` lines name failed criteria and regressed cases, and `::warning` lines name cases with missing evidence. The evaluator's output is grouped by phase and fenced with `::stop-commands::`, so it can't issue workflow commands. |
+| `--format markdown` | A Markdown summary on stdout, for a PR comment. |
+| `--summary-json FILE` | The JSON summary, also written to a file. |
+| `--summary-md FILE` | Append the Markdown summary, for example to `$GITHUB_STEP_SUMMARY`. Repeatable. |
+| `--github-output FILE` | Append `result`, `exit-code`, `verdict`, `comparison-id`, `request-id`, `candidate-version-id`, `candidate-digest` and `parent-version-id` lines, for example to `$GITHUB_OUTPUT`. |
+
+The summary contains:
+
+- `result` and `exitCode`, always, including after a configuration error or a cancellation.
+- the verified `commit`, the `channel`, and when request creation succeeds, `requestId`, `parentVersionId`, `candidateVersionId`, `candidateDigest` and `handoff` (relative to the output directory).
+- `executionStatus`, `comparisonId`, `qualityVerdict` and `quality`. `quality` holds the bound policy, case and pair counts (`counts.incompletePairs` is the number of pairs without a comparable score), mean scores, `failedCriteria`, `unknownCriteria`, `regressedCases` and `criteriaCases` when the evaluator reports them, `evidenceGaps`, and `policyReceipt`.
+- `failedPhase`, `diagnosticCode`, `failedChecks`, `hint` and `nextAction` for a failure in any phase. A preflight failure lists each failed check, such as `serviceIdentity` with `service.unavailable`.
+- `phaseExitCodes`, with each phase's exit code or `null` when skipped, and `reviewDirectory` after a verified export.
+- `reuse`, `cancellation`, `changedFiles`, `reconciled` and `previous*` fields when they apply.
+
+| Result | Exit | CI action |
+| --- | --- | --- |
+| `pass` | 0 | Mark the check successful and associate the commit with its candidate. |
+| `quality_failed`, `quality_indeterminate` | 2 | Show the verdict and evidence to the PR author. |
+| `execution_failed` | 2 | Show the diagnostic to the evaluation owner. Use `--rerun-after` after a repair. |
+| `execution_unresolved`, `prior_execution_unresolved` | 3 | Wait for the service to expire the earlier attempt, or pass `--abandon-uncertain`. |
+| `prior_status_unavailable` | 1 to 3 | Check the credential and service, then rerun. |
+| `cancelled` | 130, 143 | Rerun. |
+| `preflight_failed`, `request_failed`, `check_failed`, `export_failed`, `configuration_error`, `wrapper_error` | 1 to 3 | Fix the reported diagnostic and rerun. |
+
+A failed execution and a quality regression can both exit 2, so route on `result`. After a failed execution, the wrapper still applies the policy to capture its verdict.
+
+## Rerun the same commit
+
+Rerunning the same command recovers the existing request or its saved result. Interrupted requests, including those the service expired, and cancelled runs are followed by a fresh request automatically.
+
+A changed evaluator descriptor already gets a new request. To deliberately run the same commit again with an unchanged evaluator, for example after an infrastructure failure, repeat the command with the previous summary's handoff:
 
 ```sh
---retry-after "$(jq -r '.priorHandoff // .handoff' previous-result.json)"
+--rerun-after "$(jq -r '.priorHandoff // .handoff' previous-result.json)"
 ```
 
-Use the original private output directory. CI verifies the predecessor belongs to this commit, source and target and reads its current service state. A completed or failed request with a bound attempt and comparison permits one successor. A new request pins the current channel baseline. Its `parentVersionId` identifies the baseline it evaluated. Repeating the same retry command resumes that successor. To start a later generation, supply the most recent finished successor's handoff. Requested, running, interrupted and unverifiable work requires reconciliation on the original worker. Pipelines with a custom `--intent` continue to own their operation identity. The `--retry-after` option uses CI-managed state.
+The wrapper checks that the handoff belongs to this commit, source, target, release and evaluator, then reads the request's service state. A completed or failed request with a bound comparison, or an interrupted request, permits one successor. A `requested` or `running` request is interrupted for you when this host's journal shows execution never started. Otherwise the wrapper stops unless you pass `--abandon-uncertain`. The successor compares against the channel's current release. Repeating the command resumes the successor, and later plain runs follow it.
 
-## Publish the check result
+`--retry-after` is a deprecated spelling of `--rerun-after`. Unlike `compare --retry-after`, which keeps the original parent, the wrapper always compares against the current release.
 
-Stdout is one JSON object. Stderr carries individual CLI results and diagnostics. The summary contains the verified source `commit`, target `channel`, and the service's `requestId`, `candidateVersionId` and `candidateDigest` when request creation succeeds. Its `handoff` field points to the request file relative to the output directory. Use `executionStatus` and `comparisonId` to identify the recorded run. `quality` includes the bound policy, case and pair counts, parent and candidate mean scores, oriented improvement, failed criteria and criteria with unavailable evidence. `counts.incompletePairs` gives the number of pairs missing a comparable score. `quality.evidenceGaps` and `quality.policyReceipt` appear when the installed evaluator provides them. `qualityVerdict` is the application's `pass`, `fail`, or `indeterminate` policy verdict when available. `phaseExitCodes` records each command's integer exit code, with `null` for skipped phases.
+To manage your own request intent, pass its absolute path with `--intent` and keep its output directory. `--intent` disables reuse and automatic successors.
 
-| Summary result | CI action |
-| --- | --- |
-| `pass` | Mark the PR check successful and associate the commit with its evaluated candidate. |
-| `quality_failed` or `quality_indeterminate` | Surface the application policy verdict and retained evidence to the reviewer. |
-| `prior_execution_unresolved`, `prior_status_unavailable` | Inspect the predecessor and its worker before requesting a successor. |
-| `execution_unresolved` | Inspect the original worker and its journal before retrying. |
-| `execution_failed`, `check_failed`, `export_failed`, `preflight_failed`, `request_failed` or `configuration_error` | Show the phase and diagnostic to the evaluation owner. |
+## Reviews, retention and cleanup
 
-The wrapper preserves the underlying command's failure exit code. A failed execution and a quality regression can both exit 2. Use `result` to route them. After a terminal failed execution the wrapper attempts the policy check to capture its verdict. It attempts review export after every run and sets `reviewDirectory` only after successful export verification.
+After each run, the wrapper exports review evidence once per request to `reviews/REQUEST_ID` (with a selection digest suffix when `--selection` is used) and verifies it. Upload only the verified `reviewDirectory`, using your CI provider's access controls and retention, and then delete it. For selected app artifacts, supply `--selection "$EVALUATOR_APP/share-selection.json"` and install a review mapper.
 
-For scalar evidence, omit `--selection`. To export selected app-owned artifacts, supply `--selection "$EVALUATOR_APP/share-selection.json"` and install a review mapper. Upload only the verified `reviewDirectory` under the private output directory. Use your CI provider's access controls and retention settings. The journal, config, private request intent and case inventory belong on the worker.
+`requests/` holds one directory per candidate, release and evaluator. Delete directories you no longer need to reuse or recover, for example with `find "$OUTPUT/requests" -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} +`. The journal, config, private request intent and case inventory stay on the worker.
 
-An authorized reviewer can use the immutable candidate ID, digest and current channel revision to release the reviewed candidate separately. The CI credential needs workspace read/write and the quality check requires no promotion permission.
+## Release after merge
+
+An authorized reviewer, or the job in `workflows/release.yml`, releases the evaluated candidate with the operator CLI from the SDK:
+
+```sh
+acclimate-operator promote --project "$PROJECT" --bundle "$BUNDLE" --channel stable \
+  --version "$CANDIDATE" --comparison "$COMPARISON" --expected-revision "$REVISION"
+```
+
+Give that job its own releasing credential in a protected environment. The PR check's credential needs only evaluate rights.

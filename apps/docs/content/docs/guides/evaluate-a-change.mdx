@@ -52,7 +52,7 @@ python -m acclimate compare --config "$EVALUATOR_CONFIG" \
   --name "$CHANGE_ID" --live
 ```
 
-After a completed or failed named comparison, you can measure the same candidate again with `--retry-after "$CHANGE_ID"` in place of `--name "$CHANGE_ID"`. The successor keeps the original parent and candidate. Use a new name for different content. An unresolved attempt requires [reconciliation](/docs/operate/upgrades-and-recovery#recover-an-evaluation).
+After a completed, failed or interrupted named comparison, you can measure the same candidate again with `--retry-after "$CHANGE_ID"` in place of `--name "$CHANGE_ID"`. The successor keeps the original parent and candidate. Use a new name for different content. An attempt that is still requested or running must first be interrupted, by the service when it expires an abandoned attempt or by [reconciliation](/docs/operate/upgrades-and-recovery#recover-an-evaluation).
 
 ## Export evidence for review
 

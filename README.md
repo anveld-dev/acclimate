@@ -16,13 +16,13 @@ python -m acclimate compare --config "$EVALUATOR_CONFIG" --handoff evaluation-re
 ./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
 ```
 
-The result shows the parent and candidate scores and how many pairs were graded. Add `--policy` with your application's policy file to check thresholds or measured costs. The same command can create a comparison directly from a bundle payload. [Connect your agent and run its first comparison](docs/getting-started.md) · [Run a PR check against a Git commit](examples/ci/README.md)
+The result shows the parent and candidate scores and how many pairs were graded. Add `--policy` with your application's policy file to check thresholds or measured costs. The same command can create a comparison directly from a bundle payload. [Connect your agent and run its first comparison](docs/getting-started.md) · [Gate pull requests with the GitHub Action or CI wrapper](examples/ci/README.md)
 
 ## Deliver and improve content
 
 - Use **App setup** in the console to prepare pinned content for each new job. Coding agents can stage repository files, run a native harness and grade retained changes against frozen tests. [Native integration](examples/native-repository/README.md)
 - Use a connection to turn outcomes and approved corrections into proposals. Run comparisons before releasing a version and choose whether releases need human review. [Connected learning](deploy/README.md#operate-connected-learning)
-- Inspect comparisons, authorize a channel release or restore a reviewed version. [Review and release](tools/operator/README.md)
+- Inspect comparisons, authorize a channel release or restore a reviewed version with `acclimate-operator`, which ships in the SDK. [Review and release](tools/operator/README.md)
 
 ## Operate or develop Acclimate
 

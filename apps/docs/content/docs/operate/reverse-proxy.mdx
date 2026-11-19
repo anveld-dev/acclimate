@@ -1,0 +1,70 @@
+---
+title: Use a reverse proxy
+description: Preserve Acclimate's public HTTPS origins, private listeners and trusted proxy headers.
+---
+
+Use the bundled Caddy configuration for the supported single-host deployment. Caddy terminates TLS for your public console and API hostnames and forwards HTTP over a private Docker network. The Keycloak overlay adds a separate identity hostname. See [Self-host Acclimate](/docs/operate/self-host) for the DNS and runtime settings.
+
+## Match the bundled proxy behavior
+
+If you operate nginx, Traefik or a Kubernetes ingress, apply these requirements to the console and the API.
+
+- Terminate TLS at the trusted edge and redirect public HTTP to HTTPS. Route each public hostname to its own private listener. The bundled listeners are `console:3100` and `service:3000`. Expose neither listener, either PostgreSQL database nor the proxy admin interface to public clients.
+- Set the upstream `Host` to the fixed public host for that route. For the console, use the host from `CONSOLE_ORIGIN`, including the port if you use a nondefault HTTPS port. The console rejects a different host and reconstructs request URLs from its configured origin. It ignores caller-supplied forwarding headers.
+- Remove incoming `Forwarded` and all `X-Forwarded-*` headers. Set `X-Forwarded-Proto` to `https`, `X-Forwarded-Host` to the fixed public host, and `X-Forwarded-For` to the peer IP observed at your trusted edge. Avoid appending a client-supplied chain.
+- Preserve paths and query strings, including `/auth/callback`. Keep console cookies, request `Origin` and API `Authorization` intact. Register the exact public console origin plus `/auth/callback` with Keycloak.
+- Let API requests reach the service's 2 MiB body limit and 30-second processing deadline. Configure a 2 MiB ingress limit on the API and an upstream response timeout slightly above 30 seconds so the service can return its timeout response. A proxy that enforces the body limit itself can return its own 413 response.
+
+If you replace Caddy for the co-hosted Keycloak overlay, also preserve the HTTPS issuer from the browser and from the private application network. The supplied identity route forwards only `/realms/acclimate`, `/realms/acclimate/*`, `/resources/*` and `/robots.txt` to `keycloak:8080`. It applies the same header rules using the identity hostname. Keep `/admin`, the master realm and the management listener private.
+
+## Example nginx configuration
+
+<Callout type="info">
+The repository's qualification tests do not cover this nginx example or other replacement proxies. Verify your own routing, TLS, header handling and sign-in before switching traffic.
+</Callout>
+
+This example assumes nginx runs at the public edge and can resolve both service names on the private network. Load the [headers-more module](https://github.com/openresty/headers-more-nginx-module) for wildcard request-header removal. Put the common directives inside each proxy location through an include. Configure your certificate paths and existing HTTP redirects for the two hostnames.
+
+```nginx title="/etc/nginx/acclimate-proxy.inc"
+more_clear_input_headers 'Forwarded' 'X-Forwarded-*';
+proxy_http_version 1.1;
+proxy_set_header X-Forwarded-Proto https;
+proxy_set_header X-Forwarded-For $remote_addr;
+client_max_body_size 2m;
+proxy_connect_timeout 5s;
+proxy_send_timeout 35s;
+proxy_read_timeout 35s;
+proxy_next_upstream off;
+```
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name console.example.com;
+    ssl_certificate /etc/nginx/tls/console.fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/console.key;
+    location / {
+        include /etc/nginx/acclimate-proxy.inc;
+        proxy_set_header Host console.example.com;
+        proxy_set_header X-Forwarded-Host console.example.com;
+        proxy_pass http://console:3100;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name api.example.com;
+    ssl_certificate /etc/nginx/tls/api.fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/api.key;
+    location / {
+        include /etc/nginx/acclimate-proxy.inc;
+        proxy_set_header Host api.example.com;
+        proxy_set_header X-Forwarded-Host api.example.com;
+        proxy_pass http://service:3000;
+    }
+}
+```
+
+Keep unmatched hosts on a rejecting default virtual host. The nginx read and send timeouts measure inactivity between I/O operations. The service enforces its own total processing deadline. See the [nginx proxy module reference](https://nginx.org/en/docs/http/ngx_http_proxy_module.html).
+
+[Verify readiness, scoped API access and real OIDC sign-in](/docs/operate/health-and-readiness#verify-access-and-activity) through the configured edge.

@@ -30,8 +30,7 @@ async fn provider_requires_bounded_complete_patch_response() {
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    // This integration-test executable owns its environment and has one test; no other threads read it.
+    // This executable has one test on a current-thread runtime. Set fixture variables before serving requests.
     unsafe {
         std::env::set_var("ACCLIMATE_MODEL_TOKEN", "disposable-http-fixture");
         std::env::remove_var("ACCLIMATE_MODEL_ENDPOINT");
@@ -39,18 +38,22 @@ async fn provider_requires_bounded_complete_patch_response() {
     assert!(OpenAiModel::from_env().unwrap().is_none());
     unsafe {
         std::env::set_var("ACCLIMATE_MODEL_ENDPOINT", format!("http://{address}/"));
-        std::env::set_var("ACCLIMATE_MODEL", "gpt-unapproved");
+        std::env::remove_var("ACCLIMATE_CRITIC_ENDPOINT");
+        std::env::remove_var("ACCLIMATE_CRITIC_TOKEN");
     }
-    assert!(OpenAiModel::from_env().is_err());
-    for legacy_model in ["gpt-6-luna", "gpt-5.6-luna"] {
-        unsafe { std::env::set_var("ACCLIMATE_MODEL", legacy_model) };
-        assert!(OpenAiModel::from_env().unwrap().is_some());
+    let oversized = "x".repeat(257);
+    for invalid in ["", "   ", "gateway/invalid\nmodel", &oversized] {
+        unsafe { std::env::set_var("ACCLIMATE_MODEL", invalid) };
+        assert!(OpenAiModel::from_env().is_err());
     }
     unsafe {
         std::env::set_var("ACCLIMATE_MODEL", "gpt-6.2-sol");
         std::env::set_var("ACCLIMATE_CRITIC_MODEL", "independent-critic-fixture");
     }
     let model = OpenAiModel::from_env().unwrap().unwrap();
+    unsafe { std::env::set_var("ACCLIMATE_MODEL", "  anthropic/claude-sonnet  ") };
+    let custom = OpenAiModel::from_env().unwrap().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let parent:BundlePayload=serde_json::from_value(json!({"schemaVersion":1,"files":[{"path":"guide.md","kind":"instruction","text":"before\n"},{"path":"large.md","kind":"memory","text":"保留".repeat(10000)}]})).unwrap();
     let request = ProposalRequest {
         parent_version_id: "parent".into(),
@@ -90,6 +93,13 @@ async fn provider_requires_bounded_complete_patch_response() {
     assert!(!data.contains('<'));
     let parsed: Value = serde_json::from_str(data).unwrap();
     assert_eq!(parsed["request"]["hypothesis"], request.hypothesis);
+
+    custom
+        .propose(parent.clone(), request.clone())
+        .await
+        .unwrap();
+    assert_eq!(observed.lock().unwrap()["model"], "anthropic/claude-sonnet");
+
     *retry.lock().unwrap() =
         Some(json!({"choices":[{"finish_reason":"stop","message":{"content":content}}]}));
     *output.lock().unwrap() =

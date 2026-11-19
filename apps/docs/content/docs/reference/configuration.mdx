@@ -3,7 +3,7 @@ title: Configuration and environment variables
 description: Find the values your application, evaluator, service, and console read.
 ---
 
-Configure each process with its own credentials and addresses. Use the [deployment guide](/docs/operate/deploy) for the private runtime files and [evaluator access](/docs/operate/evaluator-access) for the worker config format.
+Configure each process with its own credentials and addresses. Use the [self-hosting guide](/docs/operate/self-host) for the private runtime files and [evaluator access](/docs/operate/evaluator-access) for the worker config format.
 
 ## Application and CLI recipes
 
@@ -18,6 +18,7 @@ These variables are used by the repository's app setup recipes and command-line 
 | `ACCLIMATE_CACHE`, `ACCLIMATE_JOB_DIR` | Cache and staging directory overrides in the console recipes. |
 | `ACCLIMATE_INTEGRATION`, `ACCLIMATE_RECEIPT_TOKEN` | Connection ID and separate optional delivery reporting credential. |
 | `ACCLIMATE_EVALUATOR_CASES` | Absolute path to a private JSON array that overrides the installed adapter's cases. Use mode 0600. |
+| `AGENT_TASK` | Task input for the console's connected agent recipe. |
 | `ACCLIMATE_CI_PYTHON` | Override the Python interpreter used by the CI wrapper. |
 
 `EVALUATOR_CONFIG` in command examples is a shell variable for the path passed to `--config`. The evaluator reads its credential and journal settings from that explicit private file.
@@ -26,26 +27,91 @@ These variables are used by the repository's app setup recipes and command-line 
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | PostgreSQL connection URL for the service database. |
-| `ACCLIMATE_BIND` | Private API listener address. |
-| `ACCLIMATE_OIDC_ISSUER` | Exact HTTPS Keycloak realm issuer. |
-| `ACCLIMATE_LOGIN_TOKEN`, `ACCLIMATE_CONSOLE_TOKEN` | Distinct login authority and console transport credentials. |
-| `ACCLIMATE_OPERATORS` | JSON array of exact issuer and subject pairs for deployment operators. |
-| `ACCLIMATE_AUTH` | JSON array of explicit machine grants. Use `[]` for browser-only operation. |
-| `ACCLIMATE_MODEL_ENDPOINT`, `ACCLIMATE_MODEL_TOKEN`, `ACCLIMATE_MODEL` | Optional configuration for the service proposer. |
-| `ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS`, `ACCLIMATE_LEARNING_MAX_CHAIN_AGE_SECONDS` | When to check accumulated development changes before an audit. See `deploy/README.md` for learning policy and budget settings. |
+| `DATABASE_URL` | Required `postgresql://` or `postgres://` URL with an explicit host, user and database. URL-encode the password component. |
+| `ACCLIMATE_BIND` | Private API socket address. Defaults to `127.0.0.1:3000`. Compose binds `0.0.0.0:3000` inside the private network. |
+| `ACCLIMATE_OIDC_ISSUER` | Required exact HTTPS realm issuer. Match `CONSOLE_OIDC_ISSUER` verbatim, including any trailing slash. Do not include credentials, a query or a fragment. |
+| `ACCLIMATE_LOGIN_TOKEN` | Required login authority token. Match `CONSOLE_LOGIN_TOKEN`. |
+| `ACCLIMATE_CONSOLE_TOKEN` | Required console transport token. Match `CONSOLE_SERVICE_TOKEN`. Use a different token from the login authority and every machine grant. The login authority and machine tokens must also be distinct. |
+| `ACCLIMATE_OPERATORS` | Required nonempty JSON array of objects with `issuer` and `subject`. Each pair must be unique, use the exact configured issuer and have a nonempty subject of at most 512 bytes. |
+| `ACCLIMATE_AUTH` | Required JSON array of machine grants with `token`, `principalId`, `projectId` and `rights`. Use `[]` for browser-only operation. Rights are `read`, `write`, `propose` and `promote`. A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. |
+| `ACCLIMATE_SERVICE_BINARY` | Absolute path to the executable used by the native `npm start` wrapper. Defaults to `target/release/acclimate-service` under the checkout. |
 
-## Console and Compose
+Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from both the Rust and console environments. Startup rejects any defined value.
+
+### Proposer and critic
+
+The proposer is disabled when `ACCLIMATE_MODEL_ENDPOINT` is absent. The endpoint must accept bearer authentication and the chat-completions fields `model`, `messages`, `response_format: {"type":"json_object"}` and `max_completion_tokens: 8192`. The service expects a complete JSON response with `choices[0].finish_reason` equal to `stop` and JSON text in `choices[0].message.content`. Calls have a 60-second deadline and a 256 KiB response envelope limit.
 
 | Variable | Purpose |
 | --- | --- |
-| `CONSOLE_ORIGIN` | Canonical public HTTPS console origin. |
-| `CONSOLE_PUBLIC_API_URL` | Public HTTPS API URL shown in app setup. |
-| `CONSOLE_SERVICE_URL` | Private console-to-API URL. |
-| `CONSOLE_LOGIN_TOKEN`, `CONSOLE_SERVICE_TOKEN` | Match the Rust login authority and console transport credentials, respectively. |
-| `CONSOLE_OIDC_ISSUER`, `CONSOLE_OIDC_CLIENT_ID`, `CONSOLE_OIDC_CLIENT_SECRET` | Exact Keycloak issuer and confidential client credentials. |
-| `CONSOLE_ALLOW_EDITS` | Set to `true` to enable authorized authoring and connection mutations. |
-| `CONSOLE_HOST`, `API_HOST`, `ACME_EMAIL` | Proxy hostnames without schemes or paths, and certificate contact address. |
-| `ACCLIMATE_SERVICE_ENV`, `ACCLIMATE_CONSOLE_ENV`, `ACCLIMATE_POSTGRES_PASSWORD_FILE` | Absolute paths to the private files required by Compose. |
+| `ACCLIMATE_MODEL_ENDPOINT` | Full OpenAI-compatible chat-completions URL. |
+| `ACCLIMATE_MODEL_TOKEN` | Required when the proposer endpoint is set. Sent as the bearer token. |
+| `ACCLIMATE_MODEL` | Required when the proposer endpoint is set. The service trims the supplied name and requires 1–256 UTF-8 bytes with no control characters in the input. Use `gpt-6.2-sol` for the documented example or use a model name accepted by your configured endpoint. |
+| `ACCLIMATE_CRITIC_ENDPOINT` | Optional chat-completions URL for the critic. Defaults to the proposer URL. |
+| `ACCLIMATE_CRITIC_MODEL` | Optional critic model name. Defaults to the trimmed proposer name. |
+| `ACCLIMATE_CRITIC_TOKEN` | Optional critic bearer token. Defaults to the proposer token only when the endpoint strings match. A separate endpoint requires its own explicit token. |
+| `ACCLIMATE_PROPOSAL_GROWTH_FLOOR_BYTES` | Unsigned integer. Defaults to 2,048. Maximum permitted increase in encoded bundle bytes is the greater of this floor and 10% of the parent size, rounded down. |
 
-Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from the runtime environment. The current entry points reject defined values.
+### Connected learning
+
+Give these limits as whole numbers. Missing or invalid values use the indicated default, subject to the effective minima below.
+
+| Variable | Default | Range and purpose |
+| --- | --- | --- |
+| `ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS` | 3 | 1–1,000 accepted development steps before a cumulative comparison. |
+| `ACCLIMATE_LEARNING_MAX_CHAIN_AGE_SECONDS` | 86,400 | 1–4,294,967,295 seconds before an accumulated chain is due for a cumulative comparison. |
+| `ACCLIMATE_LEARNING_CALIBRATION_REPETITIONS` | 2 | 2–5 effective repetitions per case during calibration, within report size and the 1,000-pair wire limit. A value of 1 uses 2. |
+| `ACCLIMATE_LEARNING_MAX_REPETITIONS` | 3 | 1–5 repetitions per case in planned comparisons. Explicit collection schedules keep their registered inventory. |
+| `ACCLIMATE_LEARNING_PAIR_BUDGET` | 1,000 | 1–1,000 pairs per planned evaluation, raised to fit the largest registered inventory if needed. Each pair runs two trials before any retries. Report size can further limit planned repetitions. |
+| `ACCLIMATE_LEARNING_PARENT_MAX_AGE_SECONDS` | 86,400 | 0–4,294,967,295 seconds. Maximum age for reusing a complete matching development parent comparison. Set to 0 to disable reuse. |
+| `ACCLIMATE_LEARNING_PARENT_MAX_REUSES` | 3 | 0–4,294,967,295 reuses of a matching development parent comparison. Set to 0 to disable reuse. |
+| `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS` | 604,800 | 1–4,294,967,295 seconds to wait for an evaluator to start a queued request. |
+| `ACCLIMATE_LEARNING_EVALUATION_SECONDS` | 86,400 | 1–4,294,967,295 seconds from evaluation start to completion. |
+| `ACCLIMATE_LEARNING_REVIEW_SECONDS` | 1,209,600 | 1–4,294,967,295 seconds to review a round. |
+| `ACCLIMATE_LEARNING_CALIBRATION_ATTEMPTS` | 3 | Use 1–2,147,483,647 for the number of failed calibration attempts before admission stops. |
+| `ACCLIMATE_LEARNING_FAILURE_WINDOW_SECONDS` | 3,600 | 1–4,294,967,295 seconds from the first consecutive processing error before a subsequent error closes the round. A successful tick clears this window. |
+
+### Invitation email
+
+Set `ACCLIMATE_SMTP_HOST` to enable application invitation email. Configure Keycloak's email separately.
+
+| Variable | Purpose |
+| --- | --- |
+| `ACCLIMATE_SMTP_HOST` | SMTP relay hostname. Required when another `ACCLIMATE_SMTP_*` variable is set. |
+| `ACCLIMATE_SMTP_PORT` | Integer from 1 to 65,535. Defaults to 465 with `tls` and 587 otherwise. |
+| `ACCLIMATE_SMTP_FROM` | Required sender mailbox when SMTP is enabled, for example `Acclimate <noreply@example.com>`. |
+| `ACCLIMATE_SMTP_TLS` | `starttls` by default. Use `tls` for implicit TLS. The `none` setting is limited to localhost, loopback or `mailpit` without credentials. |
+| `ACCLIMATE_SMTP_USERNAME`, `ACCLIMATE_SMTP_PASSWORD` | Optional authentication. Set both to nonempty values for a TLS relay that requires credentials. |
+| `ACCLIMATE_CONSOLE_ORIGIN` | Required HTTPS console origin when SMTP is enabled. Use the same public origin as `CONSOLE_ORIGIN` for invitation links. |
+
+## Console
+
+| Variable | Purpose |
+| --- | --- |
+| `CONSOLE_ORIGIN` | Required canonical public HTTPS origin without a path or trailing slash. The trusted proxy must supply this origin's host as `Host`. |
+| `CONSOLE_PUBLIC_API_URL` | Required public HTTPS API base URL shown in app setup. |
+| `CONSOLE_SERVICE_URL` | Required private HTTP or HTTPS API base URL. Use `http://service:3000` in Compose. |
+| `CONSOLE_LOGIN_TOKEN` | Required. Match Rust's `ACCLIMATE_LOGIN_TOKEN`. |
+| `CONSOLE_SERVICE_TOKEN` | Required. Match Rust's `ACCLIMATE_CONSOLE_TOKEN`. Use a different value from `CONSOLE_LOGIN_TOKEN`. |
+| `CONSOLE_OIDC_ISSUER` | Required exact HTTPS realm issuer. Match `ACCLIMATE_OIDC_ISSUER` verbatim. |
+| `CONSOLE_OIDC_CLIENT_ID`, `CONSOLE_OIDC_CLIENT_SECRET` | Required confidential client ID and credential. The bundled realm uses `acclimate-console`. Register the exact `CONSOLE_ORIGIN` plus `/auth/callback`. |
+| `CONSOLE_ALLOW_EDITS` | Set to the literal `true` to enable authoring and connection mutations for authorized users. Defaults to disabled. |
+| `CONSOLE_PROJECT`, `CONSOLE_BUNDLE`, `CONSOLE_CHANNEL` | Optional fallback workspace, bundle and channel for server operations without a saved selection. Many operations use `stable` when a channel is absent. Prefer selecting the scope in the console. |
+| `HOST`, `PORT` | Listener settings. The native console and dev wrappers default to `127.0.0.1` and `3100` and accept port numbers 1–65,535. Compose binds `0.0.0.0:3100` on the private network. |
+| `NODE_ENV` | The console image runs with `production`. |
+
+The console derives `CONSOLE_SESSION_TOKEN` from the request's session cookie. Set user access through OIDC sign-in. The built Node listener can also read Nitro's `NITRO_HOST`, `NITRO_PORT`, `NITRO_UNIX_SOCKET`, `NITRO_SSL_CERT` and `NITRO_SSL_KEY`. Leave those overrides unset for the bundled deployment so its health probe and proxy can reach the private HTTP listener.
+
+## Compose and co-hosted Keycloak
+
+| Variable | Purpose |
+| --- | --- |
+| `CONSOLE_HOST`, `API_HOST`, `KEYCLOAK_HOST` | Distinct public hostnames without schemes or paths. The Keycloak hostname is required with the co-hosted overlay. |
+| `ACME_EMAIL` | Certificate contact email for Caddy. |
+| `ACCLIMATE_SERVICE_ENV`, `ACCLIMATE_CONSOLE_ENV` | Absolute paths to the private service and console runtime files. |
+| `ACCLIMATE_POSTGRES_PASSWORD_FILE` | Absolute path to the private raw PostgreSQL password file. Its password must match the encoded value in `DATABASE_URL`. |
+| `ACCLIMATE_KEYCLOAK_ENV`, `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE` | Absolute paths to the private Keycloak runtime file and separate raw database password file for the overlay. |
+| `ACCLIMATE_VERSION` | Tag for the service and console images. Defaults to `latest`. Pin the exact release version without the Git tag's leading `v`, for example `0.1.0`. |
+| `ACCLIMATE_SERVICE_IMAGE`, `ACCLIMATE_CONSOLE_IMAGE` | Optional complete image references. An explicit reference overrides the corresponding default GHCR image and version tag. |
+
+In the Keycloak runtime file, set `KC_DB_PASSWORD` to the raw password from the identity database's password file. For the initial realm import, set `ACCLIMATE_CONSOLE_ORIGIN` and `ACCLIMATE_OIDC_CLIENT_SECRET` to the values of the console's `CONSOLE_ORIGIN` and `CONSOLE_OIDC_CLIENT_SECRET`. Set `KC_BOOTSTRAP_ADMIN_USERNAME` and `KC_BOOTSTRAP_ADMIN_PASSWORD` for the temporary administrator. See [Self-host Acclimate](/docs/operate/self-host) for the file setup and first sign-in.

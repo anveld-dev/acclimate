@@ -5,24 +5,57 @@ description: Back up and restore PostgreSQL, verify a service upgrade, and recov
 
 Preserve stored content and release history when changing service releases, and recover evaluator attempts using their original worker state.
 
+## Pin a release
+
+Acclimate uses a shared `major.minor.patch` release version for the service, console and SDK artifacts. Git tags use a leading `v`, such as `v0.1.0`. The matching GHCR image tag is `0.1.0`. Use the release's checkout and read its release notes before changing versions. Set `ACCLIMATE_VERSION` in the Compose environment to the exact published image tag. That pin selects both the service and console images. The default tag is `latest`, which can change between pulls. Keep the original tag and checkout available for recovery.
+
 ## Upgrade the deployment
 
 This release uses a fresh schema baseline. An installation using the former migration chain has no in-place upgrade to this baseline. Keep the existing database with its matching service build. Use a separate empty PostgreSQL database to try this release alongside it.
 
-For an installation already on the current baseline, stop incoming traffic and both application containers before changing service versions. Take a backup and rehearse its restoration in a separate database with the matching service build. Verify readiness and an authenticated read before restoring traffic. A normal `docker compose down` preserves volumes. The `--volumes` option deletes them.
+<Steps>
+<Step>
 
-## Back up and restore PostgreSQL
+### Stop traffic and drain the applications
 
-Use the backup script with `psql`, `pg_dump`, and `pg_restore` from the PostgreSQL server's major version. Point `DATABASE_URL` at the source database for the dump, then at a separate empty database for the restore. Provision the target owner and grants separately.
+Pause external clients and worker submissions. Take the public routes out of service and stop both application containers. Leave PostgreSQL running for the dump. In the bundled stack you can stop all three public routes by stopping Caddy first.
 
 ```sh
-python3 scripts/operations/backup.py dump /private/backups/acclimate.dump \
-  --pg-bin /path/to/postgresql-16/bin
-python3 scripts/operations/backup.py restore /private/backups/acclimate.dump \
-  --pg-bin /path/to/postgresql-16/bin
+docker compose stop proxy
+docker compose stop console service
 ```
 
-Choose a new archive path within a private parent directory. The script writes a PostgreSQL custom-format snapshot with mode 0600. Protect the archive in transit and at rest. Restore refuses a populated database and runs in one transaction. Verify payload bytes, revisions, release history, and application access in the isolated restore before switching the stopped service to it.
+</Step>
+<Step>
+
+### Back up and rehearse a restore
+
+[Back up the application database and Keycloak separately](/docs/operate/backup-and-restore). Keep the previous deployment's private configuration available. Restore the application archive to a separate empty database and verify it with the matching service build before upgrading.
+
+</Step>
+<Step>
+
+### Apply the release
+
+Use the new checkout and set `ACCLIMATE_VERSION` to its published tag. Validate the Compose configuration and pull the application images. If you build from source, build the new service and console from that checkout instead. Use the same Compose project name and existing volume mapping when switching checkouts. Bring up the upgraded service and console while public traffic is still paused.
+
+```sh
+docker compose config --quiet
+docker compose pull service console
+docker compose up -d --no-build --wait service console
+```
+
+Keep one Rust process per database. A normal `docker compose down` preserves volumes. The `--volumes` option deletes them.
+
+</Step>
+<Step>
+
+### Verify before resuming traffic
+
+Check service and console readiness. Start the proxy with `docker compose up -d --no-build --wait proxy` for [your authenticated read and sign-in checks](/docs/operate/health-and-readiness#verify-access-and-activity) while access is limited to your verification clients. Resume user and worker traffic after those checks pass. If verification fails after a schema change, recover the previous release using its matching verified backup.
+
+</Step>
+</Steps>
 
 ## Recover an evaluation
 

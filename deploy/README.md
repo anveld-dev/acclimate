@@ -2,6 +2,8 @@
 
 Service-specific vocabulary is defined in [Internal terms](../CONTEXT.md#internal-terms).
 
+For a walkthrough from a fresh server to a comparison, see [Self-host Acclimate](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/operate/self-host.mdx).
+
 `compose.yaml` is the application stack for an existing Keycloak deployment: PostgreSQL 16 with a persistent volume, one Rust service, one built Node console and Caddy terminating public HTTPS. Only Caddy publishes host ports (80 and 443). The API, console and PostgreSQL are private Docker-network listeners. Keep the Docker bridge inaccessible to untrusted processes and firewall backend ports. The application containers require outbound access to the configured OIDC issuer and any explicitly configured model endpoint. Do not run multiple Rust processes against one database.
 
 Supply real identity, domain and secret settings before startup. No command infers a PostgreSQL role from the OS account, creates machine/human credentials, adopts existing private state, seeds example content or provisions a database from a developer account.
@@ -39,14 +41,16 @@ docker compose up -d --wait
 
 Caddy obtains and stores certificates in its persistent volume. It pins the upstream console `Host` to the configured public hostname, strips incoming forwarding headers and replaces them from the trusted connection. The console reconstructs public URLs from its pinned HTTPS origin, rejects a different Host, and ignores caller-supplied `Forwarded`/`X-Forwarded-*` headers. HTTP from Caddy to the two application listeners is allowed only on the private network. Direct access bypassing this proxy is unsupported. Caddy's administration listener stays container-local; its health check is process/configuration liveness, while its dependency checks require both applications ready.
 
+See the [reverse proxy guide](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/operate/reverse-proxy.mdx) for the headers and limits an alternative proxy must preserve.
+
 PostgreSQL, Rust, console and proxy use restart policies and 90-second stop grace. Rust drains within 35 seconds plus bounded lock release; its singleton guard is held until work stops. `/health` is process liveness. `/ready` checks database usability, singleton ownership, initialized/live worker and non-draining state within a bounded probe. It does not prove queue progress, model/provider availability or evaluation quality. Console `/ready` validates configuration and upstream readiness without a provider discovery call on each probe.
 
 On first startup, the service applies its embedded schema baseline to an empty database under the singleton ownership lock. Subsequent starts verify the recorded migration. The service then registers the projects named in explicit machine grants. Registration creates no human memberships. Migration failure prevents listening. Human operators create workspaces through verified sign-in; existing memberless workspaces require explicit audited adoption by exact ID and reason. Operator capability alone does not grant existing workspace access.
 
 ## Operate connected learning
 
-1. Configure the service proposer in the private service environment using `ACCLIMATE_MODEL_ENDPOINT`, `ACCLIMATE_MODEL_TOKEN`, and `ACCLIMATE_MODEL`. The checkout accepts `gpt-6.2-sol`, `gpt-6-luna`, and `gpt-5.6-luna`. The proposer may make paid calls once eligible outcomes reach an enrolled connection.
-2. Add two distinct machine principals to the workspace in `ACCLIMATE_AUTH`. Grant the outcome principal `write` and the evaluator principal `read` plus `write`. A grant has `token`, `principal_id`, `project_id`, and `rights`. Keep their tokens in the application and use a separate delivery credential. Restart the service with the updated configuration.
+1. Configure the service proposer in the private service environment. Set `ACCLIMATE_MODEL_ENDPOINT` to the full OpenAI-compatible chat-completions URL and supply `ACCLIMATE_MODEL_TOKEN` and `ACCLIMATE_MODEL`. Use `gpt-6.2-sol` for the documented example, or give the model name your endpoint accepts. The service trims the name and requires 1–256 UTF-8 bytes with no control characters. The proposer may make paid calls once eligible outcomes reach an enrolled connection.
+2. Add two distinct machine principals to the workspace in `ACCLIMATE_AUTH`. Grant the outcome principal `write` and the evaluator principal `read` plus `write`. A grant has `token`, `principal_id`, `project_id`, and `rights`. Keep their tokens in the application and use a separate delivery credential. Restart the service with the updated configuration. See the [self-hosting walkthrough](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/operate/self-host.mdx) for the JSON field names.
 3. Define the development evaluator and each held-out audit evaluator in the application. Export their descriptors with `connectedEvaluationDescriptor(app)`. This binds the private fixtures, answers and repetitions to what the installed worker will grade. Supply distinct audit inputs and case identities across cohorts. Keep the inputs and answers in the app. [Install the evaluator and terminal hook](../docs/evaluator-operations.md#serve-connected-learning).
 4. In **Connections**, select an enabled connection whose source channel has a published release and open its continuous learning setup. Enter an installation ID, both machine principals, permitted existing paths and proposal allowance. Register the development and audit descriptors. Select manual review or authorize automatic rollout. Each release affects only this connection. Automatic rollback defaults on.
 5. Start the app-side `acclimate-learning` process with the enrollment's installation ID and a persistent evaluator journal. Resolve the connection once per job, retain its delivery revision, and report the job's terminal outcome. The app can attach an approved correction later. A correction observed on an older revision needs a private recheck on the current one.
@@ -77,6 +81,8 @@ A rollback takes effect on the next fresh resolve. Existing jobs retain their pi
 To restore manually, open **Restore or refresh the delivery target** on the connection. Choose an earlier delivered release or the source channel's currently approved release. Review its exact revision and version, enter a reason, and submit against the connection's displayed delivery revision. The service records a new promotion, preserves connection identity and closes work built against the superseded baseline. A stale revision requires a fresh review. An enabled connection can be restored even after learning was stopped. A restore does not restart a stopped learner.
 
 ## Upgrades and recovery
+
+See [Upgrade and recover](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/operate/upgrades-and-recovery.mdx) for release pinning and the upgrade sequence.
 
 This release starts from a fresh schema baseline. For an installation made with the former migration chain, keep the existing database and its matching service build together. To try this release alongside it, provision a separate empty PostgreSQL database and point the new service at it. The baseline has no in-place upgrade path for the former schema.
 
@@ -111,6 +117,8 @@ python3 scripts/productization/external.py --execute --gate oidc --interactive \
 The `container` gate builds and checks the deployment images in a disposable Docker Compose project with a private volume, fixture issuer and test certificates. Use the `https` and `oidc` gates to verify your deployment's own endpoints. The `remote-model` gate checks a bounded Luna completion against your configured endpoint, and the `native-*` gates exercise prepared files and version pinning with an installed native provider SDK. Those gates require `--live` and can incur model charges.
 
 ## Private backup and restore
+
+See [Back up and restore](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/operate/backup-and-restore.mdx) for the self-hosted backup workflow.
 
 The scripts use Python 3 and `psql`, `pg_dump`, `pg_restore` from the same major version as the connected server. `--pg-bin` selects the tools explicitly. `DATABASE_URL` accepts PostgreSQL URLs and the `sslmode`, `sslrootcert`, `sslcert`, `sslkey`, and `connect_timeout` query options. The URL is passed through libpq environment variables, not command arguments. Protect the environment from other users. The dump is a consistent PostgreSQL custom-format snapshot, created exclusively with mode 0600; keep its parent directory private. It contains sensitive content and history. Encrypt it at rest and in transit, set a retention policy, and securely manage keys and copies. The database roles and ACLs are not included; provision them separately.
 

@@ -1,0 +1,212 @@
+---
+title: Self-host Acclimate
+description: Set up a single Linux server with PostgreSQL, Keycloak, and Caddy, then run your first comparison.
+---
+
+Start with one server and run the evaluator in the environment that already runs your agent. Leave the optional service proposer disabled for this walkthrough. To try a comparison on your laptop first, see [Run locally](/docs/get-started/run-locally).
+
+<Steps>
+<Step>
+
+## Prepare the server and DNS
+
+Use a 64-bit Linux server on x86-64 (amd64) or AArch64 (arm64). For pulled images, check that the release provides images for your platform. Install Git, OpenSSL, Python 3, [Docker Engine](https://docs.docker.com/engine/install/) and the [Compose plugin](https://docs.docker.com/compose/install/linux/). Start with Engine 28 or newer and Compose v2.39 or newer. The commands use `docker compose` and require `up --wait`.
+
+For a small deployment with Keycloak on the same host, start with 4 vCPUs, 8 GiB RAM and 40 GiB of SSD storage. These are starting recommendations. The host runs two PostgreSQL 16 instances, the Rust service, the Node console, Keycloak's JVM and Caddy. Allow more space as bundle history and database backups grow. If you build images on the host, allow extra disk and memory for Rust, Node and the Keycloak theme build.
+
+Create DNS records for three distinct names, such as `console.example.com`, `api.example.com` and `auth.example.com`. Point each A record at the server. Add AAAA records only if the server is reachable over IPv6. Allow inbound TCP 80 and 443 for Caddy and certificate issuance. Keep ports 3000, 3100, 8080, 9000 and both database listeners private. Allow outbound DNS and HTTPS for image pulls, ACME and OIDC. Allow egress to a model endpoint or SMTP relay only if you configure one.
+
+Clone the repository on the server. Check out the release you plan to run so its Compose files, Caddy configuration and Keycloak realm template match the application images. The commands use release 0.1.0 as an example.
+
+```sh
+git clone https://github.com/anveld-dev/acclimate.git
+cd acclimate
+git switch --detach v0.1.0
+```
+
+</Step>
+<Step>
+
+## Create the private runtime files
+
+From the checkout, set the hostnames and private paths. Replace the example names and email address. Keep these exports in the deployment shell, or save the non-secret settings in an operator-owned file you can load again.
+
+```sh
+umask 077
+private_dir="$HOME/.config/acclimate"
+mkdir -p "$private_dir"
+chmod 700 "$private_dir"
+
+export COMPOSE_FILE=compose.yaml:compose.keycloak.yaml
+export CONSOLE_HOST=console.example.com
+export API_HOST=api.example.com
+export KEYCLOAK_HOST=auth.example.com
+export ACME_EMAIL=ops@example.com
+export ACCLIMATE_SERVICE_ENV="$private_dir/service.env"
+export ACCLIMATE_CONSOLE_ENV="$private_dir/console.env"
+export ACCLIMATE_POSTGRES_PASSWORD_FILE="$private_dir/postgres-password"
+export ACCLIMATE_KEYCLOAK_ENV="$private_dir/keycloak.env"
+export ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE="$private_dir/keycloak-postgres-password"
+```
+
+Run the next block for a fresh installation. It creates independent secrets and writes each database password to its own file. PostgreSQL uses the raw password. Only the password component in `DATABASE_URL` is URL-encoded. The encoding command reads the password from stdin, so it works if you instead use a password with URL-reserved characters.
+
+```sh
+openssl rand -hex 32 > "$ACCLIMATE_POSTGRES_PASSWORD_FILE"
+openssl rand -hex 32 > "$ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE"
+login_token=$(openssl rand -hex 32)
+transport_token=$(openssl rand -hex 32)
+oidc_client_secret=$(openssl rand -hex 32)
+bootstrap_password=$(openssl rand -hex 32)
+database_password_url=$(python3 -c 'import sys; from urllib.parse import quote; print(quote(sys.stdin.read().rstrip("\n"), safe=""))' < "$ACCLIMATE_POSTGRES_PASSWORD_FILE")
+issuer="https://$KEYCLOAK_HOST/realms/acclimate"
+
+cat > "$ACCLIMATE_SERVICE_ENV" <<EOF_SERVICE
+DATABASE_URL=postgresql://acclimate:${database_password_url}@postgres:5432/acclimate
+ACCLIMATE_OIDC_ISSUER=$issuer
+ACCLIMATE_LOGIN_TOKEN=$login_token
+ACCLIMATE_CONSOLE_TOKEN=$transport_token
+ACCLIMATE_OPERATORS=[{"issuer":"$issuer","subject":"REPLACE_WITH_USER_UUID"}]
+ACCLIMATE_AUTH=[]
+EOF_SERVICE
+
+cat > "$ACCLIMATE_CONSOLE_ENV" <<EOF_CONSOLE
+CONSOLE_ORIGIN=https://$CONSOLE_HOST
+CONSOLE_SERVICE_URL=http://service:3000
+CONSOLE_PUBLIC_API_URL=https://$API_HOST
+CONSOLE_OIDC_ISSUER=$issuer
+CONSOLE_OIDC_CLIENT_ID=acclimate-console
+CONSOLE_OIDC_CLIENT_SECRET=$oidc_client_secret
+CONSOLE_LOGIN_TOKEN=$login_token
+CONSOLE_SERVICE_TOKEN=$transport_token
+CONSOLE_ALLOW_EDITS=true
+EOF_CONSOLE
+
+cat > "$ACCLIMATE_KEYCLOAK_ENV" <<EOF_KEYCLOAK
+KC_DB_PASSWORD=$(cat "$ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE")
+KC_BOOTSTRAP_ADMIN_USERNAME=bootstrap-admin
+KC_BOOTSTRAP_ADMIN_PASSWORD=$bootstrap_password
+ACCLIMATE_CONSOLE_ORIGIN=https://$CONSOLE_HOST
+ACCLIMATE_OIDC_CLIENT_SECRET=$oidc_client_secret
+EOF_KEYCLOAK
+
+unset login_token transport_token oidc_client_secret bootstrap_password database_password_url
+```
+
+<Callout type="warn" title="Keep runtime files private">
+Keep the files outside the checkout with mode 0600. Avoid printing the Compose configuration or dumping container environments. Changing the password file later leaves an initialized PostgreSQL role's password as it was.
+</Callout>
+
+</Step>
+<Step>
+
+## Start Keycloak and create your user
+
+The overlay imports the `acclimate` realm on first start. Its confidential `acclimate-console` client uses authorization code flow with S256 PKCE and the redirect `https://console.example.com/auth/callback`. The Rust service and the console use the same exact HTTPS issuer. See the repository's [Keycloak setup](https://github.com/anveld-dev/acclimate/blob/main/deploy/keycloak/README.md) for realm updates, email and external Keycloak.
+
+Start only the identity database and Keycloak while you finish the application configuration.
+
+```sh
+docker compose config --quiet
+docker compose up -d --build --wait keycloak-db keycloak
+```
+
+Authenticate as `bootstrap-admin` with the password from your private `keycloak.env` when prompted. Run the admin CLI inside the container.
+
+```sh
+docker compose exec keycloak /bin/bash -c 'umask 077; exec /opt/keycloak/bin/kcadm.sh config credentials --config /tmp/acclimate-admin.config --server http://127.0.0.1:8080 --realm master --user bootstrap-admin'
+```
+
+Use a private editor to create `$private_dir/initial-user.json` with mode 0600. Set your own login, email and temporary password.
+
+```json
+{
+  "username": "your-login",
+  "enabled": true,
+  "firstName": "Your",
+  "lastName": "Name",
+  "email": "you@example.com",
+  "credentials": [{"type": "password", "value": "REPLACE_PRIVATELY", "temporary": true}]
+}
+```
+
+Create the user and use the UUID returned by the CLI as your OIDC subject. Then remove the CLI session file and the temporary local JSON.
+
+```sh
+docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh create users --config /tmp/acclimate-admin.config -r acclimate -f - < "$private_dir/initial-user.json"
+docker compose exec keycloak rm -f /tmp/acclimate-admin.config
+rm -f "$private_dir/initial-user.json"
+```
+
+In `service.env`, replace `REPLACE_WITH_USER_UUID` in `ACCLIMATE_OPERATORS` with that subject. Keep the exact realm issuer alongside it. The bootstrap account administers Keycloak. The operator entry grants workspace creation in Acclimate to the user you just created.
+
+</Step>
+<Step>
+
+## Start Acclimate and create a workspace
+
+<Tabs items={['Release images', 'Build from source']}>
+<Tab value="Release images">
+
+Set `ACCLIMATE_VERSION` to the exact GHCR tag for your checkout's release, without the Git tag's leading `v`. Keep the pin with your deployment settings. The co-hosted Keycloak image was built in the previous step.
+
+```sh
+export ACCLIMATE_VERSION=0.1.0
+docker compose pull postgres service console proxy
+docker compose up -d --no-build --wait
+```
+
+</Tab>
+<Tab value="Build from source">
+
+Build with the checkout's Dockerfiles. Use a local image tag to keep locally built images separate from a published release tag.
+
+```sh
+export ACCLIMATE_VERSION=local
+docker compose up -d --build --wait
+```
+
+</Tab>
+</Tabs>
+
+Caddy obtains certificates for all three public names. Open your console URL, sign in as the realm user and change the temporary password. Choose **New workspace**, set a name and workspace ID, then choose **Create workspace**. Record the exact workspace ID for the evaluator grant. Set up a permanent Keycloak administrator and retire the bootstrap account after confirming you can administer the realm.
+
+</Step>
+<Step>
+
+## Grant evaluator access
+
+Generate a new token and keep it in a private file until you have added it to the service grant and your evaluator config.
+
+```sh
+openssl rand -hex 32 > "$private_dir/evaluator-token"
+```
+
+Replace `ACCLIMATE_AUTH=[]` in `service.env` with the following entry on one line. Replace the token placeholder and use your exact workspace ID. `principalId` is the evaluator's stable machine identity.
+
+```ini
+ACCLIMATE_AUTH=[{"token":"REPLACE_WITH_EVALUATOR_TOKEN","principalId":"support-evaluator","projectId":"support","rights":["read","write"]}]
+```
+
+Drain the service and recreate its container so it reads the updated file.
+
+```sh
+docker compose stop service
+docker compose up -d --no-build --force-recreate --wait service
+```
+
+Follow [Provision evaluator access](/docs/operate/evaluator-access#configure-the-worker) to write the private evaluator config. Use the public API URL, workspace ID, machine principal and token from this grant, with a persistent local journal in the evaluator environment. For worker operation and recovery, see the repository's [evaluator operations guide](https://github.com/anveld-dev/acclimate/blob/main/docs/evaluator-operations.md).
+
+</Step>
+<Step>
+
+## Run a comparison
+
+Download the matching SDK artifacts or build them from source, then install them in the environment where your agent runs. [Install the SDKs](/docs/get-started/install) covers the release artifacts and installation.
+
+Follow [Run your first comparison](/docs/get-started/quickstart) to publish a starting bundle, save a candidate and connect your existing agent, grader and saved cases. Run the evaluator with your private config and inspect the paired scores in the console.
+
+</Step>
+</Steps>
+
+Before routing users or workers to this host, [verify public HTTPS and authenticated access](/docs/operate/health-and-readiness#verify-access-and-activity). Set up [backups](/docs/operate/backup-and-restore) for both databases.

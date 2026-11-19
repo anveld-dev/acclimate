@@ -111,33 +111,65 @@ pub(crate) struct Projection {
     case_count: usize,
     effective_repetitions: f64,
     projected_mde: Option<f64>,
+    lower_mde: Option<f64>,
+    upper_mde: Option<f64>,
+    decision: AdmissionDecision,
+    reason: String,
     power_at_effect: Option<f64>,
     effect: f64,
     paired_trials: u32,
     cases_needed_at_target: Option<usize>,
 }
 
+#[derive(PartialEq, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum AdmissionDecision {
+    Stop,
+    Warn,
+    Admit,
+}
+
 impl Projection {
-    pub(crate) fn stop_reason(&self, target: Option<f64>, stage: &str) -> Option<String> {
-        let target = target?;
-        if self.projected_mde.is_some_and(|mde| mde <= target) {
-            return None;
-        }
+    fn assess(&mut self, target: Option<f64>) {
+        let Some(target) = target else {
+            self.reason = "No target effect configured".to_owned();
+            return;
+        };
+        self.decision = if self.lower_mde.is_some_and(|mde| mde > target) {
+            AdmissionDecision::Stop
+        } else if self.projected_mde.is_none_or(|mde| mde > target) {
+            AdmissionDecision::Warn
+        } else {
+            AdmissionDecision::Admit
+        };
+        let describe = |mde: Option<f64>| {
+            mde.map_or_else(|| "unavailable".to_owned(), |mde| format!("{mde:.3}"))
+        };
         let needed = self.cases_needed_at_target.map_or_else(
-            || "the target must exceed the gate threshold".to_owned(),
+            || "no finite case count at the current threshold and repetition mix".to_owned(),
             |n| {
                 format!(
                     "approximately {n} cases at the same repetition mix are needed for 80% power"
                 )
             },
         );
-        let mde = self
-            .projected_mde
-            .map_or_else(|| "unavailable".to_owned(), |mde| format!("{mde:.3}"));
-        Some(format!(
-            "{stage} target {target:.3} exceeds achievable power within budget: projected 80% MDE {mde} with {} cases, {} pairs, and {:.2} effective repetitions; {needed}",
-            self.case_count, self.paired_trials, self.effective_repetitions
-        ))
+        self.reason = format!(
+            "target {target:.3}, projected 80% MDE {} (95% interval {} to {}) with {} cases, {} pairs, and {:.2} effective repetitions; {needed} at the point estimate",
+            describe(self.projected_mde),
+            describe(self.lower_mde),
+            describe(self.upper_mde),
+            self.case_count,
+            self.paired_trials,
+            self.effective_repetitions
+        );
+    }
+
+    pub(crate) fn stop_reason(&self, stage: &str) -> Option<String> {
+        (self.decision == AdmissionDecision::Stop).then(|| format!("{stage}: {}", self.reason))
+    }
+
+    pub(crate) fn warning(&self, stage: &str) -> Option<String> {
+        (self.decision == AdmissionDecision::Warn).then(|| format!("{stage}: {}", self.reason))
     }
 }
 
@@ -250,11 +282,12 @@ impl Plan {
         &self,
         descriptor: &Descriptor,
         audit: Option<usize>,
-        calibration: &Calibration,
+        noise: (&Calibration, usize),
         threshold: f64,
         z: f64,
         target: Option<f64>,
     ) -> Projection {
+        let (calibration, guard_observations) = noise;
         let counts = self.counts(descriptor, audit);
         let n = counts.len();
         let effective = harmonic_repetitions(counts.values().map(|&n| n as usize));
@@ -295,15 +328,25 @@ impl Plan {
             }
             low
         });
-        Projection {
+        let bounds = (n > 1)
+            .then(|| super::statistics::sd_interval(sd, guard_observations))
+            .flatten();
+        let mde = |sd| threshold + detect(n) * sd / (n as f64).sqrt();
+        let mut projection = Projection {
             case_count: n,
             effective_repetitions: effective,
-            projected_mde: (n > 1).then(|| threshold + detect(n) * se),
+            projected_mde: (n > 1).then(|| mde(sd)),
+            lower_mde: bounds.map(|(lower, _)| mde(lower)),
+            upper_mde: bounds.map(|(_, upper)| mde(upper)),
+            decision: AdmissionDecision::Admit,
+            reason: String::new(),
             power_at_effect: (n > 1)
                 .then(|| 0.5 * libm::erfc((critical - (effect - threshold) / se) / 2.0_f64.sqrt())),
             effect,
             paired_trials: counts.values().sum(),
             cases_needed_at_target,
-        }
+        };
+        projection.assess(target);
+        projection
     }
 }

@@ -1,6 +1,6 @@
 use crate::WorkspaceRoutes;
 use crate::{
-    ApiResult, AppState, ComparisonRequest, PromoteRequest, ProposalRequest,
+    ApiResult, AppState, CaseKey, ComparisonRequest, PromoteRequest, ProposalRequest,
     connected_learning::{
         Descriptor, repetitions,
         selection::Stage,
@@ -873,13 +873,70 @@ impl Connection {
             policies.development.threshold(Stage::Cumulative),
             scored_reward,
         );
+        let repetition_keys = |report: &ComparisonRequest| {
+            let sorted = |mut keys: Vec<CaseKey>| {
+                keys.sort_unstable_by(|a, b| {
+                    (&a.case_id, a.repetition).cmp(&(&b.case_id, b.repetition))
+                });
+                keys
+            };
+            let scored = report
+                .results
+                .iter()
+                .filter(|pair| {
+                    scored_reward(&pair.parent).is_some()
+                        && scored_reward(&pair.candidate).is_some()
+                })
+                .map(|pair| pair.key.clone())
+                .collect();
+            (sorted(report.expected_cases.clone()), sorted(scored))
+        };
+        let keys = repetition_keys(&comparison);
+        let previous: Vec<(Value, Value)> = sqlx::query_as(
+            "SELECT p.noise_calibration, c.body
+             FROM connected_learning_policy_epochs p
+             JOIN evaluation_requests e ON e.id=p.calibration_request_id
+             JOIN comparisons c ON c.id=e.comparison_id
+             WHERE (p.project_id,p.integration_id)=($1,$2) AND p.epoch < $3
+               AND p.development=$4 AND c.submitter=$5 AND e.status='completed' AND c.complete
+               AND p.noise_calibration IS NOT NULL AND p.repetition_plan IS NOT NULL
+               AND c.body->>'parentVersionId'=$6 AND c.body->>'parentDigest'=$7
+             ORDER BY p.epoch",
+        )
+        .bind(&self.project)
+        .bind(self.integration)
+        .bind(self.policy_epoch)
+        .bind(json!(self.development))
+        .bind(&self.evaluator)
+        .bind(&comparison.parent_version_id)
+        .bind(&comparison.parent_digest)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(db)?;
+        let history = previous
+            .into_iter()
+            .filter_map(|(calibration, report)| {
+                let report = serde_json::from_value::<ComparisonRequest>(report).ok()?;
+                (report.candidate_version_id == comparison.candidate_version_id
+                    && report.candidate_digest == comparison.candidate_digest
+                    && report.dataset_revision == comparison.dataset_revision
+                    && report.grader_revision == comparison.grader_revision
+                    && report.runtime == comparison.runtime
+                    && repetition_keys(&report) == keys)
+                    .then(|| serde_json::from_value(calibration))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(db)?;
+        let (guard_noise, observations) =
+            crate::connected_learning::statistics::pool_calibrations(&calibration, &history);
+        let noise = (&guard_noise, observations);
         let target = policies.development.target_effect;
         let audit_target = policies.audit.target_effect.or(target);
         let plan = repetitions::Plan::new(&self.development, &self.audits, &calibration);
         let development = plan.project(
             &self.development,
             None,
-            &calibration,
+            noise,
             policies.development.threshold(Stage::Development {
                 replay_passed: false,
             }),
@@ -889,7 +946,7 @@ impl Connection {
         let cumulative = plan.project(
             &self.development,
             None,
-            &calibration,
+            noise,
             policies.development.threshold(Stage::Cumulative),
             DEVELOPMENT_Z,
             target,
@@ -902,18 +959,28 @@ impl Connection {
                 plan.project(
                     audit,
                     Some(index),
-                    &calibration,
+                    noise,
                     policies.audit.threshold(Stage::Audit),
                     AUDIT_Z,
                     audit_target,
                 )
             })
             .collect();
-        let stopped = cumulative.stop_reason(target, "Cumulative").or_else(|| {
-            audits
-                .iter()
-                .find_map(|audit| audit.stop_reason(audit_target, "Audit"))
-        });
+        let gates = std::iter::once(("Development".to_owned(), &development))
+            .chain(std::iter::once(("Cumulative".to_owned(), &cumulative)))
+            .chain(
+                audits
+                    .iter()
+                    .enumerate()
+                    .map(|(index, audit)| (format!("Audit {}", index + 1), audit)),
+            );
+        let stopped = gates
+            .clone()
+            .find_map(|(stage, gate)| gate.stop_reason(&stage));
+        let warnings = gates
+            .filter_map(|(stage, gate)| gate.warning(&stage))
+            .collect::<Vec<_>>();
+        let warning = (!warnings.is_empty()).then(|| warnings.join("\n"));
         sqlx::query(
             "UPDATE connected_learning_policy_epochs
              SET noise_calibration=$4,repetition_plan=$5,calibration_stopped_reason=$6
@@ -923,7 +990,7 @@ impl Connection {
         .bind(self.integration)
         .bind(self.policy_epoch)
         .bind(json!(calibration))
-        .bind(json!({"plan": plan, "developmentProjection": development, "cumulativeProjection": cumulative, "auditProjections": audits}))
+        .bind(json!({"plan": plan, "developmentProjection": development, "cumulativeProjection": cumulative, "auditProjections": audits, "powerGuardObservations": observations, "powerGuardNoise": guard_noise, "warning": warning}))
         .bind(&stopped)
         .execute(&mut **tx)
         .await
@@ -2247,7 +2314,7 @@ async fn review(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CaseKey, CasePair, Outcome};
+    use crate::{CasePair, Outcome};
 
     fn scored(reward: f64, execution_status: &str) -> Outcome {
         Outcome {

@@ -7488,6 +7488,29 @@
               "null"
             ]
           },
+          "lowerMde": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "upperMde": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "stop",
+              "warn",
+              "admit"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
           "powerAtEffect": {
             "type": [
               "number",
@@ -7591,6 +7614,10 @@
                   "string",
                   "null"
                 ]
+              },
+              "powerGuardObservations": {
+                "type": "integer",
+                "minimum": 1
               },
               "caseVariability": {
                 "type": "object",

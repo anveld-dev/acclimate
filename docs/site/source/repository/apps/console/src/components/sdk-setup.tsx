@@ -27,10 +27,12 @@ type Language = 'typescript' | 'python';
 /** A visible step marker; the accessible heading still reads "1. Install the SDK". */
 function StepNumber({ value }: { value: number }) {
   return (
-    <span className="sdk-step-number">
-      {value}
-      <span className="sr-only">.</span>{' '}
-    </span>
+    <>
+      <span className="sdk-step-number" aria-hidden="true">
+        {value}
+      </span>
+      <span className="sr-only">{value}. </span>
+    </>
   );
 }
 

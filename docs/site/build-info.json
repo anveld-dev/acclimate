@@ -89,7 +89,7 @@
     "apps/console/src/components/bundle-releases.tsx": "4530c7a9d3c35b34d95af8403f33e915f05a1210fc41e87ccdddece5f8647fcf",
     "apps/console/src/components/draft-workspace.tsx": "fccdf04442fcfb57b6a6464f269531ff784f5b9be0447b3accc7bb9806f85efb",
     "apps/console/src/components/improvement-workspace.tsx": "f83d2c3c62991c8ec2aa92ee3f80fb0e314a93edb8728c2c96c7bdf377dc9617",
-    "apps/console/src/components/sdk-setup.tsx": "0c315ece2926dc544f30791f8a97aafdda4dc744f0e777589f06fd319117dda4",
+    "apps/console/src/components/sdk-setup.tsx": "6af35b2542773c8c947e5c9404a88334c684b3ca04458dbfb1c7015cef1e9e36",
     "apps/console/src/components/shell.tsx": "c4f41320abf3d3f5d097e965bc52673172a5886071a76863ca4ff583c04edc4f",
     "apps/console/src/components/ui/button.tsx": "8d2b3bbdb2e88ede05354ebb3a3513d75db8dc440825c69bfe8abb65db15732e",
     "apps/console/src/components/ui/input.tsx": "cf1020fd559eda1fda401e51cb5ce26b14e0c1cecd3084999875e64a1188898b",

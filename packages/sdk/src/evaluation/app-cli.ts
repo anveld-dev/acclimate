@@ -10,6 +10,7 @@ import {
 import { defineEvaluation } from './definition.js';
 import { canonicalEvaluationJson, createEvaluationManifest } from './manifest.js';
 import { evaluationMain, evaluationReadMain } from './cli.js';
+import { TRY_USAGE } from './local-cli.js';
 import { EvaluationError } from './errors.js';
 import type { EvaluationManifestInput } from './manifest.js';
 import type { EvaluationCase, EvaluationDefinition, Json } from './types.js';
@@ -20,6 +21,10 @@ export interface ApplicationAdapter<I = Json, E = Json, O = Json>
   cases?: readonly EvaluationCase<I, E>[];
   revisionFiles?: readonly string[];
   configId?: string;
+  /** Pairs in flight at once (1–64, default 1). Changes the descriptor fingerprint. */
+  concurrency?: number;
+  /** Extra grade attempts after a grader throws or times out (0–5, default 0). */
+  gradeRetries?: number;
   grader?: EvaluationManifestInput['grader'];
   runtime?: Partial<EvaluationManifestInput['runtime']>;
   toReviewArtifact?: ReviewMapper;
@@ -30,15 +35,25 @@ Export cases, execute and grade from that module in your current directory.
 Select a different entry with --app PATH, for example: acclimate-eval describe --app dist/application.mjs.
 Run coverage to inspect bound sources and packages. status and verify-export run without application code.
 
+Try it locally first. These need no service, config or handoff:
+
+  acclimate-eval try --live [--case ID] [--payload FILE|DIR]
+  acclimate-eval compare --local --parent FILE|DIR --candidate FILE|DIR --live [--policy POLICY]
+
+Then compare against the service to gate a release:
+
   acclimate-eval compare --config CONFIG --handoff HANDOFF --live [--policy POLICY] [--json]
   acclimate-eval compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) --live [--policy POLICY] [--json]
 
+Run controls for compare and run: --deadline 30m, --case-timeout 2m, --max-cost-usd 5,
+--cases ID,ID or --shard 1/4 (partial, never full coverage), --quiet to hide progress.
 Reuse RUN_NAME to recover the same change. Use describe for your public descriptor,
 doctor to check setup, or request, run, check, status, interrupt, export and verify-export.`;
 
 const commandHelp: Record<string, string> = {
   compare: help,
   describe: 'describe [--app PATH]  Print the public descriptor for these callbacks and cases.',
+  try: TRY_USAGE,
   coverage: 'coverage [--app PATH]  Inspect bound local sources, imported packages and declared revisions.',
   doctor: 'doctor --config CONFIG (--bundle ID | --handoff FILE | --name RUN_NAME) [--policy POLICY]',
   request: 'request --config CONFIG --bundle ID --channel CHANNEL --payload FILE --intent FILE --out HANDOFF [--policy POLICY]',
@@ -184,6 +199,8 @@ export async function loadApplication(directory = process.cwd(), appPath?: strin
   const manifest = createEvaluationManifest({
     configId: adapter.configId ?? 'application',
     execution: 'live',
+    ...(adapter.concurrency !== undefined ? { concurrency: adapter.concurrency } : {}),
+    ...(adapter.gradeRetries !== undefined ? { gradeRetries: adapter.gradeRetries } : {}),
     cases,
     grader: adapter.grader ?? { artifactDigest: graderDigest },
     runtime: {

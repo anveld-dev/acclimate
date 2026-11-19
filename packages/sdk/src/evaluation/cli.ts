@@ -26,6 +26,7 @@ import {
   readCommandJson,
   readCommandText,
 } from './cli-intents.js';
+import { routeEvaluationCommand, serviceRunNotices } from './local-cli.js';
 
 type Command =
   | 'compare'
@@ -84,6 +85,7 @@ function required(flags: Parsed['flags'], name: string): string {
 const compareUsage = [
   'compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]',
   'compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]',
+  'compare --local --parent PAYLOAD --candidate PAYLOAD [--live] [--policy POLICY] [--json]  (no service; advisory)',
   'Live evaluators require --live. Use one input form and supply each flag once.',
 ].join('\n');
 class CompareUsageError extends EvaluationError {
@@ -108,7 +110,7 @@ function validateCompareFlags(flags: Parsed['flags'], live: boolean) {
     throw new CompareUsageError('--name requires 1–80 letters, digits, underscores or hyphens.');
 }
 
-function comparisonText(
+export function comparisonText(
   request: Evaluation,
   comparison: Comparison | null,
   scores: Pick<MetricAnalysis, 'counts' | 'summary' | 'cases' | 'evidenceGaps'> | null,
@@ -497,13 +499,17 @@ async function dispatch(
         const status = policy ? policyExit(policyResult?.verdict ?? 'indeterminate') : runStatus(request);
         const runName = optional(flags, 'name');
         const invocation = { callbacksStarted: result.callbacksStarted, reusedEvidence: result.reusedEvidence };
+        const notices = serviceRunNotices(result, {
+          parent: request.parentDigest,
+          candidate: request.candidateDigest,
+        });
         const execution = result.reusedEvidence
           ? 'Reused saved evidence. No execution callbacks started.'
           : `Execution callbacks started this time: ${result.callbacksStarted}.`;
         return {
           status: status || (receipt?.status === 'unconfirmed' ? 1 : 0),
           result: terminal
-            ? [comparisonText(request, result.comparison, scores, policyResult, !!policy), execution,
+            ? [comparisonText(request, result.comparison, scores, policyResult, !!policy), ...notices.lines, execution,
                 ...(receipt ? [receipt.status === 'recorded' ? 'Policy receipt recorded for release review.' : 'Policy receipt unconfirmed. Retry check with the evaluator config.'] : []),
                 ...(runName ? ['Run handle: --name ' + runName] : [])].join('\n')
             : {
@@ -516,6 +522,7 @@ async function dispatch(
                 scores,
                 policy: policyResult,
                 ...(receipt ? { policyReceipt: receipt } : {}),
+                ...notices.json,
               },
         };
       }
@@ -667,7 +674,9 @@ export async function evaluationMain(
   argv: readonly string[],
   options: EvaluationMainOptions = {},
 ): Promise<number> {
-  return runCommand(argv, (parsed) => dispatch(app, parsed, options));
+  return routeEvaluationCommand(app, argv, (bound, rest) =>
+    runCommand(rest, (parsed) => dispatch(bound, parsed, options)),
+  );
 }
 
 /** Verify a recorded comparison using the installed descriptor and the caller's policy. */

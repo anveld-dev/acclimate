@@ -27,13 +27,16 @@ def private_write(path, text):
 
 
 def full_stack_definition(definition, directory, public_port, issuer):
-    """Modify only disposable routing/trust inputs; retain canonical images/probes/policy."""
+    """Use project-local application builds and disposable routing/trust inputs."""
     services = definition['services']
     if set(services) != {'postgres', 'service', 'console', 'proxy'}:
         raise ValueError('Canonical complete deployment changed; review container qualification')
     for name in ('postgres', 'service', 'console'):
         if services[name].get('ports'):
             raise ValueError('Backend host ports are forbidden')
+    for name in ('service', 'console'):
+        # Compose tags these builds with the unique qualification project name.
+        services[name].pop('image', None)
     services['proxy']['ports'] = [dict(target=443, published=str(public_port), host_ip='127.0.0.1', protocol='tcp')]
     services['proxy']['volumes'] = [volume for volume in services['proxy']['volumes']
                                    if volume['target'] != '/etc/caddy/Caddyfile'] + [

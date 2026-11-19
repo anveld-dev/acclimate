@@ -7600,6 +7600,7 @@
                 "type": "object",
                 "properties": {
                   "developmentRepetitions": {
+                    "description": "Assigned repetitions per development case, shared with cumulative comparisons. New plans use equal counts for unscheduled inventories.",
                     "type": "object",
                     "additionalProperties": {
                       "type": "integer",
@@ -7607,6 +7608,7 @@
                     }
                   },
                   "auditRepetitions": {
+                    "description": "Uniform count per unscheduled audit cohort in enrollment order. Earlier plans recorded a repetition floor.",
                     "type": "array",
                     "items": {
                       "type": "integer",
@@ -7614,18 +7616,22 @@
                     }
                   },
                   "flakyCaseCount": {
+                    "description": "Development cases with observed A/A disagreement.",
                     "type": "integer",
                     "minimum": 0
                   },
                   "pairBudget": {
+                    "description": "Pair budget per evaluation before the report size limit.",
                     "type": "integer",
                     "minimum": 0
                   },
                   "trialBudget": {
+                    "description": "Twice the pair budget, before retries.",
                     "type": "integer",
                     "minimum": 0
                   },
                   "maxRepetitions": {
+                    "description": "Cap on the planned uniform repetition count.",
                     "type": "integer",
                     "minimum": 0
                   }

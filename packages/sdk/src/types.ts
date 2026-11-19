@@ -452,8 +452,11 @@ export interface LearningEnrollmentStatus extends LearningEnrollment {
     minimumDetectableEffect?: number;
     caseVariability?: Record<string, number>;
     plan?: {
+      /** Assigned repetitions per development case, shared with cumulative comparisons. */
       developmentRepetitions: Record<string, number>;
+      /** Uniform count per audit cohort. Earlier plans recorded a repetition floor. */
       auditRepetitions: number[];
+      /** Development cases with observed A/A disagreement. */
       flakyCaseCount: number;
       pairBudget: number;
       trialBudget: number;

@@ -681,7 +681,7 @@ async fn inspect(
     view["noiseCalibration"] = sqlx::query_scalar::<_, Value>(
         "SELECT jsonb_build_object('requestId',p.calibration_request_id,'status',CASE WHEN p.calibration_stopped_reason IS NOT NULL THEN 'stopped' ELSE COALESCE(e.status,'queued') END,
                     'failedAttempts',p.calibration_failures,'stoppedReason',p.calibration_stopped_reason)
-             || COALESCE(p.noise_calibration,'{}'::jsonb) || COALESCE(p.repetition_plan,'{}'::jsonb)
+             || COALESCE(p.noise_calibration,'{}'::jsonb) || (COALESCE(p.repetition_plan,'{}'::jsonb) #- '{plan,uniformAuditFrom}')
          FROM connected_learning_policy_epochs p
          LEFT JOIN evaluation_requests e ON e.id=p.calibration_request_id
          WHERE (p.project_id,p.integration_id,p.epoch)=($1,$2,$3)",

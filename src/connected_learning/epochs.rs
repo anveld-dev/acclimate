@@ -376,7 +376,7 @@ async fn extend_repetition_plan(
         .audit
         .target_effect
         .or(policies.development.target_effect);
-    plan.extend_audits(audits, target.is_some());
+    plan.extend_audits(audits);
     let projections = view["auditProjections"]
         .as_array_mut()
         .ok_or_else(|| db("Missing audit power projections"))?;

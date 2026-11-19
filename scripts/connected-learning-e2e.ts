@@ -267,8 +267,8 @@ try {
             (line) =>
               line.field === 'priorAttempt' &&
               line.text.includes('"outcome":"development-rejected"') &&
-              line.text.includes('"improvedPairs":1') &&
-              line.text.includes('"regressedPairs":1'),
+              line.text.includes('"improvedPairs":3') &&
+              line.text.includes('"regressedPairs":3'),
           );
           if (repairRegression) {
             edits = [];
@@ -953,10 +953,16 @@ try {
   }
   assert.deepEqual(
     await scores(rejected.developmentComparisonId, rejected.developmentRequestId),
-    [0, 1],
+    [0, 0, 0, 1, 1, 1],
   );
-  assert.deepEqual(await scores(rejected.auditComparisonId, rejected.auditRequestId), [0, 1, -1]);
-  assert.deepEqual(await scores(second.auditComparisonId, second.auditRequestId), [0, 1, 0]);
+  assert.deepEqual(
+    await scores(rejected.auditComparisonId, rejected.auditRequestId),
+    [0, 0, 0, 1, 1, 1, -1, -1, -1],
+  );
+  assert.deepEqual(
+    await scores(second.auditComparisonId, second.auditRequestId),
+    [0, 0, 0, 1, 1, 1, 0, 0, 0],
+  );
 
   await api('POST', `${learning(automatic)}/stop`);
   const stoppedWork = await api('GET', `${learning(automatic)}/work`, undefined, 'evaluator');
@@ -1054,7 +1060,7 @@ try {
   assert.equal(auditDatasets.size, 3);
   for (const dataset of auditDatasets) {
     const cases = autoExecutions.filter((execution) => execution.dataset === dataset);
-    assert.equal(cases.length, 6);
+    assert.equal(cases.length, 18);
     assert.equal(new Set(cases.map(({ caseId }) => caseId)).size, 3);
     assert.equal(new Set(cases.map(({ version }) => version)).size, 2);
   }
@@ -1661,11 +1667,11 @@ try {
   const [firstAttempt, repair] = attempts;
   assert.deepEqual(
     await scores(firstAttempt.developmentComparisonId, firstAttempt.developmentRequestId),
-    [1, -1],
+    [1, 1, 1, -1, -1, -1],
   );
   assert.deepEqual(
     await scores(repair.developmentComparisonId, repair.developmentRequestId),
-    [1, 0],
+    [1, 1, 1, 0, 0, 0],
   );
   const skillHistory = modelRequests
     .filter(({ instruction }) => instruction === 'Create a reusable refund skill.')
@@ -1677,7 +1683,7 @@ try {
   assert(skillHistory[1][0].includes(firstAttempt.candidateVersionId!));
   assert.deepEqual(
     await scores(attempts[1].auditComparisonId, attempts[1].auditRequestId),
-    [0, 0, 0, 0],
+    Array(12).fill(0),
   );
   const withSkill = await installedBundle(structural);
   assert(withSkill.payload.files.some((f) => f.path === 'skills/refunds/SKILL.md'));
@@ -2025,7 +2031,7 @@ try {
         dataset === descriptor(apps.development).datasetRevision &&
         version === first.developmentCandidateVersionId,
     );
-    assert.equal(parentRuns.length, mode === 'aged' ? inventory.length * 2 : inventory.length);
+    assert.equal(parentRuns.length, inventory.length * 3 * (mode === 'aged' ? 2 : 1));
     assert.equal(second.parentVersionId, baseline.id);
     assert.equal(second.developmentParentVersionId, first.developmentCandidateVersionId);
     assert(second.cumulativeDevelopmentRequestId);

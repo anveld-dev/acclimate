@@ -6,21 +6,20 @@ This guide is for the service operator. Application developers start with [Conne
 
 ## Provision the exact identity
 
-1. Confirm the intended project, a stable evaluator principal, and the worker's private persistent storage. Guided project IDs are 1–128 ASCII letters/digits/`-_.`, excluding dot/dotdot. New guided resource IDs use canonical lowercase UUIDs. Legacy raw-client access does not imply guided retained-operation support.
-2. In your secret manager, provision a strong token for that same principal/project with exactly `read` and `write`. The current static `ACCLIMATE_AUTH` grant format is `{token,principalId,projectId,rights}`. Evaluator `write` grants other project writes too; no narrower eval-only right exists in this release. Do not add propose/promote merely to run evaluations.
-3. Validate a private candidate grant file without printing its contents or starting the service:
+1. Confirm the intended workspace, a stable evaluator name and the worker's private persistent storage. Guided project IDs are 1–128 ASCII letters/digits/`-_.`, excluding dot/dotdot. New guided resource IDs use canonical lowercase UUIDs. Legacy raw-client access does not imply guided retained-operation support.
+2. As a workspace administrator, issue a machine token with only the `evaluate` right from **Settings → Members → Evaluator tokens**, or with `POST /v1/workspaces/{project}/machine-tokens`. Its principal is `machine:{name}`. The service stores a SHA-256 digest, returns the secret once, and records the issue in the append-only token audit trail. No restart is needed. `evaluate` reads the workspace and runs evaluations; it never publishes, promotes, authors versions or changes channels. Do not add `write`, `propose` or `promote` merely to run evaluations.
+3. Deliver the owner-only evaluator configuration to the worker through your secret channel, never through browser configuration or command arguments. The console can download a ready `evaluator.json`. The token can instead live in a private `evaluatorTokenFile` or in `ACCLIMATE_EVALUATOR_TOKEN`. The schema is documented in [evaluator access](../apps/docs/content/docs/operate/evaluator-access.mdx#configure-the-worker-or-ci-job).
+4. Run the installed app's `doctor` with that explicit config. The machine-only capability endpoint checks the exact principal's current `evaluate` authority and retained-operation support, and reports its rights, credential kind and expiry, and the abandonment policy. A human editor's console authority or published delivery token is insufficient. `/ready` checks the service, not the provider, evaluator host or progress.
+
+Static `ACCLIMATE_AUTH` grants remain supported for bootstrap and fixed deployment principals. Their format is `{token,principalId,projectId,rights}`, and they may use `evaluate`. Validate a private candidate grant file without printing its contents or starting the service:
 
 ```sh
 target/release/acclimate-service --check-grants < /absolute/private/machine-grants.json
 ```
 
-The validator reads only explicit stdin, checks the closed grant schema and emits fixed success/error JSON. It does not contact PostgreSQL/OIDC/a model, inspect ambient runtime credentials, open a listener, or validate the rest of your deployment configuration.
+The validator reads only explicit stdin, checks the closed grant schema and emits fixed success/error JSON. It does not contact PostgreSQL/OIDC/a model, inspect ambient runtime credentials, open a listener, or validate the rest of your deployment configuration. Deploy a static grant through your private service environment with a [coordinated drain/restart](../deploy/README.md). Registering a machine project does not create human workspace membership. Connected-learning enrollment still names static grant principals.
 
-4. Deploy the grant through your existing private service environment. Follow [coordinated deployment](../deploy/README.md): one Rust process owns the database, so changes require a coordinated drain/restart. Registering a machine project does not create human workspace membership.
-5. Deliver an owner-only evaluator configuration file to the worker through your secret channel, never through browser configuration or command arguments. Its schema is documented in [getting started](getting-started.md#3-obtain-evaluator-access-before-creating-a-request).
-6. Run the installed app's `doctor` with that explicit config. The machine-only capability endpoint checks the exact principal's current project read/write authority and retained-operation support. A human editor's console authority or published delivery token is insufficient. `/ready` checks the service, not the provider, evaluator host or progress.
-
-No evaluator secret enters the browser. Console authors create requests through their own current memberships; the installed application claims/executes them with its separate evaluator identity.
+No evaluator secret enters the browser except the one-time display to the administrator who issued it. Console authors create requests through their own current memberships; the installed application claims/executes them with its separate evaluator identity.
 
 ## Policy receipts
 
@@ -42,11 +41,13 @@ Back up worker journals/private artifacts separately from PostgreSQL, under your
 
 ## Rotate a token without changing attempt ownership
 
-1. Add a replacement token for the **same exact** principal/project and required rights while retaining the old token. Validate and restart with overlapping grants.
-2. Replace only the token in the worker's explicit private config, preserving service URL, project, principal, canonical root, request IDs, attempts and operation keys. Run `doctor`. Let existing in-process clients using the old credential drain during overlap.
-3. After old workers are quiescent, remove the old token, validate and restart again. If an old client is denied, preserve its saved report and recover with the same-principal replacement credential.
+1. Rotate the token from the console or with `POST /v1/workspaces/{project}/machine-tokens/{id}/rotate`. The successor keeps the same `machine:` principal and rights. Set `overlapSeconds` (0–604,800) to keep the old token valid while workers switch; the console uses one hour. No restart is needed.
+2. Replace only the token in the worker's private config, token file or CI secret, preserving service URL, project, principal, canonical root, request IDs, attempts and operation keys. Run `doctor`. Existing in-process clients using the old token drain during the overlap.
+3. If an old client is denied after the overlap, preserve its saved report and recover with the same-principal successor.
 
-Emergency revocation may skip overlap, but can leave external work and submissions uncertain. Revoking a credential neither terminates a provider operation nor authorizes another principal to take over its attempt. Dynamic credential issuance, restart-free rotation and narrower evaluation rights remain explicit follow-ups.
+Revoke a token from the console or with `POST /v1/workspaces/{project}/machine-tokens/{id}/revoke` and a reason. Each transaction rechecks the token under a row lock, so revocation applies to the next request. Revoking a credential neither terminates a provider operation nor authorizes another principal to take over its attempt; abandon the attempt instead. Expired tokens stop working the same way.
+
+A static grant still rotates with overlapping grants and two coordinated restarts.
 
 ## Recovery decisions
 
@@ -59,12 +60,25 @@ Emergency revocation may skip overlap, but can leave external work and submissio
 | Comparison confirmed; finish response lost | Recover original finish and authoritative current binding |
 | Running; original journal absent/relocated | Restore original supported root/identity or inspect/interrupt; no speculative replay |
 | Interrupted | Keep private evidence; the record is interrupted but the external job may still be active |
+| Abandoned | Terminal. Its evidence never counts; a new request for the same candidate may start (`--retry-after` accepts it) |
+| Running; worker gone (cancelled CI job) | Abandon explicitly with a reason, or let the inactivity TTL abandon it; then start a new request |
 | Completed/failed | Inspect terminal evidence; quality and release remain separate |
 | Foreign language journal or changed principal/root | Refuse takeover; resolve with the original supported runtime and identity |
 
 New retained evaluator operations outlive the transient 24-hour idempotency cache and recheck current authorization on execution, replay, lookup and close. Retained responses are historical mutation results, not current running-state proof. The runner re-reads current lifecycle before callbacks. A check racing with a later interruption cannot cancel already started external work.
 
 Use the installed `status` and explicit `interrupt --reason ...` commands for headless inspection/intent. Interruption uses a separate short-held command lock so an active execution lock does not prevent recording intent. A fresh CI worker without the original journal cannot resume the running request. Before creating replacement work, establish whether its original external effects can safely be repeated.
+
+### Abandon an attempt whose worker is gone
+
+An `abandoned` request is a server-side terminal state for an attempt whose outcome is unknown. It is reached in two ways:
+
+- **Inactivity.** The service abandons a running attempt with no start, progress report or bound comparison for `ACCLIMATE_EVALUATION_ABANDON_SECONDS` (default 7,200). The sweep runs every 30 seconds and records `abandonedBy: service:evaluation-expiry`.
+- **Explicit call.** `POST /v1/workspaces/{project}/bundles/{bundle}/evaluation-requests/{id}/abandon` with a required `reason`, by any principal with `evaluate` or a workspace editor. The SDK clients expose `abandonEvaluation` and `abandon_evaluation`; the console offers **Abandon attempt**. It records the reason, `abandonedBy` and `abandonedAt`, and replays like other retained evaluator operations.
+
+After abandonment the service refuses the old attempt's start, progress, comparison and finish calls. Promotion rejects any comparison bound to the attempt with `evidence_abandoned`, including one submitted before abandonment, and policy receipts already require a settled attempt. A new request for the same candidate content may then start, and `--retry-after` accepts an abandoned predecessor. Connected-learning evaluations keep their own deadlines and refuse explicit abandonment.
+
+This keeps the service's honesty about execution. Abandonment never infers that the original worker stopped or that its model and tool calls ran exactly once; a stale heartbeat is not termination. It only fences the attempt so its evidence cannot count. The replacement attempt may repeat paid or side-effecting work, so record why you abandoned it and settle any external effects first.
 
 ## Diagnostics and retention
 

@@ -332,7 +332,7 @@ class EvaluationProgressObservation(EvaluationProgressRequest):
 class EvaluationProgressView(TypedDict):
     schemaVersion: Literal[1]
     requestId: str
-    status: Literal["requested", "running", "completed", "failed", "interrupted"]
+    status: Literal["requested", "running", "completed", "failed", "interrupted", "abandoned"]
     attemptId: str | None
     observation: EvaluationProgressObservation | None
     activity: Literal["fresh", "stale", "absent"]

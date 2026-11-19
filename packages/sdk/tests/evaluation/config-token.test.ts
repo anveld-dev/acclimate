@@ -103,7 +103,11 @@ test('an evaluator token can come from ACCLIMATE_EVALUATOR_TOKEN when the config
     // Naming two token sources is ambiguous.
     await assert.rejects(
       readEvaluatorConfig(
-        await write({ ...base, evaluatorToken: 'acm_INLINE', evaluatorTokenFile: '/private/token' }),
+        await write({
+          ...base,
+          evaluatorToken: 'acm_INLINE',
+          evaluatorTokenFile: '/private/token',
+        }),
       ),
       code('config.schema'),
     );

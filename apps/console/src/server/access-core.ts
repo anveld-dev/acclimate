@@ -64,6 +64,10 @@ export type AccessResult =
   | { ok: false; message: string };
 class Denied extends Error {}
 class SessionExpired extends Denied {}
+/** True when the service or session refused the caller (including an expired session). */
+export function accessDenied(error: unknown): boolean {
+  return error instanceof Denied;
+}
 class LastAdmin extends Error {}
 export function accessTransport(env: Environment, fetcher: typeof fetch) {
   if (!env.CONSOLE_SESSION_TOKEN) throw new SessionExpired();
@@ -101,6 +105,16 @@ export function accessTransport(env: Environment, fetcher: typeof fetch) {
       ) {
         const problem = new Error(String(error.error.message).slice(0, 500));
         problem.name = 'InvitationError';
+        throw problem;
+      }
+      if (
+        ['invalid_content', 'not_found', 'machine_token_limit', 'machine_token_inactive'].includes(
+          error?.error?.code,
+        ) &&
+        path.includes('/machine-tokens')
+      ) {
+        const problem = new Error(String(error.error.message).slice(0, 500));
+        problem.name = 'MachineTokenError';
         throw problem;
       }
       if ([401, 403].includes(response.status)) throw new Denied();

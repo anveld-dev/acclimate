@@ -750,12 +750,14 @@ export function ImprovementWorkspace({
           r.request!,
           ...previous.filter((row) => row.id !== r.request!.id),
         ]);
-        if (data.action === 'interrupt')
+        if (data.action === 'interrupt' || data.action === 'abandon')
           setInterruptionReasons((previous) => ({ ...previous, [r.request!.id]: '' }));
         setMessage(
           data.action === 'interrupt'
             ? 'Interruption recorded. Your app may still be running.'
-            : 'Evaluation request created. Run it in your app, then return here for the results.',
+            : data.action === 'abandon'
+              ? 'Attempt abandoned. Its evidence never counts; start a new request to measure this candidate again.'
+              : 'Evaluation request created. Run it in your app, then return here for the results.',
         );
       }
       if ('promotion' in r) {
@@ -1737,7 +1739,8 @@ export function ImprovementWorkspace({
                                             <CircleCheck />
                                           ) : request.status === 'failed' ? (
                                             <CircleX />
-                                          ) : request.status === 'interrupted' ? (
+                                          ) : request.status === 'interrupted' ||
+                                            request.status === 'abandoned' ? (
                                             <CirclePause />
                                           ) : request.status === 'running' ? (
                                             <Radio />
@@ -1812,7 +1815,7 @@ export function ImprovementWorkspace({
                                   {['requested', 'running'].includes(request.status) && (
                                     <Disclosure>
                                       <DisclosureTrigger className="cursor-pointer">
-                                        Record an interruption
+                                        Record an interruption or abandon the attempt
                                       </DisclosureTrigger>
                                       <DisclosureContent>
                                         <div className="mt-3 space-y-3">
@@ -1851,7 +1854,29 @@ export function ImprovementWorkspace({
                                             }
                                           >
                                             Mark interrupted
+                                          </Button>{' '}
+                                          <Button
+                                            variant="outline"
+                                            disabled={
+                                              busy ||
+                                              !state.canEdit ||
+                                              !interruptionReasons[request.id]?.trim()
+                                            }
+                                            onClick={() =>
+                                              void act({
+                                                action: 'abandon',
+                                                id: request.id,
+                                                reason: interruptionReasons[request.id],
+                                              })
+                                            }
+                                          >
+                                            Abandon attempt
                                           </Button>
+                                          <p className="text-sm text-muted-foreground">
+                                            Abandon when the worker is gone, such as a cancelled CI
+                                            job. Its evidence never counts and a new request for
+                                            this candidate may start.
+                                          </p>
                                         </div>
                                       </DisclosureContent>
                                     </Disclosure>

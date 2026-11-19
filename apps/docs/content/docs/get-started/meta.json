@@ -2,6 +2,7 @@
   "title": "Get started",
   "pages": [
     "quickstart",
-    "install"
+    "install",
+    "run-locally"
   ]
 }

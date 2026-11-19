@@ -8,7 +8,9 @@ The first implementation is a Rust HTTP service, a TypeScript delivery SDK, and 
 
 There is one production identity path, including during development. PostgreSQL 16 stores all service data. The console uses Keycloak through OIDC and HTTPS; browser users need verified sessions and workspace membership. Machine SDK credentials stay separate.
 
-Use the [deployment guide](../deploy/README.md) for the complete PostgreSQL/API/console/TLS stack and required private configuration. The [console guide](../apps/console/README.md) lists identity settings. Builds need no runtime credentials:
+For laptop evaluation or development, run `npm run local:up` from the checkout. The [local stack guide](../apps/docs/content/docs/get-started/run-locally.mdx) covers prerequisites, Caddy's local CA, the bootstrap login, and evaluator access.
+
+Use the [deployment guide](../deploy/README.md) for production hosting and required private configuration. The [console guide](../apps/console/README.md) lists identity settings. Builds need no runtime credentials:
 
 ```sh
 npm ci --ignore-scripts

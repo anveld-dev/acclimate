@@ -361,9 +361,25 @@ async fn enrollment(
     tx: &mut Transaction<'_, Postgres>,
     project: &str,
     integration: Uuid,
+    lock_integration: bool,
 ) -> ApiResult<PgRow> {
-    sqlx::query("SELECT e.*, i.enabled FROM connected_learning_enrollments e JOIN integrations i ON (i.project_id,i.id)=(e.project_id,e.integration_id) WHERE e.project_id=$1 AND e.integration_id=$2 FOR SHARE OF i")
-        .bind(project).bind(integration).fetch_optional(&mut **tx).await.map_err(db)?.ok_or_else(absent)
+    let lock = if lock_integration {
+        " FOR SHARE OF i"
+    } else {
+        ""
+    };
+    let query = format!(
+        "SELECT e.*, i.enabled FROM connected_learning_enrollments e
+         JOIN integrations i ON (i.project_id,i.id)=(e.project_id,e.integration_id)
+         WHERE e.project_id=$1 AND e.integration_id=$2{lock}"
+    );
+    sqlx::query(&query)
+        .bind(project)
+        .bind(integration)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(db)?
+        .ok_or_else(absent)
 }
 
 async fn enroll(
@@ -668,7 +684,7 @@ async fn inspect(
     h: HeaderMap,
 ) -> ApiResult<Json<Value>> {
     let mut tx = crate::auth::read_transaction(&s, &h, &project).await?;
-    let row = enrollment(&mut tx, &project, integration).await?;
+    let row = enrollment(&mut tx, &project, integration, false).await?;
     let include_audits = match learning_admin(&s, &h, &project) {
         Ok(admin) if !app_principal(&row, &admin.principal) => {
             crate::auth::authorize_transaction(&mut tx, &admin, &project, "admin")
@@ -998,7 +1014,7 @@ async fn work(
         &actor.principal,
     )
     .await?;
-    let row = enrollment(&mut tx, &project, integration).await?;
+    let row = enrollment(&mut tx, &project, integration, true).await?;
     let mut rechecks = Vec::new();
     let mut incident_replays = Vec::new();
     let mut field_replays = Vec::new();
@@ -1105,7 +1121,7 @@ pub(crate) async fn authorize_evaluator(
         return Ok(());
     };
     let integration = round.get("integration_id");
-    let row = enrollment(tx, project, integration).await?;
+    let row = enrollment(tx, project, integration, true).await?;
     if row.get::<String, _>("evaluator_principal") != principal {
         return Err(denied());
     }

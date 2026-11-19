@@ -11,6 +11,7 @@ import { defineEvaluation } from './definition.js';
 import { canonicalEvaluationJson, createEvaluationManifest } from './manifest.js';
 import { evaluationMain, evaluationReadMain } from './cli.js';
 import { EvaluationError } from './errors.js';
+import { pullHelp, pullMain } from './pull.js';
 import type { EvaluationManifestInput } from './manifest.js';
 import type { EvaluationCase, EvaluationDefinition, Json } from './types.js';
 import type { ReviewMapper } from './artifacts.js';
@@ -34,7 +35,8 @@ Run coverage to inspect bound sources and packages. status and verify-export run
   acclimate-eval compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) --live [--policy POLICY] [--json]
 
 Reuse RUN_NAME to recover the same change. Use describe for your public descriptor,
-doctor to check setup, or request, run, check, status, interrupt, export and verify-export.`;
+doctor to check setup, or request, run, check, status, interrupt, export and verify-export.
+Use pull to save a published bundle as a payload file to edit.`;
 
 const commandHelp: Record<string, string> = {
   compare: help,
@@ -48,6 +50,7 @@ const commandHelp: Record<string, string> = {
   export: 'export (--config CONFIG | --read-config READER) --handoff FILE --out DIRECTORY [--selection FILE]\nexport --config CONFIG --name RUN_NAME --out DIRECTORY [--selection FILE]',
   interrupt: 'interrupt --config CONFIG (--handoff FILE | --name RUN_NAME) --reason REASON',
   'verify-export': 'verify-export --manifest FILE [--read-config READER --handoff FILE]',
+  pull: pullHelp,
 };
 
 async function readCases(filename: string): Promise<EvaluationCase[]> {
@@ -238,6 +241,7 @@ export async function applicationMain(argv = process.argv.slice(2), directory = 
       argv = [...argv.slice(0, flag), ...argv.slice(flag + 2)];
     }
     if (argv[0] === 'verify-export' || argv[0] === 'status') return evaluationReadMain(argv);
+    if (argv[0] === 'pull') return pullMain(argv);
     installed = await loadApplication(directory, appPath);
     if (argv[0] === 'coverage') {
       if (argv.length !== 1)

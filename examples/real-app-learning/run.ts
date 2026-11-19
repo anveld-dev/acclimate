@@ -63,7 +63,7 @@ async function waitFor<T>(label: string, probe: () => Promise<T | undefined>): P
     }
     const found = await probe();
     if (found !== undefined) return found;
-    await delay(100, undefined, { signal: controller.signal });
+    await delay(1_000, undefined, { signal: controller.signal });
   }
 }
 
@@ -84,6 +84,7 @@ const fixtures = JSON.parse(
   execFileSync(python, [grader, '--cases'], { encoding: 'utf8' }),
 ) as Record<'development' | 'audit' | 'field', Case[]>;
 const expanded = process.env.LLM_REPLICATION === '40';
+const fiveAdmissions = expanded && process.env.LLM_PROPOSAL_ADMISSIONS === '5';
 const replication = expanded || process.env.LLM_REPLICATION === '1';
 if (replication) {
   fixtures.audit = JSON.parse(await readFile(path.join(home, 'replication-audit.json'), 'utf8'));
@@ -217,7 +218,8 @@ const adapter = createServer((req, res) => {
       messages.map((message) => message.content).join('\n'),
       label,
     );
-    JSON.parse(content);
+    const parsed = JSON.parse(content);
+    if (fiveAdmissions) console.log(JSON.stringify({ adapterResult: label, response: parsed }));
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content } }] }));
   })().catch((error: unknown) => {
@@ -405,7 +407,8 @@ try {
     installationId,
     automaticRollout: false,
     permittedPaths: ['AGENTS.md', 'context.md'],
-    maxProposalAdmissions: replication ? 1 : 3,
+    maxProposalAdmissions: fiveAdmissions ? 5 : replication ? 1 : 3,
+    ...(fiveAdmissions ? { maxCorrectionsPerRound: 1 } : {}),
     ...(replication
       ? {
           selectionPolicies: {
@@ -433,7 +436,17 @@ try {
     console.error('Driver:', String(error));
     controller.abort();
   });
-  const view = () => api<LearningEnrollmentStatus>('GET', learning(connection));
+  async function view() {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await api<LearningEnrollmentStatus>('GET', learning(connection));
+      } catch (error) {
+        if (!(error instanceof DOMException) || error.name !== 'TimeoutError' || attempt >= 2) throw error;
+        console.error('Enrollment status timed out. Retrying the read.');
+        await delay(1_000, undefined, { signal });
+      }
+    }
+  }
   const calibration = await waitFor('noise calibration', async () => {
     signal.throwIfAborted();
     const status = (await view()).noiseCalibration;
@@ -482,7 +495,7 @@ try {
       if (!reward) outcome.push({ task, argv, outcomeId });
       console.log(JSON.stringify({ field: task.caseId, reward }));
     }
-    for (const { task, argv, outcomeId } of outcome.slice(0, 3)) {
+    for (const { task, argv, outcomeId } of (fiveAdmissions ? outcome : outcome.slice(0, 3))) {
       const correction = await client('other', connection).reportLearningCorrection(
         project,
         connection,
@@ -495,6 +508,10 @@ try {
           },
         },
       );
+      if (fiveAdmissions) {
+        console.log(JSON.stringify({ correctionCase: task.caseId, correctionId: correction.correctionId, outcomeId }));
+        continue;
+      }
       const round = await waitFor('round for ' + correction.correctionId, async () => {
         signal.throwIfAborted();
         return (await view()).rounds.find(
@@ -504,6 +521,26 @@ try {
               (!expanded && item.state === 'developed')),
         );
       });
+      await recordRound(round);
+      if (round.state === 'awaiting_review') {
+        await reviewRound(round.id);
+        break;
+      }
+      if (replication || !(await view()).remainingAudits) break;
+    }
+    const rounds = fiveAdmissions ? await waitFor('five-admission experiment', async () => {
+      const status = await view();
+      if (status.rounds.some((item) => ['proposing', 'development', 'audit'].includes(item.state))) return undefined;
+      if (status.rounds.some((item) => item.state === 'awaiting_review') ||
+          status.stoppedAt || !status.remainingAudits ||
+          status.proposalAdmissions >= Math.min(5, outcome.length)) return status.rounds;
+      return undefined;
+    }) : [];
+    for (const round of rounds) await recordRound(round);
+    const review = rounds.find((item) => item.state === 'awaiting_review');
+    if (review) await reviewRound(review.id);
+
+    async function recordRound(round: LearningEnrollmentStatus['rounds'][number]) {
       console.log(JSON.stringify({ round }));
       for (const id of [
         round.developmentComparisonId,
@@ -521,30 +558,24 @@ try {
             proposal: await operator.getProposal(project, bundle.id, round.proposalId),
           }),
         );
-      if (round.state === 'awaiting_review') {
-        const decisionPath = path.join(scratch, 'operator-decision.json');
-        console.log(JSON.stringify({ reviewDecisionFile: decisionPath, roundId: round.id }));
-        const decision = await waitFor('operator review', async () => {
-          signal.throwIfAborted();
-          const data = await readFile(decisionPath, 'utf8').catch(
-            (error: NodeJS.ErrnoException) => {
-              if (error.code === 'ENOENT') return undefined;
-              throw error;
-            },
-          );
-          if (!data) return undefined;
-          const value = JSON.parse(data);
-          assert.equal(value.roundId, round.id);
-          assert.equal(typeof value.approve, 'boolean');
-          return value as { roundId: string; approve: boolean };
+    }
+
+    async function reviewRound(roundId: string) {
+      const decisionPath = path.join(scratch, 'operator-decision.json');
+      console.log(JSON.stringify({ reviewDecisionFile: decisionPath, roundId }));
+      const decision = await waitFor('operator review', async () => {
+        const data = await readFile(decisionPath, 'utf8').catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return undefined;
+          throw error;
         });
-        await api('POST', learning(connection) + '/rounds/' + round.id + '/review', {
-          approve: decision.approve,
-        });
-        console.log(JSON.stringify({ operatorDecision: decision }));
-        break;
-      }
-      if (replication || !(await view()).remainingAudits) break;
+        if (!data) return undefined;
+        const value = JSON.parse(data);
+        assert.equal(value.roundId, roundId);
+        assert.equal(typeof value.approve, 'boolean');
+        return value as { roundId: string; approve: boolean };
+      });
+      await api('POST', learning(connection) + '/rounds/' + roundId + '/review', { approve: decision.approve });
+      console.log(JSON.stringify({ operatorDecision: decision }));
     }
     console.log(JSON.stringify({ final: await view() }));
   }

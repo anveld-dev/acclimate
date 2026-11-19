@@ -13,8 +13,19 @@ import threading
 from contextlib import contextmanager
 
 
-class SetupError(Exception):
-    """An actionable startup error safe to print without private application data."""
+from ._evaluation_shared import EvaluationError
+
+
+class SetupError(EvaluationError):
+    """The application module could not be imported, or its exports are invalid.
+
+    ``code`` is ``application.invalid``, ``application.import_failed`` or
+    ``definition.invalid``. The original exception is chained as ``__cause__``.
+    """
+
+    def __init__(self, message: str, *, code: str = "application.invalid", field: str | None = None,
+                 reason: str | None = None, hint: str | None = None):
+        super().__init__(code, message=message, field=field, reason=reason, hint=hint)  # type: ignore[arg-type]
 
 
 class _BoundSource(importlib.machinery.SourceFileLoader):
@@ -155,7 +166,10 @@ def load_adapter(directory, selection):
             package = name if path.name == "__init__.py" else name.rpartition(".")[0]
             imported = set(_import_names(data, package))
         except (OSError, SyntaxError, ValueError) as error:
-            raise SetupError("Cannot read or parse the adapter's Python sources. Check the module and its local imports.") from error
+            location = f" ({path}:{error.lineno})" if isinstance(error, SyntaxError) and error.lineno else ""
+            raise SetupError("Cannot read or parse the adapter's Python sources" + location +
+                             f": {type(error).__name__}: {error}", code="application.import_failed",
+                             field=str(path)) from error
         if package and package != name:
             imported.add(package)
         for target in imported:
@@ -186,8 +200,17 @@ def load_adapter(directory, selection):
     with _bound_imports(files, root):
         try:
             adapter = importlib.import_module(module)
+        except SetupError:
+            raise
         except Exception as error:
-            raise SetupError("Could not import the selected adapter. Check its package imports and installed dependencies.") from error
+            # Name the exception the application raised, including its own code, so an
+            # ImportError or NameError in the user's module is visible without a debugger.
+            code = getattr(error, "code", None)
+            label = f" [{code}]" if type(code) is str and len(code) <= 64 else ""
+            detail = str(error).split("\n")[0][:500]
+            raise SetupError(f"Could not import the application module: {type(error).__name__}{label}: {detail}",
+                             code="application.import_failed", field=str(filename),
+                             hint="Fix the error your module raised while loading. Rerun with --verbose for the traceback.") from error
         digests = {name: hashlib.sha256(data).hexdigest() for name, (_, data) in files.items() if name != module}
         imported_files = sorted(os.path.relpath(path, filename.parent) for name, (path, _) in files.items() if name != module)
         digests.update(external_sources)

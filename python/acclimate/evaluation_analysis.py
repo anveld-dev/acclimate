@@ -10,6 +10,7 @@ from typing import Any, Literal, NotRequired, TypedDict
 
 from .evaluation_policy import EvidenceGaps, _add_gap, _scalar_gap, check_comparison
 from .types import Comparison, EvaluationDescriptor
+from ._evaluation_shared import EvaluationError
 
 
 class AnalysisMetric(TypedDict):
@@ -105,10 +106,10 @@ class ComparisonAnalysis(TypedDict):
     metrics: list[MetricAnalysis]
 
 
-class AnalysisError(ValueError):
+class AnalysisError(EvaluationError, ValueError):
     def __init__(self, code: str):
-        self.code = code
-        super().__init__("The analysis configuration or component observation is invalid or does not match trusted evidence.")
+        super().__init__(code, phase="policy",  # type: ignore[arg-type]
+            message="The analysis configuration or component observation is invalid or does not match trusted evidence.")
 
 
 def _record(value: Any) -> bool:

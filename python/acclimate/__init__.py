@@ -5,6 +5,10 @@ from .client import (
     ApiError as ApiError,
     TransportError as TransportError,
 )
+from .errors import (
+    AcclimateError as AcclimateError,
+    UsageError as UsageError,
+)
 from .delivery import (
     DeliveryError as DeliveryError,
     PreparedFiles as PreparedFiles,

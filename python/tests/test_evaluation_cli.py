@@ -174,7 +174,8 @@ class CommandTests(unittest.TestCase):
         self.assertNotIn("cases", value)
         status, _, error = self.invoke(["run", "--config", str(self.config), "--config", "PRIVATE_CANARY"])
         self.assertEqual(status, 1)
-        self.assertEqual(error["error"]["code"], "config.schema")
+        self.assertEqual(error["error"]["code"], "usage.invalid_flag")
+        self.assertEqual(error["error"]["field"], "--config")
         self.assertNotIn("PRIVATE_CANARY", json.dumps(error))
 
     def test_named_compare_exposes_reuse_and_resolves_for_followups(self):
@@ -242,13 +243,15 @@ class CommandTests(unittest.TestCase):
         args = ["compare", "--config", str(self.config), "--handoff", str(self.handoff), "--policy", str(self.policy)]
         def run(args, terminal):
             output, errors = io.StringIO(), io.StringIO()
-            with patch.object(output, "isatty", return_value=terminal), redirect_stdout(output), redirect_stderr(errors):
+            with patch.object(output, "isatty", return_value=terminal), patch.object(errors, "isatty", return_value=terminal), \
+                    redirect_stdout(output), redirect_stderr(errors):
                 code = evaluation_main(self.app, args)
             return code, output.getvalue(), errors.getvalue()
         with patch.object(type(self.app), "execution", new=property(lambda self: "live")):
             code, _, usage = run(args, True)
             self.assertEqual(code, 1)
-            self.assertIn("requires --live", usage)
+            self.assertIn("error[usage.missing_flag]", usage)
+            self.assertIn("Add --live", usage)
             self.assertIn("--bundle ID --channel CHANNEL", usage)
             self.assertNotIn(str(self.config), usage)
         code, _, usage = run(args + ["--name", "PRIVATE_CANARY"], True)
@@ -305,7 +308,7 @@ class CommandTests(unittest.TestCase):
         with patch.object(AcclimateClient, "report_comparison_policy_receipt", side_effect=TransportError()):
             code, result, _ = self.invoke(args)
         self.assertEqual((code, result["policy"]["verdict"], result["policyReceipt"]["status"]),
-                         (1, "pass", "unconfirmed"))
+                         (4, "pass", "unconfirmed"))
         self.assertEqual(len(self.policy_receipts), 0)
         code, result, _ = self.invoke(["check", "--read-config", str(self.reader), "--handoff",
                                       str(self.handoff), "--policy", str(self.policy)])
@@ -336,7 +339,7 @@ class CommandTests(unittest.TestCase):
 
     def test_lost_creation_recovers_original_before_drift_and_changed_payload_rejected(self):
         self.state["loseRequests"] = 3
-        self.assertEqual(self.invoke(self.request_args)[0], 3)
+        self.assertEqual(self.invoke(self.request_args)[0], 5)
         self.state["revision"] = "2"
         status, result, error = self.invoke(self.request_args)
         self.assertEqual(status, 0, error)
@@ -369,7 +372,7 @@ class CommandTests(unittest.TestCase):
         self.state["failGrade"] = True
         self.assertEqual(self.invoke(self.request_args)[0], 0)
         status, result, _ = self.invoke(["run", "--config", str(self.config), "--handoff", str(self.handoff)])
-        self.assertEqual(status, 2)
+        self.assertEqual(status, 4)
         self.assertEqual(result["status"], "failed")
         self.assertNotIn("PRIVATE_GRADER_CANARY", json.dumps(result))
         self.assertEqual(self.invoke(["check", "--config", str(self.config), "--handoff", str(self.handoff), "--policy", str(self.policy)])[0], 3)
@@ -377,7 +380,7 @@ class CommandTests(unittest.TestCase):
     def test_interrupted_request_never_invokes_callbacks(self):
         self.assertEqual(self.invoke(self.request_args)[0], 0)
         self.state["request"]["status"] = "interrupted"
-        self.assertEqual(self.invoke(["run", "--config", str(self.config), "--handoff", str(self.handoff)])[0], 3)
+        self.assertEqual(self.invoke(["run", "--config", str(self.config), "--handoff", str(self.handoff)])[0], 5)
         self.assertEqual(self.state["executions"], 0)
 
     def test_check_without_terminal_comparison_is_indeterminate_for_all_lifecycle_states(self):
@@ -397,7 +400,7 @@ class CommandTests(unittest.TestCase):
                 self.assertEqual(self.state["executions"],0)
                 self.assertIsNone(self.state["comparison"])
 
-    def test_committed_comparison_oversized_response_is_exit3_and_exact_retry_without_execution(self):
+    def test_committed_comparison_oversized_response_is_exit5_and_exact_retry_without_execution(self):
         self.assertEqual(self.invoke(self.request_args)[0],0)
         run=["run","--config",str(self.config),"--handoff",str(self.handoff)]
         handler_type=self.server.RequestHandlerClass
@@ -420,7 +423,7 @@ class CommandTests(unittest.TestCase):
                 return None
         with patch.object(handler_type,"reply",reply):
             status,result,error=self.invoke(run)
-            self.assertEqual(status,3)
+            self.assertEqual(status,5)
             self.assertIsNone(result)
             self.assertEqual(error["error"]["code"],"transport.response_too_large")
             self.assertEqual(error["error"]["executionState"],"report_saved")
@@ -461,30 +464,30 @@ class CommandTests(unittest.TestCase):
 
     def test_lost_candidate_then_channel_drift_refuses_rebase(self):
         self.state["loseDrafts"] = 3
-        self.assertEqual(self.invoke(self.request_args)[0], 3)
+        self.assertEqual(self.invoke(self.request_args)[0], 5)
         self.assertEqual(self.state["drafts"], 1)
         self.assertEqual(self.state["requests"], 0)
         self.state["revision"] = "2"
         status, _, error = self.invoke(self.request_args)
-        self.assertEqual(status, 3)
+        self.assertEqual(status, 5)
         self.assertEqual(error["error"]["code"], "request.base_conflict")
         self.assertEqual(self.state["drafts"], 1)
         self.assertEqual(self.state["requests"], 0)
 
     def test_missing_original_intent_does_not_regenerate_creation_keys(self):
         self.state["loseRequests"] = 3
-        self.assertEqual(self.invoke(self.request_args)[0], 3)
+        self.assertEqual(self.invoke(self.request_args)[0], 5)
         self.intent.unlink()
         status, _, error = self.invoke(self.request_args)
-        self.assertEqual(status, 3)
+        self.assertEqual(status, 5)
         self.assertEqual(error["error"]["code"], "journal.missing")
         self.assertEqual(self.state["drafts"], 1)
         self.assertEqual(self.state["requests"], 1)
 
-    def test_request_denial_uses_exit1_while_doctor_uses_exit2(self):
+    def test_request_denial_and_doctor_failed_check_both_use_setup_exit1(self):
         blocked = {"status": "blocked", "authorization": "denied", "checks": [{"status": "failed", "code": "auth.denied"}]}
         with patch("acclimate.evaluation_cli.preflight_evaluation", return_value=blocked):
-            self.assertEqual(self.invoke(["doctor", "--config", str(self.config), "--bundle", BUNDLE])[0], 2)
+            self.assertEqual(self.invoke(["doctor", "--config", str(self.config), "--bundle", BUNDLE])[0], 1)
             self.assertEqual(self.invoke(self.request_args)[0], 1)
         self.assertEqual(self.state["drafts"], 0)
         self.assertEqual(self.state["requests"], 0)
@@ -494,13 +497,13 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(status,0)
         self.assertEqual(result["status"],"ready")
         status,result,_=self.invoke(["doctor","--config",str(self.config),"--bundle",COMPARISON])
-        self.assertEqual(status,2)
+        self.assertEqual(status,1)
         self.assertEqual(result["checks"][-1]["code"],"bundle.missing")
         self.assertEqual(result["nextAction"],"fix_config")
         self.handoff.write_bytes(encoded({"schemaVersion":1,"serviceUrl":self.service,
             "projectId":"project","bundleId":BUNDLE,"requestId":REQUEST,"configuration":self.app.descriptor}))
         status,result,error=self.invoke(["doctor","--config",str(self.config),"--handoff",str(self.handoff)])
-        self.assertEqual(status,2)
+        self.assertEqual(status,1)
         self.assertEqual(result["checks"][-1]["code"],"request.missing")
         self.assertEqual(result["nextAction"],"fix_config")
         self.assertIsNone(error)
@@ -537,7 +540,7 @@ class CommandTests(unittest.TestCase):
 
     def test_creation_recovery_survives_same_principal_token_rotation(self):
         self.state["loseRequests"] = 3
-        self.assertEqual(self.invoke(self.request_args)[0], 3)
+        self.assertEqual(self.invoke(self.request_args)[0], 5)
         config = json.loads(self.config.read_bytes())
         config["evaluatorToken"] = "ROTATED_PRIVATE_CANARY"
         self.config.write_bytes(encoded(config))

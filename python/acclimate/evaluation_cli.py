@@ -5,7 +5,9 @@ The helper returns a process status; the application decides when to exit.
 from __future__ import annotations
 
 import json
+import os
 import re
+import traceback
 from pathlib import Path
 import signal
 import sys
@@ -13,7 +15,7 @@ import threading
 
 from .evaluation import preflight_evaluation, run_evaluation
 from ._evaluation_shared import (
-    _canonical_path,
+    _canonical_path, ERROR_CODES, EXIT_CODES, EvaluationUsageError, exit_code_for,
     EvaluationError, assert_descriptor, json_bytes, make_client, mutation_path,
     read_evaluator_config, read_reader_config, safe_error, validate_handoff,
     guided_uuid, DIGEST_RE,
@@ -24,13 +26,14 @@ from ._evaluation_cli_intents import (
 )
 from .evaluation_analysis import analyze_comparison
 from ._evaluation_policy_receipt import record_policy_receipt
-from .evaluation_policy import PolicyError, check_comparison, parse_evaluation_policy
+from .evaluation_policy import check_comparison, parse_evaluation_policy
 from .evaluation_artifacts import (
     export_review_evidence, verify_review_export, parse_artifact_selection,
 )
 
 _FLAGS = {
-    "compare": {"config", "handoff", "bundle", "channel", "payload", "name", "retry-after", "live", "policy", "json"},
+    "compare": {"config", "handoff", "bundle", "channel", "payload", "name", "retry-after", "live", "policy"},
+    "coverage": set(),
     "describe": set(),
     "doctor": {"config", "bundle", "handoff", "policy", "name"},
     "request": {"config", "bundle", "channel", "payload", "intent", "out", "policy"},
@@ -41,28 +44,61 @@ _FLAGS = {
     "export": {"config", "read-config", "handoff", "out", "selection", "name"},
     "verify-export": {"manifest", "read-config", "handoff"},
 }
+#: Flags every command accepts.
+_GLOBAL_FLAGS = {"json", "verbose"}
+_BOOLEAN_FLAGS = {"live", "json", "verbose"}
+#: Flags whose values are paths, resolved against the working directory.
+_PATH_FLAGS = {"config", "read-config", "handoff", "payload", "intent", "out", "policy", "selection", "manifest"}
+#: Commands that never import the application module.
+ADAPTER_FREE_COMMANDS = ("status", "verify-export", "interrupt")
+EVALUATOR_COMMANDS = tuple(_FLAGS)
 
 
-def _parse(argv):
-    if not argv or argv[0] not in _FLAGS:
-        raise EvaluationError("config.schema")
+def _commands():
+    return ", ".join(EVALUATOR_COMMANDS)
+
+
+def _flag_list(command):
+    return ", ".join("--" + name for name in sorted(_FLAGS[command] | _GLOBAL_FLAGS))
+
+
+def _usage_error(code, *, field=None, reason=None, hint=None):
+    return EvaluationUsageError(code, field=field, reason=reason, hint=hint)
+
+
+def parse_evaluator_arguments(argv, cwd=None):
+    """Parse evaluator arguments without loading application code or reading files."""
+    if not argv:
+        raise _usage_error("usage.missing_command", hint=f"Choose a command: {_commands()}. Run with --help for usage.")
+    if argv[0] not in _FLAGS:
+        raise _usage_error("usage.unknown_command", field=json.dumps(str(argv[0])[:80]),
+                           hint=f"Choose a command: {_commands()}. Run with --help for usage.")
     command, flags, position = argv[0], {}, 1
     while position < len(argv):
         argument = argv[position]
         if type(argument) is not str or not argument.startswith("--"):
-            raise EvaluationError("config.schema")
+            raise _usage_error("usage.invalid_flag", field=json.dumps(str(argument)[:80]),
+                               reason="Unexpected argument. Values must follow their flag.",
+                               hint=f"{command} accepts {_flag_list(command)}.")
         name = argument[2:]
-        if name not in _FLAGS[command] or name in flags:
-            raise EvaluationError("config.schema")
-        if name in ("live", "json"):
+        if name not in _FLAGS[command] and name not in _GLOBAL_FLAGS:
+            raise _usage_error("usage.unknown_flag", field=json.dumps(argument[:80]),
+                               hint=f"{command} accepts {_flag_list(command)}.")
+        if name in flags:
+            raise _usage_error("usage.invalid_flag", field=argument, reason=f"Supply {argument} once.")
+        if name in _BOOLEAN_FLAGS:
             flags[name] = True
         else:
             position += 1
             if position >= len(argv) or not argv[position] or argv[position].startswith("--"):
-                raise EvaluationError("config.schema")
-            flags[name] = argv[position]
+                raise _usage_error("usage.missing_flag", field=argument, reason=f"{argument} needs a value.")
+            value = argv[position]
+            flags[name] = os.path.join(cwd or os.getcwd(), value) if name in _PATH_FLAGS else value
         position += 1
     return command, flags
+
+
+_parse = parse_evaluator_arguments
 
 
 _COMPARE_USAGE = (
@@ -72,25 +108,33 @@ _COMPARE_USAGE = (
 )
 
 
-class _CompareUsageError(EvaluationError):
-    def __init__(self, hint):
-        super().__init__("config.schema")
-        self.hint = hint
-
-
 def _validate_compare_flags(flags, live):
     if live != (flags.get("live") is True):
-        raise _CompareUsageError("This evaluator requires --live." if live else "Omit --live for this evaluator.")
+        raise _usage_error("usage.missing_flag" if live else "usage.invalid_flag", field="--live",
+                           reason="This evaluator is live. Add --live to authorize model calls." if live
+                           else "This evaluator is model-free. Omit --live.")
     creation = ("bundle", "channel", "payload", "name", "retry-after")
-    if flags.get("handoff") and any(key in flags for key in creation):
-        raise _CompareUsageError("--handoff cannot be combined with candidate creation flags.")
-    if not flags.get("handoff") and bool(flags.get("name")) == bool(flags.get("retry-after")):
-        raise _CompareUsageError("Choose --name for a run or --retry-after for a fresh attempt.")
-    for key in ("config",) if flags.get("handoff") else ("config", "bundle", "channel", "payload"):
+    used = [key for key in creation if flags.get(key)]
+    if flags.get("handoff") and used:
+        raise _usage_error("usage.conflicting_flags", field="--" + used[0],
+                           reason="--handoff cannot be combined with candidate creation flags.", hint=_COMPARE_USAGE)
+    if not flags.get("config"):
+        raise _usage_error("usage.missing_flag", field="--config", hint=_COMPARE_USAGE)
+    if flags.get("handoff"):
+        return
+    if not used:
+        raise _usage_error("usage.missing_flag", field="--handoff", hint=_COMPARE_USAGE,
+                           reason="Supply --handoff FILE, or create a run with --bundle, --channel, --payload and --name RUN_NAME.")
+    for key in ("bundle", "channel", "payload"):
         if not flags.get(key):
-            raise _CompareUsageError("Missing --" + key + ".")
+            raise _usage_error("usage.missing_flag", field="--" + key, hint=_COMPARE_USAGE)
+    if bool(flags.get("name")) == bool(flags.get("retry-after")):
+        raise _usage_error("usage.conflicting_flags" if flags.get("name") else "usage.missing_flag", field="--name",
+                           hint=_COMPARE_USAGE,
+                           reason="Use --name or --retry-after, not both." if flags.get("name") else
+                           "Name the run with --name RUN_NAME, or repeat a finished run with --retry-after PRIOR_NAME.")
     if "name" in flags and not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", flags["name"]):
-        raise _CompareUsageError("--name requires 1–80 letters, digits, underscores or hyphens.")
+        raise _usage_error("usage.invalid_flag", field="--name", reason="Use 1–80 letters, digits, underscores or hyphens.")
 
 
 def _comparison_text(request, comparison, scores, policy, policy_requested):
@@ -135,23 +179,46 @@ def _comparison_text(request, comparison, scores, policy, policy_requested):
 def _required(flags, name):
     value = flags.get(name)
     if type(value) is not str or not value:
-        raise EvaluationError("config.schema")
+        raise _usage_error("usage.missing_flag", field="--" + name)
     return value
 
 
-def _named_handoff(journal_root, name):
+def _exactly_one(flags, first, second):
+    if not flags.get(first) and not flags.get(second):
+        raise _usage_error("usage.missing_flag", field="--" + first, reason=f"Supply --{first} or --{second}.")
+    if flags.get(first) and flags.get(second):
+        raise _usage_error("usage.conflicting_flags", field="--" + first, reason=f"Supply --{first} or --{second}, not both.")
+
+
+def _named_handoff(journal_root, name, flag="--name"):
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", name):
-        raise EvaluationError("config.schema")
+        raise _usage_error("usage.invalid_flag", field=flag, reason="Use 1–80 letters, digits, underscores or hyphens.")
     return _canonical_path(journal_root, alias_issue="journalAlias") / "comparisons" / name / "request.json"
 
 
+def _read_handoff(filename, flag, name=None):
+    """Read a handoff file. A missing file is handoff.missing, not a config problem."""
+    try:
+        if not os.path.lexists(filename):
+            raise EvaluationError("config.missing")
+        value = read_command_json(filename)
+    except EvaluationError as error:
+        if error.code == "config.missing":
+            raise EvaluationError("handoff.missing", field=flag,
+                reason=f"No run named {json.dumps(name)} in the journal." if name else None,
+                hint="Check the run name, or create the run with compare --name." if name else
+                "Download the handoff from the console, or create one with request --out.") from None
+        raise
+    return validate_handoff(value)
+
+
 def _handoff(flags):
-    return validate_handoff(read_command_json(_required(flags, "handoff")))
+    name = flags.get("run-name")
+    return _read_handoff(_required(flags, "handoff"), "--name" if name else "--handoff", name)
 
 
 def _connection(flags, handoff):
-    if bool(flags.get("config")) == bool(flags.get("read-config")):
-        raise EvaluationError("config.schema")
+    _exactly_one(flags, "config", "read-config")
     config = read_reader_config(_required(flags, "read-config")) if flags.get("read-config") else read_evaluator_config(_required(flags, "config"))
     if config["serviceUrl"] != handoff["serviceUrl"] or config["projectId"] != handoff["projectId"]:
         raise EvaluationError("version.binding_mismatch", phase="inspect")
@@ -208,13 +275,27 @@ def _read_progress(client, project_id, bundle_id, request):
 
 
 def _readiness_status(result):
+    """ready -> 0. An unreachable or unverified service -> 4. Any setup problem -> 1."""
     if result["status"] == "ready":
-        return 0
-    if any(check.get("code", "").startswith("config.") or check.get("code") in {"guided_target_unsupported", "definition.report_budget_exceeded", "internal.error"} for check in result.get("checks", [])):
-        return 1
-    if result.get("authorization") == "unverified" or any(check.get("status") == "unverified" for check in result.get("checks", [])):
-        return 3
-    return 2
+        return EXIT_CODES["ok"]
+    if any(check.get("code") == "service.unavailable" or check.get("status") == "unverified"
+           for check in result.get("checks", []) if check.get("code")):
+        return EXIT_CODES["infrastructure"]
+    return EXIT_CODES["usage"]
+
+
+def _run_status(evaluation):
+    """completed -> 0, failed (execution or infrastructure failure) -> 4, interrupted -> 5."""
+    return {"completed": EXIT_CODES["ok"], "failed": EXIT_CODES["infrastructure"],
+            "interrupted": EXIT_CODES["recovery"]}.get(evaluation["status"], EXIT_CODES["indeterminate"])
+
+
+def _failure_text(failure):
+    text = (f'First callback failure: {json.dumps(failure["caseId"], ensure_ascii=False)} [{failure["repetition"]}] '
+            f'{failure["side"]} · {failure["stage"]} · {failure["reason"]}')
+    if failure.get("diagnosticFile"):
+        text += "\n  Details (private, not uploaded): " + failure["diagnosticFile"]
+    return text
 
 
 def _run(app, flags, handoff):
@@ -239,7 +320,7 @@ def _comparison_binding(request):
 
 
 def _policy_exit(verdict):
-    return 0 if verdict == "pass" else 2 if verdict == "fail" else 3
+    return EXIT_CODES["ok"] if verdict == "pass" else EXIT_CODES["gate_failed"] if verdict == "fail" else EXIT_CODES["indeterminate"]
 
 
 def _create_request(app, flags, predecessor=None):
@@ -249,7 +330,7 @@ def _create_request(app, flags, predecessor=None):
     mutation_path("createDraft", {"projectId": config["projectId"], "bundleId": bundle_id, "channel": channel})
     preflight = preflight_evaluation(app=app, config_path=config_path, target={"bundleId": bundle_id})
     if preflight["status"] != "ready":
-        return 1, preflight
+        return _readiness_status(preflight), preflight
     return 0, create_request_from_intent(app=app, config=config, bundle_id=bundle_id, channel=channel,
         payload_file=_required(flags, "payload"), intent_path=_required(flags, "intent"), output_file=_required(flags, "out"), predecessor=predecessor)
 
@@ -257,17 +338,28 @@ def _create_request(app, flags, predecessor=None):
 def _dispatch(app, command, flags, review):
     if command == "describe":
         return 0, app.descriptor
+    if command == "coverage":
+        raise _usage_error("usage.unknown_command", field='"coverage"', hint="Run coverage through python -m acclimate.")
+    if command == "interrupt":
+        # Check every flag before reading any file.
+        config_path, reason = _required(flags, "config"), _required(flags, "reason")
+        handoff = _handoff(flags)
+        config = read_evaluator_config(config_path)
+        if config["serviceUrl"] != handoff["serviceUrl"] or config["projectId"] != handoff["projectId"]:
+            raise EvaluationError("version.binding_mismatch", field="--handoff",
+                                  reason="The handoff names a different service or workspace than the config.")
+        return 0, _safe_request(interrupt_from_intent(config, handoff, reason))
     if command == "verify-export":
         online = bool(flags.get("read-config") or flags.get("handoff"))
         if online and not (flags.get("read-config") and flags.get("handoff")):
-            raise EvaluationError("config.schema")
+            raise _usage_error("usage.missing_flag", field="--handoff" if flags.get("read-config") else "--read-config",
+                               reason="Online verification needs both --read-config and --handoff.")
         options = {"manifest_path": _required(flags, "manifest")}
         if online:
             options["online"] = {"readConfigPath": _required(flags, "read-config"), "expectedHandoff": _handoff(flags)}
         return 0, verify_review_export(**options)
     if command == "doctor":
-        if bool(flags.get("bundle")) == bool(flags.get("handoff")):
-            raise EvaluationError("config.schema")
+        _exactly_one(flags, "bundle", "handoff")
         if flags.get("policy"):
             parse_evaluation_policy(read_command_bytes(_required(flags, "policy")).decode(), app.descriptor)
         target = {"handoff": _handoff(flags)} if flags.get("handoff") else {"bundleId": _required(flags, "bundle")}
@@ -284,10 +376,11 @@ def _dispatch(app, command, flags, review):
             config = read_evaluator_config(_required(flags, "config"))
             predecessor = None
             if flags.get("retry-after"):
-                handoff_file = _named_handoff(config["journalRoot"], flags["retry-after"])
-                prior = validate_handoff(read_command_json(handoff_file))
+                handoff_file = _named_handoff(config["journalRoot"], flags["retry-after"], "--retry-after")
+                prior = _read_handoff(handoff_file, "--retry-after", flags["retry-after"])
                 if prior["bundleId"] != flags["bundle"]:
-                    raise EvaluationError("request.intent_mismatch")
+                    raise EvaluationError("request.intent_mismatch", field="--bundle",
+                                          reason="The prior run used a different bundle.")
                 client, project_id = _connection(flags, prior)
                 request = client.get_evaluation(project_id, prior["bundleId"], prior["requestId"])
                 _assert_request(request, prior)
@@ -307,11 +400,14 @@ def _dispatch(app, command, flags, review):
         if flags.get("policy"):
             parse_evaluation_policy(read_command_bytes(_required(flags, "policy")).decode(), app.descriptor)
         return _create_request(app, flags)
+    if command == "status":
+        _exactly_one(flags, "config", "read-config")
     handoff = _handoff(flags)
     if command == "run" or comparing:
         result = _run(app, flags, handoff)
         evaluation = result["evaluation"]
-        status = 0 if evaluation["status"] == "completed" else 2 if evaluation["status"] == "failed" else 3
+        status = _run_status(evaluation)
+        failure = result.get("firstCallbackFailure")
         if comparing:
             scores, policy_result = None, None
             if policy:
@@ -329,35 +425,35 @@ def _dispatch(app, command, flags, review):
                     status = _policy_exit(policy_result["verdict"])
             receipt = record_policy_receipt(_connection(flags, handoff)[0], handoff, policy_result) if policy_result else None
             if receipt and receipt["status"] == "unconfirmed" and status == 0:
-                status = 1
+                status = EXIT_CODES["infrastructure"]
             run_name = flags.get("name")
             invocation = {"callbacksStarted": result["callbacksStarted"], "reusedEvidence": result["reusedEvidence"]}
             if terminal:
                 summary = _comparison_text(evaluation, result.get("comparison"), scores, policy_result, bool(policy))
                 activity = ("Reused saved evidence. No execution callbacks started." if result["reusedEvidence"]
                             else f'Execution callbacks started this time: {result["callbacksStarted"]}.')
+                summary += "\n" + activity
+                if failure:
+                    summary += "\n" + _failure_text(failure)
                 if receipt:
                     summary += ("\nPolicy receipt recorded for release review." if receipt["status"] == "recorded" else
                                 "\nPolicy receipt unconfirmed. Retry check with the evaluator config.")
-                return status, summary + "\n" + activity + ("\nRun handle: --name " + run_name if run_name else "")
-            return status, {**_safe_request(evaluation), "invocation": invocation, **({"runName": run_name} if run_name else {}),
+                return status, summary + ("\nRun handle: --name " + run_name if run_name else "")
+            return status, {**_safe_request(evaluation), "invocation": invocation,
+                            **({"firstCallbackFailure": failure} if failure else {}),
+                            **({"runName": run_name} if run_name else {}),
                             "parentVersionId": evaluation["parentVersionId"],
                             "candidateVersionId": evaluation["candidateVersionId"], "candidateDigest": evaluation["candidateDigest"],
                             "scores": scores, "policy": policy_result, **({"policyReceipt": receipt} if receipt else {})}
-        return status, {**_safe_request(evaluation), "executionState": result["executionState"]}
+        return status, {**_safe_request(evaluation), "executionState": result["executionState"],
+                        **({"firstCallbackFailure": failure} if failure else {})}
     if command == "export":
-        if bool(flags.get("config")) == bool(flags.get("read-config")):
-            raise EvaluationError("config.schema")
+        _exactly_one(flags, "config", "read-config")
         selection = parse_artifact_selection(read_command_json(_required(flags, "selection"))) if flags.get("selection") else None
         mapper = review.get("to_review_artifact") if review else None
         result = export_review_evidence(config_path=flags.get("config"), read_config_path=flags.get("read-config"),
             handoff=handoff, output_directory=_required(flags, "out"), selection=selection, to_review_artifact=mapper)
         return 0, {key: result[key] for key in ("schemaVersion", "status", "localInspection", "selection")}
-    if command == "interrupt":
-        config = read_evaluator_config(_required(flags, "config"))
-        if config["serviceUrl"] != handoff["serviceUrl"] or config["projectId"] != handoff["projectId"]:
-            raise EvaluationError("version.binding_mismatch")
-        return 0, _safe_request(interrupt_from_intent(config, handoff, _required(flags, "reason")))
     if command == "check":
         policy = parse_evaluation_policy(read_command_bytes(_required(flags, "policy")).decode(), app.descriptor)
         client, project_id = _connection(flags, handoff)
@@ -374,11 +470,112 @@ def _dispatch(app, command, flags, review):
             expected_binding=_comparison_binding(request),
             policy=policy["policy"], policy_digest=policy["sha256"])
         receipt = record_policy_receipt(client, handoff, verdict) if flags.get("config") else {"status": "read_only"}
-        return _policy_exit(verdict["verdict"]) or int(receipt["status"] == "unconfirmed"), {**verdict, "policyReceipt": receipt}
+        return _policy_exit(verdict["verdict"]) or (EXIT_CODES["infrastructure"] if receipt["status"] == "unconfirmed" else 0), {**verdict, "policyReceipt": receipt}
     client, project_id = _connection(flags, handoff)
     request = client.get_evaluation(project_id, handoff["bundleId"], handoff["requestId"])
     _assert_request(request, handoff)
     return 0, {**_safe_request(request), "progress": _read_progress(client, project_id, handoff["bundleId"], request)}
+
+
+_RECOVERY_HINTS = {
+    "request.intent_mismatch": "Restore the original evaluator and candidate to recover this run. To measure a changed evaluator on the same settled candidate, replace --name with --retry-after and the prior name.",
+    "request.base_conflict": "The published parent changed. Review the new parent and choose a new name for a comparison against it.",
+    "evidence.not_terminal": "Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison.",
+    "policy.invalid": "Use the editable quality-policy.example.json from the evaluator starter or copy the policy in the getting-started guide.",
+    "config.missing": "Check the --config path. Relative paths resolve against the current directory.",
+}
+_FORWARDED_CODES = {"policy.invalid", "policy.inventory_incompatible", "evidence.identity_mismatch", "evidence.malformed",
+                    "artifact.missing", "artifact.hash_mismatch", "artifact.integrity", "artifact.selection_invalid",
+                    "artifact.mapper_failed"}
+
+
+def verbose_requested(argv) -> bool:
+    """True when --verbose was passed or ACCLIMATE_DEBUG is set to a truthy value."""
+    debug = os.environ.get("ACCLIMATE_DEBUG", "")
+    return "--verbose" in argv or (bool(debug) and debug.lower() not in ("0", "false", "no"))
+
+
+def _describe_cause(cause):
+    if cause is None:
+        return None
+    message = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", str(cause)).split("\n")[0][:1000]
+    described = {"name": type(cause).__name__[:128], "message": message}
+    code = getattr(cause, "code", None)
+    if type(code) is str and re.fullmatch(r"[A-Za-z0-9_.:-]{1,64}", code):
+        described["code"] = code
+    return described
+
+
+def report_evaluator_error(error, argv, command="invalid") -> int:
+    """Print an error for a local evaluator command and return its exit code.
+
+    On a terminal, stderr gets readable text; otherwise, or with --json, one JSON line.
+    --verbose or ACCLIMATE_DEBUG=1 adds the traceback and the chained cause.
+    """
+    if not isinstance(error, EvaluationError) and getattr(error, "code", None) in _FORWARDED_CODES:
+        error = EvaluationError(error.code, phase="policy" if command == "check" or error.code.startswith("policy.") else "export",
+                                missing_fields=(getattr(error, "diagnostic", None) or {}).get("missingFields"))
+    safe = safe_error(error, phase="configure")
+    diagnostic = dict(safe.diagnostic)
+    hint = diagnostic.get("hint")
+    if hint is None and (command == "compare" or diagnostic["code"] in ("policy.invalid", "config.missing")):
+        hint = _RECOVERY_HINTS.get(diagnostic["code"])
+    message = str(safe) if isinstance(error, EvaluationError) else ERROR_CODES.get(diagnostic["code"], ERROR_CODES["internal.error"])[0]
+    # An unexpected exception is itself the cause; an evaluator error names its chained cause.
+    cause = error.__cause__ if isinstance(error, EvaluationError) else error
+    first_cause = _describe_cause(cause)
+    verbose = verbose_requested(argv)
+    public = {**diagnostic, "message": message, **({"hint": hint} if hint else {}),
+              **({"cause": first_cause} if first_cause else {})}
+    if sys.stderr.isatty() and "--json" not in argv:
+        lines = [f'error[{diagnostic["code"]}]: {message}']
+        if diagnostic.get("field") and diagnostic["field"] not in message:
+            lines.append("  field: " + diagnostic["field"])
+        if diagnostic.get("reason") and diagnostic["reason"] not in message:
+            lines.append("  reason: " + diagnostic["reason"])
+        if diagnostic.get("missingFields"):
+            lines.append("  missing fields: " + ", ".join(diagnostic["missingFields"]))
+        if diagnostic.get("serviceUrl"):
+            lines.append("  service: " + diagnostic["serviceUrl"])
+        if first_cause:
+            lines.append("  caused by: " + first_cause["name"] + (f' [{first_cause["code"]}]' if "code" in first_cause else "")
+                         + ": " + first_cause["message"])
+        if hint:
+            lines.append("  hint: " + hint.replace("\n", "\n        "))
+        elif command == "compare" and diagnostic["code"].startswith("usage."):
+            lines.append("  usage:\n    " + _COMPARE_USAGE.replace("\n", "\n    "))
+        lines.append("  next: " + diagnostic["nextAction"])
+        if verbose:
+            lines.extend(["", "".join(traceback.format_exception(error)).rstrip()])
+        elif first_cause:
+            lines.append("  Rerun with --verbose or ACCLIMATE_DEBUG=1 for the traceback.")
+        sys.stderr.write("\n".join(lines) + "\n")
+    else:
+        record = {"schemaVersion": 1, "command": command, "error": public}
+        if verbose:
+            record["traceback"] = "".join(traceback.format_exception(error))
+        sys.stderr.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return exit_code_for(diagnostic)
+
+
+def sdk_version() -> str:
+    """The installed SDK version, or the source checkout's version."""
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        return version("acclimate-sdk")
+    except PackageNotFoundError:
+        pass
+    declared = getattr(sys.modules.get(__package__ or "acclimate"), "__version__", None)
+    if isinstance(declared, str):
+        return declared
+    try:
+        project = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+        match = re.search(r'^version\s*=\s*"([^"]+)"', project, re.M)
+        if match:
+            return match.group(1)
+    except OSError:
+        pass
+    return "unknown"
 
 
 def evaluation_main(app, argv=None, *, review=None) -> int:
@@ -386,12 +583,17 @@ def evaluation_main(app, argv=None, *, review=None) -> int:
     command = "invalid"
     args = list(sys.argv[1:] if argv is None else argv)
     try:
-        command, flags = _parse(args)
+        if args in (["--version"], ["-V"]):
+            sys.stdout.write(sdk_version() + "\n")
+            return EXIT_CODES["ok"]
+        command, flags = parse_evaluator_arguments(args)
         if command != "compare" and flags.get("name"):
             if flags.get("handoff") or flags.get("read-config"):
-                raise EvaluationError("config.schema")
+                raise _usage_error("usage.conflicting_flags", field="--name",
+                                   reason="--name uses the evaluator config and cannot be combined with --handoff or --read-config.")
             config = read_evaluator_config(_required(flags, "config"))
             flags["handoff"] = str(_named_handoff(config["journalRoot"], flags["name"]))
+            flags["run-name"] = flags["name"]
         status, result = _dispatch(app, command, flags, review)
         output = result.encode("utf-8") if command == "compare" and isinstance(result, str) else json_bytes(result)
         if len(output) > 4 * 1024 * 1024:
@@ -401,29 +603,4 @@ def evaluation_main(app, argv=None, *, review=None) -> int:
     except KeyboardInterrupt:
         return 130
     except Exception as error:
-        missing = error.diagnostic.get("missingFields") if isinstance(error, PolicyError) else None
-        codes = {"policy.invalid", "policy.inventory_incompatible", "evidence.identity_mismatch", "evidence.malformed", "artifact.missing", "artifact.hash_mismatch", "artifact.integrity", "artifact.selection_invalid", "artifact.mapper_failed"}
-        if not isinstance(error, EvaluationError) and getattr(error, "code", None) in codes:
-            error = EvaluationError(error.code, phase="policy" if command == "check" or error.code.startswith("policy.") else "export")
-        diagnostic = safe_error(error).diagnostic
-        hints = {
-            "request.intent_mismatch": "Restore the original evaluator and candidate to recover this run. To measure a changed evaluator on the same settled candidate, replace --name with --retry-after and the prior name.",
-            "request.base_conflict": "The published parent changed. Review the new parent and choose a new name for a comparison against it.",
-            "evidence.not_terminal": "Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison.",
-            "policy.invalid": "Use the editable quality-policy.example.json from the evaluator starter or copy the policy in the getting-started guide.",
-        }
-        if (command == "compare" or diagnostic["code"] == "policy.invalid") and diagnostic["code"] in hints:
-            diagnostic = {**diagnostic, "hint": hints[diagnostic["code"]]}
-        if missing:
-            diagnostic = {**diagnostic, "missingFields": missing}
-        if (args[:1] == ["compare"] and sys.stdout.isatty() and "--json" not in args
-                and (command == "invalid" or isinstance(error, _CompareUsageError))):
-            hint = error.hint if isinstance(error, _CompareUsageError) else "Invalid compare flags."
-            sys.stderr.write(hint + "\n" + _COMPARE_USAGE + "\n")
-        else:
-            sys.stderr.write(json_bytes({"schemaVersion": 1, "command": command, "error": diagnostic}).decode() + "\n")
-        if diagnostic["code"] in {"execution.uncertain", "submission.unconfirmed", "journal.busy", "journal.foreign", "journal.missing", "journal.relocated", "journal.ownership_lost", "request.interrupted", "request.base_conflict", "evidence.not_terminal"} or diagnostic.get("executionState") in {"may_have_started", "report_saved"}:
-            return 3
-        if command == "export" and diagnostic["code"] == "artifact.missing":
-            return 3
-        return 1
+        return report_evaluator_error(error, args, command)

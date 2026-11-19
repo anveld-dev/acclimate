@@ -6,6 +6,8 @@ import math
 import time
 import uuid
 
+from .errors import UsageError
+
 
 def _timestamp(seconds):
     return datetime.fromtimestamp(seconds, timezone.utc).isoformat().replace("+00:00", "Z")
@@ -13,14 +15,14 @@ def _timestamp(seconds):
 
 def _deadline(timeout):
     if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 <= timeout <= 30:
-        raise ValueError("timeout must be between 0 and 30 seconds")
+        raise UsageError("timeout must be between 0 and 30 seconds")
     return time.monotonic() + timeout
 
 
 class DeliveryReporter:
     def __init__(self, client, project_id, integration_id, *, max_queue=100, clock=time.time):
         if type(max_queue) is not int or not 1 <= max_queue <= 1000:
-            raise ValueError("max_queue must be 1..1000")
+            raise UsageError("max_queue must be 1..1000")
         self.client, self.project_id, self.integration_id = client, project_id, integration_id
         self.max_queue, self.clock = max_queue, clock
         self._ready, self._failed = deque(), deque()
@@ -31,7 +33,7 @@ class DeliveryReporter:
 
     def bind(self, bundle_id, bundle, source):
         if source not in ("network", "cache", "offline"):
-            raise ValueError("invalid receipt source")
+            raise UsageError("invalid receipt source")
         return BoundDeliveryReporter(self, bundle_id, bundle, source)
 
     def _expire(self):
@@ -130,10 +132,10 @@ class BoundDeliveryReporter:
 
     def _make_receipt(self, stage):
         if stage not in ("resolved", "downloaded", "verified", "prepared", "started"):
-            raise ValueError("invalid receipt stage")
+            raise UsageError("invalid receipt stage")
         resolution = self.bundle.get("resolution")
         if stage == "resolved" and resolution is None or stage == "downloaded" and self.source != "network":
-            raise ValueError("impossible receipt stage/source")
+            raise UsageError("impossible receipt stage/source")
         r = self.reporter
         receipt = dict(eventId=str(uuid.uuid4()), integrationId=r.integration_id,
                        projectId=r.project_id, bundleId=self.bundle_id,

@@ -1,11 +1,30 @@
 import unittest
+import json
 import tempfile
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 from scripts.bdd.coverage import assess, catalog
+from scripts.bdd.run import run_behave
 
 class CoverageTests(unittest.TestCase):
+    def test_parallel_report_retains_both_groups_and_propagates_worker_errors(self):
+        for worker_code in [0, 1]:
+            with self.subTest(worker_code=worker_code), tempfile.TemporaryDirectory() as temporary:
+                out = Path(temporary)
+
+                def worker(command, **kwargs):
+                    console = '--include' in command
+                    feature = 'console' if console else 'other'
+                    Path(command[-1]).write_text(json.dumps([{'name': feature}]))
+                    return subprocess.CompletedProcess(command, worker_code if console else 0, stdout='')
+
+                with patch('scripts.bdd.run.subprocess.run', side_effect=worker):
+                    self.assertEqual(run_behave(['behave'], out, True), worker_code)
+                self.assertCountEqual(json.loads((out / 'results.json').read_text()),
+                                      [{'name': 'console'}, {'name': 'other'}])
+
     def test_import_without_site_packages_does_not_reexecute_the_behavior_runner(self):
         root = Path(__file__).resolve().parents[2]
         result = subprocess.run([sys.executable, '-S', '-c',

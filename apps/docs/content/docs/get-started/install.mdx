@@ -1,9 +1,26 @@
 ---
 title: Install the SDKs
-description: Install an operator-distributed TypeScript SDK tarball or Python wheel in your application.
+description: Verify and install an Acclimate TypeScript SDK tarball or Python wheel.
 ---
 
-Install a verified Acclimate release in the environment that runs your agent. Ask your workspace operator for the release manifest, artifacts, and `SHA256SUMS`. Verify the files against the checksums before installing SDKs or extracting starter archives. Distribution is operator-managed.
+## Get a release
+
+**Download a published release.** Choose a version on the [GitHub Releases page](https://github.com/anveld-dev/acclimate/releases). Download the attached assets into one directory, including `manifest.json`, `SHA256SUMS`, and every file listed in `SHA256SUMS`. Your workspace operator can also distribute these files directly.
+
+**Build from a checkout.** From the repository root, use Node.js 22.22 or later and Python 3.11 or later to build and check a release against isolated consumers.
+
+```sh
+npm ci --ignore-scripts
+npm run pack:verify
+```
+
+The command writes the SDK and plugin tarballs, Python wheel, starter archives, manifest and checksums to `artifacts/releases/<version>/`. To build the same version again, pass `-- --output /path/to/new-release` to `npm run pack:verify`.
+
+## Verify and install
+
+From the release directory, verify the files before installing an SDK or extracting a starter. On Linux, run `sha256sum --check SHA256SUMS`. On macOS, run `shasum -a 256 --check SHA256SUMS`.
+
+Install the SDK offline in the environment that runs your agent.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">

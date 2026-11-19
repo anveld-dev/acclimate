@@ -1,0 +1,184 @@
+# Evaluation and development. Start with npm run local:up to provision configuration.
+name: acclimate-local
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: acclimate
+      POSTGRES_DB: acclimate
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U acclimate -d acclimate"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  service:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    env_file:
+      - path: ./.local/stack/service.env
+        required: false
+    environment:
+      ACCLIMATE_BIND: 127.0.0.1:3000
+      SSL_CERT_FILE: /run/acclimate-local/root.crt
+    volumes:
+      - type: bind
+        source: ./.local/stack/root.crt
+        target: /run/acclimate-local/root.crt
+        read_only: true
+        bind:
+          create_host_path: false
+    network_mode: service:proxy
+    depends_on:
+      postgres:
+        condition: service_healthy
+      proxy:
+        condition: service_healthy
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:3000/ready"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 30s
+
+  console:
+    build:
+      context: .
+      dockerfile: deploy/console.Dockerfile
+    env_file:
+      - path: ./.local/stack/console.env
+        required: false
+    environment:
+      HOST: 127.0.0.1
+      PORT: "3100"
+      NODE_EXTRA_CA_CERTS: /run/acclimate-local/root.crt
+    volumes:
+      - type: bind
+        source: ./.local/stack/root.crt
+        target: /run/acclimate-local/root.crt
+        read_only: true
+        bind:
+          create_host_path: false
+    network_mode: service:proxy
+    depends_on:
+      service:
+        condition: service_healthy
+      proxy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "/app/deploy/console-probe.mjs"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 30s
+
+  keycloak-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: keycloak
+      POSTGRES_DB: keycloak
+      POSTGRES_PASSWORD_FILE: /run/secrets/keycloak_postgres_password
+    secrets: [keycloak_postgres_password]
+    volumes: [keycloak-postgres-data:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  keycloak:
+    build:
+      context: .
+      dockerfile: deploy/keycloak/Dockerfile
+    command: ["start", "--optimized", "--import-realm"]
+    env_file:
+      - path: ./.local/stack/keycloak.env
+        required: false
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_HOSTNAME: https://127.0.0.1:${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_MANAGEMENT_SCHEME: http
+      KC_CACHE: local
+    volumes:
+      - ./deploy/keycloak/acclimate-realm.json:/opt/keycloak/data/import/acclimate-realm.json:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "/bin/bash", "/opt/keycloak/bin/acclimate-health.sh"]
+      interval: 5s
+      timeout: 4s
+      retries: 24
+      start_period: 90s
+
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    environment:
+      MP_DATABASE: /data/messages.db
+      MP_MAX_MESSAGES: "1000"
+      MP_MAX_MESSAGE_SIZE: "5"
+      MP_DISABLE_VERSION_CHECK: "true"
+      MP_BLOCK_REMOTE_CSS_AND_FONTS: "true"
+      MP_ALLOWED_HOSTS: localhost,127.0.0.1,mailpit
+    ports:
+      - "127.0.0.1:${ACCLIMATE_LOCAL_MAIL_PORT:-8025}:8025"
+    volumes: [mailpit-data:/data]
+    networks: [backend, edge]
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  proxy:
+    image: caddy:2-alpine
+    environment:
+      ACCLIMATE_LOCAL_CONSOLE_PORT: ${ACCLIMATE_LOCAL_CONSOLE_PORT:-3443}
+      ACCLIMATE_LOCAL_API_PORT: ${ACCLIMATE_LOCAL_API_PORT:-3444}
+      ACCLIMATE_LOCAL_KEYCLOAK_PORT: ${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}
+    volumes:
+      - ./deploy/local/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "127.0.0.1:${ACCLIMATE_LOCAL_CONSOLE_PORT:-3443}:${ACCLIMATE_LOCAL_CONSOLE_PORT:-3443}"
+      - "127.0.0.1:${ACCLIMATE_LOCAL_API_PORT:-3444}:${ACCLIMATE_LOCAL_API_PORT:-3444}"
+      - "127.0.0.1:${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}:${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}"
+    networks: [backend, edge]
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+networks:
+  backend:
+    internal: true
+  edge: {}
+volumes:
+  postgres-data:
+  keycloak-postgres-data:
+  mailpit-data:
+  caddy-data:
+  caddy-config:
+secrets:
+  postgres_password:
+    file: ./.local/stack/postgres-password
+  keycloak_postgres_password:
+    file: ./.local/stack/keycloak-postgres-password

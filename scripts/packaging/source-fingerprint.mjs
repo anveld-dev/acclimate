@@ -9,6 +9,9 @@ const roots = [
   'scripts/packaging', 'src', 'migrations',
 ];
 const manifests = [
+  'LICENSE', 'python/LICENSE',
+  'packages/sdk/LICENSE', 'packages/codex-plugin/LICENSE', 'packages/claude-plugin/LICENSE',
+  'packages/pi-plugin/LICENSE', 'packages/cursor-plugin/LICENSE',
   'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json',
   'packages/sdk/package.json', 'packages/codex-plugin/package.json',
   'packages/claude-plugin/package.json', 'packages/pi-plugin/package.json',

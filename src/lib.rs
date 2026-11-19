@@ -298,6 +298,18 @@ pub struct OpenAiModel {
     model: String,
     critic: Option<Box<Self>>,
 }
+
+fn validate_proposer_model(value: &str) -> Result<&str, String> {
+    let model = value.trim();
+    if model.is_empty() || model.len() > 256 || value.chars().any(char::is_control) {
+        return Err(
+            "ACCLIMATE_MODEL must be nonempty, at most 256 bytes after trimming, and contain no control characters"
+                .into(),
+        );
+    }
+    Ok(model)
+}
+
 impl OpenAiModel {
     pub fn from_env() -> Result<Option<Self>, String> {
         let Ok(endpoint) = std::env::var("ACCLIMATE_MODEL_ENDPOINT") else {
@@ -307,12 +319,7 @@ impl OpenAiModel {
             .map_err(|_| "ACCLIMATE_MODEL_TOKEN required".to_string())?;
         let model =
             std::env::var("ACCLIMATE_MODEL").map_err(|_| "ACCLIMATE_MODEL required".to_string())?;
-        if !matches!(
-            model.as_str(),
-            "gpt-6.2-sol" | "gpt-6-luna" | "gpt-5.6-luna"
-        ) {
-            return Err("ACCLIMATE_MODEL must be gpt-6.2-sol, gpt-6-luna, or gpt-5.6-luna".into());
-        }
+        let model = validate_proposer_model(&model)?.to_owned();
         let critic_endpoint =
             std::env::var("ACCLIMATE_CRITIC_ENDPOINT").unwrap_or_else(|_| endpoint.clone());
         let critic_model =
@@ -491,6 +498,27 @@ impl OpenAiModel {
 mod validation_tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn proposer_model_accepts_trimmed_gateway_names() {
+        for model in ["gpt-6.2-sol", "anthropic/claude-sonnet", "llama3.2:latest"] {
+            assert_eq!(
+                validate_proposer_model(&format!(" {model} ")).unwrap(),
+                model
+            );
+        }
+        let longest = "é".repeat(128);
+        assert_eq!(validate_proposer_model(&longest).unwrap(), longest);
+    }
+
+    #[test]
+    fn proposer_model_rejects_blank_oversized_and_control_characters() {
+        for model in ["", "  ", "gateway/\u{0085}model", "model\n", "\tmodel"] {
+            assert!(validate_proposer_model(model).is_err());
+        }
+        assert!(validate_proposer_model(&"é".repeat(129)).is_err());
+    }
+
     #[test]
     fn exact_fixture_encoding_and_digest() {
         let payload: BundlePayload =

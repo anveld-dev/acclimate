@@ -11,6 +11,12 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 
+def mail_settings(smtp_host):
+    return dict(smtpServer=dict(host=smtp_host, port='1025', **{'from': 'noreply@acclimate.local'},
+        fromDisplayName='Acclimate', ssl='false', starttls='false', auth='false'),
+        registrationAllowed=True, registrationEmailAsUsername=True, verifyEmail=True, resetPasswordAllowed=True)
+
+
 def configure(server, realm, username, password, smtp_host='127.0.0.1'):
     parsed = urlsplit(server)
     if parsed.scheme != 'http' or parsed.hostname not in ('localhost', '127.0.0.1') or parsed.path not in ('', '/'):
@@ -22,9 +28,7 @@ def configure(server, realm, username, password, smtp_host='127.0.0.1'):
         token = json.load(response)['access_token']
     headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}
     url = server + '/admin/realms/' + realm
-    settings = dict(smtpServer=dict(host=smtp_host, port='1025', **{'from': 'noreply@acclimate.local'},
-        fromDisplayName='Acclimate', ssl='false', starttls='false', auth='false'),
-        registrationAllowed=True, registrationEmailAsUsername=True, verifyEmail=True, resetPasswordAllowed=True)
+    settings = mail_settings(smtp_host)
     with urlopen(Request(url, data=json.dumps(settings).encode(), method='PUT', headers=headers), timeout=15) as response:
         assert response.status == 204
     with urlopen(Request(url, headers=headers), timeout=15) as response:

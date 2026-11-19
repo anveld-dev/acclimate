@@ -58,7 +58,8 @@ def main():
                   'aggregation':'equal-case-means','minimumMeanImprovement':0.5,
                   'maximumCaseRegression':0,'candidateThreshold':1,
                   'requiredCases':['compromised-account','ordinary-issue'],
-                  'maximumCandidateTaskFailures':0,'cost':{'maximumCandidateUsd':0}}
+                  'maximumCandidateTaskFailures':0,'cost':{'maximumCandidateUsd':0},
+                  'inference':{'method':'none'}}
         f.write_json(app/'quality-policy.json', policy)
         cli = [shutil.which('node'), str(app/'acclimate-eval.mjs')]
         command_steps = []

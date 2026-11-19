@@ -216,7 +216,9 @@ def main():
             'aggregation': 'equal-case-means', 'minimumMeanImprovement': 0.3,
             'maximumCaseRegression': 0, 'candidateThreshold': 1,
             'requiredCases': ['outage', 'negated', 'routine'], 'maximumCandidateTaskFailures': 0,
-            'cost': {'maximumCandidateUsd': 0}}
+            'cost': {'maximumCandidateUsd': 0},
+            # Three saved cases: a point-estimate check; the paired-t default needs 10.
+            'inference': {'method': 'none'}}
         f.write_json(app / 'quality-policy.json', policy)
         f.run(['node', 'node_modules/typescript/bin/tsc', '--project', 'tsconfig.json'], cwd=app)
         command = ['node', 'dist/app.js']

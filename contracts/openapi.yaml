@@ -9240,7 +9240,7 @@
           "checks": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 16,
+            "maxItems": 2048,
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -9262,6 +9262,10 @@
                 "result"
               ]
             }
+          },
+          "inference": {
+            "type": "object",
+            "description": "Statistics behind the mean-difference check as reported by the SDK verdict: method, estimand, confidence, n, sd, sdFloor, df, criticalValue, lowerBound, threshold and imputed counts. At most 4096 bytes."
           }
         },
         "required": [
@@ -9317,7 +9321,7 @@
           "checks": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 16,
+            "maxItems": 2048,
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -9351,6 +9355,10 @@
           "receivedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "inference": {
+            "type": "object",
+            "description": "Statistics behind the mean-difference check as reported by the SDK verdict: method, estimand, confidence, n, sd, sdFloor, df, criticalValue, lowerBound, threshold and imputed counts. At most 4096 bytes."
           }
         },
         "required": [

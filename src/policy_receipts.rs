@@ -21,6 +21,9 @@ struct Report {
     policy: Policy,
     verdict: String,
     checks: Vec<Check>,
+    /// The statistics behind the mean-difference check, as reported by the SDK verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    inference: Option<serde_json::Map<String, Value>>,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -46,13 +49,26 @@ fn valid(report: &Report) -> bool {
             s.len() == 64 && s.bytes().all(|b| matches!(b,b'0'..=b'9'|b'a'..=b'f'))
         })
         || report.checks.is_empty()
-        || report.checks.len() > 16
+        || report.checks.len() > 2048
+        || report.inference.as_ref().is_some_and(|inference| {
+            serde_json::to_vec(inference).map_or(true, |bytes| bytes.len() > 4096)
+        })
     {
         return false;
     }
     if !report.checks.iter().all(|c| match c.code.as_str() {
-        "evidence.incomplete" | "analysis.nonfinite" | "cost.unknown" => c.result == "unknown",
+        "evidence.incomplete"
+        | "analysis.nonfinite"
+        | "cost.unknown"
+        | "inference.minimum_cases"
+        | "inference.minimum_repetitions"
+        | "inference.zero_variance" => c.result == "unknown",
         "policy.minimum_mean_improvement"
+        | "policy.non_inferiority"
+        | "policy.step_non_inferiority"
+        | "policy.development_benefit"
+        | "policy.protected_case_threshold"
+        | "policy.minimum_cost_savings"
         | "policy.maximum_case_regression"
         | "policy.candidate_threshold"
         | "policy.maximum_candidate_task_failures"
@@ -202,4 +218,41 @@ async fn record(
     let out = receipt(row);
     tx.commit().await.map_err(db)?;
     Ok(Json(out))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn report(checks: Value, inference: Option<Value>) -> Report {
+        serde_json::from_value(json!({
+            "requestId": "request",
+            "attemptId": "attempt",
+            "policy": {"id": "quality", "revision": "1", "sha256": format!("sha256:{}", "a".repeat(64))},
+            "verdict": "indeterminate",
+            "checks": checks,
+            "inference": inference,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn statistical_checks_and_inference_are_accepted() {
+        let insufficient = report(
+            json!([{"code": "inference.minimum_cases", "result": "unknown"},
+                   {"code": "policy.maximum_case_regression", "result": "pass"}]),
+            Some(json!({"method": "paired-t", "n": 5, "lowerBound": 0.9})),
+        );
+        assert!(valid(&insufficient));
+        let wrong = report(
+            json!([{"code": "inference.zero_variance", "result": "pass"}]),
+            None,
+        );
+        assert!(!valid(&wrong));
+        let large = report(
+            json!([{"code": "inference.minimum_cases", "result": "unknown"}]),
+            Some(json!({"padding": "x".repeat(5000)})),
+        );
+        assert!(!valid(&large));
+    }
 }

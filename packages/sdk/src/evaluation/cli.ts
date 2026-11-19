@@ -13,7 +13,14 @@ import type { EvaluationApp } from './types.js';
 import { assertUnaliasedPath } from './private-state.js';
 import { readEvaluatorConfig, readReaderConfig } from './config.js';
 import { EvaluationError, toSafeDiagnostic } from './errors.js';
-import { checkComparison, parseEvaluationPolicy, PolicyError, type PolicyVerdict } from './policy.js';
+import {
+  checkComparison,
+  describePolicyInference,
+  formatStatistic,
+  parseEvaluationPolicy,
+  PolicyError,
+  type PolicyVerdict,
+} from './policy.js';
 import {
   exportReviewEvidence,
   verifyReviewExport,
@@ -115,8 +122,7 @@ function comparisonText(
   policy: PolicyVerdict | null,
   policyRequested: boolean,
 ) {
-  const value = (number: number | null | undefined) =>
-    number == null ? 'unknown' : String(number);
+  const value = formatStatistic;
   // JSON quoting keeps line breaks and escape sequences out of terminal control flow.
   const label = (id: string) =>
     JSON.stringify(id).replace(
@@ -134,6 +140,7 @@ function comparisonText(
   ];
   for (const check of policy?.checks ?? [])
     if (check.result !== 'pass') lines.push(`  ${check.result}  ${check.code}`);
+  if (policy?.inference) lines.push(...describePolicyInference(policy.inference));
   const gaps = policy?.evidenceGaps ?? scores?.evidenceGaps;
   if (gaps) {
     lines.push(`Evidence gaps       showing ${gaps.rows.length} of ${gaps.total}`);

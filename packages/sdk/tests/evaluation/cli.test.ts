@@ -599,6 +599,7 @@ test('compare terminal and JSON modes render the same bound run without extra ca
     assert.match(first.out, /"case"\s+parent 0\s+candidate 1/);
     assert.match(first.out, /Policy\s+fail/);
     assert.match(first.out, /fail\s+policy.minimum_mean_improvement/);
+    assert.match(first.out, /Inference\s+none: point estimates for these cases, no noise model/);
     const before = f.traffic.length;
     const piped = await invoke(f.app, args);
     const readCalls = f.traffic.slice(before);

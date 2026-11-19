@@ -110,6 +110,8 @@ export interface ComparisonPolicyReport {
   policy: { id: string; revision: string; sha256: string };
   verdict: 'pass' | 'fail' | 'indeterminate';
   checks: Array<{ code: string; result: 'pass' | 'fail' | 'unknown' }>;
+  /** Statistics behind the mean-difference check (method, n, sd, floor, df, t, bound, threshold). */
+  inference?: Record<string, unknown>;
 }
 
 export interface ComparisonPolicyReceipt extends ComparisonPolicyReport {

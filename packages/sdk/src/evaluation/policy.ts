@@ -1109,7 +1109,10 @@ export function checkComparison(options: {
         ? null
         : improvements.every((gain) => gain === improvements[0])
           ? 0
-          : Math.sqrt(total(improvements.map((gain) => (gain - improvement) * (gain - improvement))) / (n - 1));
+          : Math.sqrt(
+              total(improvements.map((gain) => (gain - improvement) * (gain - improvement))) /
+                (n - 1),
+            );
     inference.sd = sd;
     const insufficient: string[] = [];
     if (n < settings.minCases) insufficient.push('inference.minimum_cases');
@@ -1266,4 +1269,34 @@ export function resolveInference(policy: EvaluationPolicy): ResolvedInference {
     maximumMissingPercent:
       declared.maximumMissingPercent ?? (statistical ? defaultInference.maximumMissingPercent : 0),
   };
+}
+
+/** Fixed-precision terminal number. JSON output keeps full precision. */
+export function formatStatistic(value: number | null | undefined): string {
+  if (value == null) return 'unknown';
+  if (!Number.isFinite(value)) return String(value);
+  if (value !== 0 && Math.abs(value) < 1e-4) return value.toExponential(2);
+  return String(Number(value.toFixed(4)));
+}
+
+/** Terminal lines describing the statistic behind a verdict. */
+export function describePolicyInference(inference: PolicyInferenceResult): string[] {
+  const f = formatStatistic;
+  if (inference.method === 'none')
+    return [
+      `Inference           none: point estimates for these cases, no noise model`,
+      `  mean difference ${f(inference.meanDifference)} vs threshold ${f(inference.threshold)} (${inference.check})`,
+    ];
+  const lines = [
+    `Inference           paired-t ${f((inference.confidence ?? 0) * 100)}% one-sided · cases treated as a sample (${inference.check})`,
+    `  n ${inference.n} (minimum ${inference.minCases}) · repetitions ${inference.repetitions} (minimum ${inference.minRepetitions}) · imputed parent ${inference.imputed.parent}, candidate ${inference.imputed.candidate}`,
+  ];
+  if (inference.meanDifference !== null)
+    lines.push(
+      `  mean difference ${f(inference.meanDifference)} · sd ${f(inference.sd)} · floor ${f(inference.sdFloor)} (${inference.sdFloorSource ?? 'none'})${inference.calibratedSd !== null ? ` · calibrated ${f(inference.calibratedSd)}` : ''} · df ${inference.df ?? 'none'} · t ${f(inference.criticalValue)}`,
+      `  lower bound ${f(inference.lowerBound)} vs threshold ${f(inference.threshold)} (${inference.thresholdSource})`,
+    );
+  if (inference.status === 'insufficient_data')
+    lines.push('  insufficient data: the verdict is indeterminate, not a pass');
+  return lines;
 }

@@ -176,7 +176,9 @@ def main():
                   'aggregation':'equal-case-means', 'minimumMeanImprovement':0.5,
                   'maximumCaseRegression':0, 'candidateThreshold':1,
                   'requiredCases':['compromised-account','ordinary-issue'],
-                  'maximumCandidateTaskFailures':0, 'cost':{'maximumCandidateUsd':0}}
+                  'maximumCandidateTaskFailures':0, 'cost':{'maximumCandidateUsd':0},
+                  # Two saved cases: a point-estimate check; the paired-t default needs 10.
+                  'inference':{'method':'none'}}
         f.write_json(app / 'quality-policy.json', policy)
         f.write_json(app / 'candidate.json', CANDIDATE)
         f.write_json(app / 'share-selection.json', {'schemaVersion':1, 'entries':[

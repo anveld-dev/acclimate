@@ -437,16 +437,18 @@ def qualify(release, pg_bin):
             assert first['invocation'] == {'callbacksStarted': 4, 'reusedEvidence': False}
             assert replay['invocation'] == {'callbacksStarted': 0, 'reusedEvidence': True}
             handle = ['--config', str(consumer['config']), '--name', first['runName']]
-            def followup(command, *args):
-                return run([*consumer['command'], command, *args], cwd=app, env=consumer['env'])
+            def followup(command, *args, expected=0):
+                return run([*consumer['command'], command, *args], cwd=app, env=consumer['env'], expected=expected)
             assert followup('status', *handle)['requestId'] == first['requestId']
-            gate = followup('check', *handle, '--policy', str(default_policy))
-            assert gate['verdict'] == 'pass' and gate['policyReceipt']['status'] == 'recorded'
+            # The starter's statistical example policy needs at least 10 cases; two are insufficient.
+            gate = followup('check', *handle, '--policy', str(default_policy), expected=3)
+            assert gate['verdict'] == 'indeterminate' and gate['code'] == 'inference.insufficient_data'
+            assert gate['policyReceipt']['status'] == 'recorded'
             journal = Path(json.loads(consumer['config'].read_bytes())['journalRoot'])
             reviewed = followup('check', '--read-config', str(consumer['reader']), '--handoff',
                                 str(journal / 'comparisons' / first['runName'] / 'request.json'),
-                                '--policy', str(default_policy))
-            assert reviewed['verdict'] == 'pass' and reviewed['policyReceipt']['status'] == 'read_only'
+                                '--policy', str(default_policy), expected=3)
+            assert reviewed['verdict'] == 'indeterminate' and reviewed['policyReceipt']['status'] == 'read_only'
             destination = app / 'named-review'
             followup('export', *handle, '--out', str(destination))
             followup('verify-export', '--manifest', str(destination / 'manifest.json'))

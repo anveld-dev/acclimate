@@ -5,6 +5,8 @@ import test from 'node:test';
 import {
   checkComparison,
   connectedPolicyDefaults,
+  describePolicyInference,
+  formatStatistic,
   parseEvaluationPolicy,
   PolicyError,
   reservedPolicyIds,
@@ -428,4 +430,21 @@ test('inference block validation rejects unknown, fractional and out-of-range se
     sdFloor: 0,
   });
   assert.equal(parsed.perCaseChecks, 'protected-cases');
+});
+
+test('terminal statistics use fixed precision and state the method, bound and minimums', () => {
+  assert.equal(formatStatistic(0.30999999999999994), '0.31');
+  assert.equal(formatStatistic(0), '0');
+  assert.equal(formatStatistic(0.00001234), '1.23e-5');
+  assert.equal(formatStatistic(null), 'unknown');
+  const vector = inferenceVectors.vectors.find(
+    (item: any) => item.name === 'default-five-cases-is-insufficient',
+  );
+  const text = describePolicyInference(
+    checkComparison(expandInferenceVector(vector) as any).inference,
+  ).join('\n');
+  assert.match(text, /paired-t 95% one-sided/);
+  assert.match(text, /n 5 \(minimum 10\)/);
+  assert.match(text, /lower bound 0.9047 vs threshold 0/);
+  assert.match(text, /insufficient data: the verdict is indeterminate/);
 });

@@ -4,7 +4,7 @@ import type { Draft, Proposal } from '@acclimate/sdk';
 import type { ConsoleState } from '../server/channel';
 import { runDraftCommand } from '../server/content-actions';
 import { runImprovement } from '../server/improvement-actions';
-import { bundleHref } from '../navigation';
+import { bundleHref, workspaceHref } from '../navigation';
 import { ConsoleLink } from './console-link';
 import { DraftWorkspace } from './draft-workspace';
 import { ImprovementWorkspace } from './improvement-workspace';
@@ -12,6 +12,7 @@ import { Button } from './ui/button';
 import { mergeHistory, refreshKnownActive } from '../lib/improvement-history';
 import { ChangesPipeline } from './changes-pipeline';
 import { ChangesOverview } from './changes-overview';
+import { loadPending } from '../lib/pending-operation';
 
 type Ready = Extract<ConsoleState, { status: 'ready' }>;
 const text = (value: unknown) => (typeof value === 'string' ? value : '');
@@ -145,6 +146,21 @@ export function BundleChanges({
 }
 function ChangeLists({ state, search }: { state: Ready; search: Record<string, unknown> }) {
   const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
+  const { actorScope, projectId, creationRecoveryServiceIdentity } = state;
+  const [pendingCreation, setPendingCreation] = useState(false);
+  useEffect(() => {
+    try {
+      const operation = loadPending(sessionStorage, {
+        owner: 'library',
+        actorScope,
+        projectId,
+        serviceIdentity: creationRecoveryServiceIdentity,
+      });
+      setPendingCreation(Boolean(operation));
+    } catch {
+      setPendingCreation(false);
+    }
+  }, [actorScope, projectId, creationRecoveryServiceIdentity]);
   const [drafts, setDrafts] = useState<Draft[]>([]),
     [proposals, setProposals] = useState<Proposal[]>([]);
   const [draftCursor, setDraftCursor] = useState<string | null>(null),
@@ -256,7 +272,7 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
       clearTimeout(timer);
     };
   }, [state.actorScope, state.projectId, state.bundleId, state.channel]);
-  return (
+  const overview = (
     <ChangesOverview
       state={state}
       search={search}
@@ -297,5 +313,18 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
         />
       )}
     />
+  );
+  return (
+    <>
+      {pendingCreation && state.canEdit && (
+        <div className="workspace-panel flex flex-wrap items-center justify-between gap-2 p-4">
+          <p role="status">A bundle publication is still unresolved.</p>
+          <Button asChild variant="outline">
+            <ConsoleLink href={workspaceHref(projectId)}>Open creation recovery</ConsoleLink>
+          </Button>
+        </div>
+      )}
+      {overview}
+    </>
   );
 }

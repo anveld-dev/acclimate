@@ -197,9 +197,14 @@
   }
   /* Narrow headers keep "Use in an app" and the channel on one row: the button keeps its
      accessible name but shows only its icon. */
-  .bundle-header-layout .use-in-app-trigger[data-slot='button'] {
+  .bundle-header-layout .use-in-app-trigger {
     min-width: 36px;
     padding-inline: 9px;
+  }
+  @media (pointer: coarse) {
+    .bundle-header-layout .use-in-app-trigger {
+      min-width: 44px;
+    }
   }
   .bundle-header-layout .use-in-app-label {
     position: absolute;

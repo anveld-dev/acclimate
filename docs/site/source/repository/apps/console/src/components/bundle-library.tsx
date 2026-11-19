@@ -308,12 +308,12 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
         actions={
           state.ok &&
           state.canEdit &&
-          entries.length > 0 && !showCreate && (
+          (operation || (entries.length > 0 && !showCreate)) && (
             <Button
               disabled={Boolean(operation)}
               onClick={() => setShowCreate(true)}
             >
-              {!operation && !showCreate && <Plus aria-hidden="true" />}
+              {!operation && <Plus aria-hidden="true" />}
               {operation ? 'Pending creation' : 'New bundle'}
             </Button>
           )

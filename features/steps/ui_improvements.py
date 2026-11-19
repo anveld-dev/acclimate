@@ -76,6 +76,19 @@ def reconcile_initial(context):
     frozen=json.loads(p.get_by_label('Exact submitted creation',exact=True).inner_text())
     assert frozen['origin']=='created'
     assert frozen['payload']['files'][0]['text']=='Keep these exact instructions.'
+    bundle, = w.call('GET',w.root+'/bundles')['items']
+    browser = w.browser_fixture
+    def leave_creation(dialog):
+        assert dialog.type == 'beforeunload'
+        dialog.accept()
+    p.on('dialog',leave_creation)
+    try:
+        browser.visit(browser.bundle_path('changes',bundle_id=bundle['id']))
+    finally:
+        p.remove_listener('dialog',leave_creation)
+    expect(p.get_by_role('status').filter(has_text='A bundle publication is still unresolved.')).to_be_visible()
+    p.get_by_role('link',name='Open creation recovery',exact=True).click()
+    expect(p.get_by_role('button',name='Pending creation',exact=True)).to_be_disabled()
     p.get_by_role('button',name='Check result',exact=True).click()
     expect(p.get_by_test_id('entry-content')).to_contain_text('Keep these exact instructions.')
     assert len(w.call('GET',w.root+'/bundles')['items'])==1
@@ -96,9 +109,11 @@ def manual_review(context):
     p.get_by_role('button',name='Leave editor',exact=True).click()
     expect(p.get_by_label('Saved change review',exact=True)).to_contain_text('Generation 1 saved')
     expect(p.locator('.bundle-scope-header').get_by_role('combobox',name='Channel',exact=True)).to_contain_text('stable')
-    open_details(p,'Saved snapshot details')
-    expect(p.get_by_label('Saved change review',exact=True)).to_contain_text('Channel stable · current revision 1')
-    open_details(p,'Publish without evaluation')
+    p.get_by_role('tab',name='Details',exact=True).click()
+    details=p.get_by_role('region',name='Saved change details',exact=True)
+    open_details(details,'Saved snapshot details')
+    expect(details).to_contain_text('Channel stable · current revision 1')
+    open_details(p.get_by_role('complementary',name='Release decision',exact=True),'Publish without evaluation')
 
 
 @then('manual publication requires its own reason and confirms the saved generation')

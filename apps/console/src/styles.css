@@ -144,6 +144,7 @@
 }
 .content-search-group .file-search-submit {
   margin: 0;
+  font-size: var(--type-14);
 }
 [data-slot='textarea'] {
   background: var(--card);

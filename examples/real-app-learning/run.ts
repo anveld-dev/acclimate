@@ -43,6 +43,9 @@ const controller = new AbortController();
 let child: ChildProcess | undefined;
 let logs = '';
 let browserSession: string | undefined;
+for (const event of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(event, () => controller.abort(new Error(event)));
+}
 
 async function listen(server: Server): Promise<number> {
   server.listen(0, '127.0.0.1');
@@ -53,13 +56,15 @@ async function listen(server: Server): Promise<number> {
 }
 
 async function waitFor<T>(label: string, probe: () => Promise<T | undefined>): Promise<T> {
-  const deadline = Date.now() + 5 * 3600_000;
-  do {
+  while (true) {
+    controller.signal.throwIfAborted();
+    if (child && child.exitCode !== null) {
+      throw new Error(`Service exited while waiting for ${label}: ${logs}`);
+    }
     const found = await probe();
     if (found !== undefined) return found;
-    await delay(100);
-  } while (Date.now() < deadline);
-  throw new Error(`Timed out waiting for ${label}`);
+    await delay(100, undefined, { signal: controller.signal });
+  }
 }
 
 async function stopService() {
@@ -78,13 +83,12 @@ type Case = { caseId: string; input: string; expected: string };
 const fixtures = JSON.parse(
   execFileSync(python, [grader, '--cases'], { encoding: 'utf8' }),
 ) as Record<'development' | 'audit' | 'field', Case[]>;
+const replication = process.env.LLM_REPLICATION === '1';
+if (replication) {
+  fixtures.audit = JSON.parse(await readFile(path.join(home, 'replication-audit.json'), 'utf8'));
+}
 const codex = new Codex();
-const priorAttempts = Number(process.env.LLM_PRIOR_ATTEMPTS ?? '1');
-const remainingMs = Number(process.env.LLM_REMAINING_MS ?? 6 * 3600_000 - 120_000);
-assert(Number.isInteger(priorAttempts) && priorAttempts >= 1 && priorAttempts < 600);
-assert(remainingMs > 0 && remainingMs <= 6 * 3600_000);
-const limit = AbortSignal.timeout(remainingMs);
-const signal = AbortSignal.any([controller.signal, limit]);
+const signal = controller.signal;
 const usage: { label: string; input: number | null; output: number | null }[] = [];
 async function turn(
   cwd: string,
@@ -93,10 +97,10 @@ async function turn(
   outputSchema?: unknown,
   caseSignal?: AbortSignal,
 ) {
-  assert(priorAttempts + usage.length < 600 && !signal.aborted, 'Experiment budget exhausted');
+  signal.throwIfAborted();
   const row = { label, input: null as number | null, output: null as number | null };
   usage.push(row);
-  console.log(JSON.stringify({ attempt: priorAttempts + usage.length, label }));
+  console.log(JSON.stringify({ attempt: usage.length, label }));
   const result = await codex
     .startThread({
       model: modelId,
@@ -165,7 +169,7 @@ function cohort(split: 'development' | 'audit') {
   return defineEvaluation<string, string, string[]>({
     configId: 'llm-cli-support',
     configRevision: '1',
-    datasetRevision: split + '-1',
+    datasetRevision: replication && split === 'audit' ? 'audit-replication-1' : split + '-1',
     graderRevision: 'click-argv-v2',
     runtime: { app: 'llm-0.38', model: modelId, effort: 'low' },
     execution: 'live',
@@ -243,6 +247,14 @@ try {
         ACCLIMATE_MODEL_TOKEN: modelToken,
         ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS: String(checkSteps),
         ACCLIMATE_MODEL: modelId,
+        ...(replication
+          ? {
+              ACCLIMATE_LEARNING_MAX_REPETITIONS: '2',
+              ACCLIMATE_LEARNING_PAIR_BUDGET: '60',
+              ACCLIMATE_LEARNING_CALIBRATION_REPETITIONS: '2',
+              ACCLIMATE_LEARNING_CALIBRATION_ATTEMPTS: '1',
+            }
+          : {}),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -368,11 +380,30 @@ try {
   const installationId = 'llm-cli-support';
   const development = cohort('development');
   const audit = cohort('audit');
+  const selectionPolicy = {
+    schemaVersion: 3,
+    revision: '1',
+    metric: { name: 'reward', unit: 'reward', direction: 'higher' },
+    aggregation: 'equal-case-means',
+    minimumMeanImprovement: 0,
+    maximumCaseRegression: 0,
+    requiredCases: [],
+    maximumCandidateTaskFailures: 0,
+    targetEffect: 0.1,
+  };
   await api('PUT', learning(connection), {
     installationId,
     automaticRollout: false,
     permittedPaths: ['AGENTS.md', 'context.md'],
-    maxProposalAdmissions: 3,
+    maxProposalAdmissions: replication ? 1 : 3,
+    ...(replication
+      ? {
+          selectionPolicies: {
+            development: { ...selectionPolicy, id: 'connected-development' },
+            audit: { ...selectionPolicy, id: 'connected-audit' },
+          },
+        }
+      : {}),
     development: connectedEvaluationDescriptor(development),
     audits: [connectedEvaluationDescriptor(audit)],
     evaluatorPrincipal: 'evaluator',
@@ -396,7 +427,7 @@ try {
   const calibration = await waitFor('noise calibration', async () => {
     signal.throwIfAborted();
     const status = (await view()).noiseCalibration;
-    return status && ['failed', 'completed', 'interrupted'].includes(status.status)
+    return status && ['failed', 'completed', 'interrupted', 'stopped'].includes(status.status)
       ? status
       : undefined;
   });
@@ -414,96 +445,102 @@ try {
         }),
       );
   }
-  assert.equal(calibration.status, 'completed');
-  const reporter = createLearningOutcomeReporter({
-    client: client('other', connection),
-    projectId: project,
-    integrationId: connection,
-  });
-  const installed = await resolveAndCache(
-    client('operator', connection),
-    {
+  if (replication && calibration.stoppedReason) {
+    console.log(JSON.stringify({ final: await view() }));
+  } else {
+    assert.equal(calibration.status, 'completed');
+    const reporter = createLearningOutcomeReporter({
+      client: client('other', connection),
       projectId: project,
-      bundleId: bundle.id,
-      channel: 'stable',
-    },
-    { cacheDir: path.join(dir, 'delivery-cache') },
-  );
-  const outcome = [];
-  for (const task of fixtures.field) {
-    const argv = await answer(installed, task.input, 'field:' + task.caseId);
-    const reward = score(argv, task.expected);
-    const outcomeId = randomUUID();
-    await reporter(installed, { outcomeId, status: reward ? 'completed' : 'failed' });
-    if (!reward) outcome.push({ task, argv, outcomeId });
-    console.log(JSON.stringify({ field: task.caseId, reward }));
-  }
-  for (const { task, argv, outcomeId } of outcome.slice(0, 3)) {
-    const correction = await client('other', connection).reportLearningCorrection(
-      project,
-      connection,
-      {
-        correctionId: randomUUID(),
-        outcomeId,
-        feedback: {
-          expected: task.input + ' Reference: ' + task.expected,
-          observed: JSON.stringify(argv),
-        },
-      },
-    );
-    const round = await waitFor('round for ' + correction.correctionId, async () => {
-      signal.throwIfAborted();
-      return (await view()).rounds.find(
-        (item) =>
-          item.outcomeId === outcomeId &&
-          ['developed', 'awaiting_review', 'rejected', 'promoted'].includes(item.state),
-      );
+      integrationId: connection,
     });
-    console.log(JSON.stringify({ round }));
-    for (const id of [
-      round.developmentComparisonId,
-      round.cumulativeDevelopmentComparisonId,
-      round.auditComparisonId,
-    ]) {
-      if (id)
-        console.log(
-          JSON.stringify({ comparison: await operator.getComparison(project, bundle.id, id) }),
-        );
+    const installed = await resolveAndCache(
+      client('operator', connection),
+      {
+        projectId: project,
+        bundleId: bundle.id,
+        channel: 'stable',
+      },
+      { cacheDir: path.join(dir, 'delivery-cache') },
+    );
+    const outcome = [];
+    for (const task of fixtures.field) {
+      const argv = await answer(installed, task.input, 'field:' + task.caseId);
+      const reward = score(argv, task.expected);
+      const outcomeId = randomUUID();
+      await reporter(installed, { outcomeId, status: reward ? 'completed' : 'failed' });
+      if (!reward) outcome.push({ task, argv, outcomeId });
+      console.log(JSON.stringify({ field: task.caseId, reward }));
     }
-    if (round.proposalId)
-      console.log(
-        JSON.stringify({
-          proposal: await operator.getProposal(project, bundle.id, round.proposalId),
-        }),
+    for (const { task, argv, outcomeId } of outcome.slice(0, 3)) {
+      const correction = await client('other', connection).reportLearningCorrection(
+        project,
+        connection,
+        {
+          correctionId: randomUUID(),
+          outcomeId,
+          feedback: {
+            expected: task.input + ' Reference: ' + task.expected,
+            observed: JSON.stringify(argv),
+          },
+        },
       );
-    if (round.state === 'awaiting_review') {
-      const decisionPath = path.join(scratch, 'operator-decision.json');
-      console.log(JSON.stringify({ reviewDecisionFile: decisionPath, roundId: round.id }));
-      const decision = await waitFor('operator review', async () => {
+      const round = await waitFor('round for ' + correction.correctionId, async () => {
         signal.throwIfAborted();
-        const data = await readFile(decisionPath, 'utf8').catch((error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT') return undefined;
-          throw error;
+        return (await view()).rounds.find(
+          (item) =>
+            item.outcomeId === outcomeId &&
+            ['developed', 'awaiting_review', 'rejected', 'promoted'].includes(item.state),
+        );
+      });
+      console.log(JSON.stringify({ round }));
+      for (const id of [
+        round.developmentComparisonId,
+        round.cumulativeDevelopmentComparisonId,
+        round.auditComparisonId,
+      ]) {
+        if (id)
+          console.log(
+            JSON.stringify({ comparison: await operator.getComparison(project, bundle.id, id) }),
+          );
+      }
+      if (round.proposalId)
+        console.log(
+          JSON.stringify({
+            proposal: await operator.getProposal(project, bundle.id, round.proposalId),
+          }),
+        );
+      if (round.state === 'awaiting_review') {
+        const decisionPath = path.join(scratch, 'operator-decision.json');
+        console.log(JSON.stringify({ reviewDecisionFile: decisionPath, roundId: round.id }));
+        const decision = await waitFor('operator review', async () => {
+          signal.throwIfAborted();
+          const data = await readFile(decisionPath, 'utf8').catch(
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === 'ENOENT') return undefined;
+              throw error;
+            },
+          );
+          if (!data) return undefined;
+          const value = JSON.parse(data);
+          assert.equal(value.roundId, round.id);
+          assert.equal(typeof value.approve, 'boolean');
+          return value as { roundId: string; approve: boolean };
         });
-        if (!data) return undefined;
-        const value = JSON.parse(data);
-        assert.equal(value.roundId, round.id);
-        assert.equal(typeof value.approve, 'boolean');
-        return value as { roundId: string; approve: boolean };
-      });
-      await api('POST', learning(connection) + '/rounds/' + round.id + '/review', {
-        approve: decision.approve,
-      });
-      console.log(JSON.stringify({ operatorDecision: decision }));
-      break;
+        await api('POST', learning(connection) + '/rounds/' + round.id + '/review', {
+          approve: decision.approve,
+        });
+        console.log(JSON.stringify({ operatorDecision: decision }));
+        break;
+      }
+      if (replication || !(await view()).remainingAudits) break;
     }
-    if (!(await view()).remainingAudits) break;
+    console.log(JSON.stringify({ final: await view() }));
   }
-  console.log(JSON.stringify({ final: await view() }));
 } finally {
   console.log(
     JSON.stringify({
-      attempts: priorAttempts + usage.length,
+      attempts: usage.length,
       input: usage.reduce((n, r) => n + (r.input ?? 0), 0),
       output: usage.reduce((n, r) => n + (r.output ?? 0), 0),
     }),

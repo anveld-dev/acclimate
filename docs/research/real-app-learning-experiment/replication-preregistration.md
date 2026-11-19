@@ -32,4 +32,8 @@ Run one tool-free readiness turn before connecting the evaluator. Report a calib
 
 ## Budget
 
-Each inference selects `gpt-6-luna` at low reasoning effort. The projected budget is 1 readiness + 120 A/A + 10 field + at most 10 proposer and critic + 120 step + 120 cumulative + 120 audit = 501 turns. The 10% contingency rounds up to 51 turns, for 552 projected turns. Keep two repetitions at all three evaluation stages. If an updated pre-call projection exceeds 600, stop without calling the model. The hard caps are 600 total attempts and six hours from readiness, including any restarts. Charge every started call, record Codex-reported token usage, limit proposer and critic calls to ten in total and abort pending calls at the deadline.
+Each inference selects `gpt-6-luna` at low reasoning effort. The original pre-call estimate was 1 readiness + 120 A/A + 10 field + up to 10 proposer and critic + 120 step + 120 cumulative + 120 audit = 501 turns. Adding a 10% contingency rounded up to 51 turns gave 552 projected turns. This is a planning estimate. Count every started call and record Codex-reported usage across attempts.
+
+## Amendment during calibration
+
+At the experimenter's request, remove the experiment-wide turn and wall-clock caps and all budget-driven reductions before observing any comparison result. The initial run was stopped during A/A after 18 started Luna turns, including one readiness turn. Codex reported 267,537 input and 639 output tokens across 17 turns. The final interrupted turn had no usage report. Restart A/A from a fresh PostgreSQL database using the completed readiness check. The scientific design retains uniform repetition cap two, a 60-pair plan, and calibration at two repetitions per arm.

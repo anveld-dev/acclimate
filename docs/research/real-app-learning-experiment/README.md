@@ -54,7 +54,7 @@ bash examples/real-app-learning/preflight.sh </dev/null
 python3 examples/real-app-learning/run.py /opt/homebrew/opt/postgresql@18/bin > "$TMPDIR/run.log" 2>&1
 ```
 
-For a restart, include all spent attempts in `LLM_PRIOR_ATTEMPTS` and set `LLM_REMAINING_MS` to the remaining wall-clock allowance. If the service requests manual review, write an `operator-decision.json` file in the scratch directory with the reported `roundId` and a boolean `approve`. Review the audit bound and candidate diff first. Remove the scratch directory after recording aggregate evidence.
+For a restart, retain the previous run and readiness logs and include their turn counts and reported tokens in the totals. If the service requests manual review, write an `operator-decision.json` file in the scratch directory with the reported `roundId` and a boolean `approve`. Review the audit bound and candidate diff first. Remove the scratch directory after recording aggregate evidence.
 
 ## Deviations and service issues
 

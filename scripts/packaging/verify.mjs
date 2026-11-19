@@ -286,6 +286,9 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
     const descriptor = describe('acclimate-eval.mjs');
     const bin = join(temp, 'node_modules/.bin/acclimate-eval');
     run(bin, ['--help'], app);
+    // The operator CLI runs from an installed SDK, outside any checkout.
+    const operatorHelp = execFileSync(join(temp, 'node_modules/.bin/acclimate-operator'), ['--help'], { cwd: app, encoding: 'utf8' });
+    if (!operatorHelp.startsWith('Usage: acclimate-operator')) throw new Error('Installed SDK lacks the operator CLI');
     const installedDescriptor = JSON.parse(execFileSync(bin, ['describe'], { cwd: app, env: appEnv, encoding: 'utf8' }));
     if (!isDeepStrictEqual(installedDescriptor, descriptor))
       throw new Error('SDK binary and starter describe different installed applications');

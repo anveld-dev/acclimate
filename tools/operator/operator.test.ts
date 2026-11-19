@@ -166,3 +166,23 @@ test('promotion requires an explicit reason and exact receipt identities for an 
   await run([...args, ...acknowledgement, '--override-reason', 'Reviewed exception'], client);
   assert.deepEqual(calls[0].body.policyOverride, { reason: 'Reviewed exception', receipts: [{ comparisonId, policyDigest }] });
 });
+
+test('the packaged entry prints usage and reports errors as JSON with exit 1', async () => {
+  const { operatorMain, operatorUsage } = await import('../../packages/sdk/src/operator/cli.js');
+  const writes: string[] = [];
+  const stdout = process.stdout.write.bind(process.stdout);
+  const stderr = process.stderr.write.bind(process.stderr);
+  process.stdout.write = ((chunk: string) => (writes.push('out:' + chunk), true)) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: string) => (writes.push('err:' + chunk), true)) as typeof process.stderr.write;
+  try {
+    assert.equal(await operatorMain(['--help']), 0);
+    assert.equal(await operatorMain([]), 1);
+    assert.equal(await operatorMain(['promote', '--project', 'p']), 1);
+  } finally {
+    process.stdout.write = stdout;
+    process.stderr.write = stderr;
+  }
+  assert.equal(writes[0], 'out:' + operatorUsage + '\n');
+  assert.match(operatorUsage, /^Usage: acclimate-operator COMMAND/);
+  assert.deepEqual(JSON.parse(writes[2].slice(4)), { error: '--bundle is required' });
+});

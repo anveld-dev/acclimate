@@ -55,7 +55,8 @@
   },
   "bin": {
     "acclimate-learning": "./dist/learning/serve-cli.js",
-    "acclimate-eval": "./dist/evaluation/bin.js"
+    "acclimate-eval": "./dist/evaluation/bin.js",
+    "acclimate-operator": "./dist/operator/bin.js"
   },
   "files": [
     "dist"

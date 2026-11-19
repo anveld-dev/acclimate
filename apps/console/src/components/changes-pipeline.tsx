@@ -79,9 +79,14 @@ export function ChangesPipeline({
   const evaluating: Candidate[] = [];
   const ready: Candidate[] = [];
   const knownVersions = new Set(drafts.map((draft) => draft.snapshotVersion.id));
-  const candidateRequests = new Map<string, { active?: Evaluation; compared?: Evaluation }>();
+  const candidateRequests = new Map<
+    string,
+    { active?: Evaluation; compared?: Evaluation; latest?: Evaluation }
+  >();
   for (const request of model.requests) {
     const row = candidateRequests.get(request.candidateVersionId) ?? {};
+    if (!row.latest || Date.parse(request.createdAt) > Date.parse(row.latest.createdAt))
+      row.latest = request;
     if (!row.active && (request.status === 'requested' || request.status === 'running'))
       row.active = request;
     if (!row.compared && request.status === 'completed' && request.comparisonId)
@@ -198,12 +203,26 @@ export function ChangesPipeline({
     });
   }
 
-  // A retry saves the same content as a new version. Show it once, with its earlier attempts.
-  const attempts = groupAttempts([...evaluating, ...ready], (item) => item.request);
+  // A retry saves the same content as a new version. Show it once, with its earlier attempts,
+  // including a failed attempt that would otherwise wait in Drafting.
+  const settled = (item: Candidate) =>
+    item.candidate && !releasedVersions.has(item.candidate)
+      ? candidateRequests.get(item.candidate)?.latest
+      : undefined;
+  const pool = [
+    ...evaluating.map((item) => ({ item, column: evaluating, request: item.request })),
+    ...ready.map((item) => ({ item, column: ready, request: item.request })),
+    ...drafting.map((item) => ({ item, column: drafting, request: settled(item) })),
+  ];
+  const attempts = groupAttempts(pool, (entry) => entry.request);
   evaluating.length = 0;
   ready.length = 0;
-  for (const { item, earlier } of attempts)
-    (item.request?.status === 'completed' ? ready : evaluating).push({ ...item, earlier });
+  drafting.length = 0;
+  for (const { item: entry, earlier } of attempts)
+    entry.column.push({
+      ...entry.item,
+      earlier: earlier.map((attempt) => ({ ...attempt.item, request: attempt.request })),
+    });
 
   function requestHref(item: Candidate, request: Evaluation) {
     return bundleHref(scope, 'changes', {

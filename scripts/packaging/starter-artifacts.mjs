@@ -85,7 +85,9 @@ export async function archiveStarters(root, output, metadata) {
       const dirname = `${starter.name}-starter`;
       const destination = join(workspace, dirname);
       const source = starter.name === 'evaluation' ? 'evaluation-starter' : starter.name;
-      const omitted = starter.name === 'native-repository' ? new Set(['QUALIFICATION.md', 'test']) : new Set();
+      // Each starter's own tests and qualification notes stay in the repository.
+      const omitted = starter.name === 'native-repository' ? new Set(['QUALIFICATION.md', 'test'])
+        : starter.name === 'ci' ? new Set(['test']) : new Set();
       await copyStarter(join(root, 'examples', source), destination, inventories[starter.name], omitted);
       const packageFile = join(destination, 'package.json');
       try {

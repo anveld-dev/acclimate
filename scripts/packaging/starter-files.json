@@ -14,8 +14,11 @@
   ],
   "ci": [
     "README.md",
+    "action.yml",
     "ci.py",
-    "ci.sh"
+    "ci.sh",
+    "workflows/pr-check.yml",
+    "workflows/release.yml"
   ],
   "native-repository": [
     "README.md",

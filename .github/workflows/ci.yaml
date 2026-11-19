@@ -28,6 +28,40 @@ jobs:
       - run: npm audit --audit-level=high
       - run: PYTHONPATH=python python -m unittest discover -s python/tests -v
       - run: python -m unittest discover -s scripts/operations -p 'test_*.py' -v
+  pr-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test the CI wrapper and starter archive
+        run: npm run test:ci-starter
+      - id: gate
+        name: Run the PR quality gate action against an offline evaluator
+        uses: ./examples/ci
+        with:
+          app: examples/ci/test/fake-evaluator.mjs
+          policy: examples/ci/test/policy.json
+          bundle: offline-bundle
+          bundle-dir: examples/ci/test/bundle
+          config-json: '{"serviceUrl":"http://127.0.0.1:9/","projectId":"offline","evaluatorPrincipalId":"offline-ci"}'
+          token: offline-token
+      - name: Check the gate outputs
+        env:
+          RESULT: ${{ steps.gate.outputs.result }}
+          VERDICT: ${{ steps.gate.outputs.verdict }}
+          CANDIDATE: ${{ steps.gate.outputs.candidate-version-id }}
+          SUMMARY: ${{ steps.gate.outputs.summary-json }}
+        run: |
+          test "$RESULT" = pass
+          test "$VERDICT" = pass
+          test "$CANDIDATE" = 00000000-0000-4000-8000-000000000002
+          python3 -c 'import json, sys; summary = json.load(open(sys.argv[1])); assert summary["commit"] == sys.argv[2], summary' "$SUMMARY" "$GITHUB_SHA"
   test:
     runs-on: ubuntu-24.04
     steps:

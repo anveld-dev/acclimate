@@ -29,6 +29,8 @@ test('release archives contain installed-app source and independent CI runner, e
     await mkdir(join(root, 'examples/native-repository/test/fixture'), { recursive: true });
     await writeFile(join(root, 'examples/native-repository/test/fixture/input.txt'), 'test repository');
     await writeFile(join(root, 'examples/native-repository/QUALIFICATION.md'), 'internal evidence');
+    await mkdir(join(root, 'examples/ci/test'), { recursive: true });
+    await writeFile(join(root, 'examples/ci/test/fake-evaluator.mjs'), 'offline test double');
     const artifacts = await archiveStarters(root, output, metadata);
     assert.equal(artifacts.length, 3);
     const archive = join(output, metadata.starters[0].file);
@@ -36,7 +38,10 @@ test('release archives contain installed-app source and independent CI runner, e
     assert.ok(listing.includes('evaluation-starter/acclimate-eval.mjs'));
     const ci = execFileSync('tar', ['-tzf', join(output, metadata.starters[1].file)], { encoding: 'utf8' });
     assert.ok(ci.includes('ci-starter/ci.py'));
+    assert.ok(ci.includes('ci-starter/action.yml'));
+    assert.ok(ci.includes('ci-starter/workflows/release.yml'));
     assert.ok(!ci.includes('evaluation/'));
+    assert.ok(!ci.includes('/test/'));
     const native = execFileSync('tar', ['-tzf', join(output, metadata.starters[2].file)], { encoding: 'utf8' });
     assert.ok(!native.includes('/test/'));
     assert.ok(!native.includes('QUALIFICATION.md'));

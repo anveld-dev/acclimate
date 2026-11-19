@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { execFileSync, spawn } from 'node:child_process';
-import { chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -341,6 +341,9 @@ export const { execute, grade } = adapter;
 
     run('sh', ['-n', 'ci.sh'], join(extractedStarters, 'ci-starter'));
     run(pythonExecutable, ['ci.py', '--help'], join(extractedStarters, 'ci-starter'));
+    for (const name of ['action.yml', 'workflows/pr-check.yml', 'workflows/release.yml'])
+      if (!(await stat(join(extractedStarters, 'ci-starter', name)).catch(() => null))?.isFile())
+        throw new Error(`CI starter is missing ${name}`);
     const native = join(extractedStarters, 'native-repository-starter');
     await cp(join(root, 'examples/native-repository/test'), join(native, 'test'), { recursive: true });
     run(process.execPath, ['--test', 'test/installed.test.mjs'], native);

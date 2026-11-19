@@ -1,0 +1,249 @@
+name: Acclimate PR quality gate
+description: Evaluate the agent bundle at this commit against the channel's current release with your installed evaluator, and fail the check when your quality policy fails.
+author: Acclimate
+branding:
+  icon: check-circle
+  color: green
+inputs:
+  app:
+    description: Trusted evaluator directory on the runner with the Acclimate SDK installed, or an evaluator CLI file.
+    required: true
+  bundle:
+    description: Bundle ID in the workspace.
+    required: true
+  policy:
+    description: Quality policy file that decides the check.
+    required: true
+  channel:
+    description: Channel whose current release is the comparison parent.
+    default: stable
+  bundle-dir:
+    description: Committed bundle directory, relative to the repository root.
+    default: agent
+  payload:
+    description: Committed bundle payload JSON, relative to the repository root. Use instead of bundle-dir.
+    default: ''
+  memory:
+    description: Newline-separated memory/PATH files approved for the candidate, or "none" to include no memory files.
+    default: ''
+  config:
+    description: Evaluator config file on the runner. It may omit the token when token or token-file is set.
+    default: ''
+  config-json:
+    description: Non-secret evaluator config fields as JSON (serviceUrl, projectId, evaluatorPrincipalId, journalRoot), for example from a repository variable. Merged over config.
+    default: ''
+  service-url:
+    description: Acclimate service URL. Overrides serviceUrl from config and config-json.
+    default: ''
+  token:
+    description: Evaluator token from a secret. Use a credential that can only evaluate.
+    default: ''
+  token-file:
+    description: Owner-only file on the runner that holds the evaluator token.
+    default: ''
+  live:
+    description: Authorize model-backed execution. Keep it false for changes you do not trust.
+    default: 'false'
+  deadline:
+    description: Passed to the evaluator run command as --deadline.
+    default: ''
+  max-cost-usd:
+    description: Passed to the evaluator run command as --max-cost-usd.
+    default: ''
+  concurrency:
+    description: Passed to the evaluator run command as --concurrency.
+    default: ''
+  shard:
+    description: Passed to the evaluator run command as --shard.
+    default: ''
+  cases:
+    description: Passed to the evaluator run command as --cases.
+    default: ''
+  selection:
+    description: Artifact selection file for the review export.
+    default: ''
+  language:
+    description: Adapter language (javascript or python) when the app directory contains both.
+    default: ''
+  commit:
+    description: Full commit ID to evaluate. It must be checked out. Defaults to github.sha, which is the test merge commit on pull_request events.
+    default: ''
+  base-commit:
+    description: Also list the bundle files changed since this commit, for example github.event.pull_request.base.sha with fetch-depth 2.
+    default: ''
+  repo:
+    description: Git checkout to read.
+    default: ${{ github.workspace }}
+  output-dir:
+    description: Absolute private directory for request state and review exports. Keep it persistent on self-hosted runners so results are reused and interrupted runs resume. Defaults to ~/.acclimate-ci/OWNER-REPO.
+    default: ''
+  abandon-uncertain:
+    description: Interrupt an earlier attempt that may have started executing and start a fresh request.
+    default: 'false'
+  cancel-grace:
+    description: Seconds to wait for the evaluator to stop after the job is cancelled.
+    default: '20'
+  python:
+    description: Python interpreter for the CI wrapper, and for Python evaluators without their own .venv.
+    default: ''
+  comment:
+    description: Create or update one pull request comment with the summary. Needs pull-requests write permission.
+    default: 'false'
+  github-token:
+    description: Token used for the pull request comment.
+    default: ${{ github.token }}
+outputs:
+  result:
+    description: The wrapper result, such as pass, quality_failed, execution_failed or cancelled.
+    value: ${{ steps.gate.outputs.result }}
+  verdict:
+    description: The policy verdict (pass, fail or indeterminate) when available.
+    value: ${{ steps.gate.outputs.verdict }}
+  comparison-id:
+    description: The recorded comparison ID.
+    value: ${{ steps.gate.outputs.comparison-id }}
+  request-id:
+    description: The evaluation request ID.
+    value: ${{ steps.gate.outputs.request-id }}
+  candidate-version-id:
+    description: The immutable candidate version ID to release.
+    value: ${{ steps.gate.outputs.candidate-version-id }}
+  candidate-digest:
+    description: The candidate digest.
+    value: ${{ steps.gate.outputs.candidate-digest }}
+  parent-version-id:
+    description: The channel release the candidate was compared against.
+    value: ${{ steps.gate.outputs.parent-version-id }}
+  exit-code:
+    description: The wrapper exit status.
+    value: ${{ steps.gate.outputs.exit-code }}
+  summary-json:
+    description: Path of the JSON summary file.
+    value: ${{ steps.gate.outputs.summary-json }}
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      env:
+        INPUT_APP: ${{ inputs.app }}
+        INPUT_BUNDLE: ${{ inputs.bundle }}
+        INPUT_POLICY: ${{ inputs.policy }}
+        INPUT_CHANNEL: ${{ inputs.channel }}
+        INPUT_BUNDLE_DIR: ${{ inputs.bundle-dir }}
+        INPUT_PAYLOAD: ${{ inputs.payload }}
+        INPUT_MEMORY: ${{ inputs.memory }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_CONFIG_JSON: ${{ inputs.config-json }}
+        INPUT_SERVICE_URL: ${{ inputs.service-url }}
+        ACCLIMATE_EVALUATOR_TOKEN: ${{ inputs.token }}
+        INPUT_TOKEN_FILE: ${{ inputs.token-file }}
+        INPUT_LIVE: ${{ inputs.live }}
+        INPUT_DEADLINE: ${{ inputs.deadline }}
+        INPUT_MAX_COST_USD: ${{ inputs.max-cost-usd }}
+        INPUT_CONCURRENCY: ${{ inputs.concurrency }}
+        INPUT_SHARD: ${{ inputs.shard }}
+        INPUT_CASES: ${{ inputs.cases }}
+        INPUT_SELECTION: ${{ inputs.selection }}
+        INPUT_LANGUAGE: ${{ inputs.language }}
+        INPUT_COMMIT: ${{ inputs.commit || github.sha }}
+        INPUT_BASE_COMMIT: ${{ inputs.base-commit }}
+        INPUT_REPO: ${{ inputs.repo }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_ABANDON_UNCERTAIN: ${{ inputs.abandon-uncertain }}
+        INPUT_CANCEL_GRACE: ${{ inputs.cancel-grace }}
+        INPUT_PYTHON: ${{ inputs.python }}
+      # Inputs reach the script only through the environment, never through expression expansion.
+      run: |
+        set -euo pipefail
+        umask 077
+        if [ -n "$INPUT_PYTHON" ]; then export ACCLIMATE_CI_PYTHON="$INPUT_PYTHON"; fi
+        python="${ACCLIMATE_CI_PYTHON:-python3}"
+        state_root="${ACCLIMATE_CI_HOME:-$HOME/.acclimate-ci}"
+        output_dir="${INPUT_OUTPUT_DIR:-$state_root/${GITHUB_REPOSITORY//\//-}}"
+        private="$(mktemp -d "$RUNNER_TEMP/acclimate-gate.XXXXXX")"
+        {
+          echo "private-dir=$private"
+          echo "summary-json=$private/summary.json"
+          echo "comment-file=$private/comment.md"
+        } >> "$GITHUB_OUTPUT"
+        : > "$private/comment.md"
+
+        config="$INPUT_CONFIG"
+        if [ -n "$INPUT_CONFIG_JSON" ] || [ -n "$INPUT_SERVICE_URL" ]; then
+          config="$private/evaluator-config.json"
+          ACCLIMATE_STATE_ROOT="$state_root" "$python" - "$config" <<'PY'
+        import json, os, sys
+        values = {"schemaVersion": 1}
+        if os.environ.get("INPUT_CONFIG"):
+            with open(os.environ["INPUT_CONFIG"]) as handle:
+                values.update(json.load(handle))
+        if os.environ.get("INPUT_CONFIG_JSON"):
+            values.update(json.loads(os.environ["INPUT_CONFIG_JSON"]))
+        if os.environ.get("INPUT_SERVICE_URL"):
+            values["serviceUrl"] = os.environ["INPUT_SERVICE_URL"]
+        if "journalRoot" not in values:
+            journal = os.path.join(os.environ["ACCLIMATE_STATE_ROOT"], "journal")
+            os.makedirs(journal, mode=0o700, exist_ok=True)
+            values["journalRoot"] = os.path.realpath(journal)
+        descriptor = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w") as handle:
+            json.dump(values, handle)
+        PY
+        fi
+        if [ -z "$config" ]; then
+          echo "::error title=Acclimate quality gate::Set config, config-json or service-url"
+          exit 1
+        fi
+
+        args=(--commit "$INPUT_COMMIT" --repo "$INPUT_REPO" --app "$INPUT_APP" --config "$config"
+          --bundle "$INPUT_BUNDLE" --channel "$INPUT_CHANNEL" --policy "$INPUT_POLICY" --output-dir "$output_dir"
+          --cancel-grace "$INPUT_CANCEL_GRACE" --format github --summary-md "$GITHUB_STEP_SUMMARY"
+          --summary-md "$private/comment.md" --summary-json "$private/summary.json" --github-output "$GITHUB_OUTPUT")
+        if [ -n "$INPUT_PAYLOAD" ]; then args+=(--payload "$INPUT_PAYLOAD"); else args+=(--bundle-dir "$INPUT_BUNDLE_DIR"); fi
+        if [ "$INPUT_MEMORY" = none ]; then
+          args+=(--no-memory)
+        else
+          while IFS= read -r memory; do
+            if [ -n "$memory" ]; then args+=(--memory "$memory"); fi
+          done <<< "$INPUT_MEMORY"
+        fi
+        if [ -n "$ACCLIMATE_EVALUATOR_TOKEN" ]; then args+=(--token-env ACCLIMATE_EVALUATOR_TOKEN); fi
+        if [ -n "$INPUT_TOKEN_FILE" ]; then args+=(--token-file "$INPUT_TOKEN_FILE"); fi
+        if [ "$INPUT_LIVE" = true ]; then args+=(--live); fi
+        if [ "$INPUT_ABANDON_UNCERTAIN" = true ]; then args+=(--abandon-uncertain); fi
+        if [ -n "$INPUT_DEADLINE" ]; then args+=(--deadline "$INPUT_DEADLINE"); fi
+        if [ -n "$INPUT_MAX_COST_USD" ]; then args+=(--max-cost-usd "$INPUT_MAX_COST_USD"); fi
+        if [ -n "$INPUT_CONCURRENCY" ]; then args+=(--concurrency "$INPUT_CONCURRENCY"); fi
+        if [ -n "$INPUT_SHARD" ]; then args+=(--shard "$INPUT_SHARD"); fi
+        if [ -n "$INPUT_CASES" ]; then args+=(--cases "$INPUT_CASES"); fi
+        if [ -n "$INPUT_SELECTION" ]; then args+=(--selection "$INPUT_SELECTION"); fi
+        if [ -n "$INPUT_LANGUAGE" ]; then args+=(--language "$INPUT_LANGUAGE"); fi
+        if [ -n "$INPUT_BASE_COMMIT" ]; then args+=(--base-commit "$INPUT_BASE_COMMIT"); fi
+        # exec keeps the wrapper as the step process, so cancellation signals reach it directly.
+        exec sh "$GITHUB_ACTION_PATH/ci.sh" "${args[@]}"
+    - if: always() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.gate.outputs.comment-file != ''
+      uses: actions/github-script@v7
+      env:
+        COMMENT_FILE: ${{ steps.gate.outputs.comment-file }}
+        COMMENT_MARKER: '<!-- acclimate-pr-check:${{ inputs.bundle }}:${{ inputs.channel }} -->'
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('node:fs');
+          const summary = fs.readFileSync(process.env.COMMENT_FILE, 'utf8');
+          if (!summary.trim()) return;
+          const marker = process.env.COMMENT_MARKER;
+          const body = marker + '\n' + summary;
+          const { owner, repo } = context.repo;
+          const issue_number = context.payload.pull_request.number;
+          const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
+          const existing = comments.find((comment) => comment.body?.startsWith(marker));
+          if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+          else await github.rest.issues.createComment({ owner, repo, issue_number, body });
+    - if: always() && steps.gate.outputs.private-dir != ''
+      shell: bash
+      env:
+        PRIVATE_DIR: ${{ steps.gate.outputs.private-dir }}
+      # Keep the summary for later steps; remove any derived config.
+      run: rm -f "$PRIVATE_DIR/evaluator-config.json"

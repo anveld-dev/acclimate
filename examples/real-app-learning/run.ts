@@ -427,13 +427,7 @@ try {
   const calibration = await waitFor('noise calibration', async () => {
     signal.throwIfAborted();
     const status = (await view()).noiseCalibration;
-    if (status?.status === 'completed') {
-      // The evaluator completes its request before the worker publishes the power decision.
-      return status.plan ? status : undefined;
-    }
-    return status && ['failed', 'interrupted', 'stopped'].includes(status.status)
-      ? status
-      : undefined;
+    return status?.status === 'completed' || status?.status === 'stopped' ? status : undefined;
   });
   console.log(JSON.stringify({ calibration, baseline }));
   if (calibration.requestId) {

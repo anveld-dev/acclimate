@@ -339,6 +339,10 @@ function validateInstalledApps(value: ConnectedLearningDriverOptions['apps']) {
  * evaluator config and persistent journal so the runner can reconcile attempts.
  * Returns when the connection stops or the caller aborts.
  */
+/**
+ * Serves calibration and learning evaluations. After calibration submission,
+ * enrollment can report `evaluated` while the worker computes the plan and power decision.
+ */
 export async function serveConnectedLearning(
   options: ConnectedLearningDriverOptions,
 ): Promise<void> {

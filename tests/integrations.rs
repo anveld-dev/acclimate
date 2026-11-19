@@ -1132,6 +1132,8 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     )
     .await;
     assert_eq!(comparison.0, StatusCode::CREATED, "{}", comparison.1);
+    state.runtime.ownership_uncertain();
+    state.runtime.settle_claims().await;
     let finished = call(
         &app,
         "POST",
@@ -1142,6 +1144,43 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     .await;
     assert_eq!(finished.0, StatusCode::OK, "{}", finished.1);
     assert_eq!(finished.1["status"], "completed");
+    let read_calibration = async || {
+        let (status, view) = call(&app, "GET", &enrollment, "owner", Value::Null).await;
+        assert_eq!(status, StatusCode::OK, "{view}");
+        view["noiseCalibration"].clone()
+    };
+    let evaluated = read_calibration().await;
+    assert_eq!(evaluated["status"], "evaluated");
+    for field in ["plan", "pairedStandardDeviation", "cumulativeProjection"] {
+        assert!(evaluated.get(field).is_none(), "{evaluated}");
+    }
+    assert!(evaluated["stoppedReason"].is_null());
+
+    state.runtime.ownership_acquired();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let published = read_calibration().await;
+            if published["status"] == "completed" {
+                assert!(published["plan"].is_object(), "{published}");
+                assert!(
+                    published["pairedStandardDeviation"].is_number(),
+                    "{published}"
+                );
+                assert!(
+                    published["developmentProjection"].is_object(),
+                    "{published}"
+                );
+                assert!(published["cumulativeProjection"].is_object(), "{published}");
+                assert!(published["auditProjections"].is_array(), "{published}");
+                assert!(published["stoppedReason"].is_null(), "{published}");
+                break;
+            }
+            assert_eq!(published["status"], "evaluated", "{published}");
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .unwrap();
     let malformed = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             let reason: Option<String> = sqlx::query_scalar(

@@ -441,7 +441,16 @@ export interface LearningEnrollmentStatus extends LearningEnrollment {
   remainingAudits: number;
   noiseCalibration?: {
     requestId: string | null;
-    status: 'queued' | 'requested' | 'running' | 'completed' | 'failed' | 'interrupted' | 'stopped';
+    /** Evaluated evidence awaits the worker's decision. Completed includes the plan and projections. */
+    status:
+      | 'queued'
+      | 'requested'
+      | 'running'
+      | 'evaluated'
+      | 'completed'
+      | 'failed'
+      | 'interrupted'
+      | 'stopped';
     failedAttempts?: number;
     stoppedReason?: string | null;
     caseCount?: number;

@@ -18,8 +18,26 @@ Install the file on the evaluator machine with owner-only permissions:
 mkdir -p ~/.acclimate && chmod 700 ~/.acclimate
 mv ~/Downloads/evaluator.json ~/.acclimate/evaluator.json
 chmod 600 ~/.acclimate/evaluator.json
+```
+
+Then check it from the application directory:
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
 acclimate-eval doctor --config ~/.acclimate/evaluator.json --bundle "$BUNDLE_ID"
 ```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+acclimate doctor --config ~/.acclimate/evaluator.json --bundle "$BUNDLE_ID"
+```
+
+</Tab>
+</Tabs>
 
 `doctor` confirms the principal, the token's rights and the service's support for retained evaluator operations. See the [CLI reference](/docs/reference/evaluator-cli).
 
@@ -94,6 +112,7 @@ cat > "$RUNNER_TEMP/acclimate/evaluator.json" <<EOF
 EOF
 ACCLIMATE_EVALUATOR_TOKEN="$CI_EVALUATOR_TOKEN" \
   acclimate-eval compare --config "$RUNNER_TEMP/acclimate/evaluator.json" ...
+# Python: ACCLIMATE_EVALUATOR_TOKEN="$CI_EVALUATOR_TOKEN" acclimate compare --config ...
 ```
 
 Pass the path as `--config`. Relative paths resolve against the current directory. A remote service URL requires HTTPS. The worker records a failed callback's redacted message and stack trace in its private job directory. Add `"captureCallbackErrors": false` to opt out. When recovering an attempt, use the exact URL, workspace, principal, canonical journal root, and originating SDK language and release. On a durable worker, keep the journal on one authoritative physical volume across restarts.

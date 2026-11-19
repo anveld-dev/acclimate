@@ -3,7 +3,7 @@ title: Evaluator CLI
 description: Describe an installed evaluator, run a comparison, and inspect or export its retained evidence.
 ---
 
-Use `acclimate-eval` with the TypeScript SDK or `python -m acclimate` with the Python SDK. Both take the same commands, flags and exit codes.
+Use `acclimate-eval` with the TypeScript SDK or `acclimate` (also `python -m acclimate`) with the Python SDK. Both take the same commands, flags and exit codes.
 
 The CLI checks your command line first. Then, for commands that run callbacks, it loads your application module: `application.mjs` or `application.mts` (TypeScript), or `application.py` (Python), in the working directory. Choose another entry with `--app`. Python accepts a module name or a source file. If both `application.mjs` and `application.mts` exist, the CLI uses `application.mjs` and prints a warning.
 
@@ -32,31 +32,66 @@ The CLI checks your command line first. Then, for commands that run callbacks, i
 
 Run from the installed application environment. Add `--live` when your callbacks call models.
 
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
 ```sh
 acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
 acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
 acclimate-eval status --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
 ```
 
+</Tab>
+<Tab value="Python">
+
 ```sh
-python -m acclimate doctor --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
-python -m acclimate compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
-python -m acclimate status --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
+acclimate doctor --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
+acclimate compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+acclimate status --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
 ```
+
+</Tab>
+</Tabs>
 
 A separate reviewer can inspect status with the private reader config and public handoff:
 
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
 ```sh
 acclimate-eval status --read-config "$READER_CONFIG" --handoff "$HANDOFF"
-python -m acclimate status --read-config "$READER_CONFIG" --handoff "$HANDOFF"
 ```
 
+</Tab>
+<Tab value="Python">
+
+```sh
+acclimate status --read-config "$READER_CONFIG" --handoff "$HANDOFF"
+```
+
+</Tab>
+</Tabs>
+
 Create and run a named comparison from a candidate payload. Reuse the name to recover the same run:
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
 
 ```sh
 acclimate-eval compare --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --channel stable \
   --payload candidate.json --name "$RUN_NAME" --live --policy quality-policy.json
 ```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+acclimate compare --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --channel stable \
+  --payload candidate.json --name "$RUN_NAME" --live --policy quality-policy.json
+```
+
+</Tab>
+</Tabs>
 
 Use `--name` to refer to a headless run using its original evaluator config. For a deliberate repeat after a terminal run, see [run from a payload](/docs/guides/evaluate-a-change#run-from-a-payload). For uncertain execution or lost responses, see [evaluation recovery](/docs/operate/upgrades-and-recovery#recover-an-evaluation).
 
@@ -187,12 +222,28 @@ In JSON output, the same information is in `firstCallbackFailure`. Output that i
 
 `try` and `compare --local` load the same application adapter but never contact the service. `PAYLOAD` is a payload JSON file or a folder. In a folder, `skills/**` become skill files, `memory/**` become memory files, and other files become instructions.
 
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
 ```sh
 acclimate-eval try [--live] [--case ID,ID] [--payload PAYLOAD] [--case-timeout 2m] [--json]
 acclimate-eval compare --local --parent PAYLOAD --candidate PAYLOAD [--live] \
   [--policy POLICY] [--out DIR] [--json] [--cases ID,ID | --shard I/N] \
   [--deadline 30m] [--case-timeout 2m] [--max-cost-usd 5] [--progress | --quiet]
 ```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+acclimate try [--live] [--case ID,ID] [--payload PAYLOAD] [--case-timeout 2m] [--json]
+acclimate compare --local --parent PAYLOAD --candidate PAYLOAD [--live] \
+  [--policy POLICY] [--out DIR] [--json] [--cases ID,ID | --shard I/N] \
+  [--deadline 30m] [--case-timeout 2m] [--max-cost-usd 5] [--progress | --quiet]
+```
+
+</Tab>
+</Tabs>
 
 `try` exits 0 when every shape is valid and 1 otherwise. `compare --local` exits with the advisory policy result when you pass `--policy`: 0 for pass, 2 for fail, and 3 for indeterminate. Without a policy, it exits 3 when a deadline, cost limit, or interruption stopped the run, and 0 otherwise. The report `local-report.json` has `"authoritative": false` and `"releaseReceipt": false`.
 

@@ -42,7 +42,7 @@ Add an application module to your agent's project. It exports your saved `cases`
   --bundle "$BUNDLE_ID" --channel stable --payload candidate.json --name first-change --live
 ```
 
-Python users run the same commands with `python -m acclimate`. The result shows the parent and candidate scores and how many pairs were graded, and the change appears in the console under **Changes**. `--live` lets the evaluator call your agent with its own credentials. [Quickstart](apps/docs/content/docs/get-started/quickstart.mdx) · [Join a team's workspace](apps/docs/content/docs/get-started/join-a-team.mdx) · [Glossary](apps/docs/content/docs/concepts/glossary.mdx)
+Python users run the same commands with `acclimate` (or `python -m acclimate`) from the Python SDK, which needs Python 3.11+. The result shows the parent and candidate scores and how many pairs were graded, and the change appears in the console under **Changes**. `--live` lets the evaluator call your agent with its own credentials. [Quickstart](apps/docs/content/docs/get-started/quickstart.mdx) · [Join a team's workspace](apps/docs/content/docs/get-started/join-a-team.mdx) · [Glossary](apps/docs/content/docs/concepts/glossary.mdx)
 
 ## After the first comparison
 

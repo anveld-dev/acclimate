@@ -88,10 +88,24 @@ Open the printed console URL and sign in with the printed login. The `local-demo
 
 [Install the SDK](/docs/get-started/install) in your agent's project and add an application module as the [quickstart](/docs/get-started/quickstart#connect-your-agent) describes. Then save the published example as your starting point:
 
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
 ```sh
 source /path/to/acclimate/.local/stack/env.sh
 ./node_modules/.bin/acclimate-eval pull --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --out candidate.json
 ```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+source /path/to/acclimate/.local/stack/env.sh
+acclimate pull --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --out candidate.json
+```
+
+</Tab>
+</Tabs>
 
 `candidate.json` is a **payload**, the JSON form of the bundle's files:
 
@@ -106,13 +120,28 @@ source /path/to/acclimate/.local/stack/env.sh
 
 Edit the `text`, or add files with a `kind` of `instruction`, `skill`, or `memory`. Then compare your edit with the published version:
 
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
 ```sh
 ./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" \
   --bundle "$BUNDLE_ID" --channel stable \
   --payload candidate.json --name first-change --live
 ```
 
-In a terminal the CLI prints the parent and candidate means, pair coverage, and per-case scores. With `--json`, or when output is piped, it writes one JSON object instead. The change appears in the console under **Changes → Ready to review**, labeled `first-change`. The stack has no model provider of its own. Your agent makes any model calls with its own credentials. Python users run the same commands with `python -m acclimate`.
+</Tab>
+<Tab value="Python">
+
+```sh
+acclimate compare --config "$EVALUATOR_CONFIG" \
+  --bundle "$BUNDLE_ID" --channel stable \
+  --payload candidate.json --name first-change --live
+```
+
+</Tab>
+</Tabs>
+
+In a terminal the CLI prints the parent and candidate means, pair coverage, and per-case scores. With `--json`, or when output is piped, it writes one JSON object instead. The change appears in the console under **Changes → Ready to review**, labeled `first-change`. The stack has no model provider of its own. Your agent makes any model calls with its own credentials. The Python `acclimate` command and `python -m acclimate` run the same CLI.
 
 The local evaluator credential can compare changes but cannot release them. Release a reviewed change from the console.
 

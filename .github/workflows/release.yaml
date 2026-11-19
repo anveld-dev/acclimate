@@ -82,25 +82,31 @@ jobs:
 
   images:
     needs: package
-    runs-on: ubuntu-24.04
+    # Build each platform on a native runner. Rust under QEMU is slow and can crash rustc.
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
     strategy:
       fail-fast: false
       matrix:
+        image: [acclimate-service, acclimate-console]
+        platform: [linux/amd64, linux/arm64]
         include:
           - image: acclimate-service
             dockerfile: deploy/Dockerfile
           - image: acclimate-console
             dockerfile: deploy/console.Dockerfile
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           persist-credentials: false
-      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
-        with:
-          platforms: arm64
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Set image name
         id: image
@@ -114,26 +120,85 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build release image
+      - name: Build platform image
+        id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64,linux/arm64
-          push: ${{ needs.package.outputs.publish == 'true' }}
-          outputs: ${{ needs.package.outputs.publish == 'false' && format('type=oci,dest={0}/{1}.tar', runner.temp, matrix.image) || '' }}
-          tags: |
-            ${{ steps.image.outputs.name }}:${{ needs.package.outputs.version }}
-            ${{ steps.image.outputs.name }}:latest
+          platforms: ${{ matrix.platform }}
+          # Publishing pushes an untagged image by digest. The merge job tags the multi-arch index.
+          outputs: ${{ needs.package.outputs.publish == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.image.outputs.name) || 'type=cacheonly' }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ needs.package.outputs.version }}
             org.opencontainers.image.licenses=Apache-2.0
           provenance: mode=max
           sbom: true
+      - name: Record digest
+        if: needs.package.outputs.publish == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: needs.package.outputs.publish == 'true'
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  manifests:
+    needs: [package, images]
+    if: needs.package.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [acclimate-service, acclimate-console]
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: digest-${{ matrix.image }}-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag the multi-arch image
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ matrix.image }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          name="ghcr.io/${OWNER,,}/$IMAGE"
+          digests=(*)
+          if [[ ${#digests[@]} -ne 2 ]]; then
+            echo "Expected amd64 and arm64 digests, found ${#digests[@]}" >&2
+            exit 1
+          fi
+          sources=()
+          for digest in "${digests[@]}"; do
+            sources+=("$name@sha256:$digest")
+          done
+          docker buildx imagetools create --tag "$name:$VERSION" --tag "$name:latest" \
+            --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --annotation "index:org.opencontainers.image.version=$VERSION" \
+            --annotation "index:org.opencontainers.image.licenses=Apache-2.0" \
+            "${sources[@]}"
+          docker buildx imagetools inspect "$name:$VERSION"
 
   release:
-    needs: [package, images]
+    needs: [package, manifests]
     if: needs.package.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     permissions:

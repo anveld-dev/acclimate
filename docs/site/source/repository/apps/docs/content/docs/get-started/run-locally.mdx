@@ -44,7 +44,23 @@ Set the variables before launching the SDK. For a Python evaluator that also cal
 
 Sign in to the console with the printed Keycloak login. Open **Adopt an existing workspace** below the workspace creation form. Enter `local-demo` and a reason, review the adoption, then confirm it. The service provisions this workspace for the local machine grant. Adoption gives your signed-in operator administrator membership and records your reason.
 
-Use the printed path to `.local/stack/evaluator.json` as `EVALUATOR_CONFIG` in the [comparison quickstart](/docs/get-started/quickstart). It grants read and write access to `local-demo`. Start by publishing a bundle to that workspace. The stack starts without a model provider.
+Self-registration is turned on in the local realm so you can test invitations through Mailpit. A registered account has no workspace access until an administrator invites it.
+
+## Run a first comparison
+
+Open **Bundles → Create your first bundle** in `local-demo`, write your starting instructions, and select **Create and publish**. The local evaluator credential can compare changes but cannot publish a bundle, so the first release comes from the console.
+
+[Install the SDK](/docs/get-started/install) in your app and add an `application.mjs` or `application.py` as the [quickstart](/docs/get-started/quickstart) describes. Save the full candidate payload as JSON, then compare it with the published bundle. Copy the bundle ID from its console URL.
+
+```sh
+export NODE_EXTRA_CA_CERTS="$CHECKOUT/.local/stack/root.crt"
+./node_modules/.bin/acclimate-eval compare \
+  --config "$CHECKOUT/.local/stack/evaluator.json" \
+  --bundle "$BUNDLE_ID" --channel stable \
+  --payload candidate.json --name first-change --live
+```
+
+`CHECKOUT` is your Acclimate checkout. The result reports the parent and candidate means and how many pairs were graded. The candidate appears under **Changes → Ready to review** in the console. The stack starts without a model provider, so your app supplies any model calls with its own credentials.
 
 ## Stop or reset
 

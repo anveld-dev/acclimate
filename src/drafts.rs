@@ -145,7 +145,7 @@ async fn create(
     if crate::connected_learning::internal_channel(&c) {
         return Err(err(StatusCode::NOT_FOUND, "not_found", "Channel not found"));
     }
-    let a = crate::auth::actor(&h, &s, &p, "write")?;
+    let a = crate::auth::actor(&h, &s, &p, "evaluate")?;
     let req: Create = decode(&body)?;
     let route = format!("/v1/projects/{p}/bundles/{b}/channels/{c}/drafts");
     let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {

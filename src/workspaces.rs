@@ -128,7 +128,9 @@ fn machine(h: &HeaderMap, s: &AppState) -> ApiResult<()> {
             "Dedicated console transport required",
         ));
     }
-    if !s.grants.iter().any(|g| Some(g.token.as_str()) == token) {
+    if !s.grants.iter().any(|g| Some(g.token.as_str()) == token)
+        && crate::machine_tokens::trusted(h).is_none()
+    {
         return Err(err(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",
@@ -155,11 +157,15 @@ async fn projects(
             .to_str()
             .unwrap()
             .trim_start_matches("Bearer ");
+        let machine = crate::machine_tokens::trusted(&h)
+            .filter(|m| auth::rights_allow(&m.rights, "read"))
+            .map(|m| m.project_id);
         let ids: Vec<&str> = s
             .grants
             .iter()
-            .filter(|g| g.token == token && g.rights.iter().any(|r| r == "read"))
+            .filter(|g| g.token == token && auth::rights_allow(&g.rights, "read"))
             .map(|g| g.project_id.as_str())
+            .chain(machine.as_deref())
             .collect();
         sqlx::query("SELECT id,name,'operator'::text AS role FROM projects WHERE id=ANY($1) AND id>$2 ORDER BY id LIMIT $3").bind(ids).bind(cursor).bind(limit+1).fetch_all(&mut *tx).await.map_err(db)?
     };

@@ -36,7 +36,7 @@ fn guided_evaluator_route(project: &str, path: &str) -> bool {
             bundle,
             "evaluation-requests",
             request,
-            "start" | "finish" | "interrupt",
+            "start" | "finish" | "interrupt" | "abandon",
         ] => guided_uuid(bundle) && guided_uuid(request),
         _ => false,
     }
@@ -53,7 +53,7 @@ fn guided_evaluator_body(path: &str, body: &[u8]) -> bool {
         canonical(&body["attemptId"])
     } else if path.ends_with("/finish") {
         canonical(&body["attemptId"]) && canonical(&body["comparisonId"])
-    } else if path.ends_with("/interrupt") {
+    } else if path.ends_with("/interrupt") || path.ends_with("/abandon") {
         true
     } else {
         canonical(&body["parentVersionId"])
@@ -82,22 +82,25 @@ fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
         // A marked write retains its receipt; lookup/close require current write authority.
         ["bundles", b, "versions"] if uuid(b) => Some(&["write"]),
         ["bundles", b, "proposals"] if uuid(b) => Some(&["propose"]),
-        ["bundles", b, "evaluation-requests"] if uuid(b) => Some(&["write"]),
-        ["bundles", b, "comparisons"] if guided_uuid(b) => Some(&["write"]),
+        // Evaluator operations need only the narrow `evaluate` right, which `write` implies.
+        ["bundles", b, "evaluation-requests"] if uuid(b) => Some(&["evaluate"]),
+        ["bundles", b, "comparisons"] if guided_uuid(b) => Some(&["evaluate"]),
         [
             "bundles",
             b,
             "evaluation-requests",
             e,
-            "start" | "finish" | "interrupt",
-        ] if guided_uuid(b) && guided_uuid(e) => Some(&["write"]),
+            "start" | "finish" | "interrupt" | "abandon",
+        ] if guided_uuid(b) && guided_uuid(e) => Some(&["evaluate"]),
         ["bundles", b, "channels", c, "promotions"]
             if uuid(b) && crate::channels::valid_channel(c) =>
         {
             Some(&["promote"])
         }
+        // An evaluator stages its candidate as a draft; saving over, discarding
+        // and publishing drafts still require `write` or `promote`.
         ["bundles", b, "channels", c, "drafts"] if uuid(b) && crate::channels::valid_channel(c) => {
-            Some(&["write"])
+            Some(&["evaluate"])
         }
         ["bundles", b, "channels", c, "drafts", d, "save" | "discard"]
             if uuid(b) && uuid(d) && crate::channels::valid_channel(c) =>
@@ -433,7 +436,7 @@ async fn outcome(
         .and_then(|r| r.first().copied())
         .unwrap_or(if closing { "write" } else { "read" });
     let actor = if path.is_empty() {
-        ["read", "write", "promote", "propose"]
+        ["read", "evaluate", "write", "promote", "propose"]
             .into_iter()
             .find_map(|right| crate::auth::actor(&h, &s, &p, right).ok())
             .ok_or_else(|| {
@@ -705,10 +708,11 @@ mod tests {
             format!("bundles/{bundle}/evaluation-requests/{request}/start"),
             format!("bundles/{bundle}/evaluation-requests/{request}/finish"),
             format!("bundles/{bundle}/evaluation-requests/{request}/interrupt"),
+            format!("bundles/{bundle}/evaluation-requests/{request}/abandon"),
         ] {
             let route = format!("/v1/projects/p/{suffix}");
             assert!(guided_evaluator_route("p", &route));
-            assert_eq!(rights("p", &route), Some(["write"].as_slice()));
+            assert_eq!(rights("p", &route), Some(["evaluate"].as_slice()));
             assert_eq!(namespace(&route), route);
             assert!(!guided_evaluator_route(
                 "p",
@@ -778,6 +782,19 @@ mod tests {
             ),
             Some(["promote"].as_slice())
         );
+        // Evaluators stage candidate drafts; changing or publishing them is not evaluation.
+        let drafts =
+            "/v1/projects/p/bundles/11111111-1111-4111-8111-111111111111/channels/c/drafts";
+        assert_eq!(rights("p", drafts), Some(["evaluate"].as_slice()));
+        for action in ["save", "discard"] {
+            assert_eq!(
+                rights(
+                    "p",
+                    &format!("{drafts}/22222222-2222-4222-8222-222222222222/{action}")
+                ),
+                Some(["write"].as_slice())
+            );
+        }
         assert!(
             rights(
                 "p",

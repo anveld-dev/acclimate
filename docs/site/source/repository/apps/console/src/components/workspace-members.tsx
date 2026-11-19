@@ -1,3 +1,6 @@
+import { ReceiptTime } from './receipt-time';
+import { ListToolbar } from './list-toolbar';
+import { StatusBadge } from './status-badge';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import {
@@ -81,6 +84,8 @@ export function WorkspaceMembers({
   const [mailAvailable, setMailAvailable] = useState<boolean>();
   const [invitationError, setInvitationError] = useState('');
   const [role, setRole] = useState<Role>('viewer');
+  const identityTrigger = useRef<HTMLButtonElement>(null);
+  const [identityMember, setIdentityMember] = useState<VerifiedUser>();
   const [removing, setRemoving] = useState<VerifiedUser>();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
@@ -400,19 +405,27 @@ export function WorkspaceMembers({
         description="Choose who can view, edit, and manage this workspace."
         actions={
           allowed && (
-            <Button
-              ref={addTrigger}
-              className="transition-colors"
-              disabled={pending || !mailAvailable}
-              onClick={() => {
-                setEmail('');
-                setRole('viewer');
-                setMessage('');
-                setAdding(true);
-              }}
-            >
-              <UserRoundPlus aria-hidden="true" /> Invite member
-            </Button>
+            <div className="member-invite-action">
+              <Button
+                ref={addTrigger}
+                aria-describedby={mailAvailable === false ? 'member-invite-unavailable' : undefined}
+                className="transition-colors"
+                disabled={pending || !mailAvailable}
+                onClick={() => {
+                  setEmail('');
+                  setRole('viewer');
+                  setMessage('');
+                  setAdding(true);
+                }}
+              >
+                <UserRoundPlus aria-hidden="true" /> Invite member
+              </Button>
+              {mailAvailable === false && (
+                <p id="member-invite-unavailable" className="text-sm text-muted-foreground">
+                  Email invitations are unavailable until SMTP is configured.
+                </p>
+              )}
+            </div>
           )
         }
       />
@@ -435,12 +448,6 @@ export function WorkspaceMembers({
               <h2 id="current-members-heading" className="members-section-heading">
                 Current members
               </h2>
-              <span className="members-directory-count" aria-live="polite">
-                {search || roleFilter !== 'all'
-                  ? `${matchingMembers.length} of ${members.length}`
-                  : members.length}
-                {access.ok && access.nextMemberCursor ? ' loaded' : ''}
-              </span>
             </div>
             <Disclosure className="members-role-guide">
               <DisclosureTrigger>Role permissions</DisclosureTrigger>
@@ -456,14 +463,18 @@ export function WorkspaceMembers({
               </DisclosureContent>
             </Disclosure>
           </div>
-          <div className="members-directory-toolbar">
+          <ListToolbar
+            count={`${
+              search || roleFilter !== 'all'
+                ? `${matchingMembers.length} of ${members.length}`
+                : members.length
+            } members${access.ok && access.nextMemberCursor ? ' loaded' : ''}`}
+          >
             <DirectorySearch
               id="member-search"
               label="Search members"
               placeholder={
-                access.ok && access.nextMemberCursor
-                  ? 'Search loaded members…'
-                  : 'Name or ID'
+                access.ok && access.nextMemberCursor ? 'Search loaded members…' : 'Name or ID'
               }
               value={query}
               onValueChange={setQuery}
@@ -480,8 +491,8 @@ export function WorkspaceMembers({
                 </option>
               ))}
             </NativeSelect>
-          </div>
-          <Table>
+          </ListToolbar>
+          <Table className="directory-table">
             <TableHeader>
               <TableRow>
                 <TableHead>Account</TableHead>
@@ -517,16 +528,6 @@ export function WorkspaceMembers({
                             {duplicateNames.has(memberName(member)) && (
                               <div className="member-id">User ID: {member.id}</div>
                             )}
-                            <Disclosure>
-                              <DisclosureTrigger>Identity details</DisclosureTrigger>
-                              <DisclosureContent className="member-details">
-                                {!duplicateNames.has(memberName(member)) && (
-                                  <div className="member-id">User ID: {member.id}</div>
-                                )}
-                                <div>Issuer: {member.issuer}</div>
-                                <div>Subject: {member.subject}</div>
-                              </DisclosureContent>
-                            </Disclosure>
                           </div>
                         </div>
                       </div>
@@ -550,11 +551,10 @@ export function WorkspaceMembers({
                               )
                                 event.preventDefault();
                             }}
-                            data-role={member.role}
                             className="member-role-trigger"
                             aria-label={`Role for ${memberName(member)}, user ID ${member.id}: ${roleName(member.role)}`}
                           >
-                            {roleName(member.role)}
+                            <StatusBadge>{roleName(member.role)}</StatusBadge>
                             <ChevronDown
                               aria-hidden="true"
                               className="size-3.5 text-muted-foreground"
@@ -625,6 +625,15 @@ export function WorkspaceMembers({
                           <DropdownMenuLabel className="break-words">
                             {memberName(member)}
                           </DropdownMenuLabel>
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              identityTrigger.current =
+                                actionTriggers.current.get(member.id) ?? null;
+                              setIdentityMember(member);
+                            }}
+                          >
+                            Identity details
+                          </DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => void copyUserId(member)}>
                             Copy user ID
                           </DropdownMenuItem>
@@ -674,12 +683,44 @@ export function WorkspaceMembers({
           )}
         </section>
       )}
+      <Dialog
+        open={Boolean(identityMember)}
+        onOpenChange={(open) => !open && setIdentityMember(undefined)}
+      >
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            const trigger = identityTrigger.current;
+            if (trigger) {
+              event.preventDefault();
+              trigger.focus();
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Identity details</DialogTitle>
+            {identityMember && <DialogDescription>{memberName(identityMember)}</DialogDescription>}
+          </DialogHeader>
+          {identityMember && (
+            <dl className="member-details grid gap-2 break-all">
+              <div>
+                <dt>User ID</dt>
+                <dd>
+                  <code>{identityMember.id}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>Issuer</dt>
+                <dd>{identityMember.issuer}</dd>
+              </div>
+              <div>
+                <dt>Subject</dt>
+                <dd>{identityMember.subject}</dd>
+              </div>
+            </dl>
+          )}
+        </DialogContent>
+      </Dialog>
       {allowed && invitationError && <p role="alert">{invitationError}</p>}
-      {allowed && !invitationError && mailAvailable === false && (
-        <p className="text-sm text-muted-foreground">
-          Email invitations are unavailable until SMTP is configured.
-        </p>
-      )}
       {allowed && (
         <section
           className="members-invitations workspace-panel overflow-hidden"
@@ -728,7 +769,9 @@ export function WorkspaceMembers({
                             sent: 'Sent',
                             failed: 'Could not send',
                           }[invitation.deliveryStatus]}
-                      <div>Expires: {invitation.expiresAt}</div>
+                      <div>
+                        Expires: <ReceiptTime value={invitation.expiresAt} />
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       <span className="members-cell-label">Actions</span>

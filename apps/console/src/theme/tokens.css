@@ -1,5 +1,13 @@
 :root {
   color-scheme: light;
+  --tone-success-bg: #e3eee2;
+  --tone-success-fg: #254937;
+  --tone-warning-bg: #f8ebcd;
+  --tone-warning-fg: #704707;
+  --tone-danger-bg: #fae4e1;
+  --tone-danger-fg: #872f2c;
+  --tone-info-bg: #e1edf4;
+  --tone-info-fg: #2a4c63;
   --background: #f8f7f1;
   --foreground: #202e26;
   --card: #fffef9;
@@ -36,6 +44,21 @@
   --sidebar-border: #e2e4e1;
   --sidebar-ring: #4f775b;
   --sidebar-width: 176px;
+  --type-12: 0.75rem;
+  --leading-12: 1rem;
+  --type-13: 0.8125rem;
+  --leading-13: 1.125rem;
+  --type-14: 0.875rem;
+  --leading-14: 1.25rem;
+  --type-16: 1rem;
+  --leading-16: 1.5rem;
+  --type-20: 1.25rem;
+  --leading-20: 1.75rem;
+  --type-28: 1.75rem;
+  --leading-28: 2.125rem;
+  --font-mono: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  --view-heading: 650 var(--type-20)/var(--leading-20) var(--font-sans);
+  --section-heading: 650 var(--type-16)/var(--leading-16) var(--font-sans);
   --font-editorial: 'Iowan Old Style', 'Baskerville', Georgia, serif;
   --overlay-scrim: rgb(23 39 29 / 38%);
   --surface-shadow: 0 12px 36px -12px rgb(26 42 30 / 28%), 0 2px 6px rgb(26 42 30 / 8%);
@@ -44,6 +67,14 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
+    --tone-success-bg: #263c2d;
+    --tone-success-fg: #bcdfbb;
+    --tone-warning-bg: #3c3020;
+    --tone-warning-fg: #f1cd89;
+    --tone-danger-bg: #462c2d;
+    --tone-danger-fg: #ffb4ac;
+    --tone-info-bg: #263947;
+    --tone-info-fg: #c0def1;
     --overlay-scrim: rgb(5 12 7 / 64%);
     --surface-shadow: 0 16px 44px -12px rgb(0 0 0 / 55%);
     --background: #19211c;
@@ -87,4 +118,18 @@
   --sidebar-primary-foreground: #19392c;
   --sidebar-border: #45634f;
   --sidebar-ring: #d4e2b1;
+}
+
+
+@media (prefers-color-scheme: dark) {
+  .workspace-desktop-rail {
+    --sidebar: #131d17;
+    --sidebar-foreground: #d4dfd2;
+    --sidebar-accent: #26382c;
+    --sidebar-accent-foreground: #eeeee3;
+    --sidebar-primary: #dce8d1;
+    --sidebar-primary-foreground: #131d17;
+    --sidebar-border: #34473a;
+    --sidebar-ring: #acc69d;
+  }
 }

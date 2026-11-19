@@ -509,9 +509,7 @@ def inspect_case_and_scores(p):
     case = json.loads(workspace.get_by_label('Case evidence JSON').inner_text())
     assert case['comparisonId'] and case['parentVersionId'] and case['candidateVersionId']
     workspace.get_by_role('button',name='View case JSON',exact=True).click()
-    breakdown = p.get_by_role('button',name='Score breakdown',exact=True)
-    if breakdown.is_visible():
-        breakdown.click()
+    p.get_by_role('tab',name='Details',exact=True).click()
     return p.get_by_role('region',name='Observed paired rewards',exact=True)
 
 
@@ -529,7 +527,9 @@ def review_publish(context, expected_verdict='fail'):
     expected_pairs=len(context.world.browser_request['expectedCases'])
     expect(rewards.get_by_text('Scored pairs',exact=True).locator('..').locator('dd')).to_have_text(f'{expected_pairs} / {expected_pairs}')
     expect(rewards.get_by_text('Execution failures · expected outcomes',exact=True).locator('..').locator('dd')).to_have_text('0')
+    p.get_by_role('tab',name='Evaluation runs',exact=False).click()
     policy=p.get_by_label('Application policy check', exact=True)
+    policy.get_by_role('button',name='Policy check command',exact=True).click()
     expect(policy.get_by_label('Evaluator language', exact=True)).to_have_value('python')
     expect(policy.get_by_text('No policy verdict has been reported for this comparison.',exact=True)).to_be_visible()
     policy.get_by_role('button',name='Copy policy check command',exact=True).click()
@@ -749,7 +749,9 @@ def secret_once(context):
 def ui_revoke(context):
     p=page(context)
     p.get_by_role('button',name='I saved it · close',exact=True).click()
+    p.get_by_role('tab',name='Delivery reports',exact=True).click()
     expect(p.get_by_text('No delivery report received; status unknown.',exact=False)).to_be_visible()
+    p.get_by_role('tab',name='Credentials',exact=True).click()
     p.get_by_role('button',name=re.compile(r'^Revoke (read|reporting) credential ')).click()
     submit_and_wait(p,p.get_by_role('dialog').get_by_role('button',name='Revoke',exact=True))
     row=p.locator('code').filter(has_text=re.compile('^'+re.escape(context.world.ui_credential_id)+'$')).locator('../..')

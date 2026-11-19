@@ -115,3 +115,7 @@ export function actorScope(env: Environment): string {
     .digest('hex')
     .slice(0, 32);
 }
+
+export function creationRecoveryServiceIdentity(env: Environment): string {
+  return actorScope({ ...env, CONSOLE_SESSION_TOKEN: undefined });
+}

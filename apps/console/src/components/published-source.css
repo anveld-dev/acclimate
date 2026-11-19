@@ -26,7 +26,7 @@
 }
 .published-reading-tools [role='tab'] {
   min-height: 32px;
-  font-size: 14px;
+  font-size: var(--type-14);
   padding: 4px 9px;
 }
 .published-reading-tools [role='tab'][aria-selected='true'] {
@@ -57,7 +57,7 @@
   padding: 8px 14px;
   border-top: 1px solid var(--border);
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--type-14);
   font-variant-numeric: tabular-nums;
 }
 .published-source-status span:first-child,
@@ -98,11 +98,11 @@
   background: var(--muted);
 }
 .published-source-manifest header h3 {
-  font-size: 14px;
+  font-size: var(--type-14);
   font-weight: 600;
 }
 .published-source-manifest header span {
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .published-manifest-provenance dl {
   display: grid;
@@ -110,7 +110,7 @@
   align-items: baseline;
   gap: 8px 10px;
   padding: 12px 10px;
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .published-manifest-provenance dt {
   color: var(--muted-foreground);
@@ -125,7 +125,7 @@
 }
 .published-manifest-provenance dd code {
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .published-manifest-table-scroll {
   max-height: 22rem;
@@ -134,7 +134,7 @@
 .published-manifest-inventory table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .published-manifest-inventory td,
 .published-manifest-inventory th {
@@ -170,7 +170,7 @@
   max-width: 100%;
   text-align: start;
   font-family: var(--font-mono, monospace);
-  font-size: 14px;
+  font-size: var(--type-14);
   text-decoration: underline;
   text-underline-offset: 3px;
   overflow-wrap: anywhere;
@@ -180,7 +180,7 @@
 }
 .published-manifest-reference .published-reference-code {
   padding: 12px;
-  font-size: 14px;
+  font-size: var(--type-14);
   overflow-wrap: anywhere;
 }
 @container published-reader (max-width: 44rem) {
@@ -215,7 +215,7 @@
 
 .published-source-workspace .published-wrap-control,
 .published-source-manifest button {
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 @media (pointer: coarse) {
   .published-source-workspace .published-source-views button,

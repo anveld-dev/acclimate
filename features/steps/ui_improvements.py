@@ -76,6 +76,19 @@ def reconcile_initial(context):
     frozen=json.loads(p.get_by_label('Exact submitted creation',exact=True).inner_text())
     assert frozen['origin']=='created'
     assert frozen['payload']['files'][0]['text']=='Keep these exact instructions.'
+    bundle, = w.call('GET',w.root+'/bundles')['items']
+    browser = w.browser_fixture
+    def leave_creation(dialog):
+        assert dialog.type == 'beforeunload'
+        dialog.accept()
+    p.on('dialog',leave_creation)
+    try:
+        browser.visit(browser.bundle_path('changes',bundle_id=bundle['id']))
+    finally:
+        p.remove_listener('dialog',leave_creation)
+    expect(p.get_by_role('status').filter(has_text='A bundle publication is still unresolved.')).to_be_visible()
+    p.get_by_role('link',name='Open creation recovery',exact=True).click()
+    expect(p.get_by_role('button',name='Pending creation',exact=True)).to_be_disabled()
     p.get_by_role('button',name='Check result',exact=True).click()
     expect(p.get_by_test_id('entry-content')).to_contain_text('Keep these exact instructions.')
     assert len(w.call('GET',w.root+'/bundles')['items'])==1
@@ -96,9 +109,11 @@ def manual_review(context):
     p.get_by_role('button',name='Leave editor',exact=True).click()
     expect(p.get_by_label('Saved change review',exact=True)).to_contain_text('Generation 1 saved')
     expect(p.locator('.bundle-scope-header').get_by_role('combobox',name='Channel',exact=True)).to_contain_text('stable')
-    open_details(p,'Saved snapshot details')
-    expect(p.get_by_label('Saved change review',exact=True)).to_contain_text('Channel stable · current revision 1')
-    open_details(p,'Publish without evaluation')
+    p.get_by_role('tab',name='Details',exact=True).click()
+    details=p.get_by_role('region',name='Saved change details',exact=True)
+    open_details(details,'Saved snapshot details')
+    expect(details).to_contain_text('Channel stable · current revision 1')
+    open_details(p.get_by_role('complementary',name='Release decision',exact=True),'Publish without evaluation')
 
 
 @then('manual publication requires its own reason and confirms the saved generation')
@@ -174,7 +189,8 @@ def setup_roundtrip(context):
     b=w.browser()
     b.select_bundle()
     p=b.page
-    p.get_by_role('navigation',name='Bundle navigation',exact=True).get_by_role('link',name='App setup',exact=True).click()
+    p.get_by_role('button',name='Use in an app',exact=True).click()
+    p.get_by_role('link',name='Full setup guide',exact=True).click()
     expect(p.get_by_role('heading',name='1. Install the SDK',exact=True)).to_be_visible()
     expect(p.get_by_role('heading',name='2. Configure access',exact=True)).to_be_visible()
     expect(p.get_by_role('heading',name='3. Run the delivery check',exact=True)).to_be_visible()
@@ -191,7 +207,9 @@ def setup_roundtrip(context):
     query=parse_qs(urlparse(p.url).query)
     assert query['bundleId']==[w.setup['bundle']['id']] and query['channel']==['stable']
     p.get_by_role('link').filter(has=p.get_by_text(w.integration['displayName'],exact=True)).click()
-    p.get_by_role('link',name='Open app setup',exact=True).click()
+    p.get_by_role('tab',name='Setup',exact=True).click()
+    p.get_by_role('button',name='1. Bundle & channel',exact=False).click()
+    p.get_by_role('link',name='Full setup guide',exact=True).click()
 
 
 @then('App setup remains active for the same bundle and channel')
@@ -199,7 +217,8 @@ def setup_scope(context):
     w=context.world
     p=page(context)
     expect(p).to_have_url(w.browser_fixture.base+w.browser_fixture.bundle_path('connect'))
-    expect(p.get_by_role('navigation',name='Bundle navigation',exact=True).get_by_role('link',name='App setup',exact=True)).to_have_attribute('aria-current','page')
+    expect(p.get_by_role('navigation',name='Bundle navigation',exact=True).locator('[aria-current=page]')).to_have_count(0)
+    expect(p.get_by_role('link',name='Back to content',exact=True)).to_be_visible()
     assert w.call('GET',w.bundle+'/evaluation-requests')['items']==[]
     assert w.call('GET',w.channel)['revision']=='1'
 
@@ -260,7 +279,6 @@ def keyboard_preserved(context):
     expect(p.get_by_label('Entry path (rename)',exact=True)).to_have_value('memory/keyboard.md')
     close_entry_actions(p)
     expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Reusable project notes.')
-    tabs=p.get_by_role('navigation',name='Bundle navigation',exact=True)
-    tab_to(p,tabs.get_by_role('link',name='App setup',exact=True))
+    tab_to(p,p.get_by_role('button',name='Use in an app',exact=True))
     assert w.call('GET',w.channel+'/drafts')['items']==[]
     assert w.call('GET',w.channel)['revision']=='1'

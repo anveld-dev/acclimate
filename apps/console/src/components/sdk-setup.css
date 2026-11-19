@@ -1,4 +1,4 @@
-/* Setup is a checklist beside the code it configures, not a stack of documentation cards. */
+/* Setup follows the four steps in document order at every width. */
 .sdk-setup.sdk-setup-workspace {
   max-width: 1440px;
   margin-inline: auto;
@@ -15,7 +15,7 @@
   padding: 8px 0 20px;
 }
 .sdk-setup-workspace .sdk-setup-header h2 {
-  font-size: 20px;
+  font-size: var(--type-20);
   line-height: 28px;
   font-weight: 650;
   letter-spacing: -0.35px;
@@ -32,19 +32,13 @@
   gap: 28px;
   min-width: 0;
 }
-.sdk-setup-workspace .sdk-setup-checklist {
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
 .sdk-setup-workspace .sdk-step {
   min-width: 0;
   padding: 0;
   border: 0;
 }
 .sdk-setup-workspace .sdk-step h3 {
-  font-size: 16px;
+  font-size: var(--type-16);
   line-height: 24px;
   font-weight: 600;
   margin-bottom: 8px;
@@ -78,7 +72,7 @@
   padding: 7px 6px;
   margin: 0;
   background: transparent;
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 21px;
 }
 .sdk-setup-workspace .sdk-install-help {
@@ -103,19 +97,19 @@
 }
 .sdk-setup-workspace .sdk-required-environment dt {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 14px;
+  font-size: var(--type-14);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 .sdk-setup-workspace .sdk-required-environment dd {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 20px;
 }
 .sdk-setup-workspace .sdk-disclosure > [data-slot='disclosure-trigger'] {
   min-height: 36px;
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 20px;
   color: var(--muted-foreground);
 }
@@ -169,7 +163,7 @@
 .sdk-setup-workspace .sdk-recipe-toolbar code {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .sdk-setup-workspace .sdk-recipe-code {
   min-width: 0;
@@ -179,7 +173,7 @@
   border: 0;
   border-radius: 0;
   padding: 16px;
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 21px;
 }
 .sdk-setup-workspace .sdk-run-command {
@@ -190,7 +184,7 @@
 .sdk-setup-workspace .sdk-run-command > span,
 .sdk-setup-workspace .sdk-expected-output {
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 21px;
 }
 .sdk-setup-workspace .sdk-expected-output {
@@ -233,17 +227,8 @@
   margin: 0;
 }
 @container (min-width: 860px) {
-  .sdk-setup-workspace .sdk-setup-checklist {
-    padding: 0 20px 0 0;
-    border: 0;
-    border-inline-end: 1px solid var(--border);
-    border-radius: 0;
-  }
   .sdk-setup-workspace .sdk-recipe-toolbar {
     background: var(--muted);
-  }
-  .sdk-setup-workspace .sdk-setup-layout {
-    grid-template-columns: clamp(290px, 32%, 440px) minmax(0, 1fr);
   }
 }
 .sdk-setup-workspace [aria-label='Recipe language'] button {
@@ -282,7 +267,7 @@
 }
 .sdk-setup-workspace .sdk-reporting-recipe-heading h4 {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .sdk-setup-workspace .sdk-reporting-code {
   padding: 12px;
@@ -299,7 +284,7 @@
   gap: 10px 16px;
 }
 .sdk-recipe-options label {
-  font-size: 14px;
+  font-size: var(--type-14);
   color: var(--muted-foreground);
 }
 .sdk-setup-workspace .sdk-agent-step {
@@ -336,7 +321,7 @@
   padding: 10px 0 12px;
 }
 .sdk-recipe-lab .sdk-setup-header h2 {
-  font: 650 clamp(23px, 2.3vw, 34px) / 1.15 var(--font-mono, monospace);
+  font: var(--section-heading);
   letter-spacing: -0.05em;
 }
 .sdk-recipe-lab .sdk-recipe-options {
@@ -358,7 +343,7 @@
 .sdk-recipe-lab .sdk-scope strong,
 .sdk-recipe-lab .sdk-control-group > span,
 .sdk-recipe-lab .sdk-scope > span {
-  font-size: 13px;
+  font-size: var(--type-13);
 }
 .sdk-recipe-lab .sdk-control-group > span,
 .sdk-recipe-lab .sdk-scope > span {
@@ -383,42 +368,20 @@
   text-underline-offset: 3px;
 }
 .sdk-recipe-lab .sdk-setup-layout {
-  grid-template-areas: 'receipt' 'checklist' 'source';
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 .sdk-receipt-panel {
-  grid-area: receipt;
   min-width: 0;
 }
 .sdk-recipe-lab .setup-receipt {
   background: var(--card);
   overflow-wrap: anywhere;
 }
-.sdk-recipe-lab .sdk-setup-checklist {
-  grid-area: checklist;
-  padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--card);
-}
-.sdk-recipe-lab .sdk-setup-checklist .sdk-step {
-  padding: 12px 0;
-}
 .sdk-recipe-lab .sdk-run-step {
   border-top: 1px solid var(--border);
 }
-.sdk-recipe-lab .sdk-setup-checklist .sdk-step p {
-  margin-block: 5px;
-  font-size: 14px;
-  line-height: 1.45;
-}
-.sdk-recipe-lab .sdk-setup-checklist .sdk-disclosure > [data-slot='disclosure-trigger'] {
-  min-height: 30px;
-  line-height: 1.35;
-}
 .sdk-recipe-lab .sdk-check-step {
-  grid-area: source;
   scroll-margin-top: 8px;
 }
 .sdk-recipe-lab .sdk-check-step .sdk-recipe-file {
@@ -443,10 +406,6 @@
 .sdk-recipe-lab .sdk-check-step .sdk-recipe-code > code {
   min-width: max-content;
 }
-.sdk-recipe-lab .sdk-agent-drawer {
-  margin-top: 16px;
-  border-block: 1px solid var(--border);
-}
 .sdk-recipe-lab .sdk-agent-step {
   margin: 0;
   padding: 12px 0;
@@ -457,67 +416,58 @@
   padding-top: 0;
   border-top: 0;
 }
-@container (min-width: 740px) {
-  .sdk-recipe-lab .sdk-source-jump {
-    display: none;
-  }
-  .sdk-recipe-lab .sdk-setup-layout {
-    grid-template-areas: 'receipt receipt' 'checklist source';
-    grid-template-columns: minmax(240px, 0.72fr) minmax(0, 1.5fr);
-  }
+
+.sdk-recipe-lab .sdk-setup-layout > .sdk-step {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
 }
-@container (min-width: 1100px) {
-  .sdk-recipe-lab .sdk-setup-layout {
-    grid-template-areas: 'checklist source receipt';
-    grid-template-columns: minmax(240px, 0.87fr) minmax(360px, 1.8fr) minmax(180px, 0.65fr);
-  }
-  .sdk-recipe-lab .setup-receipt > div {
-    display: grid;
-    gap: 8px;
-  }
+.sdk-recipe-lab .sdk-run-step .sdk-check-step {
+  margin-top: 12px;
+}
+.sdk-recipe-lab .sdk-run-step .sdk-receipt-panel {
+  margin-top: 12px;
+}
+.sdk-recipe-lab .sdk-step [data-slot='disclosure-trigger'],
+.sdk-recipe-lab .sdk-control-group button {
+  min-height: 36px;
 }
 @media (pointer: coarse) {
-  .sdk-recipe-lab .sdk-setup-checklist .sdk-disclosure > [data-slot='disclosure-trigger'],
+  .sdk-recipe-lab .sdk-step [data-slot='disclosure-trigger'],
   .sdk-recipe-lab .sdk-control-group button {
     min-height: 44px;
   }
 }
-.sdk-runtime-column {
-  display: contents;
+
+.sdk-recipe-lab .sdk-connection-recipe .sdk-recipe-code {
+  max-height: 13rem;
 }
-.sdk-recipe-lab .sdk-run-step {
-  grid-area: run;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px;
-  background: var(--card);
-}
-.sdk-recipe-lab .sdk-run-step p {
-  font-size: 13px;
-  line-height: 1.45;
-}
-.sdk-recipe-lab .sdk-setup-layout {
-  grid-template-areas: 'receipt' 'checklist' 'run' 'source';
-}
-@container (min-width:740px) {
-  .sdk-recipe-lab .sdk-setup-layout {
-    grid-template-areas: 'receipt receipt' 'checklist source' 'run source';
-    grid-template-rows: auto minmax(0, min-content) 1fr;
+@media (min-width: 1100px) {
+  .sdk-recipe-lab .sdk-connection-recipe {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .sdk-connection-recipe .sdk-run-step,
+  .sdk-connection-recipe .sdk-agent-step {
+    grid-column: 1 / -1;
   }
 }
-@container (min-width:1100px) {
-  .sdk-recipe-lab .sdk-setup-layout {
-    grid-template-areas: 'checklist source runtime';
-    grid-template-rows: auto;
+
+@media (min-width: 1100px) {
+  .sdk-connection-recipe .sdk-run-step {
+    grid-column: 2;
+    grid-row: 1 / span 2;
   }
-  .sdk-runtime-column {
-    display: grid;
-    grid-area: runtime;
-    min-width: 0;
-    gap: 10px;
+  .sdk-recipe-lab .sdk-connection-recipe {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   }
-  .sdk-runtime-column > .sdk-run-step,
-  .sdk-runtime-column > .sdk-receipt-panel {
-    grid-area: auto;
-  }
+}
+
+.sdk-connection-recipe .sdk-run-step .sdk-check-step .sdk-recipe-code,
+.sdk-connection-recipe .sdk-agent-step .sdk-recipe-code {
+  max-height: 10rem;
+}
+.sdk-connection-recipe .sdk-expected-output {
+  margin-bottom: 0;
 }

@@ -1,3 +1,4 @@
+import { ReceiptTime } from './receipt-time';
 import { SyntaxCode } from './syntax-code';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -163,10 +164,7 @@ function ScopedVersionInspector({
               <>
                 {' '}
                 Created{' '}
-                <time dateTime={result.version.createdAt}>
-                  {new Date(result.version.createdAt).toISOString().replace('T', ' ').slice(0, 19)}{' '}
-                  UTC
-                </time>
+                <ReceiptTime value={result.version.createdAt} />
                 .
               </>
             )}

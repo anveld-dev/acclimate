@@ -15,8 +15,7 @@
   border: 0;
 }
 .changes-overview[data-triage] .changes-overview-toolbar h2 {
-  font: 650 clamp(24px, 2.2vw, 34px) / 1.2 var(--font-mono, monospace);
-  letter-spacing: -0.055em;
+  font: var(--section-heading);
 }
 .changes-overview[data-triage] .changes-frontpage {
   display: block;
@@ -49,7 +48,7 @@
 }
 .triage-runbar span,
 .triage-run time {
-  font-size: 12px;
+  font-size: var(--type-12);
   color: var(--muted-foreground);
 }
 .triage-run strong,
@@ -58,13 +57,12 @@
   align-items: center;
   gap: 6px;
 }
-.triage-run strong,
 .triage-metric b,
 .triage-coverage strong {
-  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
 }
 .triage-metric b {
-  font-size: 19px;
+  font-size: var(--type-20);
   line-height: 1.2;
 }
 .triage-coverage progress {
@@ -81,7 +79,7 @@
 .triage-runlink a {
   text-decoration: underline;
   text-underline-offset: 3px;
-  font-size: 13px;
+  font-size: var(--type-13);
   font-weight: 600;
 }
 .triage-workspace {

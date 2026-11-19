@@ -149,14 +149,16 @@ export function EvaluationCaseWorkbench({
   reviewHref: string;
   linkedPair?: string;
 }) {
-  const [filter, setFilter] = useState<PairFilter>('all');
+  const rows = evaluationPairs(comparison);
+  const counts = pairCounts(rows);
+  const defaultFilter = counts.lower ? 'lower' : 'all';
+  const [filter, setFilter] = useState<PairFilter>(defaultFilter);
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState('');
   const [page, setPage] = useState(0);
-  const rows = evaluationPairs(comparison);
-  const counts = pairCounts(rows);
   const linkedIndex = linkedPair ? rows.findIndex((r) => 'case:' + r.id === linkedPair) : -1;
   const linked = rows[linkedIndex];
+  const linkedId = linked?.id;
   const matches = linkedPair ? (linked ? [linked] : []) : selectPairs(rows, filter, query);
   const pageStart = linkedPair
     ? 0
@@ -177,12 +179,12 @@ export function EvaluationCaseWorkbench({
     if (keyboard.current) target?.focus({ preventScroll: true });
     keyboard.current = false;
     setQuery('');
-    setFilter('all');
-    if (linkedIndex >= 0 && linked) {
-      setChosen(linked.id);
+    setFilter(defaultFilter);
+    if (linkedId) {
+      setChosen(linkedId);
       setPage(Math.floor(linkedIndex / 25));
     }
-  }, [linkedPair, linkedIndex, linked?.id]);
+  }, [linkedPair, linkedIndex, linkedId, defaultFilter]);
   function choose(id: string) {
     setChosen(id);
     const pane = inspector.current;
@@ -247,7 +249,7 @@ export function EvaluationCaseWorkbench({
               }}
             >
               <option value="all">All reward changes ({rows.length})</option>
-              {(['higher', 'lower', 'same', 'unscored'] as const).map((k) => (
+              {(['lower', 'higher', 'same', 'unscored'] as const).map((k) => (
                 <option key={k} value={k}>
                   {pairLabels[k]} ({counts[k]})
                 </option>

@@ -77,7 +77,7 @@ def remove(context):
     expect(confirmation).to_contain_text('ordinary-person')
     assert w.call('GET',w.root+'/users/'+w.sessions['member']['userId'])['role']=='viewer'
     submit_and_wait(p,confirmation.get_by_role('button',name='Remove member',exact=True))
-    expect(p.get_by_role('status')).to_contain_text('Workspace access updated')
+    expect(p.get_by_role('status').filter(has_text='Workspace access updated')).to_be_visible()
 
 @then('the member is denied on the next content request')
 def denied(context):
@@ -134,6 +134,7 @@ def admin_connection(context):
 def lost_credential(context):
     w=context.world
     p=w.browser_fixture.page
+    p.get_by_role('tab',name='Credentials',exact=True).click()
     dropped=[]
     def drop(route):
         if route.request.method=='POST' and not dropped:

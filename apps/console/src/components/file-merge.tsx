@@ -79,39 +79,41 @@ export function FileMerge({
     <div ref={root} className="file-merge" aria-label={'Changed lines in ' + path} role="region">
       <div className="file-merge-tools" role="group" aria-label="Diff view">
         {width >= 620 && (
-          <Button size="sm" variant="ghost" aria-pressed={split} onClick={() => setMode('split')}>
-            Side by side
-          </Button>
+          <div className="diff-view-segment" role="group" aria-label="Diff layout">
+            <Button size="sm" variant="ghost" aria-pressed={split} onClick={() => setMode('split')}>
+              Side by side
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-pressed={!split}
+              onClick={() => setMode('unified')}
+            >
+              Unified
+            </Button>
+          </div>
         )}
-        {width >= 620 && (
+        <div className="diff-view-actions" role="group" aria-label="Diff actions">
+          <Button size="sm" variant="ghost" onClick={() => setFolded(!folded)}>
+            {folded ? 'Show all context' : 'Fold unchanged lines'}
+          </Button>
           <Button
             size="sm"
             variant="ghost"
-            aria-pressed={!split}
-            onClick={() => setMode('unified')}
+            disabled={status !== 'ready'}
+            onClick={() => editor.current?.navigate(false)}
           >
-            Unified
+            Previous change
           </Button>
-        )}
-        <Button size="sm" variant="ghost" onClick={() => setFolded(!folded)}>
-          {folded ? 'Show all context' : 'Fold unchanged lines'}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={status !== 'ready'}
-          onClick={() => editor.current?.navigate(false)}
-        >
-          Previous change
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={status !== 'ready'}
-          onClick={() => editor.current?.navigate(true)}
-        >
-          Next change
-        </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={status !== 'ready'}
+            onClick={() => editor.current?.navigate(true)}
+          >
+            Next change
+          </Button>
+        </div>
       </div>
       {split && (
         <div className="file-merge-labels">

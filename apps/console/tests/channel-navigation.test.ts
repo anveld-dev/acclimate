@@ -67,7 +67,7 @@ test('bundle-wide suggestion selection survives target navigation for a fresh re
 });
 
 test('setup retains its existing route and fragment navigation', () => {
-  assert.equal(bundleViewLabels.connect, 'App setup');
+  assert.deepEqual(Object.values(bundleViewLabels), ['Content', 'Changes', 'Releases']);
   const href = bundleHref(scope, 'connect') + '#reporting';
   const destination = consoleDestination(href);
   assert.equal(destination.params._splat, 'workspace/bundles/bundle/channels/canary/connect');

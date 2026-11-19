@@ -94,7 +94,7 @@
   padding-top: 10px;
   padding: 0;
   border: 0;
-  font-size: 13px;
+  font-size: var(--type-13);
 }
 .suggestion-consent {
   border-top: 1px solid var(--border);
@@ -167,11 +167,7 @@
   gap: 8px 16px;
 }
 .suggestion-composer-header h2 {
-  font:
-    500 clamp(26px, 3vw, 38px) / 1.12 Baskerville,
-    'Iowan Old Style',
-    Georgia,
-    serif;
+  font: var(--section-heading);
   letter-spacing: -0.035em;
 }
 .suggestion-release {
@@ -180,7 +176,7 @@
   gap: 6px;
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: var(--type-13);
 }
 .suggestion-release svg,
 .suggestion-consent h3 svg {
@@ -196,7 +192,7 @@
 }
 .suggestion-field-heading > span {
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--type-12);
 }
 .suggestion-path-row:has([aria-checked='true']) {
   background: var(--accent);

@@ -6,7 +6,7 @@
   background: var(--card);
 }
 .draft-studio .draft-status h2 {
-  font: 600 21px/1.2 var(--font-editorial, Georgia, serif);
+  font: var(--section-heading);
 }
 .draft-studio .studio-context {
   display: flex;
@@ -16,7 +16,7 @@
   padding: 6px 14px;
   background: var(--muted);
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--type-12);
   color: var(--muted-foreground);
 }
 .studio-context > span {
@@ -32,7 +32,7 @@
   margin-inline-start: auto;
 }
 .studio-file-state {
-  font-size: 12px;
+  font-size: var(--type-12);
   padding: 2px 6px;
   border-radius: 4px;
   background: var(--accent);
@@ -61,7 +61,7 @@
   min-width: 0;
   max-width: min(100%, 26rem);
   gap: 3px;
-  font-size: 14px;
+  font-size: var(--type-14);
   color: var(--muted-foreground);
 }
 .studio-review-controls select {
@@ -76,3 +76,11 @@
     flex: 1 1 130px;
   }
 }
+
+.draft-studio .draft-status { flex-wrap: wrap; min-width: 0; }
+.draft-studio .studio-context {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.draft-release-alert { margin: 8px 12px; width: auto; }

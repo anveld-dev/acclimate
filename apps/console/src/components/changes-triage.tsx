@@ -1,3 +1,4 @@
+import { ReceiptTime } from './receipt-time';
 import { useState } from 'react';
 import type { Evaluation } from '@acclimate/sdk';
 import { ArrowUpRight, GitCompareArrows } from 'lucide-react';
@@ -23,7 +24,6 @@ export function ChangesTriage({
   const comparison = evidence?.status === 'bound' ? evidence.comparison : undefined;
   const summary = comparison && evaluationScoreSummary(comparison);
   const rows = comparison ? evaluationPairs(comparison) : [];
-  const date = request && new Date(request.createdAt);
   return (
     <section className="triage-console" aria-label="Latest evaluation">
       <header className="triage-runbar">
@@ -33,15 +33,8 @@ export function ChangesTriage({
             <GitCompareArrows size={16} aria-hidden="true" />
             {request ? evaluationRunName(request.datasetRevision) : 'No run'}
           </strong>
-          {date && Number.isFinite(+date) && (
-            <time dateTime={request.createdAt}>
-              {date.toLocaleString(undefined, {
-                month: 'short',
-                day: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-              })}
-            </time>
+          {request && (
+            <ReceiptTime value={request.createdAt} />
           )}
         </div>
         {summary && (

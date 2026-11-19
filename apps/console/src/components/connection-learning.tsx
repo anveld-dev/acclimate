@@ -34,8 +34,60 @@ import {
 
 type Target = Pick<LearningRequest, 'projectId' | 'integrationId'>;
 type Mutation = Exclude<LearningRequest, { action: 'read' }>;
+export function useConnectionLearning(projectId: string, integrationId: string | undefined) {
+  const [result, setResult] = useState<LearningResult>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const refreshEpoch = useRef(0);
+  const [refreshError, setRefreshError] = useState('');
+  useEffect(() => {
+    if (busy || !integrationId) return;
+    const epoch = ++refreshEpoch.current;
+    let timer: ReturnType<typeof setTimeout>;
+    async function refresh(integrationId: string) {
+      try {
+        const next = await readConnectionLearning({ data: { projectId, integrationId } });
+        if (epoch !== refreshEpoch.current) return;
+        setResult(next);
+        setRefreshError('');
+      } catch {
+        if (epoch !== refreshEpoch.current) return;
+        setRefreshError('Learning status could not be refreshed. Retrying automatically.');
+      }
+      timer = setTimeout(() => void refresh(integrationId), 15000);
+    }
+    void refresh(integrationId);
+    return () => {
+      refreshEpoch.current++;
+      clearTimeout(timer);
+    };
+  }, [projectId, integrationId, busy]);
+
+  async function request(action: () => Promise<LearningResult>) {
+    refreshEpoch.current++;
+    setBusy(true);
+    setError('');
+    try {
+      const next = await action();
+      if (next.ok) {
+        setResult(next);
+        return true;
+      }
+      setError(next.message);
+    } catch {
+      setError('The operation could not be confirmed. Refresh learning status.');
+    } finally {
+      setBusy(false);
+    }
+    return false;
+  }
+
+  return { result, busy, error, refreshError, request };
+}
+
 export function ConnectionLearning({
   target,
+  learning,
   bundleId,
   channel,
   connectionName,
@@ -45,6 +97,7 @@ export function ConnectionLearning({
   enabled,
 }: {
   target: Target;
+  learning: ReturnType<typeof useConnectionLearning>;
   bundleId: string;
   channel: string;
   connectionName: string;
@@ -54,9 +107,7 @@ export function ConnectionLearning({
   enabled: boolean;
 }) {
   const { projectId, integrationId } = target;
-  const [result, setResult] = useState<LearningResult>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const { result, busy, error, refreshError, request } = learning;
   const [confirmStop, setConfirmStop] = useState(false);
   const [decision, setDecision] = useState<{
     parentVersionId: string;
@@ -69,10 +120,8 @@ export function ConnectionLearning({
   const decisionTrigger = useRef<HTMLElement | null>(null);
   const stopTrigger = useRef<HTMLElement | null>(null);
   const titleId = useId();
-  const refreshEpoch = useRef(0);
   const sectionRef = useRef<HTMLElement>(null);
   const alignOnLoad = useRef(false);
-  const [refreshError, setRefreshError] = useState('');
   const status = result?.ok ? result.status : null;
   const editable = canManage && enabled;
   const active = status?.enabled && !status.stoppedAt;
@@ -102,48 +151,6 @@ export function ConnectionLearning({
     });
     return () => cancelAnimationFrame(frame);
   }, [settled]);
-
-  useEffect(() => {
-    if (busy) return;
-    const epoch = ++refreshEpoch.current;
-    let timer: ReturnType<typeof setTimeout>;
-    async function refresh() {
-      try {
-        const next = await readConnectionLearning({ data: { projectId, integrationId } });
-        if (epoch !== refreshEpoch.current) return;
-        setResult(next);
-        setRefreshError('');
-      } catch {
-        if (epoch !== refreshEpoch.current) return;
-        setRefreshError('Learning status could not be refreshed. Retrying automatically.');
-      }
-      timer = setTimeout(refresh, 15000);
-    }
-    void refresh();
-    return () => {
-      refreshEpoch.current++;
-      clearTimeout(timer);
-    };
-  }, [projectId, integrationId, busy]);
-
-  async function request(action: () => Promise<LearningResult>) {
-    refreshEpoch.current++;
-    setBusy(true);
-    setError('');
-    try {
-      const next = await action();
-      if (next.ok) {
-        setResult(next);
-        return true;
-      }
-      setError(next.message);
-    } catch {
-      setError('The operation could not be confirmed. Refresh learning status.');
-    } finally {
-      setBusy(false);
-    }
-    return false;
-  }
 
   function mutate(input: Mutation) {
     return request(() => runConnectionLearning({ data: input }));

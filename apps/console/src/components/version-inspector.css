@@ -17,11 +17,11 @@
   text-align: left;
 }
 .version-inspector-header [data-slot='dialog-title'] {
-  font-size: 18px;
+  font-size: var(--type-16);
   line-height: 26px;
 }
 .version-inspector-header [data-slot='dialog-description'] {
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 21px;
 }
 .version-inspector-body {
@@ -37,12 +37,12 @@
 }
 .version-inspector-metadata > [data-slot='disclosure-trigger'] {
   min-height: 32px;
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .version-inspector-metadata dl {
   display: grid;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 21px;
 }
 .version-inspector-metadata dl > div {
@@ -104,7 +104,7 @@
 .version-inspector-file-header h3 {
   max-width: 100%;
   overflow-wrap: anywhere;
-  font-size: 16px;
+  font-size: var(--type-16);
   line-height: 24px;
   font-weight: 600;
 }
@@ -113,7 +113,7 @@
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 20px;
 }
 .version-inspector-source.syntax-code {
@@ -125,7 +125,7 @@
   overscroll-behavior: contain;
   border-radius: 0;
   background: transparent;
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 22px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -182,11 +182,7 @@
     padding: 18px 48px 16px 22px;
   }
   .version-inspector-header [data-slot='dialog-title'] {
-    font:
-      500 24px/1.25 Baskerville,
-      'Iowan Old Style',
-      Georgia,
-      serif;
+    font: var(--section-heading);
   }
   .version-inspector-metadata dl {
     grid-template-columns: repeat(3, minmax(0, 1fr));

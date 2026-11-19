@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { ReceiptTime } from './receipt-time';
+import { useState, type ReactNode } from 'react';
 import type { DeliveryReceipt, Page } from '@acclimate/sdk';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { Button } from './ui/button';
@@ -13,6 +14,7 @@ export function ConnectionReports({
   setupHref,
   busy,
   onLoadOlder,
+  action,
 }: {
   receipts: Page<DeliveryReceipt>;
   channel: string;
@@ -21,6 +23,8 @@ export function ConnectionReports({
   setupHref: string;
   busy: boolean;
   onLoadOlder(): void;
+  /** Optional header control placed beside the loaded-report count. */
+  action?: ReactNode;
 }) {
   const [showAll, setShowAll] = useState(false);
   const visible = showAll ? receipts.items : receipts.items.slice(0, 3);
@@ -33,7 +37,10 @@ export function ConnectionReports({
       <div>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-semibold">App-reported delivery</h2>
-          <Badge variant="outline">{receipts.items.length} reports loaded</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{receipts.items.length} reports loaded</Badge>
+            {action}
+          </div>
         </div>
         <p className="mt-1 break-all text-sm text-muted-foreground">
           Bundle channel {channel}: revision {currentRevision} · version {currentVersionId}
@@ -86,14 +93,23 @@ export function ConnectionReports({
 function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
   const stage =
     r.stage === 'started' ? 'App reported a session or turn started' : `App reported ${r.stage}`;
-  const received = new Date(r.receivedAt).toLocaleString(undefined, {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  });
   return (
     <article className="connection-report-row" data-testid="delivery-report">
       <Disclosure>
-        <DisclosureTrigger className="connection-report-trigger">
+        <DisclosureTrigger
+          className="connection-report-trigger"
+          aria-label={[
+            stage,
+            `source ${r.source}`,
+            r.stale && 'Stale mapping',
+            r.delayed && 'Delayed report',
+            `version ${r.versionId}`,
+            `received ${r.receivedAt}`,
+            `event ${r.eventId}`,
+          ]
+            .filter(Boolean)
+            .join(', ')}
+        >
           <span className="connection-report-summary">
             <span className="connection-report-stage">
               <span className="font-medium">{stage}</span>
@@ -102,16 +118,11 @@ function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
               {r.delayed && <Badge variant="secondary">Delayed report</Badge>}
             </span>
             <span className="connection-report-received text-muted-foreground">
-              <time dateTime={r.receivedAt} title={r.receivedAt}>
-                {received}
-              </time>
+              <ReceiptTime value={r.receivedAt} />
             </span>
             <span className="connection-report-version font-mono break-all">
               Version {r.versionId.slice(0, 8)}
             </span>
-          </span>
-          <span className="sr-only">
-            Received {r.receivedAt}. Event {r.eventId}.
           </span>
         </DisclosureTrigger>
         <DisclosureContent className="connection-report-details">
@@ -131,13 +142,13 @@ function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
             <div>
               <dt>App-reported occurrence</dt>
               <dd>
-                <time dateTime={r.occurredAt}>{r.occurredAt}</time>
+                <ReceiptTime value={r.occurredAt} />
               </dd>
             </div>
             <div>
               <dt>Service received</dt>
               <dd>
-                <time dateTime={r.receivedAt}>{r.receivedAt}</time>
+                <ReceiptTime value={r.receivedAt} />
               </dd>
             </div>
             <div>
@@ -152,7 +163,7 @@ function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
               <div>
                 <dt>App-reported resolution</dt>
                 <dd>
-                  <time dateTime={r.resolvedAt}>{r.resolvedAt}</time>
+                  <ReceiptTime value={r.resolvedAt} />
                 </dd>
               </div>
             )}

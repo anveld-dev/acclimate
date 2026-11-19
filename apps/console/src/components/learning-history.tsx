@@ -1,3 +1,4 @@
+import { ReceiptTime } from './receipt-time';
 import { useEffect, useRef, useState } from 'react';
 import type { Comparison, Evaluation } from '@acclimate/sdk';
 import type { ConsoleState } from '../server/channel';
@@ -198,9 +199,7 @@ export function LearningHistory({ state }: { state: Ready }) {
                     <ArrowRight aria-hidden="true" className="size-3.5 shrink-0" />
                   </ConsoleLink>
                   <p className="text-muted-foreground text-sm">
-                    <time dateTime={request.createdAt}>
-                      {new Date(request.createdAt).toLocaleString()}
-                    </time>
+                    <ReceiptTime value={request.createdAt} />
                     {' · '}
                     {request.expectedCases.length} pairs · {request.graderRevision}
                   </p>

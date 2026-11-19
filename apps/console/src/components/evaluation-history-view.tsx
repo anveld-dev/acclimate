@@ -1,3 +1,4 @@
+import { ReceiptTime } from './receipt-time';
 import { Fragment, useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { Comparison, Evaluation, EvaluationProgressView, Outcome } from '@acclimate/sdk';
 import type { EvaluationHistoryViewProps, RequestEvidence } from '../lib/changes-workspace';
@@ -551,7 +552,6 @@ export function EvaluationHistoryView({
                   model.selectedProgress.observation?.attemptId === request.attemptId
                     ? model.selectedProgress.observation
                     : null;
-                const created = new Date(request.createdAt);
                 const detailId = `${id}-detail-${encodeURIComponent(request.id)}`;
                 const coverageId = `${id}-coverage-${encodeURIComponent(request.id)}`;
                 return (
@@ -581,21 +581,7 @@ export function EvaluationHistoryView({
                               <span className="ledger-request-id">
                                 Request {request.id.slice(0, 8)} ·{' '}
                               </span>
-                              <time dateTime={request.createdAt} title={request.createdAt}>
-                                {Number.isNaN(created.getTime()) ? (
-                                  'Date unavailable'
-                                ) : (
-                                  <>
-                                    {created.toLocaleDateString(undefined, { dateStyle: 'short' })}
-                                    {', '}
-                                    <span className="whitespace-nowrap">
-                                      {created.toLocaleTimeString(undefined, {
-                                        timeStyle: 'short',
-                                      })}
-                                    </span>
-                                  </>
-                                )}
-                              </time>
+                              <ReceiptTime value={request.createdAt} />
                               {pinned?.id === request.id && ' · Selected outside loaded history'}
                               {outsideFilter &&
                                 outsideFilter.id === request.id &&

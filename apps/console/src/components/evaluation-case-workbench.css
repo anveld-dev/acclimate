@@ -31,14 +31,14 @@
 }
 .case-review-browser header h3,
 .case-review-inspector h3 {
-  font: 650 17px/1.35 var(--font-mono, monospace);
+  font: var(--section-heading);
 }
 .case-review-browser header span,
 .case-review-top p,
 .case-review-browser small,
 .case-review-linked {
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--type-12);
 }
 .case-browser-controls {
   display: grid;
@@ -67,13 +67,13 @@
   background: var(--card);
   color: var(--foreground);
   padding: 5px;
-  font-size: 14px;
+  font-size: var(--type-14);
   width: 100%;
 }
 .case-review-browser ul {
   list-style: none;
   padding: 0;
-  max-height: 28rem;
+  max-height: 22rem;
   overflow: auto;
 }
 .case-review-browser li button {
@@ -114,7 +114,7 @@
 .case-review-back {
   display: block;
   padding: 8px 14px;
-  font-size: 13px;
+  font-size: var(--type-13);
 }
 .case-review-back {
   text-decoration: underline;
@@ -154,7 +154,7 @@
   border-collapse: collapse;
   width: 100%;
   table-layout: fixed;
-  font-size: 13px;
+  font-size: var(--type-13);
 }
 .case-review-field-col {
   width: 21%;
@@ -168,36 +168,35 @@
 }
 .case-review-matrix thead th {
   background: var(--muted);
-  font-size: 14px;
+  font-size: var(--type-14);
   font-weight: 650;
 }
 .case-review-matrix thead span,
 .case-review-difference {
   display: block;
-  font-size: 11px;
+  font-size: var(--type-12);
   color: var(--muted-foreground);
   font-weight: 400;
 }
-.case-review-matrix thead span,
 .case-review-matrix td {
-  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
 }
 .case-review-matrix tbody th {
   font-weight: 550;
-  font-size: 12px;
+  font-size: var(--type-12);
 }
 .case-review-matrix [data-different] td {
   background: color-mix(in srgb, var(--accent) 23%, var(--card));
 }
 .case-review-matrix [data-reward] td {
-  font-size: 19px;
+  font-size: var(--type-20);
   font-weight: 650;
 }
 .case-review-tools {
   justify-content: flex-start;
 }
 .case-review-link {
-  font-size: 14px;
+  font-size: var(--type-14);
   font-weight: 600;
   text-decoration: underline;
   padding: 5px 0;
@@ -222,10 +221,10 @@
   }
   .case-review-matrix :is(th, td) {
     padding: 6px 4px;
-    font-size: 12px;
+    font-size: var(--type-12);
   }
   .case-review-matrix tbody th {
-    font-size: 11px;
+    font-size: var(--type-12);
   }
 }
 .evaluation-workspace .case-run-summary {
@@ -251,11 +250,12 @@
   padding-inline-start: 12px;
 }
 .case-run-stats dt {
-  font-size: 11px;
+  font-size: var(--type-12);
   color: var(--muted-foreground);
 }
 .case-run-stats dd {
-  font: 650 18px/1.4 var(--font-mono, monospace);
+  font: var(--section-heading);
+  font-variant-numeric: tabular-nums;
 }
 .case-run-summary > [data-slot='disclosure']:has([aria-expanded='true']) {
   order: 1;
@@ -303,7 +303,7 @@
   border-top: 1px solid var(--border);
   padding-top: 7px;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--type-12);
 }
 .case-run-quality strong {
   color: var(--foreground);
@@ -316,5 +316,5 @@
   padding: 7px 10px;
   gap: 4px;
   border-top: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--type-12);
 }

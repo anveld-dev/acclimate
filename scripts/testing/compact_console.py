@@ -475,7 +475,7 @@ def main():
         selected_evidence_url=b.base+evidence_link.get_attribute('href')
         evidence_link.click()
         expect(p).to_have_url(selected_evidence_url,timeout=30000)
-        expect(p.get_by_role('heading',name='Reported evidence',exact=True)).to_be_visible(timeout=30000)
+        expect(p.get_by_role('region',name='Evaluation case comparison',exact=True)).to_be_visible(timeout=30000)
         checked_capture(failures,p,output,'desktop-selected-evidence')
         p.get_by_role('button',name='Review release with this evidence',exact=True).click()
         expect(p.get_by_role('dialog')).to_contain_text(w.draft['snapshotVersion']['id'])

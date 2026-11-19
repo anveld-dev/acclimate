@@ -181,10 +181,10 @@ def complete_request(w,request):
 def loaded_evidence(w,b,e,p,f,prefix,*,cdp=None):
     visit(p,b,review_route(b,f));request=p.locator('.evaluation-request').filter(has=p.locator('#evaluation-request-'+f['request']['id']))
     expect(request).to_contain_text('App reported completed');activate(p,request.get_by_role('link',name=re.compile(r'^Inspect evidence for ')))
-    expect(p.get_by_role('heading',name='Reported evidence',exact=True)).to_be_visible();evidence=p.get_by_role('region',name='Evidence and release decision',exact=True)
+    p.get_by_role('tab',name='Details',exact=True).click();evidence=p.get_by_role('region',name='Evidence and release decision',exact=True)
     expect(evidence.get_by_role('table')).to_be_visible();expect(evidence).to_contain_text('Complete inventory');expect(evidence.get_by_role('row')).to_have_count(len(f['request']['expectedCases'])+1)
     for value in (f['report']['parentVersionId'],f['report']['candidateVersionId'],f['request']['id']):expect(evidence).to_contain_text(value)
-    p.get_by_role('heading',name='Reported evidence',exact=True).scroll_into_view_if_needed();capture(e,p,prefix+'-completed-loaded-evidence',cdp=cdp)
+    p.locator('.comparison-evidence').scroll_into_view_if_needed();capture(e,p,prefix+'-completed-loaded-evidence',cdp=cdp)
     release=evidence.get_by_role('button',name='Review release with this evidence',exact=True);activate(p,release);dialog=p.get_by_role('dialog',name='Publish to stable?',exact=True)
     for value in (f['report']['id'],f['report']['parentVersionId'],f['report']['candidateVersionId'],w.original['revision']):expect(dialog).to_contain_text(value)
     expect(dialog.get_by_role('button',name='Publish with selected evidence',exact=True)).to_be_enabled();capture(e,p,prefix+'-evidenced-release-review',cdp=cdp);p.keyboard.press('Escape');expect(dialog).to_have_count(0);expect(release).to_be_focused()
@@ -200,10 +200,13 @@ def evaluations(w,b,e,f):
         expect(p.get_by_role('heading',name='Evaluation request',exact=True)).to_have_count(0)
         capture(e,p,str(width)+'-evaluation-first-use')
     p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,route);p.get_by_label('Public evaluator configuration (JSON)',exact=True).filter(visible=True).fill(json.dumps(dict(datasetRevision='saved-tasks',graderRevision='grader-v1',runtime=dict(configId='app',configRevision='1'),expectedCases=[dict(caseId='review',repetition=0)])))
-    for name in ('Review file changes','Saved snapshot details','Comparison lookup and details'):open_details(p,name)
-    for name in ('Set up evaluation request','Review file changes','Saved snapshot details','Comparison lookup and details'):expect(p.get_by_role('button',name=name,exact=True)).to_have_attribute('aria-expanded','true')
+    activate(p,p.get_by_role('tab',name='Files changed',exact=False))
+    expect(p.get_by_role('region',name='Review file changes',exact=True)).to_be_visible()
+    activate(p,p.get_by_role('tab',name='Details',exact=True));open_details(p,'Saved snapshot details')
+    expect(p.get_by_role('button',name='Saved snapshot details',exact=True)).to_have_attribute('aria-expanded','true')
     manual_review(w,e,p,f,'1440-first-use')
     assert w.call('GET',w.bundle+'/evaluation-requests')['items']==baseline,'Disclosures created evaluation work'
+    activate(p,p.get_by_role('tab',name='Evaluation runs',exact=False))
     create=p.get_by_role('button',name='Create evaluation request',exact=True);activate(p,create)
     expect(p.get_by_role('button',name='Create another evaluation request',exact=True)).to_have_attribute('aria-expanded','false')
     items=w.call('GET',w.bundle+'/evaluation-requests')['items'];added=[item for item in items if item['id'] not in {row['id'] for row in baseline}];assert len(added)==1,added
@@ -245,7 +248,8 @@ def cursor_branch(w,b,e,f):
         # Use the same two paint frames +500ms settling interval as screenshots.
         p.evaluate('async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame)}');p.wait_for_timeout(500)
     expect(target).to_be_visible();expect(target).to_contain_text('App reported completed')
-    request=p.locator('.evaluation-request').filter(has=target);activate(p,request.get_by_role('link',name=re.compile(r'^Inspect evidence for ')));expect(p.get_by_role('heading',name='Reported evidence',exact=True)).to_be_visible()
+    request=p.locator('.evaluation-request').filter(has=target);activate(p,request.get_by_role('link',name=re.compile(r'^Inspect evidence for ')));expect(p.get_by_role('region',name='Evaluation case comparison',exact=True)).to_be_visible()
+    p.get_by_role('tab',name='Details',exact=True).click()
     expect(p.locator('.comparison-evidence')).to_contain_text(f['report']['candidateVersionId']);capture(e,p,'1440-cursor-loaded-older-matching-evidence')
     return dict(realOtherCandidateFixtureRequests=51,initialMatchingRequests=0,cursorBranchVisible=True,olderPagesLoaded=pages,targetRequestId=older_target,matchingEvidenceLoaded=True,modelCalls=0)
 

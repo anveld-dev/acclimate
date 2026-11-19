@@ -17,7 +17,7 @@
 }
 .release-picker h3 {
   padding: 12px 14px;
-  font-size: 14px;
+  font-size: var(--type-14);
   border-bottom: 1px solid var(--border);
 }
 .release-picker-scroll {
@@ -34,7 +34,7 @@
   padding: 12px;
   border-bottom: 1px solid var(--border);
   border-left: 3px solid transparent;
-  font-size: 14px;
+  font-size: var(--type-14);
   cursor: pointer;
 }
 .release-picker-option > svg {
@@ -44,7 +44,7 @@
 .release-picker-option time,
 .release-picker-option code {
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--type-12);
   grid-column: 2/-1;
 }
 .release-picker-option code {
@@ -78,7 +78,7 @@
   border-bottom: 1px solid var(--border);
 }
 .release-comparison-heading h3 {
-  font: 650 clamp(21px, 2.2vw, 30px) / 1.25 var(--font-mono, monospace);
+  font: var(--section-heading);
   letter-spacing: -0.045em;
 }
 .release-comparison-identities {
@@ -96,10 +96,10 @@
 .release-comparison-identities code {
   overflow-wrap: anywhere;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--type-12);
 }
 .release-comparison-identities strong {
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .release-comparison-body {
   display: grid;
@@ -118,14 +118,14 @@
   background: var(--muted);
   margin-left: 7px;
   padding: 1px 5px;
-  font-size: 12px;
+  font-size: var(--type-12);
 }
 .release-comparison-files [data-slot='native-select'] {
   max-width: 100%;
 }
 .release-comparison-evidence {
   border-inline-start: 1px solid var(--border);
-  font-size: 14px;
+  font-size: var(--type-14);
   overflow-wrap: anywhere;
 }
 .release-comparison-evidence h4:not(:first-child) {
@@ -138,11 +138,12 @@
   gap: 8px;
 }
 .release-result-values dt {
-  font-size: 12px;
+  font-size: var(--type-12);
   color: var(--muted-foreground);
 }
 .release-result-values dd {
-  font: 650 23px var(--font-mono, monospace);
+  font: var(--section-heading);
+  font-variant-numeric: tabular-nums;
 }
 .release-comparison-evidence .release-actions,
 .release-comparison-evidence .release-inspection-actions {

@@ -27,7 +27,6 @@ def main():
             ["node", "--import", "tsx", "examples/real-app-learning/run.ts"],
             env=dict(os.environ, EVALUATION_TEST_DATABASE_URL=harness.env["DATABASE_URL"]),
             cwd=ROOT,
-            timeout=6 * 3600,
             check=True,
         )
     finally:

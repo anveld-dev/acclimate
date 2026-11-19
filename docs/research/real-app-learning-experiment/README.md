@@ -2,6 +2,8 @@
 
 This experiment tested whether Acclimate could learn reusable instruction or memory changes from routine LLM CLI support failures and improve on disjoint paired tasks. [Pre-registration](preregistration.md)
 
+The [replication on policy v3](replication.md) used two repetitions per arm and a fresh audit cohort.
+
 ## Setup
 
 LLM 0.38 at `46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f`, Click 8.5.1 and Python 3.13.1. Acclimate service source `c542f0435ba7d2828c8c4b7baa6c2d03afc0e4e7`, Rust 1.89.0 and a disposable PostgreSQL 18.6 database. The validation turn used Codex CLI 0.169.1. The SDK used @openai/codex-sdk 0.169.0 with its bundled Codex CLI 0.169.0. Each turn explicitly requested `gpt-6-luna` at low reasoning effort. The protocol records the frozen task, grader and baseline SHA-256 digests. [Pinned LLM source](https://github.com/simonw/llm/tree/46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f)
@@ -54,7 +56,7 @@ bash examples/real-app-learning/preflight.sh </dev/null
 python3 examples/real-app-learning/run.py /opt/homebrew/opt/postgresql@18/bin > "$TMPDIR/run.log" 2>&1
 ```
 
-For a restart, include all spent attempts in `LLM_PRIOR_ATTEMPTS` and set `LLM_REMAINING_MS` to the remaining wall-clock allowance. If the service requests manual review, write an `operator-decision.json` file in the scratch directory with the reported `roundId` and a boolean `approve`. Review the audit bound and candidate diff first. Remove the scratch directory after recording aggregate evidence.
+For a restart, retain the previous run and readiness logs and include their turn counts and reported tokens in the totals. If the service requests manual review, write an `operator-decision.json` file in the scratch directory with the reported `roundId` and a boolean `approve`. Review the audit bound and candidate diff first. Remove the scratch directory after recording aggregate evidence.
 
 ## Deviations and service issues
 

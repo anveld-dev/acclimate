@@ -1,0 +1,152 @@
+[
+  {
+    "caseId": "replication-audit-01",
+    "input": "List four log entries matching \u201cdeployment window\u201d, as JSON.",
+    "expected": "llm logs list --count 4 --query 'deployment window' --json"
+  },
+  {
+    "caseId": "replication-audit-02",
+    "input": "Print the latest log entry as JSON, truncating long strings.",
+    "expected": "llm logs list --latest --json --truncate"
+  },
+  {
+    "caseId": "replication-audit-03",
+    "input": "List eight log entries for model atlas with token usage.",
+    "expected": "llm logs list --count 8 --model atlas --usage"
+  },
+  {
+    "caseId": "replication-audit-04",
+    "input": "Show the last response's last fenced code block.",
+    "expected": "llm logs list --latest --extract-last"
+  },
+  {
+    "caseId": "replication-audit-05",
+    "input": "Export logs from conversation planning-17 in short format.",
+    "expected": "llm logs list --conversation planning-17 --short"
+  },
+  {
+    "caseId": "replication-audit-06",
+    "input": "List log entries that contain results from the weather tool, as JSON.",
+    "expected": "llm logs list --tool weather --json"
+  },
+  {
+    "caseId": "replication-audit-07",
+    "input": "Show full schema definitions matching \u201cshipping label\u201d as JSON.",
+    "expected": "llm schemas list --full --query 'shipping label' --json"
+  },
+  {
+    "caseId": "replication-audit-08",
+    "input": "List schemas matching both latitude and longitude as newline-delimited JSON.",
+    "expected": "llm schemas list --query latitude --query longitude --nl"
+  },
+  {
+    "caseId": "replication-audit-09",
+    "input": "List full stored schemas matching tracking and carrier.",
+    "expected": "llm schemas list --full --query tracking --query carrier"
+  },
+  {
+    "caseId": "replication-audit-10",
+    "input": "Search stored schemas for \u201cemployee record\u201d in the default output format.",
+    "expected": "llm schemas list --query 'employee record'"
+  },
+  {
+    "caseId": "replication-audit-11",
+    "input": "Show the schema whose ID is contact-v2.",
+    "expected": "llm schemas show contact-v2"
+  },
+  {
+    "caseId": "replication-audit-12",
+    "input": "List models matching aurora that support tools, as JSON.",
+    "expected": "llm models list --query aurora --tools --json"
+  },
+  {
+    "caseId": "replication-audit-13",
+    "input": "List only model IDs north and south, with their options.",
+    "expected": "llm models list --model north --model south --options"
+  },
+  {
+    "caseId": "replication-audit-14",
+    "input": "List asynchronous models matching delta with their options.",
+    "expected": "llm models list --async --query delta --options"
+  },
+  {
+    "caseId": "replication-audit-15",
+    "input": "List schema-capable models matching quartz as JSON.",
+    "expected": "llm models list --schemas --query quartz --json"
+  },
+  {
+    "caseId": "replication-audit-16",
+    "input": "List aliased fragments matching \u201cweekly summary\u201d, as JSON.",
+    "expected": "llm fragments list --aliases --query 'weekly summary' --json"
+  },
+  {
+    "caseId": "replication-audit-17",
+    "input": "Search all fragments for both handbook and onboarding and return JSON.",
+    "expected": "llm fragments list --query handbook --query onboarding --json"
+  },
+  {
+    "caseId": "replication-audit-18",
+    "input": "Search fragments for \u201cincident timeline\u201d using the default display.",
+    "expected": "llm fragments list --query 'incident timeline'"
+  },
+  {
+    "caseId": "replication-audit-19",
+    "input": "Show the stored fragment aliased as review-notes.",
+    "expected": "llm fragments show review-notes"
+  },
+  {
+    "caseId": "replication-audit-20",
+    "input": "List six similar items to ID section-12 in the policies collection.",
+    "expected": "llm similar policies section-12 --number 6"
+  },
+  {
+    "caseId": "replication-audit-21",
+    "input": "Search the catalog collection for \u201cpacking list\u201d and return nine results.",
+    "expected": "llm similar catalog --content 'packing list' --number 9"
+  },
+  {
+    "caseId": "replication-audit-22",
+    "input": "Find neighbors of item rep-7 in reports with IDs starting with q4-, plain text.",
+    "expected": "llm similar reports rep-7 --prefix q4- --plain"
+  },
+  {
+    "caseId": "replication-audit-23",
+    "input": "Search inventory using stdin, in the embedding database warehouse.db.",
+    "expected": "llm similar inventory --input - --database warehouse.db"
+  },
+  {
+    "caseId": "replication-audit-24",
+    "input": "List embedding models matching both multilingual and compact.",
+    "expected": "llm embed-models list --query multilingual --query compact"
+  },
+  {
+    "caseId": "replication-audit-25",
+    "input": "List aliases in the default human-readable format.",
+    "expected": "llm aliases list"
+  },
+  {
+    "caseId": "replication-audit-26",
+    "input": "Show the saved template called incident-review.",
+    "expected": "llm templates show incident-review"
+  },
+  {
+    "caseId": "replication-audit-27",
+    "input": "List installed plugins implementing register_commands.",
+    "expected": "llm plugins --hook register_commands"
+  },
+  {
+    "caseId": "replication-audit-28",
+    "input": "Display saved options for model lake-mini.",
+    "expected": "llm models options show lake-mini"
+  },
+  {
+    "caseId": "replication-audit-29",
+    "input": "Back up the logs database to snapshot-2026.db.",
+    "expected": "llm logs backup snapshot-2026.db"
+  },
+  {
+    "caseId": "replication-audit-30",
+    "input": "Remove the model alias obsolete-chat.",
+    "expected": "llm aliases remove obsolete-chat"
+  }
+]

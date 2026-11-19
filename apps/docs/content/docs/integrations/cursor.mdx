@@ -1,24 +1,31 @@
 ---
 title: Cursor
-description: Stage local project resources and pass the generated workspace options to the Cursor SDK.
+description: Stage local project resources and run a sandboxed Cursor SDK agent on them.
 ---
 
-Prepare local project resources for a Cursor agent with `@acclimate/cursor-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install). The `/native` entry targets optional peer `@cursor/sdk` 1.3.1, which requires Node.js 22.13 or later.
+Prepare local project resources for a Cursor agent with `@acclimate/cursor-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install); the SDK is a peer of the plugin. The `/native` entry targets optional peer `@cursor/sdk` `^1.3.1`, which requires Node.js 22.13 or later.
 
 ## Prepare a local workspace
 
-The instruction goes to `AGENTS.md`, and skills go under `.cursor/skills/`. Cursor skill names use lowercase letters, digits, and hyphens. Pass the bundle paths of approved memory you want staged. Your app chooses how to include that memory in the prompt or context.
+The instruction goes to `AGENTS.md`, and skills go under `.cursor/skills/`. Cursor skill names use lowercase letters, digits, and hyphens. Pass the bundle paths of approved memory you want staged. Your app chooses how to include that memory in the prompt or context. `prepare` accepts a verified version or the result of `client.prepare()`.
 
 ```ts
+import { Agent } from '@cursor/sdk';
 import { prepare } from '@acclimate/cursor-plugin';
 import { cursorLocalOptions } from '@acclimate/cursor-plugin/native';
 
-const prepared = await prepare(verifiedVersion, { approvedMemoryPaths });
-const options = cursorLocalOptions(prepared);
+const prepared = await prepare(delivery, { approvedMemoryPaths });
+const agent = await Agent.create({
+  apiKey,
+  model: { id: model },
+  local: { ...cursorLocalOptions(prepared).local, sandboxOptions: { enabled: true } },
+});
 ```
 
-Pass the returned `local.cwd` and `local.settingSources: ['project']` to `Agent.create` with your app's credentials, model, and permissions. Start a fresh local agent for a new version. Call `await prepared.cleanup()` when the agent stops. Cleanup removes the prepared directory, including any files the agent created, so retain needed results first.
+Cursor's local sandbox is off unless you enable it. Call `prepared.reportStarted()` when the run reaches `RUNNING`. Start a fresh local agent for a new version. After `run.wait()` returns, retain the result, then call `await prepared.cleanup()`. Cleanup removes the prepared directory, including any files the agent created, and releases the delivery.
+
+The repository's `examples/cursor-agent.ts` shows the complete job, and the [native repository starter](/docs/guides/deliver-content#stage-a-repository-for-evaluation) runs Cursor with `"harness": "cursor"`.
 
 ## Qualification
 
-Offline checks cover native option types and file preparation. Live provider sessions, scanner discovery, and resumed-session reload behavior remain unqualified. The plugin prepares local files. Cloud delivery is outside its supported scope.
+Offline checks cover native option types, file preparation and the starter's adapter against a fake SDK module. Live provider sessions, scanner discovery, and resumed-session reload behavior remain unqualified. The plugin prepares local files. Cloud delivery is outside its supported scope.

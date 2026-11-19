@@ -122,7 +122,7 @@ def run_trials(*, app, request_id: str, attempt_id: str, bundles: dict, cancella
 
     lock = threading.Lock()
     deadline_event, fatal_event = threading.Event(), threading.Event()
-    state = {"stopReason": "completed", "costUsd": None, "armsDone": 0, "timedOut": 0, "retriesUsed": 0,
+    state = {"stopReason": "completed", "costUsd": None, "armsDone": 0, "timedOut": 0, "uncertain": 0, "retriesUsed": 0,
              "pairsStarted": 0, "compared": 0, "identical": 0}
     started_at = time.monotonic()
     digests: dict = {}
@@ -217,7 +217,22 @@ def run_trials(*, app, request_id: str, attempt_id: str, bundles: dict, cancella
         try:
             if on_callback_started:
                 on_callback_started()
-            execution = bounded(lambda: app._execute(execute_input), arm_event)
+            try:
+                execution = bounded(lambda: app._execute(execute_input), arm_event)
+            except ExecutionUncertainError as error:
+                # The application kept this job's work quarantined in its own private job
+                # directory. Record the arm as uncertain, never retry it while the earlier
+                # attempt may still run, and continue with the remaining pairs. Unawaited
+                # work the runner itself detects below, and uncertainty from grade, still stop the run.
+                hooks.assert_owned()
+                marker = job_dir / "uncertain.json"
+                atomic_private_write(marker, json_bytes({"schemaVersion": 1, "jobId": job_id, "side": side,
+                                                         "caseId": case.case_id, "repetition": repetition}) + b"\n")
+                note_failure(case, repetition, side, "execute", "execution_uncertain",
+                             hooks.record_diagnostic(job_dir, "execute", error) or str(marker))
+                with lock:
+                    state["uncertain"] += 1
+                return empty_outcome("execution_uncertain")
             if _async_value(execution) or (isinstance(execution, ExecutionResult) and _async_value(execution.output)):
                 if inspect.iscoroutine(execution):
                     execution.close()
@@ -400,7 +415,8 @@ def run_trials(*, app, request_id: str, attempt_id: str, bundles: dict, cancella
         "pairs": {"expected": len(plan), "selected": selected_pairs, "started": state["pairsStarted"], "notSelected": not_selected},
         "costUsd": state["costUsd"], "maxCostUsd": controls.max_cost_usd,
         "deadlineMs": controls.deadline_ms, "caseTimeoutMs": controls.case_timeout_ms,
-        "timedOutCallbacks": state["timedOut"], "gradeRetriesUsed": state["retriesUsed"],
+        "timedOutCallbacks": state["timedOut"], "uncertainArms": state["uncertain"],
+        "gradeRetriesUsed": state["retriesUsed"],
         "outputs": {"comparedPairs": state["compared"], "identicalPairs": state["identical"]},
     }
     return results, summary

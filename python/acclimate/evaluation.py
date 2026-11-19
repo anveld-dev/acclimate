@@ -185,7 +185,7 @@ class CallbackFailure(TypedDict, total=False):
     repetition: int
     side: Literal["parent", "candidate"]
     stage: Literal["execute", "grade"]
-    reason: Literal["execution_failed", "task_failed", "output_invalid", "grading_failed"]
+    reason: Literal["execution_failed", "task_failed", "output_invalid", "grading_failed", "execution_uncertain"]
     #: Private local file with the redacted message and traceback. Never uploaded.
     diagnosticFile: str
 

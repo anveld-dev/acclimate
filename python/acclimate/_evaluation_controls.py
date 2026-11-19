@@ -228,6 +228,11 @@ def run_warnings(summary: dict | None, digests: dict | None = None) -> list[str]
         count = summary["timedOutCallbacks"]
         warnings.append(f"{count} callback{'' if count == 1 else 's'} exceeded the {_format_ms(summary['caseTimeoutMs'])} case timeout. "
                         "The SDK cancelled them and stopped waiting; work that ignores cancellation may still be running.")
+    if summary.get("uncertainArms"):
+        count = summary["uncertainArms"]
+        warnings.append(f"{count} arm{'' if count == 1 else 's'} could not confirm that execution stopped and "
+                        f"{'is' if count == 1 else 'are'} recorded as execution_uncertain. Inspect the quarantined jobs "
+                        "(uncertain.json) before reusing their resources.")
     if summary["selection"]:
         warnings.append(f'Ran {describe_selection(summary["selection"])}. Unselected pairs are reported as not_selected, '
                         "so this result never claims full coverage.")

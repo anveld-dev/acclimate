@@ -17,7 +17,8 @@ from acclimate._evaluation_controls import (
 )
 from acclimate._evaluation_shared import json_bytes
 from acclimate.evaluation import (
-    Case, EvaluationError, ExecutionResult, GradeResult, bind_run_controls, define_evaluation, run_evaluation,
+    Case, EvaluationError, ExecutionResult, ExecutionUncertainError, GradeResult, bind_run_controls, define_evaluation,
+    run_evaluation,
 )
 from acclimate.evaluation_async import run_evaluation_async
 from acclimate.evaluation_cli import evaluation_main, parse_evaluator_arguments
@@ -117,6 +118,21 @@ class PayloadTests(LocalTestCase):
 
 
 class LocalComparisonTests(LocalTestCase):
+    def test_uncertain_execute_fails_one_arm_in_local_runs_too(self):
+        calls = []
+
+        def execute(run):
+            calls.append(run.case_id)
+            if len(calls) == 1:
+                raise ExecutionUncertainError()
+            return ExecutionResult({"ok": sees_polite(run)})
+        result = self.run_local(make_app(execute=execute))
+        arms = [arm for pair in result["comparison"]["results"] for arm in (pair["parent"], pair["candidate"])]
+        self.assertEqual([arm["error"] for arm in arms].count("execution_uncertain"), 1)
+        self.assertEqual(result["summary"]["uncertainArms"], 1)
+        self.assertTrue(any("execution_uncertain" in warning for warning in result["warnings"]))
+        self.assertEqual(len(list((self.root / "run" / "jobs").glob("*/uncertain.json"))), 1)
+
     def test_local_compare_uses_the_counterbalanced_schedule_and_service_bundle_shape(self):
         seen = []
 

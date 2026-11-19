@@ -457,28 +457,48 @@ class EvaluationCoreTests(unittest.TestCase):
                 self.assertEqual(len(calls),callbacks)
                 self.assertEqual(service.request["status"],"requested" if operation=="start" else "running")
 
-    def test_uncertain_execute_and_grade_stop_all_callbacks_and_refuse_retry(self):
-        for uncertainty in ("execute","grade"):
-            with self.subTest(uncertainty=uncertainty):
-                if self.journal_root.exists():
-                    import shutil
-                    shutil.rmtree(self.journal_root)
-                calls=[]
-                def execute(run):
-                    calls.append("execute")
-                    if uncertainty=="execute":
-                        raise ExecutionUncertainError()
-                    return ExecutionResult({"ok":True})
-                def grade(run):
-                    calls.append("grade")
-                    raise ExecutionUncertainError()
-                app=self.app(execute,grade)
-                service=FakeService(app)
-                for _ in range(2):
-                    with self.assertRaises(ExecutionUncertainError):
-                        self.run_app(app,service)
-                self.assertEqual(calls,["execute"] if uncertainty=="execute" else ["execute","grade"])
-                self.assertIsNone(service.comparison)
+    def test_uncertain_grade_stops_all_callbacks_and_refuses_retry(self):
+        calls=[]
+        def execute(run):
+            calls.append("execute")
+            return ExecutionResult({"ok":True})
+        def grade(run):
+            calls.append("grade")
+            raise ExecutionUncertainError()
+        app=self.app(execute,grade)
+        service=FakeService(app)
+        for _ in range(2):
+            with self.assertRaises(ExecutionUncertainError):
+                self.run_app(app,service)
+        self.assertEqual(calls,["execute","grade"])
+        self.assertIsNone(service.comparison)
+
+    def test_uncertain_execute_fails_only_that_arm_is_never_retried_and_leaves_a_marker(self):
+        calls=[]
+        def execute(run):
+            calls.append((run.case_id,run.context.side))
+            if len(calls)==1:
+                raise ExecutionUncertainError()
+            return ExecutionResult({"ok":True})
+        app=self.app(execute,cases=[Case("one",{"task":"do"},True),Case("two",{"task":"do"},True)])
+        service=FakeService(app)
+        result=self.run_app(app,service)
+        # Every other arm still ran; the uncertain arm ran once.
+        self.assertEqual(len(calls),4)
+        self.assertEqual(len(set(calls)),4)
+        arms=[arm for pair in service.comparison["results"] for arm in (pair["parent"],pair["candidate"])]
+        uncertain=[arm for arm in arms if arm["error"]=="execution_uncertain"]
+        self.assertEqual(len(uncertain),1)
+        self.assertEqual(uncertain[0]["executionStatus"],"infrastructure_failed")
+        self.assertEqual(sum(1 for arm in arms if arm["reward"]==1.0),3)
+        markers=list(self.journal_root.glob("*/jobs/*/uncertain.json"))
+        self.assertEqual(len(markers),1)
+        marker=json.loads(markers[0].read_bytes())
+        self.assertEqual((marker["caseId"],marker["side"]),calls[0])
+        self.assertEqual(result["firstCallbackFailure"]["reason"],"execution_uncertain")
+        # A rerun reuses the submitted evidence and never repeats the uncertain arm.
+        self.run_app(app,service)
+        self.assertEqual(len(calls),4)
 
     def test_coroutine_callbacks_run_to_completion_and_future_outputs_are_uncertain(self):
         import asyncio

@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any
 from .client import AcclimateClient, ApiError, TransportError
-from .types import BundlePayload, VerifiedBundle
+from .types import BundlePayload, VerifiedVersion
 from .receipts import BoundDeliveryReporter
 
 
@@ -194,7 +194,7 @@ def resolve_and_cache(
     offline_pinned_version: str | None = None,
     max_cache_bytes: int = 20 * 1024 * 1024,
     reporter=None,
-) -> VerifiedBundle:
+) -> VerifiedVersion:
     """Resolve online by default. Offline age is seconds; a pin permits that exact version."""
     if (channel is None) == (version_id is None):
         raise ValueError("Select exactly one channel or version_id")
@@ -345,7 +345,7 @@ def resolve_and_cache(
                 continue
             os.unlink(name, dir_fd=fd)
             total -= size
-        result: VerifiedBundle = {
+        result: VerifiedVersion = {
             "version": version,
             "payload": payload,
             "resolvedAt": resolved_at * 1000,
@@ -408,7 +408,7 @@ class PreparedFiles:
 class PreparedDelivery(AbstractContextManager["PreparedDelivery"]):
     """Pinned instructions, staged skills and the complete file inventory for one job."""
 
-    def __init__(self, bundle: VerifiedBundle, staged: PreparedFiles, directory: str, owned: bool):
+    def __init__(self, bundle: VerifiedVersion, staged: PreparedFiles, directory: str, owned: bool):
         self.bundle = bundle
         self.version = bundle["version"]
         self.files = staged.files
@@ -463,7 +463,7 @@ def _remove_job_directory(directory: str) -> None:
             raise
 
 
-def prepare_files(bundle: VerifiedBundle, destination: str) -> PreparedFiles:
+def prepare_files(bundle: VerifiedVersion, destination: str) -> PreparedFiles:
     validate_payload(bundle["payload"])
     root = os.path.abspath(destination)
     root_fd = _private_dir(root)

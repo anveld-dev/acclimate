@@ -1,4 +1,4 @@
-import type { IntegrationObservation, Page } from '@acclimate/sdk';
+import type { ConnectionObservation, Page } from '@acclimate/sdk';
 import { ApiError } from '@acclimate/sdk';
 import { consoleClient } from './console-client';
 import { publicReport } from './delivery-detail-core';
@@ -7,7 +7,7 @@ import { requireSession, type Environment } from './selection';
 
 export type DeliveryObservationsResult =
   | { ok: false; message: string }
-  | { ok: true; projectId: string; projectName: string; page: Page<IntegrationObservation> };
+  | { ok: true; projectId: string; projectName: string; page: Page<ConnectionObservation> };
 
 /** Reading app observations deliberately does not enter the admin Connections context. */
 export async function readDeliveryObservationsState(
@@ -26,11 +26,11 @@ export async function readDeliveryObservationsState(
     )
       return { ok: false, message: 'Select a workspace and a valid delivery page.' };
     const api = consoleClient(env, fetcher);
-    const projects = await allPages((cursor) => api.listProjects({ cursor, limit: 100 }));
+    const projects = await allPages((cursor) => api.listWorkspaces({ cursor, limit: 100 }));
     const project = projects.find((item) => item.id === input.projectId);
     if (!project)
       return { ok: false, message: 'Access denied. Current workspace read access is required.' };
-    const response = await api.listIntegrationObservations(input.projectId, {
+    const response = await api.listConnectionObservations(input.projectId, {
       cursor: input.cursor,
       limit: 50,
     });
@@ -40,7 +40,7 @@ export async function readDeliveryObservationsState(
       response.nextCursor
     ) {
       const remaining = await allPages((cursor) =>
-        api.listIntegrationObservations(input.projectId, {
+        api.listConnectionObservations(input.projectId, {
           cursor: cursor ?? response.nextCursor!,
           limit: 100,
         }),
@@ -48,8 +48,8 @@ export async function readDeliveryObservationsState(
       const linked = remaining.find((item) => item.id === input.integrationId);
       if (linked) response.items.push(linked);
     }
-    // Project only the public observation DTO, even if an upstream version adds fields.
-    const page: Page<IntegrationObservation> = {
+    // Workspace only the public observation DTO, even if an upstream version adds fields.
+    const page: Page<ConnectionObservation> = {
       nextCursor: response.nextCursor,
       items: response.items.map((item) => ({
         id: item.id,

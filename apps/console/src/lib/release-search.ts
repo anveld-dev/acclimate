@@ -1,6 +1,6 @@
-import type { Promotion } from '@acclimate/sdk';
+import type { Release } from '@acclimate/sdk';
 
-export function matchesRelease(item: Pick<Promotion, 'revision' | 'version'>, query: string) {
+export function matchesRelease(item: Pick<Release, 'revision' | 'version'>, query: string) {
   const term = query.trim().toLowerCase();
   const explicitRevision = /^(?:revision\s+|#)(\d+)$/.exec(term);
   if (explicitRevision) return item.revision === explicitRevision[1];

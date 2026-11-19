@@ -1,5 +1,6 @@
 """Faults at disposable browser boundaries, with exact committed-write assertions."""
 import json
+from scripts.bdd.provider import proposal_prompt
 import re
 import time
 from urllib.parse import quote
@@ -132,7 +133,7 @@ def later_proposal_retained(context):
     while not w.provider.requests and time.monotonic()<deadline:
         time.sleep(.05)
     assert len(w.provider.requests)==1
-    sent=json.loads(w.provider.requests[0]['messages'][0]['content'])['request']
+    sent=proposal_prompt(w.provider.requests[0])['request']
     assert sent['hypothesis']=='Submitted fixture hypothesis.'
     assert sent['evidence']==['Submitted fixture evidence.']
     assert w.call('GET',w.channel)['version']==w.original['version']
@@ -231,7 +232,7 @@ def cleanup_secret_kept(context):
     secret.focus()
     assert secret.evaluate('el=>el.selectionStart===0 && el.selectionEnd===el.value.length')
     assert w.call('GET',w.channel,actor='cleanup-issued')['version']==w.original['version']
-    rows=w.call('GET',w.root+'/integrations',actor='admin')['items']
+    rows=w.call('GET',w.root+'/connections',actor='admin')['items']
     integration=next(row for row in rows if row['id']==w.integration['id'])
     assert len(integration['credentials'])==1 and not integration['credentials'][0]['revokedAt']
     stored=p.evaluate('JSON.stringify([Object.entries(sessionStorage),Object.entries(localStorage)])')

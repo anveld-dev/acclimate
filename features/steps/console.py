@@ -100,7 +100,7 @@ def selected_origin(context,origin):
     assert len(entries)==1 and entries[0]['origin']==origin
     assert '/w/'+w.h.project+'/bundles/'+entries[0]['id']+'/' in page(context).url
     bundle=w.root+'/bundles/'+entries[0]['id']
-    releases=w.call('GET',bundle+'/channels/stable/promotions')['items']
+    releases=w.call('GET',bundle+'/channels/stable/releases')['items']
     assert len(releases)==1 and releases[0]['unevaluatedReason']
     assert releases[0].get('comparisonId') is None
     assert w.call('GET',bundle+'/evaluation-requests')['items']==[]
@@ -542,7 +542,7 @@ def review_publish(context, expected_verdict='fail'):
     command[command.index('--handoff')+1]=str(w.evaluator_app/'downloaded-evaluation-request.json')
     result=subprocess.run(command,cwd=w.evaluator_app,env=w.evaluator_env,capture_output=True,text=True,timeout=60)
     assert result.returncode=={'fail':2,'pass':0}[expected_verdict] and json.loads(result.stdout)['verdict']==expected_verdict
-    policy.get_by_role('button',name='Refresh policy receipts',exact=True).click()
+    policy.get_by_role('button',name='Refresh policy checks',exact=True).click()
     expect(policy.get_by_text({'fail':'Failed','pass':'Passed'}[expected_verdict],exact=True)).to_be_visible()
     if expected_verdict=='fail':
         expect(policy.get_by_text('Minimum mean improvement',exact=True)).to_be_visible()
@@ -564,7 +564,7 @@ def review_publish(context, expected_verdict='fail'):
 def exact_published(context):
     w=context.world
     assert w.call('GET',w.channel)['version']==w.browser_saved['snapshotVersion']
-    promotion=w.call('GET',w.channel+'/promotions')['items'][0]
+    promotion=w.call('GET',w.channel+'/releases')['items'][0]
     receipt=w.call('GET',w.bundle+'/comparisons/'+promotion['comparisonId']+'/policy-receipts')['items'][0]
     assert promotion['policyOverride']=={'reason':'Reviewer accepted the unchanged score for a scoped rollout.',
         'receipts':[{'comparisonId':receipt['comparisonId'],'policyDigest':receipt['policy']['sha256']}]}
@@ -652,7 +652,7 @@ def restored(context):
     w=context.world
     current=w.call('GET',w.channel)
     assert current['revision']=='3' and current['version']==w.original['version']
-    latest=w.call('GET',w.channel+'/promotions')['items'][0]
+    latest=w.call('GET',w.channel+'/releases')['items'][0]
     assert latest['unevaluatedReason'].endswith('BDD operator rollback.')
 
 
@@ -686,7 +686,7 @@ def stale_restore_rejected(context):
     expect(dialog.get_by_role('button', name='Review current release', exact=True)).to_be_enabled()
     current = w.call('GET', w.channel)
     assert current['revision'] == '3' and current['version'] == w.external_promotion['version']
-    w.history_before_retry = w.call('GET', w.channel + '/promotions')['items']
+    w.history_before_retry = w.call('GET', w.channel + '/releases')['items']
     assert w.history_before_retry[0]['id'] == w.external_promotion['id']
 
 
@@ -711,7 +711,7 @@ def restore_after_new_review(context):
     expect(page(context).get_by_role('article', name='Revision 4 · Current', exact=True)).to_be_visible()
     current = w.call('GET', w.channel)
     assert current['revision'] == '4' and current['version'] == w.original['version']
-    restored, *previous = w.call('GET', w.channel + '/promotions')['items']
+    restored, *previous = w.call('GET', w.channel + '/releases')['items']
     assert previous == w.history_before_retry
     assert restored['revision'] == '4' and restored['version'] == w.original['version']
     assert restored['previousVersionId'] == w.external_promotion['version']['id']

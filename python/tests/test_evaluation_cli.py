@@ -64,7 +64,7 @@ class CommandTests(unittest.TestCase):
                     return self.reply({"items": list(owner.policy_receipts.values())})
                 if route.endswith("/evaluation-capabilities"):
                     return self.reply({"schemaVersion": 1, "projectId": "project", "principalId": "evaluator", "checkedAt": NOW, "readUnpublished": True, "writeEvaluation": True, "retainedEvaluationOperations": True})
-                if route=="/v1/projects/project/bundles":
+                if route=="/v1/workspaces/project/bundles":
                     return self.reply({"items":[{"id":BUNDLE}],"nextCursor":None})
                 if "/operations/" in route:
                     key = route.rsplit("/", 1)[1]
@@ -96,7 +96,7 @@ class CommandTests(unittest.TestCase):
                         return self.reply(receipt)
                     key = self.headers["Idempotency-Key"]
                     owner.assertEqual(self.headers["X-Acclimate-Durable-Operation"], "true")
-                    fingerprint = "sha256:" + hashlib.sha256(b"POST\0" + route.encode() + b"\0" + raw).hexdigest()
+                    fingerprint = "sha256:" + hashlib.sha256(b"POST\0" + route.replace("/v1/workspaces/", "/v1/projects/", 1).encode() + b"\0" + raw).hexdigest()
                     result = state["receipts"].get(key, {}).get("result")
                     if result is not None:
                         owner.assertEqual(state["receipts"][key]["requestFingerprint"], fingerprint)
@@ -442,8 +442,8 @@ class CommandTests(unittest.TestCase):
             self.assertEqual(result["attemptId"],attempt_id)
             self.assertEqual(self.state["executions"],executions)
             self.assertEqual(len(submitted),2)
-            route=f"/v1/projects/project/bundles/{BUNDLE}/comparisons"
-            fingerprint="sha256:"+hashlib.sha256(b"POST\0"+route.encode()+b"\0"+body).hexdigest()
+            route=f"/v1/workspaces/project/bundles/{BUNDLE}/comparisons"
+            fingerprint="sha256:"+hashlib.sha256(b"POST\0"+route.replace("/v1/workspaces/", "/v1/projects/", 1).encode()+b"\0"+body).hexdigest()
             self.assertEqual(submitted,[(submit_key,fingerprint),(submit_key,fingerprint)])
             final=json.loads(attempt_file.read_bytes())
             self.assertEqual(final["keys"]["submit"],submit_key)

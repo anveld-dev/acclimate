@@ -447,7 +447,7 @@ def scope_from(config: dict, handoff: dict) -> dict:
 def mutation_path(operation: str, scope: dict) -> str:
     if not guided_project(scope.get("projectId")) or not guided_uuid(scope.get("bundleId")):
         raise EvaluationError("guided_target_unsupported")
-    base=f'/v1/projects/{scope["projectId"]}/bundles/{scope["bundleId"]}'
+    base=f'/v1/workspaces/{scope["projectId"]}/bundles/{scope["bundleId"]}'
     if operation == "submit":
         return base+"/comparisons"
     if operation == "createRequest":

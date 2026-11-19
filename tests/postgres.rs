@@ -176,6 +176,7 @@ async fn postgres_bundle_scope_and_immutable_payload() {
     .unwrap();
     assert_eq!(queued["candidate"], serde_json::Value::Null);
     assert_eq!(queued["status"], "queued");
+    state.runtime.ownership_acquired();
     let worker = tokio::spawn(proposal_worker(state));
     let mut final_status = String::new();
     for _ in 0..20 {

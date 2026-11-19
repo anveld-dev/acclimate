@@ -30,12 +30,12 @@ async function loadApps(path: string): Promise<ConnectedLearningDriverOptions['a
     if (error instanceof EvaluationError) throw error;
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       throw new EvaluationError('learning.apps_module_missing');
-    throw new EvaluationError('learning.apps_module_load_failed');
+    throw new EvaluationError('learning.apps_module_load_failed', {}, { cause: error });
   }
   try {
     return (await import(pathToFileURL(filename).href)).default;
-  } catch {
-    throw new EvaluationError('learning.apps_module_load_failed');
+  } catch (error) {
+    throw new EvaluationError('learning.apps_module_load_failed', {}, { cause: error });
   }
 }
 

@@ -4,14 +4,14 @@ import { join } from 'node:path';
 import { AcclimateClient, ApiError } from '../client.js';
 import { resolveAndCache } from '../cache.js';
 import { readEvaluatorConfig } from '../evaluation/config.js';
-import { captureDefinition } from '../evaluation/definition.js';
+import { bindEvaluationRepetitions, captureDefinition } from '../evaluation/definition.js';
 import {
   EvaluationError,
-  runEvaluation,
   toSafeDiagnostic,
   type EvaluationApp,
   type SafeDiagnostic,
 } from '../evaluation/index.js';
+import { runEvaluationRequest } from '../evaluation/runner.js';
 import type {
   DeliveryReceiptRequest,
   LearningFieldAuditRequest,
@@ -24,7 +24,7 @@ import type {
   LearningRecheckVerdict,
   LearningWork,
   LearningWorkItem,
-  VerifiedBundle,
+  VerifiedVersion,
 } from '../types.js';
 import { evaluationDescriptorDifferences, validateEvaluationHandoff } from '../validation.js';
 import { replayVerdict, type ReplayExecution } from './connected-replay.js';
@@ -47,7 +47,7 @@ type TerminalOutcome = Omit<
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const digest = /^sha256:[a-f0-9]{64}$/;
 
-function freshResolution(bundle: VerifiedBundle, projectId: string, integrationId: string) {
+function freshResolution(bundle: VerifiedVersion, projectId: string, integrationId: string) {
   const resolution = bundle.resolution;
   if (
     !resolution ||
@@ -62,7 +62,7 @@ function freshResolution(bundle: VerifiedBundle, projectId: string, integrationI
 }
 
 function startedBinding(
-  bundle: VerifiedBundle,
+  bundle: VerifiedVersion,
   projectId: string,
   integrationId: string,
   receipt: Readonly<DeliveryReceiptRequest>,
@@ -104,7 +104,7 @@ export function createLearningOutcomeReporter(options: LearningOutcomeReporterOp
   if (!uuid.test(options.integrationId)) throw new TypeError('integrationId must be a UUID');
   const integrationId = options.integrationId.toLowerCase();
   return async (
-    bundle: VerifiedBundle,
+    bundle: VerifiedVersion,
     outcome: TerminalOutcome,
   ): Promise<LearningOutcomeReceipt> => {
     const resolution = freshResolution(bundle, projectId, integrationId);
@@ -148,7 +148,7 @@ interface FieldAuditSample {
 }
 
 function fieldAuditBinding(
-  bundle: VerifiedBundle,
+  bundle: VerifiedVersion,
   projectId: string,
   integrationId: string,
   sample: FieldAuditSample,
@@ -191,11 +191,11 @@ export function createLearningFieldAuditReporter(options: LearningFieldAuditRepo
   if (!uuid.test(options.integrationId)) throw new TypeError('integrationId must be a UUID');
   const integrationId = options.integrationId.toLowerCase();
   return async (
-    bundle: VerifiedBundle,
+    bundle: VerifiedVersion,
     sample: FieldAuditSample & { verdict: LearningFieldAuditRequest['verdict'] },
   ): Promise<LearningFieldAuditReceipt> => {
     const binding = fieldAuditBinding(bundle, projectId, integrationId, sample);
-    if (!binding || (sample.verdict !== 'pass' && sample.verdict !== 'regression'))
+    if (!binding || !['pass', 'regression', 'win', 'loss', 'tie'].includes(sample.verdict))
       throw new TypeError('Field audit requires an eligible sample and an independent verdict');
     return client.reportLearningFieldAudit(projectId, integrationId, {
       ...binding,
@@ -212,8 +212,8 @@ export interface LearningFieldAuditorOptions<Job> extends LearningFieldAuditRepo
   /** Grade the recorded job and a read-only predecessor replay against the same objective. */
   evaluate(input: {
     job: Job;
-    served: VerifiedBundle;
-    predecessor: VerifiedBundle;
+    served: VerifiedVersion;
+    predecessor: VerifiedVersion;
     signal?: AbortSignal;
   }): Promise<{ served: LearningFieldGrade; predecessor: LearningFieldGrade }>;
 }
@@ -233,7 +233,7 @@ export function createLearningFieldAuditor<Job>(options: LearningFieldAuditorOpt
     );
   const integrationId = options.integrationId.toLowerCase();
   return async (
-    bundle: VerifiedBundle,
+    bundle: VerifiedVersion,
     sample: FieldAuditSample & { job: Job; signal?: AbortSignal },
   ): Promise<LearningFieldAuditRequest | null> => {
     const binding = fieldAuditBinding(bundle, projectId, integrationId, sample);
@@ -266,10 +266,12 @@ export function createLearningFieldAuditor<Job>(options: LearningFieldAuditorOpt
     });
     sample.signal?.throwIfAborted();
     if (!['correct', 'incorrect'].includes(grades.predecessor)) return null;
-    if (grades.served === 'correct') return { ...binding, verdict: 'pass' };
-    if (grades.served === 'incorrect' && grades.predecessor === 'correct')
-      return { ...binding, verdict: 'regression' };
-    return null;
+    if (!['correct', 'incorrect'].includes(grades.served)) return null;
+    return {
+      ...binding,
+      verdict:
+        grades.served === grades.predecessor ? 'tie' : grades.served === 'correct' ? 'win' : 'loss',
+    };
   };
 }
 
@@ -284,14 +286,14 @@ export interface ConnectedLearningDriverOptions {
     recheckExecution?: ReplayExecution;
     recheck?(input: {
       assignment: Readonly<LearningRecheck>;
-      baseline: VerifiedBundle;
+      baseline: VerifiedVersion;
       signal?: AbortSignal;
     }): Promise<LearningRecheckVerdict>;
     /** Re-run the triggering incident on a verified candidate using the original private evidence. */
     replayIncidentExecution?: ReplayExecution;
     replayIncident?(input: {
       assignment: Readonly<Omit<LearningIncidentReplay, 'verdict'>>;
-      candidate: VerifiedBundle;
+      candidate: VerifiedVersion;
       signal?: AbortSignal;
     }): Promise<LearningIncidentReplay['verdict']>;
     /** Opaque replay callbacks default to live. Mark deterministic callbacks model-free. */
@@ -299,7 +301,7 @@ export interface ConnectedLearningDriverOptions {
     /** Grade the original private field job using the supplied candidate. */
     requalifyFieldCase?(input: {
       assignment: Readonly<Omit<LearningFieldReplay, 'verdict'>>;
-      candidate: VerifiedBundle;
+      candidate: VerifiedVersion;
       signal?: AbortSignal;
     }): Promise<LearningFieldReplay['verdict']>;
     audit: readonly EvaluationApp<any, any, any>[];
@@ -307,11 +309,13 @@ export interface ConnectedLearningDriverOptions {
   allowLive?: boolean;
   pollIntervalMs?: number;
   signal?: AbortSignal;
-  onDiagnostic?: (diagnostic: SafeDiagnostic) => void;
+  /** The original error may contain private data. Keep it out of shared diagnostics. */
+  onDiagnostic?: (diagnostic: SafeDiagnostic, error: unknown) => void;
 }
 
 function validateInstalledApps(value: ConnectedLearningDriverOptions['apps']) {
-  const invalid = () => new EvaluationError('learning.apps_invalid_export');
+  const invalid = (cause?: unknown) =>
+    new EvaluationError('learning.apps_invalid_export', {}, { cause });
   if (!value || typeof value !== 'object' || !Array.isArray(value.audit)) throw invalid();
   for (const callback of [value.recheck, value.requalifyFieldCase, value.replayIncident]) {
     if (callback !== undefined && typeof callback !== 'function') throw invalid();
@@ -325,8 +329,8 @@ function validateInstalledApps(value: ConnectedLearningDriverOptions['apps']) {
   }
   try {
     for (const app of [value.development, ...value.audit]) captureDefinition(app);
-  } catch {
-    throw invalid();
+  } catch (error) {
+    throw invalid(error);
   }
 }
 
@@ -334,6 +338,10 @@ function validateInstalledApps(value: ConnectedLearningDriverOptions['apps']) {
  * Serve assigned evaluations with the installed app. Restart with the same
  * evaluator config and persistent journal so the runner can reconcile attempts.
  * Returns when the connection stops or the caller aborts.
+ */
+/**
+ * Serves calibration and learning evaluations. After calibration submission,
+ * enrollment can report `evaluated` while the worker computes the plan and power decision.
  */
 export async function serveConnectedLearning(
   options: ConnectedLearningDriverOptions,
@@ -384,7 +392,7 @@ export async function serveConnectedLearning(
     return result;
   }
   function report(error: unknown) {
-    onDiagnostic?.(toSafeDiagnostic(error));
+    onDiagnostic?.(toSafeDiagnostic(error), error);
   }
   function terminalError(error: unknown): boolean {
     return (
@@ -441,20 +449,31 @@ export async function serveConnectedLearning(
     }
   }
   async function evaluate(bundleId: string, item: LearningWorkItem): Promise<void> {
-    if (!uuid.test(item.evaluationRequestId) || !Object.hasOwn(apps, item.phase))
+    const calibration = item.phase === 'calibration';
+    const phase = calibration ? 'development' : item.phase;
+    const cumulative = !calibration && item.cumulative === true;
+    if (!uuid.test(item.evaluationRequestId) || !Object.hasOwn(apps, phase))
       throw new EvaluationError('evidence.identity_mismatch');
     const request = await client.getEvaluation(projectId, bundleId, item.evaluationRequestId);
     if (
       request.id !== item.evaluationRequestId ||
       request.requireBoundEvidence !== true ||
-      !request.proposalId
+      (!cumulative && Boolean(request.proposalId) === calibration) ||
+      (request.parentVersionId === request.candidateVersionId) !== calibration
     )
       throw new EvaluationError('evidence.identity_mismatch');
     if (request.status !== 'requested' && request.status !== 'running') return;
 
-    const matches = installed[item.phase](request).filter(
-      (app) => evaluationDescriptorDifferences(request, app.descriptor).length === 0,
-    );
+    const matches = installed[phase](request)
+      .filter(
+        (app) =>
+          evaluationDescriptorDifferences(
+            { ...request, expectedCases: app.descriptor.expectedCases },
+            app.descriptor,
+          ).length === 0,
+      )
+      .map((app) => bindEvaluationRepetitions(app, request.expectedCases))
+      .filter((app) => evaluationDescriptorDifferences(request, app.descriptor).length === 0);
     if (matches.length !== 1) throw new EvaluationError('descriptor.mismatch');
     const handoff = validateEvaluationHandoff({
       schemaVersion: 1,
@@ -477,13 +496,28 @@ export async function serveConnectedLearning(
         const app = matches[0]!;
         const live = captureDefinition(app).execution === 'live';
         if (live && !allowLive) throw new EvaluationError('config.schema');
-        await runEvaluation({ app, configPath, handoff, allowLive: live, signal: running });
+        await runEvaluationRequest(
+          {
+            app,
+            configPath,
+            handoff,
+            allowLive: live,
+            retryMissingTrial: true,
+            cachedParent: item.cachedParent
+              ? async () =>
+                  (await work()).items.find((next) => next.evaluationRequestId === request.id)
+                    ?.cachedParent
+              : undefined,
+            signal: running,
+          },
+          cumulative && !request.proposalId,
+        );
       },
     );
   }
 
-  type FieldReplay = Omit<LearningFieldReplay, 'verdict'>;
-  type IncidentReplay = Omit<LearningIncidentReplay, 'verdict'>;
+  type FieldReplay = Omit<LearningFieldReplay, 'verdict' | 'attempts'>;
+  type IncidentReplay = Omit<LearningIncidentReplay, 'verdict' | 'attempts'>;
   async function replay(
     bundleId: string,
     assignment: LearningRecheck | FieldReplay | IncidentReplay,
@@ -552,33 +586,55 @@ export async function serveConnectedLearning(
       const common = { root: config.journalRoot, identity, allowLive, signal: running, assigned };
       if (incident && options.apps.replayIncident) {
         const callback = options.apps.replayIncident;
-        const verdict = await replayVerdict({
-          ...common,
-          kind: 'learning-incident-replays',
-          verdicts: ['pass', 'regression', 'unavailable'] as const,
-          execution: options.apps.replayIncidentExecution,
-          execute: (signal) =>
-            callback({ assignment: Object.freeze({ ...assignment }), candidate: bundle, signal }),
-        });
-        if (verdict !== undefined && (await assigned()))
+        const attempts: Array<LearningIncidentReplay['verdict']> = [];
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const verdict = await replayVerdict({
+            ...common,
+            identity: [...identity, String(attempt)],
+            kind: 'learning-incident-replays',
+            verdicts: ['pass', 'regression', 'unavailable'] as const,
+            execution: options.apps.replayIncidentExecution,
+            execute: (signal) =>
+              callback({ assignment: Object.freeze({ ...assignment }), candidate: bundle, signal }),
+          });
+          if (verdict === undefined) return;
+          attempts.push(verdict);
+        }
+        const verdict =
+          attempts.filter((value) => value === 'pass').length >= 2
+            ? 'pass'
+            : attempts.filter((value) => value === 'unavailable').length >= 2
+              ? 'unavailable'
+              : 'regression';
+        if (await assigned())
           await client.reportLearningIncidentReplay(projectId, integrationId, {
             ...assignment,
             verdict,
+            attempts,
           });
       } else if (!incident && field && options.apps.requalifyFieldCase) {
         const callback = options.apps.requalifyFieldCase;
-        const verdict = await replayVerdict({
-          ...common,
-          kind: 'learning-field-replays',
-          verdicts: ['pass', 'regression'] as const,
-          execution: options.apps.requalifyFieldCaseExecution,
-          execute: (signal) =>
-            callback({ assignment: Object.freeze({ ...assignment }), candidate: bundle, signal }),
-        });
-        if (verdict !== undefined && (await assigned()))
+        const attempts: Array<LearningFieldReplay['verdict']> = [];
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const verdict = await replayVerdict({
+            ...common,
+            identity: [...identity, String(attempt)],
+            kind: 'learning-field-replays',
+            verdicts: ['pass', 'regression'] as const,
+            execution: options.apps.requalifyFieldCaseExecution,
+            execute: (signal) =>
+              callback({ assignment: Object.freeze({ ...assignment }), candidate: bundle, signal }),
+          });
+          if (verdict === undefined) return;
+          attempts.push(verdict);
+        }
+        const verdict =
+          attempts.filter((value) => value === 'pass').length >= 2 ? 'pass' : 'regression';
+        if (await assigned())
           await client.reportLearningFieldReplay(projectId, integrationId, {
             ...assignment,
             verdict,
+            attempts,
           });
       } else if (!field && options.apps.recheck) {
         const callback = options.apps.recheck;

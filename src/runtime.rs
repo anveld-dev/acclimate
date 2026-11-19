@@ -28,8 +28,11 @@ impl RuntimeStatus {
     pub fn ownership_acquired(&self) {
         self.owner.store(true, Ordering::SeqCst);
     }
-    pub fn ownership_lost(&self) {
+    pub fn ownership_uncertain(&self) {
         self.owner.store(false, Ordering::SeqCst);
+    }
+    pub fn ownership_lost(&self) {
+        self.ownership_uncertain();
         self.begin_draining();
     }
     pub fn mark_initialized(&self) {
@@ -79,7 +82,7 @@ impl RuntimeStatus {
     // crosses the write barrier after setting draining to settle earlier claims.
     pub async fn claim_permit(&self) -> Option<RwLockReadGuard<'_, ()>> {
         let permit = self.claims.read().await;
-        if self.is_draining() {
+        if self.is_draining() || !self.owner.load(Ordering::SeqCst) {
             None
         } else {
             Some(permit)

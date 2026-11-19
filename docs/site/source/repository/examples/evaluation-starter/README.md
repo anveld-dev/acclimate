@@ -69,7 +69,7 @@ acclimate-eval doctor --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --polic
 
 To keep cases in a separate JSON file, set `ACCLIMATE_EVALUATOR_CASES` to its absolute path and give it mode 0600. This array overrides the module's cases. Only the grader receives the expected answer.
 
-Use `python -m acclimate` in your Python environment. Ask the service operator for the evaluator's project read/write principal and private configuration file. Keep its service URL, principal and canonical journal root stable across retries. Copy [quality-policy.example.json](quality-policy.example.json) to `quality-policy.json` and edit it for your application. The example checks that both the equal-case mean and each case reward hold steady or improve. List release-critical case IDs in `requiredCases`. Add a measured cost ceiling with `"cost": {"maximumCandidateUsd": 1}` if that is your budget. Pass the edited file explicitly with `--policy`.
+Use `python -m acclimate` in your Python environment. Ask the service operator for the evaluator's workspace read/write principal and private configuration file. Keep its service URL, principal and canonical journal root stable across retries. Copy [quality-policy.example.json](quality-policy.example.json) to `quality-policy.json` and edit it for your application. The example checks that both the equal-case mean and each case reward hold steady or improve. List release-critical case IDs in `requiredCases`. Add a measured cost ceiling with `"cost": {"maximumCandidateUsd": 1}` if that is your budget. Pass the edited file explicitly with `--policy`.
 
 From the console, select your saved immutable candidate, paste the public `describe` output and download its handoff. Run the comparison and apply your policy with one command:
 

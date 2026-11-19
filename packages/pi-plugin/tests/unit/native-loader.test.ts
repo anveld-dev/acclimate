@@ -23,9 +23,9 @@ const bundle: VerifiedBundle = {
       {
         path: 'skills/lookup/SKILL.md',
         kind: 'skill',
-        text: '---\nname: lookup\ndescription: Find values.\n---\nRead references/data.txt.',
+        text: '---\nname: lookup\ndescription: Find values.\n---\nRead references/data.md.',
       },
-      { path: 'skills/lookup/references/data.txt', kind: 'skill', text: 'Reference marker.' },
+      { path: 'skills/lookup/references/data.md', kind: 'skill', text: 'Reference marker.' },
       { path: 'memory/selected.md', kind: 'memory', text: 'Selected memory marker.' },
       { path: 'memory/other.md', kind: 'memory', text: 'Other memory marker.' },
     ],
@@ -44,9 +44,9 @@ test('real Pi loader exposes prepared instructions and skill, with explicitly se
     assert.equal(skills.length, 1);
     assert.equal(skills[0]!.name, 'lookup');
     assert.equal(skills[0]!.filePath, prepared.skillPaths[0]);
-    assert.match(await readFile(skills[0]!.filePath, 'utf8'), /Read references\/data.txt/);
+    assert.match(await readFile(skills[0]!.filePath, 'utf8'), /Read references\/data\.md/);
     assert.equal(
-      await readFile(join(skills[0]!.baseDir, 'references/data.txt'), 'utf8'),
+      await readFile(join(skills[0]!.baseDir, 'references/data.md'), 'utf8'),
       'Reference marker.',
     );
     assert.deepEqual(loader.getAppendSystemPrompt(), ['Selected memory marker.']);

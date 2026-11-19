@@ -237,12 +237,30 @@ async fn real_process_ownership_readiness_recovery_and_shutdown() {
             .await
             .unwrap()
     );
-    assert_eq!(
-        exit(&mut restart).await.code(),
-        Some(75),
-        "ownership loss retains EX_TEMPFAIL"
-    );
-    assert_eq!(status(&restart_address, "/health").await, None);
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            assert!(
+                restart.0.try_wait().unwrap().is_none(),
+                "service exited while reconnecting"
+            );
+            let replacement = sqlx::query_scalar::<_, i32>(
+                "SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted
+                 AND classid=169 AND objid=3333947977 AND pid<>$1
+                 AND database=(SELECT oid FROM pg_database WHERE datname=current_database())",
+            )
+            .bind(owner)
+            .fetch_optional(&db)
+            .await
+            .unwrap();
+            if replacement.is_some() && status(&restart_address, "/ready").await == Some(200) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("same service process did not reacquire the queue lock");
+    terminate(&mut restart).await;
     no_lock(&db).await;
     db.close().await;
     sqlx::query(&format!("DROP DATABASE {name} WITH (FORCE)"))

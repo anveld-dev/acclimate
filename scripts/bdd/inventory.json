@@ -514,14 +514,14 @@
     "lane": "service",
     "examples": [
       {
-        "first": "60",
+        "first": "40",
         "second": "120",
         "state": "rejected",
         "remaining": "1"
       },
       {
-        "first": "90",
-        "second": "90",
+        "first": "80",
+        "second": "80",
         "state": "audit",
         "remaining": "0"
       }
@@ -538,6 +538,30 @@
     "source": "features/connected_learning.feature",
     "cases": 1,
     "lane": "service"
+  },
+  "LEARNING-09": {
+    "name": "Fenced feedback and bounded screening settle before evaluation",
+    "source": "features/connected_learning.feature",
+    "cases": 4,
+    "lane": "service",
+    "examples": [
+      {
+        "mode": "repair",
+        "result": "repaired"
+      },
+      {
+        "mode": "reject",
+        "result": "critic-rejected"
+      },
+      {
+        "mode": "malformed-once",
+        "result": "format-retried"
+      },
+      {
+        "mode": "malformed",
+        "result": "proposal-format-rejected"
+      }
+    ]
   },
   "NATIVE-WALK-01": {
     "name": "Repair, evaluate, release, deliver and roll back one native-target bundle",
@@ -649,6 +673,18 @@
   },
   "PROPOSAL-05": {
     "name": "A refreshed client can find and inspect its proposal",
+    "source": "features/proposals.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "PROPOSAL-06": {
+    "name": "A new memory note supersedes an explicitly allowed note",
+    "source": "features/proposals.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "PROPOSAL-07": {
+    "name": "A candidate over the growth limit is retried",
     "source": "features/proposals.feature",
     "cases": 1,
     "lane": "service"

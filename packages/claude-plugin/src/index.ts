@@ -1,7 +1,7 @@
-import type { VerifiedBundle } from '../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../sdk/src/types.js';
 import { prepareNativeFiles } from '../../sdk/src/internal/native-files.js';
 
-export interface PreparedClaudeBundle {
+export interface PreparedClaudeVersion {
   cwd: string;
   versionId: string;
   digest: string;
@@ -15,7 +15,7 @@ export interface PreparedClaudeBundle {
 }
 
 /** Stage instructions and skills for a fresh Claude project workspace. */
-export async function prepare(bundle: VerifiedBundle): Promise<PreparedClaudeBundle> {
+export async function prepare(bundle: VerifiedVersion): Promise<PreparedClaudeVersion> {
   const staged = await prepareNativeFiles(
     bundle,
     {
@@ -37,3 +37,6 @@ export async function prepare(bundle: VerifiedBundle): Promise<PreparedClaudeBun
     cleanup: staged.cleanup,
   };
 }
+
+/** @deprecated Use PreparedClaudeVersion. */
+export type PreparedClaudeBundle = PreparedClaudeVersion;

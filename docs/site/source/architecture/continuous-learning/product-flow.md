@@ -1,5 +1,7 @@
 # Product flow and console read model
 
+This historical proposal describes the superseded app-owned design. See the [connected learning operator workflow](../../../deploy/README.md#operate-connected-learning) for current behavior.
+
 Proposed design, 2026-11-17. This document specifies product behavior; it does not introduce routes, endpoints, permissions, or an installed learner. The application owns execution, task telemetry, local learning state, and its native SDK credentials. The console continues to own content authoring and authorized release review.
 
 ## Decision

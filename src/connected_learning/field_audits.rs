@@ -10,8 +10,7 @@ use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
-const WINDOW_CAPACITY: i64 = 10;
-const REGRESSION_THRESHOLD: i64 = 3;
+use crate::connected_learning::statistics::{FieldDecision, field_decision, field_log_likelihood};
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -31,13 +30,26 @@ pub(super) struct FieldVerdict {
 pub(super) enum Verdict {
     Pass,
     Regression,
+    Win,
+    Loss,
+    Tie,
 }
 
 impl Verdict {
-    pub(super) fn as_str(&self) -> &'static str {
+    fn label(&self) -> &'static str {
         match self {
             Self::Pass => "pass",
             Self::Regression => "regression",
+            Self::Win => "win",
+            Self::Loss => "loss",
+            Self::Tie => "tie",
+        }
+    }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Loss => "regression",
+            verdict => verdict.label(),
         }
     }
 }
@@ -68,25 +80,21 @@ pub(super) async fn submit(
         ));
     }
     let request = serde_json::to_value(&verdict).map_err(db)?;
-    let prior: Option<(Value, Value)> = sqlx::query_as(
-        "SELECT request,response FROM connected_learning_field_verdicts
-         WHERE (project_id,bundle_id,integration_id,outcome_id)=($1,$2,$3,$4)",
-    )
-    .bind(&connection.project)
-    .bind(connection.bundle)
-    .bind(integration)
-    .bind(verdict.outcome_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(db)?;
-    if let Some((stored, response)) = prior {
-        return if stored == request {
-            Ok(Json(response))
-        } else {
-            Err(conflict(
-                "A field verdict already exists for this served job",
-            ))
-        };
+    let command = crate::commands::DurableCommand::new(
+        &connection.project,
+        integration,
+        "field",
+        &actor.principal,
+        verdict.outcome_id,
+        request,
+    );
+    if let Some(response) = command
+        .replay(&mut tx, || {
+            conflict("A field verdict already exists for this served job")
+        })
+        .await?
+    {
+        return Ok(Json(response));
     }
     if !connection.active {
         return Err(conflict("Field auditing authority is inactive"));
@@ -107,13 +115,13 @@ pub(super) async fn submit(
     let served = sqlx::query(
         "SELECT p.id AS promotion_id,r.id AS round_id,f.control_version_id,f.rollback_promotion_id
          FROM connected_learning_outcomes o
-         JOIN promotions p ON (p.project_id,p.bundle_id,p.channel,p.version_id,p.revision)=(o.project_id,o.bundle_id,$5,o.version_id,o.delivery_revision)
+         JOIN promotions p ON (p.project_id,p.bundle_id,p.channel,p.version_id,p.revision)=(o.project_id,o.bundle_id,$5,o.version_id,o.observed_revision)
          JOIN connected_learning_field_releases f ON f.promotion_id=p.id
          LEFT JOIN connected_learning_rounds r ON r.promotion_id=p.id
          JOIN versions v ON (v.project_id,v.bundle_id,v.id)=(o.project_id,o.bundle_id,o.field_parent_version_id)
          WHERE (o.outcome_id,o.project_id,o.bundle_id,o.integration_id)=($1,$2,$3,$4)
            AND (v.id,v.digest)=($8,$9)
-           AND (o.version_id,o.delivery_revision,o.digest,o.started_receipt_id,o.submitted_by)=($6,$7,$10,$11,$12)",
+           AND (o.version_id,o.observed_revision,o.digest,o.started_receipt_id,o.submitted_by)=($6,$7,$10,$11,$12)",
     )
     .bind(verdict.outcome_id).bind(&connection.project).bind(connection.bundle).bind(integration)
     .bind(&connection.channel).bind(verdict.version_id).bind(revision)
@@ -127,25 +135,28 @@ pub(super) async fn submit(
     let existing_rollback: Option<Uuid> = served.get("rollback_promotion_id");
     let sequence: Option<i64> = sqlx::query_scalar(
         "INSERT INTO connected_learning_field_verdicts
-         (project_id,bundle_id,integration_id,round_id,outcome_id,started_receipt_id,verdict,evaluator_principal,request,promotion_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING RETURNING sequence",
+         (project_id,bundle_id,integration_id,round_id,outcome_id,started_receipt_id,verdict,evaluator_principal,control_version_id,promotion_id,grade)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING RETURNING sequence",
     )
     .bind(&connection.project).bind(connection.bundle).bind(integration).bind(round)
     .bind(verdict.outcome_id).bind(verdict.started_receipt_id).bind(verdict.verdict.as_str())
-    .bind(actor.principal).bind(request).bind(release).fetch_optional(&mut *tx).await.map_err(db)?;
+    .bind(actor.principal).bind(verdict.parent_version_id).bind(release)
+    .bind(verdict.verdict.label()).fetch_optional(&mut *tx).await.map_err(db)?;
     let Some(sequence) = sequence else {
         return Err(conflict(
             "A field verdict already exists for this served job",
         ));
     };
-    let (window_size, regressions) = window(&mut tx, release, verdict.parent_version_id).await?;
+    let (evidence, regressions, wins, decision) =
+        sequential_test(&mut tx, release, verdict.parent_version_id).await?;
+    let window_size = evidence.len() as i64;
     let same_control = control == Some(verdict.parent_version_id);
-    let withdraw = connection.automatic_rollback && regressions >= REGRESSION_THRESHOLD;
-    // Quarantine the failing bytes before the promotion trigger chooses a
+    let withdraw = connection.automatic_rollback && decision == FieldDecision::Withdraw;
+    // Quarantine the failing bytes before the promotion chooses a
     // comparison version for the restored release.
     sqlx::query("UPDATE connected_learning_field_releases
         SET validated=(validated OR $2) AND NOT (withdrawn OR $3),withdrawn=withdrawn OR $3 WHERE promotion_id=$1")
-        .bind(release).bind(current && same_control && window_size == WINDOW_CAPACITY && regressions == 0)
+        .bind(release).bind(current && same_control && decision == FieldDecision::Validate)
         .bind(withdraw).execute(&mut *tx).await.map_err(db)?;
     // Once superseded, a served revision can still contribute evidence, but it
     // can never move traffic. Only a control still eligible for delivery may be restored.
@@ -161,14 +172,14 @@ pub(super) async fn submit(
     }
     let attempted = if let Some(target) = restore {
         let reason = format!(
-            "Automatic rollback after {regressions} regressions in {window_size} independently graded served jobs"
+            "Automatic rollback after {regressions} losses and {wins} wins in {window_size} independently graded served jobs"
         );
         match crate::channels::promote_in_tx(
             &mut tx,
             &connection.project,
             connection.bundle,
             &connection.channel,
-            &connection.authorizer,
+            super::WORKER,
             PromoteRequest {
                 version_id: target.to_string(),
                 expected_revision: verdict.revision,
@@ -176,7 +187,7 @@ pub(super) async fn submit(
                 unevaluated_reason: Some(reason),
                 policy_override: None,
             },
-            Some(&connection.channel),
+            crate::channels::Publication::Restore(&connection.channel),
         )
         .await
         {
@@ -205,7 +216,9 @@ pub(super) async fn submit(
             )
             .await?;
         }
-        Some(crate::path(&promotion.id)?)
+        let id = crate::path(&promotion.id)?;
+        connection.record_automatic(&mut tx, id).await?;
+        Some(id)
     } else {
         None
     };
@@ -226,102 +239,60 @@ pub(super) async fn submit(
             .bind(&connection.project).bind(integration).bind(connection.bundle).bind(&connection.channel)
             .bind(&verdict.digest).execute(&mut *tx).await.map_err(db)?;
     }
-    if let Some(round) = round
-        && same_control
+    for kind in [
+        (decision == FieldDecision::Validate).then_some("validate"),
+        withdraw.then_some("withdraw"),
+        promotion.map(|_| "rollback"),
+    ]
+    .into_iter()
+    .flatten()
     {
-        // Preserve the recorded basis for a rollback even when later historical grades arrive.
-        sqlx::query("UPDATE connected_learning_rounds SET field_audit_window_size=$2,field_audit_regressions=$3,
-                     rollback_promotion_id=$4,updated_at=now() WHERE id=$1 AND rollback_promotion_id IS NULL")
-            .bind(round).bind(window_size as i32).bind(regressions as i32).bind(promotion).execute(&mut *tx).await.map_err(db)?;
+        sqlx::query("INSERT INTO connected_learning_field_decisions
+            (promotion_id,kind,control_version_id,verdict_sequences,window_size,losses,wins,log_likelihood,triggering_sequence)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING")
+            .bind(release).bind(kind).bind(verdict.parent_version_id).bind(&evidence)
+            .bind(window_size).bind(regressions).bind(wins)
+            .bind(field_log_likelihood(wins, regressions)).bind(evidence.last().copied().unwrap_or(sequence))
+            .execute(&mut *tx).await.map_err(db)?;
     }
-    let mut response = json!({"outcomeId":verdict.outcome_id,"accepted":true,"windowSize":window_size,"regressions":regressions});
+    let mut response = json!({"outcomeId":verdict.outcome_id,"accepted":true,"windowSize":window_size,"regressions":regressions,"wins":wins});
     if let Some(promotion) = promotion {
         response["rollbackPromotionId"] = json!(promotion);
     }
-    sqlx::query("UPDATE connected_learning_field_verdicts SET response=$2 WHERE sequence=$1")
-        .bind(sequence)
-        .bind(&response)
-        .execute(&mut *tx)
-        .await
-        .map_err(db)?;
-    tx.commit().await.map_err(db)?;
-    Ok(Json(response))
+    command.finish(tx, response).await
 }
 
-async fn window(tx: &mut Tx<'_>, release: Uuid, control: Uuid) -> ApiResult<(i64, i64)> {
-    sqlx::query_as(
-        "SELECT count(*),count(*) FILTER (WHERE verdict='regression')
-         FROM (SELECT verdict FROM connected_learning_field_verdicts WHERE promotion_id=$1 AND request->>'parentVersionId'=$3
-               ORDER BY sequence DESC LIMIT $2) recent",
+async fn sequential_test(
+    tx: &mut Tx<'_>,
+    release: Uuid,
+    control: Uuid,
+) -> ApiResult<(Vec<i64>, i64, i64, FieldDecision)> {
+    // Legacy pass combined wins and ties. Exclude both legacy labels from inference.
+    let rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT sequence, grade FROM connected_learning_field_verdicts
+         WHERE promotion_id=$1 AND control_version_id=$2
+           AND grade IN ('win','loss','tie')
+           AND sequence > COALESCE((
+               SELECT max(triggering_sequence) FROM connected_learning_field_decisions
+               WHERE promotion_id=$1 AND control_version_id=$2 AND kind='validate'
+           ),0)
+         ORDER BY sequence",
     )
     .bind(release)
-    .bind(WINDOW_CAPACITY)
-    .bind(control.to_string())
-    .fetch_one(&mut **tx)
+    .bind(control)
+    .fetch_all(&mut **tx)
     .await
-    .map_err(db)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-    async fn rollback_window_expires_old_verdicts_and_partitions_releases() {
-        let url =
-            std::env::var("ACCLIMATE_TEST_DATABASE_URL").expect("requires isolated PostgreSQL");
-        let pool = sqlx::PgPool::connect(&url).await.unwrap();
-        let mut tx = pool.begin().await.unwrap();
-        sqlx::query(
-            "CREATE TEMP TABLE connected_learning_field_verdicts (
-                sequence bigint GENERATED ALWAYS AS IDENTITY, promotion_id uuid NOT NULL, verdict text NOT NULL, request jsonb NOT NULL
-            ) ON COMMIT DROP",
-        )
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-        let target = Uuid::new_v4();
-        let another = Uuid::new_v4();
-        let control = Uuid::new_v4();
-        let insert = "INSERT INTO connected_learning_field_verdicts (promotion_id, verdict,request)
-                      SELECT $1, verdict,jsonb_build_object('parentVersionId',$3::uuid) FROM unnest($2::text[]) AS verdict";
-        sqlx::query(insert)
-            .bind(target)
-            .bind(["regression"; 3].as_slice())
-            .bind(control)
-            .execute(&mut *tx)
-            .await
-            .unwrap();
-        sqlx::query(insert)
-            .bind(another)
-            .bind(["regression"; 4].as_slice())
-            .bind(control)
-            .execute(&mut *tx)
-            .await
-            .unwrap();
-        assert_eq!(window(&mut tx, target, control).await.unwrap(), (3, 3));
-        sqlx::query(insert)
-            .bind(target)
-            .bind(["pass"; 8].as_slice())
-            .bind(control)
-            .execute(&mut *tx)
-            .await
-            .unwrap();
-        assert_eq!(window(&mut tx, target, control).await.unwrap(), (10, 2));
-        assert_eq!(window(&mut tx, another, control).await.unwrap(), (4, 4));
-        let replacement_control = Uuid::new_v4();
-        sqlx::query(insert)
-            .bind(target)
-            .bind(["regression"].as_slice())
-            .bind(replacement_control)
-            .execute(&mut *tx)
-            .await
-            .unwrap();
-        assert_eq!(
-            window(&mut tx, target, replacement_control).await.unwrap(),
-            (1, 1)
-        );
-        assert_eq!(window(&mut tx, target, control).await.unwrap(), (10, 2));
+    .map_err(db)?;
+    let (mut wins, mut losses) = (0, 0);
+    let mut evidence = Vec::new();
+    for (sequence, verdict) in rows {
+        evidence.push(sequence);
+        wins += i64::from(verdict == "win");
+        losses += i64::from(verdict == "loss");
+        let decision = field_decision(wins, losses);
+        if decision != FieldDecision::Pending {
+            return Ok((evidence, losses, wins, decision));
+        }
     }
+    Ok((evidence, losses, wins, FieldDecision::Pending))
 }

@@ -1,6 +1,7 @@
 @service @learning @provider_fixture
 Feature: Learning from application feedback
   The application provides the evidence used to change the connection's delivered instructions.
+  A qualified multi-step chain delivers its head with its development parent intact.
 
   Background:
     Given a published bundle containing "Review code."
@@ -32,15 +33,19 @@ Feature: Learning from application feedback
     When I register the same review task for development and audit under different case names
     Then the overlapping enrollment is refused before a release or proposal
     When I replace the audit with a different review task that has the same expected answer
-    Then both tasks independently improve and the connection releases the candidate
+    Then both cohorts independently improve and the connection releases the candidate
 
   @LEARNING-04
   Scenario: A retry distinguishes a better score from a failed execution
     Given a connection evaluates partial-credit review tasks and allows a second proposal
     When its evaluator reports these paired review results
-      | case         | repetition | parent | candidate | candidate status |
-      | retry-review | 0          | 0      | 0.5       | task_failed      |
-      | retry-review | 1          | 0      | 0.5       | task_failed      |
+      | case             | repetition | parent | candidate | candidate status |
+      | retry-review     | 0          | 0      | 0.5       | task_failed      |
+      | retry-review     | 1          | 0      | 0.5       | task_failed      |
+      | retry-review     | 2          | 0.5    | 0.5       | completed        |
+      | reference-review | 0          | 0.5    | 0.5       | completed        |
+      | reference-review | 1          | 0.5    | 0.5       | completed        |
+      | reference-review | 2          | 0.5    | 0.5       | completed        |
     Then the next proposal receives two score gains, zero score regressions and two task failures
     And the failed development round consumes no audit or release
 
@@ -49,8 +54,8 @@ Feature: Learning from application feedback
     Given I issued a receipt-write credential
     And an independently graded field job triggered automatic rollback
     When the source republishes the withdrawn bytes under a new version ID
-    Then the four original field jobs block restoring those bytes
-    When the application repairs its default code check and replays three original jobs
+    Then the eight original field jobs block restoring those bytes
+    When the application repairs its default code check and replays seven original jobs
     Then the outstanding job still blocks restore on the current delivery revision
     When the last original job passes and the reviewer retries the restore after restart
     Then the connection serves the requalified version with exactly one new release
@@ -60,15 +65,23 @@ Feature: Learning from application feedback
     Given development requires every critical request to finish within 100 milliseconds
     When its evaluator reports these paired review results
       | case     | repetition | parent | candidate | candidate status |
-      | fast     | 0          | 100    | 10        | completed        |
-      | fast     | 1          | 100    | 10        | completed        |
-      | critical | 0          | 100    | <first>   | completed        |
-      | critical | 1          | 100    | <second>  | completed        |
+      | fast     | 0          | 70     | 20        | completed        |
+      | fast     | 1          | 70     | 20        | completed        |
+      | fast     | 2          | 70     | 20        | completed        |
+      | critical | 0          | 130    | <first>   | completed        |
+      | critical | 1          | 130    | <second>  | completed        |
+      | critical | 2          | 130    | 80        | completed        |
+      | search   | 0          | 100    | 50        | completed        |
+      | search   | 1          | 100    | 50        | completed        |
+      | search   | 2          | 100    | 50        | completed        |
+      | update   | 0          | 100    | 50        | completed        |
+      | update   | 1          | 100    | 50        | completed        |
+      | update   | 2          | 100    | 50        | completed        |
     Then the mean latency falls to 50 milliseconds and the round is <state> with <remaining> audits remaining
     Examples:
       | first | second | state    | remaining |
-      | 60    | 120    | rejected | 1         |
-      | 90    | 90     | audit    | 0         |
+      | 40    | 120    | rejected | 1         |
+      | 80    | 80     | audit    | 0         |
 
   @LEARNING-07
   Scenario: A parked correction is reconsidered once on the new delivery revision
@@ -85,3 +98,15 @@ Feature: Learning from application feedback
     And its audited candidate is awaiting rollout with one blocking policy
     When the signed-in reviewer declines the rollout and repeats the decision after restart
     Then a competing reviewer sees who declined and the original delivery is still served
+
+  @LEARNING-09
+  Scenario Outline: Fenced feedback and bounded screening settle before evaluation
+    When the fixture screens a managed proposal in <mode> mode
+    Then the screened proposal settles as <result>
+
+    Examples:
+      | mode           | result                   |
+      | repair         | repaired                 |
+      | reject         | critic-rejected          |
+      | malformed-once | format-retried           |
+      | malformed      | proposal-format-rejected |

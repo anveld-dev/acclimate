@@ -1,7 +1,7 @@
-import type { VerifiedBundle } from '../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../sdk/src/types.js';
 import { prepareNativeFiles } from '../../sdk/src/internal/native-files.js';
 
-export interface PreparedPiBundle {
+export interface PreparedPiVersion {
   cwd: string;
   versionId: string;
   digest: string;
@@ -19,7 +19,7 @@ export interface PreparedPiBundle {
 }
 
 /** Stage verified files in a private workspace for a host-owned Pi ResourceLoader/session. */
-export async function prepare(bundle: VerifiedBundle): Promise<PreparedPiBundle> {
+export async function prepare(bundle: VerifiedVersion): Promise<PreparedPiVersion> {
   const staged = await prepareNativeFiles(
     bundle,
     {
@@ -46,3 +46,6 @@ export async function prepare(bundle: VerifiedBundle): Promise<PreparedPiBundle>
     cleanup: staged.cleanup,
   };
 }
+
+/** @deprecated Use PreparedPiVersion. */
+export type PreparedPiBundle = PreparedPiVersion;

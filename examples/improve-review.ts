@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { AcclimateClient } from '../packages/sdk/src/index.js';
 import { prepare } from '../packages/codex-plugin/src/index.js';
-import type { VerifiedBundle } from '../packages/sdk/src/types.js';
+import type { VerifiedVersion } from '../packages/sdk/src/types.js';
 import { improve, type Model } from './improvement/workflow.js';
 import { improve as improveService } from './service-proposer/workflow.js';
 
@@ -47,7 +47,7 @@ if (args[0] === 'run' || args[0] === 'run-service') {
   let turns = 0;
   const run = async (
     model: string,
-    bundle: VerifiedBundle,
+    bundle: VerifiedVersion,
     prompt: string,
     outputSchema: unknown,
   ) => {
@@ -153,7 +153,7 @@ if (args[0] === 'run' || args[0] === 'run-service') {
     );
   else {
     if (!expectedRevision) throw new Error('--expected-revision is required with --apply');
-    const result = await client().promote(
+    const result = await client().createRelease(
       plan.project,
       plan.bundle,
       plan.channel,

@@ -714,7 +714,7 @@ export function ImprovementWorkspace({
               ? { ok: true, proposal: submitted.result as Proposal }
               : submitted.resultKind === 'request'
                 ? { ok: true, request: submitted.result as Evaluation }
-                : { ok: true, promotion: submitted.result as import('@acclimate/sdk').Promotion };
+                : { ok: true, promotion: submitted.result as import('@acclimate/sdk').Release };
         }
       }
       if (epoch !== scopeEpoch.current) return;
@@ -1528,9 +1528,9 @@ export function ImprovementWorkspace({
                           <div className="space-y-2" aria-label="Application policy check">
                             <h3>Check the application’s quality policy</h3>
                             {receiptReadFailed ? (
-                              <p role="alert">Could not refresh policy receipts.</p>
+                              <p role="alert">Could not refresh policy checks.</p>
                             ) : !receipts ? (
-                              <p>Loading policy receipts…</p>
+                              <p>Loading policy checks…</p>
                             ) : !receipts.comparison.length ? (
                               <p>No policy verdict has been reported for this comparison.</p>
                             ) : null}
@@ -1538,7 +1538,7 @@ export function ImprovementWorkspace({
                               <PolicyReceiptList receipts={receipts.comparison} />
                             )}
                             <Button variant="outline" onClick={refreshReceipts}>
-                              Refresh policy receipts
+                              Refresh policy checks
                             </Button>
                             <EvaluationHandoffDownload
                               handoff={evaluationHandoff(

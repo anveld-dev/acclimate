@@ -1,4 +1,4 @@
-import type { EvaluationPolicyV1 } from './evaluation/policy.js';
+import type { EvaluationPolicy } from './evaluation/policy.js';
 export type CompatibilityTarget = 'generic' | 'codex' | 'claude' | 'pi' | 'cursor';
 export type FileKind = 'instruction' | 'skill' | 'memory';
 export interface BundleFile {
@@ -39,11 +39,11 @@ export interface PolicyOverride {
   reason: string;
   receipts: Array<{ comparisonId: string; policyDigest: string }>;
 }
-export type PromoteRequest = { versionId: string; expectedRevision: string } & (
+export type CreateReleaseRequest = { versionId: string; expectedRevision: string } & (
   | { comparisonId: string; unevaluatedReason?: never; policyOverride?: PolicyOverride }
   | { unevaluatedReason: string; comparisonId?: never; policyOverride?: never }
 );
-export interface Promotion {
+export interface Release {
   id: string;
   channel: string;
   revision: string;
@@ -56,8 +56,8 @@ export interface Promotion {
   reviewer: string;
   createdAt: string;
 }
-export interface PromotionPage {
-  items: Promotion[];
+export interface ReleasePage {
+  items: Release[];
   nextBeforeRevision: string | null;
 }
 export interface ProposalRequest {
@@ -73,6 +73,14 @@ export interface Proposal {
   attempts: number;
   candidate: VersionMetadata | null;
   rationale: string | null;
+  screening?: Array<{
+    stage: 'initial' | 'repair';
+    result: { verdict: 'accept' | 'reject'; objections: string[]; risky?: boolean } | null;
+    scannerClean?: boolean;
+    structural?: boolean;
+    rationale?: string;
+    changes: Array<{ path: string; before: string | null; after: string | null }>;
+  }>;
   error: string | null;
   createdAt: string;
 }
@@ -164,6 +172,7 @@ export interface EvaluationBinding {
   attemptId: string;
 }
 export interface ComparisonRequest {
+  parentSourceComparisonId?: string;
   evaluation?: EvaluationBinding;
   parentVersionId: string;
   candidateVersionId: string;
@@ -184,7 +193,7 @@ export interface Comparison extends ComparisonRequest {
 export interface ApiErrorBody {
   error: { code: string; message: string; requestId: string; details?: Record<string, unknown> };
 }
-export interface VerifiedBundle {
+export interface VerifiedVersion {
   version: VersionMetadata;
   payload: BundlePayload;
   resolution?: ChannelResolution;
@@ -203,7 +212,7 @@ export interface ListOptions {
   limit?: number;
   cursor?: string;
 }
-export interface Project {
+export interface Workspace {
   id: string;
   name: string;
   role: string;
@@ -222,7 +231,7 @@ export interface BundleSetup {
   bundle: Bundle;
   version: VersionMetadata;
   resolution: ChannelResolution;
-  promotion: Promotion;
+  promotion: Release;
 }
 export interface Draft {
   id: string;
@@ -295,10 +304,10 @@ export interface Channel {
   revision: string;
   versionId: string;
 }
-export interface Integration {
+export interface Connection {
   credentials?: Array<{
     id: string;
-    kind: IntegrationCredentialKind;
+    kind: ConnectionCredentialKind;
     createdAt: string;
     revokedAt: string | null;
   }>;
@@ -310,15 +319,15 @@ export interface Integration {
   enabled: boolean;
   createdAt: string;
 }
-export interface CreateIntegrationRequest {
+export interface CreateConnectionRequest {
   bundleId: string;
   channel: string;
   displayName: string;
 }
-export type IntegrationCredentialKind = 'content-read' | 'receipt-write';
-export interface IntegrationCredential {
+export type ConnectionCredentialKind = 'content-read' | 'receipt-write';
+export interface ConnectionCredential {
   id: string;
-  kind: IntegrationCredentialKind;
+  kind: ConnectionCredentialKind;
   secret: string;
 }
 export interface LearningEvaluationDescriptor extends EvaluationDescriptor {
@@ -327,14 +336,7 @@ export interface LearningEvaluationDescriptor extends EvaluationDescriptor {
   caseFingerprints?: string[];
   familyFingerprints?: string[];
 }
-export interface LearningSelectionPolicy extends EvaluationPolicyV1 {
-  /** Each matching candidate repetition must complete and meet its oriented reward threshold. */
-  protectedCaseThresholds?: Record<string, number>;
-  /** Require observed savings across the complete paired case inventory. */
-  minimumCostSavingsUsd?: number;
-  /** Minimum paired repetitions required for every case in the stage inventory. */
-  minimumRepetitionsPerCase?: number;
-}
+export type LearningSelectionPolicy = EvaluationPolicy;
 export interface LearningSelectionPolicies {
   development: LearningSelectionPolicy;
   audit: LearningSelectionPolicy;
@@ -346,6 +348,7 @@ export interface LearningEnrollmentRequest {
   /** Names authorized for whole-package operations on discrepancy-driven proposals. */
   skillPackages?: { createSkillNames: string[]; retireSkillNames: string[] };
   maxProposalAdmissions: number;
+  maxCorrectionsPerRound?: number;
   development: LearningEvaluationDescriptor;
   audits: LearningEvaluationDescriptor[];
   automaticRollout: boolean;
@@ -373,19 +376,36 @@ export interface LearningEnrollment
   enabled: boolean;
 }
 export interface LearningRound {
+  batchSize?: number;
+  includedCorrections?: { correctionId: string; outcomeId: string; attempt: number }[];
+  parentSourceComparisonId?: string | null;
   incidentReplay?: LearningIncidentReplayStatus | null;
   correctionId?: string;
   attempt?: number;
   policyEpoch?: number;
   id: string;
   outcomeId: string;
-  state: 'proposing' | 'development' | 'audit' | 'awaiting_review' | 'promoted' | 'rejected';
+  state:
+    | 'proposing'
+    | 'development'
+    | 'developed'
+    | 'audit'
+    | 'awaiting_review'
+    | 'promoted'
+    | 'rejected';
+  decision?: string | null;
   reason: string | null;
   parentVersionId: string;
   candidateVersionId: string | null;
   proposalId: string | null;
   developmentRequestId: string | null;
   developmentComparisonId: string | null;
+  developmentParentVersionId?: string;
+  developmentCandidateVersionId?: string | null;
+  cumulativeDevelopmentRequestId?: string | null;
+  cumulativeDevelopmentComparisonId?: string | null;
+  cumulativeDevelopmentEstimate?: number | null;
+  cumulativeDevelopmentLowerBound?: number | null;
   auditRequestId: string | null;
   auditComparisonId: string | null;
   promotionId: string | null;
@@ -395,7 +415,23 @@ export interface LearningRound {
     rollbackPromotionId?: string | null;
   };
 }
+export interface LearningDevelopmentIncumbent {
+  versionId: string;
+  chainLength: number;
+  cumulativeEstimate: number | null;
+  cumulativeLowerBound: number | null;
+  nextAuditTrigger: {
+    state:
+      | 'awaitingSteps'
+      | 'checkingCumulative'
+      | 'auditPending'
+      | 'awaitingReview'
+      | 'unavailable';
+    acceptedStepsRemaining: number;
+  };
+}
 export interface LearningEnrollmentStatus extends LearningEnrollment {
+  developmentIncumbent?: LearningDevelopmentIncumbent;
   policyHistory?: Array<{
     policyEpoch: number;
     development: LearningEvaluationDescriptor;
@@ -403,9 +439,60 @@ export interface LearningEnrollmentStatus extends LearningEnrollment {
   }>;
   rounds: LearningRound[];
   remainingAudits: number;
+  noiseCalibration?: {
+    requestId: string | null;
+    /** Evaluated evidence awaits the worker's decision. Completed includes the plan and projections. */
+    status:
+      | 'queued'
+      | 'requested'
+      | 'running'
+      | 'evaluated'
+      | 'completed'
+      | 'failed'
+      | 'interrupted'
+      | 'stopped';
+    failedAttempts?: number;
+    stoppedReason?: string | null;
+    caseCount?: number;
+    flipRate?: number;
+    pairedStandardDeviation?: number;
+    effectiveRepetitions?: number;
+    standardError?: number;
+    minimumDetectableEffect?: number;
+    powerGuardObservations?: number;
+    caseVariability?: Record<string, number>;
+    plan?: {
+      /** Assigned repetitions per development case, shared with cumulative comparisons. */
+      developmentRepetitions: Record<string, number>;
+      /** Uniform count per audit cohort. Earlier plans recorded a repetition floor. */
+      auditRepetitions: number[];
+      /** Development cases with observed A/A disagreement. */
+      flakyCaseCount: number;
+      pairBudget: number;
+      trialBudget: number;
+      maxRepetitions: number;
+    };
+    developmentProjection?: LearningPowerProjection;
+    cumulativeProjection?: LearningPowerProjection;
+    auditProjections?: LearningPowerProjection[];
+    warning?: string | null;
+  };
   deliveredVersionId: string;
   deliveredRevision: string;
   restoreTargets?: LearningRestoreTarget[];
+}
+export interface LearningPowerProjection {
+  caseCount: number;
+  effectiveRepetitions: number;
+  projectedMde: number | null;
+  lowerMde?: number | null;
+  upperMde?: number | null;
+  decision?: 'stop' | 'warn' | 'admit';
+  reason?: string;
+  powerAtEffect: number | null;
+  effect: number;
+  casesNeededAtTarget: number | null;
+  pairedTrials: number;
 }
 export interface LearningRestoreTarget {
   kind: 'delivery' | 'source';
@@ -448,6 +535,7 @@ export interface LearningIncidentReplay {
   digest: string;
   baselineRevision: string;
   verdict: Exclude<LearningIncidentReplayStatus, 'pending'>;
+  attempts?: Array<Exclude<LearningIncidentReplayStatus, 'pending'>>;
 }
 export interface LearningReleaseEvidence {
   promotionId: string;
@@ -465,7 +553,7 @@ export interface LearningOutcomeStatus {
   currentDelivery?: { versionId: string; revision: string };
   servedRelease?: LearningReleaseEvidence | null;
   fieldAudit?: {
-    verdict: 'pass' | 'regression';
+    verdict: LearningFieldAuditRequest['verdict'];
     controlVersionId: string;
     triggeredRollback: boolean;
   } | null;
@@ -478,6 +566,7 @@ export interface LearningOutcomeStatus {
     correctionId: string;
     state: string;
     roundId: string | null;
+    decision?: string | null;
     reason: string | null;
     incidentReplay: LearningIncidentReplayStatus | null;
     release?: LearningReleaseEvidence | null;
@@ -534,7 +623,7 @@ export interface LearningFieldAuditRequest {
   revision: string;
   parentVersionId: string;
   parentDigest: string;
-  verdict: 'pass' | 'regression';
+  verdict: 'pass' | 'regression' | 'win' | 'loss' | 'tie';
 }
 export interface LearningFieldRequalification {
   versionId: string;
@@ -549,23 +638,32 @@ export interface LearningFieldReplay {
   baselineRevision: string;
   outcomeId: string;
   verdict: 'pass' | 'regression';
+  attempts?: Array<'pass' | 'regression'>;
 }
 export interface LearningFieldAuditReceipt {
   outcomeId: string;
   accepted: true;
   regressions: number;
   windowSize: number;
+  wins?: number;
   rollbackPromotionId?: string;
 }
-export interface LearningWorkItem {
-  roundId: string;
-  evaluationRequestId: string;
-  phase: 'development' | 'audit';
-  status: 'requested' | 'running';
+export interface CachedLearningParent {
+  comparisonId: string;
+  results: (CaseKey & { parent: Outcome })[];
 }
+
+export type LearningWorkItem = {
+  cachedParent?: CachedLearningParent | null;
+  evaluationRequestId: string;
+  status: 'requested' | 'running';
+} & (
+  | { phase: 'development' | 'audit'; roundId: string; cumulative?: boolean }
+  | { phase: 'calibration'; roundId: null }
+);
 export interface LearningWork {
-  incidentReplays?: Omit<LearningIncidentReplay, 'verdict'>[];
-  fieldReplays?: Omit<LearningFieldReplay, 'verdict'>[];
+  incidentReplays?: Omit<LearningIncidentReplay, 'verdict' | 'attempts'>[];
+  fieldReplays?: Omit<LearningFieldReplay, 'verdict' | 'attempts'>[];
   installationId: string;
   bundleId: string;
   active: boolean;
@@ -592,7 +690,7 @@ export interface DeliveryReceipt extends DeliveryReceiptRequest {
   delayed: boolean;
 }
 /** Safe project-readable discovery; all latest fields describe one received observation. */
-export interface IntegrationObservation {
+export interface ConnectionObservation {
   id: string;
   displayName: string;
   bundleId: string;
@@ -613,14 +711,29 @@ export type Operation =
       operationId: string;
       path: string;
       requestFingerprint?: string;
-      result:
-        | Draft
-        | BundleSetup
-        | Proposal
-        | Evaluation
-        | Promotion
-        | Comparison
-        | VersionMetadata;
+      result: Draft | BundleSetup | Proposal | Evaluation | Release | Comparison | VersionMetadata;
     }
   | { status: 'not_observed'; operationId: string }
   | { status: 'closed'; operationId: string; path?: string };
+
+/** @deprecated Use Workspace. */
+export type Project = Workspace;
+/** @deprecated Use Release. */
+export type Promotion = Release;
+/** @deprecated Use ReleasePage. */
+export type PromotionPage = ReleasePage;
+/** @deprecated Use CreateReleaseRequest. */
+export type PromoteRequest = CreateReleaseRequest;
+/** @deprecated Use Connection. */
+export type Integration = Connection;
+/** @deprecated Use CreateConnectionRequest. */
+export type CreateIntegrationRequest = CreateConnectionRequest;
+/** @deprecated Use ConnectionCredential. */
+export type IntegrationCredential = ConnectionCredential;
+/** @deprecated Use ConnectionCredentialKind. */
+export type IntegrationCredentialKind = ConnectionCredentialKind;
+/** @deprecated Use ConnectionObservation. */
+export type IntegrationObservation = ConnectionObservation;
+
+/** @deprecated Use VerifiedVersion. */
+export type VerifiedBundle = VerifiedVersion;

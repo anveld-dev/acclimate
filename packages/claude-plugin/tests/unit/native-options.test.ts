@@ -22,9 +22,9 @@ const bundle: VerifiedBundle = {
       {
         path: 'skills/lookup/SKILL.md',
         kind: 'skill',
-        text: '---\nname: lookup\ndescription: Find values.\n---\nRead references/data.txt.',
+        text: '---\nname: lookup\ndescription: Find values.\n---\nRead references/data.md.',
       },
-      { path: 'skills/lookup/references/data.txt', kind: 'skill', text: 'Reference.' },
+      { path: 'skills/lookup/references/data.md', kind: 'skill', text: 'Reference.' },
       { path: 'memory/private.md', kind: 'memory', text: 'Memory.' },
     ],
   },

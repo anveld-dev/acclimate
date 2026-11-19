@@ -2,7 +2,7 @@
 import { lstat, mkdir, mkdtemp, open, realpath, rm, rmdir, chmod, readdir } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import type { VerifiedBundle, FileKind, DeliveryReceiptRequest } from './types.js';
+import type { VerifiedVersion, FileKind, DeliveryReceiptRequest } from './types.js';
 import { validatePayload, DeliveryError, resolveAndCache } from './cache.js';
 import type { Selection, CachePolicy } from './cache.js';
 import type { AcclimateClient } from './client.js';
@@ -26,16 +26,16 @@ export type PrepareDeliveryOptions = Selection &
     cacheDir?: string;
     destination?: string;
     reporter?: DeliveryObserver & {
-      reportPrepared?(bundle: VerifiedBundle): unknown;
-      reportStarted?(bundle: VerifiedBundle): unknown;
-      bindStartedReceipt?(bundle: VerifiedBundle): () => Readonly<DeliveryReceiptRequest> | null;
-      reportStartedReceipt?(bundle: VerifiedBundle): Readonly<DeliveryReceiptRequest> | null;
+      reportPrepared?(bundle: VerifiedVersion): unknown;
+      reportStarted?(bundle: VerifiedVersion): unknown;
+      bindStartedReceipt?(bundle: VerifiedVersion): () => Readonly<DeliveryReceiptRequest> | null;
+      reportStartedReceipt?(bundle: VerifiedVersion): Readonly<DeliveryReceiptRequest> | null;
     };
   };
 export interface PreparedDelivery extends PreparedFiles {
   directory: string;
-  bundle: VerifiedBundle;
-  version: VerifiedBundle['version'];
+  bundle: VerifiedVersion;
+  version: VerifiedVersion['version'];
   instructions: string;
   skillFiles: PreparedFile[];
   /** Queue this job's start once. Retain its receipt with the job for field auditing. */
@@ -173,7 +173,7 @@ async function ensureSafeRoot(input: string): Promise<string> {
   return root;
 }
 export async function prepareFiles(
-  bundle: VerifiedBundle,
+  bundle: VerifiedVersion,
   destination: string,
   options: PrepareOptions = {},
 ): Promise<PreparedFiles> {

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -135,6 +136,8 @@ pub struct Proposal {
     pub attempts: i32,
     pub candidate: Option<VersionMetadata>,
     pub rationale: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub screening: Vec<serde_json::Value>,
     pub error: Option<String>,
     pub created_at: String,
 }
@@ -142,6 +145,8 @@ pub struct Proposal {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ComparisonRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_source_comparison_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evaluation: Option<EvaluationBinding>,
     pub parent_version_id: String,

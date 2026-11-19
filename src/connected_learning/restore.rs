@@ -106,23 +106,21 @@ pub(super) async fn restore(
     if app_principal(&enrollment, &actor.principal) {
         return Err(denied());
     }
-    if let Some(row) = sqlx::query(
-        "SELECT reviewer, request, response FROM connected_learning_restores
-         WHERE (project_id,integration_id,restore_id)=($1,$2,$3)",
-    )
-    .bind(&project)
-    .bind(integration)
-    .bind(request.restore_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(db)?
+    let command = crate::commands::DurableCommand::new(
+        &project,
+        integration,
+        "restore",
+        &actor.principal,
+        request.restore_id,
+        body,
+    );
+    if let Some(response) = command
+        .replay(&mut tx, || {
+            conflict("Restore ID already binds a different review")
+        })
+        .await?
     {
-        if row.get::<String, _>("reviewer") != actor.principal
-            || row.get::<Value, _>("request") != body
-        {
-            return Err(conflict("Restore ID already binds a different review"));
-        }
-        return Ok(Json(row.get("response")));
+        return Ok(Json(response));
     }
     if !enabled {
         return Err(conflict("Connection is disabled"));
@@ -205,7 +203,7 @@ pub(super) async fn restore(
             unevaluated_reason: Some(request.reason),
             policy_override: None,
         },
-        Some(match request.target.kind {
+        crate::channels::Publication::Restore(match request.target.kind {
             TargetKind::Delivery => &delivery,
             TargetKind::Source => enrollment.get::<&str, _>("source_channel"),
         }),
@@ -229,11 +227,5 @@ pub(super) async fn restore(
         .await?;
     }
     let response = serde_json::to_value(&promotion).map_err(db)?;
-    sqlx::query("INSERT INTO connected_learning_restores(project_id,integration_id,restore_id,reviewer,request,promotion_id,response)
-                 VALUES($1,$2,$3,$4,$5,$6,$7)")
-        .bind(&project).bind(integration).bind(request.restore_id).bind(&actor.principal)
-        .bind(body).bind(crate::path(&promotion.id)?).bind(&response)
-        .execute(&mut *tx).await.map_err(db)?;
-    tx.commit().await.map_err(db)?;
-    Ok(Json(response))
+    command.finish(tx, response).await
 }

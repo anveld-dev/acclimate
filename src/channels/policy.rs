@@ -11,22 +11,40 @@ pub(super) async fn approve(
     reviewed: Option<PolicyOverride>,
     restore_from: Option<&str>,
 ) -> ApiResult<(Option<Json<PolicyOverride>>, Option<Uuid>)> {
-    // Receipt insertion takes the same lock. A receipt that commits before this
-    // release is included even if it belongs to a different comparison of the version.
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-        .bind(format!("policy-receipt:{project}:{bundle}:{candidate}"))
-        .execute(&mut **tx)
-        .await
-        .map_err(db)?;
+    // Historical copy releases inherit the blocking receipts of the chain head.
+    let search: Option<Uuid> = sqlx::query_scalar(
+        "SELECT candidate_version_id FROM connected_learning_rounds
+         WHERE (project_id,bundle_id,release_candidate_id)=($1,$2,$3)",
+    )
+    .bind(project)
+    .bind(bundle)
+    .bind(candidate)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(db)?;
+    let mut candidates = vec![candidate];
+    if let Some(version) = search {
+        candidates.push(version);
+    }
+    candidates.sort_unstable();
+    candidates.dedup();
+    // Use the receipt insertion lock for each version before reading blockers.
+    for version in &candidates {
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+            .bind(format!("policy-receipt:{project}:{bundle}:{version}"))
+            .execute(&mut **tx)
+            .await
+            .map_err(db)?;
+    }
     let rows = sqlx::query(
         "SELECT comparison_id,policy_digest FROM evaluation_policy_receipts
-         WHERE (project_id,bundle_id,candidate_version_id)=($1,$2,$3)
+         WHERE (project_id,bundle_id)=($1,$2) AND candidate_version_id=ANY($3)
            AND body->>'verdict' IN ('fail','indeterminate')
          ORDER BY comparison_id,policy_digest",
     )
     .bind(project)
     .bind(bundle)
-    .bind(candidate)
+    .bind(&candidates)
     .fetch_all(&mut **tx)
     .await
     .map_err(db)?;

@@ -26,8 +26,8 @@ class BrowserMembershipPagination(unittest.TestCase):
             dict(items=[dict(id='people-current',role='admin')],nextCursor=None)])
         self.assertEqual(world.prepare_browser_identity(),'operator')
         self.assertEqual(calls, [
-            ('GET','/v1/projects?limit=100','_browser-operator'),
-            ('GET','/v1/projects?limit=100&cursor=cursor%26%2Bopaque','_browser-operator')])
+            ('GET','/v1/workspaces?limit=100','_browser-operator'),
+            ('GET','/v1/workspaces?limit=100&cursor=cursor%26%2Bopaque','_browser-operator')])
 
     def test_repeated_cursor_fails_without_attempting_adoption(self):
         world, _ = self.world([

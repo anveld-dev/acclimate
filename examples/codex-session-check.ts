@@ -4,12 +4,12 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { Codex, type Thread, type ThreadOptions } from '@openai/codex-sdk';
 import { prepare } from '../packages/codex-plugin/src/index.js';
-import type { VerifiedBundle } from '../packages/sdk/src/types.js';
+import type { VerifiedVersion } from '../packages/sdk/src/types.js';
 
 const model = 'gpt-6-luna';
 function fixture(id: string, parentVersionId: string | null) {
   const markers = { instruction: randomUUID(), skill: randomUUID(), memory: randomUUID() };
-  const payload: VerifiedBundle['payload'] = {
+  const payload: VerifiedVersion['payload'] = {
     schemaVersion: 1,
     files: [
       {
@@ -32,7 +32,7 @@ function fixture(id: string, parentVersionId: string | null) {
   const digest = `sha256:${createHash('sha256')
     .update(`${JSON.stringify(payload)}\n`)
     .digest('hex')}`;
-  const bundle: VerifiedBundle = {
+  const bundle: VerifiedVersion = {
     version: {
       id,
       bundleId: 'session-check',

@@ -30,13 +30,13 @@ def assert_blocked(w):
     assert w.call('GET', w.history_path)['items'] == w.before_restore
 
 
-@then('the four original field jobs block restoring those bytes')
+@then('the eight original field jobs block restoring those bytes')
 def original_field_jobs(context):
     w = context.world
     original = requirements(w, w.served['version'])
     alias = requirements(w, w.alias)
     w.required_jobs = alias['pendingOutcomeIds']
-    assert len(w.required_jobs) == 4 and set(w.required_jobs) == set(w.private_field_jobs)
+    assert len(w.required_jobs) == 8 and set(w.required_jobs) == set(w.private_field_jobs)
     assert original['pendingOutcomeIds'] == w.required_jobs and alias['failedOutcomeIds'] == []
     assert alias['baselineRevision'] == w.restored_delivery['revision']
     assert_blocked(w)
@@ -49,17 +49,17 @@ def replay(w, outcome_id):
     assert result == dict(accepted=True, verdict='pass'), result
 
 
-@when('the application repairs its default code check and replays three original jobs')
+@when('the application repairs its default code check and replays seven original jobs')
 def replay_three(context):
     w = context.world
-    for job in w.required_jobs[:3]:
+    for job in w.required_jobs[:7]:
         replay(w, job)
 
 
 @then('the outstanding job still blocks restore on the current delivery revision')
 def outstanding_job(context):
     w = context.world
-    assert requirements(w, w.alias)['pendingOutcomeIds'] == w.required_jobs[3:]
+    assert requirements(w, w.alias)['pendingOutcomeIds'] == w.required_jobs[7:]
     assert_blocked(w)
 
 

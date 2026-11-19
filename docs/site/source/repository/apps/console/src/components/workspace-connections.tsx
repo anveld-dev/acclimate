@@ -9,7 +9,7 @@ import { ReceiptTime } from './receipt-time';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import type { DeliveryReceipt, IntegrationCredential, Page } from '@acclimate/sdk';
+import type { DeliveryReceipt, ConnectionCredential, Page } from '@acclimate/sdk';
 import { Button } from './ui/button';
 import { DirectorySearch } from './ui/directory-search';
 import { ArrowUpRight, Check, ChevronRight, Plus, Radio } from 'lucide-react';
@@ -191,7 +191,7 @@ function ConnectionWorkspace({
   const [channel, setChannel] = useState(
     typeof search.channel === 'string' ? search.channel : (bundle?.channels[0]?.name ?? ''),
   );
-  const [credential, setCredential] = useState<IntegrationCredential | null>(null);
+  const [credential, setCredential] = useState<ConnectionCredential | null>(null);
   const [credentialId, setCredentialId] = useState('');
   const [confirm, setConfirm] = useState<'integration' | 'credential' | null>(null);
   const [busy, setBusy] = useState(false);

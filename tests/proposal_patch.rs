@@ -159,6 +159,16 @@ fn scoped_skill_mutations_require_complete_packages_and_exact_parent_inventory()
         "---\nname: settlement\ndescription: Classify a settlement\n---\nUse the helper.";
     let create = json!({"op":"createSkill","name":"settlement","files":[{"relativePath":"SKILL.md","text":manifest}]});
     let p = parent("unchanged");
+    let mut script = create.clone();
+    script["files"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"relativePath":"scripts/helper.sh","text":"echo helper"}));
+    assert!(scoped(&p, json!([script])).is_err());
+    let mut tool_permission = create.clone();
+    tool_permission["files"][0]["text"] =
+        json!(manifest.replace("description:", "allowed-tools: Bash\ndescription:"));
+    assert!(scoped(&p, json!([tool_permission])).is_err());
     let (created, _) = scoped(&p, json!([create.clone()])).unwrap();
     assert_eq!(created.files[2].path, "skills/settlement/SKILL.md");
     assert!(scoped(&created, json!([create.clone()])).is_err());
@@ -185,4 +195,33 @@ fn scoped_skill_mutations_require_complete_packages_and_exact_parent_inventory()
         assert!(scoped(&p, json!([{"op":"createSkill","name":name,"files":[{"relativePath":file,"text":content}]}])).is_err());
     }
     assert!(reconstruct(&p,&request(), &json!({"schemaVersion":1,"edits":[],"skillOperations":[create],"rationale":"unauthorized"}).to_string()).is_err());
+}
+
+#[test]
+fn new_memory_note_supersedes_only_an_explicitly_allowed_note() {
+    let parent = parent("Keep this guidance");
+    let mut request = request();
+    request.allowed_paths.push("memory/new.md".into());
+    let patch = json!({
+        "schemaVersion":1, "edits":[], "rationale":"Replace stale context",
+        "noteOperations":[{"op":"create_note","path":"memory/new.md","text":"Reusable context","supersedes":"memory/large.md"}]
+    }).to_string();
+    assert!(reconstruct(&parent, &request, &patch).is_err());
+    request.allowed_paths.push("memory/large.md".into());
+    let (candidate, _) = reconstruct(&parent, &request, &patch).unwrap();
+    assert_eq!(candidate.files.len(), 2);
+    assert_eq!(candidate.files[0].text, "Keep this guidance");
+    assert_eq!(candidate.files[1].path, "memory/new.md");
+    assert_eq!(parent.files[1].path, "memory/large.md");
+}
+
+#[test]
+fn proposal_growth_is_measured_against_encoded_parent() {
+    let mut parent = parent("before");
+    parent.files.truncate(1);
+    let edit = patch(json!([{"path":"guide.md","oldText":"before","newText":"x".repeat(3000)}]));
+    assert_eq!(
+        reconstruct(&parent, &request(), &edit).err().unwrap(),
+        "Candidate exceeds proposal byte-growth limit"
+    );
 }

@@ -1,5 +1,11 @@
 [
   {
+    "source": "CONTEXT.md",
+    "route": "glossary.html",
+    "group": "Start here",
+    "title": "Glossary"
+  },
+  {
     "source": "docs/design/README.md",
     "route": "index.html",
     "group": "Start here",
@@ -1117,6 +1123,56 @@
   {
     "source": "docs/research/luna-real-app-integration.md",
     "route": "source/research/luna-real-app-integration.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/40-case-preregistration.md",
+    "route": "source/research/real-app-learning-experiment/40-case-preregistration.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/40-case.md",
+    "route": "source/research/real-app-learning-experiment/40-case.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/5-admission-preregistration.md",
+    "route": "source/research/real-app-learning-experiment/5-admission-preregistration.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/5-admission-rerun-preregistration.md",
+    "route": "source/research/real-app-learning-experiment/5-admission-rerun-preregistration.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/5-admission-rerun.md",
+    "route": "source/research/real-app-learning-experiment/5-admission-rerun.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/5-admission.md",
+    "route": "source/research/real-app-learning-experiment/5-admission.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/README.md",
+    "route": "source/research/real-app-learning-experiment/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/preregistration.md",
+    "route": "source/research/real-app-learning-experiment/preregistration.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/replication-preregistration.md",
+    "route": "source/research/real-app-learning-experiment/replication-preregistration.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/research/real-app-learning-experiment/replication.md",
+    "route": "source/research/real-app-learning-experiment/replication.md",
     "kind": "source"
   },
   {

@@ -2,7 +2,7 @@
 
 Review date: 2026-11-17. Source baseline: `3de5ac433a5a6b3d1406efaa51e50283ec66d402`. This pass independently challenges the [first review](../README.md), using current Acclimate source and the pinned AgentRun/RRSI clones in `.repos.json`. It reviews concepts and implementation; no new benchmark or paid model run is implied.
 
-The resulting [continuous-learning architecture](../../../architecture/continuous-learning/README.md) selects an app-owned learner and specifies implementation contracts and migration gates.
+The [continuous-learning architecture decision](../../../architecture/continuous-learning/README.md) records the move to service-managed learning.
 
 ## Updated verdict
 

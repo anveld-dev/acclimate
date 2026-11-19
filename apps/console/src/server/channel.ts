@@ -6,7 +6,7 @@ import { ApiError, DeliveryError, verifyPayloadBytes } from '@acclimate/sdk';
 import type {
   BundlePayload,
   ChannelResolution,
-  PromotionPage,
+  ReleasePage,
   CompatibilityTarget,
 } from '@acclimate/sdk';
 
@@ -34,7 +34,7 @@ export type ConsoleState =
       channel: string;
       resolution: ChannelResolution;
       payload: BundlePayload;
-      history: PromotionPage;
+      history: ReleasePage;
     };
 
 const observations = new Map<string, string>();
@@ -67,11 +67,11 @@ export async function readChannel(
     const { resolution } = await client.resolveChannel(projectId, bundleId, channel);
     if (!resolution) throw new Error('Missing channel');
     const membership = (
-      await allPages((cursor) => client.listProjects({ limit: 100, cursor }))
+      await allPages((cursor) => client.listWorkspaces({ limit: 100, cursor }))
     ).find((project) => project.id === projectId)?.role;
     const [bytes, history, bundles] = await Promise.all([
       client.getPayload(projectId, bundleId, resolution.version.id),
-      client.listPromotions(projectId, bundleId, channel, { limit: 20 }),
+      client.listReleases(projectId, bundleId, channel, { limit: 20 }),
       allPages((cursor) => client.listBundles(projectId, { limit: 100, cursor })),
     ]);
     const payload = verifyPayloadBytes(bytes, resolution.version.digest);
@@ -94,9 +94,12 @@ export async function readChannel(
       canEdit:
         env.CONSOLE_ALLOW_EDITS === 'true' && (membership === 'editor' || membership === 'admin'),
       source: {
-        kind: bundle.origin === 'example'
-          ? 'seeded-example'
-          : bundle.origin === 'imported' ? 'imported' : 'configured-bundle',
+        kind:
+          bundle.origin === 'example'
+            ? 'seeded-example'
+            : bundle.origin === 'imported'
+              ? 'imported'
+              : 'configured-bundle',
         storage: 'postgresql',
         isWorkingTree: false,
       },

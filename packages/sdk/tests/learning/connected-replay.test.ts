@@ -126,9 +126,11 @@ async function fixture(t: TestContext, kind: 'recheck' | 'field' | 'incident') {
       return 'pass';
     },
   };
+  const errors: unknown[] = [];
   async function run(mode?: 'live' | 'model-free', allowLive = false) {
     const stop = new AbortController();
     const codes: string[] = [];
+    errors.length = 0;
     await serveConnectedLearning({
       integrationId,
       installationId: 'test',
@@ -142,14 +144,15 @@ async function fixture(t: TestContext, kind: 'recheck' | 'field' | 'incident') {
       signal: AbortSignal.any([stop.signal, AbortSignal.timeout(30_000)]),
       allowLive,
       pollIntervalMs: 25,
-      onDiagnostic(diagnostic) {
+      onDiagnostic(diagnostic, error) {
+        errors.push(error);
         codes.push(diagnostic.code);
         stop.abort();
       },
     });
     return codes;
   }
-  return { record, run, apps };
+  return { record, run, apps, errors };
 }
 
 for (const kind of ['recheck', 'field', 'incident'] as const) {
@@ -162,24 +165,29 @@ for (const kind of ['recheck', 'field', 'incident'] as const) {
       assert.equal(record.callbacks, 0);
       record.failPost = true;
       assert.equal((await run('live', true)).length, 1);
-      assert.equal(record.callbacks, 1);
+      assert.equal(record.callbacks, kind === 'recheck' ? 1 : 3);
       record.failPost = false;
       assert.deepEqual(await run('live', false), []);
       assert.ok(record.posts.length >= 2);
       assert.equal(new Set(record.posts).size, 1);
       assert.equal(new Set(record.keys).size, 1);
       assert.ok(record.keys[0]);
-      assert.equal(record.callbacks, 1);
+      if (kind !== 'recheck') assert.deepEqual(JSON.parse(record.posts[0]!).attempts, ['pass', 'pass', 'pass']);
+      assert.equal(record.callbacks, kind === 'recheck' ? 1 : 3);
     },
   );
   test(
     kind + ' holds an uncertain callback across restarts until the evaluator reconciles it',
     async (t) => {
-      const { record, run } = await fixture(t, kind);
+      const { record, run, errors } = await fixture(t, kind);
+      const failure = Object.assign(new Error('ambiguous callback failure'), {
+        code: 'provider.timeout',
+      });
       record.run = async () => {
-        throw new Error('ambiguous callback failure');
+        throw failure;
       };
-      assert.equal((await run('model-free')).length, 1);
+      assert.deepEqual(await run('model-free'), ['execution.uncertain']);
+      assert.equal((errors[0] as Error).cause, failure);
       assert.deepEqual(await run('model-free'), ['execution.uncertain']);
       assert.equal(record.callbacks, 1);
       assert.deepEqual(record.posts, []);

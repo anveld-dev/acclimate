@@ -1,6 +1,10 @@
 use super::{
     Descriptor, absent, app_principal, config, conflict, denied, enrollment_view, invalid,
-    learning_admin, selection::Policies, validate_descriptors,
+    learning_admin,
+    repetitions::Plan,
+    selection::{Policies, Stage},
+    statistics::{AUDIT_Z, Calibration},
+    validate_descriptors,
 };
 use crate::{ApiErr, ApiResult, AppState, db};
 use axum::{
@@ -43,6 +47,55 @@ pub(super) fn valid_fingerprints(descriptor: &Descriptor) -> bool {
                         .bytes()
                         .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
             })
+}
+
+pub(super) async fn save_policy_epoch(
+    tx: &mut Transaction<'_, Postgres>,
+    project: &str,
+    integration: Uuid,
+) -> ApiResult<()> {
+    sqlx::query("INSERT INTO connected_learning_policy_epochs(project_id,integration_id,epoch,development,selection_policies)
+        SELECT project_id,integration_id,policy_epoch,development,selection_policies
+        FROM connected_learning_enrollments WHERE (project_id,integration_id)=($1,$2)")
+        .bind(project).bind(integration).execute(&mut **tx).await.map_err(db)?;
+    Ok(())
+}
+
+pub(super) async fn register_cohorts(
+    tx: &mut Transaction<'_, Postgres>,
+    project: &str,
+    bundle: Uuid,
+    integration: Uuid,
+    development: Option<&Descriptor>,
+    previous_count: usize,
+    audits: &[Descriptor],
+) -> ApiResult<()> {
+    if development.is_none() && audits.is_empty() {
+        return Ok(());
+    }
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('connected-learning-cohorts:' || $1 || ':' || $2::uuid::text, 0))")
+        .bind(project).bind(bundle).execute(&mut **tx).await.map_err(db)?;
+    let registrations = development
+        .into_iter()
+        .map(|descriptor| (None, descriptor))
+        .chain(
+            audits
+                .iter()
+                .enumerate()
+                .map(|(index, descriptor)| (Some((previous_count + index) as i32), descriptor)),
+        );
+    for (slot, descriptor) in registrations {
+        sqlx::query("SELECT connected_learning_register($1,$2,$3,$4,$5)")
+            .bind(project)
+            .bind(bundle)
+            .bind(integration)
+            .bind(slot)
+            .bind(serde_json::to_value(descriptor).map_err(db)?)
+            .execute(&mut **tx)
+            .await
+            .map_err(registry_error)?;
+    }
+    Ok(())
 }
 
 pub(super) fn registry_error(error: sqlx::Error) -> ApiErr {
@@ -102,6 +155,22 @@ pub(super) async fn renew(
     if app_principal(&row, &actor.principal) {
         return Err(denied());
     }
+    let command = crate::commands::DurableCommand::new(
+        &project,
+        integration,
+        "renew",
+        &actor.principal,
+        request.renewal_id,
+        body.clone(),
+    );
+    if let Some(response) = command
+        .replay(&mut tx, || {
+            conflict("Renewal ID already binds different settings")
+        })
+        .await?
+    {
+        return Ok(Json(response));
+    }
     if let Some((prior, revision)) = sqlx::query_as::<_, (Value, i64)>(
         "SELECT request,revision FROM connected_learning_renewals
          WHERE project_id=$1 AND integration_id=$2 AND renewal_id=$3",
@@ -155,15 +224,50 @@ pub(super) async fn renew(
         if settings.automatic_rollout {
             crate::auth::authorize_transaction(&mut tx, &actor, &project, "promote").await?;
         }
+        let reviews = sqlx::query(
+            "SELECT * FROM connected_learning_rounds
+            WHERE (project_id,integration_id)=($1,$2) AND state='awaiting_review'",
+        )
+        .bind(&project)
+        .bind(integration)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(db)?;
+        for round in reviews {
+            crate::connected_learning_worker::expire_review(&mut tx, &round).await?;
+        }
         let active: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2
-             AND state NOT IN ('promoted','rejected'))"
+             AND state IN ('proposing','development','audit','awaiting_review'))"
         ).bind(&project).bind(integration).fetch_one(&mut *tx).await.map_err(db)?;
         if active {
             return Err(conflict(
                 "Selection and development may rotate only between rounds",
             ));
         }
+        crate::connected_learning_worker::discard_developed(
+            &mut tx,
+            &project,
+            integration,
+            previous_epoch,
+        )
+        .await?;
+        sqlx::query(
+            "INSERT INTO connected_learning_incumbent_events
+            (project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,
+             source_revision,version_id,chain_length,reason)
+            SELECT project_id,integration_id,policy_epoch,baseline_version_id,baseline_revision,
+                   source_revision,baseline_version_id,0,'policy epoch rotated'
+            FROM (SELECT * FROM connected_learning_incumbent_events
+                WHERE (project_id,integration_id,policy_epoch)=($1,$2,$3)
+                ORDER BY sequence DESC LIMIT 1) head WHERE chain_length>0",
+        )
+        .bind(&project)
+        .bind(integration)
+        .bind(previous_epoch)
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
         previous_epoch
             .checked_add(1)
             .ok_or_else(|| conflict("Policy epoch limit reached"))?
@@ -175,7 +279,7 @@ pub(super) async fn renew(
         if let Some(policies) = policies {
             policies.development.validate(&[development], None)?;
             let spent = sqlx::query_scalar::<_, i32>(
-                "SELECT audit_index FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 AND audit_index IS NOT NULL"
+                "SELECT audit_index FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 AND audit_index IS NOT NULL AND NOT audit_released"
             ).bind(&project).bind(integration).fetch_all(&mut *tx).await.map_err(db)?
             .into_iter().collect::<std::collections::HashSet<_>>();
             let future_audits = settings
@@ -211,43 +315,112 @@ pub(super) async fn renew(
     .fetch_one(&mut *tx)
     .await
     .map_err(registry_error)?;
-    sqlx::query(
-        "INSERT INTO connected_learning_renewals(project_id,integration_id,renewal_id,request,revision,authorized_by)
-         VALUES($1,$2,$3,$4,$5,$6)",
+    if rotate {
+        save_policy_epoch(&mut tx, &project, integration).await?;
+    }
+    if !rotate && !request.audits.is_empty() {
+        extend_repetition_plan(
+            &mut tx,
+            &project,
+            integration,
+            epoch,
+            settings.audits.len(),
+            &request.audits,
+            policies,
+        )
+        .await?;
+    }
+    register_cohorts(
+        &mut tx,
+        &project,
+        row.get("bundle_id"),
+        integration,
+        request.development.as_ref(),
+        settings.audits.len(),
+        &request.audits,
     )
-    .bind(&project)
-    .bind(integration)
-    .bind(request.renewal_id)
-    .bind(body)
-    .bind(revision)
-    .bind(actor.principal)
-    .execute(&mut *tx)
-    .await
-    .map_err(db)?;
-    tx.commit().await.map_err(db)?;
+    .await?;
     let mut view = enrollment_view(&updated, true, true)?;
     view["appliedRenewalRevision"] = json!(revision);
-    Ok(Json(view))
+    command.finish(tx, view).await
 }
 
-pub(crate) async fn audit_is_fresh(
+async fn extend_repetition_plan(
     tx: &mut Transaction<'_, Postgres>,
     project: &str,
-    bundle: Uuid,
     integration: Uuid,
-    index: i32,
-) -> ApiResult<bool> {
-    sqlx::query_scalar(
-        "SELECT connected_learning_audit_registered(project_id,bundle_id,integration_id,$4,audits->$4)
-         FROM connected_learning_enrollments WHERE (project_id,bundle_id,integration_id)=($1,$2,$3)",
+    epoch: i64,
+    previous_count: usize,
+    audits: &[Descriptor],
+    policies: Option<&Policies>,
+) -> ApiResult<()> {
+    let stored: Option<(Value, Value)> = sqlx::query_as(
+        "SELECT noise_calibration,repetition_plan
+         FROM connected_learning_policy_epochs
+         WHERE (project_id,integration_id,epoch)=($1,$2,$3) AND repetition_plan IS NOT NULL",
     )
     .bind(project)
-    .bind(bundle)
     .bind(integration)
-    .bind(index)
-    .fetch_one(&mut **tx)
+    .bind(epoch)
+    .fetch_optional(&mut **tx)
     .await
-    .map_err(db)
+    .map_err(db)?;
+    let Some((calibration, mut view)) = stored else {
+        return Ok(());
+    };
+    let calibration: Calibration =
+        serde_json::from_value(view.get("powerGuardNoise").cloned().unwrap_or(calibration))
+            .map_err(db)?;
+    let observations = view["powerGuardObservations"]
+        .as_u64()
+        .map_or(calibration.case_count, |n| n as usize);
+    let mut plan: Plan = serde_json::from_value(view["plan"].take()).map_err(db)?;
+    let defaults = Policies::default();
+    let policies = policies.unwrap_or(&defaults);
+    let target = policies
+        .audit
+        .target_effect
+        .or(policies.development.target_effect);
+    plan.extend_audits(audits);
+    let mut warnings: Vec<_> = view["warning"]
+        .as_str()
+        .map(str::to_owned)
+        .into_iter()
+        .collect();
+    let projections = view["auditProjections"]
+        .as_array_mut()
+        .ok_or_else(|| db("Missing audit power projections"))?;
+    let mut stopped = None;
+    for (offset, audit) in audits.iter().enumerate() {
+        let projection = plan.project(
+            audit,
+            Some(previous_count + offset),
+            (&calibration, observations),
+            policies.audit.threshold(Stage::Audit),
+            AUDIT_Z,
+            target,
+        );
+        let stage = format!("Audit {}", previous_count + offset + 1);
+        stopped = stopped.or_else(|| projection.stop_reason(&stage));
+        warnings.extend(projection.warning(&stage));
+        projections.push(json!(projection));
+    }
+    view["plan"] = json!(plan);
+    view["warning"] = json!((!warnings.is_empty()).then(|| warnings.join("\n")));
+    sqlx::query(
+        "UPDATE connected_learning_policy_epochs
+         SET repetition_plan=$4,calibration_stopped_reason=COALESCE(calibration_stopped_reason,$5)
+         WHERE (project_id,integration_id,epoch)=($1,$2,$3)",
+    )
+    .bind(project)
+    .bind(integration)
+    .bind(epoch)
+    .bind(view)
+    .bind(stopped)
+    .execute(&mut **tx)
+    .await
+    .map_err(db)?;
+    Ok(())
 }
 
 pub(super) async fn remaining_audits(

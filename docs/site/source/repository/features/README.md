@@ -49,7 +49,7 @@ CI uses `npm run test:bdd -- --parallel` to build once and run `console.feature`
 | [Identity boundary](identity.feature) | Public callback handler against real Rust sessions; fixture external identity provider, transaction binding, expiry, logout and cookie flags |
 | [UX refinements](ux_refinement.feature), [reload recovery](recovery_reload.feature) | Invalid draft correction, explicit reload/cancel, missing files, evaluator edits, direct initial file import and lost-save recovery after browser reload |
 
-The reviewed [inventory](../scripts/bdd/inventory.json) records 169 behaviors and 215 scenario variants. Every expected variant must run and pass. A missing, skipped, undefined or failing variant leaves that behavior uncovered. The coverage checker has its own regression tests.
+The reviewed [inventory](../scripts/bdd/inventory.json) records 172 behaviors and 221 scenario variants. Every expected variant must run and pass. A missing, skipped, undefined or failing variant leaves that behavior uncovered. The coverage checker has its own regression tests.
 
 After a run, open `artifacts/bdd/coverage.md`. Machine results are in `coverage.json`, `results.json` and `junit/`. Browser failures save screenshots and Playwright traces in `failures/`; these contain disposable fixture data and should still be treated as private. To inspect a trace: `.venv-bdd/bin/playwright show-trace artifacts/bdd/failures/<name>.zip`.
 

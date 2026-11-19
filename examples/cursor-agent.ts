@@ -47,7 +47,7 @@ const selected = process.env.ACCLIMATE_APPROVED_MEMORY_PATH;
 const prepared = await prepare(bundle, { approvedMemoryPaths: selected ? [selected] : [] });
 observeOptional(() => reporter?.reportPrepared(bundle));
 try {
-  // The app chooses its model, tool policy and approved memory. Project settings can run hooks;
+  // The app chooses its model, tool policy and approved memory. Workspace settings can run hooks;
   // this fresh private workspace contains only the staged bundle resources.
   const agent = await Agent.create({
     apiKey,

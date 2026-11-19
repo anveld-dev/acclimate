@@ -31,7 +31,7 @@ export async function listSetup(
 ) {
   try {
     const client = setupClient(env, fetcher);
-    const projects = await allPages((cursor) => client.listProjects({ limit: 100, cursor }));
+    const projects = await allPages((cursor) => client.listWorkspaces({ limit: 100, cursor }));
     if (workspaceOnly && !projects.some((p) => p.id === env.CONSOLE_PROJECT))
       throw new ApiError(403, 'denied', 'Workspace unavailable', '');
     const selectedProject = projects.some((p) => p.id === env.CONSOLE_PROJECT)
@@ -115,8 +115,7 @@ export async function createSetup(
       !/^[a-f0-9-]{36}$/i.test(input.key)
     )
       throw new Error('Invalid setup request.');
-    if (!['created', 'imported'].includes(input.origin))
-      throw new Error('Invalid origin.');
+    if (!['created', 'imported'].includes(input.origin)) throw new Error('Invalid origin.');
     body = setupRequest(input);
     validatePayload(body.payload);
   } catch (error) {
@@ -129,7 +128,7 @@ export async function createSetup(
     {
       projectId: input.projectId,
       key: input.key,
-      operationPath: `/v1/projects/${encodeURIComponent(input.projectId)}/bundle-setups`,
+      operationPath: `/v1/workspaces/${encodeURIComponent(input.projectId)}/bundle-setups`,
       body: JSON.stringify(body),
     },
     fetcher,

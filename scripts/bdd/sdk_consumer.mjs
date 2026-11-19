@@ -11,7 +11,11 @@ import {
   createReceiptReporter,
 } from '@acclimate/sdk';
 import { defineEvaluation } from '@acclimate/sdk/evaluation';
-import { connectedEvaluationDescriptor } from '@acclimate/sdk/learning';
+import {
+  connectedEvaluationDescriptor,
+  createLearningFieldAuditor,
+  createLearningOutcomeReporter,
+} from '@acclimate/sdk/learning';
 const input = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const client = new AcclimateClient({
   baseUrl: input.baseUrl,
@@ -77,6 +81,13 @@ async function evaluate() {
     const registered = connectedEvaluationDescriptor(defineEvaluation(definition));
     assert.equal(runtime['acclimate.fixtures.v1.dataset'], registered.datasetDigest);
   }
+  const casesById = new Map(definition.cases.map((testCase) => [testCase.caseId, testCase]));
+  const repetitionCounts = new Map();
+  for (const { caseId } of expectedCases) {
+    assert.ok(casesById.has(caseId), `Unexpected review case: ${caseId}`);
+    repetitionCounts.set(caseId, (repetitionCounts.get(caseId) ?? 0) + 1);
+  }
+  assert.equal(repetitionCounts.size, casesById.size);
   const report = await compare({
     parent: { version: parent.version },
     candidate: { version: candidate.version },
@@ -84,8 +95,8 @@ async function evaluate() {
     evaluation: input.settings.evaluation,
     runtime,
     graderRevision,
-    cases: definition.cases.map(({ caseId, repetitions, input }) => ({
-      caseId, repetitions, snapshot: input, settings: null,
+    cases: Array.from(repetitionCounts, ([caseId, repetitions]) => ({
+      caseId, repetitions, snapshot: casesById.get(caseId).input, settings: null,
     })),
     execute: ({ version, snapshot }) => definition.execute({ bundle: bundles.get(version.version.id), input: snapshot }),
     grade: ({ output, caseId }) => definition.grade({ output, expected: answers.get(caseId) }),
@@ -129,9 +140,6 @@ function fieldJobPasses(instructions, job, defaultChecks = []) {
 }
 
 async function gradeFieldJob() {
-  const { createLearningFieldAuditor, createLearningOutcomeReporter } = await import(
-    '@acclimate/sdk/learning'
-  );
   const target = { projectId: base.projectId, integrationId: input.integrationId };
   const scopedClient = (token, role) =>
     new AcclimateClient({
@@ -190,10 +198,12 @@ async function replayFieldJob() {
   assert.equal(candidate.version.digest, input.digest);
   const instructions = candidate.payload.files.find((file) => file.path === 'AGENTS.md').text;
   assert.equal(fieldJobPasses(instructions, input.fieldJob), false, 'Original application must reproduce the loss');
-  const verdict = fieldJobPasses(instructions, input.fieldJob, input.defaultChecks) ? 'pass' : 'regression';
+  const attempts = Array.from({ length: 3 }, () =>
+    fieldJobPasses(instructions, input.fieldJob, input.defaultChecks) ? 'pass' : 'regression');
+  const verdict = attempts.filter((result) => result === 'pass').length >= 2 ? 'pass' : 'regression';
   const receipt = await client.reportLearningFieldReplay(base.projectId, input.integrationId, {
     versionId: candidate.version.id, digest: candidate.version.digest, baselineRevision: input.baselineRevision,
-    outcomeId: input.outcomeId, verdict,
+    outcomeId: input.outcomeId, verdict, attempts,
   });
   return { ...receipt, verdict };
 }

@@ -1,0 +1,120 @@
+[
+  {
+    "name": "tied audit at the default margin",
+    "stage": "audit",
+    "calibratedStandardDeviation": 0.2,
+    "gains": [0, 0, 0, 0],
+    "pass": false
+  },
+  {
+    "name": "tied audit within a positive margin",
+    "stage": "audit",
+    "calibratedStandardDeviation": 0.2,
+    "nonInferiorityMargin": 0.25,
+    "gains": [0, 0, 0, 0],
+    "pass": true
+  },
+  {
+    "name": "large development gain despite one unprotected regression",
+    "stage": "development",
+    "calibratedStandardDeviation": 0.2,
+    "gains": [-1, 1, 1, 1, 1, 1, 1, 1],
+    "pass": true
+  },
+  {
+    "name": "small uniform development gain below the noise floor",
+    "stage": "development",
+    "calibratedStandardDeviation": 0.2,
+    "gains": [0.05, 0.05, 0.05, 0.05],
+    "pass": false
+  },
+  {
+    "name": "v3 tied audit at default margin",
+    "schemaVersion": 3,
+    "stage": "audit",
+    "calibratedStandardDeviation": 0,
+    "gains": [0, 0],
+    "pass": true
+  },
+  {
+    "name": "v3 audit superiority requires positive gain",
+    "schemaVersion": 3,
+    "auditMode": "superiority",
+    "stage": "audit",
+    "calibratedStandardDeviation": 0,
+    "gains": [0, 0],
+    "pass": false
+  },
+  {
+    "name": "v3 tied step passes with targeted replay",
+    "schemaVersion": 3,
+    "replayPassed": true,
+    "stage": "development",
+    "calibratedStandardDeviation": 0,
+    "gains": [0, 0],
+    "pass": true
+  },
+  {
+    "name": "v3 tied step needs a benefit",
+    "schemaVersion": 3,
+    "stage": "development",
+    "calibratedStandardDeviation": 0,
+    "gains": [0, 0],
+    "pass": false
+  },
+  {
+    "name": "v3 tied cumulative cohort requires improvement",
+    "schemaVersion": 3,
+    "stage": "cumulative",
+    "calibratedStandardDeviation": 0,
+    "gains": [0, 0],
+    "pass": false
+  },
+  {
+    "name": "missing parent cannot produce a win",
+    "schemaVersion": 3,
+    "stage": "cumulative",
+    "calibratedStandardDeviation": 0,
+    "gains": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "missingParent": [0],
+    "pass": false
+  },
+  {
+    "name": "missing candidate uses the worst observed reward",
+    "rewardOffset": 0.6,
+    "schemaVersion": 3,
+    "stage": "audit",
+    "calibratedStandardDeviation": 0,
+    "gains": [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01],
+    "missingCandidate": [0],
+    "pass": true
+  },
+  {
+    "name": "per-arm missing cap applies independently",
+    "schemaVersion": 3,
+    "stage": "audit",
+    "calibratedStandardDeviation": 0,
+    "gains": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    "missingParent": [0, 1],
+    "pass": false
+  },
+  {
+    "name": "v3 single case has insufficient degrees of freedom",
+    "schemaVersion": 3,
+    "stage": "audit",
+    "calibratedStandardDeviation": 0,
+    "gains": [1],
+    "pass": false
+  },
+  {
+    "name": "audit repetition count scales the calibration floor",
+    "schemaVersion": 3,
+    "stage": "audit",
+    "nonInferiorityMargin": 0.06,
+    "calibratedStandardDeviation": 0.2,
+    "calibrationEffectiveRepetitions": 1,
+    "evaluationRepetitions": 16,
+    "gains": [0, 0, 0, 0],
+    "pass": true
+  }
+]

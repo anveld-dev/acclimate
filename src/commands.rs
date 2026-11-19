@@ -1,3 +1,4 @@
+use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, auth::Actor, db, err};
 use axum::{
     Json, Router,
@@ -9,7 +10,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
 
 /// The installed evaluator promises retained operations only for this route grammar.
 pub(crate) fn guided_project(project: &str) -> bool {
@@ -363,8 +364,8 @@ struct OperationScope {
 }
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/v1/projects/{project}/operations/{id}", get(operation))
-        .route("/v1/projects/{project}/operations/{id}/close", post(close))
+        .workspace_route("/v1/projects/{project}/operations/{id}", get(operation))
+        .workspace_route("/v1/projects/{project}/operations/{id}/close", post(close))
 }
 async fn operation(
     State(s): State<AppState>,
@@ -398,7 +399,28 @@ async fn outcome(
     closing: bool,
 ) -> ApiResult<Json<Value>> {
     validate_key(&id)?;
-    let path = scope.operation_path.as_deref().unwrap_or("");
+    let requested_path = scope.operation_path.as_deref().unwrap_or("");
+    let canonical = requested_path.starts_with("/v1/workspaces/");
+    let legacy_path = canonical.then(|| {
+        let mut segments: Vec<_> = requested_path.split('/').collect();
+        segments[2] = "projects";
+        if let [
+            "",
+            "v1",
+            "projects",
+            _,
+            "bundles",
+            _,
+            "channels",
+            _,
+            action @ "releases",
+        ] = segments.as_mut_slice()
+        {
+            *action = "promotions";
+        }
+        segments.join("/")
+    });
+    let path = legacy_path.as_deref().unwrap_or(requested_path);
     if !path.is_empty() && rights(&p, path).is_none() {
         return Err(err(
             StatusCode::BAD_REQUEST,
@@ -463,8 +485,13 @@ async fn outcome(
         )
         .await?;
     }
+    let response_path = if canonical && actual_path == path {
+        requested_path
+    } else {
+        &actual_path
+    };
     let value = if let Some(row) = committed {
-        json!({"status":"committed","operationId":id,"path":actual_path,"requestFingerprint":format!("sha256:{}",hex::encode(row.get::<Vec<u8>,_>("fingerprint"))),"result":serde_json::from_slice::<Value>(&row.get::<Vec<u8>,_>("response_body")).map_err(db)?})
+        json!({"status":"committed","operationId":id,"path":response_path,"requestFingerprint":format!("sha256:{}",hex::encode(row.get::<Vec<u8>,_>("fingerprint"))),"result":serde_json::from_slice::<Value>(&row.get::<Vec<u8>,_>("response_body")).map_err(db)?})
     } else if closing || row.is_some() {
         if closing {
             sqlx::query("INSERT INTO operation_records(principal_id,project_id,namespace,key,path,status) VALUES($1,$2,$3,$4,$5,'closed') ON CONFLICT DO NOTHING").bind(&actor.principal).bind(&p).bind(namespace(path)).bind(&id).bind(path).execute(&mut *tx).await.map_err(db)?;
@@ -476,6 +503,181 @@ async fn outcome(
     tx.commit().await.map_err(db)?;
     Ok(Json(value))
 }
+/// A durable domain command. Callers hold the domain lock and use the same
+/// transaction for the mutation and receipt, including when adopting old data.
+pub(crate) struct DurableCommand {
+    project: String,
+    scope: String,
+    principal: String,
+    key: String,
+    request: Value,
+    principal_owned: bool,
+    legacy_request: Option<Value>,
+    optional_retry_field: Option<&'static str>,
+}
+
+#[derive(sqlx::FromRow)]
+struct DurableReceipt {
+    principal_id: String,
+    request: Option<Value>,
+    legacy_fingerprint: Option<String>,
+    legacy_normalized: bool,
+    response: Value,
+}
+
+impl DurableCommand {
+    pub(crate) fn new(
+        project: &str,
+        integration: uuid::Uuid,
+        operation: &str,
+        principal: &str,
+        key: impl ToString,
+        request: Value,
+    ) -> Self {
+        Self {
+            project: project.into(),
+            scope: format!("learning/{integration}/{operation}"),
+            principal: principal.into(),
+            key: key.to_string(),
+            request,
+            principal_owned: false,
+            legacy_request: None,
+            optional_retry_field: None,
+        }
+    }
+
+    pub(crate) fn optional(
+        headers: &HeaderMap,
+        project: &str,
+        integration: uuid::Uuid,
+        operation: &str,
+        principal: &str,
+        request: Value,
+    ) -> ApiResult<Option<Self>> {
+        headers
+            .get("idempotency-key")
+            .map(|header| {
+                let key = header
+                    .to_str()
+                    .ok()
+                    .filter(|key| !key.is_empty() && key.len() <= 256)
+                    .ok_or_else(|| {
+                        err(
+                            StatusCode::BAD_REQUEST,
+                            "invalid_content",
+                            "Invalid idempotency key",
+                        )
+                    })?;
+                let mut command =
+                    Self::new(project, integration, operation, principal, key, request);
+                command.principal_owned = true;
+                Ok(command)
+            })
+            .transpose()
+    }
+
+    pub(crate) async fn finish_optional(
+        command: Option<Self>,
+        tx: Transaction<'_, Postgres>,
+        response: Value,
+    ) -> ApiResult<Json<Value>> {
+        if let Some(command) = command {
+            return command.finish(tx, response).await;
+        }
+        tx.commit().await.map_err(db)?;
+        Ok(Json(response))
+    }
+
+    pub(crate) fn with_legacy_request(mut self, request: Value) -> Self {
+        self.legacy_request = Some(request);
+        self
+    }
+
+    /// Some older clients repeat a report without the attempts sent by the
+    /// evaluator. Match that abbreviated retry only when the field is absent.
+    pub(crate) fn with_optional_retry_field(mut self, field: &'static str) -> Self {
+        self.optional_retry_field = Some(field);
+        self
+    }
+
+    pub(crate) async fn replay(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        conflict: impl FnOnce() -> crate::ApiErr,
+    ) -> ApiResult<Option<Value>> {
+        let stored: Option<DurableReceipt> = sqlx::query_as(
+            "SELECT principal_id,request,legacy_fingerprint,legacy_normalized,response FROM durable_commands
+             WHERE (project_id,scope,key)=($1,$2,$3) AND (NOT $4 OR principal_id=$5)",
+        )
+        .bind(&self.project)
+        .bind(&self.scope)
+        .bind(&self.key)
+        .bind(self.principal_owned)
+        .bind(&self.principal)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(db)?;
+        let Some(stored) = stored else {
+            return Ok(None);
+        };
+        if stored.principal_id != self.principal {
+            return Err(conflict());
+        }
+        let matches = if let Some(fingerprint) = stored.legacy_fingerprint {
+            fingerprint == crate::digest(&serde_json::to_vec(&self.request).map_err(db)?)
+        } else {
+            stored.request.as_ref() == Some(&self.request)
+                || (stored.legacy_normalized && stored.request == self.legacy_request)
+                || self.optional_retry_field.is_some_and(|field| {
+                    if self.request.get(field).is_some() {
+                        return false;
+                    }
+                    let Some(Value::Object(mut request)) = stored.request else {
+                        return false;
+                    };
+                    request.remove(field);
+                    Value::Object(request) == self.request
+                })
+        };
+        if matches {
+            Ok(Some(stored.response))
+        } else {
+            Err(conflict())
+        }
+    }
+
+    pub(crate) async fn finish(
+        self,
+        mut tx: Transaction<'_, Postgres>,
+        response: Value,
+    ) -> ApiResult<Json<Value>> {
+        self.record(&mut tx, &response).await?;
+        tx.commit().await.map_err(db)?;
+        Ok(Json(response))
+    }
+
+    pub(crate) async fn record(
+        self,
+        tx: &mut Transaction<'_, Postgres>,
+        response: &Value,
+    ) -> ApiResult<()> {
+        sqlx::query(
+            "INSERT INTO durable_commands(project_id,scope,principal_id,key,request,response)
+             VALUES ($1,$2,$3,$4,$5,$6)",
+        )
+        .bind(self.project)
+        .bind(self.scope)
+        .bind(self.principal)
+        .bind(self.key)
+        .bind(self.request)
+        .bind(response)
+        .execute(&mut **tx)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

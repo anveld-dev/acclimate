@@ -10,7 +10,8 @@ import {
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const other = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const key = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
-const env = { ...consoleEnvironment,
+const env = {
+  ...consoleEnvironment,
   CONSOLE_SERVICE_TOKEN: 'fixture-console',
   CONSOLE_PROJECT: 'project',
   CONSOLE_BUNDLE: 'bundle',
@@ -18,7 +19,10 @@ const env = { ...consoleEnvironment,
   CONSOLE_SESSION_TOKEN: 'fixture-session',
   CONSOLE_ALLOW_EDITS: 'true',
 };
-function fixture(role = 'admin', receipts: Page<DeliveryReceipt> = { items: [], nextCursor: null }) {
+function fixture(
+  role = 'admin',
+  receipts: Page<DeliveryReceipt> = { items: [], nextCursor: null },
+) {
   const requests: { url: string; method: string; headers: Headers; body: unknown }[] = [];
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -30,7 +34,7 @@ function fixture(role = 'admin', receipts: Page<DeliveryReceipt> = { items: [], 
       body: init?.body ? JSON.parse(String(init.body)) : null,
     });
     let body: unknown;
-    if (url.includes('/v1/projects?'))
+    if (url.includes('/v1/workspaces?'))
       body = { items: [{ id: 'project', name: 'Project', role }], nextCursor: null };
     else if (url.endsWith('/credentials'))
       body = { id: key, kind: 'receipt-write', secret: 'fixture-once' };
@@ -144,7 +148,7 @@ test('all receipt views preserve the selected page and reject a single out-of-sc
         assert.deepEqual(result, {
           ok: false,
           message:
-            'Could not confirm the service response. Refresh to check current integrations before repeating an action.',
+            'Could not confirm the service response. Refresh to check current connections before repeating an action.',
         });
       }
     } else {
@@ -260,7 +264,7 @@ test('canonical connection create keeps the rendered target when another tab cha
   assert.equal(result.ok, true);
   const post = f.requests.find((request) => request.method === 'POST');
   assert.ok(post);
-  assert.ok(post.url.endsWith('/projects/project/integrations'));
+  assert.ok(post.url.endsWith('/workspaces/project/connections'));
   assert.deepEqual(post.body, {
     bundleId: 'bundle',
     channel: 'stable',
@@ -302,7 +306,7 @@ test('workspace connection detail selects the bookmarked native ID and verifies 
   if (!result.ok) throw Error('Expected connection detail');
   assert.equal(result.state.selected?.integration.bundleId, 'other-bundle');
   assert.equal(result.state.selected?.currentRevision, '2');
-  assert.ok(f.requests.some((request) => request.url.includes(`/integrations/${other}/receipts`)));
+  assert.ok(f.requests.some((request) => request.url.includes(`/connections/${other}/receipts`)));
   assert.ok(
     f.requests.some((request) => request.url.includes('/bundles/other-bundle/channels/stable')),
   );
@@ -353,7 +357,7 @@ test('workspace connection index traverses independent integration cursor pages'
   let pages = 0;
   const fetcher: typeof fetch = async (input, init) => {
     const response = await f.fetcher(input, init);
-    if (String(input).includes('/integrations?')) {
+    if (String(input).includes('/connections?')) {
       const body = await response.json();
       const second = String(input).includes('cursor=');
       pages++;
@@ -393,13 +397,28 @@ test('directory projects the latest service-received status without receipt or c
   const { readConnectionsState } = await import('../src/server/integration-core');
   const f = fixture();
   const receivedAt = '2026-11-17T10:00:00Z';
-  const result = await readConnectionsState(env, { projectId:'project' }, async (input,init) => {
-    if(String(input).includes('/integration-observations?')) return Response.json({
-      items:[{id,latestObservation:{stage:'verified',receivedAt,eventId:'excluded-event',credential:'excluded-secret'}},
-        {id:other,latestObservation:null}],nextCursor:null
-    });
-    return f.fetcher(input,init);
+  const result = await readConnectionsState(env, { projectId: 'project' }, async (input, init) => {
+    if (String(input).includes('/connection-observations?'))
+      return Response.json({
+        items: [
+          {
+            id,
+            latestObservation: {
+              stage: 'verified',
+              receivedAt,
+              eventId: 'excluded-event',
+              credential: 'excluded-secret',
+            },
+          },
+          { id: other, latestObservation: null },
+        ],
+        nextCursor: null,
+      });
+    return f.fetcher(input, init);
   });
   assert(result.ok);
-  assert.deepEqual(result.state.reports,{[id]:{stage:'verified',receivedAt},[other]:null});
+  assert.deepEqual(result.state.reports, {
+    [id]: { stage: 'verified', receivedAt },
+    [other]: null,
+  });
 });

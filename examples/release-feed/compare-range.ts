@@ -8,10 +8,10 @@ import {
   createReceiptReporter,
   resolveAndCache,
   type EvaluationProgressRequest,
-  type VerifiedBundle,
+  type VerifiedVersion,
 } from '../../packages/sdk/src/index.js';
 import { prepare } from '../../packages/codex-plugin/src/index.js';
-import { callLiveModel } from '../continuous-learning/live-model.js';
+import { callLiveModel } from './live-model.js';
 
 process.umask(0o077);
 const [operatorFile, connectionFile, previousSummary, output, teaching, audit1, audit2, probe] =
@@ -107,7 +107,7 @@ function grade(text: string, row: Row, mode: Mode) {
     return 0;
   }
 }
-async function run(content: VerifiedBundle, row: Row, mode: Mode, id: string, connected = false) {
+async function run(content: VerifiedVersion, row: Row, mode: Mode, id: string, connected = false) {
   const native = await prepare(content);
   try {
     if (connected) reporter.reportPrepared(content);
@@ -288,7 +288,7 @@ try {
     report.results.every((pair) => pair.candidate.reward === 1 && pair.parent.reward !== null) &&
     report.results.some((pair) => pair.parent.reward === 0);
   if (eligible)
-    await api.promote(
+    await api.createRelease(
       project,
       bundle,
       'stable',

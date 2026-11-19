@@ -57,17 +57,17 @@ test('live checkout command refuses a request for a different evaluator before s
       assert.equal(req.headers.authorization, `Bearer ${token}`);
       const route = req.url ?? '';
       requests.push(route);
-      if (route === `/v1/projects/${projectId}/evaluation-capabilities`) {
+      if (route === `/v1/workspaces/${projectId}/evaluation-capabilities`) {
         assert.equal(req.method, 'GET');
         res.setHeader('cache-control', 'private, no-store');
         return send(200, await f.api.getEvaluationCapabilities(projectId));
       }
-      assert.ok(route.startsWith(`/v1/projects/${projectId}/bundles/${bundleId}/`));
+      assert.ok(route.startsWith(`/v1/workspaces/${projectId}/bundles/${bundleId}/`));
       let text = '';
       for await (const chunk of req) text += chunk;
       const body = text ? JSON.parse(text) : undefined;
       const key = String(req.headers['idempotency-key'] ?? '');
-      const bundleRoute = `/v1/projects/${projectId}/bundles/${bundleId}`;
+      const bundleRoute = `/v1/workspaces/${projectId}/bundles/${bundleId}`;
       if (req.method === 'POST') {
         assert.equal(req.headers['x-acclimate-durable-operation'], 'true');
         assert.match(key, /^[\x20-\x7e]{1,128}$/);

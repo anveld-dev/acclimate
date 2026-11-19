@@ -16,7 +16,7 @@ def wait_for_round(w, state, *, attempt=1):
     raise AssertionError(f'Round for {w.outcome_id}, attempt {attempt}, did not reach {state}')
 
 
-def review_enrollment(w, *, automatic=False, development=None, audit=None):
+def review_enrollment(w, *, automatic=False, development=None, audit=None, audit_protected_thresholds=None):
     w.learning_path = w.integration_path + '/learning'
     w.cohorts = {
         'development': development or {'retry-review': 'retries', 'backoff-review': 'backoff'},
@@ -26,22 +26,73 @@ def review_enrollment(w, *, automatic=False, development=None, audit=None):
         w.cohorts['reserve'] = {'timeout-review': 'timeout'}
     descriptors = w.sdk('reviewDescriptors', cohorts=w.cohorts)
     audits = [value for phase, value in descriptors.items() if phase != 'development']
+    quality = dict(schemaVersion=2, id='review-development', revision='1',
+                   metric=dict(name='coverage', unit='reward', direction='higher'),
+                   aggregation='equal-case-means', maximumCaseRegression=0,
+                   minimumMeanImprovement=-0.2, requiredCases=[])
     return dict(
+        selectionPolicies=dict(development=quality,
+                               audit=dict(quality, id='review-audit', nonInferiorityMargin=0.75,
+                                          protectedCaseThresholds=audit_protected_thresholds or {})),
         installationId='review-fixture', permittedPaths=['AGENTS.md'], maxProposalAdmissions=4 if automatic else 1,
         automaticRollout=automatic, automaticRollback=True,
         development=descriptors['development'], audits=audits,
         evaluatorPrincipal='evaluator', outcomePrincipal='other')
 
 
+def calibrate(w):
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        assignments = w.call('GET', w.learning_path + '/work', actor='evaluator')['items']
+        item = next((item for item in assignments if item['phase'] == 'calibration'), None)
+        if item:
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError('Baseline calibration was not assigned')
+    request_id = item['evaluationRequestId']
+    w.evaluation_path = w.bundle + '/evaluation-requests/' + request_id
+    w.attempt = 'baseline-calibration'
+    w.start_attempt()
+    report = {k: w.started[k] for k in ('parentVersionId', 'parentDigest', 'candidateVersionId', 'candidateDigest',
+                                       'runtime', 'datasetRevision', 'graderRevision', 'expectedCases')}
+    assert report['parentVersionId'] == report['candidateVersionId']
+    repetitions = {}
+    for case in report['expectedCases']:
+        repetitions.setdefault(case['caseId'], []).append(case['repetition'])
+    assert repetitions and all(keys == [0, 1] for keys in repetitions.values()), repetitions
+    outcome = dict(executionStatus='completed', gradingStatus='scored', reward=0)
+    report['evaluation'] = dict(requestId=request_id, attemptId=w.attempt)
+    report['results'] = [dict(**case, parent=outcome, candidate=outcome) for case in report['expectedCases']]
+    w.report = w.call('POST', w.bundle + '/comparisons', report, actor='evaluator')
+    assert w.finish()['status'] == 'completed'
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        calibration = w.call('GET', w.learning_path)['noiseCalibration']
+        if calibration['status'] == 'completed':
+            return
+        assert calibration['status'] == 'evaluated', calibration
+        time.sleep(0.05)
+    raise AssertionError(f'Baseline calibration did not settle: {calibration}')
+
+
 def install_enrollment(w, enrollment):
-    w.call('PUT', w.learning_path, enrollment)
+    actor = w.actor
+    if enrollment['automaticRollout']:
+        actor = 'admin'
+        w.prepare_browser_identity()
+        if actor not in w.sessions:
+            w.sign_in(actor, 'operator')
+    w.call('PUT', w.learning_path, enrollment, actor=actor)
+    calibrate(w)
     w.original_delivery = w.call('GET', w.channel, actor='content-reader')
-    w.history_path = w.bundle + '/channels/learn-' + w.integration['id'] + '/promotions'
+    w.history_path = w.bundle + '/channels/learn-' + w.integration['id'] + '/releases'
     w.original_history = w.call('GET', w.history_path)['items']
 
 
 def enroll_reviews(w, **cohorts):
     install_enrollment(w, review_enrollment(w, **cohorts))
+    w.provider.replacement = lambda request: 'Review retries, backoff, duplicated effects, and idempotency.'
 
 
 def report_failed_job(w, delivery, *, expected=None, **teaching):
@@ -61,9 +112,10 @@ def grade_phase(w, phase, *, attempt=1):
                      settings=dict(w.started, evaluation=dict(requestId=request_id, attemptId=w.attempt)))
 
 
-def grade_through_audit(w):
-    w.outcome_id = report_failed_job(w, w.original_delivery,
-        lesson=dict(path='AGENTS.md', instruction='Review retries and duplicated effects.'))
+def grade_through_audit(w, **teaching):
+    if not teaching:
+        teaching = dict(feedback=dict(expected='Review retries and duplicated effects.', observed='The review omitted retry guidance.'))
+    w.outcome_id = report_failed_job(w, w.original_delivery, **teaching)
     grade_phase(w, 'development')
     assert w.finish()['status'] == 'completed'
     grade_phase(w, 'audit')

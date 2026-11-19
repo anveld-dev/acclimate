@@ -11,7 +11,8 @@ const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const original = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const key = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const nextKey = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
-const env = { ...consoleEnvironment,
+const env = {
+  ...consoleEnvironment,
   CONSOLE_SERVICE_TOKEN: 'fixture',
   CONSOLE_SESSION_TOKEN: 'session',
   CONSOLE_ALLOW_EDITS: 'true',
@@ -23,7 +24,7 @@ function fixture(revokedAt: string | null, errorDetails?: unknown) {
   const writes: { key: string | null; body: unknown }[] = [];
   const fetcher: typeof fetch = async (url, init) => {
     const path = String(url);
-    if (path.includes('/v1/projects?'))
+    if (path.includes('/v1/workspaces?'))
       return Response.json({ items: [{ id: 'project', role: 'admin' }] });
     if (path.endsWith('/credentials')) {
       writes.push({

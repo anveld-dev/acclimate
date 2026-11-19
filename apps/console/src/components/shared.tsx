@@ -31,7 +31,12 @@ export function PageTitle({
   actions?: ReactNode;
 }) {
   return (
-    <PageHeader title={title} description={description} actions={actions} utility={<WorkspaceMenuButton />} />
+    <PageHeader
+      title={title}
+      description={description}
+      actions={actions}
+      utility={<WorkspaceMenuButton />}
+    />
   );
 }
 export function ConnectionNotice({ state }: { state: Exclude<ConsoleState, { status: 'ready' }> }) {
@@ -169,7 +174,7 @@ export function WorkspaceDetails({ state }: { state: ReadyConsole }) {
           </DialogDescription>
         </DialogHeader>
         <dl className="details-grid">
-          <dt>Project</dt>
+          <dt>Workspace</dt>
           <dd>{state.projectId}</dd>
           <dt>Bundle</dt>
           <dd>

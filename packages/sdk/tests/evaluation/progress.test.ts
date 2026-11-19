@@ -34,7 +34,7 @@ test('optional reports send bounded public fields with exact attempt and sequenc
   assert.equal(sent.length, 1);
   assert.equal(
     sent[0].url,
-    `https://fixture.example/v1/projects/p/bundles/${scope.bundleId}/evaluation-requests/${scope.requestId}/progress`,
+    `https://fixture.example/v1/workspaces/p/bundles/${scope.bundleId}/evaluation-requests/${scope.requestId}/progress`,
   );
   assert.deepEqual(JSON.parse(sent[0].options.body as string), {
     attemptId: 'attempt',

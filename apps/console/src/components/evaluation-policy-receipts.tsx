@@ -88,7 +88,7 @@ export function PolicyReceiptList({ receipts }: { receipts: ComparisonPolicyRece
             <div key={code}>{checkNames[code] ?? code}</div>
           ))}
           <details className="mt-1 text-muted-foreground">
-            <summary>Receipt details</summary>
+            <summary>Policy check details</summary>
             <p className="break-all">
               Reported by {receipt.reportedBy} · <ReceiptTime value={receipt.receivedAt} />
             </p>

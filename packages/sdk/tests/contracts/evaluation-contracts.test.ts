@@ -159,7 +159,7 @@ test('retained transport retries exact Unicode request bytes and the same author
     evaluationFingerprint('start', scope, body),
     'sha256:' +
       createHash('sha256')
-        .update('POST\0' + path + '\0' + body)
+        .update('POST\0' + path.replace(/^\/v1\/workspaces\//, '/v1/projects/') + '\0' + body)
         .digest('hex'),
   );
   assert.throws(() => transport.mutate('start', { ...scope, projectId: 'other' }, body, 'key'));
@@ -204,7 +204,7 @@ test('default response budget accepts comparison and operation wrappers larger t
   const wrapped = {
     status: 'committed',
     operationId: 'k',
-    path: '/v1/projects/project',
+    path: '/v1/workspaces/project',
     result: {
       ...reportSized,
       id: requestId,

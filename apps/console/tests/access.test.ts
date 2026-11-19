@@ -252,5 +252,5 @@ test('membership commands keep their explicit workspace when the remembered sele
   );
   assert.equal(result.ok, true);
   const write = f.calls.find((call) => call.method === 'DELETE');
-  assert.equal(write?.path, `/v1/projects/p/memberships/${userId}`);
+  assert.equal(write?.path, `/v1/workspaces/p/memberships/${userId}`);
 });

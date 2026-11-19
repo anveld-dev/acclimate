@@ -2,7 +2,7 @@ import { Codex } from '@openai/codex-sdk';
 import { mkdir, writeFile, readFile, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { prepare } from '../../packages/codex-plugin/src/index.js';
-import type { VerifiedBundle } from '../../packages/sdk/src/types.js';
+import type { VerifiedVersion } from '../../packages/sdk/src/types.js';
 import { outputSchema } from './domain.js';
 
 export const model = 'gpt-6-luna';
@@ -33,7 +33,7 @@ export class Luna {
     return { ...turn, elapsedMs: Date.now() - started, threadId: thread.id };
   }
   async job(
-    bundle: VerifiedBundle,
+    bundle: VerifiedVersion,
     batch: { id: string; incidents: readonly unknown[] },
     label: string,
     options?: {

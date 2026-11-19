@@ -1,3 +1,4 @@
+use super::statistics::{AUDIT_Z, DEVELOPMENT_Z, lower_bound};
 use super::{Descriptor, bounded, invalid};
 use crate::{ApiResult, ComparisonRequest};
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,15 @@ pub(crate) struct SelectionPolicy {
     minimum_mean_improvement: f64,
     maximum_case_regression: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    non_inferiority_margin: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     candidate_threshold: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    step_margin: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audit_mode: Option<AuditMode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) target_effect: Option<f64>,
     required_cases: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     maximum_candidate_task_failures: Option<u64>,
@@ -59,10 +68,24 @@ struct Cost {
     maximum_increase_usd: Option<f64>,
 }
 
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+enum AuditMode {
+    NonInferiority,
+    Superiority,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Stage {
+    Development { replay_passed: bool },
+    Cumulative,
+    Audit,
+}
+
 impl Default for Policies {
     fn default() -> Self {
         let audit = SelectionPolicy {
-            schema_version: 1,
+            schema_version: 3,
             id: "connected-audit".into(),
             revision: "1".into(),
             metric: Metric {
@@ -73,6 +96,10 @@ impl Default for Policies {
             aggregation: "equal-case-means".into(),
             minimum_mean_improvement: 0.0,
             maximum_case_regression: 0.0,
+            non_inferiority_margin: None,
+            step_margin: None,
+            audit_mode: None,
+            target_effect: None,
             candidate_threshold: None,
             required_cases: vec![],
             maximum_candidate_task_failures: Some(0),
@@ -83,7 +110,8 @@ impl Default for Policies {
         };
         let development = SelectionPolicy {
             id: "connected-development".into(),
-            minimum_mean_improvement: f64::EPSILON,
+            minimum_mean_improvement: 0.0,
+            non_inferiority_margin: None,
             ..audit.clone()
         };
         Self { development, audit }
@@ -106,7 +134,18 @@ impl SelectionPolicy {
         if self
             .minimum_repetitions_per_case
             .is_some_and(|n| !(1..=1000).contains(&n))
-            || self.schema_version != 1
+            || !matches!(self.schema_version, 1..=3)
+            || (self.schema_version < 3
+                && (self.step_margin.is_some()
+                    || self.audit_mode.is_some()
+                    || self.target_effect.is_some()))
+            || [self.step_margin, self.target_effect]
+                .into_iter()
+                .flatten()
+                .any(|v| !(0.0..=1.0).contains(&v))
+            || self
+                .non_inferiority_margin
+                .is_some_and(|v| self.schema_version == 1 || !v.is_finite() || v < 0.0)
             || !bounded(&self.id, 128)
             || !bounded(&self.revision, 1024)
             || !bounded(&self.metric.name, 128)
@@ -166,12 +205,65 @@ impl SelectionPolicy {
         Ok(())
     }
 
+    fn protected(&self, case: &str) -> bool {
+        self.protected_case_thresholds.contains_key(case)
+            || self.required_cases.iter().any(|id| id == case)
+    }
+
     pub(crate) fn higher_is_better(&self) -> bool {
         self.metric.direction == Direction::Higher
     }
 
-    /// Called only after the service verifies a complete, bound comparison.
+    pub(crate) fn audit_margin(&self) -> f64 {
+        self.non_inferiority_margin
+            .unwrap_or(if self.schema_version == 3 { 0.03 } else { 0.0 })
+    }
+
+    pub(crate) fn modern(&self) -> bool {
+        self.schema_version == 3
+    }
+
+    pub(crate) fn threshold(&self, stage: Stage) -> f64 {
+        match stage {
+            Stage::Audit if self.audit_mode != Some(AuditMode::Superiority) => -self.audit_margin(),
+            Stage::Development { .. } if self.modern() => -self.step_margin.unwrap_or(0.03),
+            _ => self.minimum_mean_improvement,
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn check(&self, comparison: &ComparisonRequest) -> Result<(), &'static str> {
+        self.check_calibrated(comparison, self.id == "connected-audit", 0.0)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn check_calibrated(
+        &self,
+        comparison: &ComparisonRequest,
+        audit: bool,
+        calibrated_sd: f64,
+    ) -> Result<(), &'static str> {
+        self.check_with_summary(
+            comparison,
+            if audit {
+                Stage::Audit
+            } else {
+                Stage::Development {
+                    replay_passed: false,
+                }
+            },
+            calibrated_sd,
+            &mut None,
+        )
+    }
+
+    pub(crate) fn check_with_summary(
+        &self,
+        comparison: &ComparisonRequest,
+        stage: Stage,
+        calibrated_sd: f64,
+        summary: &mut Option<(f64, f64)>,
+    ) -> Result<(), &'static str> {
         let sign = if self.metric.direction == Direction::Higher {
             1.0
         } else {
@@ -183,15 +275,54 @@ impl SelectionPolicy {
         let mut means = BTreeMap::new();
         let (mut parent_cost, mut candidate_cost) = (Some(0.0), Some(0.0));
         let mut failed = 0;
+        let mut observed = pairs
+            .iter()
+            .flat_map(|pair| [&pair.parent, &pair.candidate])
+            .filter_map(super::statistics::scored_reward);
+        let first = observed
+            .next()
+            .ok_or("Selection policy lacks scored evidence")?;
+        let (minimum, maximum) = observed.fold((first, first), |(lo, hi), reward| {
+            (lo.min(reward), hi.max(reward))
+        });
+        if minimum < 0.0 || maximum > 1.0 {
+            return Err("Connected rewards must be in [0,1]");
+        }
+        if [true, false].into_iter().any(|parent| {
+            pairs
+                .iter()
+                .filter(|pair| {
+                    super::statistics::scored_reward(if parent {
+                        &pair.parent
+                    } else {
+                        &pair.candidate
+                    })
+                    .is_none()
+                })
+                .count()
+                * 100
+                > pairs.len() * super::statistics::MAX_MISSING_PERCENT
+        }) {
+            return Err("Evidence is incomplete");
+        }
+        let (worst, best) = if self.higher_is_better() {
+            (minimum, maximum)
+        } else {
+            (maximum, minimum)
+        };
         for pair in pairs {
-            let (Some(p), Some(c)) = (pair.parent.reward, pair.candidate.reward) else {
-                return Err("Incomplete scored pairs");
-            };
-            if pair.candidate.execution_status == "task_failed" {
-                failed += 1
+            let p = super::statistics::scored_reward(&pair.parent).unwrap_or(best);
+            let c = super::statistics::scored_reward(&pair.candidate).unwrap_or(worst);
+            if self.protected(&pair.key.case_id)
+                && (pair.candidate.execution_status == "task_failed"
+                    || super::statistics::scored_reward(&pair.candidate).is_none())
+            {
+                failed += 1;
             }
             if let Some(threshold) = self.protected_case_thresholds.get(&pair.key.case_id)
-                && (pair.candidate.execution_status != "completed" || sign * c < sign * threshold)
+                && (pair.candidate.execution_status != "completed"
+                    || super::statistics::scored_reward(&pair.candidate).is_none()
+                    || sign * c < sign * threshold)
             {
                 return Err("Protected case threshold failed");
             }
@@ -211,8 +342,8 @@ impl SelectionPolicy {
             return Err("Selection policy lacks required case evidence");
         }
         let case_count = means.len() as f64;
-        let (mut gains, mut candidates) = (0.0, 0.0);
-        for (_, (parent, candidate, count)) in means {
+        let (mut gains, mut candidates) = (Vec::new(), 0.0);
+        for (id, (parent, candidate, count)) in means {
             if self
                 .minimum_repetitions_per_case
                 .is_some_and(|n| (count as usize) < n)
@@ -221,16 +352,27 @@ impl SelectionPolicy {
             }
             let candidate_mean = candidate / f64::from(count);
             let gain = sign * (candidate_mean - parent / f64::from(count));
-            if !gain.is_finite() || -gain > self.maximum_case_regression {
+            if !gain.is_finite() || (self.protected(id) && -gain > self.maximum_case_regression) {
                 return Err("Maximum case regression exceeded");
             }
-            gains += gain;
+            gains.push(gain);
             candidates += candidate_mean;
         }
-        if !gains.is_finite() || !candidates.is_finite() {
+        if !candidates.is_finite() {
             return Err("Nonfinite selection arithmetic");
         }
-        if gains / case_count < self.minimum_mean_improvement {
+        let z = if matches!(stage, Stage::Audit) {
+            AUDIT_Z
+        } else {
+            DEVELOPMENT_Z
+        };
+        let threshold = self.threshold(stage);
+        let estimate = gains.iter().sum::<f64>() / case_count;
+        let bound = lower_bound(&gains, calibrated_sd, z);
+        if bound.is_finite() {
+            *summary = Some((estimate, bound));
+        }
+        if !bound.is_finite() || bound <= threshold {
             return Err("Minimum mean improvement was not reached");
         }
         if self
@@ -245,7 +387,28 @@ impl SelectionPolicy {
         {
             return Err("Maximum candidate task failures exceeded");
         }
-        if self.cost.is_some() || self.minimum_cost_savings_usd.is_some() {
+        if let Stage::Development { replay_passed } = stage
+            && self.modern()
+            && estimate <= 0.0
+            && !replay_passed
+        {
+            let savings = parent_cost.zip(candidate_cost).map(|(p, c)| p - c);
+            if !(self.cost.is_some()
+                && savings.is_some_and(|amount| {
+                    amount.is_finite()
+                        && amount > 0.0
+                        && amount >= self.minimum_cost_savings_usd.unwrap_or(0.0)
+                }))
+            {
+                return Err("Development step lacks evidence of benefit");
+            }
+        }
+        let minimum_savings = if self.modern() {
+            None
+        } else {
+            self.minimum_cost_savings_usd
+        };
+        if self.cost.is_some() || minimum_savings.is_some() {
             let candidate_cost = candidate_cost
                 .filter(|v| v.is_finite())
                 .ok_or("Candidate cost is unknown")?;
@@ -258,15 +421,13 @@ impl SelectionPolicy {
                 return Err("Maximum candidate cost exceeded");
             }
             let maximum_increase = self.cost.as_ref().and_then(|c| c.maximum_increase_usd);
-            if maximum_increase.is_some() || self.minimum_cost_savings_usd.is_some() {
+            if maximum_increase.is_some() || minimum_savings.is_some() {
                 let parent_cost = parent_cost
                     .filter(|v| v.is_finite())
                     .ok_or("Parent cost is unknown")?;
                 let increase = candidate_cost - parent_cost;
                 if maximum_increase.is_some_and(|cap| increase > cap)
-                    || self
-                        .minimum_cost_savings_usd
-                        .is_some_and(|floor| -increase < floor)
+                    || minimum_savings.is_some_and(|floor| -increase < floor)
                 {
                     return Err("Candidate cost change exceeds policy");
                 }
@@ -280,6 +441,32 @@ impl SelectionPolicy {
 mod tests {
     use super::*;
     use crate::{CaseKey, CasePair, Outcome, Usage};
+
+    #[test]
+    fn shared_selection_policy_conformance() {
+        #[derive(Deserialize)]
+        struct Fixture {
+            descriptor: Descriptor,
+            cases: Vec<Case>,
+        }
+
+        #[derive(Deserialize)]
+        struct Case {
+            name: String,
+            valid: bool,
+            policy: Box<serde_json::value::RawValue>,
+        }
+
+        let fixture: Fixture = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/connected-selection-policy.json"
+        ))
+        .unwrap();
+        for case in fixture.cases {
+            let accepted = serde_json::from_str::<SelectionPolicy>(case.policy.get())
+                .is_ok_and(|policy| policy.validate(&[&fixture.descriptor], None).is_ok());
+            assert_eq!(accepted, case.valid, "{}", case.name);
+        }
+    }
 
     fn comparison(values: &[(&str, f64, f64)]) -> ComparisonRequest {
         let outcome = |reward| Outcome {
@@ -312,6 +499,7 @@ mod tests {
             })
             .collect();
         ComparisonRequest {
+            parent_source_comparison_id: None,
             evaluation: None,
             parent_version_id: String::new(),
             candidate_version_id: String::new(),
@@ -326,21 +514,112 @@ mod tests {
     }
 
     #[test]
-    fn default_development_requires_gain_and_audit_accepts_a_tie() {
+    fn shared_confidence_decisions() {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Decision {
+            name: String,
+            stage: String,
+            schema_version: Option<u8>,
+            audit_mode: Option<AuditMode>,
+            #[serde(default)]
+            replay_passed: bool,
+            #[serde(default)]
+            missing_parent: Vec<usize>,
+            #[serde(default)]
+            missing_candidate: Vec<usize>,
+            calibrated_standard_deviation: f64,
+            calibration_effective_repetitions: Option<f64>,
+            evaluation_repetitions: Option<usize>,
+            non_inferiority_margin: Option<f64>,
+            gains: Vec<f64>,
+            #[serde(default)]
+            reward_offset: f64,
+            pass: bool,
+        }
+        let decisions: Vec<Decision> = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/connected-confidence-decisions.json"
+        ))
+        .unwrap();
+        for decision in decisions {
+            let audit = decision.stage == "audit";
+            let policies = Policies::default();
+            let mut policy = if audit {
+                policies.audit
+            } else {
+                policies.development
+            };
+            policy.schema_version = decision.schema_version.unwrap_or(2);
+            policy.audit_mode = decision.audit_mode;
+            policy.non_inferiority_margin = decision.non_inferiority_margin;
+            let ids: Vec<_> = (0..decision.gains.len())
+                .map(|index| index.to_string())
+                .collect();
+            let repetitions = decision.evaluation_repetitions.unwrap_or(1);
+            let offset = decision.reward_offset;
+            let cases: Vec<_> = ids
+                .iter()
+                .zip(decision.gains)
+                .flat_map(|(id, gain)| {
+                    std::iter::repeat_n(
+                        (
+                            id.as_str(),
+                            offset + (-gain).max(0.0),
+                            offset + gain.max(0.0),
+                        ),
+                        repetitions,
+                    )
+                })
+                .collect();
+            let mut evidence = comparison(&cases);
+            for index in decision.missing_parent {
+                evidence.results[index].candidate.reward = Some(1.0);
+                evidence.results[index].parent.reward = None;
+            }
+            for index in decision.missing_candidate {
+                evidence.results[index].candidate.reward = None;
+            }
+            let stage = match decision.stage.as_str() {
+                "audit" => Stage::Audit,
+                "cumulative" => Stage::Cumulative,
+                _ => Stage::Development {
+                    replay_passed: decision.replay_passed,
+                },
+            };
+            assert_eq!(
+                policy
+                    .check_with_summary(
+                        &evidence,
+                        stage,
+                        decision.calibrated_standard_deviation
+                            * decision
+                                .calibration_effective_repetitions
+                                .map_or(1.0, |r| (r / repetitions as f64).sqrt()),
+                        &mut None,
+                    )
+                    .is_ok(),
+                decision.pass,
+                "{}",
+                decision.name
+            );
+        }
+    }
+
+    #[test]
+    fn default_stages_require_positive_evidence() {
         let policies = Policies::default();
-        let tied = comparison(&[("ordinary", 1., 1.)]);
+        let tied = comparison(&[("ordinary", 1., 1.), ("other", 1., 1.)]);
         assert!(policies.development.check(&tied).is_err());
         assert!(policies.audit.check(&tied).is_ok());
-        let regressed = comparison(&[("ordinary", 0., 2.), ("invariant", 1., 0.)]);
+        let regressed = comparison(&[("ordinary", 0., 1.), ("invariant", 1., 0.)]);
         assert!(policies.audit.check(&regressed).is_err());
     }
 
     #[test]
     fn repetitions_average_per_case_and_protected_threshold_applies_to_each_repeat() {
         let mut policy = Policies::default().development;
-        let measurements = comparison(&[("a", 1., 0.), ("a", 0., 1.), ("b", 1., 2.)]);
-        policy.minimum_mean_improvement = 0.49;
-        assert!(policy.check(&measurements).is_ok()); // case means produce .5; pair weighting would be .333.
+        let measurements = comparison(&[("a", 0., 0.), ("a", 0., 1.), ("b", 0., 1.)]);
+        assert!(policy.check(&measurements).is_ok());
         policy.minimum_repetitions_per_case = Some(2);
         assert!(policy.check(&measurements).is_err());
         policy.minimum_repetitions_per_case = None;
@@ -349,10 +628,44 @@ mod tests {
     }
 
     #[test]
+    fn explicit_missing_arms_keep_the_inventory_and_denominator() {
+        let ids: Vec<_> = (0..10).map(|index| index.to_string()).collect();
+        let cases: Vec<_> = ids.iter().map(|id| (id.as_str(), 0.0, 1.0)).collect();
+        let mut evidence = comparison(&cases);
+        evidence.runtime.insert("app".into(), "test".into());
+        evidence.evaluation = Some(crate::EvaluationBinding {
+            request_id: "request".into(),
+            attempt_id: "attempt".into(),
+        });
+        for pair in evidence.results.iter_mut().take(1) {
+            pair.candidate.reward = None;
+            pair.candidate.grading_status = "missing".into();
+        }
+        assert_eq!(crate::improvement::validate_comparison(&evidence), Ok(true));
+        let mut policy = Policies::default().development;
+        policy.schema_version = 2;
+        policy.minimum_mean_improvement = 0.8;
+        assert!(policy.check(&evidence).is_err());
+        evidence.results[3].candidate.reward = None;
+        evidence.results[3].candidate.grading_status = "missing".into();
+        assert_eq!(
+            crate::improvement::validate_comparison(&evidence),
+            Ok(false)
+        );
+        evidence.results.remove(3);
+        assert_eq!(
+            crate::improvement::validate_comparison(&evidence),
+            Ok(false)
+        );
+    }
+
+    #[test]
     fn cost_optimization_requires_observed_savings() {
         let mut policy = Policies::default().audit;
+        policy.schema_version = 2;
         policy.minimum_cost_savings_usd = Some(0.5);
-        let mut results = comparison(&[("a", 1., 1.)]);
+        policy.non_inferiority_margin = Some(0.1);
+        let mut results = comparison(&[("a", 1., 1.), ("b", 1., 1.)]);
         assert!(policy.check(&results).is_err());
         results.results[0]
             .candidate
@@ -366,13 +679,269 @@ mod tests {
     }
 
     #[test]
+    fn v3_cost_savings_prove_benefit_without_a_reward_gain() {
+        let mut policy = Policies::default().development;
+        policy.cost = Some(Cost {
+            maximum_candidate_usd: Some(2.0),
+            maximum_increase_usd: None,
+        });
+        policy.minimum_cost_savings_usd = Some(0.5);
+        let mut evidence = comparison(&[("a", 1., 1.), ("b", 1., 1.)]);
+        assert!(policy.check(&evidence).is_err());
+        evidence.results[0]
+            .candidate
+            .usage
+            .as_mut()
+            .unwrap()
+            .cost_usd = Some(0.5);
+        assert!(policy.check(&evidence).is_ok());
+        assert!(
+            policy
+                .check_with_summary(&evidence, Stage::Cumulative, 0.0, &mut None)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn repetition_plan_power_simulation() {
+        use crate::connected_learning::{
+            repetitions::{DEFAULT_MAX_REPETITIONS, DEFAULT_PAIR_BUDGET, Plan},
+            statistics::{AUDIT_Z, calibrate, harmonic_repetitions, lower_bound, scored_reward},
+        };
+        let ids: Vec<_> = (0..30).map(|i| format!("case-{i:02}")).collect();
+        let probabilities: Vec<_> = (0..30)
+            .map(|i| match i {
+                0..=8 => 0.0,
+                9..=17 => 1.0,
+                _ => 0.50,
+            })
+            .collect();
+        let cohort = |prefix: &str| Descriptor {
+            dataset_revision: prefix.into(),
+            expected_cases: ids
+                .iter()
+                .map(|id| CaseKey {
+                    case_id: format!("{prefix}{id}"),
+                    repetition: 0,
+                })
+                .collect(),
+            grader_revision: "test".into(),
+            runtime: Default::default(),
+            fixture_protocol: None,
+            dataset_digest: None,
+            case_fingerprints: Vec::new(),
+            family_fingerprints: Vec::new(),
+        };
+        let development = cohort("");
+        let audits = [cohort("audit-")];
+        let mut rng = 0x38a7_aefe_4dec_e53c_u64;
+        let mut sample = |p: f64| {
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            if ((rng >> 32) as f64) < p * 4294967296.0 {
+                1.0
+            } else {
+                0.0
+            }
+        };
+        const RUNS: usize = 5000;
+        let mut baseline_passes = [0; 3];
+        let mut audit_passes = [0; 3];
+        let mut audit_pairs = 0;
+        for _ in 0..RUNS {
+            let mut observations = Vec::new();
+            for (id, &p) in ids.iter().zip(&probabilities) {
+                for _ in 0..2 {
+                    observations.push((id.as_str(), sample(p), sample(p)));
+                }
+            }
+            let calibration = calibrate(&comparison(&observations), 0.0, scored_reward);
+            let plan = Plan::with_budget(
+                &development,
+                &audits,
+                &calibration,
+                DEFAULT_MAX_REPETITIONS,
+                DEFAULT_PAIR_BUDGET,
+            );
+            let audit = plan.expected_cases(&audits[0], Some(0));
+            let development_keys = plan.expected_cases(&development, None);
+            let repeats = audit.len() / ids.len();
+            for keys in [&audit, &development_keys] {
+                assert_eq!(keys.len(), ids.len() * repeats);
+                assert!(keys.chunks_exact(repeats).all(|case| {
+                    case.iter().enumerate().all(|(index, key)| {
+                        key.case_id == case[0].case_id && key.repetition as usize == index
+                    })
+                }));
+            }
+            audit_pairs += audit.len();
+            let mut passes = |repeats: &[usize], effect: f64| {
+                let gains: Vec<_> = probabilities
+                    .iter()
+                    .zip(repeats)
+                    .enumerate()
+                    .map(|(i, (&p, &r))| {
+                        let q = if i >= 18 { p + effect / 0.4 } else { p };
+                        (0..r).map(|_| sample(q) - sample(p)).sum::<f64>() / r as f64
+                    })
+                    .collect();
+                let floor = calibration.paired_standard_deviation
+                    * (calibration.effective_repetitions
+                        / harmonic_repetitions(repeats.iter().copied()))
+                    .sqrt();
+                usize::from(lower_bound(&gains, floor, AUDIT_Z) > -0.03)
+            };
+            for (i, effect) in [-0.03, 0.0, 0.05].into_iter().enumerate() {
+                baseline_passes[i] += passes(&[1; 30], effect);
+                audit_passes[i] += passes(&[repeats; 30], effect);
+            }
+        }
+        let rates = |passes: [usize; 3]| passes.map(|n| n as f64 / RUNS as f64);
+        eprintln!(
+            "Audit pass rates (−3pp, 0pp, +5pp): 30×1 {:?} at 30 pairs, uniform {:?} at {:.1} pairs",
+            rates(baseline_passes),
+            rates(audit_passes),
+            audit_pairs as f64 / RUNS as f64,
+        );
+        assert_eq!(audit_pairs, 90 * RUNS);
+        assert!(audit_passes[0] <= RUNS * 6 / 100);
+        assert!(baseline_passes[0] <= RUNS * 6 / 100);
+        assert!(audit_passes[2] >= baseline_passes[2] + RUNS / 20);
+    }
+
+    #[test]
+    fn power_guard_reports_when_the_budget_cannot_support_the_target() {
+        use crate::connected_learning::{
+            repetitions::Plan,
+            statistics::{DEVELOPMENT_Z, calibrate, scored_reward},
+        };
+        let evidence = comparison(&[
+            ("stable", 0., 0.),
+            ("stable", 0., 0.),
+            ("flaky", 0., 1.),
+            ("flaky", 1., 0.),
+        ]);
+        let descriptor = Descriptor {
+            dataset_revision: "test".into(),
+            expected_cases: vec![
+                evidence.expected_cases[0].clone(),
+                evidence.expected_cases[2].clone(),
+            ],
+            grader_revision: "test".into(),
+            runtime: Default::default(),
+            fixture_protocol: None,
+            dataset_digest: None,
+            case_fingerprints: Vec::new(),
+            family_fingerprints: Vec::new(),
+        };
+        let calibration = calibrate(&evidence, 0.0, scored_reward);
+        assert_eq!(calibration.case_variability["flaky"], 1.0);
+        assert_eq!(calibration.case_variability["stable"], 0.0);
+        let plan = Plan::with_budget(&descriptor, &[], &calibration, 3, 5);
+        let projection = plan.project(
+            &descriptor,
+            None,
+            (&calibration, 2),
+            0.0,
+            DEVELOPMENT_Z,
+            Some(0.05),
+        );
+        let reason = projection.stop_reason("Cumulative").unwrap();
+        assert!(reason.contains("2 cases, 4 pairs"));
+        assert!(reason.contains("cases at the same repetition mix are needed"));
+    }
+
+    #[test]
+    fn admission_guard_handles_noisy_boundary_and_pools_matching_epochs() {
+        use super::super::{
+            repetitions::Plan,
+            statistics::{calibrate, pool_calibrations, scored_reward, sd_interval},
+        };
+
+        for (cases, se, decision) in [
+            (40, 0.0428, "admit"),
+            (40, 0.0428, "admit"),
+            (40, 0.0552, "warn"),
+            (10, 0.30, "stop"),
+        ] {
+            let ids: Vec<_> = (0..cases).map(|id| id.to_string()).collect();
+            let difference =
+                ((se * se * cases as f64 * (cases + 1) as f64 - 0.5) / cases as f64).sqrt();
+            let comparison = comparison(
+                &ids.iter()
+                    .flat_map(|id| [(id.as_str(), 0.0, difference); 2])
+                    .collect::<Vec<_>>(),
+            );
+            let descriptor: Descriptor = serde_json::from_value(serde_json::json!({
+                "datasetRevision": "test",
+                "graderRevision": "grader",
+                "runtime": {},
+                "expectedCases": comparison.expected_cases,
+            }))
+            .unwrap();
+            let calibration = calibrate(&comparison, 0.0, scored_reward);
+            let plan = Plan::with_budget(&descriptor, &[], &calibration, 2, 1000);
+            let (guard, observations) = pool_calibrations(&calibration, &[]);
+            let projection = serde_json::to_value(plan.project(
+                &descriptor,
+                None,
+                (&guard, observations),
+                0.0,
+                DEVELOPMENT_Z,
+                Some(0.10),
+            ))
+            .unwrap();
+            assert_eq!(projection["decision"], decision, "{projection}");
+            if cases == 40 {
+                let original = guard.paired_standard_deviation;
+                let (pooled, total) =
+                    pool_calibrations(&calibration, std::slice::from_ref(&calibration));
+                assert_eq!(total, 80);
+                assert!(pooled.paired_standard_deviation < original);
+                let (lower, upper) = sd_interval(original, observations).unwrap();
+                let (pooled_lower, pooled_upper) =
+                    sd_interval(pooled.paired_standard_deviation, total).unwrap();
+                assert!(pooled_upper - pooled_lower < upper - lower);
+            }
+        }
+    }
+
+    #[test]
+    fn calibration_counts_only_scored_case_means() {
+        use super::super::statistics::{calibrate, scored_reward};
+        let mut evidence = comparison(&[("a", 0., 0.), ("b", 0., 0.), ("c", 0., 0.)]);
+        evidence.results[2].parent.reward = None;
+        let report = serde_json::to_value(calibrate(&evidence, 0.05, scored_reward)).unwrap();
+        assert_eq!(report["caseCount"], 2);
+        assert_eq!(report["effectiveRepetitions"], 1.0);
+        assert!((report["standardError"].as_f64().unwrap() - 1.0 / 6.0_f64.sqrt()).abs() < 1e-12);
+        let zero_threshold = calibrate(&evidence, 0.0, scored_reward);
+        assert!(
+            (report["minimumDetectableEffect"].as_f64().unwrap()
+                - zero_threshold.minimum_detectable_effect.unwrap()
+                - 0.05)
+                .abs()
+                < 1e-12
+        );
+    }
+
+    #[test]
     fn lower_metrics_orient_thresholds_and_reject_nonfinite_aggregation() {
         let mut policy = Policies::default().audit;
         policy.metric.direction = Direction::Lower;
         policy.protected_case_thresholds.insert("a".into(), 0.5);
         policy.candidate_threshold = Some(0.5);
-        assert!(policy.check(&comparison(&[("a", 3., 0.5)])).is_ok());
-        assert!(policy.check(&comparison(&[("a", 3., 1.)])).is_err());
+        assert!(
+            policy
+                .check(&comparison(&[("a", 1., 0.5), ("b", 1., 0.5)]))
+                .is_ok()
+        );
+        assert!(
+            policy
+                .check(&comparison(&[("a", 1., 1.), ("b", 1., 1.)]))
+                .is_err()
+        );
         assert!(
             policy
                 .check(&comparison(&[

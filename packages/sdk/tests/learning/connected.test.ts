@@ -56,7 +56,7 @@ test('terminal reporter binds outcomes to fresh delivery and sends only bounded 
   const request = requests[0]!;
   assert.equal(
     new URL(request.url).pathname,
-    '/v1/projects/' + projectId + '/integrations/' + integrationId + '/learning/outcomes',
+    '/v1/workspaces/' + projectId + '/connections/' + integrationId + '/learning/outcomes',
   );
   assert.equal(request.headers.get('idempotency-key'), outcomeId);
   assert.equal(request.headers.get('authorization'), 'Bearer outcome-principal');
@@ -195,18 +195,20 @@ test('field auditor links the exact started receipt and grades only the authoriz
     revision: '2',
     parentVersionId: parent.id,
     parentDigest: parent.digest,
-    verdict: 'regression',
+    verdict: 'loss',
   });
   assert.equal(executions, 1);
   await client.reportLearningFieldAudit(projectId, integrationId, body!);
   assert.equal(requests.at(-1)!.headers.get('idempotency-key'), outcomeId);
   assert.deepEqual(await requests.at(-1)!.json(), body);
   grades = { served: 'incorrect', predecessor: 'incorrect' };
-  assert.equal(await prepare(bundle, sample), null);
+  assert.equal((await prepare(bundle, sample))?.verdict, 'tie');
   grades = { served: 'correct', predecessor: 'indeterminate' };
   assert.equal(await prepare(bundle, sample), null);
   grades = { served: 'correct', predecessor: 'correct' };
-  assert.equal((await prepare(bundle, sample))?.verdict, 'pass');
+  assert.equal((await prepare(bundle, sample))?.verdict, 'tie');
+  grades = { served: 'correct', predecessor: 'incorrect' };
+  assert.equal((await prepare(bundle, sample))?.verdict, 'win');
 });
 
 test('enrollment PUT preserves an explicit false rollout precondition', async () => {
@@ -278,7 +280,7 @@ test('corrections and rechecks use independent stable ids against their original
   };
   await client.reportLearningCorrection(projectId, integrationId, correction);
   await client.reportLearningRecheck(projectId, integrationId, recheck);
-  const prefix = '/v1/projects/' + projectId + '/integrations/' + integrationId + '/learning/';
+  const prefix = '/v1/workspaces/' + projectId + '/connections/' + integrationId + '/learning/';
   assert.deepEqual(
     requests.map((r) => new URL(r.url).pathname),
     [prefix + 'corrections', prefix + 'rechecks'],

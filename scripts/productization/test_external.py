@@ -55,7 +55,7 @@ class ExternalGateTests(unittest.TestCase):
             self.assertEqual(external.main(['--execute','--gate','https','--url','https://api.example',
                 '--project','fixture','--token-env','FIXTURE_TOKEN']), 0)
         self.assertEqual([row.args[0] for row in request.call_args_list], [
-            'https://api.example/health','https://api.example/ready','https://api.example/v1/projects/fixture/bundles'])
+            'https://api.example/health','https://api.example/ready','https://api.example/v1/workspaces/fixture/bundles'])
         self.assertNotIn('private-fixture', output.getvalue())
 
     def test_oidc_predicates_accept_actual_playwright_string_urls(self):

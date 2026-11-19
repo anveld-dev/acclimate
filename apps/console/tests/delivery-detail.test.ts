@@ -35,10 +35,10 @@ test('detail binds a receipt and promotion to the selected app scope and project
           consoleEnvironment.CONSOLE_SESSION_TOKEN,
         );
         const path = String(request);
-        if (path.includes('/integration-observations?')) return page([app]);
+        if (path.includes('/connection-observations?')) return page([app]);
         if (path.includes('/receipts?'))
           return page([{ ...receipt, bundleId: mismatch ? 'outside' : scope.bundleId }]);
-        assert(path.includes('/channels/stable/promotions?limit=1'));
+        assert(path.includes('/channels/stable/releases?limit=1'));
         return page([
           {
             channel: 'stable',

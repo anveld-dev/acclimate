@@ -34,6 +34,8 @@ export function compatibilityIssues(
       add('skill_path', 'Skill files require skills/<name>/<file>', file.path);
       continue;
     }
+    if (!file.path.endsWith('.md'))
+      add('skill_file_type', 'Skill packages may contain only Markdown files', file.path, name);
     if (target === 'cursor' && !/^[a-z0-9-]{1,64}$/.test(name))
       add(
         'skill_name',
@@ -62,7 +64,12 @@ export function compatibilityIssues(
     const metadata = manifest.text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
     const declaredName = metadata?.match(/^name:[ \t]*([A-Za-z0-9_-]{1,64})[ \t]*\r?$/m)?.[1];
     const description = metadata?.match(/^description:[ \t]*\S.+\r?$/m)?.[0];
-    if (declaredName !== name || !description)
+    const lines = metadata?.split(/[\r\n\u2028\u2029]/) ?? [];
+    const validKeys =
+      lines.filter((line) => line.startsWith('name:')).length === 1 &&
+      lines.filter((line) => line.startsWith('description:')).length === 1 &&
+      lines.every((line) => !line.trim() || /^(name|description):/.test(line));
+    if (declaredName !== name || !description || !validKeys)
       add(
         'skill_metadata',
         'Skill metadata requires a matching name and description',

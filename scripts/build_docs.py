@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'docs/site'
 ASSETS = ROOT / 'docs/site-src'
 PAGES = [
+    ('CONTEXT.md', 'glossary.html', 'Start here', 'Glossary', 'Acclimate’s public vocabulary and service terminology.'),
     ('docs/design/README.md', 'index.html', 'Start here', 'Design guide', 'A small service for improving and delivering harness files.'),
     ('docs/design/overview.md', 'overview.html', 'Start here', 'Overview and ownership', 'The service delivers content; the application runs its native agent SDK.'),
     ('docs/design/bundles-and-cache.md', 'bundles.html', 'Service design', 'Bundles and local cache', 'Immutable files, scoped caching, freshness, and job-local preparation.'),
@@ -313,6 +314,7 @@ def build():
     source_notes |= set((ROOT / 'docs/implementation').rglob('*.md'))
     source_notes |= set((ROOT / 'docs/research').glob('*.md'))
     source_notes |= set((ROOT / 'docs/research/continuous-harness-review').rglob('*.md'))
+    source_notes |= set((ROOT / 'docs/research/real-app-learning-experiment').rglob('*.md'))
     published_sources = {ROOT / src for src, *_ in PAGES}
     note_manifest = []
     for source_path in sorted(source_notes - published_sources):

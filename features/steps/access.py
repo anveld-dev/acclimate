@@ -2,13 +2,13 @@ from behave import given, when, then
 from scripts.productization.qualify import payload
 @when('the console transport requests workspaces without a session')
 def no_person(context):
-    context.world.call('GET', '/v1/projects', actor='console-transport', expected=401)
+    context.world.call('GET', '/v1/workspaces', actor='console-transport', expected=401)
 
 
 @when('a configured application lists its own workspace')
 def machine(context):
     w = context.world
-    w.projects = w.call('GET', '/v1/projects', actor='operator')['items']
+    w.projects = w.call('GET', '/v1/workspaces', actor='operator')['items']
 
 
 @then('its configured project is returned')
@@ -41,7 +41,7 @@ def admin_project(context):
 
 @when('I try to create a new workspace')
 def cannot_bootstrap(context):
-    context.world.call('POST', '/v1/projects', dict(id='not-operator',name='Denied'), actor='member', expected=403)
+    context.world.call('POST', '/v1/workspaces', dict(id='not-operator',name='Denied'), actor='member', expected=403)
 
 
 @given('an administrator created a workspace with published content')

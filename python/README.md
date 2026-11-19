@@ -25,7 +25,7 @@ from acclimate import AcclimateClient
 from application import run_agent
 
 client = AcclimateClient(os.environ["ACCLIMATE_URL"], os.environ["ACCLIMATE_TOKEN"], "support-agent")
-with client.prepare(project_id, bundle_id, channel="stable") as prepared:
+with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
     result = run_agent(task, instructions=prepared.instructions, skill_files=prepared.skill_files)
     save_job_result(result, version=prepared.version["id"], digest=prepared.version["digest"])
 ```
@@ -34,7 +34,7 @@ with client.prepare(project_id, bundle_id, channel="stable") as prepared:
 
 The scope identifies the authenticated principal and namespaces the cache; it must remain stable and must never be a token. Reads resolve online by default. To permit fallback only on transport failure or HTTP 503, specify `offline_max_age` in seconds (up to 30 days) for a cached channel, or `offline_pinned_version` for an exact version. Returned `stale` marks fallback; `resolvedAt` is milliseconds since the Unix epoch. Denials, missing resources, malformed responses, and integrity failures never trigger fallback. A cached payload is always verified against metadata before parsing. Only use cache and destination directories controlled by the current user.
 
-All mutation methods require an explicit printable ASCII idempotency key, and serialize once for retries. Reuse the same key and request for a retry across calls. `ApiError` exposes `status`, `code`, and `request_id` (also `requestId`); transport failures raise `TransportError`. Redirects are rejected, including same-origin redirects, to prevent credential forwarding. Responses and timeouts are bounded. `resolve_channel` returns `(resolution, etag, not_modified)`. The remaining method names mirror R0 routes in snake case; wire dictionaries use the camelCase keys in `acclimate.types`.
+All mutation methods require an explicit printable ASCII idempotency key, and serialize once for retries. Reuse the same key and request for a retry across calls. `ApiError` exposes `status`, `code`, and `request_id` (also `requestId`); transport failures raise `TransportError`. Redirects are rejected, including same-origin redirects, to prevent credential forwarding. Responses and timeouts are bounded. `resolve_channel` returns `(resolution, etag, not_modified)`. Use `create_connection` and `list_connections` to manage connections. Use `create_release` and `list_releases` to manage releases for a channel. HTTP dictionaries retain the camelCase keys defined in `acclimate.types`.
 
 For paired evaluations, export your cases, execute callback and independent grader from a Python module. The installed CLI accepts a module name or a source file. Package-relative imports work in both forms. The default adapter is `application.py` in the current directory.
 
@@ -53,7 +53,7 @@ The client, delivery helpers and evaluation runner are synchronous. Async applic
 
 Run offline source tests from the repository root with `PYTHONPATH=python python3.11 -m unittest discover -s python/tests -v`. This deliberately imports the checkout. Installed applications omit `PYTHONPATH=python`; the wheel contains the SDK, while examples and starter scripts are obtained separately. The [strict typing fixtures](tests/typing/README.md) check an installed wheel from outside the checkout.
 
-The delivery-check command reads each staged file and prints the pinned version, digest and checked file inventory. With a separate receipt-write credential, it can also report preparation. In your app, pass a `DeliveryReporter` to `client.prepare` and call `prepared.report_started()` from the job’s actual start event. Retain its returned receipt with your job ID for a connected field audit. Calling it again on the same prepared job returns the same event ID. A missing reporter or a full reporting queue returns `None`. Once a full queue drains, call `report_started()` on the same prepared job to enqueue the original start event.
+The delivery-check command reads each staged file and prints the pinned version, digest and checked file inventory. With a separate reporting credential, it can also report preparation. In your app, pass a `DeliveryReporter` to `client.prepare` and call `prepared.report_started()` from the job’s actual start event. Save the returned startup record with your job ID so the connection can link it to the outcome. Calling it again on the same prepared job returns the same event ID. A missing reporter or a full reporting queue returns `None`. Once a full queue drains, call `report_started()` on the same prepared job to enqueue the original start event.
 
 ```sh
 export ACCLIMATE_URL=http://127.0.0.1:3000

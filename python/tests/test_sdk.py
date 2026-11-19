@@ -39,7 +39,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.reply(201, b'{"id":"b1"}')
 
     def do_GET(self):
-        if "/promotions?" in self.path:
+        if "/releases?" in self.path:
             Handler.last_history_path = self.path
             if "limit=0" in self.path:
                 self.reply(400, b'{"error":{"code":"invalid_content","message":"bad"}}')

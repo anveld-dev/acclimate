@@ -19,7 +19,7 @@ The result shows the parent and candidate scores and how many pairs were graded.
 ## Deliver and improve content
 
 - Use **App setup** in the console to prepare pinned content for each new job. Coding agents can stage repository files, run a native harness and grade retained changes against frozen tests. [Native integration](examples/native-repository/README.md)
-- Enroll a connection to propose changes from trusted outcomes and run development and held-out evaluations. Choose manual release or an automatic policy. [Connected learning](deploy/README.md#operate-connected-learning)
+- Use a connection to turn outcomes and approved corrections into proposals. Run comparisons before releasing a version and choose whether releases need human review. [Connected learning](deploy/README.md#operate-connected-learning)
 - Inspect comparisons, authorize a channel release or restore a reviewed version. [Review and release](tools/operator/README.md)
 
 ## Operate or develop Acclimate
@@ -33,6 +33,6 @@ npm test
 npm run build
 ```
 
-[Architecture](docs/architecture/README.md) · [Wire contract](contracts/IMPLEMENTATION.md) · [Behavior tests](features/README.md) · [HTML documentation](docs/site/index.html) · [Qualification records](docs/implementation/full-roadmap.md)
+[Architecture](docs/architecture/README.md) · [Wire contract](contracts/IMPLEMENTATION.md) · [Behavior tests](features/README.md) · [HTML documentation](docs/site/index.html) · [Qualification records](docs/implementation/full-roadmap.md) · [Connected-learning audit experiment](docs/research/real-app-learning-experiment/5-admission-rerun.md)
 
 Inspired by [AgentRun](https://github.com/Parcha-ai/agentrun) and [RRSI](https://github.com/google-research/rrsi).

@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, open, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { BundleFile, VerifiedBundle, CompatibilityTarget } from '../types.js';
+import type { BundleFile, VerifiedVersion, CompatibilityTarget } from '../types.js';
 import { validatePayload, DeliveryError } from '../cache.js';
 import { compatibilityIssues } from '../compatibility.js';
 
@@ -25,7 +25,7 @@ export interface NativePathMapping {
 
 /** Validate bundle content, then stage mapped native inputs in an owned private temp directory. */
 export async function prepareNativeFiles(
-  bundle: VerifiedBundle,
+  bundle: VerifiedVersion,
   mapping: NativePathMapping,
   prefix: string,
   target: Exclude<CompatibilityTarget, 'generic'> = 'codex',

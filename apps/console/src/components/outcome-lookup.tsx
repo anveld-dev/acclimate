@@ -12,22 +12,22 @@ import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosur
 
 export const roundLabels: Record<string, string> = {
   proposing: 'Generating proposal',
-  development: 'Development evaluation',
-  audit: 'Independent audit',
+  development: 'Comparing versions',
+  audit: 'Independent comparison',
   awaiting_review: 'Awaiting decision',
-  promoted: 'Rolled out',
+  promoted: 'Released',
   rejected: 'Rejected',
 };
 
 const correctionLabels: Record<string, string> = {
   ...roundLabels,
   queued: 'Queued for a proposal',
-  awaiting_baseline_recheck: 'Awaiting the evaluator’s private recheck on the current baseline',
-  private_evidence_unavailable: 'Private evidence unavailable for the baseline recheck',
-  admission_closed: 'Admission closed for this connection',
-  admissions_exhausted: 'Proposal admissions exhausted. Renew admissions to continue.',
-  audits_exhausted: 'Independent audits exhausted. Install and register a fresh cohort.',
-  resolved: 'The baseline recheck found the issue resolved',
+  awaiting_baseline_recheck: 'Checking the issue on the current version',
+  private_evidence_unavailable: 'The app could not check the issue on the current version',
+  admission_closed: 'This connection is closed to new proposals',
+  admissions_exhausted: 'Proposal limit reached. Update the limit to continue.',
+  audits_exhausted: 'No independent comparisons remain. Add more cases to continue.',
+  resolved: 'The issue is resolved on the current version',
 };
 
 export function OutcomeLookup({
@@ -83,14 +83,14 @@ function ReleaseDetails({ release }: { release: LearningReleaseEvidence }) {
   return (
     <div>
       <div>
-        Promotion <code>{release.promotionId}</code> · revision {release.revision}
-        {release.withdrawn && ' · withdrawn from field use'}
+        Release <code>{release.promotionId}</code> · revision {release.revision}
+        {release.withdrawn && ' · withdrawn'}
       </div>
       {release.rollback && (
         <div>
           Automatic rollback restored <code>{release.rollback.versionId}</code>
           {' · revision '}
-          {release.rollback.revision} · promotion <code>{release.rollback.promotionId}</code>
+          {release.rollback.revision} · release <code>{release.rollback.promotionId}</code>
         </div>
       )}
     </div>
@@ -112,7 +112,7 @@ function EvidenceLinks({
     <div className="flex flex-wrap gap-3">
       {[
         [development, 'Development evidence'],
-        [audit, 'Audit evidence'],
+        [audit, 'Independent comparison'],
       ].map(
         ([request, label]) =>
           request && (
@@ -161,14 +161,14 @@ function OutcomeDetails({
       )}
       {outcome.fieldAudit && (
         <p>
-          Field verdict · {outcome.fieldAudit.verdict} against control{' '}
+          Outcome comparison · {outcome.fieldAudit.verdict} against control{' '}
           <code>{outcome.fieldAudit.controlVersionId}</code>
           {outcome.fieldAudit.triggeredRollback && ' · this verdict triggered automatic rollback'}
         </p>
       )}
       {outcome.currentDelivery && (
         <p>
-          Current delivery target <code>{outcome.currentDelivery.versionId}</code> · revision{' '}
+          Current version <code>{outcome.currentDelivery.versionId}</code> · revision{' '}
           {outcome.currentDelivery.revision}
         </p>
       )}
@@ -178,17 +178,17 @@ function OutcomeDetails({
             <li key={c.correctionId} className="break-all py-1">
               Correction <code>{c.correctionId}</code> ·{' '}
               {c.release?.withdrawn
-                ? 'Rolled out, later withdrawn'
+                ? 'Released, later withdrawn'
                 : (correctionLabels[c.state] ?? c.state)}
               {c.roundId && (
                 <div>
-                  Latest round <code>{c.roundId}</code>
+                  Latest proposal activity <code>{c.roundId}</code>
                 </div>
               )}
               {c.reason && <div>{c.reason}</div>}
               {c.incidentReplay && (
                 <div>
-                  Triggering incident replay ·{' '}
+                  Original issue check ·{' '}
                   {c.state === 'rejected' && c.incidentReplay === 'pending'
                     ? 'No verdict received'
                     : c.incidentReplay}

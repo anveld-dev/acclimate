@@ -18,7 +18,7 @@ Point `--app` at the trusted evaluator directory with its SDK installed. For `ap
 
 Keep the evaluator's agent, grader and private cases installed there. Git and Python 3 are required for the CI wrapper. Python evaluators require 3.11+. Set `ACCLIMATE_CI_PYTHON` to select a specific interpreter. Otherwise a Python app uses its own `.venv/bin/python` when present or the interpreter running the wrapper, including an activated virtual environment. The config, policy and optional selection paths resolve from the directory where you launch CI. Pass `--live` for model-backed execution.
 
-Use a private persistent output directory and an owner-only evaluator config with a project-scoped credential and stable journal. By default the wrapper stores the request intent and handoff together under `requests/` inside that directory. A retry with the same commit, target and candidate reuses its intent. A new commit or different candidate receives a separate path. If your pipeline manages an existing intent, supply its absolute path with `--intent` and keep its original output directory. A new runner without the original journal needs an operator to reconcile uncertain work before scheduling another attempt.
+Use a private persistent output directory and an owner-only evaluator config with a workspace-scoped credential and stable journal. By default the wrapper stores the request intent and handoff together under `requests/` inside that directory. A retry with the same commit, target and candidate reuses its intent. A new commit or different candidate receives a separate path. If your pipeline manages an existing intent, supply its absolute path with `--intent` and keep its original output directory. A new runner without the original journal needs an operator to reconcile uncertain work before scheduling another attempt.
 
 ### Rerun after repairing a terminal evaluation
 
@@ -46,4 +46,4 @@ The wrapper preserves the underlying command's failure exit code. A failed execu
 
 For scalar evidence, omit `--selection`. To export selected app-owned artifacts, supply `--selection "$EVALUATOR_APP/share-selection.json"` and install a review mapper. Upload only the verified `reviewDirectory` under the private output directory. Use your CI provider's access controls and retention settings. The journal, config, private request intent and case inventory belong on the worker.
 
-An authorized reviewer can use the immutable candidate ID, digest and current channel revision to release the reviewed candidate separately. The CI credential needs project read/write and the quality check requires no promotion permission.
+An authorized reviewer can use the immutable candidate ID, digest and current channel revision to release the reviewed candidate separately. The CI credential needs workspace read/write and the quality check requires no promotion permission.

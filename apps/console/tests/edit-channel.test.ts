@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { editChannel } from '../src/server/edit-channel';
-const env = { ...consoleEnvironment,
+const env = {
+  ...consoleEnvironment,
   CONSOLE_ALLOW_EDITS: 'true',
   CONSOLE_SERVICE_TOKEN: 'local-private',
   CONSOLE_PROJECT: 'demo',
@@ -28,15 +29,22 @@ function fixture(parent = 'parent', conflict = false) {
   const writes: Array<{ url: string; body: any }> = [];
   const fetcher: typeof fetch = async (input, options) => {
     const url = String(input);
-    if (url.includes('/v1/projects?')) return Response.json({ items: [{ id: env.CONSOLE_PROJECT, name: 'Workspace', role: 'admin' }], nextCursor: null });
+    if (url.includes('/v1/workspaces?'))
+      return Response.json({
+        items: [{ id: env.CONSOLE_PROJECT, name: 'Workspace', role: 'admin' }],
+        nextCursor: null,
+      });
     if (url.includes('/operations/'))
       return Response.json({ status: 'not_observed', operationId: 'key' });
     if (url.includes('/bundles?'))
-      return Response.json({ items: [{ id: env.CONSOLE_BUNDLE, origin: 'created', compatibilityTarget: 'generic' }], nextCursor: null });
+      return Response.json({
+        items: [{ id: env.CONSOLE_BUNDLE, origin: 'created', compatibilityTarget: 'generic' }],
+        nextCursor: null,
+      });
     if (options?.method === 'POST') {
       const body = JSON.parse(options.body as string);
       writes.push({ url, body });
-      if (url.endsWith('/promotions'))
+      if (url.endsWith('/releases'))
         return Response.json(
           conflict
             ? { error: { code: 'revision_conflict', message: 'changed' } }
@@ -45,7 +53,7 @@ function fixture(parent = 'parent', conflict = false) {
         );
       return Response.json({ ...version, id: 'draft', parentVersionId: 'parent' });
     }
-    if (url.includes('/promotions?')) return Response.json({ items: [], nextBeforeRevision: null });
+    if (url.includes('/releases?')) return Response.json({ items: [], nextBeforeRevision: null });
     if (url.endsWith('/payload')) return new Response(bytes);
     if (url.endsWith('/versions/draft'))
       return Response.json({ ...version, id: 'draft', parentVersionId: parent });

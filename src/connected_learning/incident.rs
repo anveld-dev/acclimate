@@ -26,23 +26,7 @@ pub(super) async fn inspect(
     Ok(Json(result))
 }
 
-pub(super) async fn work(
-    tx: &mut Transaction<'_, Postgres>,
-    project: &str,
-    integration: Uuid,
-) -> ApiResult<Vec<Value>> {
-    sqlx::query_scalar(
-        "SELECT jsonb_build_object('roundId',r.id,'outcomeId',r.outcome_id,'versionId',v.id,
-                  'digest',v.digest,'baselineRevision',r.parent_revision::text)
-         FROM connected_learning_rounds r JOIN versions v ON v.id=r.candidate_version_id
-         JOIN connected_learning_enrollments e ON (e.project_id,e.integration_id)=(r.project_id,r.integration_id)
-         JOIN channels c ON (c.project_id,c.bundle_id,c.name)=(e.project_id,e.bundle_id,e.delivery_channel)
-         WHERE (r.project_id,r.integration_id)=($1,$2) AND r.state='development' AND r.incident_replay='pending'
-           AND (c.version_id,c.revision)=(r.parent_version_id,r.parent_revision)",
-    ).bind(project).bind(integration).fetch_all(&mut **tx).await.map_err(db)
-}
-
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Verdict {
     round_id: Uuid,
@@ -51,6 +35,8 @@ pub(super) struct Verdict {
     digest: String,
     baseline_revision: String,
     verdict: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    attempts: Vec<String>,
 }
 
 pub(super) async fn submit(
@@ -77,18 +63,40 @@ pub(super) async fn submit(
     ) {
         return Err(invalid("Unknown incident replay verdict"));
     }
+    let command = crate::commands::DurableCommand::new(
+        &project,
+        integration,
+        "incident",
+        &actor.principal,
+        format!("{}:{}", input.round_id, input.outcome_id),
+        serde_json::to_value(&input).map_err(db)?,
+    )
+    .with_optional_retry_field("attempts");
+    if let Some(response) = command
+        .replay(&mut tx, || {
+            conflict("A different incident replay result already exists")
+        })
+        .await?
+    {
+        return Ok(Json(response));
+    }
     // The enrollment/connection lock serializes verdicts with state transitions.
     let row = sqlx::query(
-        "SELECT r.state,r.incident_replay,(c.version_id,c.revision)=(r.parent_version_id,r.parent_revision) AS current
+        "SELECT r.state,COALESCE(replay.verdict,'pending') AS incident_replay,(c.version_id,c.revision)=(r.parent_version_id,r.parent_revision) AS current
          FROM connected_learning_rounds r JOIN versions v ON v.id=r.candidate_version_id
+         JOIN connected_learning_replay_obligations o ON o.round_id=r.id
+         JOIN connected_learning_replay_results replay ON replay.id=o.id
          JOIN connected_learning_enrollments e ON (e.project_id,e.integration_id)=(r.project_id,r.integration_id)
          JOIN channels c ON (c.project_id,c.bundle_id,c.name)=(e.project_id,e.bundle_id,e.delivery_channel)
-         WHERE (r.project_id,r.integration_id,r.id,r.outcome_id,v.id,v.digest,r.parent_revision)=($1,$2,$3,$4,$5,$6,$7)",
+         WHERE (r.project_id,r.integration_id,r.id,o.incident_outcome_id,v.id,v.digest,r.parent_revision)=($1,$2,$3,$4,$5,$6,$7)",
     ).bind(&project).bind(integration).bind(input.round_id).bind(input.outcome_id).bind(input.version_id)
      .bind(&input.digest).bind(revision).fetch_optional(&mut *tx).await.map_err(db)?
      .ok_or_else(|| conflict("Incident replay identity does not match this round"))?;
     let saved: Option<String> = row.get("incident_replay");
-    if saved.as_deref() != Some(&input.verdict) {
+    {
+        if !super::statistics::valid_replays(&input.verdict, &input.attempts, true) {
+            return Err(invalid("Invalid incident replay attempts"));
+        }
         if !active
             || !row.get::<bool, _>("current")
             || row.get::<String, _>("state") != "development"
@@ -98,13 +106,14 @@ pub(super) async fn submit(
                 "Incident replay is not pending for this candidate",
             ));
         }
-        sqlx::query("UPDATE connected_learning_rounds SET incident_replay=$2 WHERE id=$1")
+        sqlx::query("UPDATE connected_learning_replay_obligations SET verdict=$2,evaluator=$3,attempts=$4 WHERE round_id=$1 AND incident_outcome_id=$5")
             .bind(input.round_id)
             .bind(&input.verdict)
+            .bind(&actor.principal)
+            .bind(&input.attempts).bind(input.outcome_id)
             .execute(&mut *tx)
             .await
             .map_err(db)?;
     }
-    tx.commit().await.map_err(db)?;
-    Ok(Json(json!({"accepted":true})))
+    command.finish(tx, json!({"accepted":true})).await
 }

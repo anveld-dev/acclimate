@@ -27,6 +27,6 @@ Up to five proposals and 24 paid Luna SDK turns are allowed, with a 60-minute pr
 
 Each draft runs on 24 flat incidents and a 32-view distributed-evidence job. All 56 raw final answers and all 56 helper-produced objects must be correct. The test also requires successful helper invocation and unchanged pinned files. It parses complete trailing JSON when a legitimate command prints inspected inputs before the helper output.
 
-A passing draft is copied unchanged into a release candidate under the original parent, retaining the source draft and proposal records. **No channel is promoted here.** An independent [large audit and delivery check](../large/README.md) must qualify those exact bytes.
+A passing draft is copied unchanged into a release candidate under the original parent, retaining the source draft and proposal records. **This step only saves the candidate version.** An independent [large audit and delivery check](../large/README.md) must qualify those exact bytes.
 
 See the [stress-test results](../../../docs/research/self-improvement-stress-test.md) for failed attempts, the final helper and measured limits.

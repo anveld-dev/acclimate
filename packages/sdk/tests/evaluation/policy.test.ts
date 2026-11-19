@@ -16,6 +16,29 @@ const fixtures = JSON.parse(
   ),
 );
 
+const selectionPolicies = JSON.parse(
+  readFileSync(
+    new URL('../../../../contracts/fixtures/connected-selection-policy.json', import.meta.url),
+    'utf8',
+  ),
+);
+for (const { name, policy, valid } of selectionPolicies.cases) {
+  test(`connected selection policy conformance: ${name}`, () => {
+    const parse = () => parseEvaluationPolicy(JSON.stringify(policy), selectionPolicies.descriptor);
+    if (valid) {
+      const parsed = parse().policy;
+      for (const field of [
+        'protectedCaseThresholds',
+        'minimumRepetitionsPerCase',
+        'minimumCostSavingsUsd',
+      ] as const)
+        assert.deepEqual(parsed[field], policy[field] ?? undefined);
+    } else {
+      assert.throws(parse, PolicyError);
+    }
+  });
+}
+
 for (const vector of fixtures.vectors) {
   test(`shared policy vector: ${vector.name}`, () => {
     const execute = () =>
@@ -246,3 +269,58 @@ test('all generated diagnostics and verdict checks exclude arbitrary error strin
   });
   assert.ok(!JSON.stringify(result).includes('secret-canary'));
 });
+
+const confidence = JSON.parse(
+  readFileSync(
+    new URL('../../../../contracts/fixtures/connected-confidence-decisions.json', import.meta.url),
+    'utf8',
+  ),
+);
+for (const decision of confidence) {
+  test(`shared confidence decision: ${decision.name}`, () => {
+    const { comparison, binding, descriptor, policy } = structuredClone(fixtures.vectors[0]);
+    const template = comparison.results[0];
+    const offset = decision.rewardOffset ?? 0;
+    comparison.results = decision.gains.flatMap((gain: number, index: number) =>
+      Array.from({ length: decision.evaluationRepetitions ?? 1 }, (_, repetition) => ({
+        ...template,
+        repetition,
+        caseId: String(index),
+        parent: {
+          ...template.parent,
+          reward: decision.missingParent?.includes(index) ? null : offset + Math.max(0, -gain),
+          ...(decision.missingParent?.includes(index) && { gradingStatus: 'missing' }),
+        },
+        candidate: {
+          ...template.candidate,
+          reward: decision.missingParent?.includes(index)
+            ? 1
+            : decision.missingCandidate?.includes(index)
+              ? null
+              : offset + Math.max(0, gain),
+          ...(decision.missingCandidate?.includes(index) && { gradingStatus: 'missing' }),
+        },
+      })),
+    );
+    descriptor.expectedCases = comparison.results.map(
+      ({ caseId, repetition }: { caseId: string; repetition: number }) => ({ caseId, repetition }),
+    );
+    comparison.expectedCases = descriptor.expectedCases;
+    const result = checkComparison({
+      comparison,
+      expectedBinding: binding,
+      expectedDescriptor: descriptor,
+      policy: {
+        ...policy,
+        schemaVersion: decision.schemaVersion ?? 2,
+        auditMode: decision.auditMode,
+        nonInferiorityMargin: decision.nonInferiorityMargin,
+      },
+      replayPassed: decision.replayPassed,
+      stage: decision.stage,
+      calibratedStandardDeviation: decision.calibratedStandardDeviation,
+      calibrationEffectiveRepetitions: decision.calibrationEffectiveRepetitions,
+    });
+    assert.equal(result.verdict === 'pass', decision.pass);
+  });
+}

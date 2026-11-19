@@ -57,7 +57,7 @@ class PolicyOverride(TypedDict):
     receipts: list[PolicyReceiptReference]
 
 
-class PromoteRequest(TypedDict):
+class CreateReleaseRequest(TypedDict):
     versionId: str
     expectedRevision: str
     comparisonId: NotRequired[str]
@@ -65,7 +65,7 @@ class PromoteRequest(TypedDict):
     policyOverride: NotRequired[PolicyOverride]
 
 
-class Promotion(TypedDict):
+class Release(TypedDict):
     id: str
     channel: str
     revision: str
@@ -79,8 +79,8 @@ class Promotion(TypedDict):
     createdAt: str
 
 
-class PromotionPage(TypedDict):
-    items: list[Promotion]
+class ReleasePage(TypedDict):
+    items: list[Release]
     nextBeforeRevision: str | None
 
 
@@ -91,6 +91,27 @@ class ProposalRequest(TypedDict):
     evidence: list[str]
 
 
+class CriticVerdict(TypedDict):
+    verdict: Literal["accept", "reject"]
+    objections: list[str]
+    risky: NotRequired[bool]
+
+
+class ProposalChange(TypedDict):
+    path: str
+    before: str | None
+    after: str | None
+
+
+class ProposalScreen(TypedDict):
+    stage: Literal["initial", "repair"]
+    result: CriticVerdict | None
+    changes: list[ProposalChange]
+    scannerClean: NotRequired[bool]
+    structural: NotRequired[bool]
+    rationale: NotRequired[str]
+
+
 class Proposal(TypedDict):
     id: str
     parentVersionId: str
@@ -98,6 +119,7 @@ class Proposal(TypedDict):
     attempts: int
     candidate: VersionMetadata | None
     rationale: str | None
+    screening: NotRequired[list[ProposalScreen]]
     error: str | None
     createdAt: str
 
@@ -152,7 +174,7 @@ class Comparison(ComparisonRequest):
     createdAt: str
 
 
-class VerifiedBundle(TypedDict):
+class VerifiedVersion(TypedDict):
     version: VersionMetadata
     payload: BundlePayload
     resolution: NotRequired[ChannelResolution]
@@ -281,7 +303,7 @@ class EvaluationProgressView(TypedDict):
     staleAfterSeconds: Literal[60]
 
 
-class IntegrationLatestObservation(TypedDict):
+class ConnectionLatestObservation(TypedDict):
     eventId: str
     stage: str
     versionId: str
@@ -290,17 +312,17 @@ class IntegrationLatestObservation(TypedDict):
     receivedAt: str
 
 
-class IntegrationObservation(TypedDict):
+class ConnectionObservation(TypedDict):
     id: str
     displayName: str
     bundleId: str
     channel: str
     enabled: bool
-    latestObservation: IntegrationLatestObservation | None
+    latestObservation: ConnectionLatestObservation | None
 
 
-class IntegrationObservationPage(TypedDict):
-    items: list[IntegrationObservation]
+class ConnectionObservationPage(TypedDict):
+    items: list[ConnectionObservation]
     nextCursor: str | None
 
 
@@ -360,7 +382,7 @@ class OperationCommitted(TypedDict):
     operationId: str
     path: str
     requestFingerprint: NotRequired[str]
-    result: Draft | Evaluation | Comparison | Promotion | Proposal | dict
+    result: Draft | Evaluation | Comparison | Release | Proposal | dict
 
 
 class OperationNotObserved(TypedDict):
@@ -375,3 +397,19 @@ class OperationClosed(TypedDict):
 
 
 Operation = OperationCommitted | OperationNotObserved | OperationClosed
+
+# Deprecated. Use Release.
+Promotion = Release
+# Deprecated. Use ReleasePage.
+PromotionPage = ReleasePage
+# Deprecated. Use CreateReleaseRequest.
+PromoteRequest = CreateReleaseRequest
+# Deprecated. Use ConnectionObservation.
+IntegrationObservation = ConnectionObservation
+# Deprecated. Use ConnectionLatestObservation.
+IntegrationLatestObservation = ConnectionLatestObservation
+# Deprecated. Use ConnectionObservationPage.
+IntegrationObservationPage = ConnectionObservationPage
+
+# Deprecated. Use VerifiedVersion.
+VerifiedBundle = VerifiedVersion

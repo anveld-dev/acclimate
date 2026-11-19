@@ -36,7 +36,7 @@ def evaluate_connected_candidate(w):
 def audited_candidate(context):
     w = context.world
     w.round = evaluate_connected_candidate(w)
-    w.first_receipt = blocking_receipt(w, 'development', minimumMeanImprovement=0.75)
+    w.first_receipt = blocking_receipt(w, 'development', minimumMeanImprovement=1.01)
 
 
 def rollout_dialog(w):
@@ -68,7 +68,7 @@ def open_review(context):
 @when('the evaluator records another blocking policy before the reviewer confirms')
 def additional_policy(context):
     w = context.world
-    w.second_receipt = blocking_receipt(w, 'audit', minimumMeanImprovement=0, candidateThreshold=0.75)
+    w.second_receipt = blocking_receipt(w, 'audit', minimumMeanImprovement=0, candidateThreshold=1.01)
     expect_receipts(rollout_dialog(w), w.first_receipt)
 
 
@@ -174,7 +174,7 @@ def released(context):
     w = context.world
     region = w.browser_fixture.page.get_by_role('region', name='Continuous learning')
     expect(region.get_by_role('button', name='Review rollout', exact=True)).to_have_count(0)
-    expect(region.get_by_text('Rolled out', exact=False)).to_be_visible()
+    expect(region.get_by_text('Released · outcome', exact=False)).to_be_visible()
     round_ = wait_for_round(w, 'promoted')
     release, *previous = w.call('GET', w.history_path)['items']
     assert previous == w.original_history
@@ -204,23 +204,26 @@ def automatic_rollback(context):
     # on opposite sides of the rollback, so only one can be its cause.
     grades = []
     w.private_field_jobs = {}
-    for path in ('src/parser.ts', 'src/runner.ts', 'src/review.ts', 'src/cache.ts'):
+    for index in range(8):
+        path = f'src/review-{index}.ts'
         job = dict(changedPaths=[path, 'CHANGELOG.md'], expectedPaths=[path])
         grade = w.sdk('gradeFieldJob', actor='evaluator', integrationId=w.integration['id'],
                       readerToken=w.read_credential['secret'], receiptToken=w.write_credential['secret'],
                       outcomeToken=w.h.tokens['other'], fieldJob=job)
-        assert grade.get('verdict') == 'regression', grade
+        assert grade.get('verdict') == 'loss', grade
         assert grade['versionId'] == w.served['version']['id']
         assert grade['parentVersionId'] == w.original_delivery['version']['id']
         grades.append(grade)
         w.private_field_jobs[grade['outcomeId']] = job
     assert len({grade['outcomeId'] for grade in grades}) == len(grades)
     audits = w.learning_path + '/field-audits'
-    for grade in grades[:2]:
+    for grade in grades[:6]:
         assert 'rollbackPromotionId' not in w.call('POST', audits, grade, actor='evaluator')
-    w.triggering_job, w.later_job = grades[2:]
+    w.triggering_job, w.later_job = grades[6:]
     w.rollback_id = w.call('POST', audits, w.triggering_job, actor='evaluator')['rollbackPromotionId']
     assert 'rollbackPromotionId' not in w.call('POST', audits, w.later_job, actor='evaluator')
+    rollback = w.call('GET', w.history_path)['items'][0]
+    assert rollback['id'] == w.rollback_id and rollback['reviewer'] == 'service:connected-learning'
     w.restored_delivery = w.call('GET', w.channel, actor='content-reader')
     assert w.restored_delivery['version'] == w.original_delivery['version']
     assert int(w.restored_delivery['revision']) == int(w.served['revision']) + 1
@@ -248,13 +251,13 @@ def expect_traced_outcome(w, *, triggered):
     version = restored['version']['id']
     lines = [
         f"Job failed · served version {served['version']['id']} · revision {served['revision']}",
-        f"Promotion {w.round['promotionId']} · revision {served['revision']} · withdrawn from field use",
-        f"Automatic rollback restored {version} · revision {restored['revision']} · promotion {w.rollback_id}",
-        f"Current delivery target {version} · revision {restored['revision']}",
+        f"Release {w.round['promotionId']} · revision {served['revision']} · withdrawn",
+        f"Automatic rollback restored {version} · revision {restored['revision']} · release {w.rollback_id}",
+        f"Current version {version} · revision {restored['revision']}",
     ]
     for line in lines:
         expect(region.get_by_text(line, exact=True)).to_be_visible()
-    verdict = f"Field verdict · regression against control {version}"
+    verdict = f"Outcome comparison · loss against control {version}"
     if triggered:
         verdict += ' · this verdict triggered automatic rollback'
     expect(region.get_by_text(verdict, exact=True)).to_be_visible()
@@ -270,7 +273,7 @@ def trace_trigger(context):
 @when('I follow its audit evidence')
 def follow_audit(context):
     region = context.world.browser_fixture.page.get_by_role('region', name='Continuous learning')
-    region.get_by_role('link', name='Audit evidence', exact=True).click()
+    region.get_by_role('link', name='Independent comparison', exact=True).click()
 
 
 @then('the console opens the independent audit for the exact served candidate')
@@ -304,15 +307,16 @@ def rejected_audit(context):
     enroll_reviews(w, automatic=True, audit={
         'duplicate-review': 'duplicated effects', 'idempotency-review': 'idempotency',
         'code-review': 'Review code.',
-    })
+    }, audit_protected_thresholds={'code-review': 1})
     grade_through_audit(w)
     assert w.finish()['status'] == 'completed'
     w.round = wait_for_round(w, 'rejected')
+    assert w.round['reason'] == 'Protected case threshold failed'
     development = w.call('GET', w.bundle + '/comparisons/' + w.round['developmentComparisonId'])
     gains = sorted((p['caseId'], p['repetition'], p['candidate']['reward'] - p['parent']['reward'])
                    for p in development['results'])
-    assert gains == [('backoff-review', 0, 0), ('backoff-review', 1, 0),
-                     ('retry-review', 0, 1), ('retry-review', 1, 1)], gains
+    assert gains == [(case, repetition, 1) for case in ('backoff-review', 'retry-review')
+                     for repetition in range(3)], gains
     assert w.round['auditComparisonId'] == w.report['id'] and w.round['promotionId'] is None
 
 
@@ -329,16 +333,17 @@ def open_rejected(context):
 @then('I see the audit rejection reason and cannot approve that round')
 def visible_rejection(context):
     region = context.world.browser_fixture.page.get_by_role('region', name='Continuous learning')
-    expect(region.get_by_text('Maximum case regression exceeded', exact=True)).to_be_visible()
+    assert context.world.round['reason']
+    expect(region.get_by_text(context.world.round['reason'], exact=True)).to_be_visible()
     expect(region.get_by_role('button', name='Review rollout', exact=True)).to_have_count(0)
-    expect(region.get_by_role('link', name='View development evidence')).to_be_visible()
+    expect(region.get_by_role('link', name='View development comparison')).to_be_visible()
 
 
 @when("I follow the round's audit evidence to the regressed case")
 def open_regressed_case(context):
     w = context.world
     page = w.browser_fixture.page
-    link = page.get_by_role('link', name='View audit evidence', exact=True)
+    link = page.get_by_role('link', name='View independent comparison', exact=True)
     href = link.get_attribute('href')
     link.click()
     expect(page).to_have_url(w.browser_fixture.base + href)
@@ -371,7 +376,7 @@ def pending_audit(context):
     assert w.call('GET', w.evaluation_path)['status'] == 'running'
     assert w.report['complete']
     scores = [(p['caseId'], p['parent']['reward'], p['candidate']['reward']) for p in w.report['results']]
-    assert sorted(scores) == [('duplicate-review', 0, 1)] * 2 + [('idempotency-review', 0, 0)] * 2, scores
+    assert sorted(scores) == [('duplicate-review', 0, 1)] * 3 + [('idempotency-review', 0, 1)] * 3, scores
 
 
 @when('I confirm Stop learning on the connection')

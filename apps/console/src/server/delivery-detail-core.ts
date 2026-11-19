@@ -1,9 +1,9 @@
-import type { IntegrationObservation, Page } from '@acclimate/sdk';
+import type { ConnectionObservation, Page } from '@acclimate/sdk';
 import { consoleClient } from './console-client';
 import { allPages } from './listing';
 import { requireSession, type Environment } from './selection';
 
-type Observation = NonNullable<IntegrationObservation['latestObservation']>;
+type Observation = NonNullable<ConnectionObservation['latestObservation']>;
 export type Report = Observation & { revision?: string | null; source?: string; delayed?: boolean };
 export type DeliveryDetail = {
   current: { versionId: string; digest: string; revision: string; promotedAt: string } | null;
@@ -48,7 +48,7 @@ export async function readSetupReportState(
       return { state: 'error' };
     const client = consoleClient(env, fetcher);
     const observations = await allPages((cursor) =>
-      client.listIntegrationObservations(scope.projectId, { cursor, limit: 100 }),
+      client.listConnectionObservations(scope.projectId, { cursor, limit: 100 }),
     );
     const latest = observations
       .filter(
@@ -88,13 +88,13 @@ export async function readDeliveryDetailState(
     const api = consoleClient(env, fetcher);
     // Resolve bundle and channel from the public integration directory using this user's session.
     const apps = await allPages((cursor) =>
-      api.listIntegrationObservations(input.projectId, { cursor, limit: 100 }),
+      api.listConnectionObservations(input.projectId, { cursor, limit: 100 }),
     );
     const app = apps.find((item) => item.id === input.integrationId);
     if (!app) return { ok: false, message: 'This app is unavailable in this workspace.' };
     const [history, releases] = await Promise.all([
       api.listDeliveryReceipts(input.projectId, app.id, { cursor: input.cursor, limit: 12 }),
-      api.listPromotions(input.projectId, app.bundleId, app.channel, { limit: 1 }),
+      api.listReleases(input.projectId, app.bundleId, app.channel, { limit: 1 }),
     ]);
     const latest = releases.items[0];
     if (latest && (latest.channel !== app.channel || latest.version.bundleId !== app.bundleId))

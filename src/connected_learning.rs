@@ -1,3 +1,5 @@
+pub(crate) mod parent_cache;
+use crate::WorkspaceRoutes;
 use crate::{ApiErr, ApiResult, AppState, BundlePayload, CaseKey, PromoteRequest, db, err};
 use axum::{
     Json, Router,
@@ -15,8 +17,10 @@ use uuid::Uuid;
 mod corrections;
 pub(crate) mod epochs;
 mod incident;
+pub(crate) mod repetitions;
 mod restore;
 pub(crate) mod selection;
+pub(crate) mod statistics;
 
 pub(crate) const CONNECTION_HEADER: &str = "x-acclimate-integration-id";
 
@@ -28,43 +32,43 @@ pub(crate) fn internal_channel(channel: &str) -> bool {
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/corrections",
             post(corrections::submit),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/rechecks",
             post(corrections::recheck),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning",
             get(inspect).put(enroll),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/stop",
             post(stop),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/restore",
             post(restore::restore),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/renew",
             post(epochs::renew),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/outcomes",
             post(submit_outcome),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/outcomes/{outcome}",
             get(incident::inspect),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/incident-replays",
             post(incident::submit),
         )
-        .route(
+        .workspace_route(
             "/v1/projects/{project}/integrations/{integration}/learning/work",
             get(work),
         )
@@ -122,6 +126,8 @@ struct Enrollment {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     skill_packages: Option<crate::proposal_edits::SkillPackages>,
     max_proposal_admissions: i32,
+    #[serde(default = "default_batch_size")]
+    max_corrections_per_round: i32,
     development: Descriptor,
     audits: Vec<Descriptor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -210,12 +216,17 @@ fn bounded(value: &str, limit: usize) -> bool {
     !value.trim().is_empty() && value.len() <= limit
 }
 
+fn default_batch_size() -> i32 {
+    5
+}
+
 fn validate(config: &Enrollment) -> ApiResult<()> {
     if !bounded(&config.installation_id, 128)
         || !bounded(&config.outcome_principal, 1024)
         || !bounded(&config.evaluator_principal, 1024)
         || config.outcome_principal == config.evaluator_principal
         || !(1..=100).contains(&config.max_proposal_admissions)
+        || !(1..=10).contains(&config.max_corrections_per_round)
         || !(1..=32).contains(&config.permitted_paths.len())
         || config.permitted_paths.iter().collect::<HashSet<_>>().len()
             != config.permitted_paths.len()
@@ -305,6 +316,7 @@ fn config(row: &PgRow) -> ApiResult<Enrollment> {
             .transpose()
             .map_err(db)?,
         max_proposal_admissions: row.get("max_proposal_admissions"),
+        max_corrections_per_round: row.get("max_corrections_per_round"),
         development: serde_json::from_value(row.get("development")).map_err(db)?,
         audits: serde_json::from_value(row.get("audits")).map_err(db)?,
         automatic_rollout: row.get("automatic_rollout"),
@@ -349,9 +361,25 @@ async fn enrollment(
     tx: &mut Transaction<'_, Postgres>,
     project: &str,
     integration: Uuid,
+    lock_integration: bool,
 ) -> ApiResult<PgRow> {
-    sqlx::query("SELECT e.*, i.enabled FROM connected_learning_enrollments e JOIN integrations i ON (i.project_id,i.id)=(e.project_id,e.integration_id) WHERE e.project_id=$1 AND e.integration_id=$2 FOR SHARE OF i")
-        .bind(project).bind(integration).fetch_optional(&mut **tx).await.map_err(db)?.ok_or_else(absent)
+    let lock = if lock_integration {
+        " FOR SHARE OF i"
+    } else {
+        ""
+    };
+    let query = format!(
+        "SELECT e.*, i.enabled FROM connected_learning_enrollments e
+         JOIN integrations i ON (i.project_id,i.id)=(e.project_id,e.integration_id)
+         WHERE e.project_id=$1 AND e.integration_id=$2{lock}"
+    );
+    sqlx::query(&query)
+        .bind(project)
+        .bind(integration)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(db)?
+        .ok_or_else(absent)
 }
 
 async fn enroll(
@@ -367,6 +395,9 @@ async fn enroll(
         return Err(denied());
     }
     if request.automatic_rollout {
+        if actor.user_id.is_none() {
+            return Err(denied());
+        }
         crate::auth::actor(&h, &s, &project, "promote")?;
     }
     let enrolled_grant = |principal: &str, rights: &[&str]| {
@@ -402,8 +433,16 @@ async fn enroll(
             "Skill package permissions require bounded unique skill names",
         ));
     }
+    let command = crate::commands::DurableCommand::optional(
+        &h,
+        &project,
+        integration,
+        "enrollment",
+        &actor.principal,
+        serde_json::to_value(&request).map_err(db)?,
+    )?;
     let expected_rollout = request.expected_automatic_rollout.take();
-    let connection = sqlx::query("SELECT bundle_id,channel FROM integrations WHERE project_id=$1 AND id=$2 AND enabled FOR UPDATE")
+    let connection = sqlx::query("SELECT bundle_id,channel,enabled FROM integrations WHERE project_id=$1 AND id=$2 FOR UPDATE")
         .bind(&project).bind(integration).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(absent)?;
     if let Some(row) = sqlx::query(
         "SELECT * FROM connected_learning_enrollments WHERE project_id=$1 AND integration_id=$2",
@@ -416,6 +455,18 @@ async fn enroll(
     {
         if app_principal(&row, &actor.principal) {
             return Err(denied());
+        }
+        if let Some(command) = &command
+            && let Some(response) = command
+                .replay(&mut tx, || {
+                    conflict("Enrollment key already binds different settings")
+                })
+                .await?
+        {
+            return Ok(Json(response));
+        }
+        if !connection.get::<bool, _>("enabled") {
+            return Err(absent());
         }
         let mut frozen = config(&row)?;
         let previous_packages = frozen.skill_packages.clone();
@@ -487,7 +538,7 @@ async fn enroll(
                  CROSS JOIN LATERAL jsonb_array_elements(e.audits) WITH ORDINALITY AS a(descriptor,n)
                  WHERE (e.project_id,e.integration_id)=($1,$2)
                  AND descriptor->>'fixtureProtocol'='installed-v1'
-                 AND connected_learning_audit_registered(e.project_id,e.bundle_id,e.integration_id,(n-1)::integer,descriptor))",
+                )",
             )
             .bind(&project).bind(integration).fetch_one(&mut *tx).await.map_err(db)?;
             if !request.development.committed() || !registered {
@@ -500,21 +551,34 @@ async fn enroll(
             && previous_rollout == request.automatic_rollout
             && previous_rollback == request.automatic_rollback
         {
-            return Ok(Json(enrollment_view(&row, true, true)?));
+            return crate::commands::DurableCommand::finish_optional(
+                command,
+                tx,
+                enrollment_view(&row, true, true)?,
+            )
+            .await;
         }
-        if (!previous_rollout && request.automatic_rollout)
+        let reauthorize = (!previous_rollout && request.automatic_rollout)
             || (previous_rollback != request.automatic_rollback
-                && request.automatic_rollback == Some(true))
-        {
+                && request.automatic_rollback == Some(true));
+        if reauthorize {
             validate_grants()?;
+            record_authorization(&mut tx, &project, integration, &actor.principal).await?;
         }
-        let row = sqlx::query("UPDATE connected_learning_enrollments SET automatic_rollout=$3,authorized_by=$4,automatic_rollback=$5,skill_packages=$6,permitted_paths=$7 WHERE project_id=$1 AND integration_id=$2 RETURNING *")
-            .bind(&project).bind(integration).bind(request.automatic_rollout).bind(&actor.principal).bind(request.automatic_rollback)
+        let row = sqlx::query("UPDATE connected_learning_enrollments SET automatic_rollout=$3,authorized_by=COALESCE($4,authorized_by),automatic_rollback=$5,skill_packages=$6,permitted_paths=$7 WHERE project_id=$1 AND integration_id=$2 RETURNING *")
+            .bind(&project).bind(integration).bind(request.automatic_rollout).bind(reauthorize.then_some(&actor.principal)).bind(request.automatic_rollback)
             .bind(request.skill_packages.as_ref().map(serde_json::to_value).transpose().map_err(db)?)
             .bind(&request.permitted_paths)
             .fetch_one(&mut *tx).await.map_err(db)?;
-        tx.commit().await.map_err(db)?;
-        return Ok(Json(enrollment_view(&row, true, true)?));
+        return crate::commands::DurableCommand::finish_optional(
+            command,
+            tx,
+            enrollment_view(&row, true, true)?,
+        )
+        .await;
+    }
+    if !connection.get::<bool, _>("enabled") {
+        return Err(absent());
     }
     if expected_rollout.is_some() {
         return Err(conflict(
@@ -535,6 +599,7 @@ async fn enroll(
         serde_json::from_slice(&current.get::<Vec<u8>, _>("payload")).map_err(db)?;
     if request.permitted_paths.iter().any(|path| {
         !payload.files.iter().any(|file| file.path == *path)
+            && !crate::proposal_edits::memory_path(path)
             && !request
                 .skill_packages
                 .as_ref()
@@ -560,19 +625,57 @@ async fn enroll(
             ),
             policy_override: None,
         },
-        Some(&source),
+        crate::channels::Publication::Restore(&source),
     )
     .await?;
-    let row = sqlx::query("INSERT INTO connected_learning_enrollments(project_id,integration_id,bundle_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,development,audits,automatic_rollout,outcome_principal,evaluator_principal,authorized_by,automatic_rollback,selection_policies,skill_packages) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *")
+    let row = sqlx::query("INSERT INTO connected_learning_enrollments(project_id,integration_id,bundle_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,development,audits,automatic_rollout,outcome_principal,evaluator_principal,authorized_by,automatic_rollback,selection_policies,skill_packages,max_corrections_per_round) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *")
         .bind(&project).bind(integration).bind(bundle).bind(&source).bind(current.get::<i64, _>("revision")).bind(delivery).bind(&request.installation_id)
         .bind(&request.permitted_paths).bind(request.max_proposal_admissions)
         .bind(serde_json::to_value(&request.development).map_err(db)?).bind(serde_json::to_value(&request.audits).map_err(db)?)
         .bind(request.automatic_rollout).bind(&request.outcome_principal).bind(&request.evaluator_principal).bind(&actor.principal).bind(request.automatic_rollback.unwrap_or(true))
         .bind(request.selection_policies.as_ref().map(serde_json::to_value).transpose().map_err(db)?)
         .bind(request.skill_packages.as_ref().map(serde_json::to_value).transpose().map_err(db)?)
+        .bind(request.max_corrections_per_round)
         .fetch_one(&mut *tx).await.map_err(epochs::registry_error)?;
-    tx.commit().await.map_err(db)?;
-    Ok(Json(enrollment_view(&row, true, true)?))
+    epochs::register_cohorts(
+        &mut tx,
+        &project,
+        bundle,
+        integration,
+        Some(&request.development),
+        0,
+        &request.audits,
+    )
+    .await?;
+    epochs::save_policy_epoch(&mut tx, &project, integration).await?;
+    record_authorization(&mut tx, &project, integration, &actor.principal).await?;
+    sqlx::query(
+        "INSERT INTO connected_learning_field_releases(promotion_id,validated)
+        SELECT id,true FROM promotions WHERE (project_id,bundle_id,channel,revision)=($1,$2,$3,1)",
+    )
+    .bind(&project)
+    .bind(bundle)
+    .bind(row.get::<String, _>("delivery_channel"))
+    .execute(&mut *tx)
+    .await
+    .map_err(db)?;
+    crate::commands::DurableCommand::finish_optional(
+        command,
+        tx,
+        enrollment_view(&row, true, true)?,
+    )
+    .await
+}
+
+async fn record_authorization(
+    tx: &mut Transaction<'_, Postgres>,
+    project: &str,
+    integration: Uuid,
+    principal: &str,
+) -> ApiResult<()> {
+    sqlx::query("INSERT INTO connected_learning_authorizations(project_id,integration_id,principal) VALUES($1,$2,$3)")
+        .bind(project).bind(integration).bind(principal).execute(&mut **tx).await.map_err(db)?;
+    Ok(())
 }
 
 async fn inspect(
@@ -581,7 +684,7 @@ async fn inspect(
     h: HeaderMap,
 ) -> ApiResult<Json<Value>> {
     let mut tx = crate::auth::read_transaction(&s, &h, &project).await?;
-    let row = enrollment(&mut tx, &project, integration).await?;
+    let row = enrollment(&mut tx, &project, integration, false).await?;
     let include_audits = match learning_admin(&s, &h, &project) {
         Ok(admin) if !app_principal(&row, &admin.principal) => {
             crate::auth::authorize_transaction(&mut tx, &admin, &project, "admin")
@@ -591,6 +694,14 @@ async fn inspect(
         _ => false,
     };
     let mut view = enrollment_view(&row, row.get("enabled"), include_audits)?;
+    view["noiseCalibration"] =
+        sqlx::query_scalar::<_, Value>(include_str!("connected_learning/calibration_view.sql"))
+            .bind(&project)
+            .bind(integration)
+            .bind(row.get::<i64, _>("policy_epoch"))
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(db)?;
     view["remainingAudits"] =
         json!(epochs::remaining_audits(&mut tx, &project, integration).await?);
     let delivery = sqlx::query(
@@ -604,6 +715,25 @@ async fn inspect(
     .map_err(db)?;
     view["deliveredVersionId"] = json!(delivery.get::<Uuid, _>("version_id"));
     view["deliveredRevision"] = json!(delivery.get::<i64, _>("revision").to_string());
+    let (version, length, estimate, bound, phase): (Uuid, i32, Option<f64>, Option<f64>, String) =
+        sqlx::query_as(include_str!("connected_learning/incumbent_view.sql"))
+            .bind(&project)
+            .bind(integration)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(db)?;
+    view["developmentIncumbent"] = json!({
+        "versionId": version,
+        "chainLength": length,
+        "cumulativeEstimate": estimate,
+        "cumulativeLowerBound": bound,
+        "nextAuditTrigger": {
+            "state": phase,
+            "acceptedStepsRemaining": if phase == "awaitingSteps" {
+                (crate::connected_learning_worker::development_check_interval() - length).max(0)
+            } else { 0 },
+        },
+    });
     let can_restore = match crate::auth::actor(&h, &s, &project, "promote") {
         Ok(actor) if row.get::<bool, _>("enabled") && !app_principal(&row, &actor.principal) => {
             crate::auth::authorize_transaction(&mut tx, &actor, &project, "promote")
@@ -617,8 +747,12 @@ async fn inspect(
     } else {
         json!([])
     };
-    let rounds: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'policyEpoch',policy_epoch,'outcomeId',outcome_id,'correctionId',correction_id,'attempt',attempt,'incidentReplay',incident_replay,'state',state,'reason',reason,'parentVersionId',parent_version_id,'candidateVersionId',candidate_version_id,'proposalId',proposal_id,'developmentRequestId',development_request_id,'developmentComparisonId',development_comparison_id,'auditRequestId',audit_request_id,'auditComparisonId',audit_comparison_id,'promotionId',promotion_id,'fieldAudits',jsonb_build_object('windowSize',field_audit_window_size,'regressions',field_audit_regressions,'rollbackPromotionId',rollback_promotion_id)) FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100")
-        .bind(&project).bind(integration).fetch_all(&mut *tx).await.map_err(db)?;
+    let rounds: Vec<Value> = sqlx::query_scalar(include_str!("connected_learning/round_view.sql"))
+        .bind(&project)
+        .bind(integration)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(db)?;
     if include_audits {
         let mut epochs: Vec<i64> = rounds
             .iter()
@@ -645,15 +779,34 @@ async fn stop(
     let actor = learning_admin(&s, &h, &project)?;
     let mut tx = s.db.begin().await.map_err(db)?;
     crate::auth::authorize_transaction(&mut tx, &actor, &project, "admin").await?;
-    let current = enrollment(&mut tx, &project, integration).await?;
+    let current = corrections::locked(&mut tx, &project, integration).await?;
+    let command = crate::commands::DurableCommand::optional(
+        &h,
+        &project,
+        integration,
+        "stop",
+        &actor.principal,
+        Value::Null,
+    )?;
     if app_principal(&current, &actor.principal) {
         return Err(denied());
+    }
+    if let Some(command) = &command
+        && let Some(response) = command
+            .replay(&mut tx, || conflict("Stop key already used"))
+            .await?
+    {
+        return Ok(Json(response));
     }
     let enabled = current.get("enabled");
     let row = sqlx::query("UPDATE connected_learning_enrollments SET stopped_at=COALESCE(stopped_at,now()) WHERE project_id=$1 AND integration_id=$2 RETURNING *")
         .bind(project).bind(integration).fetch_one(&mut *tx).await.map_err(db)?;
-    tx.commit().await.map_err(db)?;
-    Ok(Json(enrollment_view(&row, enabled, true)?))
+    crate::commands::DurableCommand::finish_optional(
+        command,
+        tx,
+        enrollment_view(&row, enabled, true)?,
+    )
+    .await
 }
 
 // Keep the original parent binding in the idempotent outcome response even
@@ -698,24 +851,29 @@ async fn submit_outcome(
     if row.get::<String, _>("outcome_principal") != actor.principal {
         return Err(denied());
     }
+    let bundle: Uuid = row.get("bundle_id");
+    let body = serde_json::to_value(&outcome).map_err(db)?;
+    let command = crate::commands::DurableCommand::new(
+        &project,
+        integration,
+        "outcome",
+        &actor.principal,
+        outcome.outcome_id,
+        body.clone(),
+    );
+    if let Some(response) = command
+        .replay(&mut tx, || {
+            conflict("Outcome ID was already used for different content")
+        })
+        .await?
+    {
+        return Ok(Json(response));
+    }
     corrections::validate_teaching(&row, outcome.lesson.as_ref(), outcome.feedback.as_ref())?;
     if outcome.require_incident_replay && outcome.lesson.is_none() && outcome.feedback.is_none() {
         return Err(invalid(
             "An incident replay requires a lesson or graded discrepancy",
         ));
-    }
-    let bundle: Uuid = row.get("bundle_id");
-    let body = serde_json::to_value(&outcome).map_err(db)?;
-    let fingerprint = crate::digest(&serde_json::to_vec(&body).map_err(db)?);
-    let prior = sqlx::query_as::<_, (String, Option<Uuid>)>("SELECT fingerprint,field_parent_version_id FROM connected_learning_outcomes WHERE project_id=$1 AND integration_id=$2 AND bundle_id=$3 AND outcome_id=$4")
-        .bind(&project).bind(integration).bind(bundle).bind(outcome.outcome_id).fetch_optional(&mut *tx).await.map_err(db)?;
-    if let Some((prior, parent)) = prior {
-        if prior != fingerprint {
-            return Err(conflict(
-                "Outcome ID was already used for different content",
-            ));
-        }
-        return outcome_response(&mut tx, &project, bundle, &outcome, parent).await;
     }
     if !row.get::<bool, _>("enabled")
         || row
@@ -748,8 +906,8 @@ async fn submit_outcome(
             ));
         }
     }
-    let (delivery_revision, field_parent) = match (outcome.started_receipt_id, observed_revision) {
-        (None, _) => (None, None),
+    let field_parent = match (outcome.started_receipt_id, observed_revision) {
+        (None, _) => None,
         (Some(receipt), Some(delivery_revision)) if !receipt.is_nil() => {
             let correlated: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM integration_receipts
@@ -775,7 +933,7 @@ async fn submit_outcome(
                     "A matching fresh channel-started delivery receipt is required",
                 ));
             }
-            let parent = sqlx::query_scalar(
+            sqlx::query_scalar(
                 "SELECT f.control_version_id FROM promotions p
                  JOIN connected_learning_field_releases f ON f.promotion_id=p.id
                  JOIN connected_learning_enrollments e ON (e.project_id,e.bundle_id,e.delivery_channel)=(p.project_id,p.bundle_id,p.channel)
@@ -785,8 +943,7 @@ async fn submit_outcome(
             )
             .bind(&project).bind(bundle).bind(integration).bind(row.get::<String,_>("delivery_channel"))
             .bind(delivery_revision).bind(outcome.version_id)
-            .fetch_optional(&mut *tx).await.map_err(db)?;
-            (Some(delivery_revision), parent)
+            .fetch_optional(&mut *tx).await.map_err(db)?
         }
         _ => {
             return Err(invalid("A started receipt requires its delivery revision"));
@@ -794,9 +951,9 @@ async fn submit_outcome(
     };
     let inserted = sqlx::query(
         "INSERT INTO connected_learning_outcomes(project_id,integration_id,bundle_id,outcome_id,
-             version_id,digest,status,lesson,feedback,submitted_by,fingerprint,
-             started_receipt_id,delivery_revision,field_parent_version_id,observed_revision)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+             version_id,digest,status,lesson,feedback,submitted_by,
+             started_receipt_id,field_parent_version_id,observed_revision)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          ON CONFLICT DO NOTHING",
     )
     .bind(&project)
@@ -823,9 +980,7 @@ async fn submit_outcome(
             .map_err(db)?,
     )
     .bind(&actor.principal)
-    .bind(&fingerprint)
     .bind(outcome.started_receipt_id)
-    .bind(delivery_revision)
     .bind(field_parent)
     .bind(observed_revision)
     .execute(&mut *tx)
@@ -840,8 +995,7 @@ async fn submit_outcome(
     if outcome.lesson.is_some() || outcome.feedback.is_some() {
         corrections::append(&mut tx, &row, &outcome.into(), &actor.principal).await?;
     }
-    tx.commit().await.map_err(db)?;
-    Ok(response)
+    command.finish(tx, response.0).await
 }
 
 async fn work(
@@ -860,40 +1014,90 @@ async fn work(
         &actor.principal,
     )
     .await?;
-    let row = enrollment(&mut tx, &project, integration).await?;
-    let rechecks = if active {
-        corrections::work(&mut tx, &project, integration).await?
-    } else {
-        vec![]
-    };
-    let incident_replays = if active {
-        incident::work(&mut tx, &project, integration).await?
-    } else {
-        vec![]
-    };
-    let field_replays: Vec<Value> = if active {
-        sqlx::query_scalar(
-            "SELECT jsonb_build_object('versionId',v.id,'digest',v.digest,
-                        'baselineRevision',r.parent_revision::text,'outcomeId',required.outcome_id)
-             FROM connected_learning_rounds r
-             JOIN versions v ON v.id=r.candidate_version_id
-             CROSS JOIN LATERAL connected_field_requirements(r.project_id,r.integration_id,v.id,r.parent_revision) required
-             WHERE (r.project_id,r.integration_id)=($1,$2) AND r.state IN ('development','audit','awaiting_review')
-               AND required.replay IS NULL
-             ORDER BY required.sequence LIMIT 50")
-            .bind(&project).bind(integration).fetch_all(&mut *tx).await.map_err(db)?
-    } else {
-        vec![]
-    };
+    let row = enrollment(&mut tx, &project, integration, true).await?;
+    let mut rechecks = Vec::new();
+    let mut incident_replays = Vec::new();
+    let mut field_replays = Vec::new();
+    if active {
+        sqlx::query(
+            "INSERT INTO connected_learning_replay_obligations
+            (project_id,integration_id,bundle_id,correction_id,version_id,baseline_revision)
+            SELECT project_id,integration_id,bundle_id,correction_id,version_id,revision
+            FROM connected_learning_correction_work
+            WHERE (project_id,integration_id)=($1,$2) AND action='recheck'
+            ORDER BY queued_at,correction_id LIMIT 100
+            ON CONFLICT DO NOTHING",
+        )
+        .bind(&project)
+        .bind(integration)
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
+        sqlx::query("INSERT INTO connected_learning_replay_obligations
+            (project_id,integration_id,bundle_id,regression_sequence,version_id,baseline_revision)
+            SELECT r.project_id,r.integration_id,r.bundle_id,q.sequence,COALESCE(r.release_candidate_id,r.candidate_version_id),r.parent_revision
+            FROM connected_learning_rounds r
+            CROSS JOIN LATERAL connected_field_requirements(r.project_id,r.integration_id,COALESCE(r.release_candidate_id,r.candidate_version_id),r.parent_revision) q
+            WHERE (r.project_id,r.integration_id)=($1,$2) AND r.state IN ('development','audit','awaiting_review')
+            AND q.replay IS NULL ON CONFLICT DO NOTHING")
+            .bind(&project).bind(integration).execute(&mut *tx).await.map_err(db)?;
+        let replays: Vec<(String, Value)> =
+            sqlx::query_as(include_str!("connected_learning/replay_work.sql"))
+                .bind(&project)
+                .bind(integration)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(db)?;
+        for (kind, payload) in replays {
+            match kind.as_str() {
+                "correction" => rechecks.push(payload),
+                "incident" => incident_replays.push(payload),
+                "field" => field_replays.push(payload),
+                _ => return Err(db("Invalid replay work kind")),
+            }
+        }
+    }
     let items: Vec<Value> = if active {
-        sqlx::query_scalar("SELECT jsonb_build_object('roundId',r.id,'evaluationRequestId',e.id,'phase', CASE WHEN e.id=r.audit_request_id THEN 'audit' ELSE 'development' END,'status',e.status) FROM connected_learning_rounds r JOIN connected_learning_enrollments enrollment ON (enrollment.project_id,enrollment.integration_id)=(r.project_id,r.integration_id) JOIN evaluation_requests e ON e.project_id=r.project_id AND e.bundle_id=r.bundle_id AND e.id=CASE r.state WHEN 'audit' THEN r.audit_request_id WHEN 'development' THEN r.development_request_id END WHERE r.project_id=$1 AND r.integration_id=$2 AND e.status IN ('requested','running') AND (r.state <> 'audit' OR connected_learning_audit_registered(r.project_id,r.bundle_id,r.integration_id,r.audit_index,enrollment.audits->r.audit_index)) ORDER BY r.created_at,r.id LIMIT 100")
+        sqlx::query_scalar("SELECT payload FROM (
+            SELECT jsonb_build_object('roundId',NULL,'evaluationRequestId',e.id,'phase','calibration','status',e.status) AS payload
+            FROM connected_learning_policy_epochs p
+            JOIN connected_learning_enrollments l ON (l.project_id,l.integration_id,l.policy_epoch)=(p.project_id,p.integration_id,p.epoch)
+            JOIN evaluation_requests e ON e.id=p.calibration_request_id
+            WHERE (p.project_id,p.integration_id)=($1,$2) AND e.status IN ('requested','running')
+            UNION ALL
+            SELECT jsonb_build_object('roundId',r.id,'evaluationRequestId',e.id,
+                'phase',CASE WHEN e.id=r.audit_request_id THEN 'audit' ELSE 'development' END,
+                'cumulative',r.cumulative_request_id IS NOT NULL,'status',e.status,
+                'cachedParent',registration.payload)
+            FROM connected_learning_rounds r JOIN evaluation_requests e
+              ON (e.project_id,e.bundle_id)=(r.project_id,r.bundle_id)
+              AND e.id=CASE r.state WHEN 'audit' THEN r.audit_request_id
+                  WHEN 'development' THEN COALESCE(r.cumulative_request_id,r.development_request_id) END
+            LEFT JOIN LATERAL (
+                SELECT jsonb_build_object('comparisonId',c.id,'results',(
+                    SELECT jsonb_agg(jsonb_build_object('caseId',pair->'caseId','repetition',pair->'repetition',
+                        'parent',pair->e.parent_source_arm))
+                    FROM jsonb_array_elements(c.body->'results') pair
+                )) AS payload
+                FROM comparisons c WHERE c.id=e.parent_source_comparison_id
+                AND COALESCE(e.started_at,CURRENT_TIMESTAMP) < e.parent_source_expires_at
+                AND NOT EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(c.body->'results') pair
+                    WHERE jsonb_typeof(pair->e.parent_source_arm->'reward') IS DISTINCT FROM 'number'
+                       OR pair->e.parent_source_arm->>'executionStatus'='infrastructure_failed'
+                )
+            ) registration ON true
+            WHERE (r.project_id,r.integration_id)=($1,$2) AND e.status IN ('requested','running')
+  ) assigned LIMIT 100")
             .bind(project).bind(integration).fetch_all(&mut *tx).await.map_err(db)?
     } else {
         vec![]
     };
-    Ok(Json(
-        json!({"installationId":row.get::<String,_>("installation_id"),"bundleId":row.get::<Uuid,_>("bundle_id"),"active":active,"items":items,"rechecks":rechecks,"fieldReplays":field_replays,"incidentReplays":incident_replays}),
-    ))
+    let response = json!({"installationId":row.get::<String,_>("installation_id"),
+        "bundleId":row.get::<Uuid,_>("bundle_id"),"active":active,"items":items,
+        "rechecks":rechecks,"fieldReplays":field_replays,"incidentReplays":incident_replays});
+    tx.commit().await.map_err(db)?;
+    Ok(Json(response))
 }
 
 // Take the connection lock before the enrollment lock, matching stop and admission.
@@ -906,30 +1110,44 @@ pub(crate) async fn authorize_evaluator(
     starting: bool,
 ) -> ApiResult<()> {
     let round = sqlx::query(
-        "SELECT integration_id,CASE WHEN audit_request_id=$3 THEN audit_index END AS audit_index,CASE WHEN audit_request_id=$3 THEN 'audit' ELSE 'development' END AS phase FROM connected_learning_rounds WHERE project_id=$1 AND bundle_id=$2 AND (development_request_id=$3 OR audit_request_id=$3)",
+        "SELECT integration_id,CASE WHEN audit_request_id=$3 THEN 'audit' ELSE 'development' END AS phase FROM connected_learning_rounds WHERE project_id=$1 AND bundle_id=$2 AND $3 IN (development_request_id,cumulative_request_id,audit_request_id)
+         UNION ALL
+         SELECT p.integration_id,'calibration' FROM connected_learning_policy_epochs p
+         JOIN connected_learning_enrollments e USING(project_id,integration_id)
+         WHERE (p.project_id,e.bundle_id,p.calibration_request_id)=($1,$2,$3)",
     )
     .bind(project).bind(bundle).bind(evaluation).fetch_optional(&mut **tx).await.map_err(db)?;
     let Some(round) = round else {
         return Ok(());
     };
     let integration = round.get("integration_id");
-    let row = enrollment(tx, project, integration).await?;
+    let row = enrollment(tx, project, integration, true).await?;
     if row.get::<String, _>("evaluator_principal") != principal {
         return Err(denied());
-    }
-    if let Some(index) = round.get::<Option<i32>, _>("audit_index")
-        && !epochs::audit_is_fresh(tx, project, bundle, integration, index).await?
-    {
-        return Err(conflict("Audit cohort is not independently registered"));
     }
     if starting {
         let active: bool = sqlx::query_scalar("SELECT stopped_at IS NULL FROM connected_learning_enrollments WHERE project_id=$1 AND integration_id=$2 FOR SHARE")
             .bind(project).bind(integration).fetch_one(&mut **tx).await.map_err(db)?;
-        let current: bool = sqlx::query_scalar(
-            "SELECT state=$3 FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 AND (development_request_id=$4 OR audit_request_id=$4)",
+        let phase: String = round.get("phase");
+        let current: bool = if phase == "calibration" {
+            sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM connected_learning_policy_epochs
+                WHERE (project_id,integration_id,epoch,calibration_request_id)=($1,$2,$3,$4))",
+            )
+            .bind(project)
+            .bind(integration)
+            .bind(row.get::<i64, _>("policy_epoch"))
+            .bind(evaluation)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(db)?
+        } else {
+            sqlx::query_scalar(
+            "SELECT state=$3 AND ($3<>'development' OR $4=COALESCE(cumulative_request_id,development_request_id)) FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2 AND $4 IN (development_request_id,cumulative_request_id,audit_request_id)",
         )
-        .bind(project).bind(integration).bind(round.get::<String, _>("phase")).bind(evaluation)
-        .fetch_one(&mut **tx).await.map_err(db)?;
+        .bind(project).bind(integration).bind(phase).bind(evaluation)
+        .fetch_one(&mut **tx).await.map_err(db)?
+        };
         if !active || !current || !row.get::<bool, _>("enabled") {
             return Err(conflict("Learning dispatch is closed"));
         }
@@ -966,4 +1184,30 @@ pub(crate) fn audit_visible(evidence_match: &str, principal: usize, reviewer: us
            AND cl.evaluator_principal <> ${principal}
            AND (NOT ${reviewer} OR cl.outcome_principal = ${principal}))"
     )
+}
+
+pub(crate) async fn descends_from(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    project: &str,
+    bundle: Uuid,
+    candidate: Uuid,
+    baseline: Uuid,
+) -> ApiResult<bool> {
+    sqlx::query_scalar(
+        "WITH RECURSIVE lineage(id) AS (
+            SELECT parent_version_id FROM versions
+            WHERE (project_id,bundle_id,id)=($1,$2,$3)
+            UNION
+            SELECT v.parent_version_id FROM versions v JOIN lineage l ON v.id=l.id
+            WHERE (v.project_id,v.bundle_id)=($1,$2) AND l.id<>$4
+        )
+        SELECT EXISTS(SELECT 1 FROM lineage WHERE id=$4)",
+    )
+    .bind(project)
+    .bind(bundle)
+    .bind(candidate)
+    .bind(baseline)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(db)
 }

@@ -1,3 +1,4 @@
+import { studentTCritical } from './student-t.js';
 import type { Comparison, EvaluationDescriptor } from '../types.js';
 import { addGap, scalarGap, type EvidenceGaps } from './evidence-gaps.js';
 import { validateEvaluationDescriptor, evaluationDescriptorDifferences } from '../validation.js';
@@ -15,7 +16,27 @@ export interface EvaluationPolicyV1 {
   requiredCases: string[];
   maximumCandidateTaskFailures?: number;
   cost?: { maximumCandidateUsd?: number; maximumIncreaseUsd?: number };
+  /** Each matching candidate repetition must meet its oriented reward threshold. */
+  protectedCaseThresholds?: Record<string, number>;
+  /** Savings threshold across the full paired inventory. In v3 this can establish step benefit. */
+  minimumCostSavingsUsd?: number;
+  /** Minimum paired repetitions required for every case in the stage inventory. */
+  minimumRepetitionsPerCase?: number;
 }
+
+export interface EvaluationPolicyV2 extends Omit<EvaluationPolicyV1, 'schemaVersion'> {
+  schemaVersion: 2;
+  nonInferiorityMargin?: number;
+}
+
+export interface EvaluationPolicyV3 extends Omit<EvaluationPolicyV2, 'schemaVersion'> {
+  schemaVersion: 3;
+  stepMargin?: number;
+  auditMode?: 'non-inferiority' | 'superiority';
+  targetEffect?: number;
+}
+
+export type EvaluationPolicy = EvaluationPolicyV1 | EvaluationPolicyV2 | EvaluationPolicyV3;
 
 export interface ExpectedComparisonBinding {
   parentVersionId: string;
@@ -54,12 +75,19 @@ export interface PolicyVerdict {
 }
 
 const requiredPolicyFields = [
-  'schemaVersion', 'id', 'revision', 'metric', 'aggregation', 'minimumMeanImprovement',
-  'maximumCaseRegression', 'requiredCases',
+  'schemaVersion',
+  'id',
+  'revision',
+  'metric',
+  'aggregation',
+  'minimumMeanImprovement',
+  'maximumCaseRegression',
+  'requiredCases',
 ];
 const requiredMetricFields = ['name', 'unit', 'direction'];
 const publicPolicyFields = new Set([
-  ...requiredPolicyFields, ...requiredMetricFields.map(name => 'metric.' + name),
+  ...requiredPolicyFields,
+  ...requiredMetricFields.map((name) => 'metric.' + name),
 ]);
 
 type PolicyErrorCode =
@@ -78,7 +106,10 @@ export class PolicyError extends Error {
     nextAction: 'fix_config';
     missingFields?: string[];
   };
-  constructor(readonly code: PolicyErrorCode, missingFields: string[] = []) {
+  constructor(
+    readonly code: PolicyErrorCode,
+    missingFields: string[] = [],
+  ) {
     super(
       code === 'policy.inventory_incompatible'
         ? 'The policy requires cases absent from the trusted evaluation inventory.'
@@ -94,7 +125,9 @@ export class PolicyError extends Error {
       phase: 'policy',
       executionState: 'finished',
       nextAction: 'fix_config',
-      ...(missingFields.length && { missingFields: missingFields.filter(field => publicPolicyFields.has(field)) }),
+      ...(missingFields.length && {
+        missingFields: missingFields.filter((field) => publicPolicyFields.has(field)),
+      }),
     };
   }
 }
@@ -106,11 +139,14 @@ const record = (value: unknown): value is Record<string, unknown> =>
   [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
   Object.values(Object.getOwnPropertyDescriptors(value)).every((entry) => !entry.get && !entry.set);
 const encoder = new TextEncoder();
-const string = (value: unknown, max = 1024): value is string =>
+const boundedString = (value: unknown, max: number): value is string =>
   typeof value === 'string' &&
-  !!value.trim() &&
   encoder.encode(value).length <= max &&
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
+const string = (value: unknown, max = 1024): value is string =>
+  boundedString(value, max) && !!value.trim();
+const policyString = (value: unknown, max = 1024): value is string =>
+  boundedString(value, max) && /[^\p{White_Space}]/u.test(value);
 const finite = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 const nonnegative = (value: unknown): value is number => finite(value) && value >= 0;
@@ -125,49 +161,91 @@ function invalid(): never {
 export function validateEvaluationPolicy(
   value: unknown,
   expectedDescriptor?: EvaluationDescriptor,
-): EvaluationPolicyV1 {
+): EvaluationPolicy {
   if (!record(value)) invalid();
-  const missing = requiredPolicyFields.filter(key => !own(value, key));
+  const missing = requiredPolicyFields.filter((key) => !own(value, key));
   const metric = value.metric;
   if (record(metric)) {
-    for (const key of requiredMetricFields)
-      if (!own(metric, key)) missing.push('metric.' + key);
+    for (const key of requiredMetricFields) if (!own(metric, key)) missing.push('metric.' + key);
   }
   if (missing.length) throw new PolicyError('policy.invalid', missing);
   if (
-    !fields(value, [...requiredPolicyFields, 'candidateThreshold', 'maximumCandidateTaskFailures', 'cost'], []) ||
-    value.schemaVersion !== 1 ||
-    !string(value.id, 128) ||
-    !string(value.revision) ||
+    !fields(
+      value,
+      [
+        ...requiredPolicyFields,
+        'candidateThreshold',
+        'maximumCandidateTaskFailures',
+        'cost',
+        'protectedCaseThresholds',
+        'minimumCostSavingsUsd',
+        'minimumRepetitionsPerCase',
+        'nonInferiorityMargin',
+        'stepMargin',
+        'auditMode',
+        'targetEffect',
+      ],
+      [],
+    ) ||
+    (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3) ||
+    [value.stepMargin, value.targetEffect].some(
+      (entry) => entry != null && (value.schemaVersion !== 3 || !nonnegative(entry) || entry > 1),
+    ) ||
+    (value.auditMode != null &&
+      (value.schemaVersion !== 3 ||
+        (value.auditMode !== 'non-inferiority' && value.auditMode !== 'superiority'))) ||
+    (value.nonInferiorityMargin != null &&
+      (value.schemaVersion === 1 || !nonnegative(value.nonInferiorityMargin))) ||
+    !policyString(value.id, 128) ||
+    !policyString(value.revision) ||
     value.aggregation !== 'equal-case-means' ||
     !finite(value.minimumMeanImprovement) ||
     !nonnegative(value.maximumCaseRegression) ||
     !record(metric) ||
     !fields(metric, requiredMetricFields, []) ||
-    !string(metric.name, 128) ||
-    !string(metric.unit, 128) ||
+    !policyString(metric.name, 128) ||
+    !policyString(metric.unit, 128) ||
     !['higher', 'lower'].includes(metric.direction as string) ||
     !Array.isArray(value.requiredCases) ||
     value.requiredCases.length > 1000 ||
-    value.requiredCases.some((caseId) => !string(caseId)) ||
+    value.requiredCases.some((caseId) => !policyString(caseId)) ||
     new Set(value.requiredCases).size !== value.requiredCases.length ||
-    (own(value, 'candidateThreshold') && !finite(value.candidateThreshold)) ||
-    (own(value, 'maximumCandidateTaskFailures') &&
+    (value.candidateThreshold != null && !finite(value.candidateThreshold)) ||
+    (value.maximumCandidateTaskFailures != null &&
       (!Number.isSafeInteger(value.maximumCandidateTaskFailures) ||
-        (value.maximumCandidateTaskFailures as number) < 0))
+        (value.maximumCandidateTaskFailures as number) < 0)) ||
+    (value.minimumCostSavingsUsd != null && !nonnegative(value.minimumCostSavingsUsd)) ||
+    (value.minimumRepetitionsPerCase != null &&
+      (!nonnegative(value.minimumRepetitionsPerCase) ||
+        !Number.isInteger(value.minimumRepetitionsPerCase) ||
+        value.minimumRepetitionsPerCase < 1 ||
+        value.minimumRepetitionsPerCase > 1000))
   )
     invalid();
   let cost: EvaluationPolicyV1['cost'];
-  if (own(value, 'cost')) {
+  if (value.cost != null) {
     if (
       !record(value.cost) ||
-      !Object.keys(value.cost).length ||
+      !Object.values(value.cost).some(nonnegative) ||
       !fields(value.cost, ['maximumCandidateUsd', 'maximumIncreaseUsd'], []) ||
-      Object.values(value.cost).some((item) => !nonnegative(item))
+      Object.values(value.cost).some((item) => item != null && !nonnegative(item))
     )
       invalid();
-    cost = { ...value.cost };
+    cost = Object.fromEntries(Object.entries(value.cost).filter(([, amount]) => amount != null));
   }
+  let protectedCaseThresholds: EvaluationPolicyV1['protectedCaseThresholds'];
+  if (own(value, 'protectedCaseThresholds')) {
+    const thresholds = value.protectedCaseThresholds;
+    if (!record(thresholds)) invalid();
+    const entries = Object.entries(thresholds);
+    if (
+      entries.length > 1000 ||
+      entries.some(([id, threshold]) => !policyString(id) || !finite(threshold))
+    )
+      invalid();
+    protectedCaseThresholds = { ...thresholds } as Record<string, number>;
+  }
+  const minimumRepetitions = value.minimumRepetitionsPerCase;
   if (expectedDescriptor !== undefined) {
     let descriptor: EvaluationDescriptor;
     try {
@@ -175,12 +253,34 @@ export function validateEvaluationPolicy(
     } catch {
       return invalid();
     }
-    const caseIds = new Set(descriptor.expectedCases.map((item) => item.caseId));
-    if ((value.requiredCases as string[]).some((caseId) => !caseIds.has(caseId)))
+    const counts = new Map<string, number>();
+    for (const { caseId } of descriptor.expectedCases)
+      counts.set(caseId, (counts.get(caseId) ?? 0) + 1);
+    if (
+      [...value.requiredCases, ...Object.keys(protectedCaseThresholds ?? {})].some(
+        (caseId) => !counts.has(caseId),
+      ) ||
+      (typeof minimumRepetitions === 'number' &&
+        [...counts.values()].some((count) => count < minimumRepetitions))
+    )
       throw new PolicyError('policy.inventory_incompatible');
   }
   return {
-    schemaVersion: 1,
+    ...(value.schemaVersion !== 1
+      ? {
+          schemaVersion: value.schemaVersion,
+          ...(value.schemaVersion === 3 && {
+            ...(typeof value.stepMargin === 'number' && { stepMargin: value.stepMargin }),
+            ...(typeof value.targetEffect === 'number' && { targetEffect: value.targetEffect }),
+            ...(value.auditMode != null && {
+              auditMode: value.auditMode as EvaluationPolicyV3['auditMode'],
+            }),
+          }),
+          ...(typeof value.nonInferiorityMargin === 'number'
+            ? { nonInferiorityMargin: value.nonInferiorityMargin }
+            : {}),
+        }
+      : { schemaVersion: 1 as const }),
     id: value.id as string,
     revision: value.revision as string,
     metric: {
@@ -192,13 +292,22 @@ export function validateEvaluationPolicy(
     minimumMeanImprovement: value.minimumMeanImprovement as number,
     maximumCaseRegression: value.maximumCaseRegression as number,
     requiredCases: [...(value.requiredCases as string[])],
-    ...(own(value, 'candidateThreshold')
+    ...(value.candidateThreshold != null
       ? { candidateThreshold: value.candidateThreshold as number }
       : {}),
-    ...(own(value, 'maximumCandidateTaskFailures')
+    ...(value.maximumCandidateTaskFailures != null
       ? { maximumCandidateTaskFailures: value.maximumCandidateTaskFailures as number }
       : {}),
     ...(cost ? { cost } : {}),
+    ...(protectedCaseThresholds && Object.keys(protectedCaseThresholds).length
+      ? { protectedCaseThresholds }
+      : {}),
+    ...(typeof value.minimumCostSavingsUsd === 'number'
+      ? { minimumCostSavingsUsd: value.minimumCostSavingsUsd }
+      : {}),
+    ...(typeof minimumRepetitions === 'number'
+      ? { minimumRepetitionsPerCase: minimumRepetitions }
+      : {}),
   };
 }
 
@@ -207,7 +316,7 @@ export function parseEvaluationPolicy(
   text: string,
   expectedDescriptor?: EvaluationDescriptor,
 ): {
-  policy: EvaluationPolicyV1;
+  policy: EvaluationPolicy;
   sha256: string;
 } {
   if (typeof text !== 'string' || encoder.encode(text).length > 2 * 1024 * 1024) invalid();
@@ -239,7 +348,7 @@ function strictJson(text: string): unknown {
     }
     throw new Error();
   };
-  const parse = (depth: number): unknown => {
+  const parse = (depth: number, unsignedInteger = false): unknown => {
     if (depth > 32) throw new Error();
     whitespace();
     const first = text[cursor];
@@ -259,7 +368,13 @@ function strictJson(text: string): unknown {
         if (own(object, key)) throw new Error();
         whitespace();
         if (text[cursor++] !== ':') throw new Error();
-        object[key] = parse(depth + 1);
+        object[key] = parse(
+          depth + 1,
+          depth === 0 &&
+            (key === 'schemaVersion' ||
+              key === 'maximumCandidateTaskFailures' ||
+              key === 'minimumRepetitionsPerCase'),
+        );
         whitespace();
         if (text[cursor] === '}') {
           cursor++;
@@ -289,7 +404,8 @@ function strictJson(text: string): unknown {
     const token = /^(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)/.exec(
       text.slice(cursor),
     );
-    if (!token) throw new Error();
+    if (!token || (unsignedInteger && token[0] !== 'null' && !/^\d+$/.test(token[0])))
+      throw new Error();
     cursor += token[0].length;
     return JSON.parse(token[0]);
   };
@@ -375,8 +491,14 @@ export function checkComparison(options: {
   comparison: Comparison;
   expectedDescriptor: EvaluationDescriptor;
   expectedBinding: ExpectedComparisonBinding;
-  policy: EvaluationPolicyV1;
+  policy: EvaluationPolicy;
   policyDigest?: string;
+  stage?: 'development' | 'cumulative' | 'audit';
+  /** Independently attested replay result for the correction targeted by this step. */
+  replayPassed?: boolean;
+  /** Harmonic mean of scored paired repetitions per calibration case. */
+  calibrationEffectiveRepetitions?: number;
+  calibratedStandardDeviation?: number;
 }): PolicyVerdict {
   let descriptor: EvaluationDescriptor;
   try {
@@ -385,6 +507,11 @@ export function checkComparison(options: {
     return invalid();
   }
   const policy = validateEvaluationPolicy(options.policy, descriptor);
+  const confidenceGate =
+    policy.schemaVersion !== 1 ||
+    options.stage !== undefined ||
+    policy.id === 'connected-development' ||
+    policy.id === 'connected-audit';
   const binding = options.expectedBinding;
   if (
     !record(binding) ||
@@ -596,10 +723,32 @@ export function checkComparison(options: {
     ).length;
     result.summary[side === 'parent' ? 'parentUnknownCosts' : 'candidateUnknownCosts'] = unknown;
   }
-  result.summary.candidateTaskFailures = ordered.filter(
-    (item) => pairs.get(key(item))?.candidate.executionStatus === 'task_failed',
-  ).length;
-  if (comparable.length !== ordered.length) {
+  const protectedCase = (id: string) =>
+    policy.requiredCases.includes(id) || own(policy.protectedCaseThresholds ?? {}, id);
+  result.summary.candidateTaskFailures = ordered.filter((item) => {
+    const outcome = pairs.get(key(item))?.candidate;
+    return (
+      outcome &&
+      (confidenceGate
+        ? protectedCase(item.caseId) &&
+          (outcome.executionStatus === 'task_failed' ||
+            outcome.executionStatus === 'infrastructure_failed' ||
+            !finite(outcome.reward))
+        : outcome.executionStatus === 'task_failed')
+    );
+  }).length;
+  const missingOverCap = (['parent', 'candidate'] as const).some(
+    (side) =>
+      ordered.filter((item) => {
+        const outcome = pairs.get(key(item))?.[side];
+        return (
+          !outcome || outcome.executionStatus === 'infrastructure_failed' || !finite(outcome.reward)
+        );
+      }).length *
+        100 >
+      ordered.length * (confidenceGate ? 15 : 0),
+  );
+  if (pairs.size !== ordered.length || missingOverCap) {
     result.checks.push({ code: 'evidence.incomplete', result: 'unknown' });
     return result;
   }
@@ -638,12 +787,47 @@ export function checkComparison(options: {
       candidateMeans: number[] = [],
       improvements: number[] = [];
     const orientation = policy.metric.direction === 'higher' ? 1 : -1;
-    for (const rows of groups.values()) {
-      const parent = mean(rows.map((pair) => pair.parent.reward!));
-      const candidate = mean(rows.map((pair) => pair.candidate.reward!));
+    const scored = (outcome: Comparison['results'][number]['parent']) =>
+      outcome.executionStatus === 'infrastructure_failed' ? null : outcome.reward;
+    let minimum = Infinity;
+    let maximum = -Infinity;
+    for (const pair of pairs.values()) {
+      for (const outcome of [pair.parent, pair.candidate]) {
+        const reward = scored(outcome);
+        if (reward !== null) {
+          minimum = Math.min(minimum, reward);
+          maximum = Math.max(maximum, reward);
+        }
+      }
+    }
+    if (confidenceGate && (minimum < 0 || maximum > 1)) {
+      result.checks.push({ code: 'evidence.reward_out_of_range', result: 'fail' });
+      result.code = 'policy.fail';
+      result.verdict = 'fail';
+      return result;
+    }
+    const worstReward = orientation > 0 ? minimum : maximum;
+    const bestReward = orientation > 0 ? maximum : minimum;
+    let protectedRegression = 0;
+    for (const [id, rows] of groups) {
+      const parent = mean(rows.map((pair) => scored(pair.parent) ?? bestReward));
+      const candidate = mean(rows.map((pair) => scored(pair.candidate) ?? worstReward));
+      const gain = arithmetic(orientation * arithmetic(candidate - parent));
       parentMeans.push(parent);
       candidateMeans.push(candidate);
-      improvements.push(arithmetic(orientation * arithmetic(candidate - parent)));
+      improvements.push(gain);
+      if (protectedCase(id)) protectedRegression = Math.max(protectedRegression, -gain);
+      const thresholds = policy.protectedCaseThresholds ?? {};
+      if (own(thresholds, id))
+        check(
+          'policy.protected_case_threshold',
+          rows.every(
+            ({ candidate: outcome }) =>
+              outcome.executionStatus === 'completed' &&
+              outcome.reward !== null &&
+              orientation * outcome.reward >= orientation * thresholds[id],
+          ),
+        );
     }
     const parentMean = mean(parentMeans),
       candidateMean = mean(candidateMeans),
@@ -653,8 +837,43 @@ export function checkComparison(options: {
     result.summary.candidateMean = candidateMean;
     result.summary.orientedMeanImprovement = improvement;
     result.summary.worstCaseRegression = worstRegression;
-    check('policy.minimum_mean_improvement', improvement >= policy.minimumMeanImprovement);
-    check('policy.maximum_case_regression', worstRegression <= policy.maximumCaseRegression);
+    const stage = options.stage ?? (policy.id === 'connected-audit' ? 'audit' : 'development');
+    const audit = stage === 'audit';
+    const modern = policy.schemaVersion === 3;
+    const threshold =
+      audit && (!modern || policy.auditMode !== 'superiority')
+        ? -(policy.schemaVersion === 1 ? 0 : (policy.nonInferiorityMargin ?? (modern ? 0.03 : 0)))
+        : modern && stage === 'development'
+          ? -(policy.stepMargin ?? 0.03)
+          : policy.minimumMeanImprovement;
+    const variance =
+      total(improvements.map((gain) => (gain - improvement) ** 2)) /
+      Math.max(1, improvements.length - 1);
+    let calibrated = options.calibratedStandardDeviation ?? 0;
+    if (!nonnegative(calibrated)) throw new RangeError();
+    if (options.calibrationEffectiveRepetitions !== undefined) {
+      if (!nonnegative(options.calibrationEffectiveRepetitions)) throw new RangeError();
+      const inverseRepetitions = total([...groups.values()].map((rows) => 1 / rows.length));
+      const evaluated = groups.size / inverseRepetitions;
+      calibrated *= Math.sqrt(options.calibrationEffectiveRepetitions / evaluated);
+    }
+    const bound =
+      improvements.length < 2
+        ? -Infinity
+        : improvement -
+          (studentTCritical(improvements.length, audit) *
+            Math.max(Math.sqrt(variance), calibrated)) /
+            Math.sqrt(improvements.length);
+    check(
+      'policy.minimum_mean_improvement',
+      confidenceGate
+        ? Number.isFinite(bound) && bound > threshold
+        : improvement >= policy.minimumMeanImprovement,
+    );
+    check(
+      'policy.maximum_case_regression',
+      (confidenceGate ? protectedRegression : worstRegression) <= policy.maximumCaseRegression,
+    );
     if (policy.candidateThreshold !== undefined)
       check(
         'policy.candidate_threshold',
@@ -692,6 +911,25 @@ export function checkComparison(options: {
         check(
           'policy.maximum_cost_increase',
           result.summary.costIncreaseUsd <= policy.cost.maximumIncreaseUsd,
+        );
+    }
+    if (modern && stage === 'development' && improvement <= 0 && options.replayPassed !== true) {
+      const increase = result.summary.costIncreaseUsd;
+      check(
+        'policy.development_benefit',
+        policy.cost !== undefined &&
+          increase !== null &&
+          increase < 0 &&
+          -increase >= (policy.minimumCostSavingsUsd ?? 0),
+      );
+    }
+    if (!modern && policy.minimumCostSavingsUsd !== undefined) {
+      if (result.summary.costIncreaseUsd === null)
+        result.checks.push({ code: 'cost.unknown', result: 'unknown' });
+      else
+        check(
+          'policy.minimum_cost_savings',
+          -result.summary.costIncreaseUsd >= policy.minimumCostSavingsUsd,
         );
     }
   } catch {

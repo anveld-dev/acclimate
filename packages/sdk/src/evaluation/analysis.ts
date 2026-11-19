@@ -12,6 +12,21 @@ export interface AnalysisMetric {
   direction: 'higher' | 'lower';
   source: 'reward' | 'component';
 }
+/**
+ * The analysis metric for a policy metric: the scalar reward, or the named grade component the
+ * policy gates on. Scale and other policy-only fields stay with the policy.
+ */
+export function policyAnalysisMetric(metric: {
+  name: string;
+  unit: string;
+  direction: 'higher' | 'lower';
+  component?: string;
+}): AnalysisMetric {
+  const { name, unit, direction } = metric;
+  return metric.component
+    ? { id: metric.component, name, unit, direction, source: 'component' }
+    : { id: 'reward', name, unit, direction, source: 'reward' };
+}
 export interface ComponentObservation {
   requestId: string;
   attemptId: string;
@@ -310,7 +325,9 @@ export function analyzeComparison(options: AnalysisOptions): ComparisonAnalysis 
         const value =
           metric.source === 'reward'
             ? outcome.reward
-            : observed.get(key(row.caseId, row.repetition, side))?.values[metric.id];
+            : // A side observation wins; otherwise read the component recorded on the outcome.
+              (observed.get(key(row.caseId, row.repetition, side))?.values[metric.id] ??
+              outcome.components?.[metric.id]);
         if (typeof value === 'number' && !Number.isFinite(value)) nonfinite = true;
         if (finite(value)) return value;
         addGap(gaps, row, side, 'metric', 'missing_component');

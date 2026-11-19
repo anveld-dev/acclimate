@@ -203,6 +203,8 @@ export interface Outcome {
   outputRef: string | null;
   error: string | null;
   usage: Usage | null;
+  /** Optional named numeric grade components, such as correctness. Present only on scored arms. */
+  components?: Record<string, number>;
 }
 export interface CasePair extends CaseKey {
   parent: Outcome;

@@ -158,6 +158,10 @@ class GradeResult:
     reward: float
     error: str | None = None
     explanation: Any = None
+    #: Named numeric grade components, such as ``{"correctness": 1, "citations": 0.5}``. They travel
+    #: with the outcome; a policy can gate on one with ``metric.component``. At most 32 names of
+    #: 1-64 letters, digits, ``_``, ``-``, ``.`` or ``:``, each a finite number.
+    components: dict[str, float] | None = None
 
 
 class PreflightCheck(TypedDict, total=False):

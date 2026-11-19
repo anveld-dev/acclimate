@@ -177,7 +177,7 @@ The execute callback receives the case `input`, `caseId`, `repetition`, a cancel
 | `run.skillFiles` | `run.skill_files` | Skill files. |
 | `run.memoryFiles` | `run.memory_files` | Memory files. |
 
-Return `{ output, executionStatus?, outputRef?, usage? }` (Python `ExecutionResult`). `output` must be plain JSON. Convert a `Date` with `toISOString()` (Python `isoformat()`). TypeScript reports a non-JSON output type at compile time, naming the field. `usage` accepts `inputTokens`, `outputTokens` and `costUsd`. Python also maps `input_tokens`, `output_tokens` and `cost_usd`. Any other key marks the output invalid.
+Return `{ output, executionStatus?, outputRef?, usage? }` (Python `ExecutionResult`). `grade` returns `{ reward, explanation?, components? }` (Python `GradeResult`). `components` holds up to 32 named finite numbers, such as `{ correctness: 1, citations: 0.5 }`; they travel with the outcome, and a policy can gate on one with `metric.component`. `output` must be plain JSON. Convert a `Date` with `toISOString()` (Python `isoformat()`). TypeScript reports a non-JSON output type at compile time, naming the field. `usage` accepts `inputTokens`, `outputTokens` and `costUsd`. Python also maps `input_tokens`, `output_tokens` and `cost_usd`. Any other key marks the output invalid.
 
 ## Errors and exit codes
 

@@ -8872,6 +8872,17 @@
                 "type": "null"
               }
             ]
+          },
+          "components": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^[A-Za-z0-9_.:-]{1,64}$"
+            },
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Optional named numeric grade components on a scored outcome, such as correctness. A quality policy can gate on one with metric.component. Omitted when the grader reports none."
           }
         },
         "required": [

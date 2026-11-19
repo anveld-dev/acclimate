@@ -300,11 +300,11 @@ def run_local_comparison(*, app, parent: dict, candidate: dict, directory: str |
 
 def score_local_comparison(result: dict, policy_text: str | None = None) -> dict:
     """Score a local comparison and, when supplied, apply a policy as advice only."""
-    from .evaluation_analysis import analyze_comparison
+    from .evaluation_analysis import analyze_comparison, policy_analysis_metric
     from .evaluation_policy import check_comparison, parse_evaluation_policy
     policy = None if policy_text is None else parse_evaluation_policy(policy_text, result["descriptor"])
     evidence = dict(comparison=result["comparison"], expected_descriptor=result["descriptor"], expected_binding=result["binding"])
-    metrics = [{**policy["policy"]["metric"], "source": "reward", "id": "reward"}] if policy else None
+    metrics = [policy_analysis_metric(policy["policy"]["metric"])] if policy else None
     metric = analyze_comparison(**evidence, metrics=metrics)["metrics"][0]
     scores = {key: metric[key] for key in ("counts", "summary", "cases")}
     if "evidenceGaps" in metric:

@@ -150,6 +150,9 @@ class Outcome(TypedDict):
     outputRef: str | None
     error: str | None
     usage: Usage | None
+    #: Optional named numeric grade components on a scored outcome. A policy can gate on one
+    #: with ``metric.component``.
+    components: NotRequired[dict[str, float]]
 
 
 class CasePair(CaseKey):

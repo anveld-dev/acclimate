@@ -24,7 +24,7 @@ from ._evaluation_cli_intents import (
     assert_settled_predecessor, create_request_from_intent, interrupt_from_intent, read_command_bytes,
     read_command_json,
 )
-from .evaluation_analysis import analyze_comparison
+from .evaluation_analysis import analyze_comparison, policy_analysis_metric
 from ._evaluation_policy_receipt import record_policy_receipt
 from .evaluation_policy import check_comparison, parse_evaluation_policy
 from .evaluation_plan import PLAN_USAGE, plan_command, policy_readiness
@@ -480,7 +480,7 @@ def _dispatch(app, command, flags, review, cwd=None):
             if result.get("comparison") and all(evaluation.get(key) for key in ("attemptId", "comparisonId", "evaluatorPrincipal")):
                 evidence = dict(comparison=result["comparison"], expected_descriptor=app.descriptor,
                                 expected_binding=_comparison_binding(evaluation))
-                metrics = [{**policy["policy"]["metric"], "source": "reward", "id": "reward"}] if policy else None
+                metrics = [policy_analysis_metric(policy["policy"]["metric"])] if policy else None
                 metric = analyze_comparison(**evidence, metrics=metrics)["metrics"][0]
                 scores = {key: metric[key] for key in ("counts", "summary", "cases")}
                 if "evidenceGaps" in metric:

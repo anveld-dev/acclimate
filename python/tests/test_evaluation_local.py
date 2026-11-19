@@ -118,6 +118,29 @@ class PayloadTests(LocalTestCase):
 
 
 class LocalComparisonTests(LocalTestCase):
+    def test_named_grade_components_travel_with_outcomes_and_a_policy_can_gate_on_one(self):
+        cases = [Case(f"c{index}", index, index) for index in range(4)]
+
+        def grade(run):
+            # The scalar reward ignores politeness; the named component measures it.
+            return GradeResult(1, components={"politeness": 1 if run.output["polite"] else 0, "rubric.length": 0.5})
+        app = make_app(execute=lambda run: ExecutionResult({"polite": sees_polite(run)}), grade=grade, cases=cases)
+        result = self.run_local(app)
+        first = result["comparison"]["results"][0]
+        self.assertEqual(first["parent"]["components"], {"politeness": 0.0, "rubric.length": 0.5})
+        self.assertEqual(first["candidate"]["components"], {"politeness": 1.0, "rubric.length": 0.5})
+        base = {"schemaVersion": 1, "id": "polite", "revision": "1",
+                "metric": {"name": "reward", "unit": "reward", "direction": "higher"},
+                "aggregation": "equal-case-means", "minimumMeanImprovement": 0.5, "maximumCaseRegression": 0,
+                "requiredCases": [], "inference": {"method": "none"}}
+        self.assertEqual(score_local_comparison(result, json.dumps(base))["policy"]["verdict"], "fail")
+        component = {**base, "metric": {**base["metric"], "component": "politeness"}}
+        self.assertEqual(score_local_comparison(result, json.dumps(component))["policy"]["verdict"], "pass")
+        absent = {**base, "minimumMeanImprovement": 0, "metric": {**base["metric"], "component": "absent"}}
+        self.assertEqual(score_local_comparison(result, json.dumps(absent))["policy"]["verdict"], "indeterminate")
+        bad = self.run_local(make_app(grade=lambda run: GradeResult(1, components={"bad name": 1})), name="bad")
+        self.assertEqual(bad["comparison"]["results"][0]["parent"]["gradingStatus"], "failed")
+
     def test_uncertain_execute_fails_one_arm_in_local_runs_too(self):
         calls = []
 

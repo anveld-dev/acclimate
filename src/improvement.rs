@@ -45,6 +45,20 @@ pub fn validate_comparison(q: &ComparisonRequest) -> Result<bool, String> {
             {
                 return Err("Invalid usage cost".into());
             }
+            if let Some(components) = &o.components
+                && (o.grading_status != "scored"
+                    || components.len() > 32
+                    || components.iter().any(|(name, value)| {
+                        !value.is_finite()
+                            || name.is_empty()
+                            || name.len() > 64
+                            || !name.bytes().all(|b| {
+                                b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b':')
+                            })
+                    }))
+            {
+                return Err("Invalid grade components".into());
+            }
         }
     }
     use crate::connected_learning::statistics::{MAX_MISSING_PERCENT, scored_reward};

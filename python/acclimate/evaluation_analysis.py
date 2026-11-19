@@ -170,6 +170,14 @@ def _mean(values: list[float]) -> float:
     return _arithmetic(total / len(values))
 
 
+def policy_analysis_metric(metric: dict) -> dict:
+    """The analysis metric for a policy metric: the scalar reward, or the named grade component it gates on."""
+    base = {key: metric[key] for key in ("name", "unit", "direction")}
+    if metric.get("component"):
+        return {**base, "id": metric["component"], "source": "component"}
+    return {**base, "id": "reward", "source": "reward"}
+
+
 def analyze_comparison(*, comparison: Comparison, expected_descriptor: EvaluationDescriptor,
                        expected_binding: AnalysisComparisonBinding,
                        metrics: list[AnalysisMetric] | None = None,
@@ -256,8 +264,13 @@ def analyze_comparison(*, comparison: Comparison, expected_descriptor: Evaluatio
                         nonfinite = True
                     values.append(None)
                     continue
-                value = outcome["reward"] if metric["source"] == "reward" else observed.get(
-                    (row["caseId"], row["repetition"], side), {}).get("values", {}).get(metric["id"])
+                if metric["source"] == "reward":
+                    value = outcome["reward"]
+                else:
+                    # A side observation wins; otherwise read the component recorded on the outcome.
+                    value = observed.get((row["caseId"], row["repetition"], side), {}).get("values", {}).get(metric["id"])
+                    if value is None:
+                        value = (outcome.get("components") or {}).get(metric["id"])
                 if type(value) in (int, float) and not _finite(value):
                     nonfinite = True
                 if not _finite(value):

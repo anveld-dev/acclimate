@@ -1,7 +1,7 @@
 import { lstat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
-import { analyzeComparison, type MetricAnalysis } from './analysis.js';
+import { analyzeComparison, policyAnalysisMetric, type MetricAnalysis } from './analysis.js';
 import { recordPolicyReceipt } from './policy-receipt.js';
 import { AcclimateClient } from '../client.js';
 import type {
@@ -784,7 +784,7 @@ async function dispatch(
           const metric = policy?.policy.metric;
           const [analysis] = analyzeComparison({
             ...evidence,
-            metrics: metric ? [{ ...metric, source: 'reward', id: 'reward' }] : undefined,
+            metrics: metric ? [policyAnalysisMetric(metric)] : undefined,
           }).metrics;
           scores = {
             counts: analysis.counts,

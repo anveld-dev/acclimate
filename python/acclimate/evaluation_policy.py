@@ -343,7 +343,9 @@ def validate_evaluation_policy(value: Any, expected_descriptor: dict | None = No
         or value["aggregation"] != "equal-case-means"
         or not _finite(value["minimumMeanImprovement"]) or not _nonnegative(value["maximumCaseRegression"])
         or not _record(metric)
-        or not _fields(metric, ["name", "unit", "direction", "scale"], ["name", "unit", "direction"])
+        or not _fields(metric, ["name", "unit", "direction", "scale", "component"], ["name", "unit", "direction"])
+        or ("component" in metric and (not isinstance(metric["component"], str)
+                                       or not _COMPONENT_NAME.fullmatch(metric["component"])))
         or not _string(metric["name"], 128) or not _string(metric["unit"], 128)
         or metric["direction"] not in ("higher", "lower")
         or ("scale" in metric and (
@@ -404,6 +406,8 @@ def validate_evaluation_policy(value: Any, expected_descriptor: dict | None = No
     result_metric = {"name": metric["name"], "unit": metric["unit"], "direction": metric["direction"]}
     if "scale" in metric:
         result_metric["scale"] = {"minimum": metric["scale"]["minimum"], "maximum": metric["scale"]["maximum"]}
+    if "component" in metric:
+        result_metric["component"] = metric["component"]
     result.update({
         "id": value["id"], "revision": value["revision"], "metric": result_metric,
         "aggregation": "equal-case-means",
@@ -473,6 +477,25 @@ def parse_evaluation_policy(text: str, expected_descriptor: dict | None = None, 
             "sha256": "sha256:" + hashlib.sha256(encoded).hexdigest()}
 
 
+#: Names of grade components on the wire, such as ``correctness`` or ``rubric.citations``.
+_COMPONENT_NAME = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
+
+
+def _component_pair(pair: dict, component: str) -> dict:
+    """Read a named grade component as the pair's metric without changing the input.
+
+    A scored arm without the component becomes missing evidence (``missing_component``).
+    """
+    def arm(outcome):
+        if outcome["gradingStatus"] != "scored":
+            return outcome
+        value = (outcome.get("components") or {}).get(component)
+        if _finite(value):
+            return {**outcome, "reward": value}
+        return {**outcome, "gradingStatus": "missing", "reward": None, "error": "missing_component"}
+    return {**pair, "parent": arm(pair["parent"]), "candidate": arm(pair["candidate"])}
+
+
 def check_comparison(*, comparison: dict, expected_descriptor: dict,
                      expected_binding: ExpectedComparisonBinding, policy: EvaluationPolicyV1,
                      policy_digest: str | None = None,
@@ -540,8 +563,13 @@ def check_comparison(*, comparison: dict, expected_descriptor: dict,
             raise PolicyError("evidence.malformed")
         for outcome in (pair["parent"], pair["candidate"]):
             if (not _record(outcome)
-                or not _fields(outcome, ["executionStatus", "gradingStatus", "reward", "outputRef", "error", "usage"],
+                or not _fields(outcome, ["executionStatus", "gradingStatus", "reward", "outputRef", "error", "usage", "components"],
                                ["executionStatus", "gradingStatus", "reward", "outputRef", "error", "usage"])
+                or ("components" in outcome and (
+                    not _record(outcome["components"]) or outcome["gradingStatus"] != "scored"
+                    or len(outcome["components"]) > 32
+                    or not all(isinstance(name, str) and _COMPONENT_NAME.fullmatch(name) and _finite(item)
+                               for name, item in outcome["components"].items())))
                 or outcome["executionStatus"] not in ("completed", "task_failed", "infrastructure_failed")
                 or outcome["gradingStatus"] not in ("scored", "missing", "failed")
                 or (outcome["reward"] is not None and type(outcome["reward"]) not in (int, float))
@@ -553,7 +581,7 @@ def check_comparison(*, comparison: dict, expected_descriptor: dict,
                 raise PolicyError("evidence.malformed")
             if outcome["gradingStatus"] != "scored" and outcome["reward"] is not None:
                 raise PolicyError("evidence.malformed")
-        pairs[key] = pair
+        pairs[key] = _component_pair(pair, policy["metric"]["component"]) if policy["metric"].get("component") else pair
     ordered = sorted(expected, key=lambda item: (item[0].encode("utf-8"), item[1]))
 
     def usable(outcome) -> bool:

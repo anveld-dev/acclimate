@@ -17,7 +17,7 @@ Install `@acclimate/sdk` with Node.js 22.22 or later. See [install the SDKs](/do
 | `@acclimate/sdk/evaluation` (run controls) | `runEvaluation` accepts `controls` for a deadline, case timeout, cost limit, case selection and progress. `parseDuration`, `parseSelection`, `progressLine` and `runWarnings` parse and render them as the CLI does. |
 | `@acclimate/sdk/evaluation/policy` | `checkComparison`, `parseEvaluationPolicy`, `validateEvaluationPolicy`, `PolicyError`, `defaultInference`, `resolveInference`, `describePolicyInference`, `formatStatistic`, `connectedPolicyDefaults`, `reservedPolicyIds` |
 | `@acclimate/sdk/evaluation/artifacts` | `exportReviewEvidence`, `verifyReviewExport`, `parseArtifactSelection`, `validateArtifactSelection` |
-| `@acclimate/sdk/evaluation/analysis` | `analyzeComparison`, `AnalysisError`, `minimumBootstrapRepetitions` |
+| `@acclimate/sdk/evaluation/analysis` | `analyzeComparison`, `AnalysisError`, `minimumBootstrapRepetitions`, and `policyAnalysisMetric`, which maps a policy metric (including `metric.component`) to an analysis metric |
 | `@acclimate/sdk/evaluation/manifest` | `createEvaluationManifest`, `restoreEvaluationManifest`, `canonicalEvaluationJson` |
 | `@acclimate/sdk/evaluation/progress` | `createEvaluationProgressReporter` |
 | `@acclimate/sdk/evaluation/cli` | `evaluationMain`, `evaluationReadMain`, `evaluationCheckMain`, `parseEvaluatorArguments`, `reportEvaluatorError`, `comparisonText`, `verboseRequested`, `sdkVersion`, `EVALUATOR_COMMANDS`, `ADAPTER_FREE_COMMANDS` |

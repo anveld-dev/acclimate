@@ -4,7 +4,7 @@ import path from 'node:path';
 import { TaskExecutionError } from '../compare.js';
 import type { BundleFile, BundlePayload, Comparison, ComparisonRequest, EvaluationDescriptor, VerifiedVersion } from '../types.js';
 import { DeliveryError, validatePayload } from '../validation.js';
-import { analyzeComparison, type MetricAnalysis } from './analysis.js';
+import { analyzeComparison, policyAnalysisMetric, type MetricAnalysis } from './analysis.js';
 import { parseCommandJson } from './cli-intents.js';
 import type { CaseSelection, RunControls, RunSummary } from './controls.js';
 import { runWarnings, selectedCaseIds } from './controls.js';
@@ -432,7 +432,7 @@ export function scoreLocalComparison(
   const metric = policy?.policy.metric;
   const [analysis] = analyzeComparison({
     ...evidence,
-    metrics: metric ? [{ ...metric, source: 'reward', id: 'reward' }] : undefined,
+    metrics: metric ? [policyAnalysisMetric(metric)] : undefined,
   }).metrics;
   const scores: LocalScores = {
     counts: analysis.counts,

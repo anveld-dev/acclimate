@@ -598,3 +598,57 @@ test('run-control flags parse strictly and stay off other commands', () => {
     /not both/,
   );
 });
+
+test('named grade components travel with outcomes and a policy can gate on one', async () => {
+  const w = await workspace();
+  try {
+    const cases = Array.from({ length: 4 }, (_, index) => ({ caseId: 'c' + index, input: index, expected: index }));
+    const app = defineEvaluation<number, number, { polite: boolean }>({
+      ...(definition() as any),
+      cases,
+      execute: async ({ bundle }: { bundle: VerifiedVersion }) => ({
+        output: { polite: bundle.payload.files[0].text.includes('polite') },
+      }),
+      // The scalar reward ignores politeness; the named component measures it.
+      grade: async ({ output }: { output: { polite: boolean } }) => ({
+        reward: 1,
+        components: { politeness: output.polite ? 1 : 0, 'rubric.length': 0.5 },
+      }),
+    });
+    const result = await runLocalComparison({
+      app,
+      parent: parentPayload,
+      candidate: candidatePayload,
+      directory: w.run,
+    });
+    const first = result.comparison.results[0];
+    assert.deepEqual(first.parent.components, { politeness: 0, 'rubric.length': 0.5 });
+    assert.deepEqual(first.candidate.components, { politeness: 1, 'rubric.length': 0.5 });
+    const base = JSON.parse(policy);
+    const onReward = scoreLocalComparison(result, JSON.stringify({ ...base, minimumMeanImprovement: 0.5 }));
+    assert.equal(onReward.policy!.verdict, 'fail');
+    const onComponent = scoreLocalComparison(
+      result,
+      JSON.stringify({ ...base, minimumMeanImprovement: 0.5, metric: { ...base.metric, component: 'politeness' } }),
+    );
+    assert.equal(onComponent.policy!.verdict, 'pass');
+    const missing = scoreLocalComparison(
+      result,
+      JSON.stringify({ ...base, metric: { ...base.metric, component: 'absent' } }),
+    );
+    assert.equal(missing.policy!.verdict, 'indeterminate');
+    // Invalid components fail the grade like an invalid reward.
+    const bad = await runLocalComparison({
+      app: defineEvaluation({
+        ...(definition() as any),
+        grade: async () => ({ reward: 1, components: { 'bad name': 1 } }),
+      }),
+      parent: parentPayload,
+      candidate: candidatePayload,
+      directory: path.join(w.directory, 'bad'),
+    });
+    assert.equal(bad.comparison.results[0].parent.gradingStatus, 'failed');
+  } finally {
+    await w.cleanup();
+  }
+});

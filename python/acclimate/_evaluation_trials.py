@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import hashlib
 import inspect
 import math
+import re
 import threading
 import time
 from typing import Any, Callable
@@ -63,6 +64,20 @@ def reported_usage(value: Any):
             raise OutputValidationError("usage." + key, "Use a finite, nonnegative number.")
         result[name] = number
     return result
+
+
+_COMPONENT_NAME = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
+
+
+def grade_components(value: Any):
+    """Validate named grade components. Invalid components make the grade fail, like a bad reward."""
+    if value is None:
+        return None
+    if type(value) is not dict or len(value) > 32 or not all(
+            type(name) is str and _COMPONENT_NAME.fullmatch(name) and type(number) in (int, float) and math.isfinite(number)
+            for name, number in value.items()):
+        raise OutputValidationError("grade.components", "Return at most 32 named finite numbers.")
+    return {name: float(number) for name, number in value.items()} or None
 
 
 def _role_value(value, field):
@@ -301,9 +316,11 @@ def run_trials(*, app, request_id: str, attempt_id: str, bundles: dict, cancella
                     raise ExecutionUncertainError()
                 if not isinstance(grade, GradeResult) or type(grade.reward) not in (int, float) or not math.isfinite(grade.reward):
                     raise OutputValidationError("grade.reward", "Return GradeResult with a finite numeric reward.")
+                components = grade_components(grade.components)
                 if grade.explanation is not None:
                     hooks.write_artifact({**identity, "role": "grader-explanation"}, _role_value(grade.explanation, "grade.explanation"))
-                result = {**outcome, "gradingStatus": "scored", "reward": float(grade.reward)}
+                result = {**outcome, "gradingStatus": "scored", "reward": float(grade.reward),
+                          **({"components": components} if components else {})}
                 if grade.error is not None:
                     result["error"] = "grading_reported_error"
                 return result

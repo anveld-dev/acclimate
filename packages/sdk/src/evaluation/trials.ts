@@ -130,6 +130,23 @@ export function reportedUsage(value: unknown): Outcome['usage'] {
 
 const pairKey = (caseId: string, repetition: number) => JSON.stringify([caseId, repetition]);
 
+const COMPONENT_NAME = /^[A-Za-z0-9_.:-]{1,64}$/;
+/** Validate named grade components. Invalid components make the grade fail, like a bad reward. */
+export function gradeComponents(value: unknown): Record<string, number> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid components');
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (
+    entries.length > 32 ||
+    entries.some(
+      ([name, number]) =>
+        !COMPONENT_NAME.test(name) || typeof number !== 'number' || !Number.isFinite(number),
+    )
+  )
+    throw new Error('invalid components');
+  return entries.length ? (Object.fromEntries(entries) as Record<string, number>) : undefined;
+}
+
 /** Thrown inside a bounded callback when the runner stops waiting for it. */
 class Abandoned extends Error {
   constructor(readonly reason: 'timeout' | 'deadline') {
@@ -512,6 +529,7 @@ export async function runTrials(options: TrialRunOptions): Promise<TrialRunResul
           hooks.assertOwned();
           const reward = grade.reward;
           if (typeof reward !== 'number' || !Number.isFinite(reward)) throw new Error();
+          const components = gradeComponents(grade.components);
           const returnedExplanation = grade.explanation;
           if (returnedExplanation !== undefined) {
             assertJson(returnedExplanation, MAX_ARTIFACT);
@@ -539,7 +557,7 @@ export async function runTrials(options: TrialRunOptions): Promise<TrialRunResul
             armArtifacts.push(explanation);
             artifactBytes += explanation.bytes;
           }
-          result = { ...outcome, gradingStatus: 'scored', reward };
+          result = { ...outcome, gradingStatus: 'scored', reward, ...(components && { components }) };
           graded = true;
           break;
         } catch (error) {

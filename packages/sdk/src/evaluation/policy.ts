@@ -32,6 +32,11 @@ export interface PolicyMetric {
   direction: 'higher' | 'lower';
   /** Declared reward range. Scored rewards outside it are invalid evidence. */
   scale?: { minimum: number; maximum: number };
+  /**
+   * Gate on this named grade component (an outcome's `components[name]`) instead of the scalar
+   * reward. A scored arm without the component counts as missing evidence.
+   */
+  component?: string;
 }
 
 /** Pure policy calculation. It neither fetches nor authenticates evidence. */
@@ -240,6 +245,22 @@ export class PolicyError extends EvaluationError {
   }
 }
 
+/** Names of grade components on the wire, such as `correctness` or `rubric.citations`. */
+const COMPONENT_NAME = /^[A-Za-z0-9_.:-]{1,64}$/;
+/**
+ * Read a named grade component as the pair's metric. The input is not changed. A scored arm
+ * without the component becomes missing evidence (`missing_component`).
+ */
+function componentPair<T extends Comparison['results'][number]>(pair: T, component: string): T {
+  const arm = (outcome: T['parent']): T['parent'] => {
+    if (outcome.gradingStatus !== 'scored') return outcome;
+    const value = outcome.components?.[component];
+    return typeof value === 'number' && Number.isFinite(value)
+      ? { ...outcome, reward: value }
+      : { ...outcome, gradingStatus: 'missing', reward: null, error: 'missing_component' };
+  };
+  return { ...pair, parent: arm(pair.parent), candidate: arm(pair.candidate) };
+}
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value &&
   typeof value === 'object' &&
@@ -355,7 +376,9 @@ export function validateEvaluationPolicy(
     !finite(value.minimumMeanImprovement) ||
     !nonnegative(value.maximumCaseRegression) ||
     !record(metric) ||
-    !fields(metric, [...requiredMetricFields, 'scale'], []) ||
+    !fields(metric, [...requiredMetricFields, 'scale', 'component'], []) ||
+    (own(metric, 'component') &&
+      (typeof metric.component !== 'string' || !COMPONENT_NAME.test(metric.component))) ||
     !policyString(metric.name, 128) ||
     !policyString(metric.unit, 128) ||
     !['higher', 'lower'].includes(metric.direction as string) ||
@@ -455,6 +478,7 @@ export function validateEvaluationPolicy(
       unit: metric.unit as string,
       direction: metric.direction as 'higher' | 'lower',
       ...(scale && { scale }),
+      ...(typeof metric.component === 'string' && { component: metric.component }),
     },
     aggregation: 'equal-case-means',
     minimumMeanImprovement: value.minimumMeanImprovement as number,
@@ -837,9 +861,16 @@ export function checkComparison(options: {
         !record(outcome) ||
         !fields(
           outcome,
-          ['executionStatus', 'gradingStatus', 'reward', 'outputRef', 'error', 'usage'],
+          ['executionStatus', 'gradingStatus', 'reward', 'outputRef', 'error', 'usage', 'components'],
           ['executionStatus', 'gradingStatus', 'reward', 'outputRef', 'error', 'usage'],
         ) ||
+        (outcome.components !== undefined &&
+          (!record(outcome.components) ||
+            outcome.gradingStatus !== 'scored' ||
+            Object.keys(outcome.components).length > 32 ||
+            Object.entries(outcome.components).some(
+              ([name, value]) => !COMPONENT_NAME.test(name) || !finite(value),
+            ))) ||
         !['completed', 'task_failed', 'infrastructure_failed'].includes(outcome.executionStatus) ||
         !['scored', 'missing', 'failed'].includes(outcome.gradingStatus) ||
         (outcome.reward !== null && typeof outcome.reward !== 'number') ||
@@ -853,7 +884,7 @@ export function checkComparison(options: {
         malformed();
       if (outcome.gradingStatus !== 'scored' && outcome.reward !== null) malformed();
     }
-    pairs.set(key(pair), pair);
+    pairs.set(key(pair), policy.metric.component ? componentPair(pair, policy.metric.component) : pair);
   }
   const ordered = [...expected.values()].sort(
     (a, b) => compareUtf8(a.caseId, b.caseId) || a.repetition - b.repetition,

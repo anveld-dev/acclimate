@@ -622,6 +622,7 @@ mod tests {
                 output_tokens: None,
                 cost_usd: Some(1.0),
             }),
+            components: None,
         };
         let mut count = BTreeMap::new();
         let results: Vec<_> = values

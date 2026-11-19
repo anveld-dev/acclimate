@@ -580,6 +580,7 @@ mod validation_tests {
                     output_ref: None,
                     error: None,
                     usage: None,
+                    components: None,
                 },
                 candidate: Outcome {
                     execution_status: "completed".into(),
@@ -588,9 +589,26 @@ mod validation_tests {
                     output_ref: None,
                     error: None,
                     usage: None,
+                    components: None,
                 },
             }],
         };
+        assert!(improvement::validate_comparison(&q).is_err());
+        // Named grade components are additive: finite values on a scored outcome are valid.
+        let mut q = q;
+        q.results[0].parent.reward = Some(0.5);
+        q.results[0].parent.components = Some(std::collections::BTreeMap::from([
+            ("correctness".into(), 1.0),
+            ("citations".into(), 0.0),
+        ]));
+        assert!(improvement::validate_comparison(&q).is_ok());
+        q.results[0].parent.components = Some(std::collections::BTreeMap::from([(
+            "correctness".into(),
+            f64::INFINITY,
+        )]));
+        assert!(improvement::validate_comparison(&q).is_err());
+        q.results[0].parent.components =
+            Some(std::collections::BTreeMap::from([("bad name".into(), 1.0)]));
         assert!(improvement::validate_comparison(&q).is_err());
     }
     struct Fake;

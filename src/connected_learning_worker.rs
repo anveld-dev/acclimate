@@ -2337,6 +2337,7 @@ mod tests {
             output_ref: None,
             error: None,
             usage: None,
+            components: None,
         }
     }
 

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { AcclimateClient } from '../../packages/sdk/src/index.js';
+import { AcclimateClient } from '@acclimate/sdk';
 const args = process.argv.slice(2);
 const value = (name: string) => {
   const i = args.indexOf(name);

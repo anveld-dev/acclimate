@@ -1,6 +1,8 @@
 # Remediation contract freeze
 
-> Earlier implementation record. Production startup, identity and evaluator setup now follow the [production-only plan](../docs/architecture/production-only/plan.md). Old local-launcher commands below are retired.
+> **Internal development record.** This file coordinated parallel implementation work and is not a consumer contract. Routes now use `/v1/workspaces/{workspaceId}` and releases replace promotions. Use [`contracts/openapi.json`](../../../contracts/openapi.json) for the wire contract and the [versioning and compatibility reference](../../../apps/docs/content/docs/reference/versioning.mdx) for compatibility rules.
+
+> Earlier implementation record. Production startup, identity and evaluator setup now follow the [production-only plan](../../architecture/production-only/plan.md). Old local-launcher commands below are retired.
 
 The reviewed docs/architecture/productization/remediation/{plan,review,parallel-work}.md govern. C0 owns this file, common DTOs/migrations, SDK client/types/index, src/lib.rs and manifests. Send interface requests to C0; never edit another lane's file.
 

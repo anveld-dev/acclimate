@@ -4,7 +4,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { AcclimateClient } from '../../packages/sdk/src/index.js';
+import { AcclimateClient } from '@acclimate/sdk';
 import { Luna, model } from './luna.js';
 
 const patchSchema = {

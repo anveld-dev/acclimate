@@ -1,5 +1,7 @@
 # Additive roadmap contract
 
+> **Internal development record.** This file coordinated parallel implementation work and is not a consumer contract. Routes now use `/v1/workspaces/{workspaceId}` and releases replace promotions. Use [`contracts/openapi.json`](../../../contracts/openapi.json) for the wire contract and the [versioning and compatibility reference](../../../apps/docs/content/docs/reference/versioning.mdx) for compatibility rules.
+
 Keep all existing R0 operations and fields unchanged. This closes the existing decision-history requirement with one read operation.
 
 `GET /v1/projects/{projectId}/bundles/{bundleId}/channels/{channel}/promotions?limit=20&beforeRevision=REV`

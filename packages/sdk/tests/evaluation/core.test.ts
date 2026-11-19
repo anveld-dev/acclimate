@@ -35,7 +35,7 @@ import {
   requestId,
   evaluatorPrincipalId,
   serviceUrl,
-} from '../../../../examples/evaluation/fixture.js';
+} from '../../../../scripts/evaluator-tests/fixture.js';
 import type { createEvaluationTransport } from '../../src/internal/evaluation-transport.js';
 
 const defaultDefinition = (): EvaluationDefinition<

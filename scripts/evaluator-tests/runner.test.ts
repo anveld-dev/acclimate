@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { runEvaluation } from './runner.js';
+import { runCheckoutEvaluation } from './runner.js';
 import { EvaluationError } from '../../packages/sdk/src/evaluation/errors.js';
 import { TransportError } from '../../packages/sdk/src/errors.js';
 const safeCode =
@@ -13,8 +13,8 @@ const safeCode =
   (error: unknown) =>
     error instanceof EvaluationError && codes.includes(error.code);
 import { openJournal, EvaluationBusyError } from '../../packages/sdk/src/evaluation/journal.js';
-import { paymentAdapter } from './tests/payment.js';
-import { localEvaluationDescriptor } from './tests/descriptors.js';
+import { paymentAdapter } from './payment.js';
+import { localEvaluationDescriptor } from './descriptors.js';
 import {
   fixture,
   projectId,
@@ -43,7 +43,7 @@ async function disposable() {
 test('behavioral adapter executes pairs, persists private per-case traces, binds and completes a losing or winning report', async () => {
   const { f, options, cleanup } = await disposable();
   try {
-    assert.equal((await runEvaluation(options)).status, 'completed');
+    assert.equal((await runCheckoutEvaluation(options)).status, 'completed');
     assert.deepEqual(
       f.events.map((e) => e.kind),
       ['start', 'submit', 'finish'],
@@ -79,7 +79,7 @@ test('behavioral adapter executes pairs, persists private per-case traces, binds
         return { ...result, output: { charges: 2, succeeded: true, events: [] } };
       },
     };
-    await runEvaluation({
+    await runCheckoutEvaluation({
       ...options,
       journalRoot: path.join(options.journalRoot, 'losing'),
       api: reversed.api,
@@ -98,7 +98,7 @@ test('structural installed settings rejection happens before start or app execut
       ...f.request,
       runtime: { ...f.request.runtime, model: 'https://untrusted.example/execute' },
     };
-    await assert.rejects(runEvaluation(options), safeCode('descriptor.mismatch'));
+    await assert.rejects(runCheckoutEvaluation(options), safeCode('descriptor.mismatch'));
     assert.deepEqual(f.events, []);
   } finally {
     await cleanup();
@@ -122,7 +122,7 @@ for (const failure of ['execution', 'grading'])
       },
     };
     try {
-      const result = await runEvaluation(options);
+      const result = await runCheckoutEvaluation(options);
       assert.equal(result.status, 'failed');
       assert.ok(result.comparisonId);
       const report = f.events.find((e) => e.kind === 'submit')!
@@ -132,7 +132,7 @@ for (const failure of ['execution', 'grading'])
           (pair) => pair.parent.reward === null && pair.candidate.reward === null,
         ),
       );
-      await runEvaluation(options);
+      await runCheckoutEvaluation(options);
       assert.equal(executions, 12);
     } finally {
       await cleanup();
@@ -170,10 +170,10 @@ for (const action of ['start', 'submit', 'finish'] as const) {
       };
       try {
         await assert.rejects(
-          runEvaluation(options),
+          runCheckoutEvaluation(options),
           safeCode(action === 'start' ? 'service.unavailable' : 'submission.unconfirmed'),
         );
-        assert.equal((await runEvaluation(options)).status, 'completed');
+        assert.equal((await runCheckoutEvaluation(options)).status, 'completed');
         assert.equal(executions, 12);
         if (!committed || action === 'submit') assert.equal(seen.length, 2);
         if (seen.length === 2) assert.deepEqual(seen[0], seen[1]);
@@ -204,9 +204,9 @@ test('concurrent invocations have one owner through app execution', async () => 
     },
   };
   try {
-    const running = runEvaluation(options);
+    const running = runCheckoutEvaluation(options);
     await began;
-    await assert.rejects(runEvaluation(options), EvaluationBusyError);
+    await assert.rejects(runCheckoutEvaluation(options), EvaluationBusyError);
     release();
     await running;
     assert.equal(count, 12);
@@ -218,16 +218,16 @@ test('concurrent invocations have one owner through app execution', async () => 
 
 test('actual process death after execution marker never reruns callbacks and releases OS ownership', async () => {
   const { f, options, cleanup } = await disposable();
-  const fixtureUrl = pathToFileURL(path.resolve('examples/evaluation/fixture.ts')).href;
-  const runnerUrl = pathToFileURL(path.resolve('examples/evaluation/runner.ts')).href;
-  const paymentUrl = pathToFileURL(path.resolve('examples/evaluation/tests/payment.ts')).href;
-  const descriptorUrl = pathToFileURL(path.resolve('examples/evaluation/tests/descriptors.ts')).href;
+  const fixtureUrl = pathToFileURL(path.resolve('scripts/evaluator-tests/fixture.ts')).href;
+  const runnerUrl = pathToFileURL(path.resolve('scripts/evaluator-tests/runner.ts')).href;
+  const paymentUrl = pathToFileURL(path.resolve('scripts/evaluator-tests/payment.ts')).href;
+  const descriptorUrl = pathToFileURL(path.resolve('scripts/evaluator-tests/descriptors.ts')).href;
   const code = `import { fixture } from ${JSON.stringify(fixtureUrl)};
-import {runEvaluation} from ${JSON.stringify(runnerUrl)};
+import {runCheckoutEvaluation} from ${JSON.stringify(runnerUrl)};
 import {paymentAdapter} from ${JSON.stringify(paymentUrl)};
 import {localEvaluationDescriptor} from ${JSON.stringify(descriptorUrl)};
 const f=fixture(localEvaluationDescriptor);
-await runEvaluation({...${JSON.stringify({ ...options, api: undefined, adapter: undefined })},api:f.api,
+await runCheckoutEvaluation({...${JSON.stringify({ ...options, api: undefined, adapter: undefined })},api:f.api,
 adapter:{...paymentAdapter,execute:async()=>{process.stdout.write('callback\\n'); await new Promise(()=>{});}}});`;
   const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', code], {
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -259,7 +259,7 @@ adapter:{...paymentAdapter,execute:async()=>{process.stdout.write('callback\\n')
       attemptId: saved.attemptId,
       evaluatorPrincipal: evaluatorPrincipalId,
     };
-    await assert.rejects(runEvaluation(options), safeCode('execution.uncertain'));
+    await assert.rejects(runCheckoutEvaluation(options), safeCode('execution.uncertain'));
     assert.equal(f.events.length, 0);
   } finally {
     child.kill('SIGKILL');
@@ -310,7 +310,7 @@ test('runner captures installed execution and grading callbacks before any app c
     },
   };
   try {
-    await runEvaluation({ ...options, adapter });
+    await runCheckoutEvaluation({ ...options, adapter });
     assert.equal(executions, 12);
     assert.equal(originalGrades, 12);
     assert.equal(replacementGrades, 0);
@@ -333,7 +333,7 @@ test('installed case inventory mismatch fails before starting or executing and c
       },
     };
     await assert.rejects(
-      runEvaluation({ ...options, adapter }),
+      runCheckoutEvaluation({ ...options, adapter }),
       safeCode('descriptor.mismatch'),
     );
     assert.equal(executions, 0);
@@ -353,7 +353,7 @@ for (const changed of ['serviceUrl', 'evaluatorPrincipalId', 'journalRoot'] as c
       throw new TransportError('http://fixture.test', new TypeError('lost start response'));
     };
     try {
-      await assert.rejects(runEvaluation(options), safeCode('service.unavailable'));
+      await assert.rejects(runCheckoutEvaluation(options), safeCode('service.unavailable'));
       const attempted = { ...options, [changed]: options[changed] + '-other' };
       let executions = 0;
       attempted.adapter = {
@@ -364,7 +364,7 @@ for (const changed of ['serviceUrl', 'evaluatorPrincipalId', 'journalRoot'] as c
         },
       };
       await assert.rejects(
-        runEvaluation(attempted),
+        runCheckoutEvaluation(attempted),
         safeCode('journal.missing', 'auth.principal_mismatch', 'config.url'),
       );
       assert.equal(executions, 0);
@@ -389,7 +389,7 @@ test('copying an unfinished journal to a different root refuses recovery and cal
     throw new TransportError('http://fixture.test', new TypeError('lost submit response'));
   };
   try {
-    await assert.rejects(runEvaluation(options), safeCode('submission.unconfirmed'));
+    await assert.rejects(runCheckoutEvaluation(options), safeCode('submission.unconfirmed'));
     await cp(options.journalRoot, destination, { recursive: true, preserveTimestamps: true });
     let executions = 0;
     const adapter = {
@@ -400,7 +400,7 @@ test('copying an unfinished journal to a different root refuses recovery and cal
       },
     };
     await assert.rejects(
-      runEvaluation({ ...options, journalRoot: destination, adapter }),
+      runCheckoutEvaluation({ ...options, journalRoot: destination, adapter }),
       safeCode('journal.relocated'),
     );
     assert.equal(executions, 0);
@@ -438,7 +438,7 @@ for (const [changed, expectedCode] of [
       };
     };
     try {
-      await assert.rejects(runEvaluation(options), safeCode(expectedCode));
+      await assert.rejects(runCheckoutEvaluation(options), safeCode(expectedCode));
       assert.equal(executions, 0);
       assert.deepEqual(
         f.events.map((event) => event.kind),
@@ -457,7 +457,7 @@ test('finish response must confirm the exact request, attempt and submitted comp
     comparisonId: 'wrong-comparison',
   });
   try {
-    await assert.rejects(runEvaluation(options), safeCode('evidence.identity_mismatch'));
+    await assert.rejects(runCheckoutEvaluation(options), safeCode('evidence.identity_mismatch'));
     const [directory] = await readdir(options.journalRoot);
     const saved = JSON.parse(
       await readFile(path.join(options.journalRoot, directory, 'attempt.json'), 'utf8'),

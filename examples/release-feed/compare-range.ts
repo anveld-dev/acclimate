@@ -9,8 +9,8 @@ import {
   resolveAndCache,
   type EvaluationProgressRequest,
   type VerifiedVersion,
-} from '../../packages/sdk/src/index.js';
-import { prepare } from '../../packages/codex-plugin/src/index.js';
+} from '@acclimate/sdk';
+import { prepare } from '@acclimate/codex-plugin';
 import { callLiveModel } from './live-model.js';
 
 process.umask(0o077);

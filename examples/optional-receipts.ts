@@ -1,5 +1,5 @@
 /** Optional observation has its own credential, deadline and failure boundary. */
-import { AcclimateClient, createReceiptReporter } from '../packages/sdk/src/index.js';
+import { AcclimateClient, createReceiptReporter } from '@acclimate/sdk';
 
 export function optionalReceipts(env: NodeJS.ProcessEnv, projectId: string) {
   if (!env.ACCLIMATE_RECEIPT_TOKEN && !env.ACCLIMATE_INTEGRATION) return undefined;

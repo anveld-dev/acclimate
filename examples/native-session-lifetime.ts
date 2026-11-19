@@ -1,4 +1,4 @@
-import { ExecutionUncertainError } from '../packages/sdk/src/evaluation/index.js';
+import { ExecutionUncertainError } from '@acclimate/sdk/evaluation';
 
 /**
  * Application-owned native work must settle successfully before its inputs are

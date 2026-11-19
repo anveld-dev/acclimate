@@ -3,7 +3,7 @@
   "info": {
     "title": "Acclimate content service",
     "version": "0.1.0",
-    "description": "Content service with immutable native compatibility targets, recoverable audited console commands, request- and attempt-bound evaluation evidence, and app-owned execution. See contracts/remediation.md for invariants and rollout."
+    "description": "Acclimate content service: versioned agent bundles, channels and releases, paired comparisons, evaluation requests run by application-owned evaluators, and connected learning. This document is the source of truth for routes, fields, status codes and error codes. Compatibility and deprecation rules are in the versioning and compatibility reference."
   },
   "security": [
     {
@@ -10345,6 +10345,89 @@
             }
           }
         }
+      },
+      "EvaluationDescriptor": {
+        "type": "object",
+        "description": "Public evaluator identity: revisions, runtime identity and the fixed case inventory. Case inputs, expected answers, callbacks and credentials never appear here.",
+        "additionalProperties": false,
+        "properties": {
+          "datasetRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "graderRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runtime": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "minProperties": 1
+          },
+          "expectedCases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseKey"
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "datasetRevision",
+          "graderRevision",
+          "runtime",
+          "expectedCases"
+        ]
+      },
+      "EvaluationHandoff": {
+        "type": "object",
+        "description": "The public handoff file the console downloads for an evaluation request and the evaluator CLI reads with --handoff. It names the request and its frozen configuration. It carries no credential or private path. projectId is the workspace ID.",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "serviceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "projectId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,128}$",
+            "not": {
+              "enum": [
+                ".",
+                ".."
+              ]
+            }
+          },
+          "bundleId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/EvaluationDescriptor"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "serviceUrl",
+          "projectId",
+          "bundleId",
+          "requestId",
+          "configuration"
+        ]
       }
     }
   }

@@ -1,6 +1,6 @@
 /** Fictional gateway contract. Kept in the app/grader, never in an evaluation workspace. */
 import { createHash } from 'node:crypto';
-import type { BundlePayload } from '../../packages/sdk/src/types.js';
+import type { BundlePayload } from '@acclimate/sdk';
 
 export type Action = 'retry_original' | 'retry_fresh' | 'reconcile' | 'wait' | 'complete';
 export interface Incident {

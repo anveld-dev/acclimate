@@ -22,7 +22,7 @@ import {
   requestId,
   evaluatorPrincipalId,
   serviceUrl,
-} from '../../../../examples/evaluation/fixture.js';
+} from '../../../../scripts/evaluator-tests/fixture.js';
 
 const definition = (): EvaluationDefinition<null, null, null> => ({
   configId: 'collection-check',

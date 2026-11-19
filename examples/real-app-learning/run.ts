@@ -8,14 +8,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Codex } from '@openai/codex-sdk';
-import { AcclimateClient, resolveAndCache } from '../../packages/sdk/src/index.js';
-import { defineEvaluation } from '../../packages/sdk/src/evaluation/index.js';
+import { AcclimateClient, resolveAndCache } from '@acclimate/sdk';
+import { defineEvaluation } from '@acclimate/sdk/evaluation';
 import {
   connectedEvaluationDescriptor,
   createLearningOutcomeReporter,
   serveConnectedLearning,
-} from '../../packages/sdk/src/learning/index.js';
-import type { LearningEnrollmentStatus, VerifiedBundle } from '../../packages/sdk/src/types.js';
+} from '@acclimate/sdk/learning';
+import type { LearningEnrollmentStatus, VerifiedBundle } from '@acclimate/sdk';
 
 const home = path.resolve('examples/real-app-learning');
 const scratch = await realpath('.real-app-scratch');

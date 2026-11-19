@@ -3,9 +3,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { compare, submitComparison } from '../../packages/sdk/src/compare.js';
-import { ApiError, resolveAndCache } from '../../packages/sdk/src/index.js';
-import type { VerifiedVersion, ComparisonRequest } from '../../packages/sdk/src/types.js';
+import { compare, submitComparison } from '@acclimate/sdk';
+import { ApiError, resolveAndCache } from '@acclimate/sdk';
+import type { VerifiedVersion, ComparisonRequest } from '@acclimate/sdk';
 import {
   batches,
   grade,

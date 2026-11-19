@@ -2,19 +2,19 @@ import { evaluationDescriptorDifferences } from '../../packages/sdk/src/validati
 import type { AcclimateClient } from '../../packages/sdk/src/client.js';
 import type { Evaluation } from '../../packages/sdk/src/types.js';
 import { evaluationTransportForClient } from '../../packages/sdk/src/internal/evaluation-transport.js';
-import type { InstalledAdapter } from './adapter.js';
+import type { InstalledAdapter } from '../../examples/evaluation/adapter.js';
 import type { JournalScope } from '../../packages/sdk/src/evaluation/journal.js';
 import { runCapturedEvaluation, verifyEvaluatorAuthority } from '../../packages/sdk/src/evaluation/runner.js';
 import { EvaluationError } from '../../packages/sdk/src/evaluation/errors.js';
 import { deepFreeze } from '../../packages/sdk/src/evaluation/definition.js';
 
-export interface RunEvaluationOptions extends JournalScope {
+export interface CheckoutEvaluationOptions extends JournalScope {
   api: AcclimateClient;
   journalRoot: string;
   adapter: InstalledAdapter;
 }
 
-export async function runEvaluation(options: RunEvaluationOptions): Promise<Evaluation> {
+export async function runCheckoutEvaluation(options: CheckoutEvaluationOptions): Promise<Evaluation> {
   const { api, projectId, bundleId, requestId, adapter } = options;
   const execute = adapter.execute.bind(adapter),
     grade = adapter.grade.bind(adapter);

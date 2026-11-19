@@ -1,5 +1,5 @@
 """These application mistakes must remain static errors; never execute this file."""
-from acclimate import Evaluation, FinishEvaluationRequest, StartEvaluationRequest
+from acclimate import AcclimateClient, Evaluation, FinishEvaluationRequest, StartEvaluationRequest
 from acclimate.evaluation import (
     Case, EvaluationApp, EvaluationError, ExecuteInput, ExecutionResult, GradeInput, GradeResult, define_evaluation,
 )
@@ -60,3 +60,5 @@ typo_mode: EvaluationApp[dict[str, str], dict[str, str], dict[str, str]] = defin
     execute=execute, grade=grade,
 )
 typo_code = EvaluationError("config.schmea")  # reject: arg-type
+def legacy_offline_option(client: AcclimateClient) -> None:
+    client.prepare("p", "b", channel="stable", offline_max_age=60)  # reject: call-arg

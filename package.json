@@ -47,7 +47,7 @@
     "build:docs": "npm run build --workspace @acclimate/docs",
     "typecheck:docs": "npm run typecheck --workspace @acclimate/docs",
     "start:console": "tsx scripts/start-production.ts console",
-    "test:evaluator": "tsx --test examples/evaluate-request.test.ts examples/evaluation/*.test.ts",
+    "test:evaluator": "tsx --test scripts/evaluator-tests/*.test.ts",
     "qualify:productization": "python3 scripts/productization/qualify.py",
     "test:productization:browser": "python3 scripts/test_productization_browser.py",
     "test:bdd": "python3 scripts/bdd/run.py",

@@ -8,6 +8,13 @@ on:
         description: Build and verify without publishing
         type: boolean
         default: true
+      publish-registries:
+        description: >-
+          Publish the verified npm packages and Python wheel to npm and PyPI instead of
+          building images and a GitHub Release. Requires the release tag, dry-run cleared,
+          and approval in the npm and pypi environments.
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -23,6 +30,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       publish: ${{ steps.version.outputs.publish }}
+      registries: ${{ steps.version.outputs.registries }}
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
@@ -38,6 +46,7 @@ jobs:
         id: version
         env:
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+          REGISTRIES: ${{ github.event_name == 'workflow_dispatch' && inputs.publish-registries }}
         run: |
           python - <<'PY'
           import json
@@ -67,10 +76,15 @@ jobs:
                   raise SystemExit(f"Tag {tag} does not match package versions (expected v{version})")
           elif publish:
               raise SystemExit("Publishing requires selecting the matching vMAJOR.MINOR.PATCH tag")
+          # Registry publication is never automatic: a maintainer opts in on a manual run.
+          registries = os.environ["REGISTRIES"] == "true"
+          if registries and not publish:
+              raise SystemExit("Publishing to npm and PyPI requires clearing dry-run")
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               print(f"version={version}", file=output)
               print(f"publish={str(publish).lower()}", file=output)
+              print(f"registries={str(registries).lower()}", file=output)
           PY
       - run: npm ci --ignore-scripts --prefer-offline --no-audit
       - run: npm run pack:verify
@@ -82,6 +96,7 @@ jobs:
 
   images:
     needs: package
+    if: needs.package.outputs.registries != 'true'
     # Build each platform on a native runner. Rust under QEMU is slow and can crash rustc.
     runs-on: ${{ matrix.runner }}
     permissions:
@@ -152,7 +167,7 @@ jobs:
 
   manifests:
     needs: [package, images]
-    if: needs.package.outputs.publish == 'true'
+    if: needs.package.outputs.publish == 'true' && needs.package.outputs.registries != 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -199,7 +214,7 @@ jobs:
 
   release:
     needs: [package, manifests]
-    if: needs.package.outputs.publish == 'true'
+    if: needs.package.outputs.publish == 'true' && needs.package.outputs.registries != 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -244,3 +259,74 @@ jobs:
           fi
           gh release create "$GITHUB_REF_NAME" ./* --repo "$GITHUB_REPOSITORY" \
             --verify-tag --title "$GITHUB_REF_NAME" "${release_args[@]}"
+
+  # The registry jobs publish the same verified artifacts as the GitHub Release. Each
+  # runs in a protected environment, so a maintainer approves the deployment.
+  npm:
+    needs: package
+    if: needs.package.outputs.registries == 'true'
+    runs-on: ubuntu-24.04
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@acclimate/sdk
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install --global npm@11.6.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: acclimate-release-${{ needs.package.outputs.version }}
+          path: release-assets
+      - name: Verify and publish npm packages
+        working-directory: release-assets
+        env:
+          VERSION: ${{ needs.package.outputs.version }}
+          # Only needed for a package's first publication. Afterwards, configure npm
+          # trusted publishing for this workflow and environment and remove the secret.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          sha256sum --check --strict SHA256SUMS
+          # Publish the SDK before the plugins that depend on it. Skip versions that
+          # already exist so a rerun finishes the remaining packages.
+          for package in sdk codex-plugin claude-plugin pi-plugin cursor-plugin; do
+            if npm view "@acclimate/$package@$VERSION" version >/dev/null 2>&1; then
+              echo "@acclimate/$package@$VERSION is already published"
+              continue
+            fi
+            npm publish --provenance --access public "./acclimate-$package-$VERSION.tgz"
+          done
+
+  pypi:
+    needs: package
+    if: needs.package.outputs.registries == 'true'
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/acclimate-sdk/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: acclimate-release-${{ needs.package.outputs.version }}
+          path: release-assets
+      - name: Verify the wheel
+        env:
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          (cd release-assets && sha256sum --check --strict SHA256SUMS)
+          mkdir dist
+          cp "release-assets/acclimate_sdk-$VERSION-py3-none-any.whl" dist/
+      # Trusted publishing: PyPI accepts this workflow's OIDC identity, so no API token
+      # is stored. The action also uploads PEP 740 attestations.
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist/
+          skip-existing: true

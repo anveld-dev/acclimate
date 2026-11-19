@@ -1,6 +1,6 @@
 /** Example descriptors use the supported public wire type; installed callbacks stay local. */
-import type { EvaluationDescriptor } from '../../packages/sdk/src/types.js';
-export type { EvaluationDescriptor } from '../../packages/sdk/src/types.js';
+import type { EvaluationDescriptor } from '@acclimate/sdk';
+export type { EvaluationDescriptor } from '@acclimate/sdk';
 
 export const nativeReviewDescriptor: EvaluationDescriptor = {
   datasetRevision: 'retry-review-snapshots-v1',

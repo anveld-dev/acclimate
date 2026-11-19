@@ -47,6 +47,10 @@ with tempfile.TemporaryDirectory(prefix='acclimate-wheel-dx-') as temporary:
     module = subprocess.run([str(python), '-m', 'acclimate', 'describe'], cwd=app, env=clean_env,
                             check=True, capture_output=True, text=True)
     assert json.loads(module.stdout) == descriptor
+    # The wheel's console script runs the same CLI as python -m acclimate.
+    script = subprocess.run([str(directory / 'venv' / 'bin' / 'acclimate'), 'describe'], cwd=app, env=clean_env,
+                            check=True, capture_output=True, text=True)
+    assert json.loads(script.stdout) == descriptor
 
     assert descriptor['runtime']['configId'] == 'installed-qualification-worker'
     assert descriptor['runtime']['execution'] == 'live'

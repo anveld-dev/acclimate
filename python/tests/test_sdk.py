@@ -193,13 +193,13 @@ class SDKTest(unittest.TestCase):
             self.assertFalse(resolve_and_cache(self.client, "p", "b1", **kw)["stale"])
             Handler.mode = "unavailable"
             self.assertTrue(
-                resolve_and_cache(self.client, "p", "b1", **kw, offline_max_age=60)[
+                resolve_and_cache(self.client, "p", "b1", **kw, offline={"max_age_ms": 60_000})[
                     "stale"
                 ]
             )
             Handler.mode = "deny"
             with self.assertRaises(ApiError) as e:
-                resolve_and_cache(self.client, "p", "b1", **kw, offline_max_age=60)
+                resolve_and_cache(self.client, "p", "b1", **kw, offline={"max_age_ms": 60_000})
             self.assertEqual(
                 (e.exception.code, e.exception.request_id), ("denied", "r1")
             )
@@ -207,6 +207,21 @@ class SDKTest(unittest.TestCase):
                 self.assertTrue(prepared.files)
                 self.assertTrue(Path(prepared.files[0]["absolutePath"]).is_file())
             self.assertFalse(Path(prepared.files[0]["absolutePath"]).exists())
+
+    def test_offline_pinned_version_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            kw = dict(cache_dir=os.path.realpath(tmp) + "/cache", version_id=VERSION["id"])
+            self.assertFalse(resolve_and_cache(self.client, "p", "b1", **kw)["stale"])
+            Handler.mode = "unavailable"
+            with self.assertRaises(ApiError):
+                resolve_and_cache(self.client, "p", "b1", **kw)
+            with self.assertRaises(ApiError):
+                resolve_and_cache(self.client, "p", "b1", **kw, offline={"pinned_version_id": "other"})
+            pinned = resolve_and_cache(
+                self.client, "p", "b1", **kw, offline={"pinned_version_id": VERSION["id"]}
+            )
+            self.assertTrue(pinned["stale"])
+            self.assertEqual(pinned["version"]["id"], VERSION["id"])
 
     def test_integrity_and_redirect(self):
         with tempfile.TemporaryDirectory() as tmp:

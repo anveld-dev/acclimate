@@ -270,8 +270,10 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
     for (const starter of starters)
       run('tar', ['-xzf', join(stage, starter.file), '-C', extractedStarters]);
     const app = join(extractedStarters, 'evaluation-starter');
+    // The Python-only starter must work with the wheel alone, without Node files.
     run(pythonExecutable, [
-      'scripts/packaging/verify-wheel.py', '--wheel', join(stage, wheelName), '--starter', app,
+      'scripts/packaging/verify-wheel.py', '--wheel', join(stage, wheelName),
+      '--starter', join(extractedStarters, 'python-evaluation-starter'),
       '--analysis-fixtures', join(root, 'contracts/fixtures/evaluation-analysis/vectors.json'),
     ]);
     // Supply the external application's own adapter and cases after extraction.

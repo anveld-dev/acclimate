@@ -8,7 +8,7 @@ import type {
   Evaluation,
   VersionMetadata,
 } from '../../packages/sdk/src/index.js';
-import type { EvaluationDescriptor } from './descriptor.js';
+import type { EvaluationDescriptor } from '../../examples/evaluation/descriptor.js';
 
 export const projectId = '10000000-0000-4000-8000-000000000001';
 export const bundleId = '20000000-0000-4000-8000-000000000002';

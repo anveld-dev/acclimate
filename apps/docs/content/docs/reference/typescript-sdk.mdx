@@ -1,33 +1,61 @@
 ---
 title: TypeScript SDK
-description: Choose the public entry point for delivery, validation, evaluation, or connected learning.
+description: Every public entry point, export and command in @acclimate/sdk.
 ---
 
-Choose an entry point for your application from the installed `@acclimate/sdk` package. Use the Node entry for delivery and the validation entry when you only need to check content.
+Install `@acclimate/sdk` with Node.js 22.22 or later. See [install the SDKs](/docs/get-started/install). Import only the entry points below; other paths inside the package are private and can change in any release.
 
-## Public entry points
+## Entry points
 
-| Entry point | Use |
+| Entry point | Runtime exports |
 | --- | --- |
-| `@acclimate/sdk` | `AcclimateClient`, `resolveAndCache`, `verifyPayloadBytes`, `prepareFiles`, `createReceiptReporter`, the lower-level `compare` and `submitComparison` helpers, and the `AcclimateError`, `AcclimateUsageError`, `TransportError`, `ApiError` and `DeliveryError` classes. |
-| `@acclimate/sdk/validation` | Bundle payload and native compatibility validation without the Node file preparation entry. |
-| `@acclimate/sdk/evaluation` | `defineEvaluation`, `defineApplication`, `preflightEvaluation`, `runEvaluation`, `assertEvaluationOutput`, the `ApplicationAdapter` type, and every evaluator error class. `runLocalComparison`, `tryEvaluation`, and `loadLocalPayload` compare payloads or check callback shapes without a service. `runEvaluation` accepts `controls` for a deadline, case timeout, cost limit, case selection, and progress. |
-| `@acclimate/sdk/evaluation/policy` | Apply the application quality policy to comparison evidence. |
-| `@acclimate/sdk/evaluation/artifacts` | Export and verify review evidence. |
-| `@acclimate/sdk/evaluation/analysis` | Analyze saved comparison results. |
-| `@acclimate/sdk/evaluation/manifest` | Build revision-bound evaluation metadata. |
-| `@acclimate/sdk/evaluation/progress` | Report optional evaluation activity. |
-| `@acclimate/sdk/evaluation/cli` and `@acclimate/sdk/evaluation/app-cli` | Evaluator CLI entry points for installed adapters. |
-| `@acclimate/sdk/learning` | `connectedEvaluationDescriptor`, `createLearningOutcomeReporter`, `createLearningFieldAuditor`, and `serveConnectedLearning`. |
+| `@acclimate/sdk` | `AcclimateClient`, `ApiError`, `resolveAndCache`, `defaultCacheDir`, `prepareFiles`, `verifyPayloadBytes`, `validatePayload`, `DeliveryError`, `createReceiptReporter`, `compare`, `submitComparison`, `TaskExecutionError`, `InfrastructureError`, `compatibilityIssues`, `assertCompatible`, `AcclimateError`, `AcclimateUsageError`, `TransportError` |
+| `@acclimate/sdk/validation` | `validatePayload`, `DeliveryError`, `compatibilityIssues`, `assertCompatible`, `validateEvaluationDescriptor`, `evaluationDescriptorDifferences`, `validateEvaluationHandoff`, `validateEvaluationServiceUrl`, `assertGuidedTarget`, `EvaluationConfigurationError` |
+| `@acclimate/sdk/evaluation` | `defineEvaluation`, `defineApplication`, `preflightEvaluation`, `runEvaluation`, `assertEvaluationOutput`, `createEvaluationManifest`, `restoreEvaluationManifest`, `canonicalEvaluationJson`, `createEvaluationProgressReporter`, `analyzeComparison`, `toSafeDiagnostic`, `exitCodeFor`, `EVALUATION_ERROR_CODES`, `EXIT_CODES`, and the error classes `AcclimateError`, `AcclimateUsageError`, `TransportError`, `EvaluationError`, `EvaluationUsageError`, `DefinitionError`, `OutputValidationError`, `AppSetupError`, `EvaluatorConfigError`, `EvaluationBusyError`, `ExecutionUncertainError`, `CallbackCancelled`, `AnalysisError` |
+| `@acclimate/sdk/evaluation` (local runs) | `runLocalComparison`, `scoreLocalComparison`, `tryEvaluation`, `loadLocalPayload`, `localPayloadDigest`, `localVersion`, `LocalRunError` and `LOCAL_NOTICE` compare payloads or check callback shapes without a service. Results are advisory. |
+| `@acclimate/sdk/evaluation` (run controls) | `runEvaluation` accepts `controls` for a deadline, case timeout, cost limit, case selection and progress. `parseDuration`, `parseSelection`, `progressLine` and `runWarnings` parse and render them as the CLI does. |
+| `@acclimate/sdk/evaluation/policy` | `checkComparison`, `parseEvaluationPolicy`, `validateEvaluationPolicy`, `PolicyError` |
+| `@acclimate/sdk/evaluation/artifacts` | `exportReviewEvidence`, `verifyReviewExport`, `parseArtifactSelection`, `validateArtifactSelection` |
+| `@acclimate/sdk/evaluation/analysis` | `analyzeComparison`, `AnalysisError` |
+| `@acclimate/sdk/evaluation/manifest` | `createEvaluationManifest`, `restoreEvaluationManifest`, `canonicalEvaluationJson` |
+| `@acclimate/sdk/evaluation/progress` | `createEvaluationProgressReporter` |
+| `@acclimate/sdk/evaluation/cli` | `evaluationMain`, `evaluationReadMain`, `evaluationCheckMain`, `parseEvaluatorArguments`, `reportEvaluatorError`, `comparisonText`, `verboseRequested`, `sdkVersion`, `EVALUATOR_COMMANDS`, `ADAPTER_FREE_COMMANDS` |
+| `@acclimate/sdk/evaluation/app-cli` | `applicationMain`, `loadApplication`, `resolveApplicationFile`, `defineApplication`, and the `ApplicationAdapter` type |
+| `@acclimate/sdk/learning` | `connectedEvaluationDescriptor`, `createLearningOutcomeReporter`, `createLearningFieldAuditor`, `createLearningFieldAuditReporter`, `serveConnectedLearning` |
+| `@acclimate/sdk/native-files` | `prepareNativeFiles` and `nativeSource`, for plugin authors |
+
+The root entry also exports every wire type, such as `Bundle`, `VersionMetadata`, `Release`, `Comparison`, `Evaluation`, `EvaluationHandoff` and `Page`, plus option types such as `ClientOptions`, `CachePolicy`, `OfflinePolicy` and `PrepareDeliveryOptions`. The types match [`contracts/openapi.json`](/docs/reference/http-api).
+
+## Commands
+
+| Command | Use |
+| --- | --- |
+| `acclimate-eval` | The [evaluator CLI](/docs/reference/evaluator-cli). It loads `application.mjs` or `application.mts` from the current directory. |
+| `acclimate-learning` | Runs the connected learning worker. See [connected learning](/docs/guides/connected-learning). |
+| `acclimate-operator` | Inspects comparisons, authorizes a channel release or restores a reviewed version. See the [operator CLI](/docs/reference/operator-cli). |
 
 ## Deliver a pinned version
 
 Construct `AcclimateClient` with `baseUrl`, `token`, and a stable `scope` that identifies the authenticated application. Use the connection UUID as `integrationId` when resolving for a connection. Call `client.prepare` with `projectId`, `bundleId`, and exactly one of `channel` or `versionId`. It returns the pinned `version`, the verified `bundle`, `directory`, `instructions`, `skillFiles`, and `cleanup()`.
 
-The default preparation cache is `~/.cache/acclimate/typescript`. Set `cacheDir` to override it and `destination` to select an application-owned staging directory. Start jobs with an online resolution by default. For a bounded cached channel fallback, pass `offline: { maxAgeMs: ... }`. For exact version fallback, pass `offline: { pinnedVersionId: ... }`. Access denial and integrity errors fail preparation.
+The default preparation cache is `~/.cache/acclimate/typescript`. Set `cacheDir` to override it and `destination` to select an application-owned staging directory. Start jobs with an online resolution by default. For a bounded cached channel fallback, pass `offline: { maxAgeMs: ... }`. For exact version fallback, pass `offline: { pinnedVersionId: ... }`. The Python SDK takes the same policy as `offline={"max_age_ms": ...}` or `offline={"pinned_version_id": ...}`. Access denial and integrity errors fail preparation.
 
 Use `resolveAndCache` when you want a verified version for a native plugin or your own preparation. See [deliver content to jobs](/docs/guides/deliver-content) for a complete job flow and [configuration](/docs/reference/configuration) for app and worker settings.
 
-## Handle errors
+## Errors
 
-Every error the SDK throws on purpose extends `AcclimateError` and has a typed `code`. An invalid argument throws `AcclimateUsageError` with the argument's name in `field`. A network failure or timeout throws `TransportError`, which keeps the native error as `cause` and the service origin as `serviceUrl`. An HTTP error response throws `ApiError`. `defineEvaluation` throws `DefinitionError` naming the invalid `field`, such as `cases[1].caseId`. See [error codes](/docs/reference/error-codes).
+| Error | Thrown when |
+| --- | --- |
+| `AcclimateError` | The base class of every error the SDK throws on purpose. It has a typed `code`. |
+| `AcclimateUsageError` | An argument is invalid. `field` names it. |
+| `TransportError` | A network failure or timeout. It keeps the native error as `cause` and the service origin as `serviceUrl`. |
+| `ApiError` | The service returns an error. It has `status`, `code`, `requestId` and optional `details`. |
+| `DeliveryError` | Delivery finds a malformed response, cache entry or payload. |
+| `TaskExecutionError`, `InfrastructureError` | Thrown from your `compare` callbacks to mark a task failure or an infrastructure failure. |
+| `EvaluationError` | An evaluation step fails. It has a stable `code` and a printable diagnostic. See [error codes](/docs/reference/error-codes). |
+| `DefinitionError`, `OutputValidationError`, `AppSetupError`, `EvaluationUsageError` | `defineEvaluation` rejects a `field` such as `cases[1].caseId`, a callback returns non-JSON output, the application module is invalid, or the command line is invalid. |
+| `LocalRunError` | A local run's payload, `--out` folder or `--live` flag is invalid. |
+| `ExecutionUncertainError`, `CallbackCancelled` | Thrown from your callbacks: when external work might still be running, or after the callback stops for cooperative cancellation. |
+| `EvaluationConfigurationError`, `PolicyError`, `AnalysisError` | A descriptor, handoff, quality policy or analysis input is invalid. |
+
+[Versioning and compatibility](/docs/reference/versioning) covers which SDK versions work with which service versions and how deprecated names are removed.

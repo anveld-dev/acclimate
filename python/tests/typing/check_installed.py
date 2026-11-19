@@ -40,8 +40,11 @@ assert Path(sys.prefix).resolve() in root.parents, "SDK is not installed in cons
 assert (root / "py.typed").is_file()
 assert not importlib.metadata.requires("acclimate-sdk"), "unexpected runtime dependency"
 for name, value in vars(types).items():
-    if isinstance(value, type) and value.__module__ == "acclimate.types":
+    if isinstance(value, type) and value.__module__ == "acclimate.types" and not name.startswith("_"):
         assert getattr(acclimate, name) is value, name
+        assert name in acclimate.__all__, name
+for helper in ("Literal", "NotRequired", "TypedDict"):
+    assert not hasattr(acclimate, helper), helper
 for name in ("FileKind", "CompatibilityTarget", "Operation"):
     assert getattr(acclimate, name) is getattr(types, name), name
 for method, request in (("start_evaluation", StartEvaluationRequest), ("finish_evaluation", FinishEvaluationRequest)):

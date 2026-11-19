@@ -1,4 +1,4 @@
-import type { EvaluationDescriptor } from '../../../packages/sdk/src/types.js';
+import type { EvaluationDescriptor } from '../../packages/sdk/src/types.js';
 
 export const localEvaluationDescriptor: EvaluationDescriptor = {
   datasetRevision: 'payment-retry-scenarios-v1',

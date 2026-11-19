@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, realpath, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { prepare } from '../../packages/codex-plugin/src/index.js';
+import { prepare } from '@acclimate/codex-plugin';
 import path from 'node:path';
-import { resolveAndCache } from '../../packages/sdk/src/index.js';
-import { compare, submitComparison } from '../../packages/sdk/src/compare.js';
-import type { AcclimateClient } from '../../packages/sdk/src/client.js';
-import type { VerifiedVersion } from '../../packages/sdk/src/types.js';
+import { resolveAndCache } from '@acclimate/sdk';
+import { compare, submitComparison } from '@acclimate/sdk';
+import type { AcclimateClient } from '@acclimate/sdk';
+import type { VerifiedVersion } from '@acclimate/sdk';
 import { cases, datasetRevision } from './dataset.js';
 import { gradeFinding, graderRevision } from './grader.js';
 

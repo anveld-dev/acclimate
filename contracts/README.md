@@ -1,0 +1,14 @@
+# HTTP and data contracts
+
+These files describe what Acclimate sends and accepts on the wire. Use them when you call the service without an SDK, generate a client, or check a response.
+
+| File | Contents |
+| --- | --- |
+| [`openapi.json`](openapi.json) | The OpenAPI 3.1 description of every route, request and response body, status code and error code. It is the source of truth for the HTTP API. |
+| [`bundle.schema.json`](bundle.schema.json) | JSON Schema for a bundle payload: file paths, kinds and size limits. |
+| [`learning.md`](learning.md) | Connected learning routes, authority and fixture rules. |
+| [`fixtures/`](fixtures) | Exact payload bytes, digests, channel resolutions, comparisons and policy and analysis vectors that both SDKs test against. |
+
+Both SDKs follow this contract. TypeScript consumers can read the same types from the installed package's `.d.ts` files, and Python consumers from `acclimate.types`. The [versioning and compatibility reference](../apps/docs/content/docs/reference/versioning.mdx) explains how the contract changes between releases.
+
+Internal design and coordination records live in [`docs/internal/`](../docs/internal/README.md).

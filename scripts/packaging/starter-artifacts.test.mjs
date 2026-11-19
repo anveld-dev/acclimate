@@ -11,13 +11,13 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'acclimate-starter-archive-test-'));
   for (const [name, files] of Object.entries(inventories)) {
     for (const file of files) {
-      const path = join(root, 'examples', name === 'evaluation' ? 'evaluation-starter' : name, file);
+      const path = join(root, 'examples', name.endsWith('evaluation') ? `${name}-starter` : name, file);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, file === 'package.json' ? '{}' : 'Public fixture\n');
     }
   }
   await writeFile(join(root, 'examples/evaluation-starter/package.json'), JSON.stringify({ private: true, version: '0.0.0', dependencies: { '@acclimate/sdk': '0.0.0' } }));
-  const metadata = { version: '1.2.3', starters: ['evaluation', 'ci', 'native-repository'].map(name => ({ name, file: `acclimate-${name}-starter-1.2.3.tgz` })) };
+  const metadata = { version: '1.2.3', starters: ['evaluation', 'ci', 'native-repository', 'python-evaluation'].map(name => ({ name, file: `acclimate-${name}-starter-1.2.3.tgz` })) };
   return { root, metadata, output: join(root, 'release') };
 }
 
@@ -32,7 +32,7 @@ test('release archives contain installed-app source and independent CI runner, e
     await mkdir(join(root, 'examples/ci/test'), { recursive: true });
     await writeFile(join(root, 'examples/ci/test/fake-evaluator.mjs'), 'offline test double');
     const artifacts = await archiveStarters(root, output, metadata);
-    assert.equal(artifacts.length, 3);
+    assert.equal(artifacts.length, 4);
     const archive = join(output, metadata.starters[0].file);
     const listing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' });
     assert.ok(listing.includes('evaluation-starter/acclimate-eval.mjs'));
@@ -48,6 +48,10 @@ test('release archives contain installed-app source and independent CI runner, e
     // The offline replay harness and its fixture repository ship for consumers.
     for (const file of ['smoke.mjs', 'native.replay.json', 'fixture/replay.json', 'fixture/tests/retry.test.mjs', 'harness-template.mjs'])
       assert.ok(native.includes(`native-repository-starter/${file}`), file);
+    const python = execFileSync('tar', ['-tzf', join(output, metadata.starters[3].file)], { encoding: 'utf8' });
+    assert.ok(python.includes('python-evaluation-starter/acclimate_eval.py'));
+    assert.ok(python.includes('python-evaluation-starter/application.example.py'));
+    assert.ok(!/package\.json|\.m[jt]s\b/.test(python), 'the Python starter carries no Node files');
     assert.equal(listing.includes('node_modules'), false);
     const manifest = JSON.parse(execFileSync('tar', ['-xOzf', archive, 'evaluation-starter/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.version, '1.2.3');

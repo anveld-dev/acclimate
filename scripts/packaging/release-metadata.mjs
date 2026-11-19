@@ -32,7 +32,7 @@ export async function releaseMetadata(root) {
       })),
       { package: 'acclimate-sdk', version: pythonVersion, kind: 'wheel', file: `acclimate_sdk-${pythonVersion}-py3-none-any.whl` },
     ],
-    starters: ['evaluation', 'ci', 'native-repository'].map(name => ({
+    starters: ['evaluation', 'python-evaluation', 'ci', 'native-repository'].map(name => ({
       name, file: `acclimate-${name}-starter-${version}.tgz`,
     })),
     prerequisites: {

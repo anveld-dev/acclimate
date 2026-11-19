@@ -496,6 +496,11 @@ class EvaluationCoreTests(unittest.TestCase):
         self.assertEqual(service.comparison["results"][0]["candidate"]["reward"], 1.0)
         # One loop serves every callback so loop-bound clients keep working.
         self.assertEqual(len(loops), 1)
+        # A cancelled coroutine cannot attest that its external work stopped.
+        async def cancelled(run):
+            raise asyncio.CancelledError()
+        with self.assertRaises(ExecutionUncertainError):
+            self.app(cancelled)._execute(None)
         self.config.write_bytes(json_bytes({**json.loads(self.config.read_bytes()),
                                             "journalRoot": str(self.root / "future-journal")}))
         app=self.app(lambda run:ExecutionResult({"active":Future()}))

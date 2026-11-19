@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import Future as ConcurrentFuture
+from concurrent.futures import CancelledError as ConcurrentCancelledError, Future as ConcurrentFuture
 import copy
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -242,7 +242,7 @@ class _CoroutineRunner:
             return await awaitable
         try:
             return asyncio.run_coroutine_threadsafe(settle(), loop).result()
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, ConcurrentCancelledError):
             # A cancelled coroutine cannot attest that an external job stopped.
             raise ExecutionUncertainError() from None
 

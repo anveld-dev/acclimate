@@ -44,10 +44,14 @@ def verify(w,b,p,routes,out,checks):
         full_id=row.locator('.member-id').inner_text().removeprefix('User ID: ')
         assert full_id in row.locator('.member-role-trigger').get_attribute('aria-label')
         labels.append(row.locator('.member-actions-trigger').get_attribute('aria-label'))
-        row.get_by_role('button',name='Identity details',exact=True).click()
-        expect(row.locator('.member-details')).to_contain_text('Issuer:')
-        expect(row.locator('.member-details')).to_contain_text('Subject:')
-        row.get_by_role('button',name='Identity details',exact=True).click()
+        actions=row.locator('.member-actions-trigger')
+        actions.click()
+        p.get_by_role('menuitem',name='Identity details',exact=True).click()
+        identity=p.get_by_role('dialog',name='Identity details',exact=True)
+        expect(identity).to_contain_text('Issuer')
+        expect(identity).to_contain_text('Subject')
+        identity.press('Escape')
+        expect(actions).to_be_focused()
     assert labels[0]!=labels[1]
     row=duplicates.first
     user_id=row.locator('.member-id').inner_text().removeprefix('User ID: ')

@@ -1,3 +1,4 @@
+import { ReceiptTime } from './receipt-time';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { useId, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
@@ -186,7 +187,7 @@ export function WorkspaceAdopt({
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Recorded at</dt>
-                  <dd>{adoption.createdAt}</dd>
+                  <dd><ReceiptTime value={adoption.createdAt} /></dd>
                 </div>
               </dl>
               {adoption.currentRole && (

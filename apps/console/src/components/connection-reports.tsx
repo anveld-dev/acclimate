@@ -1,3 +1,4 @@
+import { ReceiptTime } from './receipt-time';
 import { useState } from 'react';
 import type { DeliveryReceipt, Page } from '@acclimate/sdk';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
@@ -86,10 +87,6 @@ export function ConnectionReports({
 function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
   const stage =
     r.stage === 'started' ? 'App reported a session or turn started' : `App reported ${r.stage}`;
-  const received = new Date(r.receivedAt).toLocaleString(undefined, {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  });
   return (
     <article className="connection-report-row" data-testid="delivery-report">
       <Disclosure>
@@ -102,16 +99,14 @@ function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
               {r.delayed && <Badge variant="secondary">Delayed report</Badge>}
             </span>
             <span className="connection-report-received text-muted-foreground">
-              <time dateTime={r.receivedAt} title={r.receivedAt}>
-                {received}
-              </time>
+              <ReceiptTime value={r.receivedAt} />
             </span>
             <span className="connection-report-version font-mono break-all">
               Version {r.versionId.slice(0, 8)}
             </span>
           </span>
           <span className="sr-only">
-            Received {r.receivedAt}. Event {r.eventId}.
+            Received <ReceiptTime value={r.receivedAt} />. Event {r.eventId}.
           </span>
         </DisclosureTrigger>
         <DisclosureContent className="connection-report-details">
@@ -131,13 +126,13 @@ function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
             <div>
               <dt>App-reported occurrence</dt>
               <dd>
-                <time dateTime={r.occurredAt}>{r.occurredAt}</time>
+                <ReceiptTime value={r.occurredAt} />
               </dd>
             </div>
             <div>
               <dt>Service received</dt>
               <dd>
-                <time dateTime={r.receivedAt}>{r.receivedAt}</time>
+                <ReceiptTime value={r.receivedAt} />
               </dd>
             </div>
             <div>
@@ -152,7 +147,7 @@ function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
               <div>
                 <dt>App-reported resolution</dt>
                 <dd>
-                  <time dateTime={r.resolvedAt}>{r.resolvedAt}</time>
+                  <ReceiptTime value={r.resolvedAt} />
                 </dd>
               </div>
             )}

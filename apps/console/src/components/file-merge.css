@@ -19,7 +19,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   background: var(--muted);
-  font-size: 13px;
+  font-size: var(--type-13);
 }
 .file-merge-labels span {
   padding: 4px 8px;
@@ -27,7 +27,7 @@
 .file-merge-host {
   max-height: 32rem;
   overflow: auto;
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .file-merge-host .cm-editor {
   color: var(--foreground);
@@ -38,3 +38,9 @@
   background: var(--muted);
   color: var(--muted-foreground);
 }
+
+.diff-view-segment,
+.diff-view-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.diff-view-segment { border: 1px solid var(--border); border-radius: var(--radius); padding: 2px; }
+.diff-view-segment [aria-pressed='true'] { background: var(--accent); color: var(--accent-foreground); }
+.diff-view-actions { margin-inline-start: auto; }

@@ -15,7 +15,7 @@
   padding: 6px 0 18px;
 }
 .change-page-heading h2 {
-  font-size: 20px;
+  font-size: var(--type-20);
   font-weight: 650;
   line-height: 28px;
   letter-spacing: -0.3px;
@@ -51,7 +51,7 @@
   padding: 14px 16px;
 }
 .change-queue-heading h3 {
-  font-size: 16px;
+  font-size: var(--type-16);
   font-weight: 600;
   line-height: 24px;
 }
@@ -80,7 +80,7 @@
 .change-record-title {
   display: inline-block;
   min-height: 32px;
-  font-size: 14px;
+  font-size: var(--type-14);
   font-weight: 600;
   line-height: 22px;
   overflow-wrap: anywhere;
@@ -166,7 +166,7 @@
   border: 0;
 }
 .release-history-header h2 {
-  font-size: 20px;
+  font-size: var(--type-20);
   line-height: 28px;
   font-weight: 650;
   letter-spacing: -0.3px;
@@ -217,12 +217,12 @@
   font-variant-numeric: tabular-nums;
 }
 .release-record-row .release-summary h3 {
-  font-size: 16px;
+  font-size: var(--type-16);
   line-height: 24px;
   font-weight: 600;
 }
 .is-current-release .release-summary h3 {
-  font-size: 16px;
+  font-size: var(--type-16);
 }
 .release-record-row .release-summary > p {
   margin-top: 3px;
@@ -240,11 +240,11 @@
 }
 .release-content-version {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .release-evidence-kind {
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 20px;
 }
 .release-reason {
@@ -341,12 +341,12 @@
   display: inline-flex;
   align-items: center;
   min-height: 24px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 .release-comparison-link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
   margin-top: 4px;
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .release-record-row:target {
   outline: 2px solid var(--ring);
@@ -401,3 +401,5 @@
     align-items: center;
   }
 }
+
+.published-revision-link:is(:hover, :focus-visible) { box-shadow: 0 0 0 1px var(--ring); }

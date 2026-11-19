@@ -227,7 +227,7 @@ function ScopedChangesOverview({ state, search, children }: OverviewProps) {
   );
 
   return (
-    <div className="changes-overview" data-version-selected={selectedCandidate ? true : undefined} data-triage={showTriage || undefined}>
+    <div className="changes-overview" data-version-selected={selectedCandidate ? true : undefined} data-triage={showTriage || undefined} data-history={historyPage || undefined}>
       {historyPage ? (
         <header className="changes-history-toolbar">
           <Button asChild size="sm" variant="ghost">

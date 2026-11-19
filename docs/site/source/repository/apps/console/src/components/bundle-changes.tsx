@@ -1,3 +1,4 @@
+import { ReceiptTime } from './receipt-time';
 import { useEffect, useRef, useState } from 'react';
 import './changes-queues.css';
 import { useRouter } from '@tanstack/react-router';
@@ -361,13 +362,7 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
                             <span className="worklist-record-id">#{draft.id.slice(0, 8)}</span>
                             {' · '}Generation {draft.generation}
                             {' · '}
-                            <time dateTime={draft.updatedAt}>
-                              {new Date(draft.updatedAt).toLocaleDateString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                              })}
-                            </time>
+                            <ReceiptTime value={draft.updatedAt} />
                           </p>
                         </div>
                         <div className="change-record-actions">
@@ -388,7 +383,7 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
                             fields={[
                               ['Status', draft.status],
                               ['Generation', draft.generation],
-                              ['Updated', new Date(draft.updatedAt).toLocaleString()],
+                              ['Updated', <ReceiptTime value={draft.updatedAt} />],
                               ['Base revision', draft.baseRevision],
                               ['Draft ID', draft.id],
                               ['Base version', draft.baseVersionId],
@@ -484,9 +479,7 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
                           </ConsoleLink>
                           <p className="change-record-meta">
                             Created{' '}
-                            <time dateTime={proposal.createdAt}>
-                              {new Date(proposal.createdAt).toLocaleString()}
-                            </time>
+                            <ReceiptTime value={proposal.createdAt} />
                           </p>
                           {proposal.error && (
                             <p className="change-record-error">{proposal.error}</p>
@@ -520,7 +513,7 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
                             value={JSON.stringify(proposal, null, 2)}
                             fields={[
                               ['Status', proposal.status],
-                              ['Created', new Date(proposal.createdAt).toLocaleString()],
+                              ['Created', <ReceiptTime value={proposal.createdAt} />],
                               ['Rationale', proposal.rationale || 'No rationale reported.'],
                               ['Attempts', proposal.attempts],
                               ['Suggestion ID', proposal.id],

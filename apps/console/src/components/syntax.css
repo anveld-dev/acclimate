@@ -5,7 +5,7 @@
   margin: 0;
   overflow: auto;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 1.55;
   tab-size: 2;
   white-space: pre;
@@ -50,7 +50,7 @@
   overscroll-behavior: contain;
   overflow: auto;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 22px;
 }
 .code-editor .cm-content {
@@ -76,7 +76,7 @@
   border-radius: 0;
   padding: 12px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 22px;
 }
 .code-editor-notice {
@@ -86,7 +86,7 @@
   padding: 4px 8px;
   background: var(--muted);
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .cm-syntax-keyword {
   color: #7c3a91;

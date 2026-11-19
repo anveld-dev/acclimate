@@ -1,8 +1,9 @@
+import { ListToolbar } from './list-toolbar';
 import { DirectorySearch } from './ui/directory-search';
 import { CopyButton } from './copy-button';
 import { SyntaxCode } from './syntax-code';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
-import { ArrowRight, BookOpen, Files, FileText, Layers3, Plus, Upload } from 'lucide-react';
+import { ArrowRight, BookOpen, Files, FileText, Layers3, MoreHorizontal, Plus, Upload } from 'lucide-react';
 import { NativeSelect } from './ui/native-select';
 import {
   compatibilityIssues,
@@ -307,16 +308,13 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
         actions={
           state.ok &&
           state.canEdit &&
-          (entries.length > 0 || showCreate) && (
+          entries.length > 0 && !showCreate && (
             <Button
-              variant={showCreate ? 'outline' : 'default'}
               disabled={Boolean(operation)}
-              onClick={() =>
-                showCreate ? confirmDiscard(() => setShowCreate(false)) : setShowCreate(true)
-              }
+              onClick={() => setShowCreate(true)}
             >
               {!operation && !showCreate && <Plus aria-hidden="true" />}
-              {operation ? 'Pending creation' : showCreate ? 'Cancel' : 'New bundle'}
+              {operation ? 'Pending creation' : 'New bundle'}
             </Button>
           )
         }
@@ -455,7 +453,9 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
               )
             ) : (
               <div className="bundle-directory overflow-hidden rounded-lg border bg-card">
-                <div className="bundle-directory-toolbar">
+                <ListToolbar count={query || targetFilter
+                  ? `${visibleEntries.length} of ${entries.length} bundles`
+                  : `${entries.length} ${entries.length === 1 ? 'bundle' : 'bundles'}`}>
                   <DirectorySearch
                     id="bundle-search"
                     label="Find a bundle"
@@ -480,18 +480,11 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                       </NativeSelect>
                     </div>
                   )}
-                  <span className="bundle-result-count" role="status">
-                    {query || targetFilter
-                      ? `${visibleEntries.length} of ${entries.length} bundles`
-                      : `${entries.length} ${entries.length === 1 ? 'bundle' : 'bundles'}`}
-                  </span>
-                </div>
-                <div className="bundle-directory-heading" aria-hidden="true">
+                </ListToolbar>
+                <div className="bundle-directory-heading directory-heading" aria-hidden="true">
                   <span>Bundle</span>
-                  <span>Source</span>
-                  <span>Target</span>
                   <span>Published channels</span>
-                  <span>Developer tools</span>
+                  <span />
                 </div>
                 <ul className="divide-y">
                   {visibleEntries.map(({ bundle, channels }) => {
@@ -529,7 +522,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                     };
                     return (
                       <Disclosure key={bundle.id} asChild>
-                        <li className="bundle-library-row px-4 py-4">
+                        <li className="bundle-library-row directory-row">
                           <div className="bundle-directory-name flex min-w-0 flex-1 items-center gap-3">
                             <BookOpen
                               className="size-4 shrink-0 text-muted-foreground"
@@ -539,7 +532,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                               <h3 className="break-words font-medium">
                                 {primary ? (
                                   <ConsoleLink
-                                    className="underline-offset-4 hover:underline"
+                                    className="bundle-directory-link underline-offset-4 hover:underline"
                                     aria-description={`Opens the ${primary.name} channel`}
                                     href={bundleHref(
                                       { projectId, bundleId: bundle.id, channel: primary.name },
@@ -552,15 +545,15 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                                   bundle.name
                                 )}
                               </h3>
+                              {(bundle.origin !== 'created' || bundle.compatibilityTarget !== 'generic') && (
+                                <span className="bundle-directory-meta">
+                                  {[bundle.origin !== 'created' && sourceLabels[bundle.origin],
+                                    bundle.compatibilityTarget !== 'generic' && targetLabels[bundle.compatibilityTarget]]
+                                    .filter(Boolean).join(' · ')}
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <span className="bundle-directory-meta">
-                            {sourceLabels[bundle.origin] || 'Stored content'}
-                          </span>
-                          <span className="bundle-directory-target">
-                            <span className="bundle-target-label">Target </span>
-                            {targetLabels[bundle.compatibilityTarget]}
-                          </span>
                           <div
                             className="bundle-directory-channels"
                             aria-label={`Published channels for ${bundle.name}`}
@@ -588,9 +581,10 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                           </div>
                           <DisclosureTrigger
                             className="bundle-reference-trigger"
+                            title="SDK reference"
                             aria-label={`SDK reference for ${bundle.name}`}
                           >
-                            SDK reference
+                            <MoreHorizontal aria-hidden="true" className="size-4" />
                           </DisclosureTrigger>
                           <DisclosureContent className="bundle-reference-details">
                             <dl className="grid gap-4 sm:grid-cols-2">

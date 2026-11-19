@@ -185,7 +185,7 @@ def evaluation(w,b,p,e,prefix,coarse):
     route=b.bundle_path('changes',draft=w.draft['id'],candidate=w.draft['snapshotVersion']['id'],generation=1)
     visit(p,b,route)
     for label, comparison in [('incomplete',w.incomplete),('mismatched',w.mismatched)]:
-        open_details(p,'Comparison lookup and details')
+        open_details(p,'Advanced details')
         p.get_by_label('Comparison ID',exact=True).fill(comparison['id'])
         p.get_by_role('button',name='Inspect comparison',exact=True).click()
         expect(p.get_by_text('Selected comparison: '+comparison['id'],exact=True)).to_be_visible()

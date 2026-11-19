@@ -34,7 +34,7 @@
   border-radius: 4px;
   background: transparent;
   color: var(--foreground);
-  font-size: 13px;
+  font-size: var(--type-13);
   font-weight: 500;
   text-align: left;
   white-space: normal;
@@ -68,7 +68,7 @@
   padding-inline: 4px;
   background: var(--muted);
   color: var(--muted-foreground);
-  font: 600 12px/1.45 var(--font-mono, ui-monospace, monospace);
+  font: 600 var(--type-12)/var(--leading-12) var(--font-sans);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }

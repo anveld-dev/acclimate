@@ -328,6 +328,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <TooltipTrigger asChild>
               <ConsoleLink
                 href={workspaceHref(projects[0].id)}
+                title={projects[0].name}
                 className="workspace-switcher-name block text-sm font-semibold whitespace-normal break-words hover:text-primary"
               >
                 {projects[0].name}
@@ -391,6 +392,7 @@ export function Shell({ children }: { children: ReactNode }) {
                         size="icon"
                         className="workspace-rail-control workspace-rail-workspaces"
                         disabled={!hydrated}
+                        title={nav?.projectName}
                         aria-label={nav?.projectName ? `Workspaces ${nav.projectName}` : 'Workspaces'}
                       >
                         <Building2 aria-hidden="true" className="size-[18px]" />
@@ -405,7 +407,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   <TooltipContent
                     side="right"
                     sideOffset={10}
-                    hidden={railExpanded || workspaceMenuOpen}
+                    hidden={workspaceMenuOpen}
                     className="workspace-rail-tooltip"
                   >
                     <span className="font-medium">Workspaces</span>

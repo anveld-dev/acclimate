@@ -1,5 +1,5 @@
 import type { Comparison } from '@acclimate/sdk';
-import { Badge } from './ui/badge';
+import { StatusBadge } from './status-badge';
 import { evaluationScoreSummary } from '../lib/evaluation-score-summary';
 import { evaluationEvidenceSummary } from '../lib/evaluation-history';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from './ui/disclosure';
@@ -30,12 +30,12 @@ export function EvaluationScorecard({ comparison }: { comparison: Comparison }) 
             {evidence.partial ? ' · partial' : ''}
           </p>
         </div>
-        <Badge
-          variant={evidence.partial ? 'outline' : 'secondary'}
+        <StatusBadge
+          tone={evidence.partial ? 'warning' : 'success'}
           className="evaluation-completeness"
         >
           {evidence.partial ? 'Partial evidence' : 'Complete evidence'}
-        </Badge>
+        </StatusBadge>
       </div>
       <div className="evaluation-score-rows">
         {(

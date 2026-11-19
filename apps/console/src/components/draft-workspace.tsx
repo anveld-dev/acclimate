@@ -1,3 +1,4 @@
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import './source-editor.css';
 import './draft-studio.css';
 import { artifactChanges } from '../lib/artifact-changes';
@@ -600,6 +601,18 @@ export function DraftWorkspace({
         )}
       </section>
     );
+  function startFromCurrentRelease() {
+    confirmDiscard(() => {
+      setDraft(null);
+      setNewBase({ versionId, revision });
+      hydratePayload(published);
+      setSaved(published);
+      setBase(published);
+      setHistory([]);
+      setIndex(0);
+    });
+  }
+
   return (
     <section className="space-y-4">
       <DraftDiscardDialog
@@ -632,23 +645,11 @@ export function DraftWorkspace({
                 Load more drafts
               </Button>
             )}
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() =>
-                confirmDiscard(() => {
-                  setDraft(null);
-                  setNewBase({ versionId, revision });
-                  hydratePayload(published);
-                  setSaved(published);
-                  setBase(published);
-                  setHistory([]);
-                  setIndex(0);
-                })
-              }
-            >
-              New draft from current release
-            </Button>
+            {(draft ? draft.baseRevision === revision : newBase.revision === revision) && (
+              <Button variant="outline" disabled={busy} onClick={startFromCurrentRelease}>
+                New draft from current release
+              </Button>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             {drafts.map((d) => (
@@ -783,6 +784,16 @@ export function DraftWorkspace({
                       ? 'Unsaved changes · Save to create a draft'
                       : 'Edit your content, then save a draft'}
             </p>
+            <div className="studio-context">
+              <span>
+                <GitBranch aria-hidden="true" />
+                {commandScope.channel} · Revision {draft?.baseRevision ?? newBase.revision}
+              </span>
+              <span>
+                {workingChanges.length} {workingChanges.length === 1 ? 'file' : 'files'} with
+                unsaved edits
+              </span>
+            </div>
           </div>
           <div ref={toolbarActions} className="draft-toolbar-actions">
             <Dialog>
@@ -973,17 +984,6 @@ export function DraftWorkspace({
             </DropdownMenu>
           </div>
         </header>
-        <div className="studio-context">
-          <span>
-            <GitBranch aria-hidden="true" />
-            {commandScope.channel} · Revision {draft?.baseRevision ?? newBase.revision}
-          </span>
-          <span>
-            {workingChanges.length} {workingChanges.length === 1 ? 'file' : 'files'} with unsaved
-            edits
-          </span>
-          {active && <span>Save creates a draft snapshot for evaluation.</span>}
-        </div>
         {message && (
           <p
             role="status"
@@ -1012,17 +1012,26 @@ export function DraftWorkspace({
             </ul>
           </div>
         )}
-        {!draft && newBase.revision !== revision && (
-          <p role="alert">
-            The release changed while you were editing. Your edits still belong to revision{' '}
-            {newBase.revision}. Start from the current release and reapply them before saving.
-          </p>
-        )}
-        {draft && draft.baseRevision !== revision && (
-          <p role="alert">
-            The published channel changed. This draft is preserved, but cannot be published against
-            its old base.
-          </p>
+        {(draft ? draft.baseRevision !== revision : newBase.revision !== revision) && (
+          <Alert data-tone="warning" className="draft-release-alert">
+            <AlertTitle>
+              {draft
+                ? 'The published channel changed'
+                : 'The release changed while you were editing'}
+            </AlertTitle>
+            <AlertDescription>
+              <p>
+                {draft
+                  ? 'Your draft is preserved. Publishing requires a draft based on the current release.'
+                  : `Your edits belong to revision ${newBase.revision}. Start from the current release and reapply them before saving.`}
+              </p>
+              {canEdit && (
+                <Button variant="outline" disabled={busy} onClick={startFromCurrentRelease}>
+                  New draft from current release
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
         )}
         {diff && (
           <section

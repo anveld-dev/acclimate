@@ -1,11 +1,15 @@
+import { PageHeader } from './page-header';
+import { WorkspaceMenuButton } from './workspace-chrome';
+import { ListToolbar } from './list-toolbar';
+import { StatusBadge } from './status-badge';
+import { ReceiptTime } from './receipt-time';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import type { DeliveryReceipt, IntegrationCredential, Page } from '@acclimate/sdk';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { DirectorySearch } from './ui/directory-search';
-import { ArrowUpRight, ChevronRight, Radio } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, Plus, Radio } from 'lucide-react';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { NativeSelect } from './ui/native-select';
@@ -413,42 +417,53 @@ function ConnectionWorkspace({
   );
   return (
     <>
-      <PageTitle
-        title="Connections"
-        description="App credentials and reported delivery for your bundles."
-        actions={
-          <Button
-            disabled={!state.canManage || busy || !state.bundles.length}
-            onClick={(event) => {
-              createTriggerRef.current = event.currentTarget;
-              setCreating(true);
-            }}
-          >
-            New connection
-          </Button>
-        }
-      />
+      {selected ? (
+        <div className="connection-page-heading">
+          <PageHeader
+            title={selected.displayName}
+            titleId="connection-selected-title"
+            utility={
+              <>
+                <WorkspaceMenuButton />
+                <ConsoleLink
+                  href={scopedConnectionHref(state.projectId, directorySearch)}
+                  className="workspace-back-link text-muted-foreground hover:text-foreground"
+                  onClick={(event) => {
+                    if (event.detail === 0) focusAfterNavigation('connection-entry-' + selected.id);
+                  }}
+                >
+                  Back to connections
+                </ConsoleLink>
+              </>
+            }
+          />
+        </div>
+      ) : (
+        <PageTitle
+          title="Connections"
+          description="App credentials and reported delivery for your bundles."
+          actions={
+            <Button
+              disabled={!state.canManage || busy || !state.bundles.length}
+              onClick={(event) => {
+                createTriggerRef.current = event.currentTarget;
+                setCreating(true);
+              }}
+            >
+              <Plus aria-hidden="true" /> New connection
+            </Button>
+          }
+        />
+      )}
       <div className="connection-workspace" data-selected={Boolean(state.selected)}>
         <section
           className={
-            selected ? 'connection-selected-navigation space-y-3' : 'connection-directory space-y-3'
+            selected
+              ? 'connection-selected-navigation space-y-3'
+              : 'connection-directory overflow-hidden rounded-md border bg-card'
           }
           aria-label="Workspace connections"
         >
-          {selected && (
-            <div className="connection-directory-header">
-              <ConsoleLink
-                href={scopedConnectionHref(state.projectId, directorySearch)}
-                className="underline"
-                onClick={(e) => {
-                  if (e.detail === 0) focusAfterNavigation('connection-entry-' + selected.id);
-                }}
-              >
-                Back to connections
-              </ConsoleLink>
-            </div>
-          )}
-          {selected && directoryAbout}
           {selected && (
             <div className="space-y-2">
               <Label htmlFor="selected-app-connection">App connection</Label>
@@ -509,9 +524,9 @@ function ConnectionWorkspace({
             </div>
           )}
           {!selected && (
-            <div className="connection-index-tools">
+            <div className="connection-index-tools bg-card">
               {scopedRows.length > 0 && (
-                <>
+                <ListToolbar count={`${rows.length} of ${scopedRows.length} connections`}>
                   <DirectorySearch
                     id="connection-directory-search"
                     label="Search connections"
@@ -531,12 +546,8 @@ function ConnectionWorkspace({
                       <option value="revoked">Revoked</option>
                     </NativeSelect>
                   </div>
-                  <span role="status">
-                    {rows.length} of {scopedRows.length} connections
-                  </span>
-                </>
+                </ListToolbar>
               )}
-              {directoryAbout}
             </div>
           )}
           {!selected &&
@@ -576,12 +587,12 @@ function ConnectionWorkspace({
                 )}
               </div>
             ) : (
-              <div className="connection-list connection-ledger divide-y rounded-md border bg-card">
-                <div className="connection-index-head" aria-hidden="true">
+              <div className="connection-list connection-ledger divide-y">
+                <div className="connection-index-head directory-heading" aria-hidden="true">
                   <span>App connection</span>
                   <span>Bundle / channel</span>
                   <span>Credentials</span>
-                  <span>Last report · UTC</span>
+                  <span>Last report</span>
                   <span>Access</span>
                   <span />
                 </div>
@@ -596,7 +607,7 @@ function ConnectionWorkspace({
                       onClick={(e) => {
                         if (e.detail === 0) focusAfterNavigation('connection-selected-title');
                       }}
-                      className="connection-row"
+                      className="connection-row directory-row"
                     >
                       <span className="connection-cell connection-ledger-app">
                         <Radio aria-hidden="true" size={15} />
@@ -626,28 +637,19 @@ function ConnectionWorkspace({
                         )}
                       </span>
                       <span className="connection-cell">
-                        <small>Last report · UTC</small>
+                        <small>Last report</small>
                         {report ? (
                           <>
                             <strong className="capitalize">{report.stage}</strong>
-                            <time dateTime={report.receivedAt} title={report.receivedAt}>
-                              {new Date(report.receivedAt).toLocaleString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                hourCycle: 'h23',
-                                timeZone: 'UTC',
-                              })}
-                            </time>
+                            <ReceiptTime value={report.receivedAt} />
                           </>
                         ) : (
                           <span>{report === null ? 'No retained report' : 'Unavailable'}</span>
                         )}
                       </span>
-                      <Badge variant={item.enabled ? 'secondary' : 'outline'}>
+                      <StatusBadge tone={item.enabled ? 'success' : 'neutral'}>
                         {item.enabled ? 'Enabled' : 'Revoked'}
-                      </Badge>
+                      </StatusBadge>
                       <ChevronRight size={15} className="connection-row-arrow" aria-hidden="true" />
                     </ConsoleLink>
                   );
@@ -667,6 +669,7 @@ function ConnectionWorkspace({
               </ConsoleLink>
             </p>
           )}
+          {!selected && <div className="connection-directory-details">{directoryAbout}</div>}
         </section>
         {!selected && error && (
           <p role="alert" className="rounded border border-destructive/30 p-4">
@@ -692,19 +695,12 @@ function ConnectionWorkspace({
             <header className="connection-selected-header space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2
-                    id="connection-selected-title"
-                    tabIndex={-1}
-                    className="break-words text-lg font-semibold"
-                  >
-                    {selected.displayName}
-                  </h2>
                   <p className="mt-1 break-words text-sm">
                     {bundleName(selected.bundleId)} / {selected.channel}
                   </p>
-                  <Badge variant="outline" className="mt-2">
+                  <StatusBadge tone={selected.enabled ? 'success' : 'neutral'} className="mt-2">
                     {selected.enabled ? 'Access enabled' : 'Access revoked'}
-                  </Badge>
+                  </StatusBadge>
                 </div>
                 <div className="connection-detail-actions">
                   <ConsoleLink
@@ -736,6 +732,10 @@ function ConnectionWorkspace({
                 </DisclosureTrigger>
                 <DisclosureContent>
                   <dl className="connection-identities">
+                    <div>
+                      <dt>Workspace</dt>
+                      <dd>{state.projectName}</dd>
+                    </div>
                     <div>
                       <dt>Workspace ID</dt>
                       <dd>

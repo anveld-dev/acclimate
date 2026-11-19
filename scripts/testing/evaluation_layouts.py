@@ -40,6 +40,7 @@ def run(args):
         route=b.bundle_path('changes',candidate=w.draft['snapshotVersion']['id'],request=w.evaluation['id'],comparison=w.report['id'])
         for width in [1440,1024,390,320]:
             p.set_viewport_size(dict(width=width,height=1000));visit(p,b,route)
+            p.get_by_role('button',name='Advanced details',exact=True).click()
             expect(p.get_by_role('region',name='Observed paired rewards',exact=True)).to_be_visible()
             expect(p.get_by_role('table',name='Evaluation case outcomes',exact=True)).to_be_visible()
             assert p.evaluate('document.documentElement.scrollWidth<=innerWidth+1')

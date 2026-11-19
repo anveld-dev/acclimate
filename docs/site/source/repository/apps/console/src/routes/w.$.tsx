@@ -125,9 +125,8 @@ function ScopedPage() {
   const workspaceKey = `${navigation?.actorScope}:${navigation?.role}:${data.kind === 'missing' ? '' : data.location.projectId}`;
   if (data.kind === 'missing')
     return (
-      <section className="space-y-4">
-        <h1 className="text-xl font-semibold">Page not found</h1>
-        <p>This workspace link is no longer available.</p>
+      <section className="missing-page space-y-4">
+        <PageTitle title="Page not found" description="This workspace link is no longer available." />
         <Button asChild variant="outline">
           <Link to="/">Back to bundles</Link>
         </Button>
@@ -324,7 +323,7 @@ function BundleScopeHeader({
               </span>
             </ConsoleLink>
           </Button>
-          {!unavailableChannel && (
+          {!unavailableChannel && !(view === 'changes' && String(search.history) === '1') && (
             <Button asChild variant="ghost" size="sm" className="ml-auto">
               <ConsoleLink
                 aria-label="Evaluation history"

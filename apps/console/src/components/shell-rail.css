@@ -110,7 +110,7 @@
   .workspace-desktop-rail .workspace-rail-brand {
     color: var(--sidebar-foreground);
     background: transparent;
-    font-size: 17px;
+    font-size: var(--type-16);
     font-weight: 650;
     letter-spacing: -0.03em;
   }
@@ -133,11 +133,11 @@
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 14px;
+    font-size: var(--type-14);
     font-weight: 400;
   }
   .workspace-rail-workspaces .workspace-rail-label small {
-    font-size: 12px;
+    font-size: var(--type-12);
     opacity: .82;
   }
   .workspace-desktop-rail .workspace-rail-workspaces[data-slot='button'] {
@@ -151,9 +151,12 @@
     margin-inline-start: auto;
   }
   .workspace-rail-workspaces .workspace-rail-label strong {
-    display: block;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
     overflow: hidden;
-    text-overflow: ellipsis;
     font-weight: 600;
   }
 }
@@ -172,17 +175,17 @@
   width: 280px;
   max-width: calc(100vw - 24px);
   padding: 6px;
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 20px;
 }
 .workspace-rail-workspace-menu [data-slot='dropdown-menu-label'] {
   padding: 6px 8px;
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .workspace-rail-workspace-menu [data-slot='dropdown-menu-item'],
 .workspace-rail-workspace-menu [data-slot='dropdown-menu-radio-item'] {
   min-height: 36px;
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 20px;
 }
 .workspace-rail-workspace-option > span:not([data-slot]) {
@@ -196,7 +199,7 @@
   display: block;
   margin-top: 2px;
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--type-14);
   font-weight: 400;
 }
 @media (max-width: 1000px) {
@@ -226,7 +229,7 @@
   overscroll-behavior: contain;
   gap: 4px;
   padding: 6px;
-  font-size: 14px;
+  font-size: var(--type-14);
 }
 .account-menu .account-identity {
   padding: 8px;
@@ -245,7 +248,7 @@
   overflow-wrap: anywhere;
 }
 .account-identity-name {
-  font-size: 14px;
+  font-size: var(--type-14);
   font-weight: 600;
   line-height: 1.35;
 }
@@ -275,7 +278,7 @@
   display: block;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  font-size: 13px;
+  font-size: var(--type-13);
   line-height: 1.6;
   user-select: all;
 }
@@ -300,12 +303,12 @@
 .workspace-rail-workspace-role {
   display: block;
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: var(--type-13);
   font-weight: 400;
   line-height: 18px;
 }
 .workspace-rail-workspace-id {
-  font-size: 12px;
+  font-size: var(--type-12);
   line-height: 18px;
 }
 @media (pointer: coarse) {

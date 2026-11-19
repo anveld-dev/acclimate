@@ -200,8 +200,8 @@ def evaluations(w,b,e,f):
         expect(p.get_by_role('heading',name='Evaluation request',exact=True)).to_have_count(0)
         capture(e,p,str(width)+'-evaluation-first-use')
     p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,route);p.get_by_label('Public evaluator configuration (JSON)',exact=True).filter(visible=True).fill(json.dumps(dict(datasetRevision='saved-tasks',graderRevision='grader-v1',runtime=dict(configId='app',configRevision='1'),expectedCases=[dict(caseId='review',repetition=0)])))
-    for name in ('Review file changes','Saved snapshot details','Comparison lookup and details'):open_details(p,name)
-    for name in ('Set up evaluation request','Review file changes','Saved snapshot details','Comparison lookup and details'):expect(p.get_by_role('button',name=name,exact=True)).to_have_attribute('aria-expanded','true')
+    for name in ('Advanced details','Review file changes','Saved snapshot details'):open_details(p,name)
+    for name in ('Set up evaluation request','Review file changes','Saved snapshot details','Advanced details'):expect(p.get_by_role('button',name=name,exact=True)).to_have_attribute('aria-expanded','true')
     manual_review(w,e,p,f,'1440-first-use')
     assert w.call('GET',w.bundle+'/evaluation-requests')['items']==baseline,'Disclosures created evaluation work'
     create=p.get_by_role('button',name='Create evaluation request',exact=True);activate(p,create)

@@ -1,3 +1,4 @@
+import { ReceiptTime } from './receipt-time';
 import { type ReactNode } from 'react';
 import type { Evaluation } from '@acclimate/sdk';
 import { ArrowRight, FileJson, Terminal } from 'lucide-react';
@@ -34,6 +35,7 @@ export function EvaluationRequestInspector({
   projectId,
   bundleId,
   children,
+  showDownload = true,
 }: {
   request: Evaluation;
   consoleOrigin: string;
@@ -43,6 +45,7 @@ export function EvaluationRequestInspector({
   projectId: string;
   bundleId: string;
   children?: ReactNode;
+  showDownload?: boolean;
 }) {
   const handoff = evaluationHandoff(publicApiUrl, projectId, bundleId, request.id, request);
   const setupCommand = isCheckoutCodexEvaluator(request)
@@ -122,7 +125,7 @@ export function EvaluationRequestInspector({
         <code className="run-file-name">evaluation-request.json</code>
         {requested && <p>Run in your app with the request ID and frozen public configuration.</p>}
         <div className="run-handoff-actions">
-          <EvaluationHandoffDownload handoff={handoff} />
+          {showDownload && <EvaluationHandoffDownload handoff={handoff} />}
           <CopyButton value={handoff} label="Copy request JSON" />
           <CopyButton value={request.id} label="Copy request ID" />
         </div>
@@ -186,9 +189,7 @@ export function EvaluationRequestInspector({
             <div>
               <dt>Updated</dt>
               <dd>
-                <time dateTime={request.updatedAt}>
-                  {new Date(request.updatedAt).toLocaleString()}
-                </time>
+                <ReceiptTime value={request.updatedAt} />
               </dd>
             </div>
             <RecordField label="Parent version" value={request.parentVersionId} />

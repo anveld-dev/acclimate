@@ -1,41 +1,20 @@
 .bundle-directory {
   container: bundle-directory / inline-size;
 }
-.bundle-directory-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-}
-.bundle-directory-toolbar [data-slot='input-group'] {
-  flex: 1 1 240px;
-  max-width: 390px;
-  min-width: 0;
-  background: var(--background);
-}
 .bundle-target-filter {
   display: flex;
   align-items: center;
   gap: 7px;
   color: var(--muted-foreground);
 }
-.bundle-target-filter label,
-.bundle-result-count {
-  font-size: 13px;
-}
-.bundle-result-count {
-  margin-inline-start: auto;
-  color: var(--muted-foreground);
-  font-variant-numeric: tabular-nums;
+.bundle-target-filter label {
+  font-size: var(--type-14);
 }
 .bundle-directory-heading,
 .bundle-library-row {
   display: grid;
   grid-template-columns:
-    minmax(0, 1.55fr) minmax(0, 0.58fr) minmax(0, 0.56fr) minmax(0, 1.17fr)
-    9rem;
+    minmax(0, 1.55fr) minmax(0, 1.17fr) auto;
   gap: 8px 16px;
   align-items: center;
 }
@@ -44,11 +23,11 @@
   border-bottom: 1px solid var(--border);
   background: var(--muted);
   color: var(--muted-foreground);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--type-13);
+  font-weight: 550;
 }
 .bundle-directory .bundle-library-row {
-  min-height: 50px;
+  min-height: 54px;
   min-width: 0;
   padding: 7px 16px;
   border-inline-start: 3px solid transparent;
@@ -62,12 +41,10 @@
 .bundle-library-row[data-state='open'] .bundle-directory-name {
   color: var(--foreground);
 }
-.bundle-directory-meta,
-.bundle-directory-target {
-  font-size: 14px;
+.bundle-directory-meta {
+  font-size: var(--type-14);
   color: var(--muted-foreground);
 }
-.bundle-directory-target,
 .bundle-directory-name,
 .bundle-directory-channels {
   overflow-wrap: anywhere;
@@ -79,8 +56,7 @@
   gap: 4px 8px;
   min-width: 0;
 }
-.bundle-directory-channel-label,
-.bundle-target-label {
+.bundle-directory-channel-label {
   display: none;
 }
 .bundle-published-channel {
@@ -98,7 +74,7 @@
   min-width: 0;
   padding: 4px 7px;
   min-height: 30px;
-  font-size: 14px;
+  font-size: var(--type-14);
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -119,7 +95,13 @@
   outline-offset: -2px;
 }
 .bundle-reference-trigger {
-  justify-self: start;
+  min-width: 36px;
+  min-height: 36px;
+  justify-self: end;
+  justify-content: center;
+}
+.bundle-reference-trigger > svg {
+  display: none;
 }
 .bundle-channel-disclosure {
   max-width: 100%;
@@ -149,7 +131,7 @@
   align-items: center;
   gap: 5px 15px;
   padding-top: 9px;
-  font-size: 14px;
+  font-size: var(--type-14);
   overflow-wrap: anywhere;
 }
 .bundle-version-id {
@@ -160,7 +142,7 @@
   gap: 4px 8px;
 }
 .bundle-version-id code {
-  font-size: 13px;
+  font-size: var(--type-13);
 }
 @container bundle-directory (max-width: 48rem) {
   .bundle-directory-heading {
@@ -174,28 +156,16 @@
   .bundle-directory-name {
     grid-column: 1/-1;
   }
-  .bundle-directory-meta,
-  .bundle-directory-target {
-    grid-row: 2;
-    font-size: 12px;
-  }
-  .bundle-directory-meta {
-    padding-inline-start: 28px;
-  }
-  .bundle-target-label {
-    display: inline;
-    color: var(--muted-foreground);
-  }
   .bundle-directory-channels {
     grid-column: 1;
-    grid-row: 3;
+    grid-row: 2;
   }
   .bundle-reference-trigger {
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 2;
   }
   .bundle-reference-details {
-    grid-row: 4;
+    grid-row: 3;
   }
   .bundle-version-reference {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -214,18 +184,21 @@
   }
 }
 @container bundle-directory (max-width: 31rem) {
-  .bundle-directory-toolbar {
-    gap: 6px 10px;
-    padding: 9px 12px;
-  }
-  .bundle-directory-toolbar [data-slot='input-group'] {
-    flex: 1 1 100%;
-    max-width: none;
-  }
-}
+    }
 @media (pointer: coarse) {
   .bundle-published-channel a,
   .bundle-reference-trigger {
     min-height: 44px;
   }
+  .bundle-reference-trigger { min-width: 44px; }
 }
+
+
+.bundle-directory-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  text-decoration: underline;
+  text-decoration-color: var(--input);
+}
+.bundle-directory-meta { display: block; }

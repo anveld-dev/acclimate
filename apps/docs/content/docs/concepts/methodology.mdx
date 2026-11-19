@@ -175,6 +175,21 @@ Resampling `r` repetitions understates the variance of a case mean by `(r - 1) /
 
 The bootstrap still undercovers slightly with few repetitions, which is why it requires at least three.
 
+## Noisy graders and pass@k
+
+A model grader is itself a measurement. Inside your `grade` callback, `repeatGrade` (Python `repeat_grade`) calls a grader several times and combines the rewards by `mean`, `median` or `majority`. It averages named numeric `components`, such as correctness and citation quality, and returns an agreement statistic: the share of calls matching the combined reward, their standard deviation and range. The combined value is the scalar reward; the calls, components and agreement go into `explanation`, where a review export or analysis `observations` can use them.
+
+```ts
+import { passAtK, repeatGrade } from '@acclimate/sdk/evaluation';
+
+grade: async ({ output, expected }) =>
+  repeatGrade(() => judge(output, expected), { repetitions: 3, combine: 'majority' }),
+```
+
+`passAtK(n, successes, k)` (Python `pass_at_k`) is the unbiased estimate that at least one of `k` attempts passes, from `n` binary attempts of one case. Average it across cases for a suite figure.
+
+Policies still decide on the scalar reward. Component values are not part of the comparison record yet, so a policy cannot gate on them directly.
+
 ## Caveats
 
 - The test assumes cases are independent and representative of the tasks you care about. Near-duplicate cases or cases chosen after seeing results inflate confidence.

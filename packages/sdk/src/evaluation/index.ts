@@ -36,3 +36,5 @@ export type { EvaluationProgressScope, EvaluationProgressUpdate } from './progre
 export type { ApplicationAdapter } from './app-cli.js';
 export { planEvaluation, PlanError } from './plan.js';
 export type { EvaluationPlan, PlanOptions } from './plan.js';
+export { gradeAgreement, passAtK, repeatGrade } from './grading.js';
+export type { ComponentGrade, GradeAgreement, RepeatedGradeOptions } from './grading.js';

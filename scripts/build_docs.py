@@ -105,7 +105,7 @@ def rewrite_url(url, source, current):
         dest = relative(ROUTES[target], current)
     elif (target.is_file() and target.is_relative_to(ROOT)
           and target.relative_to(ROOT).parts[0] in {'src', 'tests', 'migrations', 'packages', 'apps', 'examples', 'scripts', 'contracts', 'deploy', '.github', 'features', 'python'}
-          and target.suffix in {'.rs', '.ts', '.tsx', '.py', '.sql', '.json', '.toml', '.yaml', '.yml', '.md', '.feature'}
+          and target.suffix in {'.rs', '.ts', '.tsx', '.py', '.sql', '.json', '.toml', '.yaml', '.yml', '.md', '.mdx', '.feature'}
           and not any(part in {'node_modules', '.local', '.repos', 'target', 'dist', '.output'} or part.startswith('.env') for part in target.relative_to(ROOT).parts)):
         exported = 'source/repository/' + target.relative_to(ROOT).as_posix()
         SOURCE_EXPORTS[target] = exported

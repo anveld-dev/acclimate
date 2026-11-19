@@ -17,6 +17,7 @@ services:
       timeout: 3s
       retries: 20
   service:
+    image: ${ACCLIMATE_SERVICE_IMAGE:-ghcr.io/anveld-dev/acclimate-service:${ACCLIMATE_VERSION:-latest}}
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -37,6 +38,7 @@ services:
       retries: 12
       start_period: 30s
   console:
+    image: ${ACCLIMATE_CONSOLE_IMAGE:-ghcr.io/anveld-dev/acclimate-console:${ACCLIMATE_VERSION:-latest}}
     build:
       context: .
       dockerfile: deploy/console.Dockerfile

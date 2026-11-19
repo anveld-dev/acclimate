@@ -17,7 +17,7 @@ spec.loader.exec_module(container)
 
 
 class DeploymentTests(unittest.TestCase):
-    def resolve(self, directory, missing=None):
+    def resolve(self, directory, missing=None, **overrides):
         for filename in ('service.env','console.env','password','empty.env'):
             container.private_write(directory/filename, '')
         environment = dict(PATH=os.environ['PATH'],
@@ -25,6 +25,7 @@ class DeploymentTests(unittest.TestCase):
             ACCLIMATE_CONSOLE_ENV=str(directory/'console.env'),
             ACCLIMATE_POSTGRES_PASSWORD_FILE=str(directory/'password'),
             CONSOLE_HOST='console.fixture.invalid', API_HOST='api.fixture.invalid', ACME_EMAIL='fixture@example.invalid')
+        environment.update(overrides)
         if missing:
             environment.pop(missing)
         result = subprocess.run(['docker','compose','--env-file',str(directory/'empty.env'),
@@ -47,6 +48,8 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual({port['target'] for port in services['proxy']['ports']}, {80,443})
         self.assertEqual(services['service']['build']['dockerfile'],'deploy/Dockerfile')
         self.assertEqual(services['console']['build']['dockerfile'],'deploy/console.Dockerfile')
+        self.assertEqual(services['service']['image'],'ghcr.io/anveld-dev/acclimate-service:latest')
+        self.assertEqual(services['console']['image'],'ghcr.io/anveld-dev/acclimate-console:latest')
         self.assertEqual(services['postgres']['environment']['POSTGRES_PASSWORD_FILE'],'/run/secrets/postgres_password')
         self.assertNotIn('POSTGRES_PASSWORD',services['postgres']['environment'])
         self.assertIn('/ready', ' '.join(services['service']['healthcheck']['test']))
@@ -61,7 +64,20 @@ class DeploymentTests(unittest.TestCase):
                     self.resolve(Path(temporary), missing=missing)
                 self.assertIn(missing.encode(), failure.exception.stderr)
 
-    def test_qualification_retains_canonical_artifacts_and_private_ports(self):
+    def test_manifest_supports_a_shared_release_version_and_individual_image_overrides(self):
+        for overrides, service, console in (
+            ({'ACCLIMATE_VERSION': '0.1.0'}, 'ghcr.io/anveld-dev/acclimate-service:0.1.0',
+             'ghcr.io/anveld-dev/acclimate-console:0.1.0'),
+            ({'ACCLIMATE_VERSION': '0.1.0', 'ACCLIMATE_SERVICE_IMAGE': 'local/acclimate-service:test',
+              'ACCLIMATE_CONSOLE_IMAGE': 'local/acclimate-console:test'},
+             'local/acclimate-service:test', 'local/acclimate-console:test'),
+        ):
+            with self.subTest(overrides=overrides), tempfile.TemporaryDirectory() as temporary:
+                services = self.resolve(Path(temporary), **overrides)['services']
+                self.assertEqual(services['service']['image'], service)
+                self.assertEqual(services['console']['image'], console)
+
+    def test_qualification_uses_project_local_builds_and_private_ports(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory=Path(temporary)
             canonical=self.resolve(directory)
@@ -71,6 +87,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(result['services']['console']['environment']['NODE_EXTRA_CA_CERTS'],'/run/fixture/issuer.crt')
         for name in ('service','console'):
             self.assertIn('build',result['services'][name])
+            self.assertNotIn('image',result['services'][name])
             self.assertFalse(result['services'][name].get('ports'))
         result['services']['service']['ports']=[dict(target=3000,published='3000')]
         with self.assertRaises(ValueError):

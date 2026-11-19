@@ -5,7 +5,7 @@ import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import { ConsoleLink } from './console-link';
 import { CopyButton } from './copy-button';
 import { Button } from './ui/button';
-import { Download, FileCode2, GitBranch } from 'lucide-react';
+import { Code, Download, FileCode2, GitBranch } from 'lucide-react';
 import { SetupReceipt } from './setup-receipt';
 import { SyntaxCode } from './syntax-code';
 import { connectionHref } from '../lib/connection-navigation';
@@ -23,6 +23,18 @@ import releaseMetadata from '../../../../scripts/packaging/release-metadata.json
 type Ready = Extract<ConsoleState, { status: 'ready' }>;
 type SetupScope = Pick<Ready, 'projectId' | 'bundleId' | 'bundleName' | 'channel' | 'publicApiUrl'>;
 type Language = 'typescript' | 'python';
+
+/** A visible step marker; the accessible heading still reads "1. Install the SDK". */
+function StepNumber({ value }: { value: number }) {
+  return (
+    <>
+      <span className="sdk-step-number" aria-hidden="true">
+        {value}
+      </span>
+      <span className="sr-only">{value}. </span>
+    </>
+  );
+}
 
 function SdkLanguage({
   language,
@@ -96,7 +108,7 @@ export function UseInAnApp({ state }: { state: SetupScope }) {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="use-in-app-trigger min-h-9">
-          <FileCode2 aria-hidden="true" /> <span className="use-in-app-label">Use in an app</span>
+          <Code aria-hidden="true" /> <span className="use-in-app-label">Use in an app</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[26rem] p-4" aria-label="Use this bundle in an app">
@@ -199,20 +211,35 @@ export function SdkSetup({
     channel: state.channel,
   });
   const agentInstructions = (
-    <p>
-      Connect your existing agent loop in{' '}
-      <code>{isTypeScript ? 'application.mjs' : 'application.py'}</code>. Export{' '}
-      <code>{isTypeScript ? 'runExistingAgent' : 'run_existing_agent'}</code> with the arguments
-      below. Set <code>ACCLIMATE_JOB_DIR</code> to an empty, private, persistent directory for this
-      run. Supply the real task in <code>AGENT_TASK</code>, expose the supplied skill files through
-      your tools, and return the result after the agent stops. Save the recipe beside the module as{' '}
-      <code>{isTypeScript ? 'agent-connection.mjs' : 'agent_connection.py'}</code>. Run it with your
-      private delivery settings. It retains the result in{' '}
-      <code>ACCLIMATE_JOB_DIR/acclimate-agent-result.json</code> with its version and digest; use a
-      new empty job directory for another run. Return stopped only after actual termination; a
-      rejected call retains the private job directory for inspection instead of cleaning possibly
-      active inputs.
-    </p>
+    <div className="sdk-agent-instructions">
+      <p>
+        Connect your existing agent loop in{' '}
+        <code>{isTypeScript ? 'application.mjs' : 'application.py'}</code>. Export{' '}
+        <code>{isTypeScript ? 'runExistingAgent' : 'run_existing_agent'}</code> with the arguments
+        below.
+      </p>
+      <ol>
+        <li>
+          Set <code>ACCLIMATE_JOB_DIR</code> to an empty, private, persistent directory for this
+          run.
+        </li>
+        <li>
+          Supply the real task in <code>AGENT_TASK</code>, expose the supplied skill files through
+          your tools, and return the result after the agent stops.
+        </li>
+        <li>
+          Save the recipe beside the module as{' '}
+          <code>{isTypeScript ? 'agent-connection.mjs' : 'agent_connection.py'}</code>. Run it with
+          your private delivery settings.
+        </li>
+      </ol>
+      <p className="sdk-agent-note">
+        It retains the result in <code>ACCLIMATE_JOB_DIR/acclimate-agent-result.json</code> with its
+        version and digest; use a new empty job directory for another run. Return stopped only
+        after actual termination; a rejected call retains the private job directory for inspection
+        instead of cleaning possibly active inputs.
+      </p>
+    </div>
   );
   return (
     <section className="sdk-setup sdk-setup-workspace sdk-recipe-lab min-w-0 text-sm">
@@ -276,7 +303,10 @@ export function SdkSetup({
         {step !== 'agent' && (
           <>
             <section className="sdk-step sdk-install-step" aria-labelledby="sdk-install-heading">
-              <h3 id="sdk-install-heading">1. Install the SDK</h3>
+              <h3 id="sdk-install-heading">
+                <StepNumber value={1} />
+                Install the SDK
+              </h3>
               {!step && (
                 <p>
                   {isTypeScript ? (
@@ -332,7 +362,10 @@ export function SdkSetup({
               </Disclosure>
             </section>
             <section className="sdk-step sdk-access-step" aria-labelledby="sdk-access-heading">
-              <h3 id="sdk-access-heading">2. Configure access</h3>
+              <h3 id="sdk-access-heading">
+                <StepNumber value={2} />
+                Configure access
+              </h3>
               {!step &&
                 (canManage ? (
                   <p>
@@ -458,7 +491,10 @@ export function SdkSetup({
             <section className="sdk-step sdk-run-step">
               <div className="sdk-recipe-heading">
                 <div>
-                  <h3 id="sdk-check-heading">3. Run the delivery check</h3>
+                  <h3 id="sdk-check-heading">
+                    <StepNumber value={3} />
+                    Run the delivery check
+                  </h3>
                   <p>
                     This check makes no model calls. Run it from the folder containing the
                     downloaded file.
@@ -535,7 +571,10 @@ export function SdkSetup({
             className="sdk-step sdk-agent-step space-y-3"
             aria-labelledby="sdk-agent-heading"
           >
-            <h3 id="sdk-agent-heading">4. Connect your agent, then compare a change</h3>
+            <h3 id="sdk-agent-heading">
+              <StepNumber value={4} />
+              Connect your agent, then compare a change
+            </h3>
             {runtime === 'custom' ? (
               <>
                 {step ? (

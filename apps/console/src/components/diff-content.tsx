@@ -1,7 +1,7 @@
 import { diffArrays } from 'diff';
+import { StatusBadge } from './status-badge';
 import { FileMerge } from './file-merge';
 import type { BundlePayload } from '@acclimate/sdk';
-import { Badge } from './ui/badge';
 import { useId, useState } from 'react';
 import { artifactChanges } from '../lib/artifact-changes';
 import { Button } from './ui/button';
@@ -185,7 +185,7 @@ export function ContentDiff({
                       </span>
                     </span>
                   )}
-                  <Badge variant="outline">
+                  <StatusBadge tone={!before ? 'success' : !after ? 'danger' : 'neutral'}>
                     {!before
                       ? 'New entry'
                       : !after
@@ -193,7 +193,7 @@ export function ContentDiff({
                         : before.text === after.text
                           ? 'Type changed'
                           : 'Content changed'}
-                  </Badge>
+                  </StatusBadge>
                 </div>
               </div>
               <div className="p-4">

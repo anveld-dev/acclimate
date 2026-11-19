@@ -14,7 +14,7 @@
 .bundle-library-row {
   display: grid;
   grid-template-columns:
-    minmax(0, 1.55fr) minmax(0, 1.17fr) auto;
+    minmax(0, 1.55fr) minmax(0, 1.17fr) minmax(7rem, 0.5fr) auto;
   gap: 8px 16px;
   align-items: center;
 }
@@ -156,6 +156,9 @@
   .bundle-directory-name {
     grid-column: 1/-1;
   }
+  .bundle-directory-created {
+    display: none;
+  }
   .bundle-directory-channels {
     grid-column: 1;
     grid-row: 2;
@@ -198,7 +201,15 @@
   display: inline-flex;
   align-items: center;
   min-height: 36px;
+  font-weight: 600;
+  text-decoration: none;
+  text-underline-offset: 4px;
+}
+.bundle-directory-link:hover {
   text-decoration: underline;
-  text-decoration-color: var(--input);
+}
+.bundle-directory-created {
+  color: var(--muted-foreground);
+  font-size: var(--type-13);
 }
 .bundle-directory-meta { display: block; }

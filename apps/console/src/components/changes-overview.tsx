@@ -13,7 +13,7 @@ import { Button } from './ui/button';
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from './ui/native-select';
 import { evaluationVersionOptions } from '../lib/evaluation-version-options';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { ArrowLeft, Plus, Sparkles } from 'lucide-react';
+import { Plus, Sparkles } from 'lucide-react';
 
 type Ready = Extract<ConsoleState, { status: 'ready' }>;
 const string = (value: unknown) => (typeof value === 'string' ? value : '');
@@ -235,28 +235,16 @@ function ScopedChangesOverview({ state, search, board, toolbar }: OverviewProps)
       data-history={historyPage || undefined}
     >
       {historyPage ? (
-        <header className="changes-history-toolbar">
-          <Button asChild size="sm" variant="ghost">
-            <ConsoleLink href={bundleHref(scope, 'changes')}>
-              <ArrowLeft aria-hidden="true" /> Changes
-            </ConsoleLink>
-          </Button>
-          <span ref={heading} tabIndex={-1}>
-            {state.channel} · Revision {state.resolution.revision}
-          </span>
-        </header>
+        // The Evaluations tab names this view; keep a focus target for in-page navigation.
+        <span ref={heading} tabIndex={-1} className="sr-only">
+          Evaluations for {state.channel}, revision {state.resolution.revision}
+        </span>
       ) : (
         <header className="changes-overview-toolbar">
-          <div>
-            <h2 ref={heading} tabIndex={-1}>
-              Changes
-            </h2>
-            <p>
-              {state.channel} · {selectedCandidate ? 'Current revision' : 'Revision'}{' '}
-              {state.resolution.revision}
-              {state.canEdit ? '' : ' · Read-only'}
-            </p>
-          </div>
+          {/* The Changes tab names this view; the heading remains for assistive navigation. */}
+          <h2 ref={heading} tabIndex={-1} className="sr-only">
+            Changes
+          </h2>
           {state.canEdit && (
             <div className="changes-overview-actions">
               <Button asChild>
@@ -273,6 +261,10 @@ function ScopedChangesOverview({ state, search, board, toolbar }: OverviewProps)
               </Button>
             </div>
           )}
+          <p className="changes-overview-base">
+            Based on revision {state.resolution.revision}
+            {state.canEdit ? '' : ' · Read-only'}
+          </p>
           {toolbar && <div className="changes-overview-view">{toolbar}</div>}
         </header>
       )}

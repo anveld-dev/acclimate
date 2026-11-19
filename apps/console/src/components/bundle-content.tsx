@@ -1,4 +1,5 @@
 import './source-editor.css';
+import { StatusBadge } from './status-badge';
 import './published-source.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
@@ -18,7 +19,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { sourceLines } from '../lib/syntax-source';
-import { Badge } from './ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { FileGlyph, KindBadge, PathText, fileTitle } from './shared';
 import type { ConsoleState } from '../server/channel';
@@ -213,7 +213,7 @@ export function BundleContent({
                           {state.resolution.revision}
                         </a>
                         <KindBadge kind={selected.kind} />
-                        {!state.canEdit && <Badge variant="outline">Read only</Badge>}
+                        {!state.canEdit && <StatusBadge>Read only</StatusBadge>}
                       </div>
                     </div>
                     {selected.path !== fileTitle(selected) && (

@@ -80,7 +80,7 @@ def capture_scope(w, b, evidence, page, route, name, width, height, *, coarse=Fa
     assert scope['title']['text']==identity,scope['title']
     assert scope['channel']['tag']=='SELECT' and scope['channel']['value']==channel,scope['channel']
     assert scope['channel']['selectedText']==channel,scope['channel']
-    assert [row['name'] for row in checked if row['navigation']=='Bundle navigation']==['Content','Changes','Releases'],checked
+    assert [row['name'] for row in checked if row['navigation']=='Bundle navigation']==['Content','Changes','Releases','Evaluations'],checked
     text=scope['title']['textBounds'];heading=scope['title']['bounds']
     assert text['left']>=heading['left']-1 and text['right']<=heading['right']+1 and text['bottom']<=heading['bottom']+1,scope['title']
     assert scope['primary']['bottom']<=scope['secondary']['top']+1 or abs(scope['primary']['top']-scope['secondary']['top'])<=1,scope

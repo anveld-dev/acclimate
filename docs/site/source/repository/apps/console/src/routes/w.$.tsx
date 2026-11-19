@@ -1,4 +1,4 @@
-import { ArrowLeft, GitBranch, History } from 'lucide-react';
+import { ArrowLeft, GitBranch } from 'lucide-react';
 import { PageHeader } from '../components/page-header';
 import { Button } from '@/components/ui/button';
 import { WorkspaceMenuButton } from '../components/workspace-chrome';
@@ -289,6 +289,9 @@ function BundleScopeHeader({
 }) {
   const navigate = useNavigate();
   const historyHref = bundleHref(scope, 'changes', { history: 1 }) + '#evaluation-history';
+  // Evaluation history lives under Changes but is its own destination in the bundle tabs.
+  const historyView =
+    view === 'changes' && String(search.history) === '1' && !search.draft && !search.proposal;
   const isChangeDetail =
     !unavailableChannel &&
     view === 'changes' &&
@@ -341,45 +344,15 @@ function BundleScopeHeader({
               </span>
             </ConsoleLink>
           </Button>
-          {!unavailableChannel && !(view === 'changes' && String(search.history) === '1') && (
-            <Button asChild variant="ghost" size="sm" className="ml-auto">
-              <ConsoleLink
-                aria-label="Evaluation history"
-                className="bundle-evaluation-history"
-                href={historyHref}
-                onClick={async (event) => {
-                  const link = event.currentTarget;
-                  if (
-                    event.button !== 0 ||
-                    event.metaKey ||
-                    event.ctrlKey ||
-                    event.shiftKey ||
-                    event.altKey ||
-                    link.pathname !== window.location.pathname
-                  )
-                    return;
-                  event.preventDefault();
-                  const destination = link.href;
-                  await navigate(consoleDestination(historyHref));
-                  requestAnimationFrame(() => {
-                    if (window.location.href === destination)
-                      document.getElementById('evaluation-history')?.focus({ preventScroll: true });
-                  });
-                }}
-              >
-                <History aria-hidden="true" className="size-4" />
-                <span className="hidden sm:inline">Evaluation history</span>
-                <span className="sm:hidden">History</span>
-              </ConsoleLink>
-            </Button>
-          )}
         </>
       }
+      titleAccessory={<ChannelPicker scope={scope} view={view} search={search} />}
       actions={
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {apiUrl && <UseInAnApp state={{ ...scope, bundleName: name, publicApiUrl: apiUrl }} />}
-          <ChannelPicker scope={scope} view={view} search={search} />
-        </div>
+        apiUrl && (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <UseInAnApp state={{ ...scope, bundleName: name, publicApiUrl: apiUrl }} />
+          </div>
+        )
       }
       footer={
         !unavailableChannel && (
@@ -388,11 +361,38 @@ function BundleScopeHeader({
               <ConsoleLink
                 key={tab}
                 href={bundleHref(scope, tab)}
-                aria-current={view === tab ? 'page' : undefined}
+                exactActive
+                aria-current={view === tab && !historyView ? 'page' : undefined}
               >
                 {bundleViewLabels[tab]}
               </ConsoleLink>
             ))}
+            <ConsoleLink
+              href={historyHref}
+              exactActive
+              aria-current={historyView ? 'page' : undefined}
+              onClick={async (event) => {
+                const link = event.currentTarget;
+                if (
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey ||
+                  link.pathname !== window.location.pathname
+                )
+                  return;
+                event.preventDefault();
+                const destination = link.href;
+                await navigate(consoleDestination(historyHref));
+                requestAnimationFrame(() => {
+                  if (window.location.href === destination)
+                    document.getElementById('evaluation-history')?.focus({ preventScroll: true });
+                });
+              }}
+            >
+              Evaluations
+            </ConsoleLink>
           </nav>
         )
       }
@@ -414,7 +414,6 @@ function ChannelPicker({
   const published = channels.some((channel) => channel.name === scope.channel);
   return (
     <div className="bundle-channel-picker">
-      <span className="bundle-channel-label">Channel</span>
       <Select
         value={published ? scope.channel : ''}
         disabled={!channels.length}

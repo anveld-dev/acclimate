@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { StatusBadge } from './status-badge';
 import type { BundlePayload, Comparison, Release } from '@acclimate/sdk';
 import type { BundleScope } from '../server/selection';
 import { readStoredVersion } from '../server/read-console';
@@ -9,7 +10,6 @@ import { evaluationScoreSummary } from '../lib/evaluation-score-summary';
 import { formatReward } from '../lib/evaluation-pairs';
 import { ContentDiff } from './diff-content';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { Label } from './ui/label';
 import { NativeSelect, NativeSelectOption } from './ui/native-select';
 
@@ -120,9 +120,9 @@ export function ReleaseComparison({
               : `Revision ${previous} → ${release.revision}`}
           </h3>
         </div>
-        <Badge variant={current ? 'default' : 'outline'}>
+        <StatusBadge tone={current ? 'success' : 'neutral'}>
           {current ? 'Current release' : 'Historical release'}
-        </Badge>
+        </StatusBadge>
       </header>
       <div className="release-comparison-identities">
         <div>
@@ -185,18 +185,18 @@ export function ReleaseComparison({
           <h4>Release evidence</h4>
           {release.policyOverride && (
             <div>
-              <Badge variant="outline">Policy overridden</Badge>
+              <StatusBadge tone="warning">Policy overridden</StatusBadge>
               <p>{release.policyOverride.reason}</p>
             </div>
           )}
           {!release.comparisonId ? (
             <>
-              <Badge variant="outline">Manual release</Badge>
+              <StatusBadge>Manual release</StatusBadge>
               <p>{release.unevaluatedReason || 'No release reason recorded.'}</p>
             </>
           ) : summary && typeof evidence === 'object' ? (
             <>
-              <Badge variant="secondary">Bound evaluation</Badge>
+              <StatusBadge tone="success">Bound evaluation</StatusBadge>
               <p className="text-xs text-muted-foreground">Mean reward</p>
               <dl className="release-result-values">
                 <div>

@@ -1136,10 +1136,11 @@
   font-variant-numeric: tabular-nums;
 }
 .evaluation-outcome-strip .outcome-delta {
-  font-size: var(--type-16);
+  font-size: var(--type-14);
+  line-height: var(--leading-14);
   font-weight: 650;
   letter-spacing: 0;
-  padding: 1px 8px;
+  padding: 2px 9px;
   border-radius: 999px;
   background: var(--muted);
   color: var(--muted-foreground);
@@ -1227,5 +1228,52 @@
   }
   .evaluation-outcome-strip .outcome-completeness {
     justify-self: start;
+  }
+}
+
+.evaluation-workspace .evaluation-evidence-dataset code,
+.evaluation-workspace .evaluation-run-meta code {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-12);
+}
+
+/* Publish confirmation: a readable summary with exact identities beneath each value. */
+.release-decision-summary {
+  display: grid;
+  gap: 0;
+  margin: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.release-decision-summary > div {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+}
+.release-decision-summary > div + div {
+  border-top: 1px solid var(--border);
+}
+.release-decision-summary dt {
+  color: var(--muted-foreground);
+}
+.release-decision-summary dd {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-weight: 550;
+}
+.release-decision-summary dd code {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-12);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 480px) {
+  .release-decision-summary > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
   }
 }

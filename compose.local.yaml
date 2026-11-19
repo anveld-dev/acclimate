@@ -1,4 +1,6 @@
 # Evaluation and development. Start with npm run local:up to provision configuration.
+# local:up pulls the released service and console images for this checkout's version,
+# or builds them from source with npm run local:up -- --build.
 name: acclimate-local
 services:
   postgres:
@@ -17,6 +19,8 @@ services:
       retries: 20
 
   service:
+    image: ${ACCLIMATE_LOCAL_SERVICE_IMAGE:-acclimate-local-service:source}
+    pull_policy: ${ACCLIMATE_LOCAL_PULL_POLICY:-build}
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -48,6 +52,8 @@ services:
       start_period: 30s
 
   console:
+    image: ${ACCLIMATE_LOCAL_CONSOLE_IMAGE:-acclimate-local-console:source}
+    pull_policy: ${ACCLIMATE_LOCAL_PULL_POLICY:-build}
     build:
       context: .
       dockerfile: deploy/console.Dockerfile
@@ -94,6 +100,8 @@ services:
       retries: 20
 
   keycloak:
+    # Not published as an image. Its theme build is cached after the first start.
+    pull_policy: build
     build:
       context: .
       dockerfile: deploy/keycloak/Dockerfile

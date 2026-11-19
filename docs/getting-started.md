@@ -28,7 +28,7 @@ For ordinary traffic, open **App setup** on your bundle and channel to configure
 
 ## 3. Obtain evaluator access before creating a request
 
-The operator supplies `EVALUATOR_CONFIG`, a private file that identifies the service, workspace, machine principal and journal directory. An evaluator needs workspace read/write access to read unpublished candidates and submit paired evidence. Delivery and release use separate credentials. [Evaluator configuration and recovery](evaluator-operations.md)
+The operator supplies `EVALUATOR_CONFIG`, a private file that identifies the service, workspace, machine principal and journal directory. An evaluator needs the `evaluate` right to read unpublished candidates and submit paired evidence. A workspace administrator issues an evaluator token under **Settings → Members → Evaluator tokens** and can download a ready `evaluator.json` there. Delivery and release use separate credentials. [Evaluator configuration and recovery](evaluator-operations.md)
 
 ## 4. Compare the change
 
@@ -75,6 +75,6 @@ python -m acclimate export --config "$EVALUATOR_CONFIG" --name "$CHANGE_ID" --ou
 
 The result tells you how many execution callbacks this invocation started and whether it reused saved evidence. Repeating a completed run returns its original scores. Keep the same evaluator identity and physical journal for recovery. If the process stopped during execution, inspect the original job and its external tasks. Status and heartbeats cannot confirm those tasks stopped.
 
-To measure a fixed evaluator or collect another sample after a completed or failed named run, repeat the headless compare command with `--retry-after "$CHANGE_ID"` in place of `--name "$CHANGE_ID"`. This starts a fresh pair against the same target, parent and candidate content. Repeat that exact command to recover its single successor. It refuses an unresolved or interrupted predecessor. A different candidate change uses its own name.
+To measure a fixed evaluator or collect another sample after a completed or failed named run, repeat the headless compare command with `--retry-after "$CHANGE_ID"` in place of `--name "$CHANGE_ID"`. This starts a fresh pair against the same target, parent and candidate content. Repeat that exact command to recover its single successor. It refuses an unresolved or interrupted predecessor, and accepts one the service [abandoned](../apps/docs/content/docs/operate/evaluator-access.mdx#recover-a-cancelled-run). A different candidate change uses its own name.
 
 `compare --policy` and `check --config` apply your policy locally and submit the verdict and policy digest to the workspace for release review. Check `policyReceipt.status` for `recorded`. If it is `unconfirmed`, retry `check` with the evaluator config and the same policy. A reader can apply their own policy using `check --read-config READER --handoff FILE --policy POLICY`; that returns `read_only` and sends no verdict. Neither checking nor exporting repeats the agent callbacks. Release approval is a separate decision. For pull requests, use the [CI integration](../examples/ci/README.md) to bind the evaluation to the expected Git commit. To use outcomes for future proposals, use the [connected learning setup](../deploy/README.md#operate-connected-learning).

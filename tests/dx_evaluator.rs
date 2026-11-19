@@ -169,7 +169,11 @@ async fn capabilities_are_machine_scoped_and_never_overstate_retention() {
         assert_eq!(value["writeEvaluation"], expected_write);
         assert_eq!(value["retainedEvaluationOperations"], true);
         assert_eq!(value["readUnpublished"], true);
-        assert_eq!(value.as_object().unwrap().len(), 7);
+        // Additive: rights, credential kind and abandonment policy.
+        assert_eq!(value.as_object().unwrap().len(), 10);
+        assert_eq!(value["rights"]["evaluate"], expected_write);
+        assert_eq!(value["rights"]["promote"], token == "writer");
+        assert_eq!(value["credential"], json!({"kind": "static"}));
         assert!(!value.to_string().contains("rotated"));
     }
     for (token, expected) in [

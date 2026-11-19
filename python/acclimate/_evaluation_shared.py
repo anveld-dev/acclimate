@@ -387,28 +387,57 @@ def atomic_private_write(path: str | Path, data: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _read_config(path: str | Path, reader: bool) -> dict:
-    filename = _canonical_path(path, alias_issue="configAlias")
-    # Config parent, not just the credential-bearing file, must be owner-only.
+EVALUATOR_TOKEN_ENV = "ACCLIMATE_EVALUATOR_TOKEN"
+
+
+def _private_parent(filename: Path) -> None:
+    # A credential-bearing file's parent, not just the file, must be owner-only.
     parent = filename.parent.lstat()
     if not stat.S_ISDIR(parent.st_mode):
         raise EvaluationError("config.permissions")
     if parent.st_mode & 0o077 or parent.st_uid != os.getuid():
         raise EvaluationError("config.permissions", path_issue="configMode")
+
+
+def _read_token_file(path: Any) -> str:
+    """Read a token file with the config file's privacy checks; one trailing newline is allowed."""
+    if not _text(path,4096,trimmed=True) or not Path(path).is_absolute():
+        raise EvaluationError("config.schema")
+    filename = _canonical_path(path, alias_issue="configAlias")
+    _private_parent(filename)
+    try:
+        text = read_private_bytes(filename, 8192, config_file=True).decode("utf-8")
+    except UnicodeDecodeError:
+        raise EvaluationError("config.schema") from None
+    token = text[:-2] if text.endswith("\r\n") else text[:-1] if text.endswith("\n") else text
+    if not _text(token,4096,trimmed=True):
+        raise EvaluationError("config.schema")
+    return token
+
+
+def _read_config(path: str | Path, reader: bool) -> dict:
+    filename = _canonical_path(path, alias_issue="configAlias")
+    _private_parent(filename)
     value = parse_json(read_private_bytes(filename, config_file=True))
-    fields = {"schemaVersion","serviceUrl","projectId","readToken"} if reader else {"schemaVersion","serviceUrl","projectId","evaluatorPrincipalId","evaluatorToken","journalRoot"}
-    optional = set() if reader else {"captureCallbackErrors"}
+    fields = {"schemaVersion","serviceUrl","projectId","readToken"} if reader else {"schemaVersion","serviceUrl","projectId","evaluatorPrincipalId","journalRoot"}
+    # The evaluator token is inline, in a private file, or in ACCLIMATE_EVALUATOR_TOKEN.
+    optional = set() if reader else {"captureCallbackErrors","evaluatorToken","evaluatorTokenFile"}
     if (type(value) is not dict or not fields.issubset(value) or set(value) - fields - optional
             or type(value.get("schemaVersion")) is not int or value["schemaVersion"] != 1
-            or type(value.get("captureCallbackErrors", False)) is not bool):
+            or type(value.get("captureCallbackErrors", False)) is not bool
+            or ("evaluatorToken" in value and "evaluatorTokenFile" in value)):
         raise EvaluationError("config.schema")
     validate_service_url(value["serviceUrl"])
     if not guided_project(value["projectId"]):
         raise EvaluationError("guided_target_unsupported")
+    if not reader and (not _text(value["evaluatorPrincipalId"],1024,trimmed=True) or not _text(value["journalRoot"],4096,trimmed=True) or not Path(value["journalRoot"]).is_absolute()):
+        raise EvaluationError("config.schema")
+    if not reader and "evaluatorTokenFile" in value:
+        value = {k: v for k, v in value.items() if k != "evaluatorTokenFile"} | {"evaluatorToken": _read_token_file(value["evaluatorTokenFile"])}
+    elif not reader and "evaluatorToken" not in value:
+        value = value | {"evaluatorToken": os.environ.get(EVALUATOR_TOKEN_ENV)}
     token_key = "readToken" if reader else "evaluatorToken"
     if not _text(value[token_key],4096,trimmed=True):
-        raise EvaluationError("config.schema")
-    if not reader and (not _text(value["evaluatorPrincipalId"],1024,trimmed=True) or not _text(value["journalRoot"],4096,trimmed=True) or not Path(value["journalRoot"]).is_absolute()):
         raise EvaluationError("config.schema")
     return value
 
@@ -457,7 +486,7 @@ def mutation_path(operation: str, scope: dict) -> str:
         if type(channel) is not str or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}",channel):
             raise EvaluationError("guided_target_unsupported")
         return base+f"/channels/{channel}/drafts"
-    if operation in ("start","finish","interrupt") and guided_uuid(scope.get("requestId")):
+    if operation in ("start","finish","interrupt","abandon") and guided_uuid(scope.get("requestId")):
         return base+f'/evaluation-requests/{scope["requestId"]}/{operation}'
     raise EvaluationError("guided_target_unsupported")
 

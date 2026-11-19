@@ -317,6 +317,16 @@ export async function improvement(
           key,
         ),
       };
+    if (
+      input.action === 'abandon' &&
+      typeof input.id === 'string' &&
+      typeof input.reason === 'string' &&
+      input.reason.trim()
+    )
+      return {
+        ok: true as const,
+        request: await api.abandonEvaluation(p, b, input.id, { reason: input.reason.trim() }, key),
+      };
     throw new Error('invalid');
   } catch (error) {
     if (

@@ -3904,6 +3904,80 @@
         }
       }
     },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/abandon": {
+      "post": {
+        "operationId": "abandonEvaluation",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "evaluationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbandonEvaluationRequest"
+              }
+            }
+          }
+        },
+        "description": "Abandon a requested or running attempt whose outcome is unknown, such as a cancelled CI job. Requires `evaluate` (or a workspace editor). The attempt's later reports are refused, promotion rejects comparisons bound to it, and a new request for the same candidate may start. It never claims the original worker stopped. Connected-learning requests return `managed_evaluation`."
+      }
+    },
     "/v1/projects/{projectId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/interrupt": {
       "post": {
         "operationId": "interruptEvaluationLegacy",
@@ -3976,6 +4050,81 @@
           }
         },
         "deprecated": true
+      }
+    },
+    "/v1/projects/{projectId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/abandon": {
+      "post": {
+        "operationId": "abandonEvaluationLegacy",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "evaluationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbandonEvaluationRequest"
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "description": "Abandon a requested or running attempt whose outcome is unknown, such as a cancelled CI job. Requires `evaluate` (or a workspace editor). The attempt's later reports are refused, promotion rejects comparisons bound to it, and a new request for the same candidate may start. It never claims the original worker stopped. Connected-learning requests return `managed_evaluation`."
       }
     },
     "/v1/workspaces/{workspaceId}/operations/{operationId}": {
@@ -5147,6 +5296,16 @@
       "get": {
         "summary": "GET /v1/workspaces/{p}/evaluation-capabilities",
         "responses": {
+          "200": {
+            "description": "Point-in-time machine authority snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationCapabilities"
+                }
+              }
+            }
+          },
           "default": {
             "description": "Service response"
           }
@@ -5167,6 +5326,16 @@
       "get": {
         "summary": "GET /v1/workspaces/{p}/evaluation-capabilities",
         "responses": {
+          "200": {
+            "description": "Point-in-time machine authority snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationCapabilities"
+                }
+              }
+            }
+          },
           "default": {
             "description": "Service response"
           }
@@ -7462,6 +7631,240 @@
           }
         }
       }
+    },
+    "/v1/workspaces/{workspaceId}/machine-tokens": {
+      "get": {
+        "operationId": "listMachineTokens",
+        "description": "Newest 200 machine tokens. Secrets are never returned. Requires a browser session for a workspace administrator; machine tokens cannot manage tokens.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineTokenPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "issueMachineToken",
+        "description": "Issue an expiring machine token. The secret is returned once and stored only as a SHA-256 digest. Its principal is `machine:{name}`. Requires a browser session for a workspace administrator; machine tokens cannot manage tokens.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueMachineTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedMachineToken"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/machine-tokens/{tokenId}/rotate": {
+      "post": {
+        "operationId": "rotateMachineToken",
+        "description": "Issue a successor with the same principal and rights. With `overlapSeconds` 0 the old token is revoked; otherwise its expiry is shortened to the overlap. Only an active token can be rotated (`machine_token_inactive`). Requires a browser session for a workspace administrator; machine tokens cannot manage tokens.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tokenId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateMachineTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedMachineToken"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/machine-tokens/{tokenId}/revoke": {
+      "post": {
+        "operationId": "revokeMachineToken",
+        "description": "Revoke a token. Idempotent; the first reason is retained. Applies to the token's next request. Requires a browser session for a workspace administrator; machine tokens cannot manage tokens.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tokenId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeMachineTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineTokenEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/machine-token-events": {
+      "get": {
+        "operationId": "listMachineTokenEvents",
+        "description": "Newest 200 entries of the append-only token audit trail. Requires a browser session for a workspace administrator; machine tokens cannot manage tokens.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineTokenEventPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8870,7 +9273,8 @@
               "running",
               "completed",
               "failed",
-              "interrupted"
+              "interrupted",
+              "abandoned"
             ]
           },
           "evaluatorPrincipal": {
@@ -8904,6 +9308,19 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "lastActivityAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last start, progress report or bound comparison from the current attempt."
+          },
+          "abandonedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "abandonedBy": {
+            "type": "string",
+            "description": "Abandoning principal, or `service:evaluation-expiry` after inactivity."
           }
         },
         "required": [
@@ -9475,6 +9892,435 @@
                     }
                   }
                 }
+              }
+            }
+          }
+        }
+      },
+      "AbandonEvaluationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "MachineTokenRight": {
+        "type": "string",
+        "enum": [
+          "read",
+          "evaluate",
+          "write",
+          "propose",
+          "promote"
+        ]
+      },
+      "MachineToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "principalId",
+          "rights",
+          "secretPrefix",
+          "status",
+          "createdBy",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "revokedBy",
+          "revokeReason",
+          "rotatedFrom"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "principalId": {
+            "type": "string",
+            "pattern": "^machine:"
+          },
+          "rights": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineTokenRight"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "secretPrefix": {
+            "type": "string",
+            "description": "First 12 characters of the secret, for identification."
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ]
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Coarse; updated at most once a minute."
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revokedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revokeReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rotatedFrom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "MachineTokenPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineToken"
+            }
+          }
+        }
+      },
+      "MachineTokenEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "$ref": "#/components/schemas/MachineToken"
+          }
+        }
+      },
+      "IssuedMachineToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token",
+          "secret"
+        ],
+        "properties": {
+          "token": {
+            "$ref": "#/components/schemas/MachineToken"
+          },
+          "secret": {
+            "type": "string",
+            "pattern": "^acm_",
+            "description": "Returned once. Never stored or listed."
+          },
+          "previous": {
+            "$ref": "#/components/schemas/MachineToken",
+            "description": "Rotation only: the predecessor after its revocation or shortened expiry."
+          }
+        }
+      },
+      "IssueMachineTokenRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "rights": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineTokenRight"
+            },
+            "minItems": 1,
+            "uniqueItems": true,
+            "default": [
+              "evaluate"
+            ]
+          },
+          "expiresInDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "default": 90
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      },
+      "RotateMachineTokenRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "overlapSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 604800,
+            "default": 0
+          },
+          "expiresInDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "default": 90
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      },
+      "RevokeMachineTokenRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      },
+      "MachineTokenEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tokenId",
+          "tokenName",
+          "action",
+          "actorPrincipal",
+          "reason",
+          "detail",
+          "createdAt"
+        ],
+        "properties": {
+          "tokenId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tokenName": {
+            "type": "string"
+          },
+          "action": {
+            "enum": [
+              "issued",
+              "rotated",
+              "revoked"
+            ]
+          },
+          "actorPrincipal": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MachineTokenEventPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineTokenEvent"
+            }
+          }
+        }
+      },
+      "EvaluationCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "projectId",
+          "principalId",
+          "checkedAt",
+          "readUnpublished",
+          "writeEvaluation",
+          "retainedEvaluationOperations"
+        ],
+        "description": "Point-in-time authority for a machine principal, not a lease or provider readiness.",
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "readUnpublished": {
+            "const": true
+          },
+          "writeEvaluation": {
+            "type": "boolean",
+            "description": "True when the principal holds `evaluate` (implied by `write`)."
+          },
+          "retainedEvaluationOperations": {
+            "const": true
+          },
+          "rights": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "read",
+              "evaluate",
+              "write",
+              "propose",
+              "promote"
+            ],
+            "properties": {
+              "read": {
+                "type": "boolean"
+              },
+              "evaluate": {
+                "type": "boolean"
+              },
+              "write": {
+                "type": "boolean"
+              },
+              "propose": {
+                "type": "boolean"
+              },
+              "promote": {
+                "type": "boolean"
+              }
+            }
+          },
+          "credential": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "static"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "id",
+                  "expiresAt"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "machineToken"
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            ]
+          },
+          "abandonment": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "explicit",
+              "inactivitySeconds"
+            ],
+            "properties": {
+              "explicit": {
+                "type": "boolean"
+              },
+              "inactivitySeconds": {
+                "type": "integer",
+                "minimum": 60
               }
             }
           }

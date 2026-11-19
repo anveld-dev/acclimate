@@ -25,6 +25,7 @@ import { WorkspaceConnections } from '../components/workspace-connections';
 import { WorkspaceDelivery } from '../components/workspace-delivery';
 import { readDeliveryObservations } from '../server/delivery-observations-actions';
 import { WorkspaceMembers } from '../components/workspace-members';
+import { WorkspaceEvaluatorTokens } from '../components/workspace-evaluator-tokens';
 import { ConsoleLink, consoleDestination } from '../components/console-link';
 import { ConnectionNotice, PageTitle } from '../components/shared';
 import { useNavigation } from '../components/use-navigation';
@@ -192,11 +193,17 @@ function ScopedPage() {
     );
   if (data.kind === 'members')
     return (
-      <WorkspaceMembers
-        key={workspaceKey}
-        projectId={data.location.projectId}
-        initial={data.result}
-      />
+      <div className="space-y-6">
+        <WorkspaceMembers
+          key={workspaceKey}
+          projectId={data.location.projectId}
+          initial={data.result}
+        />
+        <WorkspaceEvaluatorTokens
+          key={`tokens-${workspaceKey}`}
+          projectId={data.location.projectId}
+        />
+      </div>
     );
   const { state, scope, location } = data;
   const view = location.view as BundleView;

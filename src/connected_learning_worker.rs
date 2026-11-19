@@ -2067,7 +2067,18 @@ pub(crate) async fn authorize_proposal(
 pub async fn connected_learning_worker(s: AppState) {
     let mut retry_after = std::collections::HashMap::new();
     let mut next_replay_sweep = tokio::time::Instant::now();
+    let mut next_abandon_sweep = tokio::time::Instant::now();
+    let abandon_after = crate::evaluations::abandon_after_seconds();
     while !s.runtime.is_draining() {
+        if tokio::time::Instant::now() >= next_abandon_sweep {
+            next_abandon_sweep = tokio::time::Instant::now() + Duration::from_secs(30);
+            if let Some(_permit) = s.runtime.claim_permit().await
+                && let Err(error) =
+                    crate::evaluations::abandon_inactive_evaluations(&s.db, abandon_after).await
+            {
+                eprintln!("Evaluation abandonment sweep failed: {error}");
+            }
+        }
         if tokio::time::Instant::now() >= next_replay_sweep {
             next_replay_sweep = tokio::time::Instant::now() + Duration::from_secs(5);
             if let Some(_permit) = s.runtime.claim_permit().await

@@ -143,7 +143,7 @@ async fn record(
     h: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Json<Value>> {
-    let actor = crate::auth::actor(&h, &s, &p, "write")?;
+    let actor = crate::auth::actor(&h, &s, &p, "evaluate")?;
     if actor.user_id.is_some() {
         return Err(err(
             StatusCode::FORBIDDEN,
@@ -167,7 +167,7 @@ async fn record(
         ));
     }
     let mut tx = s.db.begin().await.map_err(db)?;
-    crate::auth::authorize_transaction(&mut tx, &actor, &p, "write").await?;
+    crate::auth::authorize_transaction(&mut tx, &actor, &p, "evaluate").await?;
     let candidate=sqlx::query_scalar::<_,Uuid>("SELECT (c.body->>'candidateVersionId')::uuid FROM comparisons c JOIN evaluation_requests e
           ON (e.project_id,e.bundle_id,e.comparison_id)=(c.project_id,c.bundle_id,c.id)
           WHERE c.project_id=$1 AND c.bundle_id=$2 AND c.id=$3 AND e.id=$4 AND e.attempt_id=$5 AND e.status IN ('completed','failed')

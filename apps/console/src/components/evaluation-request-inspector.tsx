@@ -61,7 +61,9 @@ export function EvaluationRequestInspector({
       ? 'Request created · run in your app'
       : request.status === 'interrupted'
         ? 'Recorded interruption'
-        : `App reported ${request.status}`;
+        : request.status === 'abandoned'
+          ? 'Abandoned · evidence never counts'
+          : `App reported ${request.status}`;
   return (
     <section className="run-request-inspector" aria-label="Selected request record">
       <header className="run-request-identity">
@@ -103,12 +105,24 @@ export function EvaluationRequestInspector({
           stay private to the evaluator unless exported and verified.
         </p>
       )}
-      {!request.comparisonId && !requested && request.status !== 'running' && (
+      {request.status === 'abandoned' && (
         <p className="run-state-note">
-          No comparison was reported. Check the original app logs and journal before creating
-          another request.
+          {request.abandonedBy === 'service:evaluation-expiry'
+            ? 'The service abandoned this attempt after it stopped reporting.'
+            : `Abandoned by ${request.abandonedBy ?? 'an evaluator'}.`}{' '}
+          Its outcome is unknown and its evidence never counts. This does not prove the worker
+          stopped. Start a new request for the same candidate to measure it again.
         </p>
       )}
+      {!request.comparisonId &&
+        !requested &&
+        request.status !== 'running' &&
+        request.status !== 'abandoned' && (
+          <p className="run-state-note">
+            No comparison was reported. Check the original app logs and journal before creating
+            another request.
+          </p>
+        )}
       {!requested && children}
       <section
         className="run-artifact"
@@ -236,9 +250,11 @@ export function EvaluationRequestInspector({
               on the machine that will run it.
             </p>
             <p>
-              Use a dedicated evaluator machine principal with project read/write access. Delivery
-              credentials apply only to published content. Keep the credential file outside version
-              control with mode 0600 in a private directory (0700).
+              Use a dedicated evaluator token with the Evaluate right. Workspace administrators
+              issue one under Settings → Members → Evaluator tokens and can download a ready
+              evaluator configuration there. Delivery credentials apply only to published content.
+              Keep the credential file outside version control with mode 0600 in a private directory
+              (0700).
             </p>
             <SyntaxCode
               aria-label="Private evaluator configuration template"

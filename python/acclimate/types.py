@@ -213,13 +213,18 @@ class EvaluationRequest(_EvaluationTarget):
 class Evaluation(_EvaluationTarget):
     requireBoundEvidence: Literal[True]
     id: str
-    status: Literal["requested", "running", "completed", "failed", "interrupted"]
+    # ``abandoned``: the attempt's outcome is unknown; later reports are refused and
+    # its evidence never counts.
+    status: Literal["requested", "running", "completed", "failed", "interrupted", "abandoned"]
     evaluatorPrincipal: str | None
     attemptId: str | None
     comparisonId: str | None
     error: str | None
     createdAt: str
     updatedAt: str
+    lastActivityAt: NotRequired[str]
+    abandonedAt: NotRequired[str]
+    abandonedBy: NotRequired[str]
 
 
 class EvaluationPage(TypedDict):
@@ -236,6 +241,10 @@ class FinishEvaluationRequest(StartEvaluationRequest):
 
 
 class InterruptEvaluationRequest(TypedDict):
+    reason: str
+
+
+class AbandonEvaluationRequest(TypedDict):
     reason: str
 
 
@@ -268,6 +277,19 @@ class ComparisonPolicyReceipts(TypedDict):
     items: list[ComparisonPolicyReceipt]
 
 
+class EvaluationRights(TypedDict):
+    read: bool
+    evaluate: bool
+    write: bool
+    propose: bool
+    promote: bool
+
+
+class EvaluationAbandonmentPolicy(TypedDict):
+    explicit: bool
+    inactivitySeconds: int
+
+
 class EvaluationCapabilities(TypedDict):
     schemaVersion: Literal[1]
     projectId: str
@@ -276,6 +298,9 @@ class EvaluationCapabilities(TypedDict):
     readUnpublished: Literal[True]
     writeEvaluation: bool
     retainedEvaluationOperations: Literal[True]
+    rights: NotRequired[EvaluationRights]
+    credential: NotRequired[dict[str, str]]
+    abandonment: NotRequired[EvaluationAbandonmentPolicy]
 
 
 class EvaluationProgressRequest(TypedDict):

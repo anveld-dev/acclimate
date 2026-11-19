@@ -619,6 +619,37 @@ test('observed interruption returns the validated snapshot without a second fail
   }
 });
 
+test('an attempt the service abandons mid-run settles without executing or reporting', async () => {
+  const definition = defaultDefinition();
+  let executions = 0;
+  definition.execute = async () => {
+    executions++;
+    return { output: { answer: 'x' } };
+  };
+  const s = await setup(definition);
+  const mutate = s.options.transport.mutate;
+  s.options.transport.mutate = async <T>(...args: Parameters<typeof mutate>) => {
+    const result = await mutate<T>(...args);
+    if (args[0] === 'start')
+      s.f.request = {
+        ...s.f.request,
+        status: 'abandoned',
+        error: 'CI job cancelled',
+        abandonedBy: 'machine:ci',
+      };
+    return result;
+  };
+  try {
+    const result = await runCapturedEvaluation(s.options);
+    assert.equal(result.executionState, 'interrupted');
+    assert.equal(result.evaluation.status, 'abandoned');
+    assert.equal(executions, 0);
+    assert.equal(s.submitted.length, 0);
+  } finally {
+    await s.cleanup();
+  }
+});
+
 test('comparison/index crash window is repaired before finish and on terminal recovery without callbacks', async () => {
   const definition = defaultDefinition();
   let executions = 0;

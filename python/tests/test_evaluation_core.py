@@ -91,6 +91,8 @@ class FakeService:
             result=copy.deepcopy(self.request)
             if self.interrupt_after_start:
                 self.request.update(status="interrupted",error="operator interruption")
+            if getattr(self,"abandon_after_start",False):
+                self.request.update(status="abandoned",error="CI job cancelled",abandonedBy="machine:ci")
         elif operation=="comparisons":
             complete=all(outcome["gradingStatus"]=="scored" and outcome["executionStatus"]!="infrastructure_failed"
                 for row in value["results"] for outcome in (row["parent"],row["candidate"]))
@@ -618,6 +620,17 @@ class EvaluationCoreTests(unittest.TestCase):
         result=self.run_app(app,service)
         self.assertEqual(result["executionState"],"interrupted")
         self.assertEqual(calls,[])
+
+    def test_attempt_abandoned_by_the_service_settles_without_executing(self):
+        calls=[]
+        app=self.app(lambda run:(calls.append(1) or ExecutionResult({"ok":True})))
+        service=FakeService(app)
+        service.abandon_after_start=True
+        result=self.run_app(app,service)
+        self.assertEqual(result["executionState"],"interrupted")
+        self.assertEqual(result["evaluation"]["status"],"abandoned")
+        self.assertEqual(calls,[])
+        self.assertIsNone(service.comparison)
 
     def test_doctor_is_nonexecuting_and_denied_authority_is_not_ready(self):
         calls=[]

@@ -42,6 +42,7 @@ from acclimate import (
     EvaluationPage,
     StartEvaluationRequest,
     FinishEvaluationRequest,
+    AbandonEvaluationRequest,
     InterruptEvaluationRequest,
     EvaluationCapabilities,
     EvaluationProgressRequest,
@@ -99,6 +100,9 @@ def lifecycle(client: AcclimateClient, evaluation: Evaluation) -> None:
     assert_type(client.start_evaluation("p", "b", "r", start, "key"), Evaluation)
     assert_type(client.finish_evaluation("p", "b", "r", finish, "key"), Evaluation)
     assert_type(client.interrupt_evaluation("p", "b", "r", interrupt, "key"), Evaluation)
+    abandon: AbandonEvaluationRequest = {"reason": "CI job cancelled"}
+    evaluation["status"] = "abandoned"
+    assert_type(client.abandon_evaluation("p", "b", "r", abandon, "key"), Evaluation)
     assert_type(client.get_evaluation("p", "b", "r"), Evaluation)
     assert_type(client.list_evaluations("p", "b"), EvaluationPage)
     assert_type(client.get_evaluation_capabilities("p"), EvaluationCapabilities)

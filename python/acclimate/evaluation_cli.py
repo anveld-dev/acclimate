@@ -163,7 +163,7 @@ def _assert_request(request, handoff, app=None):
         raise EvaluationError("evidence.identity_mismatch", phase="inspect")
     if any(not guided_uuid(request.get(key)) for key in ("parentVersionId", "candidateVersionId")) or any(type(request.get(key)) is not str or not DIGEST_RE.fullmatch(request[key]) for key in ("parentDigest", "candidateDigest")):
         raise EvaluationError("version.binding_mismatch", phase="inspect")
-    if request.get("id") != handoff["requestId"] or request.get("status") not in ("requested", "running", "completed", "failed", "interrupted") or (request.get("attemptId") is not None and not guided_uuid(request["attemptId"])) or (request.get("comparisonId") is not None and not guided_uuid(request["comparisonId"])):
+    if request.get("id") != handoff["requestId"] or request.get("status") not in ("requested", "running", "completed", "failed", "interrupted", "abandoned") or (request.get("attemptId") is not None and not guided_uuid(request["attemptId"])) or (request.get("comparisonId") is not None and not guided_uuid(request["comparisonId"])):
         raise EvaluationError("version.binding_mismatch", phase="inspect")
     assert_descriptor(request, handoff["configuration"])
     if app is not None:
@@ -291,7 +291,10 @@ def _dispatch(app, command, flags, review):
                 client, project_id = _connection(flags, prior)
                 request = client.get_evaluation(project_id, prior["bundleId"], prior["requestId"])
                 _assert_request(request, prior)
-                if request["status"] not in ("completed", "failed") or not request.get("attemptId") or not request.get("comparisonId"):
+                # A settled predecessor, or one the service abandoned, may be retried.
+                # An abandoned attempt's evidence never counts, so it needs no comparison.
+                settled = request["status"] in ("completed", "failed") and request.get("attemptId") and request.get("comparisonId")
+                if not settled and request["status"] != "abandoned":
                     raise EvaluationError("evidence.not_terminal", phase="inspect", next_action="inspect_external_app")
                 predecessor = handoff_file, request
                 flags["name"] = "after-" + request["id"]

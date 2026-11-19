@@ -1,6 +1,19 @@
 use crate::{ApiResult, AppState, Grant, err};
 use std::collections::{HashMap, HashSet};
 
+/// Machine rights. `evaluate` is the narrow evaluator right: it reads the
+/// workspace and runs evaluations, but never publishes, promotes or moves channels.
+pub(crate) const RIGHTS: [&str; 5] = ["read", "evaluate", "write", "propose", "promote"];
+
+/// `write` keeps its historical evaluator authority, and `evaluate` includes `read`.
+pub(crate) fn rights_allow(rights: &[String], right: &str) -> bool {
+    rights.iter().any(|granted| {
+        granted == right
+            || (right == "read" && granted == "evaluate")
+            || (right == "evaluate" && granted == "write")
+    })
+}
+
 /// Validate static grants before accepting requests. Errors never contain grant values.
 pub fn validate_grants(grants: &[Grant]) -> Result<(), &'static str> {
     let mut principals = HashMap::new();
@@ -25,7 +38,7 @@ pub fn validate_grants(grants: &[Grant]) -> Result<(), &'static str> {
         }
         let mut rights = HashSet::new();
         for right in &grant.rights {
-            if !matches!(right.as_str(), "read" | "write" | "propose" | "promote") {
+            if !RIGHTS.contains(&right.as_str()) {
                 return Err("unknown grant right");
             }
             if !rights.insert(right) {
@@ -44,6 +57,8 @@ pub(crate) struct Actor {
     pub(crate) user_id: Option<uuid::Uuid>,
     pub(crate) session_id: Option<uuid::Uuid>,
     pub(crate) required_right: String,
+    /// Set for workspace-issued machine tokens; transactions recheck it is still active.
+    pub(crate) machine_token: Option<uuid::Uuid>,
 }
 pub(crate) fn actor(h: &HeaderMap, s: &AppState, project: &str, right: &str) -> ApiResult<Actor> {
     let raw = h
@@ -100,6 +115,34 @@ pub(crate) fn actor(h: &HeaderMap, s: &AppState, project: &str, right: &str) -> 
             user_id: Some(user),
             session_id: Some(session),
             required_right: right.into(),
+            machine_token: None,
+        });
+    }
+    if let Some(machine) = crate::machine_tokens::trusted(h) {
+        if machine.project_id != project {
+            return Err(err(StatusCode::FORBIDDEN, "denied", "No grant for project"));
+        }
+        if !rights_allow(&machine.rights, right) {
+            return Err(err(
+                StatusCode::FORBIDDEN,
+                "denied",
+                "Required right is missing",
+            ));
+        }
+        if h.contains_key("x-acclimate-session") {
+            return Err(err(
+                StatusCode::UNAUTHORIZED,
+                "invalid_console_transport",
+                "Browser requests require dedicated console transport",
+            ));
+        }
+        return Ok(Actor {
+            principal: machine.principal_id.clone(),
+            service_principal: machine.principal_id,
+            user_id: None,
+            session_id: None,
+            required_right: right.into(),
+            machine_token: Some(machine.id),
         });
     }
     if !s.grants.iter().any(|g| g.token == raw) {
@@ -114,7 +157,7 @@ pub(crate) fn actor(h: &HeaderMap, s: &AppState, project: &str, right: &str) -> 
         .iter()
         .find(|g| g.token == raw && g.project_id == project)
         .ok_or_else(|| err(StatusCode::FORBIDDEN, "denied", "No grant for project"))?;
-    if !g.rights.iter().any(|r| r == right) {
+    if !rights_allow(&g.rights, right) {
         return Err(err(
             StatusCode::FORBIDDEN,
             "denied",
@@ -134,6 +177,7 @@ pub(crate) fn actor(h: &HeaderMap, s: &AppState, project: &str, right: &str) -> 
         user_id: None,
         session_id: None,
         required_right: right.into(),
+        machine_token: None,
     })
 }
 
@@ -249,15 +293,19 @@ pub(crate) async fn session_context(
     request.headers_mut().remove("x-acclimate-trusted-role");
     request.headers_mut().remove("x-acclimate-trusted-user");
     request.headers_mut().remove("x-acclimate-trusted-session");
+    request
+        .headers_mut()
+        .remove(crate::machine_tokens::TRUSTED_HEADER);
     let login =
         request.uri().path() == "/v1/auth/sessions" && request.method() == axum::http::Method::POST;
     let bearer = request
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
-    let console = bearer == Some(s.access.console_token());
-    let login_authority = login && bearer == Some(s.access.login_token());
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::to_owned);
+    let console = bearer.as_deref() == Some(s.access.console_token());
+    let login_authority = login && bearer.as_deref() == Some(s.access.login_token());
     let has_session = request.headers().contains_key("x-acclimate-session");
     // Never interpret a session until its transport class is authenticated. Login
     // alone may carry an opaque previous-session rotation hint.
@@ -319,6 +367,32 @@ pub(crate) async fn session_context(
             Err(e) => return crate::db(e).into_response(),
         }
     }
+    // Workspace-issued machine tokens are resolved here so synchronous actor
+    // checks see them; every transaction rechecks that the token is still active.
+    if !console
+        && !login_authority
+        && let Some(token) = bearer
+            .as_deref()
+            .filter(|token| crate::machine_tokens::is_machine_token(token))
+        && !s.grants.iter().any(|g| g.token == token)
+    {
+        match crate::machine_tokens::resolve(&s, token).await {
+            Ok(Some(value)) => {
+                request
+                    .headers_mut()
+                    .insert(crate::machine_tokens::TRUSTED_HEADER, value);
+            }
+            Ok(None) => {
+                return err(
+                    StatusCode::UNAUTHORIZED,
+                    "unauthenticated",
+                    "Unknown, expired or revoked bearer token",
+                )
+                .into_response();
+            }
+            Err(e) => return e.into_response(),
+        }
+    }
     // Resolve a role for synchronous actor checks. Each handler owns its single
     // authorization + data transaction; never retain a second pool connection here.
     if let Some(user) = request
@@ -363,6 +437,20 @@ pub(crate) async fn authorize_transaction(
     right: &str,
 ) -> ApiResult<()> {
     use sqlx::Row;
+    if let Some(token) = a.machine_token {
+        // Shares the row lock that revocation takes, so a revoked token cannot
+        // complete a mutation that started after revocation committed.
+        let active: Option<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM machine_tokens WHERE id=$1 AND project_id=$2 AND revoked_at IS NULL AND expires_at>now() FOR SHARE")
+            .bind(token).bind(project).fetch_optional(&mut **tx).await.map_err(crate::db)?;
+        if active.is_none() {
+            return Err(err(
+                StatusCode::UNAUTHORIZED,
+                "unauthenticated",
+                "Unknown, expired or revoked bearer token",
+            ));
+        }
+        return Ok(());
+    }
     let (Some(user), Some(session)) = (a.user_id, a.session_id) else {
         return Ok(());
     };

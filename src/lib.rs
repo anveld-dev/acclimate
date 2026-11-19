@@ -17,6 +17,7 @@ mod commands;
 mod connected_learning;
 mod connected_learning_worker;
 pub use connected_learning_worker::connected_learning_worker;
+pub use evaluations::{abandon_after_seconds, abandon_inactive_evaluations};
 pub mod compatibility;
 mod drafts;
 mod evaluation_progress;
@@ -24,6 +25,7 @@ mod evaluations;
 mod improvement;
 mod integrations;
 mod invitations;
+mod machine_tokens;
 pub mod mail;
 pub mod pagination;
 mod policy_receipts;
@@ -222,6 +224,7 @@ pub fn router(state: AppState) -> Router {
         .merge(policy_receipts::routes())
         .merge(workspaces::routes())
         .merge(invitations::routes())
+        .merge(machine_tokens::routes())
         .route("/health", get(|| async { "ok" }))
         .route("/ready", get(runtime::readiness))
         .workspace_route(

@@ -108,7 +108,7 @@ pub async fn create_comparison(
     h: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Response> {
-    let a = crate::auth::actor(&h, &s, &p, "write")?;
+    let a = crate::auth::actor(&h, &s, &p, "evaluate")?;
     let q: ComparisonRequest = serde_json::from_slice(&body).map_err(|_| {
         err(
             StatusCode::BAD_REQUEST,

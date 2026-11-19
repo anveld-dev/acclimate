@@ -62,19 +62,47 @@ const frozen = (request: Evaluation): AttemptJournal['request'] =>
     expectedCases: request.expectedCases,
   });
 
-async function saveCallbackError(directory: string, phase: 'execute' | 'grade', error: unknown) {
+/** Remove credentials that commonly appear in provider error messages. */
+export function redactDiagnosticText(value: string, secrets: readonly string[] = []): string {
+  let text = value.slice(0, 16384);
+  for (const secret of secrets)
+    if (secret && secret.length >= 8) text = text.split(secret).join('[redacted]');
+  return text
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/giu, '$1 [redacted]')
+    .replace(/\b(sk|pk|rk|ghp|gho|github_pat|xox[abpr])[-_][A-Za-z0-9_-]{8,}/gu, '[redacted]')
+    .replace(
+      /\b((?:api[_-]?key|access[_-]?token|token|secret|password|authorization)["']?\s*[:=]\s*["']?)[^\s"',;]{4,}/giu,
+      '$1[redacted]',
+    );
+}
+
+/**
+ * Keep the callback's exception type, redacted message and stack in the private job
+ * directory. The file never leaves this machine. Set captureCallbackErrors: false to opt out.
+ */
+async function saveCallbackError(
+  directory: string,
+  phase: 'execute' | 'grade',
+  error: unknown,
+  secrets: readonly string[],
+): Promise<string> {
   let exceptionType = 'ThrownValue';
+  let message = '';
+  let code: string | undefined;
+  let stack: string | undefined;
   const frames: Array<{ file: string; line: number; function: string }> = [];
-  // Custom errors may override stack/name accessors. Diagnostics are optional and
-  // only retain structured local frame locations, never the message or source.
+  // Custom errors may override stack/name accessors. Diagnostics are optional.
   try {
     if (error instanceof Error) {
       const name = error.constructor.name;
       exceptionType = /^[A-Za-z_$][\w$]{0,127}$/.test(name) ? name : 'Error';
-      const stack = error.stack;
-      const heading = String(error);
-      if (typeof stack === 'string' && stack.startsWith(heading + '\n')) {
-        for (const frame of stack.slice(heading.length + 1, heading.length + 16385).split('\n')) {
+      message = redactDiagnosticText(String(error.message), secrets).slice(0, 4096);
+      const errorCode = (error as { code?: unknown }).code;
+      if (typeof errorCode === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(errorCode)) code = errorCode;
+      const raw = error.stack;
+      if (typeof raw === 'string') {
+        stack = redactDiagnosticText(raw, secrets).slice(0, 16384);
+        for (const frame of raw.split('\n').slice(1, 200)) {
           const match =
             /^\s*at (?:async )?(?:(.+?) \()?((?:file:\/\/\/|\/|[A-Za-z]:[\\/]).+?):(\d+):\d+\)?$/.exec(
               frame,
@@ -88,14 +116,25 @@ async function saveCallbackError(directory: string, phase: 'execute' | 'grade', 
           if (frames.length === 8) break;
         }
       }
+    } else if (['string', 'number', 'boolean'].includes(typeof error)) {
+      message = redactDiagnosticText(String(error), secrets).slice(0, 4096);
     }
   } catch {
     /* Still retain the stage when application metadata is unreadable. */
   }
+  const file = path.join(directory, 'callback-error.json');
   await atomicPrivateWrite(
-    path.join(directory, 'callback-error.json'),
-    JSON.stringify({ phase, exceptionType, frames }) + '\n',
+    file,
+    JSON.stringify({
+      phase,
+      exceptionType,
+      ...(code ? { code } : {}),
+      message,
+      frames,
+      ...(stack ? { stack } : {}),
+    }) + '\n',
   );
+  return file;
 }
 class ObservedInterruption extends Error {
   readonly request: Evaluation;
@@ -397,11 +436,10 @@ export async function preflightEvaluation<I, E, O>(
       check: currentCheck,
       status: diagnostic.code === 'capabilities.unsupported' ? 'unverified' : 'failed',
       code: diagnostic.code,
-      ...(diagnostic.pathIssue && {
-        pathIssue: diagnostic.pathIssue,
-        field: diagnostic.field,
-        hint: diagnostic.hint,
-      }),
+      ...(diagnostic.pathIssue && { pathIssue: diagnostic.pathIssue }),
+      ...(diagnostic.field && { field: diagnostic.field }),
+      ...(diagnostic.hint && { hint: diagnostic.hint }),
+      ...(diagnostic.serviceUrl && { serviceUrl: diagnostic.serviceUrl }),
     });
   } finally {
     if (probe) await rm(probe, { recursive: true, force: true });
@@ -416,14 +454,23 @@ const unavailable = (error = 'cancelled'): Outcome => ({
   error,
   usage: null,
 });
+const usageKeys = ['inputTokens', 'outputTokens', 'costUsd'] as const;
 function usage(value: unknown): Outcome['usage'] {
   if (value == null) return null;
-  if (typeof value !== 'object') return null;
+  if (typeof value !== 'object' || Array.isArray(value))
+    throw new OutputValidationError('usage', 'Return usage as { inputTokens, outputTokens, costUsd }.');
+  const unknown = Object.keys(value).find((key) => !(usageKeys as readonly string[]).includes(key));
+  if (unknown)
+    throw new OutputValidationError(
+      `usage.${unknown.slice(0, 64)}`,
+      'Unknown usage key. Use inputTokens, outputTokens and costUsd.',
+    );
   const result: NonNullable<Outcome['usage']> = {};
-  for (const key of ['inputTokens', 'outputTokens', 'costUsd'] as const) {
+  for (const key of usageKeys) {
     const n = (value as Record<string, unknown>)[key];
     if (n !== undefined) {
-      if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return null;
+      if (typeof n !== 'number' || !Number.isFinite(n) || n < 0)
+        throw new OutputValidationError(`usage.${key}`, 'Use a finite, nonnegative number.');
       result[key] = n;
     }
   }
@@ -446,7 +493,13 @@ export async function runEvaluationRequest<I, E, O>(
   assertTarget(config, handoff);
   assertDescriptor(handoff.configuration, captured.descriptor);
   if ((captured.execution === 'live') !== (options.allowLive === true))
-    throw new EvaluationError('config.schema');
+    throw new EvaluationError('config.schema', {
+      field: 'allowLive',
+      reason:
+        captured.execution === 'live'
+          ? 'This evaluation is live. Pass allowLive: true (--live on the CLI) to authorize model calls.'
+          : 'This evaluation is model-free. Omit allowLive (--live on the CLI).',
+    });
   const transport = createEvaluationTransport(config);
   await verifyEvaluatorAuthority(transport.client, config);
   return runCapturedEvaluation({
@@ -491,6 +544,9 @@ export async function runCapturedEvaluation(options: {
   const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), journal.signal]);
   let cancelled = false;
   let callbacksStarted = 0;
+  let firstCallbackFailure: EvaluationRunResult['firstCallbackFailure'];
+  const captureErrors = config.captureCallbackErrors !== false;
+  const secrets = [(config as Partial<EvaluatorConfig>).evaluatorToken ?? ''];
   try {
     // Recovery diagnostics must reflect durable work even if the first
     // authoritative read fails before we can reconcile the remote lifecycle.
@@ -735,13 +791,29 @@ export async function runCapturedEvaluation(options: {
                 pair[side] = unavailable();
                 continue;
               }
+              const noteFailure = (
+                stage: 'execute' | 'grade',
+                reason: NonNullable<EvaluationRunResult['firstCallbackFailure']>['reason'],
+                file?: string,
+              ) => {
+                firstCallbackFailure ??= {
+                  caseId: item.caseId,
+                  repetition,
+                  side,
+                  stage,
+                  reason,
+                  ...(file ? { diagnosticFile: file } : {}),
+                };
+              };
               const recordOutputError = async (error: OutputValidationError) => {
                 journal.assertOwned();
                 // Keep field names inside the application's private job.
+                const file = path.join(privateJobDirectory, 'output-validation.json');
                 await atomicPrivateWrite(
-                  path.join(privateJobDirectory, 'output-validation.json'),
+                  file,
                   JSON.stringify({ field: error.field, reason: error.reason }),
                 );
+                noteFailure('execute', 'output_invalid', file);
               };
               let execution;
               try {
@@ -769,8 +841,13 @@ export async function runCapturedEvaluation(options: {
                   pair[side] = unavailable('output_invalid');
                   continue;
                 }
-                if (config.captureCallbackErrors)
-                  await saveCallbackError(privateJobDirectory, 'execute', error);
+                noteFailure(
+                  'execute',
+                  error instanceof TaskExecutionError ? 'task_failed' : 'execution_failed',
+                  captureErrors
+                    ? await saveCallbackError(privateJobDirectory, 'execute', error, secrets)
+                    : undefined,
+                );
                 pair[side] =
                   error instanceof TaskExecutionError
                     ? { ...unavailable('task_failed'), executionStatus: 'task_failed' }
@@ -900,8 +977,14 @@ export async function runCapturedEvaluation(options: {
                 if (error instanceof EvaluationError && error.code === 'journal.ownership_lost')
                   throw error;
                 if (error instanceof CallbackCancelled) cancelled = true;
-                else if (!gradeReturned && config.captureCallbackErrors)
-                  await saveCallbackError(privateJobDirectory, 'grade', error);
+                else
+                  noteFailure(
+                    'grade',
+                    'grading_failed',
+                    !gradeReturned && captureErrors
+                      ? await saveCallbackError(privateJobDirectory, 'grade', error, secrets)
+                      : undefined,
+                  );
                 pair[side] = {
                   ...outcome,
                   gradingStatus: 'failed',
@@ -975,7 +1058,7 @@ export async function runCapturedEvaluation(options: {
     const result = await terminal(api, scope, request, callbacksStarted, reusedEvidence, state);
     state.completed = true;
     await journal.save(state);
-    return result;
+    return firstCallbackFailure ? { ...result, firstCallbackFailure } : result;
   } catch (error) {
     if (error instanceof ObservedInterruption) {
       return {

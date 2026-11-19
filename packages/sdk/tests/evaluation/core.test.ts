@@ -141,13 +141,14 @@ async function setup(definition = defaultDefinition()) {
   };
 }
 
-test('callback diagnostics retain private frame locations only when enabled', async () => {
-  for (const enabled of [false, true]) {
+test('callback diagnostics keep a redacted message and stack locally by default, with an opt-out', async () => {
+  for (const enabled of [false, undefined, true]) {
     const definition = defaultDefinition();
     const directories: string[] = [];
     definition.execute = async ({ context, repetition }) => {
       directories.push(context.privateJobDirectory);
-      if (repetition === 0) throw new TypeError('private callback canary\n    at /secret/path:1:1');
+      if (repetition === 0)
+        throw new TypeError('private callback canary Authorization: Bearer sk-live-0123456789abcdef');
       return { output: { answer: 'ok' } };
     };
     definition.grade = async () => {
@@ -155,13 +156,24 @@ test('callback diagnostics retain private frame locations only when enabled', as
     };
     const run = await setup(definition);
     try {
-      run.options.config.captureCallbackErrors = enabled;
+      if (enabled !== undefined) run.options.config.captureCallbackErrors = enabled;
+      else delete run.options.config.captureCallbackErrors;
       const result = await runCapturedEvaluation(run.options);
       assert.equal(result.evaluation.status, 'failed');
-      assert.doesNotMatch(JSON.stringify(result), /canary|secret\/path|callback-error/);
+      // The message stays in the private file. Only the local file path is reported.
+      assert.doesNotMatch(JSON.stringify(result), /canary|sk-live/);
+      assert.doesNotMatch(JSON.stringify(run.submitted), /canary|callback-error|sk-live/);
+      assert.equal(result.firstCallbackFailure?.caseId, 'one');
+      assert.equal(result.firstCallbackFailure?.repetition, 0);
+      assert.equal(result.firstCallbackFailure?.stage, 'execute');
+      assert.equal(result.firstCallbackFailure?.reason, 'execution_failed');
+      assert.equal(
+        result.firstCallbackFailure?.diagnosticFile,
+        enabled === false ? undefined : path.join(directories[0], 'callback-error.json'),
+      );
       for (const [i, dir] of directories.entries()) {
         const filename = path.join(dir, 'callback-error.json');
-        if (!enabled) {
+        if (enabled === false) {
           await assert.rejects(readFile(filename), { code: 'ENOENT' });
           continue;
         }
@@ -169,8 +181,10 @@ test('callback diagnostics retain private frame locations only when enabled', as
         const diagnostic = JSON.parse(body);
         assert.equal(diagnostic.phase, i < 2 ? 'execute' : 'grade');
         assert.equal(diagnostic.exceptionType, i < 2 ? 'TypeError' : 'RangeError');
+        assert.match(diagnostic.message, /canary/);
+        assert.match(diagnostic.stack, /canary/);
         assert.ok(diagnostic.frames.length > 0 && diagnostic.frames.length <= 8);
-        assert.doesNotMatch(body, /canary|secret\/path/);
+        assert.doesNotMatch(body, /sk-live-0123456789abcdef/);
       }
     } finally {
       await run.cleanup();
@@ -360,9 +374,9 @@ test('non-JSON adapter output identifies the field only in the private job', asy
   const providerResult = { observedAt: new Date() };
   assert.throws(() => assertEvaluationOutput(providerResult), /observedAt.*toISOString/);
   if (false) {
+    // @ts-expect-error The compiler names output.observedAt and asks for toISOString().
     defineEvaluation({
       ...defaultDefinition(),
-      // @ts-expect-error Dates require an explicit conversion at the durable adapter boundary.
       execute: async () => ({ output: providerResult }),
       grade: async () => ({ reward: 1 }),
     });

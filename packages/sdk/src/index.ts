@@ -1,6 +1,10 @@
 export { AcclimateClient, ApiError } from './client.js';
+export type { ApiErrorCode } from './client.js';
+export { AcclimateError, AcclimateUsageError, TransportError } from './errors.js';
+export type { UsageErrorCode, TransportErrorCode } from './errors.js';
 export type { ClientOptions, ChannelOptions, ChannelResult } from './client.js';
 export { resolveAndCache, validatePayload, DeliveryError } from './cache.js';
+export type { DeliveryErrorCode } from './validation.js';
 export { verifyPayloadBytes } from './verification.js';
 export type { Selection, CachePolicy, OfflinePolicy } from './cache.js';
 export { prepareFiles } from './prepare.js';

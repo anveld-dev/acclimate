@@ -1,4 +1,5 @@
 /// <reference lib="esnext.disposable" preserve="true" />
+import { AcclimateUsageError } from './errors.js';
 import { lstat, mkdir, mkdtemp, open, realpath, rm, rmdir, chmod, readdir } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -59,7 +60,7 @@ export async function prepareDelivery(
   } = options;
   const hasChannel = 'channel' in options;
   if (hasChannel === 'versionId' in options)
-    throw new TypeError('Select exactly one channel or versionId');
+    throw new AcclimateUsageError('Select exactly one channel or versionId', 'selection');
   const selection = hasChannel
     ? { projectId, bundleId, channel: options.channel }
     : { projectId, bundleId, versionId: options.versionId };
@@ -178,7 +179,7 @@ export async function prepareFiles(
   options: PrepareOptions = {},
 ): Promise<PreparedFiles> {
   if (options.collision !== undefined && options.collision !== 'error')
-    throw new TypeError('Only collision="error" is supported');
+    throw new AcclimateUsageError('Only collision="error" is supported', 'collision');
   validatePayload(bundle.payload);
   const root = await ensureSafeRoot(destination),
     rootReal = await realpath(root);

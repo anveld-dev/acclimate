@@ -3,9 +3,10 @@ import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { dirname, relative, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { ApplicationAdapter } from './app-cli.js';
+import type { ApplicationAdapter } from './application.js';
+import { AppSetupError } from './errors.js';
+export { AppSetupError } from './errors.js';
 
-export class AppSetupError extends Error {}
 
 /** Node caches both an entry and its imports for the lifetime of the process. Keep
  * their original bytes/edges so a later load cannot describe a different grader. */
@@ -59,6 +60,7 @@ function observeImports() {
             'Cannot resolve import' +
               label +
               '. Install the dependency or compile your app and select its emitted entry with --app PATH.',
+            { code: 'application.import_failed', field: specifier.slice(0, 180), cause: error },
           );
         }
       };
@@ -101,15 +103,28 @@ export async function importInstalledApplication(filename: string) {
     if (error instanceof AppSetupError) throw error;
     const code = (error as NodeJS.ErrnoException)?.code;
     if (code === 'ACCLIMATE_NATIVE_CONFIG_MISSING')
-      throw new AppSetupError('Create native.json beside the native starter’s application.mjs, then rerun describe.');
+      throw new AppSetupError('Create native.json beside the native starter’s application.mjs, then rerun describe.', {
+        code: 'application.import_failed',
+        cause: error,
+      });
     if (code === 'ACCLIMATE_NATIVE_TEST_NOT_PROTECTED')
-      throw new AppSetupError('Update native.json so every testFiles entry is in sourceFiles and outside resultFiles, then rerun describe.');
+      throw new AppSetupError('Update native.json so every testFiles entry is in sourceFiles and outside resultFiles, then rerun describe.', {
+        code: 'application.import_failed',
+        cause: error,
+      });
     const hint =
-      code === 'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX' ? ' The TS syntax requires compilation.' : '';
+      code === 'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX'
+        ? 'The TypeScript syntax requires compilation. Compile the module and select its emitted entry with --app PATH.'
+        : 'Fix the error your module threw while loading, or select a compiled entry with --app PATH.';
+    // Name the exception the application threw, including its own code such as
+    // native.control_path, so the cause is visible without a debugger.
+    const name = error instanceof Error ? error.name : typeof error;
+    const detail = String(error instanceof Error ? error.message : error)
+      .split('\n')[0]
+      .slice(0, 500);
     throw new AppSetupError(
-      'Could not import the application module.' +
-        hint +
-        ' Check its dependencies or select a compiled entry with --app PATH.',
+      `Could not import the application module: ${name}${typeof code === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(code) ? ` [${code}]` : ''}: ${detail}`,
+      { code: 'application.import_failed', field: filename, hint, cause: error },
     );
   }
   const seen = new Set<string>();

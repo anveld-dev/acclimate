@@ -5,6 +5,7 @@ import {
   AcclimateClient,
   ApiError,
   DeliveryError,
+  TransportError,
   compare,
   resolveAndCache,
   prepareFiles,
@@ -452,7 +453,7 @@ try {
     !(
       error instanceof ApiError ||
       error instanceof DeliveryError ||
-      (error instanceof TypeError && error.message === 'fetch failed')
+      error instanceof TransportError
     )
   )
     throw error;

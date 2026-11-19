@@ -1,18 +1,24 @@
+import { AcclimateError } from './errors.js';
 import type { EvaluationDescriptor, EvaluationHandoff } from './types.js';
 
 const encoder = new TextEncoder();
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const fields = ['datasetRevision', 'graderRevision', 'runtime', 'expectedCases'];
 
-export class EvaluationConfigurationError extends Error {
+export class EvaluationConfigurationError extends AcclimateError<
+  'descriptor.mismatch' | 'config.schema' | 'config.url' | 'guided_target_unsupported'
+> {
   constructor(
-    readonly code:
-      | 'descriptor.mismatch'
-      | 'config.schema'
-      | 'config.url'
-      | 'guided_target_unsupported',
+    code: 'descriptor.mismatch' | 'config.schema' | 'config.url' | 'guided_target_unsupported',
+    /** The descriptor or handoff field that failed validation, when known. */
+    readonly field?: string,
   ) {
-    super('Invalid public evaluation configuration. Check its documented fields and limits.');
+    super(
+      code,
+      'Invalid public evaluation configuration' +
+        (field ? ` at ${field}` : '') +
+        '. Check its documented fields and limits.',
+    );
     this.name = 'EvaluationConfigurationError';
   }
 }

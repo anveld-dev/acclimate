@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
   AcclimateClient,
+  AcclimateUsageError,
   ApiError,
   prepareFiles,
   resolveAndCache,
@@ -239,7 +240,7 @@ test('promotion history encodes its query, returns a page and preserves typed er
       c.listPromotions('p', 'b', 'stable', { beforeRevision: 'denied' }),
       (e: unknown) => e instanceof ApiError && e.status === 403 && e.code === 'denied',
     );
-    assert.throws(() => c.listPromotions('..', 'b', 'stable'), TypeError);
+    assert.throws(() => c.listPromotions('..', 'b', 'stable'), AcclimateUsageError);
   } finally {
     await f.close();
   }

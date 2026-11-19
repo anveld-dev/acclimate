@@ -1,4 +1,5 @@
 import type { Operation, PolicyOverride } from './types.js';
+import { AcclimateError, AcclimateUsageError, TransportError } from './errors.js';
 import type { PrepareDeliveryOptions, PreparedDelivery } from './prepare.js';
 import { registerEvaluationMutation } from './internal/http-bridge.js';
 import type {
@@ -71,22 +72,66 @@ import type {
   VersionMetadata,
 } from './types.js';
 
-export class ApiError extends Error {
+/** Error codes the Acclimate service returns, plus codes the client assigns to HTTP failures. */
+export type ApiErrorCode =
+  | 'already_adopted'
+  | 'already_member'
+  | 'base_conflict'
+  | 'credential_already_issued'
+  | 'denied'
+  | 'draft_closed'
+  | 'email_not_verified'
+  | 'email_unavailable'
+  | 'evaluation_conflict'
+  | 'evaluation_progress_conflict'
+  | 'generation_conflict'
+  | 'guided_target_unsupported'
+  | 'http_error'
+  | 'idempotency_conflict'
+  | 'invalid_compatibility'
+  | 'invalid_console_transport'
+  | 'invalid_content'
+  | 'invalid_cursor'
+  | 'invalid_session'
+  | 'invitation_closed'
+  | 'invitation_exists'
+  | 'invitation_limit'
+  | 'last_admin'
+  | 'learning_conflict'
+  | 'learning_processing_error'
+  | 'machine_principal_required'
+  | 'not_found'
+  | 'operation_closed'
+  | 'parent_conflict'
+  | 'payload_too_large'
+  | 'policy_binding_mismatch'
+  | 'policy_override_required'
+  | 'policy_receipt_conflict'
+  | 'resend_unavailable'
+  | 'response_too_large'
+  | 'review_already_decided'
+  | 'revision_conflict'
+  | 'unauthenticated'
+  | 'unavailable'
+  | 'workspace_owned'
+  // A newer service can return codes this SDK version does not list yet.
+  | (string & {});
+
+/** The service answered with a non-success HTTP status. */
+export class ApiError extends AcclimateError<ApiErrorCode> {
   readonly status: number;
-  readonly code: string;
   readonly requestId: string;
   readonly details?: Record<string, unknown>;
   constructor(
     status: number,
-    code: string,
+    code: ApiErrorCode,
     message: string,
     requestId: string,
     details?: Record<string, unknown>,
   ) {
-    super(message);
+    super(code, message);
     this.name = 'ApiError';
     this.status = status;
-    this.code = code;
     this.requestId = requestId;
     this.details = details;
   }
@@ -133,9 +178,15 @@ export class AcclimateClient {
     return prepareDelivery(this, options);
   }
   constructor(options: ClientOptions) {
-    if (!options.baseUrl || !options.token || !options.scope)
-      throw new TypeError('baseUrl, token, and scope are required');
-    const url = new URL(options.baseUrl);
+    for (const field of ['baseUrl', 'token', 'scope'] as const)
+      if (!options?.[field])
+        throw new AcclimateUsageError(`${field} is required. Pass baseUrl, token and scope.`, field);
+    let url: URL;
+    try {
+      url = new URL(options.baseUrl);
+    } catch {
+      throw new AcclimateUsageError('baseUrl must be an absolute HTTP(S) URL.', 'baseUrl');
+    }
     if (
       !['http:', 'https:'].includes(url.protocol) ||
       url.username ||
@@ -143,8 +194,9 @@ export class AcclimateClient {
       url.search ||
       url.hash
     )
-      throw new TypeError(
+      throw new AcclimateUsageError(
         'baseUrl must be an HTTP(S) service URL without credentials, query, or fragment',
+        'baseUrl',
       );
     this.baseUrl = url.toString().replace(/\/$/, '');
     this.scope = options.scope;
@@ -152,7 +204,7 @@ export class AcclimateClient {
       options.integrationId !== undefined &&
       !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(options.integrationId)
     )
-      throw new TypeError('integrationId must be a UUID');
+      throw new AcclimateUsageError('integrationId must be a UUID', 'integrationId');
     this.integrationId = options.integrationId?.toLowerCase();
     this.token = options.token;
     this.sessionToken = options.sessionToken;
@@ -162,28 +214,31 @@ export class AcclimateClient {
     this.maxPayloadBytes = options.maxPayloadBytes ?? 1024 * 1024;
     this.maxJsonResponseBytes = options.maxJsonResponseBytes ?? 4 * 1024 * 1024;
     if (!Number.isInteger(this.retries) || this.retries < 0 || this.retries > 3)
-      throw new RangeError('retries must be an integer between 0 and 3');
+      throw new AcclimateUsageError('retries must be an integer between 0 and 3', 'retries');
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs < 1 || this.timeoutMs > 120_000)
-      throw new RangeError('timeoutMs must be between 1 and 120000');
+      throw new AcclimateUsageError('timeoutMs must be between 1 and 120000', 'timeoutMs');
     if (
       !Number.isFinite(this.maxPayloadBytes) ||
       this.maxPayloadBytes < 1 ||
       this.maxPayloadBytes > 2 * 1024 * 1024
     )
-      throw new RangeError('maxPayloadBytes must be between 1 and 2097152');
+      throw new AcclimateUsageError('maxPayloadBytes must be between 1 and 2097152', 'maxPayloadBytes');
     if (
       !Number.isSafeInteger(this.maxJsonResponseBytes) ||
       this.maxJsonResponseBytes < 1 ||
       this.maxJsonResponseBytes > 8 * 1024 * 1024
     )
-      throw new RangeError('maxJsonResponseBytes must be an integer between 1 and 8388608');
+      throw new AcclimateUsageError('maxJsonResponseBytes must be an integer between 1 and 8388608', 'maxJsonResponseBytes');
     registerEvaluationMutation(this, (route, body, key) =>
       this.request('POST', route, body, key, { 'X-Acclimate-Durable-Operation': 'true' }),
     );
   }
   private part(value: string): string {
     if (!value || value === '.' || value === '..')
-      throw new TypeError('path identifiers must be nonempty and not dot segments');
+      throw new AcclimateUsageError(
+        'path identifiers (workspace, bundle and version IDs) must be nonempty and not dot segments',
+        'pathIdentifier',
+      );
     return encodeURIComponent(value);
   }
   private path(projectId: string, suffix: string): string {
@@ -202,8 +257,11 @@ export class AcclimateClient {
           : 'JSON response exceeds configured limit',
         '',
       );
+    const transport = (error: unknown): never => {
+      throw error instanceof AcclimateError ? error : new TransportError(this.baseUrl, error);
+    };
     if (!response.body) {
-      const bytes = new Uint8Array(await response.arrayBuffer());
+      const bytes = new Uint8Array(await response.arrayBuffer().catch(transport));
       if (bytes.byteLength > limit) throw fail();
       return bytes;
     }
@@ -212,7 +270,7 @@ export class AcclimateClient {
     let size = 0;
     try {
       for (;;) {
-        const item = await reader.read();
+        const item = await reader.read().catch(transport);
         if (item.done) break;
         size += item.value.byteLength;
         if (size > limit) {
@@ -232,12 +290,21 @@ export class AcclimateClient {
     }
     return bytes;
   }
+  /** Only network and timeout failures become TransportError; argument and parsing bugs stay distinct. */
+  private async send(url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await this.fetcher(url, init);
+    } catch (error) {
+      if (error instanceof AcclimateError) throw error;
+      throw new TransportError(this.baseUrl, error);
+    }
+  }
   private async readJson<T>(response: Response): Promise<T> {
     const bytes = await this.readBytes(response, this.maxJsonResponseBytes);
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as T;
   }
   async health(): Promise<string> {
-    const response = await this.fetcher(this.baseUrl + '/health', {
+    const response = await this.send(this.baseUrl + '/health', {
       method: 'GET',
       signal: AbortSignal.timeout(this.timeoutMs),
       redirect: 'manual',
@@ -270,13 +337,14 @@ export class AcclimateClient {
   ): Promise<T> {
     const mutation = method !== 'GET' && method !== 'HEAD';
     if (mutation && (!idempotencyKey || !/^[\x20-\x7e]{1,128}$/.test(idempotencyKey)))
-      throw new TypeError(
+      throw new AcclimateUsageError(
         'mutations require a printable ASCII idempotency key (1..128 characters)',
+        'idempotencyKey',
       );
     let last: unknown;
     for (let attempt = 0; attempt <= (mutation ? this.retries : 0); attempt++) {
       try {
-        const response = await this.fetcher(this.baseUrl + path, {
+        const response = await this.send(this.baseUrl + path, {
           method,
           headers: {
             Authorization: `Bearer ${this.token}`,

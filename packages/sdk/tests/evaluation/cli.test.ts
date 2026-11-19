@@ -30,7 +30,9 @@ async function invoke(
   const stdout = process.stdout.write,
     stderr = process.stderr.write;
   const ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+  const errTtyDescriptor = Object.getOwnPropertyDescriptor(process.stderr, 'isTTY');
   Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: tty });
+  Object.defineProperty(process.stderr, 'isTTY', { configurable: true, value: tty });
   process.stdout.write = ((value: unknown) => {
     out += String(value);
     return true;
@@ -55,6 +57,8 @@ async function invoke(
     process.stderr.write = stderr;
     if (ttyDescriptor) Object.defineProperty(process.stdout, 'isTTY', ttyDescriptor);
     else Reflect.deleteProperty(process.stdout, 'isTTY');
+    if (errTtyDescriptor) Object.defineProperty(process.stderr, 'isTTY', errTtyDescriptor);
+    else Reflect.deleteProperty(process.stderr, 'isTTY');
   }
 }
 
@@ -438,8 +442,10 @@ test('closed CLI describe and usage errors never expose app data or config path'
     assert.ok(!described.out.includes('"expected":'));
     const invalid = await invoke(f.app, ['run', '--config', f.config, '--config', 'SECRET_CANARY']);
     assert.equal(invalid.status, 1);
-    assert.equal(invalid.error.error.code, 'config.schema');
+    assert.equal(invalid.error.error.code, 'usage.invalid_flag');
+    assert.equal(invalid.error.error.field, '--config');
     assert.ok(!invalid.err.includes(f.config));
+    assert.ok(!invalid.err.includes('SECRET_CANARY'));
     assert.equal(f.state.executions, 0);
     assert.throws(() => parseCommandJson('{"role":"output","role":"grader-explanation"}'));
   } finally {
@@ -574,7 +580,7 @@ test('compare terminal and JSON modes render the same bound run without extra ca
     const args = ['compare', '--config', f.config, '--handoff', f.handoff, '--policy', f.policy];
     const missingLive = await invoke(f.app, args, undefined, true);
     assert.equal(missingLive.status, 1);
-    assert.match(missingLive.err, /requires --live/);
+    assert.match(missingLive.err, /error\[usage\.missing_flag\].*--live.*Add --live/);
     assert.match(missingLive.err, /--bundle ID --channel CHANNEL/);
     assert.ok(!missingLive.err.includes(f.config));
     const mixed = await invoke(
@@ -748,7 +754,7 @@ test('request lost replies recover original committed intent before changed chan
   try {
     f.state.loseRequests = 3;
     const lost = await invoke(f.app, f.requestArgs);
-    assert.equal(lost.status, 3);
+    assert.equal(lost.status, 5);
     assert.equal(f.state.requests, 1);
     f.state.revision = '2';
     const recovered = await invoke(f.app, f.requestArgs);
@@ -897,7 +903,8 @@ test('completed candidate loss, failed grading and interruption have different s
       '--handoff',
       failed.handoff,
     ]);
-    assert.equal(run.status, 2);
+    // A failed run is an execution failure (4), distinct from a quality-gate failure (2).
+    assert.equal(run.status, 4);
     assert.equal(run.result.status, 'failed');
     assert.ok(!run.out.includes('PRIVATE_GRADER_CANARY'));
     assert.equal(
@@ -928,7 +935,7 @@ test('completed candidate loss, failed grading and interruption have different s
       '--handoff',
       interrupted.handoff,
     ]);
-    assert.equal(run.status, 3);
+    assert.equal(run.status, 5);
     assert.equal(interrupted.state.executions, 0);
   } finally {
     await interrupted.cleanup();
@@ -939,12 +946,12 @@ test('lost candidate creation plus channel drift never silently rebases', async 
   const f = await fixture();
   try {
     f.state.loseDrafts = 3;
-    assert.equal((await invoke(f.app, f.requestArgs)).status, 3);
+    assert.equal((await invoke(f.app, f.requestArgs)).status, 5);
     assert.equal(f.state.drafts, 1);
     assert.equal(f.state.requests, 0);
     f.state.revision = '2';
     const retry = await invoke(f.app, f.requestArgs);
-    assert.equal(retry.status, 3);
+    assert.equal(retry.status, 5);
     assert.equal(retry.error.error.code, 'request.base_conflict');
     assert.equal(f.state.drafts, 1);
     assert.equal(f.state.requests, 0);
@@ -957,10 +964,10 @@ test('lost private creation intent is inspection-required rather than permission
   const f = await fixture();
   try {
     f.state.loseRequests = 3;
-    assert.equal((await invoke(f.app, f.requestArgs)).status, 3);
+    assert.equal((await invoke(f.app, f.requestArgs)).status, 5);
     await rm(f.intent);
     const retry = await invoke(f.app, f.requestArgs);
-    assert.equal(retry.status, 3);
+    assert.equal(retry.status, 5);
     assert.equal(retry.error.error.code, 'journal.missing');
     assert.equal(f.state.drafts, 1);
     assert.equal(f.state.requests, 1);
@@ -969,7 +976,7 @@ test('lost private creation intent is inspection-required rather than permission
   }
 });
 
-test('uncertain committed comparison submission exits 3 and retries exact bytes/key without callbacks', async () => {
+test('uncertain committed comparison submission exits 5 and retries exact bytes/key without callbacks', async () => {
   const f = await fixture();
   try {
     assert.equal((await invoke(f.app, f.requestArgs)).status, 0);
@@ -977,7 +984,7 @@ test('uncertain committed comparison submission exits 3 and retries exact bytes/
     f.state.loseComparisons = 3;
     const command = ['run', '--config', f.config, '--handoff', f.handoff];
     const uncertain = await invoke(f.app, command);
-    assert.equal(uncertain.status, 3);
+    assert.equal(uncertain.status, 5);
     assert.equal(uncertain.error.error.executionState, 'report_saved');
     assert.equal(uncertain.error.error.phase, 'submit');
     assert.equal(uncertain.error.error.nextAction, 'retry_same_command');
@@ -1044,13 +1051,13 @@ for (const status of ['running', 'interrupted'] as const)
     }
   });
 
-test('request denial uses input/access exit 1 while doctor uses failed-check exit 2', async () => {
+test('request denial and a doctor failed check both use the setup exit 1', async () => {
   const f = await fixture();
   try {
     f.state.writeEvaluation = false;
     assert.equal(
       (await invoke(f.app, ['doctor', '--config', f.config, '--bundle', bundleId])).status,
-      2,
+      1,
     );
     assert.equal((await invoke(f.app, f.requestArgs)).status, 1);
     assert.equal(f.state.drafts, 0);
@@ -1060,7 +1067,7 @@ test('request denial uses input/access exit 1 while doctor uses failed-check exi
   }
 });
 
-test('doctor verifies bundle existence and reports missing request with exit 2 before execution', async () => {
+test('doctor verifies bundle existence and reports missing request with exit 1 before execution', async () => {
   const f = await fixture();
   try {
     const ready = await invoke(f.app, ['doctor', '--config', f.config, '--bundle', bundleId]);
@@ -1073,7 +1080,7 @@ test('doctor verifies bundle existence and reports missing request with exit 2 b
       '--bundle',
       comparisonId,
     ]);
-    assert.equal(missingBundle.status, 2);
+    assert.equal(missingBundle.status, 1);
     assert.equal(missingBundle.result.checks.at(-1).code, 'bundle.missing');
     assert.equal(missingBundle.result.nextAction, 'fix_config');
     const config = JSON.parse(await readFile(f.config, 'utf8'));
@@ -1095,7 +1102,7 @@ test('doctor verifies bundle existence and reports missing request with exit 2 b
       '--handoff',
       f.handoff,
     ]);
-    assert.equal(missingRequest.status, 2);
+    assert.equal(missingRequest.status, 1);
     assert.equal(missingRequest.result.checks.at(-1).code, 'request.missing');
     assert.equal(missingRequest.result.nextAction, 'fix_config');
     assert.ok(!missingRequest.out.includes('PRIVATE_CANARY'));
@@ -1161,7 +1168,7 @@ test('creation recovery survives same-principal token rotation and retains crede
   const f = await fixture();
   try {
     f.state.loseRequests = 3;
-    assert.equal((await invoke(f.app, f.requestArgs)).status, 3);
+    assert.equal((await invoke(f.app, f.requestArgs)).status, 5);
     const config = JSON.parse(await readFile(f.config, 'utf8'));
     config.evaluatorToken = 'ROTATED_PRIVATE_CANARY';
     await writeFile(f.config, JSON.stringify(config));
@@ -1233,6 +1240,63 @@ test('doctor reports missing private configuration as invalid input exit 1', asy
     assert.equal(unsafeStorage.result.checks.at(-1).field, 'journalRoot');
     assert.match(unsafeStorage.result.checks.at(-1).hint, /chmod/);
     assert.equal(f.state.executions, 0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('missing handoffs, an unnamed compare and an unreachable service name the flag and service', async () => {
+  const f = await fixture();
+  try {
+    const missing = await invoke(f.app, [
+      'status', '--config', f.config, '--handoff', path.join(f.directory, 'absent.json'),
+    ]);
+    assert.equal(missing.status, 1);
+    assert.equal(missing.error.error.code, 'handoff.missing');
+    assert.equal(missing.error.error.field, '--handoff');
+    assert.ok(!missing.err.includes(f.directory));
+    const unnamed = await invoke(f.app, [
+      'compare', '--config', f.config, '--bundle', bundleId, '--channel', 'stable', '--payload', f.payloadFile,
+    ]);
+    assert.equal(unnamed.error.error.code, 'usage.missing_flag');
+    assert.equal(unnamed.error.error.field, '--name');
+    assert.match(unnamed.error.error.reason, /--name RUN_NAME/);
+    const noRun = await invoke(f.app, ['status', '--config', f.config, '--name', 'never-ran']);
+    assert.equal(noRun.error.error.code, 'handoff.missing');
+    assert.equal(noRun.error.error.field, '--name');
+    assert.match(noRun.error.error.reason, /No run named "never-ran"/);
+
+    const config = JSON.parse(await readFile(f.config, 'utf8'));
+    await writeFile(f.config, JSON.stringify({ ...config, serviceUrl: 'http://127.0.0.1:9/' }));
+    const doctor = await invoke(f.app, ['doctor', '--config', f.config, '--bundle', bundleId]);
+    assert.equal(doctor.status, 4);
+    const check = doctor.result.checks.at(-1);
+    assert.equal(check.code, 'service.unavailable');
+    assert.equal(check.serviceUrl, 'http://127.0.0.1:9');
+    assert.match(check.hint, /Check that the Acclimate service is running/);
+    assert.equal(doctor.result.nextAction, 'check_service');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a failed callback is named in the compare summary with its private diagnostic path', async () => {
+  const f = await fixture();
+  try {
+    f.state.failGrade = true;
+    assert.equal((await invoke(f.app, f.requestArgs)).status, 0);
+    const args = ['compare', '--config', f.config, '--handoff', f.handoff];
+    const terminal = await invoke(f.app, args, undefined, true);
+    assert.equal(terminal.status, 4);
+    assert.match(terminal.out, /First callback failure: "case" \[0\] \w+ · grade · grading_failed/);
+    const file = /Details \(private, not uploaded\): (\S+callback-error\.json)/.exec(terminal.out)![1];
+    const diagnostic = JSON.parse(await readFile(file, 'utf8'));
+    assert.match(diagnostic.message, /PRIVATE_GRADER_CANARY/);
+    assert.ok(!JSON.stringify(f.state.comparison).includes('PRIVATE_GRADER_CANARY'));
+    // A rerun reuses saved evidence, so no callback ran and none is reported.
+    const json = await invoke(f.app, args);
+    assert.equal(json.result.invocation.reusedEvidence, true);
+    assert.equal(json.result.firstCallbackFailure, undefined);
   } finally {
     await f.cleanup();
   }

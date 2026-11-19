@@ -12,8 +12,9 @@ export class EvaluatorConfigError extends EvaluationError {
       | 'config.url'
       | 'config.missing' = 'config.schema',
     pathIssue?: PathIssue,
+    detail: { field?: string; reason?: string; hint?: string } = {},
   ) {
-    super(code, { pathIssue });
+    super(code, { pathIssue, ...detail });
     this.name = 'EvaluatorConfigError';
   }
 }
@@ -44,7 +45,18 @@ export function assertServiceUrl(value: unknown): asserts value is string {
     throw new EvaluatorConfigError('config.url');
 }
 async function config(filename: string, reader: boolean): Promise<EvaluatorConfig | ReaderConfig> {
-  if (!path.isAbsolute(filename)) throw new EvaluatorConfigError('config.permissions');
+  if (!path.isAbsolute(filename)) throw new EvaluatorConfigError('config.permissions', 'configAlias');
+  // Report an absent config before judging its directory, so a typo in the path
+  // is not mistaken for a permissions problem.
+  try {
+    await lstat(filename);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      throw new EvaluatorConfigError('config.missing', undefined, {
+        field: 'configPath',
+        hint: 'Check the config path. Relative CLI paths resolve against the current directory.',
+      });
+  }
   try {
     await assertUnaliasedPath(filename, 'configAlias');
     const parent = path.dirname(filename),

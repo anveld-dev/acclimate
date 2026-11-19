@@ -1,3 +1,4 @@
+import { AcclimateUsageError } from '../errors.js';
 import { AcclimateClient } from '../client.js';
 import { assertGuidedTarget, validateEvaluationServiceUrl } from '../evaluation-validation.js';
 import { evaluationMutationFor } from './http-bridge.js';
@@ -31,17 +32,17 @@ export function evaluationOperationPath(
 ): string {
   assertGuidedTarget(scope);
   if (typeof scope.bundleId !== 'string' || !scope.bundleId)
-    throw new TypeError('Evaluation bundle is required');
+    throw new AcclimateUsageError('Evaluation bundle is required', 'bundleId');
   const base = `/v1/workspaces/${scope.projectId}/bundles/${scope.bundleId}`;
   if (operation === 'submit') return `${base}/comparisons`;
   if (operation === 'createRequest') return `${base}/evaluation-requests`;
   if (operation === 'createDraft') {
     if (!scope.channel || !/^[A-Za-z0-9_-]{1,64}$/.test(scope.channel))
-      throw new TypeError('Invalid evaluation channel');
+      throw new AcclimateUsageError('Invalid evaluation channel', 'channel');
     return `${base}/channels/${scope.channel}/drafts`;
   }
   if (!['start', 'finish', 'interrupt'].includes(operation) || !scope.requestId)
-    throw new TypeError('Unsupported evaluation operation');
+    throw new AcclimateUsageError('Unsupported evaluation operation', 'operation');
   return `${base}/evaluation-requests/${scope.requestId}/${operation}`;
 }
 
@@ -75,9 +76,9 @@ export function evaluationTransportForClient(client: AcclimateClient, projectId:
       body: string,
       key: string,
     ): Promise<T> {
-      if (scope.projectId !== projectId) throw new TypeError('Evaluation target mismatch');
+      if (scope.projectId !== projectId) throw new AcclimateUsageError('Evaluation target mismatch', 'projectId');
       if (typeof body !== 'string' || new TextEncoder().encode(body).length > 2 * 1024 * 1024)
-        throw new TypeError('Evaluation request exceeds its byte budget');
+        throw new AcclimateUsageError('Evaluation request exceeds its byte budget', 'body');
       return evaluationMutationFor(client)(
         evaluationOperationPath(operation, scope),
         body,

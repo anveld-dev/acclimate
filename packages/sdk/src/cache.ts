@@ -1,3 +1,4 @@
+import { AcclimateUsageError, TransportError } from './errors.js';
 import type { DeliveryObservation, DeliveryObserver } from './reporting.js';
 import { createHash } from 'node:crypto';
 import {
@@ -105,12 +106,14 @@ async function loadEntry(dir: string): Promise<any | null> {
   }
 }
 
-// The native fetch deadline rejects with TimeoutError, while an explicit caller abort
+// The client wraps network failures in TransportError. Custom fetchers can still surface
+// the native errors: the fetch deadline rejects with TimeoutError, while an explicit caller abort
 // rejects with AbortError. Only transport failures and 503 permit offline use.
 function isTransportFailure(error: unknown): boolean {
   return error instanceof ApiError
     ? error.status === 503
-    : error instanceof TypeError ||
+    : error instanceof TransportError ||
+        error instanceof TypeError ||
         (error instanceof DOMException &&
           (error.name === 'AbortError' || error.name === 'TimeoutError'));
 }
@@ -132,16 +135,16 @@ export async function resolveAndCache(
       policy.maxResolutionAgeMs < 0 ||
       policy.maxResolutionAgeMs > 30 * 24 * 60 * 60 * 1000)
   )
-    throw new RangeError('maxResolutionAgeMs must be between 0 and 30 days');
+    throw new AcclimateUsageError('maxResolutionAgeMs must be between 0 and 30 days', 'maxResolutionAgeMs');
   if (
     policy.maxCacheBytes !== undefined &&
     (!Number.isFinite(policy.maxCacheBytes) ||
       policy.maxCacheBytes < 1 ||
       policy.maxCacheBytes > 1024 * 1024 * 1024)
   )
-    throw new RangeError('maxCacheBytes must be between 1 and 1073741824');
+    throw new AcclimateUsageError('maxCacheBytes must be between 1 and 1073741824', 'maxCacheBytes');
   if (typeof policy.cacheDir !== 'string' || !policy.cacheDir)
-    throw new TypeError('cacheDir is required');
+    throw new AcclimateUsageError('cacheDir is required', 'cacheDir');
   if (
     typeof offline === 'object' &&
     'maxAgeMs' in offline &&
@@ -149,7 +152,7 @@ export async function resolveAndCache(
       offline.maxAgeMs < 0 ||
       offline.maxAgeMs > 30 * 24 * 60 * 60 * 1000)
   )
-    throw new RangeError('offline.maxAgeMs must be between 0 and 30 days');
+    throw new AcclimateUsageError('offline.maxAgeMs must be between 0 and 30 days', 'offline.maxAgeMs');
   await ensurePrivateDir(policy.cacheDir);
   if ('channel' in selection) {
     const mapDir = join(

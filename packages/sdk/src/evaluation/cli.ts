@@ -1,4 +1,6 @@
-import { dirname, join } from 'node:path';
+import { lstat } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { dirname, join, resolve } from 'node:path';
 import { analyzeComparison, type MetricAnalysis } from './analysis.js';
 import { recordPolicyReceipt } from './policy-receipt.js';
 import { AcclimateClient } from '../client.js';
@@ -9,11 +11,20 @@ import {
   assertGuidedTarget,
 } from '../validation.js';
 import { preflightEvaluation, runEvaluation } from './index.js';
-import type { EvaluationApp } from './types.js';
+import type { EvaluationApp, EvaluationRunResult } from './types.js';
 import { assertUnaliasedPath } from './private-state.js';
 import { readEvaluatorConfig, readReaderConfig } from './config.js';
-import { EvaluationError, toSafeDiagnostic } from './errors.js';
-import { checkComparison, parseEvaluationPolicy, PolicyError, type PolicyVerdict } from './policy.js';
+import {
+  EVALUATION_ERROR_CODES,
+  EXIT_CODES,
+  EvaluationError,
+  EvaluationUsageError,
+  exitCodeFor,
+  toSafeDiagnostic,
+  type ExitCode,
+  type SafeCode,
+} from './errors.js';
+import { checkComparison, parseEvaluationPolicy, type PolicyVerdict } from './policy.js';
 import {
   exportReviewEvidence,
   verifyReviewExport,
@@ -29,6 +40,7 @@ import {
 
 type Command =
   | 'compare'
+  | 'coverage'
   | 'describe'
   | 'doctor'
   | 'request'
@@ -39,7 +51,8 @@ type Command =
   | 'export'
   | 'verify-export';
 const allowed: Record<Command, readonly string[]> = {
-  compare: ['config', 'handoff', 'bundle', 'channel', 'payload', 'name', 'retry-after', 'live', 'policy', 'json'],
+  compare: ['config', 'handoff', 'bundle', 'channel', 'payload', 'name', 'retry-after', 'live', 'policy'],
+  coverage: [],
   describe: [],
   doctor: ['config', 'bundle', 'handoff', 'policy', 'name'],
   request: ['config', 'bundle', 'channel', 'payload', 'intent', 'out', 'policy'],
@@ -50,62 +63,157 @@ const allowed: Record<Command, readonly string[]> = {
   export: ['config', 'read-config', 'handoff', 'out', 'selection', 'name'],
   'verify-export': ['manifest', 'read-config', 'handoff'],
 };
+/** Flags every command accepts. */
+const globalFlags = ['json', 'verbose'];
+const booleanFlags = new Set(['live', 'json', 'verbose']);
+/** Flags whose values are file or directory paths, resolved against the working directory. */
+const pathFlags = new Set([
+  'config',
+  'read-config',
+  'handoff',
+  'payload',
+  'intent',
+  'out',
+  'policy',
+  'selection',
+  'manifest',
+]);
+/** Commands that never import the application module. */
+export const ADAPTER_FREE_COMMANDS: readonly string[] = ['status', 'verify-export', 'interrupt'];
+export const EVALUATOR_COMMANDS = Object.keys(allowed) as readonly Command[];
 interface Parsed {
   command: Command;
   flags: Record<string, string | boolean>;
 }
-function parse(argv: readonly string[]): Parsed {
+const commandList = () => EVALUATOR_COMMANDS.join(', ');
+const flagList = (command: Command) =>
+  [...allowed[command], ...globalFlags].map((name) => '--' + name).join(', ');
+const printable = (value: string) => JSON.stringify(value.slice(0, 80));
+
+/** The installed SDK version. */
+export function sdkVersion(): string {
+  try {
+    return String(createRequire(import.meta.url)('../../package.json').version);
+  } catch {
+    return 'unknown';
+  }
+}
+
+/** Parse evaluator arguments without loading application code or reading files. */
+export function parseEvaluatorArguments(argv: readonly string[], cwd = process.cwd()): Parsed {
+  if (!argv.length)
+    throw new EvaluationUsageError('usage.missing_command', {
+      hint: `Choose a command: ${commandList()}. Run with --help for usage.`,
+    });
   const command = argv[0] as Command;
-  if (!Object.hasOwn(allowed, command)) throw new EvaluationError('config.schema');
+  if (!Object.hasOwn(allowed, command))
+    throw new EvaluationUsageError('usage.unknown_command', {
+      field: printable(String(argv[0])),
+      hint: `Choose a command: ${commandList()}. Run with --help for usage.`,
+    });
   const flags: Record<string, string | boolean> = {};
   for (let index = 1; index < argv.length; index++) {
     const flag = argv[index];
-    if (
-      !flag.startsWith('--') ||
-      !allowed[command].includes(flag.slice(2)) ||
-      Object.hasOwn(flags, flag.slice(2))
-    )
-      throw new EvaluationError('config.schema');
+    if (typeof flag !== 'string' || !flag.startsWith('--'))
+      throw new EvaluationUsageError('usage.invalid_flag', {
+        field: printable(String(flag)),
+        reason: 'Unexpected argument. Values must follow their flag.',
+        hint: `${command} accepts ${flagList(command)}.`,
+      });
     const name = flag.slice(2);
-    if (name === 'live' || name === 'json') flags[name] = true;
+    if (!allowed[command].includes(name) && !globalFlags.includes(name))
+      throw new EvaluationUsageError('usage.unknown_flag', {
+        field: printable(flag),
+        hint: `${command} accepts ${flagList(command)}.`,
+      });
+    if (Object.hasOwn(flags, name))
+      throw new EvaluationUsageError('usage.invalid_flag', {
+        field: flag,
+        reason: `Supply ${flag} once.`,
+      });
+    if (booleanFlags.has(name)) flags[name] = true;
     else {
       const value = argv[++index];
-      if (!value || value.startsWith('--')) throw new EvaluationError('config.schema');
-      flags[name] = value;
+      if (!value || value.startsWith('--'))
+        throw new EvaluationUsageError('usage.missing_flag', {
+          field: flag,
+          reason: `${flag} needs a value.`,
+        });
+      flags[name] = pathFlags.has(name) ? resolve(cwd, value) : value;
     }
   }
   return { command, flags };
 }
-function required(flags: Parsed['flags'], name: string): string {
+function required(flags: Parsed['flags'], name: string, hint?: string): string {
   const value = flags[name];
-  if (typeof value !== 'string' || !value) throw new EvaluationError('config.schema');
+  if (typeof value !== 'string' || !value)
+    throw new EvaluationUsageError('usage.missing_flag', {
+      field: '--' + name,
+      ...(hint ? { hint } : {}),
+    });
   return value;
+}
+function exactlyOne(flags: Parsed['flags'], first: string, second: string) {
+  if (!flags[first] && !flags[second])
+    throw new EvaluationUsageError('usage.missing_flag', {
+      field: `--${first}`,
+      reason: `Supply --${first} or --${second}.`,
+    });
+  if (flags[first] && flags[second])
+    throw new EvaluationUsageError('usage.conflicting_flags', {
+      field: `--${first}`,
+      reason: `Supply --${first} or --${second}, not both.`,
+    });
 }
 const compareUsage = [
   'compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]',
   'compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME) [--live] [--policy POLICY] [--json]',
   'Live evaluators require --live. Use one input form and supply each flag once.',
 ].join('\n');
-class CompareUsageError extends EvaluationError {
-  constructor(readonly hint: string) {
-    super('config.schema');
-  }
-}
+const usageFor: Partial<Record<Command, string>> = { compare: compareUsage };
 
 function validateCompareFlags(flags: Parsed['flags'], live: boolean) {
   if (live !== (flags.live === true))
-    throw new CompareUsageError(
-      live ? 'This evaluator requires --live.' : 'Omit --live for this evaluator.',
-    );
+    throw new EvaluationUsageError(live ? 'usage.missing_flag' : 'usage.invalid_flag', {
+      field: '--live',
+      reason: live
+        ? 'This evaluator is live. Add --live to authorize model calls.'
+        : 'This evaluator is model-free. Omit --live.',
+    });
   const creation = ['bundle', 'channel', 'payload', 'name', 'retry-after'];
-  if (flags.handoff && creation.some((key) => flags[key]))
-    throw new CompareUsageError('--handoff cannot be combined with candidate creation flags.');
-  if (!flags.handoff && !!flags.name === !!flags['retry-after'])
-    throw new CompareUsageError('Choose --name for a run or --retry-after for a fresh attempt.');
-  for (const key of flags.handoff ? ['config'] : ['config', 'bundle', 'channel', 'payload'])
-    if (!flags[key]) throw new CompareUsageError(`Missing --${key}.`);
+  const used = creation.filter((key) => flags[key]);
+  if (flags.handoff && used.length)
+    throw new EvaluationUsageError('usage.conflicting_flags', {
+      field: '--' + used[0],
+      reason: '--handoff cannot be combined with candidate creation flags.',
+      hint: compareUsage,
+    });
+  if (!flags.config)
+    throw new EvaluationUsageError('usage.missing_flag', { field: '--config', hint: compareUsage });
+  if (flags.handoff) return;
+  if (!used.length)
+    throw new EvaluationUsageError('usage.missing_flag', {
+      field: '--handoff',
+      reason:
+        'Supply --handoff FILE, or create a run with --bundle, --channel, --payload and --name RUN_NAME.',
+      hint: compareUsage,
+    });
+  for (const key of ['bundle', 'channel', 'payload'])
+    if (!flags[key])
+      throw new EvaluationUsageError('usage.missing_flag', { field: '--' + key, hint: compareUsage });
+  if (!!flags.name === !!flags['retry-after'])
+    throw new EvaluationUsageError(flags.name ? 'usage.conflicting_flags' : 'usage.missing_flag', {
+      field: '--name',
+      reason: flags.name
+        ? 'Use --name or --retry-after, not both.'
+        : 'Name the run with --name RUN_NAME, or repeat a finished run with --retry-after PRIOR_NAME.',
+      hint: compareUsage,
+    });
   if (flags.name && !/^[a-zA-Z0-9_-]{1,80}$/.test(String(flags.name)))
-    throw new CompareUsageError('--name requires 1–80 letters, digits, underscores or hyphens.');
+    throw new EvaluationUsageError('usage.invalid_flag', {
+      field: '--name',
+      reason: 'Use 1–80 letters, digits, underscores or hyphens.',
+    });
 }
 
 function comparisonText(
@@ -171,18 +279,49 @@ function comparisonText(
 const optional = (flags: Parsed['flags'], name: string) =>
   typeof flags[name] === 'string' ? (flags[name] as string) : undefined;
 
-async function namedHandoff(journalRoot: string, name: string) {
-  if (!/^[a-zA-Z0-9_-]{1,80}$/.test(name)) throw new EvaluationError('config.schema');
+async function namedHandoff(journalRoot: string, name: string, flag = '--name') {
+  if (!/^[a-zA-Z0-9_-]{1,80}$/.test(name))
+    throw new EvaluationUsageError('usage.invalid_flag', {
+      field: flag,
+      reason: 'Use 1–80 letters, digits, underscores or hyphens.',
+    });
   await assertUnaliasedPath(journalRoot, 'journalAlias');
   return join(journalRoot, 'comparisons', name, 'request.json');
 }
 
+/** Read a handoff file. A missing file is `handoff.missing`, not a config problem. */
+async function readHandoff(filename: string, flag: string, name?: string): Promise<EvaluationHandoff> {
+  let value: unknown;
+  try {
+    const exists = await lstat(filename).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => error.code !== 'ENOENT' && error.code !== 'ENOTDIR',
+    );
+    if (!exists) throw new EvaluationError('config.missing');
+    value = await readCommandJson(filename);
+  } catch (error) {
+    if (error instanceof EvaluationError && error.code === 'config.missing')
+      throw new EvaluationError('handoff.missing', {
+        field: flag,
+        ...(name ? { reason: `No run named ${JSON.stringify(name)} in the journal.` } : {}),
+        hint: name
+          ? 'Check the run name, or create the run with compare --name.'
+          : 'Download the handoff from the console, or create one with request --out.',
+      });
+    if (error instanceof EvaluationError && !error.diagnostic.field)
+      throw new EvaluationError(error.code, { ...error.diagnostic, field: flag });
+    throw error;
+  }
+  return validateEvaluationHandoff(value);
+}
+
 async function handoffFile(flags: Parsed['flags']): Promise<EvaluationHandoff> {
-  return validateEvaluationHandoff(await readCommandJson(required(flags, 'handoff')));
+  const named = typeof flags['run-name'] === 'string' ? flags['run-name'] : undefined;
+  return readHandoff(required(flags, 'handoff'), named ? '--name' : '--handoff', named);
 }
 
 async function readConnection(flags: Parsed['flags'], handoff: EvaluationHandoff) {
-  if (!!flags.config === !!flags['read-config']) throw new EvaluationError('config.schema');
+  exactlyOne(flags, 'config', 'read-config');
   if (flags['read-config']) {
     const config = await readReaderConfig(required(flags, 'read-config'));
     if (config.serviceUrl !== handoff.serviceUrl || config.projectId !== handoff.projectId)
@@ -323,33 +462,35 @@ function comparisonBinding(request: Evaluation) {
 }
 
 function policyExit(verdict: string) {
-  return verdict === 'pass' ? 0 : verdict === 'fail' ? 2 : 3;
+  return verdict === 'pass'
+    ? EXIT_CODES.ok
+    : verdict === 'fail'
+      ? EXIT_CODES.gateFailed
+      : EXIT_CODES.indeterminate;
 }
+/** completed → 0, failed (execution or infrastructure failure) → 4, interrupted → 5. */
 function runStatus(request: Evaluation) {
-  return request.status === 'completed' ? 0 : request.status === 'failed' ? 2 : 3;
+  return request.status === 'completed'
+    ? EXIT_CODES.ok
+    : request.status === 'failed'
+      ? EXIT_CODES.infrastructure
+      : request.status === 'interrupted'
+        ? EXIT_CODES.recovery
+        : EXIT_CODES.indeterminate;
 }
+/** ready → 0. An unreachable or unverified service → 4. Any setup problem → 1. */
 function readinessStatus(result: {
   status: string;
   authorization: string;
   checks?: Array<{ status: string; code?: string }>;
 }) {
-  if (result.status === 'ready') return 0;
+  if (result.status === 'ready') return EXIT_CODES.ok;
+  const failed = result.checks?.filter((check) => check.code) ?? [];
   if (
-    result.checks?.some(
-      (check) =>
-        check.code?.startsWith('config.') ||
-        [
-          'guided_target_unsupported',
-          'definition.report_budget_exceeded',
-          'internal.error',
-        ].includes(check.code ?? ''),
-    )
+    failed.some((check) => check.code === 'service.unavailable' || check.status === 'unverified')
   )
-    return 1;
-  return result.authorization === 'unverified' ||
-    result.checks?.some((check) => check.status === 'unverified')
-    ? 3
-    : 2;
+    return EXIT_CODES.infrastructure;
+  return EXIT_CODES.usage;
 }
 
 async function createRequest(app: EvaluationApp<any, any, any>, flags: Parsed['flags'], predecessor?: { handoffFile: string; request: Evaluation }) {
@@ -359,9 +500,12 @@ async function createRequest(app: EvaluationApp<any, any, any>, flags: Parsed['f
     channel = required(flags, 'channel');
   assertGuidedTarget({ projectId: config.projectId, bundleId });
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(channel))
-    throw new EvaluationError('guided_target_unsupported');
+    throw new EvaluationError('guided_target_unsupported', {
+      field: '--channel',
+      reason: 'Use 1–64 letters, digits, underscores or hyphens.',
+    });
   const preflight = await preflightEvaluation({ app, configPath, target: { bundleId } });
-  if (preflight.status !== 'ready') return { status: 1, result: preflight };
+  if (preflight.status !== 'ready') return { status: readinessStatus(preflight), result: preflight };
   const result = await createRequestFromIntent({
     app,
     config,
@@ -382,9 +526,14 @@ async function dispatch(
 ): Promise<{ status: number; result: unknown }> {
   const { command, flags } = parsed;
   if (command === 'describe') return { status: 0, result: app.descriptor };
-  if (command === 'verify-export' || command === 'status') return readEvidence(parsed);
+  if (ADAPTER_FREE_COMMANDS.includes(command)) return readEvidence(parsed);
+  if (command === 'coverage')
+    throw new EvaluationUsageError('usage.unknown_command', {
+      field: '"coverage"',
+      hint: 'Run coverage through acclimate-eval or python -m acclimate.',
+    });
   if (command === 'doctor') {
-    if (!!flags.bundle === !!flags.handoff) throw new EvaluationError('config.schema');
+    exactlyOne(flags, 'bundle', 'handoff');
     if (flags.policy)
       parseEvaluationPolicy(await readCommandText(required(flags, 'policy')), app.descriptor);
     const target = flags.handoff
@@ -413,9 +562,14 @@ async function dispatch(
     const config = await readEvaluatorConfig(required(flags, 'config'));
     let predecessor;
     if (flags['retry-after']) {
-      const handoffFile = await namedHandoff(config.journalRoot, required(flags, 'retry-after'));
-      const prior = validateEvaluationHandoff(await readCommandJson(handoffFile));
-      if (prior.bundleId !== flags.bundle) throw new EvaluationError('request.intent_mismatch');
+      const priorName = required(flags, 'retry-after');
+      const handoffFile = await namedHandoff(config.journalRoot, priorName, '--retry-after');
+      const prior = await readHandoff(handoffFile, '--retry-after', priorName);
+      if (prior.bundleId !== flags.bundle)
+        throw new EvaluationError('request.intent_mismatch', {
+          field: '--bundle',
+          reason: 'The prior run used a different bundle.',
+        });
       const { client, projectId } = await readConnection(flags, prior);
       const request = await client.getEvaluation(projectId, prior.bundleId, prior.requestId);
       assertRequest(request, prior);
@@ -500,15 +654,18 @@ async function dispatch(
         const execution = result.reusedEvidence
           ? 'Reused saved evidence. No execution callbacks started.'
           : `Execution callbacks started this time: ${result.callbacksStarted}.`;
+        const failure = result.firstCallbackFailure;
         return {
-          status: status || (receipt?.status === 'unconfirmed' ? 1 : 0),
+          status: status || (receipt?.status === 'unconfirmed' ? EXIT_CODES.infrastructure : 0),
           result: terminal
             ? [comparisonText(request, result.comparison, scores, policyResult, !!policy), execution,
+                ...(failure ? [failureText(failure)] : []),
                 ...(receipt ? [receipt.status === 'recorded' ? 'Policy receipt recorded for release review.' : 'Policy receipt unconfirmed. Retry check with the evaluator config.'] : []),
                 ...(runName ? ['Run handle: --name ' + runName] : [])].join('\n')
             : {
                 ...safeRequest(request),
                 invocation,
+                ...(failure ? { firstCallbackFailure: failure } : {}),
                 ...(runName ? { runName } : {}),
                 parentVersionId: request.parentVersionId,
                 candidateVersionId: request.candidateVersionId,
@@ -521,7 +678,13 @@ async function dispatch(
       }
       return {
         status: runStatus(result.evaluation),
-        result: { ...safeRequest(result.evaluation), executionState: result.executionState },
+        result: {
+          ...safeRequest(result.evaluation),
+          executionState: result.executionState,
+          ...(result.firstCallbackFailure
+            ? { firstCallbackFailure: result.firstCallbackFailure }
+            : {}),
+        },
       };
     } finally {
       process.off('SIGINT', cancel);
@@ -529,7 +692,7 @@ async function dispatch(
     }
   }
   if (command === 'export') {
-    if (!!flags.config === !!flags['read-config']) throw new EvaluationError('config.schema');
+    exactlyOne(flags, 'config', 'read-config');
     const selection = flags.selection
       ? parseArtifactSelection(await readCommandJson(required(flags, 'selection')))
       : undefined;
@@ -552,24 +715,34 @@ async function dispatch(
       },
     };
   }
-  if (command === 'interrupt') {
-    const config = await readEvaluatorConfig(required(flags, 'config'));
-    if (config.serviceUrl !== handoff.serviceUrl || config.projectId !== handoff.projectId)
-      throw new EvaluationError('version.binding_mismatch');
-    return {
-      status: 0,
-      result: safeRequest(await interruptFromIntent(config, handoff, required(flags, 'reason'))),
-    };
-  }
   if (command === 'check') return checkPolicyCommand(app.descriptor, flags, handoff);
-  throw new EvaluationError('config.schema');
+  throw new EvaluationUsageError('usage.unknown_command', { field: JSON.stringify(command) });
 }
 
 async function readEvidence({ command, flags }: Parsed) {
+  if (command === 'interrupt') {
+    // Check every flag before reading any file.
+    const configPath = required(flags, 'config');
+    const reason = required(flags, 'reason');
+    const handoff = await handoffFile(flags);
+    const config = await readEvaluatorConfig(configPath);
+    if (config.serviceUrl !== handoff.serviceUrl || config.projectId !== handoff.projectId)
+      throw new EvaluationError('version.binding_mismatch', {
+        field: '--handoff',
+        reason: 'The handoff names a different service or workspace than the config.',
+      });
+    return {
+      status: 0,
+      result: safeRequest(await interruptFromIntent(config, handoff, reason)),
+    };
+  }
   if (command === 'verify-export') {
     const online = flags['read-config'] || flags.handoff;
     if (online && !(flags['read-config'] && flags.handoff))
-      throw new EvaluationError('config.schema');
+      throw new EvaluationUsageError('usage.missing_flag', {
+        field: flags.handoff ? '--read-config' : '--handoff',
+        reason: 'Online verification needs both --read-config and --handoff.',
+      });
     const result = await verifyReviewExport({
       manifestPath: required(flags, 'manifest'),
       ...(online
@@ -583,7 +756,9 @@ async function readEvidence({ command, flags }: Parsed) {
     });
     return { status: 0, result };
   }
-  if (command !== 'status') throw new EvaluationError('config.schema');
+  if (command !== 'status')
+    throw new EvaluationUsageError('usage.unknown_command', { field: JSON.stringify(command) });
+  exactlyOne(flags, 'config', 'read-config');
   const handoff = await handoffFile(flags);
   const { client, projectId } = await readConnection(flags, handoff);
   const request = await client.getEvaluation(projectId, handoff.bundleId, handoff.requestId);
@@ -597,7 +772,7 @@ async function readEvidence({ command, flags }: Parsed) {
   };
 }
 
-/** Reader operations validate service or export evidence without importing agent code. */
+/** Reader and control operations (status, verify-export, interrupt) never import agent code. */
 export async function evaluationReadMain(argv: readonly string[]) {
   return runCommand(argv, readEvidence);
 }
@@ -652,7 +827,7 @@ async function checkPolicyCommand(
   });
   const receipt = flags.config ? await recordPolicyReceipt(client, handoff, verdict) : { status: 'read_only' as const };
   return {
-    status: policyExit(verdict.verdict) || (receipt.status === 'unconfirmed' ? 1 : 0),
+    status: policyExit(verdict.verdict) || (receipt.status === 'unconfirmed' ? EXIT_CODES.infrastructure : 0),
     result: { ...verdict, policyReceipt: receipt },
   };
 }
@@ -676,9 +851,157 @@ export async function evaluationCheckMain(
   argv: readonly string[],
 ) {
   return runCommand(argv, async (parsed) => {
-    if (parsed.command !== 'check') throw new EvaluationError('config.schema');
+    if (parsed.command !== 'check')
+      throw new EvaluationUsageError('usage.unknown_command', {
+        field: JSON.stringify(parsed.command),
+        hint: 'This entry point runs check only.',
+      });
     return checkPolicyCommand(descriptor, parsed.flags, await handoffFile(parsed.flags));
   });
+}
+
+const recoveryHints: Partial<Record<SafeCode, string>> = {
+  'request.intent_mismatch':
+    'Restore the original evaluator and candidate to recover this run. To measure a changed evaluator on the same settled candidate, replace --name with --retry-after and the prior name.',
+  'request.base_conflict':
+    'The published parent changed. Review the new parent and choose a new name for a comparison against it.',
+  'evidence.not_terminal':
+    'Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison.',
+  'policy.invalid':
+    'Use the editable quality-policy.example.json from the evaluator starter or copy the policy in the getting-started guide.',
+  'config.missing': 'Check the --config path. Relative paths resolve against the current directory.',
+};
+const safeForwardedCodes = new Set([
+  'policy.invalid',
+  'policy.inventory_incompatible',
+  'evidence.identity_mismatch',
+  'evidence.malformed',
+  'artifact.missing',
+  'artifact.hash_mismatch',
+  'artifact.integrity',
+  'artifact.selection_invalid',
+  'artifact.mapper_failed',
+]);
+
+/** True when --verbose was passed or ACCLIMATE_DEBUG is set to a truthy value. */
+export function verboseRequested(argv: readonly string[]): boolean {
+  const debug = process.env.ACCLIMATE_DEBUG;
+  return argv.includes('--verbose') || (!!debug && !['0', 'false', 'no'].includes(debug.toLowerCase()));
+}
+
+/** The first line of an exception, without control characters. */
+function describeCause(cause: unknown): { name: string; message: string; code?: string } | undefined {
+  if (cause === undefined || cause === null) return undefined;
+  const name =
+    cause instanceof Error && /^[A-Za-z_$][\w$]{0,127}$/.test(cause.name) ? cause.name : typeof cause;
+  const message = String(cause instanceof Error ? cause.message : cause)
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/gu, ' ')
+    .split('\n')[0]
+    .slice(0, 1000);
+  const code = (cause as { code?: unknown })?.code;
+  return {
+    name,
+    message,
+    ...(typeof code === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(code) ? { code } : {}),
+  };
+}
+function causeChain(error: unknown): unknown[] {
+  const chain: unknown[] = [];
+  let current = (error as { cause?: unknown })?.cause;
+  while (current !== undefined && chain.length < 5) {
+    chain.push(current);
+    current = (current as { cause?: unknown })?.cause;
+  }
+  return chain;
+}
+
+function failureText(failure: NonNullable<EvaluationRunResult['firstCallbackFailure']>): string {
+  return (
+    `First callback failure: ${JSON.stringify(failure.caseId)} [${failure.repetition}] ${failure.side} · ${failure.stage} · ${failure.reason}` +
+    (failure.diagnosticFile ? `\n  Details (private, not uploaded): ${failure.diagnosticFile}` : '')
+  );
+}
+
+/**
+ * Print an error for a local evaluator command and return its exit code. On a terminal,
+ * stderr gets readable text; otherwise, or with --json, one JSON line. Pass --verbose or
+ * set ACCLIMATE_DEBUG=1 to include the stack and the chained cause.
+ */
+export function reportEvaluatorError(
+  error: unknown,
+  argv: readonly string[],
+  command: string = 'invalid',
+): ExitCode {
+  const known =
+    error !== null && (typeof error === 'object' || typeof error === 'function')
+      ? (error as { code?: string })
+      : {};
+  const diagnostic = toSafeDiagnostic(
+    !(error instanceof EvaluationError) && known.code && safeForwardedCodes.has(known.code)
+      ? new EvaluationError(known.code as SafeCode, {
+          phase: command === 'check' || known.code.startsWith('policy.') ? 'policy' : 'export',
+        })
+      : error,
+  );
+  const hint =
+    diagnostic.hint ??
+    ((command === 'compare' ||
+      diagnostic.code === 'policy.invalid' ||
+      diagnostic.code === 'config.missing') &&
+      recoveryHints[diagnostic.code]) ??
+    undefined;
+  const message =
+    error instanceof EvaluationError
+      ? error.message
+      : EVALUATION_ERROR_CODES[diagnostic.code].message;
+  const verbose = verboseRequested(argv);
+  // An unexpected exception is itself the cause; an evaluator error names its chained cause.
+  const causes = error instanceof EvaluationError ? causeChain(error) : [error, ...causeChain(error)];
+  const firstCause = describeCause(causes[0]);
+  const publicDiagnostic = {
+    ...diagnostic,
+    message,
+    ...(hint ? { hint } : {}),
+    ...(firstCause ? { cause: firstCause } : {}),
+  };
+  const human = process.stderr.isTTY === true && !argv.includes('--json');
+  if (human) {
+    const lines = [`error[${diagnostic.code}]: ${message}`];
+    if (diagnostic.field && !message.includes(diagnostic.field)) lines.push(`  field: ${diagnostic.field}`);
+    if (diagnostic.reason && !message.includes(diagnostic.reason)) lines.push(`  reason: ${diagnostic.reason}`);
+    if (diagnostic.missingFields?.length)
+      lines.push(`  missing fields: ${diagnostic.missingFields.join(', ')}`);
+    if (diagnostic.serviceUrl) lines.push(`  service: ${diagnostic.serviceUrl}`);
+    if (firstCause)
+      lines.push(
+        `  caused by: ${firstCause.name}${firstCause.code ? ` [${firstCause.code}]` : ''}: ${firstCause.message}`,
+      );
+    if (hint) lines.push(`  hint: ${hint.split('\n').join('\n        ')}`);
+    else if (Object.hasOwn(usageFor, command) && diagnostic.code.startsWith('usage.'))
+      lines.push('  usage:\n    ' + usageFor[command as Command]!.split('\n').join('\n    '));
+    lines.push(`  next: ${diagnostic.nextAction}`);
+    if (verbose) {
+      for (const item of new Set([error, ...causes]))
+        if (item instanceof Error && item.stack) lines.push('', item.stack);
+    } else if (firstCause) lines.push('  Rerun with --verbose or ACCLIMATE_DEBUG=1 for the stack trace.');
+    process.stderr.write(lines.join('\n') + '\n');
+  } else {
+    process.stderr.write(
+      JSON.stringify({
+        schemaVersion: 1,
+        command,
+        error: publicDiagnostic,
+        ...(verbose
+          ? {
+              stack: [...new Set([error, ...causes])]
+                .filter((item): item is Error => item instanceof Error && !!item.stack)
+                .map((item) => item.stack),
+            }
+          : {}),
+      }) + '\n',
+    );
+  }
+  return exitCodeFor(diagnostic);
 }
 
 async function runCommand(
@@ -687,12 +1010,22 @@ async function runCommand(
 ): Promise<number> {
   let command: Command | 'invalid' = 'invalid';
   try {
-    const parsed = parse(argv);
+    if (argv.length === 1 && (argv[0] === '--version' || argv[0] === '-V')) {
+      process.stdout.write(sdkVersion() + '\n');
+      return EXIT_CODES.ok;
+    }
+    const parsed = parseEvaluatorArguments(argv);
     command = parsed.command;
     if (command !== 'compare' && parsed.flags.name) {
-      if (parsed.flags.handoff || parsed.flags['read-config']) throw new EvaluationError('config.schema');
+      if (parsed.flags.handoff || parsed.flags['read-config'])
+        throw new EvaluationUsageError('usage.conflicting_flags', {
+          field: '--name',
+          reason: '--name uses the evaluator config and cannot be combined with --handoff or --read-config.',
+        });
       const config = await readEvaluatorConfig(required(parsed.flags, 'config'));
-      parsed.flags.handoff = await namedHandoff(config.journalRoot, required(parsed.flags, 'name'));
+      const name = required(parsed.flags, 'name');
+      parsed.flags.handoff = await namedHandoff(config.journalRoot, name);
+      parsed.flags['run-name'] = name;
     }
     const { status, result } = await execute(parsed);
     const output =
@@ -702,73 +1035,6 @@ async function runCommand(
     process.stdout.write(output + '\n');
     return status;
   } catch (error) {
-    const known =
-      error !== null && (typeof error === 'object' || typeof error === 'function')
-        ? (error as { code?: string; diagnostic?: unknown })
-        : {};
-    const safePolicyCodes = new Set([
-      'policy.invalid',
-      'policy.inventory_incompatible',
-      'evidence.identity_mismatch',
-      'evidence.malformed',
-      'artifact.missing',
-      'artifact.hash_mismatch',
-      'artifact.integrity',
-      'artifact.selection_invalid',
-      'artifact.mapper_failed',
-    ]);
-    const diagnostic = toSafeDiagnostic(
-      !(error instanceof EvaluationError) && known.code && safePolicyCodes.has(known.code)
-        ? new EvaluationError(known.code as any, {
-            phase: command === 'check' || known.code.startsWith('policy.') ? 'policy' : 'export',
-          })
-        : error,
-    );
-    const missing = error instanceof PolicyError ? error.diagnostic.missingFields : undefined;
-    const recoveryHints: Partial<Record<typeof diagnostic.code, string>> = {
-      'request.intent_mismatch':
-        'Restore the original evaluator and candidate to recover this run. To measure a changed evaluator on the same settled candidate, replace --name with --retry-after and the prior name.',
-      'request.base_conflict':
-        'The published parent changed. Review the new parent and choose a new name for a comparison against it.',
-      'evidence.not_terminal':
-        'Check status with the prior name and inspect the original worker. A fresh attempt requires a completed or failed comparison.',
-      'policy.invalid':
-        'Use the editable quality-policy.example.json from the evaluator starter or copy the policy in the getting-started guide.',
-    };
-    const hint = (command === 'compare' || diagnostic.code === 'policy.invalid') && recoveryHints[diagnostic.code];
-    const publicDiagnostic = { ...diagnostic, ...(missing?.length && { missingFields: missing }), ...(hint && { hint }) };
-    if (
-      argv[0] === 'compare' &&
-      process.stdout.isTTY &&
-      !argv.includes('--json') &&
-      (command === 'invalid' || error instanceof CompareUsageError)
-    )
-      process.stderr.write(
-        (error instanceof CompareUsageError ? error.hint : 'Invalid compare flags.') +
-          '\n' +
-          compareUsage +
-          '\n',
-      );
-    else
-      process.stderr.write(JSON.stringify({ schemaVersion: 1, command, error: publicDiagnostic }) + '\n');
-    if (
-      [
-        'execution.uncertain',
-        'submission.unconfirmed',
-        'journal.busy',
-        'journal.foreign',
-        'journal.missing',
-        'journal.relocated',
-        'journal.ownership_lost',
-        'request.interrupted',
-        'request.base_conflict',
-        'evidence.not_terminal',
-      ].includes(diagnostic.code) ||
-      diagnostic.executionState === 'may_have_started' ||
-      diagnostic.executionState === 'report_saved'
-    )
-      return 3;
-    if (command === 'export' && diagnostic.code === 'artifact.missing') return 3;
-    return 1;
+    return reportEvaluatorError(error, argv, command);
   }
 }

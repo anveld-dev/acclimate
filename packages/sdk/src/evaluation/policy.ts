@@ -1,4 +1,5 @@
 import { studentTCritical } from './student-t.js';
+import { EvaluationError } from './errors.js';
 import type { Comparison, EvaluationDescriptor } from '../types.js';
 import { addGap, scalarGap, type EvidenceGaps } from './evidence-gaps.js';
 import { validateEvaluationDescriptor, evaluationDescriptorDifferences } from '../validation.js';
@@ -95,40 +96,44 @@ type PolicyErrorCode =
   | 'policy.inventory_incompatible'
   | 'evidence.identity_mismatch'
   | 'evidence.malformed';
-export class PolicyError extends Error {
+export class PolicyError extends EvaluationError {
+  declare readonly code: PolicyErrorCode;
   readonly phase = 'policy';
   readonly executionState = 'finished';
   readonly nextAction = 'fix_config';
-  readonly diagnostic: {
+  declare readonly diagnostic: {
     code: PolicyErrorCode;
     phase: 'policy';
     executionState: 'finished';
     nextAction: 'fix_config';
     missingFields?: string[];
+    field?: string;
+    reason?: string;
   };
+  /** `detail.field` names a misspelled or unexpected policy field, for example `metric.directon`. */
   constructor(
-    readonly code: PolicyErrorCode,
+    code: PolicyErrorCode,
     missingFields: string[] = [],
+    detail: { field?: string; reason?: string } = {},
   ) {
-    super(
-      code === 'policy.inventory_incompatible'
-        ? 'The policy requires cases absent from the trusted evaluation inventory.'
-        : code === 'policy.invalid'
-          ? 'The evaluation policy or trusted inventory is invalid.'
-          : code === 'evidence.identity_mismatch'
-            ? 'The comparison does not match the expected evaluation identity.'
-            : 'The comparison evidence is malformed.',
-    );
-    this.name = 'PolicyError';
-    this.diagnostic = {
-      code,
+    super(code, {
       phase: 'policy',
       executionState: 'finished',
       nextAction: 'fix_config',
-      ...(missingFields.length && {
-        missingFields: missingFields.filter((field) => publicPolicyFields.has(field)),
-      }),
-    };
+      field: detail.field,
+      reason: detail.reason,
+      missingFields: missingFields.filter((field) => publicPolicyFields.has(field)),
+      message:
+        (code === 'policy.inventory_incompatible'
+          ? 'The policy requires cases absent from the trusted evaluation inventory.'
+          : code === 'policy.invalid'
+            ? 'The evaluation policy or trusted inventory is invalid.'
+            : code === 'evidence.identity_mismatch'
+              ? 'The comparison does not match the expected evaluation identity.'
+              : 'The comparison evidence is malformed.') +
+        (detail.field ? ` ${detail.field}${detail.reason ? `: ${detail.reason}` : ''}` : ''),
+    });
+    this.name = 'PolicyError';
   }
 }
 

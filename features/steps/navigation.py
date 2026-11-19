@@ -31,9 +31,9 @@ def workspace_links(context):
         expect(nav.get_by_role('link',name=name,exact=True)).to_have_count(1)
 
 
-@then('the bundle tabs contain Content, Changes, Releases and App setup')
+@then('the bundle tabs contain Content, Changes and Releases')
 def bundle_tabs(context):
-    assert tabs(context).get_by_role('link').all_text_contents()==['Content','Changes','Releases','App setup']
+    assert tabs(context).get_by_role('link').all_text_contents()==['Content','Changes','Releases']
     expect(tabs(context).get_by_role('link',name='Content',exact=True)).to_have_attribute('aria-current','page')
 
 
@@ -296,7 +296,9 @@ def no_substitution(context):
 
 @when('the reader opens App setup')
 def connect_recipe(context):
-    browser(context).page.get_by_role('link',name='App setup',exact=True).first.click()
+    p=browser(context).page
+    p.get_by_role('button',name='Use in an app',exact=True).click()
+    p.get_by_role('link',name='Full setup guide',exact=True).click()
 
 
 @then('the SDK recipe is readable without editing or connection administration')

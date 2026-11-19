@@ -819,3 +819,85 @@
   .delivery-app-directory .delivery-app-select { border-right: 0; }
 }
 .delivery-app-header h2 { font: var(--view-heading); }
+
+.console-page-tabs[data-slot='tabs-list'] {
+  height: auto;
+  max-width: 100%;
+  justify-content: flex-start;
+  /* One row of tabs; narrow screens scroll sideways instead of wrapping into a second row. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.console-page-tabs[data-slot='tabs-list']::-webkit-scrollbar {
+  display: none;
+}
+.console-page-tabs [data-slot='tabs-trigger'] {
+  min-height: 36px;
+  flex: 0 0 auto;
+  padding-inline: 0.75rem;
+  font-size: var(--type-14);
+}
+.connection-status-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.connection-status-strip > div {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+.connection-status-strip dt {
+  color: var(--muted-foreground);
+  font-size: var(--type-12);
+}
+.connection-setup-grid {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+@container (max-width: 690px) {
+  .connection-status-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .connection-setup-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.connection-setup-heading { font: var(--section-heading); }
+
+/* Setup checklist progress marks: done steps read at a glance. */
+.connection-setup-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: var(--type-12);
+  font-variant-numeric: tabular-nums;
+}
+.connection-setup-mark[data-state='done'] {
+  border-color: var(--tone-success-fg);
+  background: var(--tone-success-bg);
+  color: var(--tone-success-fg);
+}
+.connection-setup-mark[data-state='current'] {
+  border: 2px solid var(--foreground);
+  color: var(--foreground);
+  font-weight: 650;
+}
+.connection-setup-mark svg {
+  width: 12px;
+  height: 12px;
+}

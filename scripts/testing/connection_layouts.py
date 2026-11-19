@@ -46,9 +46,16 @@ def run(args):
             assert p.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), width
             report = p.get_by_test_id('delivery-report').first
             expect(report).to_be_visible()
-            geometry=p.locator('.connection-detail').evaluate('e=>({width:e.clientWidth,columns:getComputedStyle(e.querySelector(".connection-detail-panels")).gridTemplateColumns.split(" ").length})')
-            assert geometry['columns']==(2 if geometry['width']>=1000 else 1),geometry
+            geometry=p.locator('.connection-detail').evaluate('e=>({width:e.clientWidth,columns:getComputedStyle(e.querySelector(".connection-status-strip")).gridTemplateColumns.split(" ").length})')
+            assert geometry['columns']==(4 if geometry['width']>690 else 2),geometry
             if width == 1440: assert report.bounding_box()['y'] < 900, width
+            p.get_by_role('tab',name='Setup',exact=True).click()
+            expect(p.get_by_text('3 of 4 done',exact=True)).to_be_visible()
+            p.get_by_role('button',name='3. First delivery',exact=False).click()
+            expect(p.get_by_role('button',name='Refresh delivery reports',exact=True)).to_be_visible()
+            assert p.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), width
+            expect(p.get_by_role('region',name='App-reported delivery',exact=True)).to_have_count(0)
+            p.get_by_role('tab',name='Delivery reports',exact=True).click()
             if width in (1440,320):
                 # Duplicate display names stay distinguishable by ID in the directory.
                 visit(p, b, directory)
@@ -66,7 +73,7 @@ def run(args):
         root = p.locator('.workspace-connections')
         root.evaluate('e => e.style.width = "430px"')
         assert root.evaluate('e => e.scrollWidth <= e.clientWidth + 1')
-        assert p.locator('.connection-detail-panels').evaluate('e=>getComputedStyle(e).gridTemplateColumns.split(" ").length')==1
+        assert p.locator('.connection-status-strip').evaluate('e=>getComputedStyle(e).gridTemplateColumns.split(" ").length')==2
         p.screenshot(path=str(out/'selected-embedded-430.png'),full_page=True,mask=[p.locator('[data-sensitive=true]')])
         root.evaluate('e=>e.style.width=""')
         checks.append('Selected connection fits a 430px container')
@@ -91,17 +98,21 @@ def run(args):
         outside=selected+'&bundleId='+other['id']+'&channel=stable'
         visit(p,b,outside);expect(p.get_by_role('heading', name=w.integration['displayName'], exact=True)).to_be_visible()
         expect(p.get_by_text('The selected connection is outside the current directory filters.',exact=True)).to_be_visible()
-        expect(p.get_by_role('link',name='Open app setup',exact=True)).to_have_attribute('href',b.bundle_path('connect'))
+        p.get_by_role('tab',name='Setup',exact=True).click()
+        p.get_by_role('button',name='1. Bundle & channel',exact=False).click()
+        expect(p.get_by_role('link',name='Full setup guide',exact=True)).to_have_attribute('href',b.bundle_path('connect'))
         p.get_by_role('link',name='Clear filters',exact=True).click()
         query=parse_qs(urlsplit(p.url).query);assert query.get('integration')==[w.integration['id']] and 'bundleId' not in query and 'channel' not in query
         checks.append('Directory selection and Back retain origin filters; outside-filter selection and its setup binding remain explicit; clear filters retains selection')
 
         visit(p, b, selected)
+        p.get_by_role('tab',name='Credentials',exact=True).click()
         reporting = p.get_by_role('button', name='Optional delivery reports & credentials', exact=True)
         expect(reporting).to_have_attribute('aria-expanded', 'false')
         reporting.click()
         expect(p.get_by_label('Issued reporting credentials', exact=True)).to_be_visible()
         reporting.click()
+        p.get_by_role('tab',name='Delivery reports',exact=True).click()
         report = p.get_by_test_id('delivery-report').first
         trigger = report.get_by_role('button')
         trigger.focus()
@@ -150,13 +161,15 @@ def run(args):
         try:
             with p.expect_request(lambda r:r.method=='POST'):
                 p.get_by_role('button',name='Load older reports',exact=True).click()
-            expect(p.get_by_role('button',name='Create read credential',exact=True)).to_be_disabled()
+            expect(p.get_by_role('button',name='Load older reports',exact=True)).to_be_disabled()
             assert held,'Paging request was not intercepted'
             p.get_by_role('link',name='Back to connections',exact=True).click()
             p.locator('[id="connection-entry-'+w.empty_connection['id']+'"]').click()
             expect(p.get_by_role('heading',name=w.empty_connection['displayName'],exact=True)).to_be_visible()
             assert held,'Paging request was not intercepted'
             for route in held:route.fulfill(response=route.fetch())
+            expect(p.get_by_role('tab',name='Setup',exact=True)).to_have_attribute('aria-selected','true')
+            p.get_by_role('tab',name='Delivery reports',exact=True).click()
             expect(p.get_by_text('No delivery report received; status unknown.',exact=False)).to_be_visible()
             expect(p.get_by_test_id('delivery-report')).to_have_count(0)
         finally:
@@ -166,6 +179,8 @@ def run(args):
                 except Exception:pass
         checks.append('Switching connection during a held report response keeps the new connection empty')
         visit(p, b, directory + '?integration=' + w.empty_connection['id'])
+        expect(p.get_by_role('tab',name='Setup',exact=True)).to_have_attribute('aria-selected','true')
+        p.get_by_role('tab',name='Delivery reports',exact=True).click()
         expect(p.get_by_text('No delivery report received; status unknown.', exact=False)).to_be_visible()
         checks.append('Empty reports show unknown status')
         # New connection lives in the directory header; the detail view leads with the selected app.
@@ -193,6 +208,7 @@ def run(args):
         p.screenshot(path=str(out/'revoke-target-confirmation.png'),full_page=True,mask=[p.locator('[data-sensitive=true]')])
         p.keyboard.press('Escape');expect(confirmation).to_be_hidden();expect(revoke).to_be_focused()
         w.call('POST',w.root+'/integrations/'+w.empty_connection['id']+'/credentials/'+public_id+'/revoke',{})
+        p.get_by_role('tab',name='Credentials',exact=True).click()
         p.reload(wait_until='networkidle')
         p.get_by_role('button',name='Advanced credential actions',exact=True).click()
         advanced=p.get_by_label('Revoke by credential ID',exact=True);advanced.fill(public_id)

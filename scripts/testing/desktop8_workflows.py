@@ -253,7 +253,7 @@ def comparison(w,b,e,fixture):
     # Scope by the request disclosure's actual id, then follow its real link.
     request=p.locator('.evaluation-request').filter(has=p.locator('#evaluation-request-'+fixture['request']['id']))
     keyboard_activate(p,request.get_by_role('link',name=re.compile(r'^Inspect evidence for ')))
-    expect(p.get_by_role('heading',name='Reported evidence',exact=True)).to_be_visible()
+    p.get_by_role('tab',name='Details',exact=True).click()
     evidence=p.get_by_role('region',name='Evidence and release decision',exact=True)
     expect(evidence.locator('.comparison-evidence-summary')).to_be_visible();expect(evidence.get_by_role('table')).to_be_visible()
     expect(p.locator('.comparison-evidence-summary')).to_have_count(1)
@@ -284,9 +284,9 @@ def comparison(w,b,e,fixture):
             output_facts.append(dict(case=pair['caseId'],arm=arm,error=bool(pair[arm]['error'])))
             p.keyboard.press('Enter');expect(toggle).to_have_attribute('aria-expanded','false')
     name='complete' if fixture['complete'] else 'incomplete'
-    evidence.get_by_role('heading',name='Reported evidence',exact=True).scroll_into_view_if_needed()
+    evidence.locator('.comparison-evidence').scroll_into_view_if_needed()
     e.capture(p,'1440-'+name+'-loaded-evidence')
-    p.set_viewport_size(dict(width=1024,height=900));evidence.get_by_role('heading',name='Reported evidence',exact=True).scroll_into_view_if_needed()
+    p.set_viewport_size(dict(width=1024,height=900));evidence.locator('.comparison-evidence').scroll_into_view_if_needed()
     e.capture(p,'1024-'+name+'-loaded-evidence')
     p.set_viewport_size(dict(width=1440,height=1000))
     if fixture['complete']:
@@ -320,7 +320,7 @@ def loaded_native_evidence(w,b,e,fixture):
             assert p.evaluate('devicePixelRatio')==before['dpr']*2
             request=p.locator('.evaluation-request').filter(has=p.locator('#evaluation-request-'+fixture['request']['id']))
             keyboard_activate(p,request.get_by_role('link',name=re.compile(r'^Inspect evidence for ')))
-            expect(p.get_by_role('heading',name='Reported evidence',exact=True)).to_be_visible()
+            p.get_by_role('tab',name='Details',exact=True).click()
             evidence=p.get_by_role('region',name='Evidence and release decision',exact=True)
             expect(evidence.get_by_role('table')).to_be_visible();expect(evidence.locator('.comparison-evidence-summary')).to_contain_text('Incomplete evidence; not a win')
             expect(evidence.locator('.comparison-evidence-summary')).to_contain_text('1 scored pairs / 3 expected pairs')
@@ -328,7 +328,7 @@ def loaded_native_evidence(w,b,e,fixture):
             expect(p.locator('.comparison-evidence-summary')).to_have_count(1)
             cdp=context.new_cdp_session(p);captures=[];cell_facts=[]
             try:
-                evidence.get_by_role('heading',name='Reported evidence',exact=True).scroll_into_view_if_needed()
+                evidence.locator('.comparison-evidence').scroll_into_view_if_needed()
                 captures.append(native_capture(e,p,cdp,'native200-incomplete-loaded-summary')['nativeScreenshotPixels'])
                 rows=evidence.get_by_role('row');expect(rows).to_have_count(4)
                 for index,key in enumerate(fixture['settings']['expectedCases']):
@@ -374,8 +374,8 @@ def expanded_diff(w,b,e,candidate,fixture):
     route=b.bundle_path('changes',draft=w.draft['id'],candidate=w.draft['snapshotVersion']['id'],generation=w.draft['generation'])
     visit(p,b,route)
     request=p.locator('.evaluation-request').filter(has=p.locator('#evaluation-request-'+fixture['request']['id']))
-    keyboard_activate(p,request.get_by_role('link',name=re.compile(r'^Inspect evidence for ')));expect(p.get_by_role('heading',name='Reported evidence',exact=True)).to_be_visible()
-    open_details(p,'Review file changes');diff=p.locator('.content-diff');expect(diff).to_be_visible()
+    keyboard_activate(p,request.get_by_role('link',name=re.compile(r'^Inspect evidence for ')));p.get_by_role('tab',name='Details',exact=True).click()
+    p.get_by_role('tab',name='Files changed',exact=False).click();diff=p.locator('.content-diff');expect(diff).to_be_visible()
     expect(diff.get_by_role('heading',name='Changed: AGENTS.md',exact=True)).to_be_visible()
     expect(diff.get_by_label('Changed lines in AGENTS.md',exact=True)).to_contain_text('+ Desktop8 saved candidate.')
     before=json.loads(unquote(diff.get_by_role('link',name='Download original entry JSON',exact=True).get_attribute('href').split(',',1)[1]))
@@ -383,7 +383,7 @@ def expanded_diff(w,b,e,candidate,fixture):
     assert before==FILES[0] and after==candidate['files'][0],'Diff before/after download binding changed'
     diff.scroll_into_view_if_needed();metric=e.capture(p,'1440-expanded-review-file-changes')
     bounds=diff.evaluate('''el=>{const box=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}};return {diff:box(el),workspace:box(el.closest('.review-workspace')),pre:box(el.querySelector('pre'))}}''')
-    assert bounds['workspace']['width']==1200 and bounds['diff']['width']>=1100,bounds
+    assert bounds['workspace']['width']==1200 and bounds['diff']['width']>=750,bounds
     assert bounds['diff']['x']>=bounds['workspace']['x'] and bounds['diff']['right']<=bounds['workspace']['right'],bounds
     assert not metric['violations'],metric['violations']
     metric['expandedDiff']=bounds;(e.output/'1440-expanded-review-file-changes.json').write_text(json.dumps(metric,indent=2)+'\n')

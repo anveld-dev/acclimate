@@ -307,8 +307,8 @@
 .changes-overview {
   background: var(--background);
   color: var(--foreground);
-  padding: clamp(12px, 2.3vw, 36px);
-  border: 1px solid var(--border);
+  /* Sits directly on the page under the bundle tabs; its columns and cards carry the structure. */
+  padding: 16px 0 0;
 }
 .changes-overview .changes-overview-toolbar {
   display: grid;
@@ -420,4 +420,71 @@
 .changes-overview[data-history] {
   padding: 12px 0 0;
   border: 0;
+}
+
+.changes-pipeline {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+.pipeline-column {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  padding: 0.75rem;
+}
+.pipeline-column h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font: var(--section-heading);
+  font-weight: 600;
+}
+.pipeline-column ul {
+  display: grid;
+  gap: 0.5rem;
+}
+.pipeline-card {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+.pipeline-card h4 {
+  font-weight: 600;
+}
+.pipeline-card-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+@media (max-width: 950px) {
+  .changes-pipeline {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pipeline-card .change-record-details-trigger[data-slot='button'] {
+  min-height: 36px;
+  min-width: 36px;
+}
+.pipeline-column > :is(h3, p) {
+  overflow-wrap: anywhere;
+}
+
+.pipeline-card [data-slot='badge'] {
+  height: auto;
+  min-height: 20px;
+  line-height: 1.2;
 }

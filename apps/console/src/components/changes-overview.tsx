@@ -5,7 +5,7 @@ import type { ConsoleState } from '../server/channel';
 import { bundleHref, releaseRevision } from '../navigation';
 import { artifactChanges } from '../lib/artifact-changes';
 import { useEvaluationHistory } from './use-evaluation-history';
-import { ChangesTriage } from './changes-triage';
+import type { EvaluationHistoryModel } from '../lib/changes-workspace';
 import { EvaluationHistoryView, type HistoryFilters } from './evaluation-history-view';
 import { HistoryFiles, useHistoryVersion } from './history-files';
 import { ConsoleLink } from './console-link';
@@ -21,7 +21,7 @@ const string = (value: unknown) => (typeof value === 'string' ? value : '');
 type OverviewProps = {
   state: Ready;
   search: Record<string, unknown>;
-  children: ReactNode;
+  board?: (model: EvaluationHistoryModel) => ReactNode;
 };
 
 export function ChangesOverview(props: OverviewProps) {
@@ -35,7 +35,7 @@ export function ChangesOverview(props: OverviewProps) {
 }
 
 /** A scoped collection selects context; one ledger explains the selected run. */
-function ScopedChangesOverview({ state, search, children }: OverviewProps) {
+function ScopedChangesOverview({ state, search, board }: OverviewProps) {
   const [historyFilters, setHistoryFilters] = useState<HistoryFilters>({ query: '', status: '' });
   const router = useRouter();
   const scope = {
@@ -130,7 +130,6 @@ function ScopedChangesOverview({ state, search, children }: OverviewProps) {
       model.selectedRequest?.comparisonId !== search.comparison);
 
   const historyPage = String(search.history) === '1';
-  const showTriage = !selectedCandidate && !requestId && !historyPage;
   const restoreVersionFocus = useRef(false);
   const versionSelector = (
     <div className="changes-version-selector ledger-version-filter">
@@ -200,7 +199,8 @@ function ScopedChangesOverview({ state, search, children }: OverviewProps) {
     <>
       {selectedCandidate &&
         !model.requests.some((request) => request.candidateVersionId === selectedCandidate) &&
-        !model.loading && !model.error && (
+        !model.loading &&
+        !model.error && (
           <div className="changes-history-context text-sm text-muted-foreground">
             <p>
               No requests for this version in the loaded history. Older evaluations may still exist.
@@ -227,12 +227,16 @@ function ScopedChangesOverview({ state, search, children }: OverviewProps) {
   );
 
   return (
-    <div className="changes-overview" data-version-selected={selectedCandidate ? true : undefined} data-triage={showTriage || undefined} data-history={historyPage || undefined}>
+    <div
+      className="changes-overview"
+      data-version-selected={selectedCandidate ? true : undefined}
+      data-history={historyPage || undefined}
+    >
       {historyPage ? (
         <header className="changes-history-toolbar">
           <Button asChild size="sm" variant="ghost">
             <ConsoleLink href={bundleHref(scope, 'changes')}>
-              <ArrowLeft aria-hidden="true" /> Change triage
+              <ArrowLeft aria-hidden="true" /> Changes
             </ConsoleLink>
           </Button>
           <span ref={heading} tabIndex={-1}>
@@ -240,127 +244,123 @@ function ScopedChangesOverview({ state, search, children }: OverviewProps) {
           </span>
         </header>
       ) : (
-      <header className="changes-overview-toolbar">
-        <div>
-          <h2 ref={heading} tabIndex={-1}>
-            {showTriage ? 'Change triage' : 'Changes'}
-          </h2>
-          <p>
-            {state.channel} · {selectedCandidate ? 'Current revision' : 'Revision'} {state.resolution.revision}
-            {state.canEdit ? '' : ' · Read-only'}
-          </p>
-        </div>
-        {state.canEdit && (
-          <div className="changes-overview-actions">
-            <Button asChild>
-              <ConsoleLink href={bundleHref(scope, 'changes', { draft: 'new' })}>
-                <Plus aria-hidden="true" />
-                New draft
-              </ConsoleLink>
-            </Button>
-            <Button asChild variant="outline">
-              <ConsoleLink href={bundleHref(scope, 'changes', { proposal: 'new' })}>
-                <Sparkles aria-hidden="true" />
-                Suggest a change
-              </ConsoleLink>
-            </Button>
-          </div>
-        )}
-      </header>
-      )}
-      {showTriage && (
-        <div className="changes-frontpage">
-          <ChangesTriage model={model} reviewHref={reviewHref} />
-          <div className="changes-overview-queues">{children}</div>
-        </div>
-      )}
-      {!historyPage && !showTriage && !selectedCandidate && <div className="changes-overview-queues">{children}</div>}
-      <div className="changes-overview-grid">
-        <section
-          className="changes-main"
-          aria-label="Changes workspace"
-          onFocusCapture={(event) => {
-            focusRegion.current = (event.target as HTMLElement).closest(
-              '.history-files, [role="tablist"]',
-            )
-              ? 'files'
-              : 'main';
-          }}
-        >
-          {(selectedCandidate || selectionMismatch) && versionSelector}
-          {(invalidTab || (search.tab === 'files' && !selectedCandidate)) && (
-            <p role="status" className="changes-view-note">
-              That file view is unavailable here. Showing evaluations.
+        <header className="changes-overview-toolbar">
+          <div>
+            <h2 ref={heading} tabIndex={-1}>
+              Changes
+            </h2>
+            <p>
+              {state.channel} · {selectedCandidate ? 'Current revision' : 'Revision'}{' '}
+              {state.resolution.revision}
+              {state.canEdit ? '' : ' · Read-only'}
             </p>
-          )}
-          {selectionMismatch ? (
-            <div role="alert" className="space-y-3">
-              <p>
-                The selected request, version or comparison does not match. No evidence has been
-                attached to this selection.
-              </p>
-              <ConsoleLink className="underline" href={allHistoryHref}>
-                Clear the selection
-              </ConsoleLink>
+          </div>
+          {state.canEdit && (
+            <div className="changes-overview-actions">
+              <Button asChild>
+                <ConsoleLink href={bundleHref(scope, 'changes', { draft: 'new' })}>
+                  <Plus aria-hidden="true" />
+                  New draft
+                </ConsoleLink>
+              </Button>
+              <Button asChild variant="outline">
+                <ConsoleLink href={bundleHref(scope, 'changes', { proposal: 'new' })}>
+                  <Sparkles aria-hidden="true" />
+                  Suggest a change
+                </ConsoleLink>
+              </Button>
             </div>
-          ) : selectedCandidate ? (
-            <Tabs
-              value={tab}
-              onValueChange={(value) => {
-                void router.navigate({ href: href({ tab: value }) });
-              }}
-            >
-              <TabsList variant="line" aria-label="Selected version view">
-                <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
-                <TabsTrigger value="files">
-                  Files{fileCount === undefined ? '' : ` ${fileCount}`}
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="evaluations">
-                {version.status === 'unavailable' && (
-                  <p role="alert" className="changes-view-note">
-                    {version.message} Evaluation history remains available below.
-                  </p>
-                )}
-                {ledger}
-              </TabsContent>
-              <TabsContent
-                value="files"
-                onFocusCapture={() => {
-                  focusRegion.current = 'files';
+          )}
+        </header>
+      )}
+      {!historyPage && board?.(model)}
+      {historyPage && (
+        <div className="changes-overview-grid">
+          <section
+            className="changes-main"
+            aria-label="Changes workspace"
+            onFocusCapture={(event) => {
+              focusRegion.current = (event.target as HTMLElement).closest(
+                '.history-files, [role="tablist"]',
+              )
+                ? 'files'
+                : 'main';
+            }}
+          >
+            {(selectedCandidate || selectionMismatch) && versionSelector}
+            {(invalidTab || (search.tab === 'files' && !selectedCandidate)) && (
+              <p role="status" className="changes-view-note">
+                That file view is unavailable here. Showing evaluations.
+              </p>
+            )}
+            {selectionMismatch ? (
+              <div role="alert" className="space-y-3">
+                <p>
+                  The selected request, version or comparison does not match. No evidence has been
+                  attached to this selection.
+                </p>
+                <ConsoleLink className="underline" href={allHistoryHref}>
+                  Clear the selection
+                </ConsoleLink>
+              </div>
+            ) : selectedCandidate ? (
+              <Tabs
+                value={tab}
+                onValueChange={(value) => {
+                  void router.navigate({ href: href({ tab: value }) });
                 }}
               >
-                <HistoryFiles
-                  value={version}
-                  scopeKey={`${state.actorScope}:${state.serviceIdentity}:${state.projectId}:${state.bundleId}`}
-                  requestedPath={string(search.path) || undefined}
-                  onSelectPath={(path) => {
-                    void router.navigate({ href: href({ path }) });
+                <TabsList variant="line" aria-label="Selected version view">
+                  <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
+                  <TabsTrigger value="files">
+                    Files{fileCount === undefined ? '' : ` ${fileCount}`}
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="evaluations">
+                  {version.status === 'unavailable' && (
+                    <p role="alert" className="changes-view-note">
+                      {version.message} Evaluation history remains available below.
+                    </p>
+                  )}
+                  {ledger}
+                </TabsContent>
+                <TabsContent
+                  value="files"
+                  onFocusCapture={() => {
+                    focusRegion.current = 'files';
                   }}
-                />
-              </TabsContent>
-            </Tabs>
-          ) : (
-            ledger
-          )}
-          {!!search.comparison && !requestId && (
-            <p role="alert" className="changes-view-note">
-              A comparison needs its independent review view.{' '}
-              <ConsoleLink
-                className="underline"
-                href={bundleHref(scope, 'changes', {
-                  candidate: candidate || undefined,
-                  comparison: string(search.comparison),
-                  fromRevision,
-                })}
-              >
-                Open comparison
-              </ConsoleLink>
-            </p>
-          )}
-        </section>
-      </div>
-      {!historyPage && selectedCandidate && <div className="changes-overview-queues">{children}</div>}
+                >
+                  <HistoryFiles
+                    value={version}
+                    scopeKey={`${state.actorScope}:${state.serviceIdentity}:${state.projectId}:${state.bundleId}`}
+                    requestedPath={string(search.path) || undefined}
+                    onSelectPath={(path) => {
+                      void router.navigate({ href: href({ path }) });
+                    }}
+                  />
+                </TabsContent>
+              </Tabs>
+            ) : (
+              ledger
+            )}
+            {!!search.comparison && !requestId && (
+              <p role="alert" className="changes-view-note">
+                A comparison needs its independent review view.{' '}
+                <ConsoleLink
+                  className="underline"
+                  href={bundleHref(scope, 'changes', {
+                    candidate: candidate || undefined,
+                    comparison: string(search.comparison),
+                    fromRevision,
+                  })}
+                >
+                  Open comparison
+                </ConsoleLink>
+              </p>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }

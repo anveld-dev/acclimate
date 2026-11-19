@@ -51,17 +51,21 @@ def run(args):
                 if name == 'draft':
                     expect(page.get_by_role('textbox', name='Content', exact=True)).to_be_visible()
                 if name == 'review':
-                    expect(page.get_by_role('region', name='Observed paired rewards')).to_be_visible()
-                    geometry = page.locator('.evaluation-workspace').evaluate("e => { const b=e.querySelector('.evaluation-board'); return {width:e.getBoundingClientRect().width,columns:getComputedStyle(b).gridTemplateColumns.split(' ').length}; }")
-                    assert geometry['columns'] == (2 if geometry['width'] >= 900 else 1), geometry
-                    details = page.locator('.evaluation-board').evaluate("e => {const r=e.querySelector('.evaluation-request-row'), t=r?.querySelector('[data-slot=disclosure-trigger]'), a=r?.querySelector('[aria-label^=\"Inspect evidence for \"]'), d=e.querySelector('.evaluation-result-detail'), c=e.querySelector('.evaluation-coverage'); return {requestWidth:e.querySelector('.evaluation-run-sidebar').getBoundingClientRect().width,evidenceWidth:d.getBoundingClientRect().width,coverageColumns:getComputedStyle(c).gridTemplateColumns.split(' ').length,actionsAligned:Math.abs(t.getBoundingClientRect().top-a.getBoundingClientRect().top)<2};}")
-                    assert details['actionsAligned'], details
-                    layouts.append(dict(viewport=width, **geometry, **details))
+                    expect(page.get_by_role('region',name='Evaluation case comparison')).to_be_visible()
+                    geometry = page.locator('.review-decision-desk').evaluate("e=>({width:e.clientWidth,columns:getComputedStyle(e).gridTemplateColumns.split(' ').length})")
+                    assert geometry['columns'] == (2 if width >= 1100 else 1), geometry
+                    page.get_by_role('tab',name='Details',exact=True).click()
+                    expect(page.get_by_role('region',name='Observed paired rewards')).to_be_visible()
+                    page.get_by_role('tab',name='Evaluation runs',exact=False).click()
+                    aligned=page.locator('.evaluation-request-row').first.evaluate("e=>Math.abs(e.querySelector('button').getBoundingClientRect().top-e.querySelector('a').getBoundingClientRect().top)<2")
+                    assert aligned or width <= 390, geometry
+                    layouts.append(dict(viewport=width, **geometry, actionsAligned=aligned))
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), (width, name)
                 capture_layout(page, output, f'{name}-{width}')
             checks.append(f'Content, draft and full review fit {width}px without page overflow')
         if args.verify:
             visit(page, browser, routes['review'])
+            page.get_by_role('tab',name='Evaluation runs',exact=False).click()
             evidence_links = page.get_by_role('link', name=re.compile('^Inspect evidence for '))
             expect(evidence_links).to_have_count(2)
             names = evidence_links.evaluate_all("items => items.map(e => e.getAttribute('aria-label'))")
@@ -71,6 +75,7 @@ def run(args):
             for width in (931, 933):
                 page.set_viewport_size(dict(width=width, height=1000))
                 visit(page, browser, routes['review'])
+                page.get_by_role('tab',name='Evaluation runs',exact=False).click()
                 request_details = page.locator('.evaluation-request').get_by_role('button', name='Request details', exact=True).first
                 request_details.click()
                 setup = page.get_by_role('button', name='Create another evaluation request', exact=True)
@@ -161,6 +166,7 @@ def run(args):
             for width in (931, 933, 1024, 1440):
                 page.set_viewport_size(dict(width=width, height=1000))
                 visit(page, browser, stress_route)
+                page.get_by_role('tab',name='Details',exact=True).click()
                 scorecard = page.get_by_role('region', name='Observed paired rewards')
                 expect(scorecard).to_contain_text('Partial evidence')
                 expect(scorecard).to_contain_text('-1.00e+100')

@@ -1022,3 +1022,85 @@
 .review-workspace .review-summary { padding-inline: 0; }
 .review-workspace .review-readiness { margin-bottom: 12px; }
 .review-workspace .review-evidence { margin-top: 12px; }
+
+.review-decision-desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+.review-decision-rail {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.review-decision-rail .status-actions {
+  display: grid;
+  gap: 0.5rem;
+}
+.review-decision-rail .status-actions [data-slot='button'] {
+  height: auto;
+  min-height: 36px;
+  white-space: normal;
+}
+.review-score-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 0.75rem;
+}
+.review-score-facts dd {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+@media (min-width: 1100px) {
+  .review-decision-desk {
+    grid-template-columns: minmax(0, 1fr) minmax(17rem, 19rem);
+  }
+  .review-decision-rail {
+    position: sticky;
+    top: 1rem;
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .review-evidence-tabs {
+    grid-column: 1;
+    grid-row: 1;
+  }
+}
+@media (min-width: 1100px) {
+  .review-scroll-panel {
+    max-height: max(24rem, calc(100dvh - 20rem));
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    padding: 2px 4px 4px 2px;
+  }
+}
+.review-decision-rail .review-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.evaluation-workspace .review-decision-rail .review-readiness {
+  margin-bottom: 0;
+}
+
+@media (max-width: 1099px) {
+  .review-decision-rail {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+  .review-decision-rail > :is(.review-readiness, .review-release) {
+    grid-column: 1 / -1;
+  }
+}
+/* Phones stack the summary cards so score labels and values stay on one line. */
+@media (max-width: 600px) {
+  .review-decision-rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.review-scroll-panel:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}

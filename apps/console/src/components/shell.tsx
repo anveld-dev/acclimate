@@ -254,7 +254,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const bundleView = nav?.bundleId ? (view as BundleView) : undefined;
   const detailLabel = bundleView ? bundleDetailLabel(bundleView, search) : undefined;
   const viewLabel = bundleView
-    ? bundleViewLabels[bundleView]
+    ? bundleView === 'connect' ? 'App setup' : bundleViewLabels[bundleView]
     : view === 'delivery'
       ? 'Delivery'
       : view === 'connections'

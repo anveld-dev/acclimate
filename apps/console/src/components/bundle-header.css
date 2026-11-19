@@ -186,10 +186,28 @@
     letter-spacing: -0.4px;
   }
   .bundle-header-layout .bundle-context {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
     flex-shrink: 0;
     min-width: 44px;
-    max-width: 40%;
+    max-width: 55%;
     justify-content: flex-end;
+  }
+  /* Narrow headers keep "Use in an app" and the channel on one row: the button keeps its
+     accessible name but shows only its icon. */
+  .bundle-header-layout .use-in-app-trigger[data-slot='button'] {
+    min-width: 36px;
+    padding-inline: 9px;
+  }
+  .bundle-header-layout .use-in-app-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .bundle-header-layout .bundle-channel-picker {
     max-width: 100%;

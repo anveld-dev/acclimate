@@ -10,9 +10,49 @@ function reward(value: number) {
     : value.toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
 
-export function EvaluationScorecard({ comparison }: { comparison: Comparison }) {
+export function EvaluationScorecard({
+  comparison,
+  compact = false,
+}: {
+  comparison: Comparison;
+  compact?: boolean;
+}) {
   const summary = evaluationScoreSummary(comparison);
   const evidence = evaluationEvidenceSummary(comparison);
+  if (compact) {
+    const { parentMean, candidateMean } = summary;
+    const delta = parentMean === null || candidateMean === null ? null : candidateMean - parentMean;
+    return (
+      <section className="review-section space-y-2 p-3" aria-label="Score summary">
+        <h3 className="font-semibold">Mean reward</h3>
+        <p className="break-words font-medium tabular-nums">
+          {parentMean === null ? '—' : reward(parentMean)} →{' '}
+          {candidateMean === null ? '—' : reward(candidateMean)}
+          {delta !== null && Number.isFinite(delta) && (
+            <>
+              {' '}
+              ({delta > 0 ? '+' : ''}
+              {reward(delta)})
+            </>
+          )}
+        </p>
+        <dl className="review-score-facts text-sm">
+          <dt>Scored pairs</dt>
+          <dd>
+            {summary.pairedCount} / {summary.expectedCount}
+          </dd>
+          <dt>Missing grades</dt>
+          <dd>{evidence.expectedMissingGrades}</dd>
+          <dt>Execution failures</dt>
+          <dd>{evidence.expectedExecutionFailures}</dd>
+          <dt>Reported cost</dt>
+          <dd>
+            {evidence.expectedCostUsd === null ? 'Unknown' : '$' + reward(evidence.expectedCostUsd)}
+          </dd>
+        </dl>
+      </section>
+    );
+  }
   // Normalize before subtracting so even opposite finite extremes keep a valid axis.
   const scale = Math.max(Math.abs(summary.minimum), Math.abs(summary.maximum));
   const low = summary.minimum / scale;

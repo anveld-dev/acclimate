@@ -19,7 +19,7 @@ import { readWorkspaceAccess } from '../server/access-actions';
 import { BundleLibrary } from '../components/bundle-library';
 import { BundleContent } from '../components/bundle-content';
 import { BundleChanges } from '../components/bundle-changes';
-import { SdkSetup } from '../components/sdk-setup';
+import { SdkSetup, UseInAnApp } from '../components/sdk-setup';
 import { BundleReleases } from '../components/bundle-releases';
 import { WorkspaceConnections } from '../components/workspace-connections';
 import { WorkspaceDelivery } from '../components/workspace-delivery';
@@ -57,6 +57,8 @@ export const Route = createFileRoute('/w/$')({
             'request',
             'history',
             'tab',
+            'reviewTab',
+            'connectionTab',
             'integration',
             'access',
             'bundleId',
@@ -64,7 +66,11 @@ export const Route = createFileRoute('/w/$')({
           (typeof value === 'string' || typeof value === 'number'),
       ),
     ) as Record<string, string | number>,
-  loaderDeps: ({ search }) => ({ search }),
+  loaderDeps: ({ search }) => ({
+    search: Object.fromEntries(
+      Object.entries(search).filter(([key]) => key !== 'reviewTab' && key !== 'connectionTab'),
+    ),
+  }),
   loader: async ({ params, deps }) => {
     const location = parseConsoleLocation('/w/' + params._splat);
     if (!location) return { kind: 'missing' as const };
@@ -126,7 +132,10 @@ function ScopedPage() {
   if (data.kind === 'missing')
     return (
       <section className="missing-page space-y-4">
-        <PageTitle title="Page not found" description="This workspace link is no longer available." />
+        <PageTitle
+          title="Page not found"
+          description="This workspace link is no longer available."
+        />
         <Button asChild variant="outline">
           <Link to="/">Back to bundles</Link>
         </Button>
@@ -245,6 +254,7 @@ function ScopedPage() {
         search={search}
         description={description}
         currentRevision={state.resolution.revision}
+        apiUrl={state.publicApiUrl}
       />
       {view === 'content' ? (
         <BundleContent key={identity} state={state} search={search} />
@@ -266,6 +276,7 @@ function BundleScopeHeader({
   description,
   unavailableChannel = false,
   currentRevision,
+  apiUrl,
 }: {
   name: string;
   scope: { projectId: string; bundleId: string; channel: string };
@@ -274,6 +285,7 @@ function BundleScopeHeader({
   description: string;
   unavailableChannel?: boolean;
   currentRevision?: string;
+  apiUrl?: string;
 }) {
   const navigate = useNavigate();
   const historyHref = bundleHref(scope, 'changes', { history: 1 }) + '#evaluation-history';
@@ -295,12 +307,16 @@ function BundleScopeHeader({
     ? `Back to revision ${returnRevision}`
     : isChangeDetail
       ? 'Back to changes'
-      : 'Back to bundles';
+      : view === 'connect'
+        ? 'Back to content'
+        : 'Back to bundles';
   const parentHref = returnRevision
     ? `${bundleHref(scope, 'releases')}#revision-${returnRevision}`
     : isChangeDetail
       ? bundleHref(scope, 'changes')
-      : workspaceHref(scope.projectId);
+      : view === 'connect'
+        ? bundleHref(scope, 'content')
+        : workspaceHref(scope.projectId);
   return (
     <PageHeader
       title={name}
@@ -319,7 +335,9 @@ function BundleScopeHeader({
                   ? `Revision ${returnRevision}`
                   : isChangeDetail
                     ? 'Changes'
-                    : 'Bundles'}
+                    : view === 'connect'
+                      ? 'Content'
+                      : 'Bundles'}
               </span>
             </ConsoleLink>
           </Button>
@@ -357,11 +375,16 @@ function BundleScopeHeader({
           )}
         </>
       }
-      actions={<ChannelPicker scope={scope} view={view} search={search} />}
+      actions={
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {apiUrl && <UseInAnApp state={{ ...scope, bundleName: name, publicApiUrl: apiUrl }} />}
+          <ChannelPicker scope={scope} view={view} search={search} />
+        </div>
+      }
       footer={
         !unavailableChannel && (
           <nav aria-label="Bundle navigation" className="bundle-tabs bundle-scope-navigation">
-            {(['content', 'changes', 'releases', 'connect'] as const).map((tab) => (
+            {(Object.keys(bundleViewLabels) as (keyof typeof bundleViewLabels)[]).map((tab) => (
               <ConsoleLink
                 key={tab}
                 href={bundleHref(scope, tab)}

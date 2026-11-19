@@ -1,3 +1,4 @@
+import { isCurrentDelivery } from '../lib/delivery-release';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Check, GitBranch, Radio } from 'lucide-react';
 import type { IntegrationObservation } from '@acclimate/sdk';
@@ -79,8 +80,7 @@ export function DeliveryApp({
     detail?.receipts.items ?? (app.latestObservation ? [app.latestObservation] : []);
   const report = receipts.find((item) => item.eventId === event) ?? receipts[0];
   const current = detail?.current;
-  const same =
-    report && current && report.versionId === current.versionId && report.digest === current.digest;
+  const same = report && current && isCurrentDelivery(report, current);
   const scope = { projectId, bundleId: app.bundleId, channel: app.channel };
   return (
     <section

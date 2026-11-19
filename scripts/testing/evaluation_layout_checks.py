@@ -8,7 +8,7 @@ from scripts.testing.compact_console import visit
 def verify(w,b,p,route,out,checks):
     count=len(w.settings['expectedCases'])
     p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,route)
-    p.get_by_role('button',name='Advanced details',exact=True).click()
+    p.get_by_role('tab',name='Details',exact=True).click()
     e=p.locator('.comparison-evidence');table=e.get_by_role('table',name='Evaluation case outcomes',exact=True)
     rows=e.locator('.evaluation-pair-summary')
     expect(rows).to_have_count(25)
@@ -81,7 +81,7 @@ def verify(w,b,p,route,out,checks):
 
     for width in [1440,1024,390,320]:
         p.set_viewport_size(dict(width=width,height=1000));visit(p,b,route)
-        p.get_by_role('button',name='Advanced details',exact=True).click()
+        p.get_by_role('tab',name='Details',exact=True).click()
         trigger=e.get_by_role('button',name='Inspect case retry-00 / 2',exact=True);trigger.click()
         detail=p.locator('[id="'+trigger.get_attribute('aria-controls')+'"]');detail.scroll_into_view_if_needed()
         assert p.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
@@ -98,7 +98,7 @@ def verify(w,b,p,route,out,checks):
         capture_layout(p,out,f'long-case-{width}')
     # Constrain the actual evidence container independently of viewport width.
     p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,route)
-    p.get_by_role('button',name='Advanced details',exact=True).click()
+    p.get_by_role('tab',name='Details',exact=True).click()
     e.evaluate("e=>e.style.width='280px'")
     trigger=e.get_by_role('button',name='Inspect case retry-00 / 2',exact=True);trigger.click()
     assert rows.first.evaluate("e=>getComputedStyle(e).display==='grid'")
@@ -107,7 +107,7 @@ def verify(w,b,p,route,out,checks):
     checks.append('Expanded/long pair reflow at 1440/1024/390/320 and embedded 280px evidence; full identities and both sides remain reachable')
 
     p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,route)
-    p.get_by_role('button',name='Advanced details',exact=True).click()
+    p.get_by_role('tab',name='Details',exact=True).click()
     e.get_by_role('button',name='Evidence details',exact=True).click()
     for value in [w.settings['parentVersionId'],w.settings['candidateVersionId'],w.evaluation['id'],w.settings['datasetRevision'],w.settings['graderRevision']]:expect(e).to_contain_text(value)
     expect(p.get_by_role('button',name='Review release with this evidence',exact=True)).to_be_disabled()
@@ -119,7 +119,7 @@ def verify(w,b,p,route,out,checks):
     report=w.call('POST',w.bundle+'/comparisons',dict(settings,evaluation=dict(requestId=request['id'],attemptId=attempt),results=[]),actor='evaluator')
     w.call('POST',path+'/finish',dict(attemptId=attempt,comparisonId=report['id']),actor='evaluator')
     visit(p,b,b.bundle_path('changes',candidate=w.draft['snapshotVersion']['id'],request=request['id'],comparison=report['id']))
-    p.get_by_role('button',name='Advanced details',exact=True).click()
+    p.get_by_role('tab',name='Details',exact=True).click()
     expect(search).to_have_value('');expect(rows).to_have_count(25)
     expect(e.get_by_role('radio',name='All '+str(count),exact=True)).to_be_checked()
     expect(e.locator('.evaluation-pair-detail').first).to_be_hidden()
@@ -134,7 +134,7 @@ def verify(w,b,p,route,out,checks):
     context=b.browser.new_context(ignore_https_errors=True,viewport=dict(width=1440,height=1000))
     try:
         b.sign_in(context,'evaluation-layout-viewer');vp=context.new_page();vp.on('pageerror',lambda error:b.errors.append(str(error)));visit(vp,b,route)
-        vp.get_by_role('button',name='Advanced details',exact=True).click()
+        vp.get_by_role('tab',name='Details',exact=True).click()
         vt=vp.get_by_role('button',name='Inspect case retry-00 / 2',exact=True);vt.click()
         expect(vp.locator('[id="'+vt.get_attribute('aria-controls')+'"]')).to_be_visible()
         expect(vp.get_by_role('button',name='Review release with this evidence',exact=True)).to_be_disabled()

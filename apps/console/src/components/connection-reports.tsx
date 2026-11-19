@@ -1,5 +1,5 @@
 import { ReceiptTime } from './receipt-time';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { DeliveryReceipt, Page } from '@acclimate/sdk';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { Button } from './ui/button';
@@ -14,6 +14,7 @@ export function ConnectionReports({
   setupHref,
   busy,
   onLoadOlder,
+  action,
 }: {
   receipts: Page<DeliveryReceipt>;
   channel: string;
@@ -22,6 +23,8 @@ export function ConnectionReports({
   setupHref: string;
   busy: boolean;
   onLoadOlder(): void;
+  /** Optional header control placed beside the loaded-report count. */
+  action?: ReactNode;
 }) {
   const [showAll, setShowAll] = useState(false);
   const visible = showAll ? receipts.items : receipts.items.slice(0, 3);
@@ -34,7 +37,10 @@ export function ConnectionReports({
       <div>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-semibold">App-reported delivery</h2>
-          <Badge variant="outline">{receipts.items.length} reports loaded</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{receipts.items.length} reports loaded</Badge>
+            {action}
+          </div>
         </div>
         <p className="mt-1 break-all text-sm text-muted-foreground">
           Bundle channel {channel}: revision {currentRevision} · version {currentVersionId}

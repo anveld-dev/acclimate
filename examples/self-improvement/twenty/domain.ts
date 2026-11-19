@@ -1,6 +1,6 @@
 /** Fixed fictional v2 contract. This code and its answers stay outside native workspaces. */
 import { createHash } from 'node:crypto';
-import type { BundlePayload } from '../../../packages/sdk/src/types.js';
+import type { BundlePayload } from '@acclimate/sdk';
 import { screenCandidate } from '../domain.js';
 
 type State = 'ambiguous' | 'accepted' | 'committed' | 'rejected_before_dispatch';

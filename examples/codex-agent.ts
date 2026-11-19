@@ -2,8 +2,8 @@ import { Codex } from '@openai/codex-sdk';
 import { resolve, join } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { AcclimateClient, resolveAndCache } from '../packages/sdk/src/index.js';
-import { prepare } from '../packages/codex-plugin/src/index.js';
+import { AcclimateClient, resolveAndCache } from '@acclimate/sdk';
+import { prepare } from '@acclimate/codex-plugin';
 import { withNativeSessionInputs } from './native-session-lifetime.js';
 import {
   optionalReceipts,

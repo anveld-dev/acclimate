@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ContentDiff } from '../src/components/diff-content';
 import { mergeHistory, refreshKnownActive } from '../src/lib/improvement-history';
 import { improvement } from '../src/server/improvement';
-import { localEvaluationDescriptor } from '../../../examples/evaluation/tests/descriptors';
+import { localEvaluationDescriptor } from '../../../scripts/evaluator-tests/descriptors';
 
 test('a frozen proposal needs consent matching exactly the evidence being disclosed', async () => {
   let calls = 0;

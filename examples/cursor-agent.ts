@@ -2,9 +2,9 @@
 import { Agent } from '@cursor/sdk';
 import { resolve, join } from 'node:path';
 import { homedir } from 'node:os';
-import { AcclimateClient, resolveAndCache } from '../packages/sdk/src/index.js';
-import { prepare } from '../packages/cursor-plugin/src/index.js';
-import { cursorLocalOptions } from '../packages/cursor-plugin/src/native.js';
+import { AcclimateClient, resolveAndCache } from '@acclimate/sdk';
+import { prepare } from '@acclimate/cursor-plugin';
+import { cursorLocalOptions } from '@acclimate/cursor-plugin/native';
 import {
   optionalReceipts,
   observeOptional,

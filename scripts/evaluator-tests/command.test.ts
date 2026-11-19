@@ -7,9 +7,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { atomicPrivateWrite } from '../../packages/sdk/src/evaluation/private-state.js';
-import { parseEvaluatorArguments } from '../../scripts/evaluate-app.js';
+import { parseEvaluatorArguments } from '../evaluate-app.js';
 import { fixture, projectId, bundleId, requestId, evaluatorPrincipalId } from './fixture.js';
-import { localEvaluationDescriptor } from './tests/descriptors.js';
+import { localEvaluationDescriptor } from './descriptors.js';
 
 const identifiers = ['--bundleID', bundleId, '--requestID', requestId];
 const required = ['--config', '/absolute/private/evaluator.json', ...identifiers];

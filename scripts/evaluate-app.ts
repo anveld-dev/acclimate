@@ -2,7 +2,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AcclimateClient } from '../packages/sdk/src/index.js';
 import { EvaluatorConfigError, readEvaluatorConfig } from './evaluator-config.js';
-import { runEvaluation } from '../examples/evaluation/runner.js';
+import { runCheckoutEvaluation } from './evaluator-tests/runner.js';
 import { nativeReviewDescriptor } from '../examples/evaluation/descriptor.js';
 import { codexLunaAdapter } from '../examples/service-proposer/evaluation-adapter.js';
 import { evaluationCheckMain } from '../packages/sdk/src/evaluation/cli.js';
@@ -58,7 +58,7 @@ export async function evaluateApp(args: string[]) {
     token: config.evaluatorToken,
     scope: 'app-evaluator',
   });
-  return runEvaluation({
+  return runCheckoutEvaluation({
     ...config,
     api,
     adapter,

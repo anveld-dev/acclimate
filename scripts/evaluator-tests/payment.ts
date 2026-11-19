@@ -1,6 +1,6 @@
-import type { InstalledAdapter } from '../adapter.js';
+import type { InstalledAdapter } from '../../examples/evaluation/adapter.js';
 import { localEvaluationDescriptor, presenceDescriptor } from './descriptors.js';
-import type { BundlePayload } from '../../../packages/sdk/src/types.js';
+import type { BundlePayload } from '../../packages/sdk/src/types.js';
 
 export interface ChargeTrace {
   policyError?: string;

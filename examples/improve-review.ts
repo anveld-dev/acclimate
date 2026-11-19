@@ -2,9 +2,9 @@ import { Codex } from '@openai/codex-sdk';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { AcclimateClient } from '../packages/sdk/src/index.js';
-import { prepare } from '../packages/codex-plugin/src/index.js';
-import type { VerifiedVersion } from '../packages/sdk/src/types.js';
+import { AcclimateClient } from '@acclimate/sdk';
+import { prepare } from '@acclimate/codex-plugin';
+import type { VerifiedVersion } from '@acclimate/sdk';
 import { improve, type Model } from './improvement/workflow.js';
 import { improve as improveService } from './service-proposer/workflow.js';
 

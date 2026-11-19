@@ -1,8 +1,8 @@
 /** Named contract check. The app CLI requires an explicit installed adapter. */
-import type { AcclimateClient } from '../../../packages/sdk/src/index.js';
+import type { AcclimateClient } from '../../packages/sdk/src/index.js';
 import { presenceDescriptor } from './descriptors.js';
 import { presenceAdapter } from './payment.js';
-import { runEvaluation } from '../runner.js';
+import { runCheckoutEvaluation } from './runner.js';
 
 export const fixtureIdentity = presenceDescriptor;
 
@@ -11,7 +11,7 @@ export async function evaluateRequest(
   api: AcclimateClient, project: string, bundle: string, id: string,
   state: { journalRoot: string; serviceUrl: string; evaluatorPrincipalId: string },
 ) {
-  return runEvaluation({
+  return runCheckoutEvaluation({
     ...state, api, projectId: project, bundleId: bundle, requestId: id, adapter: presenceAdapter,
   });
 }

@@ -52,7 +52,7 @@
       }
     },
     {
-      "files": ["apps/*/src/**", "examples/evaluation-starter/**", "examples/native-repository/**"],
+      "files": ["apps/*/src/**", "examples/**"],
       "rules": {
         "no-restricted-imports": [
           "error",

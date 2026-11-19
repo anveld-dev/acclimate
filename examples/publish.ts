@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { AcclimateClient } from '../packages/sdk/src/index.js';
-import type { BundlePayload } from '../packages/sdk/src/types.js';
+import { AcclimateClient } from '@acclimate/sdk';
+import type { BundlePayload } from '@acclimate/sdk';
 
 const [file, name, reason] = process.argv.slice(2);
 if (!file || !name?.trim() || !reason?.trim()) {

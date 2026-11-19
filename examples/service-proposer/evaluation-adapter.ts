@@ -28,7 +28,7 @@ export function nativeReviewAdapter(model: Model, { wiringOnly = false } = {}): 
 export async function codexLunaAdapter(): Promise<InstalledAdapter> {
   const [{ Codex }, { prepare }] = await Promise.all([
     import('@openai/codex-sdk'),
-    import('../../packages/codex-plugin/src/index.js'),
+    import('@acclimate/codex-plugin'),
   ]);
   const codex = new Codex();
   let turns = 0;

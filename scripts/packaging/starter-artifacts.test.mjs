@@ -40,6 +40,9 @@ test('release archives contain installed-app source and independent CI runner, e
     const native = execFileSync('tar', ['-tzf', join(output, metadata.starters[2].file)], { encoding: 'utf8' });
     assert.ok(!native.includes('/test/'));
     assert.ok(!native.includes('QUALIFICATION.md'));
+    // The offline replay harness and its fixture repository ship for consumers.
+    for (const file of ['smoke.mjs', 'native.replay.json', 'fixture/replay.json', 'fixture/tests/retry.test.mjs', 'harness-template.mjs'])
+      assert.ok(native.includes(`native-repository-starter/${file}`), file);
     assert.equal(listing.includes('node_modules'), false);
     const manifest = JSON.parse(execFileSync('tar', ['-xOzf', archive, 'evaluation-starter/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.version, '1.2.3');

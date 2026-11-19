@@ -19,7 +19,7 @@ delete testEnvironment.NODE_TEST_CONTEXT;
 async function main() {
   const [stateRoot, target] = process.argv.slice(2);
   const source = await freezeSourceInventory({
-    sourceRoot: fileURLToPath(new URL('./fixture', import.meta.url)),
+    sourceRoot: fileURLToPath(new URL('../fixture', import.meta.url)),
     paths: ['package.json', 'src/retry.js', 'tests/retry.test.mjs'],
     revision: 'retry-fixture-v1',
   });
@@ -125,7 +125,7 @@ async function main() {
   });
   const patch = await readFile(path.join(stateRoot, 'artifacts', context.jobId, 'result.patch'), 'utf8');
   const original = await readFile(
-    fileURLToPath(new URL('./fixture/src/retry.js', import.meta.url)),
+    fileURLToPath(new URL('../fixture/src/retry.js', import.meta.url)),
     'utf8',
   );
   if (
@@ -146,7 +146,9 @@ async function main() {
   );
 }
 
-main().catch(() => {
-  console.error(JSON.stringify({ error: { code: 'native.fixture_failed' } }));
+main().catch((error) => {
+  const code = error?.code ?? 'native.fixture_failed';
+  const message = String(error?.message ?? error).split('\n')[0];
+  console.error(message.startsWith(code) ? message : `${code}: ${message}`);
   process.exitCode = 1;
 });

@@ -9,6 +9,7 @@ import {
   freezeSourceInventory,
   gradeRepositoryTests,
   inspectNativeJob,
+  matchesPattern,
   validateInventory,
 } from '../repository-job.mjs';
 
@@ -28,6 +29,36 @@ test('closed source policy rejects controls, hidden paths, prefix and case colli
   ])
     assert.throws(() => validateInventory(paths));
   assert.deepEqual(validateInventory(['tests/a.mjs', 'src/a.js']), ['src/a.js', 'tests/a.mjs']);
+  assert.throws(() => validateInventory(['.gitignore']), (error) =>
+    error.code === 'native.control_path' && error.path === '.gitignore' &&
+    error.message.startsWith('native.control_path: ".gitignore" (dot-prefixed segment)') && /allowDotPaths/.test(error.message));
+  assert.throws(() => validateInventory(['src/AGENTS.md']), /native\.control_path: "src\/AGENTS\.md" \(AGENTS\.md is a native control path/);
+  assert.throws(() => validateInventory(['a', 'a/b']), /native\.path_collision: "a" \(is both a file and the directory of a\/b\)/);
+  assert.deepEqual(validateInventory(['.eslintrc', 'src/a.js'], 10, { allowDotPaths: ['.eslintrc'] }), ['.eslintrc', 'src/a.js']);
+  assert.throws(() => validateInventory(['.git/config'], 10, { allowDotPaths: ['.git/config'] }), { code: 'native.control_path' });
+  assert.throws(() => validateInventory(['src/**']), /wildcards are accepted only in resultFiles/);
+  assert.deepEqual(validateInventory(['src/**', 'lib/*.js'], 10, { patterns: true }), ['lib/*.js', 'src/**']);
+  assert.throws(() => validateInventory(['src/a**'], 10, { patterns: true }), /\*\* must be a whole path segment/);
+});
+
+test('result patterns match within segments and never select dot paths', () => {
+  assert.ok(matchesPattern('src/**', 'src/a/b.js'));
+  assert.ok(matchesPattern('src/**', 'src'));
+  assert.ok(matchesPattern('**/*.test.mjs', 'tests/unit/a.test.mjs'));
+  assert.ok(matchesPattern('src/*.js', 'src/a.js'));
+  assert.ok(!matchesPattern('src/*.js', 'src/a/b.js'));
+  assert.ok(!matchesPattern('src/**', 'src/.env'));
+  assert.ok(!matchesPattern('src/**', 'src/.cache/x.js'));
+});
+
+test('missing and symlinked sources name the offending path', async () => {
+  await fixture(async ({ source }) => {
+    await assert.rejects(freezeSourceInventory({ sourceRoot: source, paths: ['src/missing.js'], revision: 'v1' }),
+      { code: 'native.source_unavailable', message: 'native.source_unavailable: "src/missing.js" (listed in sourceFiles but missing from sourceRoot)' });
+    await symlink('src/retry.js', path.join(source, 'link.js'));
+    await assert.rejects(freezeSourceInventory({ sourceRoot: source, paths: ['link.js'], revision: 'v1' }),
+      { code: 'native.unsafe_file', message: 'native.unsafe_file: "link.js" (symlink)' });
+  });
 });
 
 test('captures immutable source bytes; rejects source symlinks and file budget excess', async () => {
@@ -102,7 +133,9 @@ test('independent grading uses the original test when a coding agent rewrites it
         runTests: ({ cwd }) => spawnSync(process.execPath, ['verify.mjs'], { cwd }).status === 0,
       });
       assert.deepEqual(grade, { reward: 0, explanation: {
-        testsPassed: false, protectedChanges: [{ path: 'verify.mjs', status: 'modified' }],
+        outcome: 'failed', testsPassed: false, tests: null, rewardMode: 'binary',
+        protectedChanges: [{ path: 'verify.mjs', status: 'modified' }],
+        undeclaredChanges: { count: 0, paths: [], truncated: false, unsupportedEntries: [], complete: true },
       } });
     }
     const protectedGrade = await gradeRepositoryTests({

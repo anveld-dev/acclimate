@@ -18,7 +18,7 @@ for (const harness of ['codex', 'claude', 'pi', 'cursor']) {
           } else if (harness === 'claude') {
             assert.equal(inputs.sessionOptions.cwd, context.cwd);
             assert.deepEqual(inputs.sessionOptions.settingSources, ['project']);
-            assert.deepEqual(inputs.sessionOptions.skills, []);
+            assert.equal('skills' in inputs.sessionOptions, false); // empty lists would disable all skills
           } else if (harness === 'cursor') {
             assert.equal(inputs.sessionOptions.local.cwd, context.cwd);
             assert.deepEqual(inputs.sessionOptions.local.settingSources, ['project']);

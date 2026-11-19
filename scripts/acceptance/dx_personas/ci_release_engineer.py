@@ -124,10 +124,11 @@ def acceptance(output):
             assert losing_verdict['summary']['orientedMeanImprovement'] < 0
             evidence.append(dict(id='CI-LOSING', exitCode=2, requestId=losing['id'], comparisonId=losing['comparisonId'], status=losing['status'], verdict=losing_verdict))
             incomplete_payload = f.write_json('private/incomplete.json', dict(schemaVersion=1, files=[dict(path='instructions.md',kind='instruction',text='CI_INCOMPLETE')]))
-            incomplete_dir, _, incomplete, _ = pipeline('incomplete', incomplete_payload, 2, result='execution_failed')
+            # A failed run exits 4 (run or service failed); a quality regression keeps 2.
+            incomplete_dir, _, incomplete, _ = pipeline('incomplete', incomplete_payload, 4, result='execution_failed')
             assert incomplete['status'] == 'failed'
             incomplete_verdict = f.run(command + ['check', '--config', str(config_path), '--handoff', str(incomplete_dir / 'evaluation-request.json'), '--policy', str(app / 'quality-policy.json')], cwd=app, expected=3)
-            evidence.append(dict(id='CI-INCOMPLETE', exitCode=2, checkExitCode=3, requestId=incomplete['id'], comparisonId=incomplete['comparisonId'], status=incomplete['status'], verdict=incomplete_verdict))
+            evidence.append(dict(id='CI-INCOMPLETE', exitCode=4, checkExitCode=3, requestId=incomplete['id'], comparisonId=incomplete['comparisonId'], status=incomplete['status'], verdict=incomplete_verdict))
             (app / 'deny-review.flag').write_text('Private application declines required review artifact')
             failed_export_dir, _, export_request, _ = pipeline('required-export-unavailable', app / 'candidate.json', 3,
                                                               result='export_failed')

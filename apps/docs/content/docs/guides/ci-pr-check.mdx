@@ -11,7 +11,7 @@ The check uses the CI starter from your [SDK release](/docs/get-started/install)
 
 **Use a self-hosted runner with a persistent journal.** The evaluator's journal records whether execution started, so an interrupted run can resume without repeating paid work. That guarantee needs one host, a persistent owner-only POSIX volume, and the same journal and output directory on every run. NFS and other network file systems are not qualified, because the journal relies on `flock`. On this kind of runner, the wrapper reuses results across commits and resumes cancelled work.
 
-**Ephemeral runners work in a degraded mode.** GitHub-hosted and autoscaled runners start without the previous journal, and `actions/cache` can't carry it because the journal is locked while in use and must stay on one host. In this mode, every attempt creates a fresh request and runs every case. An attempt that was cancelled or lost stays `running` until the service expires it and records it as interrupted. Nothing is reused. Budget for a full run on every push.
+**Ephemeral runners work in a degraded mode.** GitHub-hosted and autoscaled runners start without the previous journal, and `actions/cache` can't carry it because the journal is locked while in use and must stay on one host. In this mode, every attempt creates a fresh request and runs every case. An attempt that was cancelled or lost stays `running` until the service marks it `abandoned` after its inactivity timeout. Nothing is reused. Budget for a full run on every push.
 
 Never run the check for untrusted code on a self-hosted runner. See [forks and untrusted pull requests](#forks-and-untrusted-pull-requests).
 
@@ -67,7 +67,7 @@ The step fails when the check doesn't pass. It writes a Markdown summary to the 
 | `config`, `config-json`, `service-url` | Where the evaluator config comes from. `config-json` holds the non-secret fields `serviceUrl`, `projectId`, `evaluatorPrincipalId` and optionally `journalRoot`. |
 | `token`, `token-file` | The evaluator token. Pass a secret; it is never written to the job log. |
 | `live` | Allows model-backed execution. It defaults to `false`. |
-| `deadline`, `max-cost-usd`, `concurrency`, `shard`, `cases` | Passed to the evaluator's `run` command. |
+| `deadline`, `case-timeout`, `max-cost-usd`, `shard`, `cases` | Passed to the evaluator's `run` command as `--deadline`, `--case-timeout`, `--max-cost-usd`, `--shard` and `--cases`. Concurrency is declared in the evaluator definition instead. |
 | `commit`, `base-commit` | The commit to evaluate (default `github.sha`) and an optional base for the changed-file list. |
 | `output-dir` | Request state and review exports. The default is `~/.acclimate-ci/OWNER-REPO`. |
 | `abandon-uncertain`, `cancel-grace` | Recovery controls. See [cancellation](#cancellation-and-cancel-in-progress). |
@@ -77,9 +77,9 @@ Outputs: `result`, `verdict`, `comparison-id`, `request-id`, `candidate-version-
 
 ## Grant the least privilege
 
-Give the PR check an evaluate-only grant for one workspace. That grant lets the evaluator create and run evaluation requests, but it can't release, so a compromised PR job can't change a channel. Keep the releasing credential in a protected GitHub environment that only the post-merge release job can use. See [provision evaluator access](/docs/operate/evaluator-access#grant-access).
+Give the PR check a workspace evaluator token that holds only the `evaluate` right. Issue it under **Settings → Members → Evaluator tokens**. The `evaluate` right lets the evaluator create and run evaluation requests, record policy receipts and abandon its own uncertain attempts, but it can't publish or release, so a compromised PR job can't change a channel. Keep the releasing credential in a protected GitHub environment that only the post-merge release job can use. See [provision evaluator access](/docs/operate/evaluator-access#grant-access).
 
-Store the token as a secret and pass it as the `token` input. The action never writes the token into a file in the workspace. The wrapper copies it into a temporary owner-only config inside the output directory and deletes it when the run ends. Outside GitHub, pass `--token-env NAME` or `--token-file FILE` to the wrapper, or set `evaluatorTokenFile` in the evaluator config if your SDK release supports it.
+Store the token as a secret and pass it as the `token` input. The token is never written to a file or a config. The wrapper writes a temporary, token-free owner-only copy of the config inside the output directory, deletes it when the run ends, and hands the token to each evaluator process in `ACCLIMATE_EVALUATOR_TOKEN`. Outside GitHub, pass `--token-env NAME` or `--token-file FILE` to the wrapper, or set `evaluatorTokenFile` in the evaluator config.
 
 ## Which commit and which parent
 
@@ -93,13 +93,13 @@ To see what the PR changed, pass `base-commit` (or `--base-commit`). The summary
 
 The wrapper reuses a request when the bundle content, the channel's release, the evaluator descriptor and the selected cases are all unchanged. A PR commit that only touches files outside the bundle therefore costs a status read, not a run. Reuse needs the persistent output directory and journal of a self-hosted runner, and the wrapper must be able to read the channel with the evaluator token. When it can't, it falls back to one request per commit and records `reuse.status` as `unavailable`. Pass `--no-reuse` to always create a request per commit.
 
-Set a job `timeout-minutes` as a hard limit. Use `max-cost-usd`, `deadline`, `concurrency`, `shard` and `cases` to bound the evaluator's own work. The wrapper passes them to the evaluator's `run` command. The [evaluator CLI reference](/docs/reference/evaluator-cli) describes their behavior.
+Set a job `timeout-minutes` as a hard limit. Use `max-cost-usd`, `deadline`, `case-timeout`, `shard` and `cases` to bound the evaluator's own work. The wrapper passes them to the evaluator's `run` command. A run they stop early is partial evidence and exits 3 (`execution_partial`). The [evaluator CLI reference](/docs/reference/evaluator-cli) describes their behavior.
 
 ## Cancellation and cancel-in-progress
 
 With `cancel-in-progress: true`, a new push cancels the running check. GitHub sends `SIGINT`, then `SIGTERM` about 7.5 seconds later, then kills the step 2.5 seconds after that. The wrapper forwards each signal to the evaluator's process group. The evaluator stops starting cases, records the cases it finished, and closes the request. If the evaluator is still running after `cancel-grace` seconds (20 by default), or shortly after a second signal, the wrapper kills the process group so nothing keeps running or holds the journal. The wrapper then prints its summary with `result: cancelled` and exits with 130 or 143.
 
-A cancelled run isn't a verdict. Rerunning the same commit starts a fresh request automatically. If the evaluator had to be killed during execution, the next run reports `execution_unresolved`, because the application's own work may still be running. Either wait until the service expires the abandoned attempt, after which the next run starts a fresh request, or set `abandon-uncertain: true` to interrupt it immediately. Interrupting doesn't stop work outside the evaluator, such as a hosted agent session.
+A cancelled run isn't a verdict. Rerunning the same commit starts a fresh request automatically. If the evaluator had to be killed during execution, the next run reports `execution_unresolved`, because the application's own work may still be running. Either wait until the service marks the attempt `abandoned` after its inactivity timeout, after which the next run starts a fresh request, or set `abandon-uncertain: true` to abandon it immediately through the service. Abandoning doesn't stop work outside the evaluator, such as a hosted agent session.
 
 ## Forks and untrusted pull requests
 
@@ -135,17 +135,19 @@ sh "$ACCLIMATE_CI/ci.sh" \
 
 ## Read the result
 
-The wrapper writes one JSON summary to stdout and sends phase diagnostics to stderr. Associate its verified `commit`, `candidateVersionId`, and `candidateDigest` with the PR. Use `result` to distinguish a policy verdict from a failed execution. The evaluator exits 2 when the quality gate fails and 4 when the run or service fails. See [exit codes](/docs/reference/evaluator-cli#errors-and-exit-codes).
+The wrapper writes one JSON summary to stdout and sends phase diagnostics to stderr. Associate its verified `commit`, `candidateVersionId`, and `candidateDigest` with the PR. Use `result` to distinguish a policy verdict from a failed execution. The wrapper exits with the evaluator's codes: 0 pass, 1 fix the command or config, 2 quality gate failed, 3 indeterminate or partial, 4 run or service failed, and 5 recovery required. See [exit codes](/docs/reference/evaluator-cli#errors-and-exit-codes).
 The JSON summary always includes `result` and `exitCode`, including after a configuration error or cancellation. When a phase fails, it also includes `failedPhase`, `diagnosticCode`, `failedChecks`, `hint` and `nextAction`.
 
 | Result | Exit | Meaning |
 | --- | --- | --- |
 | `pass` | 0 | The policy passed. Associate the commit with `candidateVersionId` and `candidateDigest`. |
-| `quality_failed`, `quality_indeterminate` | 2 | The policy failed or couldn't be measured. Review `quality.failedCriteria`, `quality.regressedCases` and `quality.evidenceGaps`. |
-| `execution_failed` | 2 | Cases failed to run or grade. Repair the evaluator, then use `--rerun-after`. |
-| `execution_unresolved`, `prior_execution_unresolved` | 3 | Earlier work may still be running. Wait for expiry or use `--abandon-uncertain`. |
+| `quality_failed` | 2 | The policy failed. Review `quality.failedCriteria` and `quality.regressedCases`. |
+| `quality_indeterminate` | 3 | The policy couldn't decide, for example too few cases for its confidence bound. Review `quality.evidenceGaps`. |
+| `execution_partial` | 3 | The run stopped at its deadline or cost limit, or covered only a case subset. Rerun with a larger budget or every case. |
+| `execution_failed` | 4 | Cases failed to run or grade, or the service was unreachable. Repair the evaluator, then use `--rerun-after`. |
+| `execution_unresolved`, `prior_execution_unresolved` | 5 | Earlier work may still be running. Wait for the service to mark it abandoned, or use `--abandon-uncertain`. |
 | `cancelled` | 130 or 143 | The job was cancelled. Rerun it. |
-| `preflight_failed`, `request_failed`, `check_failed`, `export_failed`, `configuration_error` | 1 to 3 | Fix the reported diagnostic and rerun. |
+| `preflight_failed`, `request_failed`, `check_failed`, `export_failed`, `configuration_error` | 1, 3, 4 or 5 | Fix the reported diagnostic and rerun. |
 
 Share only the verified `reviewDirectory` under the output directory. Use `--selection` and an installed review mapper to share selected app artifacts.
 
@@ -157,7 +159,7 @@ A changed evaluator descriptor already gets a new request. To deliberately evalu
 --rerun-after "$(jq -r '.priorHandoff // .handoff' previous-result.json)"
 ```
 
-The wrapper accepts one successor per finished request and compares it against the channel's current release. A predecessor can be completed, failed or interrupted. A predecessor that is still `requested` or `running` is interrupted for you when its journal shows that execution never started. Otherwise pass `--abandon-uncertain`. `--retry-after` is the deprecated spelling of `--rerun-after`. Unlike `compare --retry-after`, which keeps the original parent, the wrapper always uses the channel's current release.
+The wrapper accepts one successor per finished request and compares it against the channel's current release. A predecessor can be completed, failed, interrupted or abandoned. A predecessor that is still `requested` or `running` is interrupted for you when its journal shows that execution never started. Otherwise pass `--abandon-uncertain` to abandon it through the service. `--retry-after` is the deprecated spelling of `--rerun-after`. Unlike `compare --retry-after`, which keeps the original parent, the wrapper always uses the channel's current release.
 
 ## Clean up
 

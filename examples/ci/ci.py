@@ -39,27 +39,35 @@ PYTHON_EVALUATOR_MINIMUM = (3, 11)
 # Wait this long for a graceful stop after the first signal, and this long after a second one.
 DEFAULT_CANCEL_GRACE = 20.0
 ESCALATED_GRACE = 1.5
-# Flags passed through to the evaluator's run command, in this order.
+# Run controls passed through to the evaluator's run command, in this order. They match the
+# evaluator's own flag names. Concurrency is not a run flag: it is declared in the evaluator
+# definition (concurrency, gradeRetries) and fingerprinted in its descriptor.
 RUN_PASSTHROUGH = (
     ("deadline", "--deadline"),
+    ("case_timeout", "--case-timeout"),
     ("max_cost_usd", "--max-cost-usd"),
-    ("concurrency", "--concurrency"),
     ("shard", "--shard"),
     ("cases", "--cases"),
 )
+# The evaluator CLI's exit codes. The wrapper exits with the failing phase's code.
+EXIT_OK, EXIT_USAGE, EXIT_GATE_FAILED, EXIT_INDETERMINATE, EXIT_FAILED, EXIT_RECOVERY = 0, 1, 2, 3, 4, 5
+# The evaluator reads its token from this variable when the config names neither
+# evaluatorToken nor evaluatorTokenFile.
+TOKEN_ENV = "ACCLIMATE_EVALUATOR_TOKEN"
 
 NEXT_ACTIONS = {
     "quality_failed": "Review the failed criteria and cases. Change the agent, or release the candidate later with a reviewed policy override.",
     "quality_indeterminate": "A criterion could not be measured. Inspect quality.evidenceGaps and the unknown criteria, repair the evaluator, then rerun with --rerun-after and the handoff.",
     "execution_failed": "Cases failed to run or grade. Inspect the evaluator output, repair the evaluator, then rerun with --rerun-after and the handoff.",
-    "execution_unresolved": "Execution may still be running elsewhere. Wait for the service to expire the abandoned attempt and rerun, or rerun with --abandon-uncertain to interrupt it now.",
+    "execution_unresolved": "Execution may still be running elsewhere. Wait for the service to mark the attempt abandoned and rerun, or rerun with --abandon-uncertain to abandon it now.",
+    "execution_partial": "The run stopped early at its --deadline or --max-cost-usd, or covered only --cases or --shard, so the evidence is partial. Rerun with a larger budget or the full inventory.",
     "check_failed": "The policy check did not complete. Fix the diagnostic and rerun the same command; the saved result is reused.",
     "export_failed": "The review export failed. Fix the diagnostic and rerun the same command; the saved result is reused.",
     "preflight_failed": "Fix the failed preflight checks, then rerun the same command.",
     "request_failed": "Fix the request diagnostic, then rerun the same command.",
     "configuration_error": "Fix the wrapper arguments or CI workspace, then rerun.",
     "prior_status_unavailable": "The previous request could not be read. Check the evaluator credential and service, then rerun.",
-    "prior_execution_unresolved": "Wait for the previous attempt to finish or for the service to expire it, then rerun. Pass --abandon-uncertain to interrupt it now.",
+    "prior_execution_unresolved": "Wait for the previous attempt to finish or for the service to mark it abandoned, then rerun. Pass --abandon-uncertain to abandon it now.",
     "cancelled": "Rerun the same command. A cancelled run is not a verdict: the wrapper resumes it or starts a fresh request for this commit.",
     "wrapper_error": "Report this wrapper failure to the evaluation owner with the stderr log.",
 }
@@ -74,9 +82,9 @@ HINTS = {
     "config.url": "serviceUrl must be an https URL without a path, or http on localhost.",
     "bundle.missing": "The bundle ID does not exist in this workspace. Check --bundle.",
     "journal.busy": "Another evaluator process holds this request's journal. Wait for it to finish, or check that no orphaned evaluator is still running on this host.",
-    "journal.missing": "This runner has no journal for a request that already started elsewhere. Use the original runner, wait for server-side expiry, or pass --abandon-uncertain.",
+    "journal.missing": "This runner has no journal for a request that already started elsewhere. Use the original runner, wait for the service to mark it abandoned, or pass --abandon-uncertain.",
     "journal.relocated": "The journal moved. Restore journalRoot to its original path.",
-    "execution.uncertain": "An earlier attempt may have started executing and did not finish. Wait for server-side expiry or pass --abandon-uncertain.",
+    "execution.uncertain": "An earlier attempt may have started executing and did not finish. Wait for the service to mark it abandoned, or pass --abandon-uncertain.",
     "request.channel_empty": "The channel has no release yet. Publish a baseline release to the channel before running PR checks.",
     "request.base_conflict": "The channel release changed while the request was being created. Rerun the command to compare against the new release.",
     "request.intent_mismatch": "The saved request belongs to a different evaluator, candidate or target. Restore them, or rerun with --rerun-after and the priorHandoff.",
@@ -86,7 +94,10 @@ HINTS = {
     "evidence.not_terminal": "The previous request has not finished.",
 }
 
-SETTLED = ("completed", "failed", "interrupted")
+# Request states a fresh request may follow. `abandoned` is the service's terminal state for an
+# attempt it expired after inactivity or that a caller abandoned explicitly.
+SETTLED = ("completed", "failed", "interrupted", "abandoned")
+ENDED_WITHOUT_EVIDENCE = ("interrupted", "abandoned")
 
 
 class Arguments(argparse.ArgumentParser):
@@ -105,8 +116,10 @@ def arguments(argv):
     parser = Arguments(
         prog="ci.sh", description=__doc__, allow_abbrev=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Exit status: 0 pass, 1 configuration or preflight error, 2 quality or execution failure, "
-               "3 unresolved work, 130/143 cancelled. Route on the summary's result field.")
+        epilog="Exit status follows the evaluator CLI: 0 pass, 1 fix the command, config or application, "
+               "2 quality gate failed, 3 indeterminate (the policy could not decide, or the run stopped early "
+               "with partial evidence), 4 run or service failed, 5 recovery required (earlier work is "
+               "unresolved), 130/143 cancelled. Route on the summary's result field.")
     required = parser.add_argument_group("required arguments")
     required.add_argument("--commit", required=True, metavar="SHA",
                           help="Full commit ID the check represents. It must equal HEAD in --repo. On pull_request "
@@ -143,11 +156,16 @@ def arguments(argv):
     evaluation.add_argument("--live", action="store_true",
                             help="Authorize model-backed execution. Leave it off for untrusted changes.")
     evaluation.add_argument("--selection", metavar="FILE", help="Artifact selection for the review export")
-    evaluation.add_argument("--deadline", metavar="VALUE", help="Passed to the evaluator run command")
-    evaluation.add_argument("--max-cost-usd", metavar="USD", help="Passed to the evaluator run command")
-    evaluation.add_argument("--concurrency", metavar="N", help="Passed to the evaluator run command")
-    evaluation.add_argument("--shard", metavar="I/N", help="Passed to the evaluator run command")
-    evaluation.add_argument("--cases", metavar="IDS", help="Passed to the evaluator run command")
+    evaluation.add_argument("--deadline", metavar="DURATION",
+                            help="Passed to the evaluator run command, such as 30m. A stopped run is partial (exit 3).")
+    evaluation.add_argument("--case-timeout", metavar="DURATION",
+                            help="Passed to the evaluator run command: abort each execute or grade call after this long")
+    evaluation.add_argument("--max-cost-usd", metavar="USD",
+                            help="Passed to the evaluator run command: stop starting pairs at this reported cost")
+    evaluation.add_argument("--shard", metavar="I/N", help="Passed to the evaluator run command. Partial (exit 3).")
+    evaluation.add_argument("--cases", metavar="IDS", help="Passed to the evaluator run command. Partial (exit 3).")
+    # Concurrency belongs in the evaluator definition; reject it with an explanation.
+    evaluation.add_argument("--concurrency", metavar="N", help=argparse.SUPPRESS)
 
     credentials = parser.add_argument_group("credentials")
     token = credentials.add_mutually_exclusive_group()
@@ -165,7 +183,8 @@ def arguments(argv):
                                 "handoff, relative to --output-dir")
     operation.add_argument("--retry-after", dest="retry_after_alias", metavar="HANDOFF", help=argparse.SUPPRESS)
     recovery.add_argument("--abandon-uncertain", action="store_true",
-                          help="Interrupt an earlier attempt that may have started executing, then start a fresh request")
+                          help="Abandon an earlier attempt that may have started executing (the service's abandon "
+                               "route, which needs the evaluate right), then start a fresh request")
     recovery.add_argument("--cancel-grace", type=float, default=DEFAULT_CANCEL_GRACE, metavar="SECONDS",
                           help="On SIGINT or SIGTERM, wait this long for the evaluator to stop (default: 20)")
 
@@ -193,15 +212,18 @@ def arguments(argv):
         raise ValueError("--channel must be a guided channel name")
     if not 0 < args.cancel_grace <= 600:
         raise ValueError("--cancel-grace must be between 0 and 600 seconds")
-    if args.concurrency is not None and not re.fullmatch(r"[1-9][0-9]{0,3}", args.concurrency):
-        raise ValueError("--concurrency must be a positive integer")
+    if args.concurrency is not None:
+        raise ValueError("--concurrency is not a run flag. Declare concurrency (1-64) in the evaluator definition "
+                         "or application module; it is part of the evaluator's descriptor.")
     if args.max_cost_usd is not None:
         try:
             cost = float(args.max_cost_usd)
         except ValueError:
             cost = -1
-        if not 0 <= cost < float("inf"):
-            raise ValueError("--max-cost-usd must be a non-negative number")
+        if not 0 < cost < float("inf"):
+            raise ValueError("--max-cost-usd must be a positive number of US dollars")
+    if args.shard is not None and args.cases is not None:
+        raise ValueError("Use --cases or --shard, not both")
     for name, flag in RUN_PASSTHROUGH:
         value = getattr(args, name)
         if value is not None and (not value or value.startswith("-") or len(value) > 4096):
@@ -424,7 +446,13 @@ def valid_token(value, source):
 
 
 def credentials(args, private):
-    """Return (config path for the evaluator, parsed config or {}, token or None)."""
+    """Return (config path for the evaluator, parsed config or {}, token or None, child environment).
+
+    A token from --token-env or --token-file never lands in a config file. The wrapper writes a
+    token-free copy of the config and hands the token to each evaluator process in
+    ACCLIMATE_EVALUATOR_TOKEN, which the evaluator reads when the config names no token.
+    """
+    environment = {key: value for key, value in os.environ.items() if key != TOKEN_ENV}
     config = read_json(args.config, 1024 * 1024) or {}
     token = None
     if args.token_env:
@@ -441,19 +469,58 @@ def credentials(args, private):
                     "utf-8", "replace"), "evaluatorTokenFile")
             except ValueError:
                 token = None
-        return args.config, config, token
+        if token is None and isinstance(os.environ.get(TOKEN_ENV), str):
+            # The config names no token: the evaluator reads the inherited variable itself.
+            environment[TOKEN_ENV] = os.environ[TOKEN_ENV]
+            token = valid_token(os.environ[TOKEN_ENV], TOKEN_ENV)
+        return args.config, config, token, environment
     if not config:
         raise ValueError("--config must be a readable JSON evaluator config when the token comes from "
                          "--token-env or --token-file")
-    # The evaluator reads an owner-only config. Keep the derived copy in a private directory for this run.
+    # The evaluator reads an owner-only config. Keep the derived, token-free copy in a private
+    # directory for this run; the token travels only in the child processes' environment.
     derived = dict(config)
     derived.pop("evaluatorTokenFile", None)
-    derived["evaluatorToken"] = token
+    derived.pop("evaluatorToken", None)
     filename = Path(private) / "evaluator-config.json"
     descriptor = os.open(filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     with os.fdopen(descriptor, "w") as handle:
         handle.write(json.dumps(derived) + "\n")
-    return str(filename), config, token
+    environment[TOKEN_ENV] = token
+    return str(filename), config, token, environment
+
+
+def abandon_request(config, token, handoff, reason):
+    """Abandon a request through the service's abandon route. Returns the new status, or None.
+
+    Abandonment is terminal and fences the attempt's later reports. It never claims the original
+    worker stopped. It needs the `evaluate` right, which evaluator tokens hold.
+    """
+    base, project = config.get("serviceUrl"), config.get("projectId")
+    bundle, request_id = (handoff or {}).get("bundleId"), (handoff or {}).get("requestId")
+    if not (token and isinstance(base, str) and isinstance(project, str) and project
+            and isinstance(bundle, str) and bundle
+            and isinstance(request_id, str) and re.fullmatch(UUID, request_id)):
+        return None
+    url = urllib.parse.urlsplit(base)
+    loopback = url.scheme == "http" and url.hostname in ("localhost", "127.0.0.1", "::1")
+    if (url.scheme != "https" and not loopback) or url.username or url.password or url.query or url.fragment:
+        return None
+    route = ("/v1/workspaces/" + urllib.parse.quote(project, safe="") + "/bundles/"
+             + urllib.parse.quote(bundle, safe="") + "/evaluation-requests/" + request_id + "/abandon")
+    request = urllib.request.Request(
+        base.rstrip("/") + route, method="POST", data=json.dumps({"reason": reason}).encode(),
+        headers={"Authorization": "Bearer " + token, "Accept": "application/json",
+                 "Content-Type": "application/json",
+                 # One key per request: a retried abandonment replays the same operation.
+                 "Idempotency-Key": "ci-abandon-" + request_id})
+    try:
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=30) as response:
+            value = json.loads(response.read(1024 * 1024 + 1))
+    except (OSError, ValueError):
+        return None
+    status = value.get("status") if isinstance(value, dict) else None
+    return status if status in ("abandoned", "completed", "failed", "interrupted") else None
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -596,8 +663,9 @@ class Cancellation:
 class Runner:
     """Run installed evaluator commands in their own process group and keep their diagnostics."""
 
-    def __init__(self, cli, cwd, summary, cancellation, github):
+    def __init__(self, cli, cwd, summary, cancellation, github, environment=None):
         self.cli, self.cwd, self.summary, self.cancellation, self.github = cli, cwd, summary, cancellation, github
+        self.environment = environment
         self.codes = {}
         self.diagnostics = {}
 
@@ -610,7 +678,8 @@ class Runner:
             sys.stderr.flush()
         try:
             child = subprocess.Popen([*self.cli, name, *flags], cwd=self.cwd, stdin=subprocess.DEVNULL,
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+                                     env=self.environment)
         except OSError:
             self.record(name, 1)
             self.end_group(token)
@@ -816,43 +885,57 @@ class Pipeline:
                                   "--reason", reason)
         return not self.runner.code("interrupt") and record.get("status") == "interrupted"
 
+    def abandon(self, handoff, reason):
+        status = abandon_request(self.config, self.token, read_json(handoff, 1024 * 1024), reason)
+        if status != "abandoned":
+            print("Could not abandon request " + str(handoff_request_id(handoff)) + " through the service",
+                  file=sys.stderr)
+        return status == "abandoned"
+
     def settle(self, handoff):
         """Make an explicitly named predecessor safe to follow. Returns None or a (result, code) failure."""
         summary = self.summary
         record = self.status_of(handoff)
         if record is None:
-            return self.fail("prior_status_unavailable", self.runner.code("status") or 1, "status")
+            return self.fail("prior_status_unavailable", self.runner.code("status") or EXIT_FAILED, "status")
         summary["previousRequestId"] = record.get("requestId")
         summary["previousExecutionStatus"] = status = record.get("status")
         if status in ("completed", "failed"):
             if all(re.fullmatch(UUID, str(record.get(field))) for field in ("requestId", "attemptId", "comparisonId")):
                 return None
             summary["nextAction"] = "The previous request finished without a bound comparison. Ask the evaluation owner to inspect it."
-            return self.fail("prior_execution_unresolved", 3)
-        if status == "interrupted":
+            return self.fail("prior_execution_unresolved", EXIT_RECOVERY)
+        if status in ENDED_WITHOUT_EVIDENCE:
             return None
         if status not in ("requested", "running"):
-            return self.fail("prior_execution_unresolved", 3)
+            return self.fail("prior_execution_unresolved", EXIT_RECOVERY)
         state = journal_state(self.config, read_json(handoff, 1024 * 1024))
         summary["previousJournalState"] = state
         if state == "busy":
             summary["nextAction"] = "Another evaluator process on this host is running the previous request. Wait for it, then rerun."
-            return self.fail("prior_execution_unresolved", 3)
+            return self.fail("prior_execution_unresolved", EXIT_RECOVERY)
         if state == "report_saved":
             summary["nextAction"] = "The previous attempt saved its report. Rerun without --rerun-after to submit it."
-            return self.fail("prior_execution_unresolved", 3)
+            return self.fail("prior_execution_unresolved", EXIT_RECOVERY)
         safe = state == "not_started" or (status == "requested" and state in ("absent", "unknown"))
         if not (safe or self.args.abandon_uncertain):
             summary["nextAction"] = NEXT_ACTIONS["prior_execution_unresolved"]
-            return self.fail("prior_execution_unresolved", 3)
-        reason = ("Superseded by the CI wrapper before execution started" if safe
-                  else "Abandoned by the CI wrapper with --abandon-uncertain")
-        if not self.interrupt(handoff, reason):
-            summary["nextAction"] = "Could not interrupt the previous request. Check the evaluator credential, then rerun."
-            return self.fail("prior_execution_unresolved", self.runner.code("interrupt") or 3, "interrupt")
+            return self.fail("prior_execution_unresolved", EXIT_RECOVERY)
+        if safe:
+            # Nothing started: an interruption records that without fencing any evidence.
+            if not self.interrupt(handoff, "Superseded by the CI wrapper before execution started"):
+                summary["nextAction"] = "Could not interrupt the previous request. Check the evaluator credential, then rerun."
+                return self.fail("prior_execution_unresolved", self.runner.code("interrupt") or EXIT_RECOVERY,
+                                 "interrupt")
+            action = "interrupted"
+        else:
+            if not self.abandon(handoff, "Abandoned by the CI wrapper with --abandon-uncertain"):
+                summary["nextAction"] = "Could not abandon the previous request. Check that the evaluator token holds the evaluate right, then rerun."
+                return self.fail("prior_execution_unresolved", EXIT_RECOVERY, "abandon")
+            action = "abandoned"
         summary["reconciled"] = {"requestId": record.get("requestId"), "previousStatus": status,
-                                 "journal": state, "action": "interrupted"}
-        summary["previousExecutionStatus"] = "interrupted"
+                                 "journal": state, "action": action}
+        summary["previousExecutionStatus"] = action
         return None
 
     def advance(self, current):
@@ -868,26 +951,28 @@ class Pipeline:
                 return current, None
             status = record.get("status")
             cancelled = (current / "cancelled.json").is_file()
-            if status == "interrupted" or (cancelled and status == "failed"):
+            if status in ENDED_WITHOUT_EVIDENCE or (cancelled and status == "failed"):
+                # Interrupted by an operator or this wrapper, or abandoned explicitly or by the
+                # service after inactivity: follow it with a fresh request.
                 self.summary["previousRequestId"] = request_id
                 self.summary["previousExecutionStatus"] = status
-                reason = "interrupted" if status == "interrupted" else "cancelled"
+                reason = status if status in ENDED_WITHOUT_EVIDENCE else "cancelled"
                 current = supersede(current, request_id, status, reason)
                 continue
             if status in ("requested", "running") and self.args.abandon_uncertain:
                 state = journal_state(self.config, read_json(handoff, 1024 * 1024))
                 if state == "busy":
                     self.summary["nextAction"] = "Another evaluator process on this host is running this request."
-                    return current, self.fail("execution_unresolved", 3)
+                    return current, self.fail("execution_unresolved", EXIT_RECOVERY)
                 if state == "may_have_started" or (status == "running" and state in ("absent", "unknown")):
-                    if not self.interrupt(handoff, "Abandoned by the CI wrapper with --abandon-uncertain"):
-                        return current, self.fail("execution_unresolved", self.runner.code("interrupt") or 3,
-                                                  "interrupt")
+                    if not self.abandon(handoff, "Abandoned by the CI wrapper with --abandon-uncertain"):
+                        self.summary["nextAction"] = "Could not abandon the request. Check that the evaluator token holds the evaluate right, then rerun."
+                        return current, self.fail("execution_unresolved", EXIT_RECOVERY, "abandon")
                     self.summary["reconciled"] = {"requestId": request_id, "previousStatus": status,
-                                                  "journal": state, "action": "interrupted"}
+                                                  "journal": state, "action": "abandoned"}
                     self.summary["previousRequestId"] = request_id
-                    self.summary["previousExecutionStatus"] = "interrupted"
-                    current = supersede(current, request_id, "interrupted", "abandoned")
+                    self.summary["previousExecutionStatus"] = "abandoned"
+                    current = supersede(current, request_id, "abandoned", "abandoned")
                     continue
             return current, None
         raise ValueError("Too many successor generations under " + str(current))
@@ -952,8 +1037,9 @@ class Pipeline:
             summary["baseCommit"] = args.base_commit
             summary["changedFiles"] = changed_files(args)
         self.private = tempfile.mkdtemp(prefix=".credentials-", dir=str(output))
-        self.config_path, self.config, self.token = credentials(args, self.private)
-        self.runner = runner = Runner(cli, app_directory, summary, self.cancellation, args.format == "github")
+        self.config_path, self.config, self.token, environment = credentials(args, self.private)
+        self.runner = runner = Runner(cli, app_directory, summary, self.cancellation, args.format == "github",
+                                      environment)
         phases = summary["phaseExitCodes"]
         target = ["--config", self.config_path, "--bundle", args.bundle]
 
@@ -968,7 +1054,7 @@ class Pipeline:
             try:
                 request_root = self.request_directory(output, revision)
             except ChannelEmpty:
-                return self.fail("request_failed", 1, "request")
+                return self.fail("request_failed", EXIT_USAGE, "request")
             summary["requestDirectory"] = request_root.relative_to(output).as_posix()
             if args.rerun_after:
                 prior = prior_handoff(args.rerun_after, output, request_root)
@@ -1006,8 +1092,8 @@ class Pipeline:
             ("requestId", UUID), ("candidateVersionId", UUID), ("candidateDigest", r"sha256:[0-9a-f]{64}"),
         )):
             print("Request did not identify its immutable candidate", file=sys.stderr)
-            runner.record("request", 1)
-            return self.fail("request_failed", 1, "request")
+            runner.record("request", EXIT_FAILED)
+            return self.fail("request_failed", EXIT_FAILED, "request")
         for field in ("requestId", "candidateVersionId", "candidateDigest"):
             summary[field] = request[field]
         summary["parentVersionId"] = request.get("parentVersionId")
@@ -1029,7 +1115,11 @@ class Pipeline:
             raise
         summary["executionStatus"] = run.get("status")
         summary["comparisonId"] = run.get("comparisonId")
-        if phases["run"] in (0, 2):
+        if run.get("run"):
+            summary["run"] = run["run"]
+        # Check whenever the run produced a comparison: a completed run (0), one that stopped early
+        # with partial evidence (3), or a request that finished as failed (4). Recovery (5) has none.
+        if phases["run"] == EXIT_OK or (phases["run"] in (EXIT_INDETERMINATE, EXIT_FAILED) and run.get("comparisonId")):
             verdict = runner.step("check", *work, "--policy", args.policy)
             if verdict.get("verdict") in ("pass", "fail", "indeterminate"):
                 summary["qualityVerdict"] = verdict["verdict"]
@@ -1037,11 +1127,17 @@ class Pipeline:
                 if verdict.get("comparisonId"):
                     summary["comparisonId"] = verdict["comparisonId"]
             if phases["check"] == 0 and summary["qualityVerdict"] != "pass":
-                runner.record("check", 1)
+                runner.record("check", EXIT_INDETERMINATE)
         self.export(output, work)
 
         if phases["run"]:
-            result = "execution_unresolved" if phases["run"] == 3 else "execution_failed"
+            # 3: partial evidence (deadline, cost limit or case subset); 5: earlier work is unresolved;
+            # 4: the request failed or the service was unreachable; 1: the command or config is wrong.
+            result = {EXIT_INDETERMINATE: "execution_partial", EXIT_RECOVERY: "execution_unresolved"}.get(
+                phases["run"], "execution_failed")
+            if phases["check"] == EXIT_GATE_FAILED and result == "execution_partial":
+                # Partial evidence that already fails the gate is a quality failure.
+                return self.fail("quality_failed", EXIT_GATE_FAILED, "check")
             return self.fail(result, phases["run"], "run")
         if phases["check"]:
             outcome = {"fail": "quality_failed", "indeterminate": "quality_indeterminate"}
@@ -1348,7 +1444,7 @@ def main(argv):
         result, status = "configuration_error", 1
     except Exception as error:  # the summary must still be printed
         print("Unexpected CI wrapper failure: " + type(error).__name__, file=sys.stderr)
-        result, status = "wrapper_error", 1
+        result, status = "wrapper_error", EXIT_FAILED
     finally:
         if pipeline is not None:
             pipeline.cleanup()

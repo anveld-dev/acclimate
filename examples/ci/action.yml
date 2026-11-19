@@ -36,7 +36,9 @@ inputs:
     description: Acclimate service URL. Overrides serviceUrl from config and config-json.
     default: ''
   token:
-    description: Evaluator token from a secret. Use a credential that can only evaluate.
+    description: >-
+      Evaluator token from a secret. Use a token that holds only the evaluate right. It reaches the
+      evaluator through its environment and is never written to a config file.
     default: ''
   token-file:
     description: Owner-only file on the runner that holds the evaluator token.
@@ -50,8 +52,8 @@ inputs:
   max-cost-usd:
     description: Passed to the evaluator run command as --max-cost-usd.
     default: ''
-  concurrency:
-    description: Passed to the evaluator run command as --concurrency.
+  case-timeout:
+    description: Passed to the evaluator run command as --case-timeout, such as 2m.
     default: ''
   shard:
     description: Passed to the evaluator run command as --shard.
@@ -78,7 +80,7 @@ inputs:
     description: Absolute private directory for request state and review exports. Keep it persistent on self-hosted runners so results are reused and interrupted runs resume. Defaults to ~/.acclimate-ci/OWNER-REPO.
     default: ''
   abandon-uncertain:
-    description: Interrupt an earlier attempt that may have started executing and start a fresh request.
+    description: Abandon an earlier attempt that may have started executing (needs the evaluate right) and start a fresh request.
     default: 'false'
   cancel-grace:
     description: Seconds to wait for the evaluator to stop after the job is cancelled.
@@ -141,7 +143,7 @@ runs:
         INPUT_LIVE: ${{ inputs.live }}
         INPUT_DEADLINE: ${{ inputs.deadline }}
         INPUT_MAX_COST_USD: ${{ inputs.max-cost-usd }}
-        INPUT_CONCURRENCY: ${{ inputs.concurrency }}
+        INPUT_CASE_TIMEOUT: ${{ inputs.case-timeout }}
         INPUT_SHARD: ${{ inputs.shard }}
         INPUT_CASES: ${{ inputs.cases }}
         INPUT_SELECTION: ${{ inputs.selection }}
@@ -214,7 +216,7 @@ runs:
         if [ "$INPUT_ABANDON_UNCERTAIN" = true ]; then args+=(--abandon-uncertain); fi
         if [ -n "$INPUT_DEADLINE" ]; then args+=(--deadline "$INPUT_DEADLINE"); fi
         if [ -n "$INPUT_MAX_COST_USD" ]; then args+=(--max-cost-usd "$INPUT_MAX_COST_USD"); fi
-        if [ -n "$INPUT_CONCURRENCY" ]; then args+=(--concurrency "$INPUT_CONCURRENCY"); fi
+        if [ -n "$INPUT_CASE_TIMEOUT" ]; then args+=(--case-timeout "$INPUT_CASE_TIMEOUT"); fi
         if [ -n "$INPUT_SHARD" ]; then args+=(--shard "$INPUT_SHARD"); fi
         if [ -n "$INPUT_CASES" ]; then args+=(--cases "$INPUT_CASES"); fi
         if [ -n "$INPUT_SELECTION" ]; then args+=(--selection "$INPUT_SELECTION"); fi

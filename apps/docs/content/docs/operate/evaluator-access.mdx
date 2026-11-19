@@ -115,7 +115,7 @@ Revocation takes effect on the token's next request. Revoking a token does not s
 An evaluator journal normally prevents repeating an attempt whose outcome is unknown. On an ephemeral CI runner, a cancelled job takes its journal with it. The service can mark such an attempt `abandoned`. That status is terminal.
 
 - **After inactivity.** The service abandons a running attempt that has had no start, progress report or bound report for `ACCLIMATE_EVALUATION_ABANDON_SECONDS`. The default is 7,200 seconds. It records `abandonedBy` as `service:evaluation-expiry`.
-- **Explicitly.** A principal with `evaluate`, or a workspace editor, can call `POST /v1/workspaces/{workspace}/bundles/{bundle}/evaluation-requests/{id}/abandon` with a required `reason`. The SDK clients expose this as `abandonEvaluation` and `abandon_evaluation`. In the console, use **Abandon attempt** under the request's interruption controls. The service records the reason, the principal and the time.
+- **Explicitly.** A principal with `evaluate`, or a workspace editor, can call `POST /v1/workspaces/{workspace}/bundles/{bundle}/evaluation-requests/{id}/abandon` with a required `reason`. The SDK clients expose this as `abandonEvaluation` and `abandon_evaluation`. In the console, use **Abandon attempt** under the request's interruption controls. The service records the reason, the principal and the time. The CI wrapper's `--abandon-uncertain` (the action's `abandon-uncertain` input) calls this route for an attempt whose journal shows execution may have started.
 
 After abandonment:
 

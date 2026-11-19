@@ -37,7 +37,7 @@ Never evaluate forked or otherwise untrusted pull requests on a self-hosted runn
     comment: true
 ```
 
-`config-json` holds the non-secret config fields `serviceUrl`, `projectId`, `evaluatorPrincipalId` and optionally `journalRoot` (default `~/.acclimate-ci/journal`). Alternatively, set `config` to a config file on the runner. The token comes from a secret, ideally an evaluate-only grant. The action writes a step summary and annotations, optionally keeps one PR comment up to date, and outputs `result`, `verdict`, `comparison-id`, `request-id`, `candidate-version-id`, `candidate-digest`, `parent-version-id`, `exit-code` and `summary-json`. See `action.yml` for every input.
+`config-json` holds the non-secret config fields `serviceUrl`, `projectId`, `evaluatorPrincipalId` and optionally `journalRoot` (default `~/.acclimate-ci/journal`). Alternatively, set `config` to a config file on the runner. The token comes from a secret, ideally a workspace evaluator token that holds only the `evaluate` right (**Settings → Members → Evaluator tokens**). The action writes a step summary and annotations, optionally keeps one PR comment up to date, and outputs `result`, `verdict`, `comparison-id`, `request-id`, `candidate-version-id`, `candidate-digest`, `parent-version-id`, `exit-code` and `summary-json`. See `action.yml` for every input.
 
 ## Wrapper
 
@@ -59,9 +59,9 @@ Run `sh ci.sh --help` for every option.
 
 **Parent.** The parent is the channel's current release. A channel with no release fails with `request.channel_empty`. Publish a baseline release first.
 
-**Credentials.** `--config` is an owner-only evaluator config. With `--token-env NAME` or `--token-file FILE` (mode 0600), the config may omit `evaluatorToken`. The wrapper writes a temporary owner-only copy with the token inside the output directory and deletes it when the run ends. The config, policy and selection paths resolve from the directory where you launch the wrapper.
+**Credentials.** `--config` is an owner-only evaluator config. With `--token-env NAME` or `--token-file FILE` (mode 0600), the config may omit `evaluatorToken`. The token never lands in a config file: the wrapper writes a temporary, token-free owner-only copy of the config inside the output directory, deletes it when the run ends, and passes the token to each evaluator process in `ACCLIMATE_EVALUATOR_TOKEN`. A config can also name its own `evaluatorTokenFile`. The token needs the `evaluate` right, which covers request creation, runs, policy receipts and `--abandon-uncertain`. The config, policy and selection paths resolve from the directory where you launch the wrapper.
 
-**Cost and time.** `--deadline`, `--max-cost-usd`, `--concurrency`, `--shard` and `--cases` are passed to the evaluator's `run` command. Also set a CI job timeout.
+**Cost and time.** `--deadline`, `--case-timeout`, `--max-cost-usd`, `--shard` and `--cases` are passed to the evaluator's `run` command under the same names. A run they stop early, or a case subset, is partial evidence: the run exits 3 and the summary reports `execution_partial` unless the policy already fails. Concurrency is not a run flag; declare `concurrency` in the evaluator definition, where it is part of the descriptor. Also set a CI job timeout.
 
 **Reuse.** The wrapper reuses a request when the bundle content, the channel's release, the evaluator descriptor and the selected cases are unchanged, even across commits. It reads the channel with the evaluator token to decide. When it can't, or with `--no-reuse`, it keeps one request per commit. The summary's `reuse` field records the decision and, when reused, the commit that created the request.
 
@@ -71,7 +71,7 @@ On `SIGINT`, `SIGTERM` or `SIGHUP`, the wrapper forwards the signal to the evalu
 
 GitHub's `cancel-in-progress` sends `SIGINT`, `SIGTERM` 7.5 seconds later, and kills the step 2.5 seconds after that. The second signal makes the wrapper stop the evaluator before GitHub kills the step.
 
-A cancelled run isn't a verdict. Running the same command again for that commit starts a fresh request. If the evaluator had to be killed mid-execution, the next run reports `execution_unresolved`. Either wait until the service expires the abandoned attempt, or pass `--abandon-uncertain` to interrupt it now and start a fresh request.
+A cancelled run isn't a verdict. Running the same command again for that commit starts a fresh request. If the evaluator had to be killed mid-execution, the next run reports `execution_unresolved`. Either wait until the service marks the attempt `abandoned` after its inactivity timeout, or pass `--abandon-uncertain` to abandon it now through the service and start a fresh request.
 
 ## Output
 
@@ -98,18 +98,20 @@ The summary contains:
 | Result | Exit | CI action |
 | --- | --- | --- |
 | `pass` | 0 | Mark the check successful and associate the commit with its candidate. |
-| `quality_failed`, `quality_indeterminate` | 2 | Show the verdict and evidence to the PR author. |
-| `execution_failed` | 2 | Show the diagnostic to the evaluation owner. Use `--rerun-after` after a repair. |
-| `execution_unresolved`, `prior_execution_unresolved` | 3 | Wait for the service to expire the earlier attempt, or pass `--abandon-uncertain`. |
-| `prior_status_unavailable` | 1 to 3 | Check the credential and service, then rerun. |
+| `quality_failed` | 2 | Show the verdict and evidence to the PR author. |
+| `quality_indeterminate` | 3 | The policy could not decide, for example too few cases for its confidence bound. Show the evidence gaps. |
+| `execution_partial` | 3 | The run stopped at `--deadline` or `--max-cost-usd`, or covered only `--cases` or `--shard`. Rerun with a larger budget or the full inventory. |
+| `execution_failed` | 4 (1 for a command or config error) | Show the diagnostic to the evaluation owner. Use `--rerun-after` after a repair. |
+| `execution_unresolved`, `prior_execution_unresolved` | 5 | Wait for the service to mark the earlier attempt abandoned, or pass `--abandon-uncertain`. |
+| `prior_status_unavailable` | 1 or 4 | Check the credential and service, then rerun. |
 | `cancelled` | 130, 143 | Rerun. |
-| `preflight_failed`, `request_failed`, `check_failed`, `export_failed`, `configuration_error`, `wrapper_error` | 1 to 3 | Fix the reported diagnostic and rerun. |
+| `preflight_failed`, `request_failed`, `check_failed`, `export_failed`, `configuration_error`, `wrapper_error` | 1, 3, 4 or 5 | Fix the reported diagnostic and rerun. |
 
-A failed execution and a quality regression can both exit 2, so route on `result`. After a failed execution, the wrapper still applies the policy to capture its verdict.
+The exit codes follow the [evaluator CLI](../../apps/docs/content/docs/reference/evaluator-cli.mdx#errors-and-exit-codes): 0 ok, 1 fix the command, config or application, 2 quality gate failed, 3 indeterminate, 4 run or service failed, 5 recovery required. Route on `result` for the detail. After a failed execution that still bound a comparison, the wrapper applies the policy to capture its verdict.
 
 ## Rerun the same commit
 
-Rerunning the same command recovers the existing request or its saved result. Interrupted requests, including those the service expired, and cancelled runs are followed by a fresh request automatically.
+Rerunning the same command recovers the existing request or its saved result. Interrupted requests, requests the service or a caller abandoned, and cancelled runs are followed by a fresh request automatically.
 
 A changed evaluator descriptor already gets a new request. To deliberately run the same commit again with an unchanged evaluator, for example after an infrastructure failure, repeat the command with the previous summary's handoff:
 
@@ -117,7 +119,7 @@ A changed evaluator descriptor already gets a new request. To deliberately run t
 --rerun-after "$(jq -r '.priorHandoff // .handoff' previous-result.json)"
 ```
 
-The wrapper checks that the handoff belongs to this commit, source, target, release and evaluator, then reads the request's service state. A completed or failed request with a bound comparison, or an interrupted request, permits one successor. A `requested` or `running` request is interrupted for you when this host's journal shows execution never started. Otherwise the wrapper stops unless you pass `--abandon-uncertain`. The successor compares against the channel's current release. Repeating the command resumes the successor, and later plain runs follow it.
+The wrapper checks that the handoff belongs to this commit, source, target, release and evaluator, then reads the request's service state. A completed or failed request with a bound comparison, or an interrupted or abandoned request, permits one successor. A `requested` or `running` request is interrupted for you when this host's journal shows execution never started. Otherwise the wrapper stops unless you pass `--abandon-uncertain`, which abandons it through the service's abandon route. The successor compares against the channel's current release. Repeating the command resumes the successor, and later plain runs follow it.
 
 `--retry-after` is a deprecated spelling of `--rerun-after`. Unlike `compare --retry-after`, which keeps the original parent, the wrapper always compares against the current release.
 

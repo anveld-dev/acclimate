@@ -67,7 +67,8 @@ before(async () => {
     const payload = command === 'request' ? readFileSync(flag('payload'), 'utf8') : null;
     const log = entry => appendFileSync(process.env.CI_COMMAND_LOG, JSON.stringify(entry) + '\\n');
     log({ command, flags, payload, cwd: process.cwd(), python: process.env.CI_TEST_PYTHON_EXE,
-      configToken: config.evaluatorToken ?? null, pid: process.pid });
+      configToken: config.evaluatorToken ?? null, configTokenFile: config.evaluatorTokenFile ?? null,
+      envToken: process.env.ACCLIMATE_EVALUATOR_TOKEN ?? null, pid: process.pid });
     const body = phase.body ?? (command === 'request' ? {
       requestId: ${JSON.stringify(requestId)}, candidateVersionId: ${JSON.stringify(candidateVersionId)},
       candidateDigest: ${JSON.stringify(candidateDigest)}, parentVersionId: ${JSON.stringify(parentVersionId)},
@@ -214,13 +215,22 @@ for (const language of ['javascript', 'python']) {
 
 for (const [name, responses, expected, resultName, phaseCodes] of [
   ['policy regression', { check: { exit: 2, body: { verdict: 'fail' } } }, 2, 'quality_failed', [0, 0, 0, 2, 0, 0]],
-  ['failed execution with an incomplete grade', { run: { exit: 2 }, check: { exit: 3, body: { verdict: 'indeterminate' } } },
-    2, 'execution_failed', [0, 0, 2, 3, 0, 0]],
-  ['uncertain execution and unavailable export', { run: { exit: 3 }, export: { exit: 1 } },
-    3, 'execution_unresolved', [0, 0, 3, null, 1, null]],
+  // Evaluator exit codes: 1 fix, 2 gate failed, 3 indeterminate, 4 run or service failed, 5 recovery.
+  ['failed execution with an incomplete grade',
+    { run: { exit: 4, body: { status: 'failed', comparisonId } }, check: { exit: 3, body: { verdict: 'indeterminate' } } },
+    4, 'execution_failed', [0, 0, 4, 3, 0, 0]],
+  ['an unreachable service during the run', { run: { exit: 4 } }, 4, 'execution_failed', [0, 0, 4, null, 0, 0]],
+  ['a run stopped early with partial evidence',
+    { run: { exit: 3, body: { status: 'completed', comparisonId } }, check: { exit: 3, body: { verdict: 'indeterminate' } } },
+    3, 'execution_partial', [0, 0, 3, 3, 0, 0]],
+  ['partial evidence that already fails the gate',
+    { run: { exit: 3, body: { status: 'completed', comparisonId } }, check: { exit: 2, body: { verdict: 'fail' } } },
+    2, 'quality_failed', [0, 0, 3, 2, 0, 0]],
+  ['uncertain execution and unavailable export', { run: { exit: 5 }, export: { exit: 1 } },
+    5, 'execution_unresolved', [0, 0, 5, null, 1, null]],
   ['missing required export', { export: { exit: 3 } }, 3, 'export_failed', [0, 0, 0, 0, 3, null]],
   ['unverifiable export', { 'verify-export': { exit: 1 } }, 1, 'export_failed', [0, 0, 0, 0, 0, 1]],
-  ['failed request', { request: { exit: 3 } }, 3, 'request_failed', [0, 3, null, null, null, null]],
+  ['failed request', { request: { exit: 5 } }, 5, 'request_failed', [0, 5, null, null, null, null]],
   ['missing candidate binding', { request: { body: {} } }, 1, 'request_failed', [0, 1, null, null, null, null]],
   ['failed preflight', { doctor: { exit: 1 } }, 1, 'preflight_failed', [1, null, null, null, null, null]],
 ]) {
@@ -238,7 +248,7 @@ for (const [name, responses, expected, resultName, phaseCodes] of [
 }
 
 test('CI reports the diagnostic, failed checks and hint for every phase', async () => {
-  const doctor = await pipeline('javascript', { doctor: { exit: 3, body: { schemaVersion: 1, status: 'blocked',
+  const doctor = await pipeline('javascript', { doctor: { exit: 4, body: { schemaVersion: 1, status: 'blocked',
     authorization: 'unverified', nextAction: 'retry_same_command', checks: [{ check: 'runtime', status: 'passed' },
       { check: 'serviceIdentity', status: 'failed', code: 'service.unavailable' }] } } });
   assert.equal(doctor.summary.result, 'preflight_failed');
@@ -248,7 +258,7 @@ test('CI reports the diagnostic, failed checks and hint for every phase', async 
   assert.match(doctor.summary.hint, /could not reach the service/);
   assert.equal(doctor.summary.evaluatorNextAction, 'retry_same_command');
 
-  const run = await pipeline('javascript', { run: { exit: 3, error: { code: 'journal.busy', phase: 'claim',
+  const run = await pipeline('javascript', { run: { exit: 5, error: { code: 'journal.busy', phase: 'claim',
     nextAction: 'retry_same_command' } } });
   assert.equal(run.summary.result, 'execution_unresolved');
   assert.equal(run.summary.failedPhase, 'run');
@@ -537,7 +547,7 @@ test('one successor per settled request; uncertain, unrelated and unverified pre
   for (const body of [{ ...status, status: 'running' }, { ...status, comparisonId: null }]) {
     const [dir, handoff] = await fresh();
     const unsafe = await pipeline('javascript', { status: { body } }, ['--output-dir', dir, '--rerun-after', handoff], omitted);
-    assert.equal(unsafe.status, 3);
+    assert.equal(unsafe.status, 5);
     assert.equal(unsafe.summary.result, 'prior_execution_unresolved');
     assert.deepEqual(unsafe.commands.map(c => c.command), ['doctor', 'status']);
   }
@@ -558,19 +568,50 @@ test('one successor per settled request; uncertain, unrelated and unverified pre
   assert.equal(corrupt.summary.result, 'request_failed');
 });
 
-test('interrupted predecessors are followed headlessly; unstarted ones are reconciled; uncertain ones need opt-in', async () => {
+/** A fake service in its own process (spawnSync blocks this test's event loop). It refuses channel
+ * reads with 503, so the wrapper falls back to per-commit request directories, and answers the
+ * abandon route. */
+async function abandonService() {
+  const state = await mkdtemp(join(root, 'abandon-service-'));
+  const seenFile = join(state, 'seen.log');
+  const server = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { appendFileSync } from 'node:fs';
+    import { createServer } from 'node:http';
+    const server = createServer((request, response) => {
+      let body = '';
+      request.on('data', chunk => { body += chunk; });
+      request.on('end', () => {
+        appendFileSync(${JSON.stringify(seenFile)}, JSON.stringify({ method: request.method, url: request.url,
+          key: request.headers['idempotency-key'], authorization: request.headers.authorization, body }) + '\\n');
+        const abandon = request.method === 'POST' && request.url.endsWith('/abandon');
+        response.writeHead(abandon ? 200 : 503, { 'content-type': 'application/json' });
+        response.end(JSON.stringify(abandon ? { status: 'abandoned' } : { error: { code: 'unavailable' } }));
+      });
+    });
+    server.listen(0, '127.0.0.1', () => console.log(server.address().port));
+  `], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const port = await new Promise(resolve => server.stdout.once('data', data => resolve(Number(String(data).trim()))));
+  const seen = async () => (await readFile(seenFile, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean)
+    .map(line => JSON.parse(line));
+  return { url: `http://127.0.0.1:${port}/`, seen, stop: () => server.kill() };
+}
+
+test('interrupted and abandoned predecessors are followed headlessly; unstarted ones are reconciled; uncertain ones need opt-in', async () => {
+  const service = await abandonService();
+  try {
   const omitted = ['intent', 'output-dir'];
   const journalRoot = await realpath(await mkdtemp(join(root, 'journal-')));
-  const configValues = { schemaVersion: 1, serviceUrl: 'http://127.0.0.1:9/', projectId: 'workspace',
+  const configValues = { schemaVersion: 1, serviceUrl: service.url, projectId: 'workspace',
     evaluatorPrincipalId: 'ci-evaluator', evaluatorToken: 'secret-token', journalRoot };
   const config = await writeConfig(await mkdtemp(join(root, 'config-')), configValues);
   const status = { requestId, attemptId: candidateVersionId, comparisonId: null };
   const successor = { request: { body: { requestId: successorId, candidateVersionId, candidateDigest } } };
   const setup = async () => {
     const dir = await mkdtemp(join(root, 'headless-'));
-    const first = await pipeline('javascript', { run: { exit: 3 } }, ['--output-dir', dir, '--config', config],
+    const first = await pipeline('javascript', { run: { exit: 5 } }, ['--output-dir', dir, '--config', config],
       [...omitted, 'config']);
     assert.equal(first.summary.result, 'execution_unresolved');
+    assert.equal(first.status, 5);
     return [dir, first.summary.handoff];
   };
   const journal = async (state) => {
@@ -581,14 +622,24 @@ test('interrupted predecessors are followed headlessly; unstarted ones are recon
     await writeFile(join(directory, 'attempt.json'), JSON.stringify(state), { mode: 0o600 });
   };
 
-  // Server-side interruption, including expiry of an abandoned attempt, starts a successor automatically.
+  // An interrupted request, or one the service abandoned after inactivity, starts a successor automatically.
   let [dir, handoff] = await setup();
-  const expired = await pipeline('javascript', { status: { body: { ...status, status: 'interrupted' } }, ...successor },
+  for (const ended of ['interrupted', 'abandoned']) {
+    if (ended === 'abandoned') [dir, handoff] = await setup();
+    const expired = await pipeline('javascript', { status: { body: { ...status, status: ended,
+      ...(ended === 'abandoned' && { abandonedBy: 'service:evaluation-expiry' }) } }, ...successor },
     ['--output-dir', dir, '--config', config], [...omitted, 'config']);
-  assert.equal(expired.status, 0, expired.stderr);
-  assert.equal(expired.summary.requestId, successorId);
-  assert.equal(expired.summary.previousExecutionStatus, 'interrupted');
-  assert.equal(expired.summary.handoff, handoff.replace(/[^/]+$/, 'after-' + requestId + '/evaluation-request.json'));
+    assert.equal(expired.status, 0, expired.stderr);
+    assert.equal(expired.summary.requestId, successorId);
+    assert.equal(expired.summary.previousExecutionStatus, ended);
+    assert.equal(expired.summary.handoff, handoff.replace(/[^/]+$/, 'after-' + requestId + '/evaluation-request.json'));
+  }
+  // An explicitly named abandoned predecessor is settled too.
+  [dir, handoff] = await setup();
+  const named = await pipeline('javascript', { status: { body: { ...status, status: 'abandoned' } }, ...successor },
+    ['--output-dir', dir, '--config', config, '--rerun-after', handoff], [...omitted, 'config']);
+  assert.equal(named.status, 0, named.stderr);
+  assert.equal(named.summary.previousExecutionStatus, 'abandoned');
 
   // A running request whose journal has no execution marker is interrupted and replaced.
   [dir, handoff] = await setup();
@@ -607,19 +658,30 @@ test('interrupted predecessors are followed headlessly; unstarted ones are recon
   const uncertain = await pipeline('javascript', { status: { body: { ...status, status: 'running' } } },
     ['--output-dir', dir, '--config', config, '--rerun-after', handoff], [...omitted, 'config']);
   assert.equal(uncertain.summary.result, 'prior_execution_unresolved');
+  assert.equal(uncertain.status, 5);
   assert.equal(uncertain.summary.previousJournalState, 'may_have_started');
   assert.ok(!uncertain.commands.some(c => c.command === 'interrupt'));
+  // --abandon-uncertain calls the service's abandon route instead of interrupting.
   const abandoned = await pipeline('javascript', { status: { body: { ...status, status: 'running' } }, ...successor },
     ['--output-dir', dir, '--config', config, '--abandon-uncertain'], [...omitted, 'config']);
   assert.equal(abandoned.status, 0, abandoned.stderr);
-  assert.equal(abandoned.summary.reconciled.journal, 'may_have_started');
-  assert.match(abandoned.commands.find(c => c.command === 'interrupt').flags.join(' '), /--abandon-uncertain/);
+  assert.deepEqual(abandoned.summary.reconciled, { requestId, previousStatus: 'running', journal: 'may_have_started',
+    action: 'abandoned' });
+  assert.ok(!abandoned.commands.some(c => c.command === 'interrupt'));
+  const call = (await service.seen()).find(entry => entry.method === 'POST');
+  assert.equal(call.url, `/v1/workspaces/workspace/bundles/bundle-under-test/evaluation-requests/${requestId}/abandon`);
+  assert.equal(call.key, 'ci-abandon-' + requestId);
+  assert.equal(call.authorization, 'Bearer secret-token');
+  assert.match(JSON.parse(call.body).reason, /--abandon-uncertain/);
+  } finally {
+    service.stop();
+  }
 });
 
 test('SIGINT reaches the evaluator, the summary is printed, and a rerun starts a fresh request', async () => {
   const output = await mkdtemp(join(root, 'cancel-state-'));
   const omitted = ['intent', 'output-dir'];
-  const responses = { run: { hang: 'graceful', exit: 2, body: { status: 'failed', comparisonId } } };
+  const responses = { run: { hang: 'graceful', exit: 4, body: { status: 'failed', comparisonId } } };
   const run = await interrupted(responses, ['--output-dir', output], omitted, [['SIGINT', 0]]);
   assert.equal(run.status, 130, run.stderr);
   assert.equal(run.summary.result, 'cancelled');
@@ -656,7 +718,7 @@ test('SIGTERM kills an evaluator that ignores it after the grace period, leaving
   assert.deepEqual(escalated.entries.filter(e => e.event === 'signal').map(e => e.signal), ['SIGINT', 'SIGTERM']);
 });
 
-test('a token from the environment or a private file is injected into a private, temporary config', async () => {
+test('a token from the environment or a private file reaches the evaluator only through its environment', async () => {
   const dir = await mkdtemp(join(root, 'token-config-'));
   const template = await writeConfig(dir, { schemaVersion: 1, serviceUrl: 'http://127.0.0.1:9/', projectId: 'p',
     evaluatorPrincipalId: 'ci', journalRoot: '/tmp/unused' });
@@ -666,7 +728,9 @@ test('a token from the environment or a private file is injected into a private,
   assert.equal(run.status, 0, run.stderr);
   const configured = run.commands.filter(c => c.flags.includes('--config'));
   assert.equal(configured.length, 5);
-  assert.ok(configured.every(c => c.configToken === 'from-environment'));
+  // The derived config is token-free; the evaluator reads ACCLIMATE_EVALUATOR_TOKEN.
+  assert.ok(configured.every(c => c.configToken === null && c.configTokenFile === null));
+  assert.ok(configured.every(c => c.envToken === 'from-environment'));
   const used = run.commands[0].flags[run.commands[0].flags.indexOf('--config') + 1];
   assert.ok(used.startsWith(run.dir + '/.credentials-'));
   await assert.rejects(stat(used));
@@ -675,7 +739,8 @@ test('a token from the environment or a private file is injected into a private,
   const tokenFile = join(dir, 'token');
   await writeFile(tokenFile, 'from-file\n', { mode: 0o600 });
   const fromFile = await pipeline('javascript', {}, ['--config', template, '--token-file', tokenFile], omitted);
-  assert.ok(fromFile.commands.filter(c => c.flags.includes('--config')).every(c => c.configToken === 'from-file'));
+  assert.ok(fromFile.commands.filter(c => c.flags.includes('--config'))
+    .every(c => c.configToken === null && c.envToken === 'from-file'));
   await chmod(tokenFile, 0o644);
   const exposed = await pipeline('javascript', {}, ['--config', template, '--token-file', tokenFile], omitted);
   assert.equal(exposed.summary.result, 'configuration_error');
@@ -763,15 +828,20 @@ test('an unchanged candidate, release and evaluator reuse their result across co
   }
 });
 
-test('cost and time limits pass through to the evaluator run command', async () => {
-  const run = await pipeline('javascript', {}, ['--deadline', '30m', '--max-cost-usd', '2.50', '--concurrency', '4',
+test('cost and time limits pass through to the evaluator run command under its own flag names', async () => {
+  const run = await pipeline('javascript', {}, ['--deadline', '30m', '--case-timeout', '2m', '--max-cost-usd', '2.50',
     '--shard', '1/3']);
   assert.equal(run.status, 0, run.stderr);
   const flags = run.commands.find(c => c.command === 'run').flags;
   assert.deepEqual(flags.slice(flags.indexOf('--deadline')),
-    ['--deadline', '30m', '--max-cost-usd', '2.50', '--concurrency', '4', '--shard', '1/3']);
+    ['--deadline', '30m', '--case-timeout', '2m', '--max-cost-usd', '2.50', '--shard', '1/3']);
   for (const command of run.commands.filter(c => c.command !== 'run')) assert.ok(!command.flags.includes('--deadline'));
-  for (const bad of [['--concurrency', '0'], ['--max-cost-usd', 'lots'], ['--cancel-grace', '0']]) {
+  // Concurrency is declared in the evaluator definition, not passed to run.
+  const concurrency = await pipeline('javascript', {}, ['--concurrency', '4']);
+  assert.equal(concurrency.summary.result, 'configuration_error');
+  assert.match(concurrency.stderr, /evaluator definition/);
+  for (const bad of [['--max-cost-usd', '0'], ['--max-cost-usd', 'lots'], ['--cancel-grace', '0'],
+    ['--cases', 'a', '--shard', '1/2']]) {
     const rejected = await pipeline('javascript', {}, bad);
     assert.equal(rejected.summary.result, 'configuration_error', bad.join(' '));
   }

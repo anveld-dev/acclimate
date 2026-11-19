@@ -38,7 +38,7 @@ jobs:
           memory: none
           # {"serviceUrl":"https://acclimate.example.com/","projectId":"...","evaluatorPrincipalId":"..."}
           config-json: ${{ vars.ACCLIMATE_EVALUATOR_CONFIG }}
-          # An evaluate-only credential. It cannot release.
+          # A workspace evaluator token with only the evaluate right. It cannot release.
           token: ${{ secrets.ACCLIMATE_EVALUATE_TOKEN }}
           base-commit: ${{ github.event.pull_request.base.sha }}
           live: true

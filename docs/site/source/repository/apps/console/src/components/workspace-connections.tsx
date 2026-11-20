@@ -13,7 +13,7 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { DeliveryReceipt, ConnectionCredential, Page } from '@acclimate/sdk';
 import { Button } from './ui/button';
 import { DirectorySearch } from './ui/directory-search';
-import { ArrowUpRight, Check, ChevronRight, Plug, Plus, Radio } from 'lucide-react';
+import { ArrowUpRight, Check, ChevronRight, Plug, Plus } from 'lucide-react';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { NativeSelect } from './ui/native-select';
@@ -270,6 +270,8 @@ function ConnectionWorkspace({
       (access === 'all' || item.enabled === (access === 'enabled'))
     );
   });
+  // A handful of connections reads at a glance; search appears once it helps.
+  const searchable = scopedRows.length > 5 || Boolean(query.trim()) || access !== 'all';
   const directorySearch = { ...search, q: query, access };
   const connectionHref = (id: string) =>
     scopedConnectionHref(state.workspaceId, directorySearch, id);
@@ -428,61 +430,81 @@ function ConnectionWorkspace({
         }
       >
         {!items.length && (
-          <p className="text-sm text-muted-foreground">
-            No {kind === 'content-read' ? 'read' : 'reporting'} credentials created.
+          <p className="connection-credential-empty">
+            No {kind === 'content-read' ? 'read' : 'reporting'} credentials yet.
           </p>
         )}
         {items.map((item) => (
-          <div key={item.id} className="connection-credential-row">
-            <div className="min-w-0 space-y-1">
-              <p className="font-medium">
+          <div
+            key={item.id}
+            className="connection-credential-row"
+            data-revoked={Boolean(item.revokedAt)}
+          >
+            <div className="min-w-0">
+              <p className="connection-credential-title">
                 {item.kind === 'content-read' ? 'Read credential' : 'Reporting credential'} ·{' '}
                 {item.revokedAt ? 'Revoked' : 'Active'}
               </p>
-              <code className="block break-all text-sm">{item.id}</code>
+              <code>{item.id}</code>
+              <span className="connection-credential-time">
+                {item.revokedAt ? 'Revoked ' : 'Created '}
+                <ReceiptTime value={item.revokedAt ?? item.createdAt} relative />
+              </span>
             </div>
-            <Button
-              variant="outline"
-              aria-label={`Revoke ${item.kind === 'content-read' ? 'read' : 'reporting'} credential ${item.id}`}
-              disabled={!state.canManage || busy || Boolean(item.revokedAt)}
-              onClick={(event) => {
-                revokeTriggerRef.current = event.currentTarget;
-                setCredentialId(item.id);
-                setConfirm('credential');
-              }}
-            >
-              Revoke {item.kind === 'content-read' ? 'read' : 'reporting'} credential
-            </Button>
+            {!item.revokedAt && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="connection-credential-revoke"
+                aria-label={`Revoke ${item.kind === 'content-read' ? 'read' : 'reporting'} credential ${item.id}`}
+                disabled={!state.canManage || busy}
+                onClick={(event) => {
+                  revokeTriggerRef.current = event.currentTarget;
+                  setCredentialId(item.id);
+                  setConfirm('credential');
+                }}
+              >
+                Revoke
+              </Button>
+            )}
           </div>
         ))}
       </div>
     );
   }
-  const readCredentialControls = selected && (
-    <section className="connection-read-credentials space-y-3">
-      <div>
-        <h4 className="text-sm font-medium">Read published content</h4>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Use this credential in your app’s SDK setup.
-        </p>
-      </div>
-      <Button
-        disabled={!state.canManage || busy || !selected.enabled || Boolean(recovery)}
-        onClick={(event) => {
-          credentialTriggerRef.current = event.currentTarget;
-          void command({
-            action: 'issue',
-            id: selected.id,
-            kind: 'content-read',
-            key: crypto.randomUUID(),
-          });
-        }}
-      >
-        Create read credential
-      </Button>
-      {issuedCredentials('content-read')}
-    </section>
-  );
+  function credentialSection(kind: 'content-read' | 'receipt-write', className = '') {
+    if (!selected) return null;
+    const read = kind === 'content-read';
+    return (
+      <section className={`connection-credential-section ${className}`}>
+        <div className="connection-credential-heading">
+          <div className="min-w-0">
+            <h3>
+              {read ? 'Read credentials' : 'Reporting credentials'}
+              {!read && <span className="connection-optional">Optional</span>}
+            </h3>
+            <p>
+              {read
+                ? 'Your app’s SDK uses this to fetch published content.'
+                : 'Lets your app report what it delivered. Keep it separate from read access.'}
+            </p>
+          </div>
+          <Button
+            variant={read ? 'default' : 'outline'}
+            disabled={!state.canManage || busy || !selected.enabled || Boolean(recovery)}
+            onClick={(event) => {
+              credentialTriggerRef.current = event.currentTarget;
+              void command({ action: 'issue', id: selected.id, kind, key: crypto.randomUUID() });
+            }}
+          >
+            <Plus aria-hidden="true" />{' '}
+            {read ? 'Create read credential' : 'Create reporting credential'}
+          </Button>
+        </div>
+        {issuedCredentials(kind)}
+      </section>
+    );
+  }
   const credentialRecovery = selected && recovery && (
     <div className="space-y-3 rounded border border-amber-500/50 p-3" role="status">
       <p>
@@ -550,23 +572,15 @@ function ConnectionWorkspace({
     </div>
   );
   const directoryAbout = (
-    <Disclosure className="text-sm">
-      <DisclosureTrigger className="cursor-pointer text-muted-foreground">
-        Workspace details
-      </DisclosureTrigger>
-      <DisclosureContent className="space-y-2 pt-2">
-        <p className="text-muted-foreground">
-          A connection groups an app’s credentials for one bundle and channel. Creating one does not
-          connect a running app. SDK clients can fetch content without a connection.
-        </p>
-        <p className="break-words">Workspace: {state.workspaceName}</p>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span>Workspace ID:</span>
-          <code className="break-all">{state.workspaceId}</code>
-          <CopyButton value={state.workspaceId} label="Copy workspace ID" />
-        </div>
-      </DisclosureContent>
-    </Disclosure>
+    <div className="connection-directory-footnote">
+      <span>Workspace ID</span>
+      <code>{state.workspaceId}</code>
+      <CopyButton value={state.workspaceId} label="Copy workspace ID" iconOnly />
+      <span className="connection-directory-footnote-note">
+        Creating a connection does not connect a running app. SDK clients can fetch content without
+        one.
+      </span>
+    </div>
   );
   return (
     <>
@@ -575,6 +589,11 @@ function ConnectionWorkspace({
           <PageHeader
             title={selected.displayName}
             titleId="connection-selected-title"
+            titleAccessory={
+              <StatusBadge tone={selected.enabled ? 'success' : 'neutral'}>
+                {selected.enabled ? 'Access enabled' : 'Access revoked'}
+              </StatusBadge>
+            }
             utility={
               <>
                 <WorkspaceMenuButton />
@@ -638,7 +657,7 @@ function ConnectionWorkspace({
           )}
           {!selected && (
             <div className="connection-index-tools bg-card">
-              {scopedRows.length > 0 && (
+              {searchable && (
                 <ListToolbar count={`${rows.length} of ${scopedRows.length} connections`}>
                   <DirectorySearch
                     id="connection-directory-search"
@@ -725,8 +744,8 @@ function ConnectionWorkspace({
             ) : (
               <div className="connection-list connection-ledger divide-y">
                 <div className="connection-index-head directory-heading" aria-hidden="true">
-                  <span>App connection</span>
-                  <span>Bundle / channel</span>
+                  <span>App</span>
+                  <span>Bundle</span>
                   <span>Credentials</span>
                   <span>Last report</span>
                   <span>Access</span>
@@ -735,6 +754,9 @@ function ConnectionWorkspace({
                 {rows.map((item) => {
                   const report = state.reports?.[item.id];
                   const unrevoked = item.credentials?.filter((c) => !c.revokedAt);
+                  const reads = unrevoked?.filter((c) => c.kind === 'content-read').length ?? 0;
+                  const reporting =
+                    unrevoked?.filter((c) => c.kind === 'receipt-write').length ?? 0;
                   return (
                     <ConsoleLink
                       key={item.id}
@@ -746,47 +768,41 @@ function ConnectionWorkspace({
                       className="connection-row directory-row"
                     >
                       <span className="connection-cell connection-ledger-app">
-                        <Radio aria-hidden="true" size={15} />
-                        <span>
-                          <strong>{item.displayName}</strong>
-                          <code title={item.id}>{item.id.slice(0, 8)}</code>
-                        </span>
+                        <strong>{item.displayName}</strong>
                       </span>
-                      <span className="connection-cell">
-                        <small>Bundle / channel</small>
-                        <strong>{bundleName(item.bundleId)}</strong>
-                        <code>{item.channel}</code>
+                      <span className="connection-cell connection-ledger-binding">
+                        <span className="sr-only">Bundle: </span>
+                        <span>{bundleName(item.bundleId)}</span>
+                        <code className="connection-channel">{item.channel}</code>
                       </span>
-                      <span className="connection-cell">
-                        <small>Credentials</small>
-                        {unrevoked ? (
-                          <>
-                            <span>
-                              {unrevoked.filter((c) => c.kind === 'content-read').length} read
-                            </span>
-                            <span>
-                              {unrevoked.filter((c) => c.kind === 'receipt-write').length} reporting
-                            </span>
-                          </>
-                        ) : (
-                          <span>Unavailable</span>
-                        )}
+                      <span
+                        className="connection-cell"
+                        data-muted={!unrevoked || !(reads + reporting)}
+                      >
+                        <span className="sr-only">Credentials: </span>
+                        {!unrevoked
+                          ? 'Unavailable'
+                          : reads + reporting
+                            ? [reads && `${reads} read`, reporting && `${reporting} reporting`]
+                                .filter(Boolean)
+                                .join(' · ')
+                            : 'No credentials'}
                       </span>
-                      <span className="connection-cell">
-                        <small>Last report</small>
+                      <span className="connection-cell" data-muted={!report}>
+                        <span className="sr-only">Last report: </span>
                         {report ? (
-                          <>
-                            <strong className="capitalize">{report.stage}</strong>
-                            <ReceiptTime value={report.receivedAt} />
-                          </>
+                          <span>
+                            <span className="capitalize">{report.stage}</span> ·{' '}
+                            <ReceiptTime value={report.receivedAt} relative />
+                          </span>
                         ) : (
-                          <span>{report === null ? 'No retained report' : 'Unavailable'}</span>
+                          <span>{report === null ? 'No recent reports' : 'Unavailable'}</span>
                         )}
                       </span>
-                      <StatusBadge tone={item.enabled ? 'success' : 'neutral'}>
+                      <span className="connection-access" data-enabled={item.enabled}>
                         {item.enabled ? 'Enabled' : 'Revoked'}
-                      </StatusBadge>
-                      <ChevronRight size={15} className="connection-row-arrow" aria-hidden="true" />
+                      </span>
+                      <ChevronRight size={16} className="connection-row-arrow" aria-hidden="true" />
                     </ConsoleLink>
                   );
                 })}
@@ -805,8 +821,8 @@ function ConnectionWorkspace({
               </ConsoleLink>
             </p>
           )}
-          {!selected && <div className="connection-directory-details">{directoryAbout}</div>}
         </section>
+        {!selected && directoryAbout}
         {!selected && error && (
           <p role="alert" className="rounded border border-destructive/30 p-4">
             {error}
@@ -830,54 +846,49 @@ function ConnectionWorkspace({
             )}
             <dl className="connection-status-strip">
               <div>
-                <dt>Access</dt>
+                <dt>Bundle</dt>
                 <dd>
-                  <StatusBadge tone={selected.enabled ? 'success' : 'neutral'}>
-                    {selected.enabled ? 'Access enabled' : 'Access revoked'}
-                  </StatusBadge>
-                </dd>
-                <dd>
-                  {bundleName(selected.bundleId)} / {selected.channel}
+                  <ConsoleLink
+                    href={bundleHref(binding!, 'content')}
+                    className="connection-strip-link"
+                  >
+                    {bundleName(selected.bundleId)}
+                  </ConsoleLink>
+                  <code className="connection-channel">{selected.channel}</code>
                 </dd>
               </div>
               <div>
                 <dt>Last report</dt>
                 {latestReport ? (
-                  <>
-                    <dd className="font-medium">
-                      <span className="capitalize">{latestReport.stage}</span> ·{' '}
-                      <ReceiptTime value={latestReport.receivedAt} relative />
-                    </dd>
-                    <dd>
-                      <code title={latestReport.versionId}>
-                        {latestReport.versionId.slice(0, 8)}
-                      </code>
-                    </dd>
-                  </>
+                  <dd>
+                    <span className="capitalize">{latestReport.stage}</span>{' '}
+                    <span className="connection-strip-muted">
+                      · <ReceiptTime value={latestReport.receivedAt} relative />
+                    </span>
+                  </dd>
                 ) : (
-                  <dd>No delivery report</dd>
+                  <dd className="connection-strip-muted">No delivery report</dd>
                 )}
               </div>
               <div>
                 <dt>Release</dt>
                 <dd>
-                  <StatusBadge
-                    tone={latestReport ? (currentDelivery ? 'success' : 'warning') : 'neutral'}
-                  >
-                    {latestReport ? (currentDelivery ? 'Current' : 'Behind') : 'Unknown'}
-                  </StatusBadge>
+                  {latestReport && (
+                    <StatusBadge tone={currentDelivery ? 'success' : 'warning'}>
+                      {currentDelivery ? 'Current' : 'Behind'}
+                    </StatusBadge>
+                  )}
+                  <span className={latestReport ? 'connection-strip-muted' : undefined}>
+                    Revision {state.selected!.currentRevision}
+                  </span>
                 </dd>
-                <dd>Channel revision {state.selected!.currentRevision}</dd>
               </div>
               <div>
                 <dt>Learning</dt>
                 <dd>
-                  <ConsoleLink
-                    href={tabHref('learning')}
-                    className="inline-flex min-h-9 items-center underline underline-offset-4"
-                  >
-                    {learning.result?.ok ? (learningActive ? 'On' : 'Off') : 'Status unavailable'}{' '}
-                    <ArrowUpRight className="ml-1 size-3" aria-hidden="true" />
+                  <ConsoleLink href={tabHref('learning')} className="connection-strip-link">
+                    {learning.result?.ok ? (learningActive ? 'On' : 'Off') : 'Status unavailable'}
+                    <ArrowUpRight className="size-3" aria-hidden="true" />
                   </ConsoleLink>
                 </dd>
               </div>
@@ -899,212 +910,197 @@ function ConnectionWorkspace({
                   </TabsTrigger>
                 ))}
               </TabsList>
-              <TabsContent value="setup" className="min-w-0 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="connection-setup-heading">Connection setup</h2>
-                  <StatusBadge tone="info">
-                    {setupSteps.filter((step) => step.done).length} of 4 done
-                  </StatusBadge>
-                </div>
+              <TabsContent value="setup" className="min-w-0">
+                <h2 className="sr-only">Connection setup</h2>
                 <div className="connection-setup-grid">
-                  <ol
-                    aria-label="Setup checklist"
-                    className="workspace-panel space-y-1 self-start p-2"
-                  >
-                    {setupSteps.map((step, index) => (
-                      <li key={step.id}>
-                        <Button
-                          variant={shownStep === step.id ? 'secondary' : 'ghost'}
-                          className="h-auto min-h-9 w-full justify-start whitespace-normal p-2 text-left"
-                          aria-current={shownStep === step.id ? 'step' : undefined}
-                          onClick={() => setSetupStep(step.id)}
-                        >
-                          <span
-                            className="connection-setup-mark"
-                            data-state={
-                              step.done ? 'done' : step.id === currentStep ? 'current' : 'todo'
-                            }
-                            aria-hidden="true"
+                  <div className="connection-setup-checklist workspace-panel">
+                    <div className="connection-setup-progress">
+                      <span>Setup</span>
+                      <span>{setupSteps.filter((step) => step.done).length} of 4 done</span>
+                      <span className="connection-setup-meter" aria-hidden="true">
+                        <span
+                          style={{
+                            width: `${(setupSteps.filter((step) => step.done).length / 4) * 100}%`,
+                          }}
+                        />
+                      </span>
+                    </div>
+                    <ol aria-label="Setup checklist">
+                      {setupSteps.map((step, index) => (
+                        <li key={step.id}>
+                          <button
+                            type="button"
+                            className="connection-setup-step"
+                            aria-current={shownStep === step.id ? 'step' : undefined}
+                            onClick={() => setSetupStep(step.id)}
                           >
-                            {step.done ? <Check /> : index + 1}
-                          </span>
-                          <span>
-                            {index + 1}. {step.title}
-                            <small className="block text-muted-foreground">
-                              {step.done ? 'Done' : step.id === currentStep ? 'Current' : 'To do'}
-                              {step.optional ? ' · Optional' : ''}
-                            </small>
-                          </span>
-                        </Button>
-                      </li>
-                    ))}
-                  </ol>
+                            <span
+                              className="connection-setup-mark"
+                              data-state={
+                                step.done ? 'done' : step.id === currentStep ? 'current' : 'todo'
+                              }
+                              aria-hidden="true"
+                            >
+                              {step.done ? <Check /> : index + 1}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="sr-only">{index + 1}. </span>
+                              {step.title}
+                              <small>
+                                {step.done ? 'Done' : step.id === currentStep ? 'Current' : 'To do'}
+                                {step.optional ? ' · Optional' : ''}
+                              </small>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
                   <div className="min-w-0 space-y-3">
                     {shownStep === 'binding' && (
-                      <section className="workspace-panel space-y-2 p-4">
-                        <h3 className="font-semibold">Bundle &amp; channel</h3>
-                        <Button asChild variant="link">
-                          <ConsoleLink href={guideHref!}>Full setup guide</ConsoleLink>
-                        </Button>
-                        <ConsoleLink
-                          href={bundleHref(binding!, 'content')}
-                          className="inline-flex min-h-9 items-center underline"
-                        >
-                          {bundleName(selected.bundleId)} / {selected.channel}
-                        </ConsoleLink>
+                      <section className="workspace-panel connection-step-panel">
+                        <h3>Bundle &amp; channel</h3>
+                        <p>
+                          This connection’s credentials read{' '}
+                          <ConsoleLink href={bundleHref(binding!, 'content')} className="underline">
+                            {bundleName(selected.bundleId)}
+                          </ConsoleLink>{' '}
+                          on the <code className="connection-channel">{selected.channel}</code>{' '}
+                          channel.
+                        </p>
+                        <div className="connection-step-actions">
+                          <Button asChild variant="outline">
+                            <ConsoleLink href={guideHref!}>Full setup guide</ConsoleLink>
+                          </Button>
+                        </div>
                       </section>
                     )}
                     {shownStep === 'credential' && (
-                      <div className="workspace-panel space-y-3 p-4">
+                      <div className="workspace-panel connection-step-panel">
                         {!selected.enabled && (
                           <p>This connection is revoked; new credentials cannot be issued.</p>
                         )}
-                        {readCredentialControls}
+                        {credentialSection('content-read')}
                         {credentialRecovery}
                       </div>
                     )}
-                    {shownStep === 'delivery' && (
-                      <div className="workspace-panel flex flex-wrap items-center justify-between gap-2 p-3">
-                        <p>
-                          {latestReport ? (
-                            <>
-                              Latest report received <ReceiptTime value={latestReport.receivedAt} />
-                            </>
-                          ) : (
-                            'Waiting for a delivery report. Enable optional reporting to see it here.'
-                          )}
-                        </p>
-                        <Button
-                          variant="outline"
-                          disabled={checkingDelivery}
-                          onClick={async () => {
-                            setCheckingDelivery(true);
-                            try {
-                              await refresh();
-                            } finally {
-                              setCheckingDelivery(false);
-                            }
-                          }}
-                        >
-                          Refresh delivery reports
-                        </Button>
-                        <Button asChild variant="link">
-                          <ConsoleLink href={tabHref('credentials')}>
-                            Reporting credentials
-                          </ConsoleLink>
-                        </Button>
-                        <Button asChild variant="link">
-                          <ConsoleLink href={guideHref! + '#reporting'}>
-                            Reporting recipe
-                          </ConsoleLink>
-                        </Button>
-                      </div>
-                    )}
                     {(shownStep === 'delivery' || shownStep === 'agent') && (
-                      <SdkSetup
-                        state={{
-                          ...binding!,
-                          publicApiUrl: state.publicApiUrl,
-                          bundleName: bundleName(selected.bundleId),
-                        }}
-                        role={state.canManage ? 'admin' : undefined}
-                        step={shownStep}
-                      />
+                      <section className="workspace-panel connection-step-panel connection-recipe-panel">
+                        <div className="connection-step-header">
+                          <div className="min-w-0">
+                            <h3>
+                              {shownStep === 'agent'
+                                ? 'Connect your agent, then compare a change'
+                                : latestReport
+                                  ? 'Delivery reported'
+                                  : 'Waiting for the first delivery'}
+                            </h3>
+                            <p>
+                              {shownStep === 'agent' ? (
+                                'Optional. Run your existing agent loop against saved versions of this bundle to compare a change before release.'
+                              ) : latestReport ? (
+                                <>
+                                  Latest report received{' '}
+                                  <ReceiptTime value={latestReport.receivedAt} />
+                                </>
+                              ) : (
+                                'Install the SDK, configure access, then run the delivery check from your app. With optional reporting enabled, your app’s report appears here.'
+                              )}
+                            </p>
+                          </div>
+                          {shownStep === 'delivery' && (
+                            <Button
+                              variant="outline"
+                              disabled={checkingDelivery}
+                              onClick={async () => {
+                                setCheckingDelivery(true);
+                                try {
+                                  await refresh();
+                                } finally {
+                                  setCheckingDelivery(false);
+                                }
+                              }}
+                            >
+                              Refresh delivery reports
+                            </Button>
+                          )}
+                        </div>
+                        <SdkSetup
+                          state={{
+                            ...binding!,
+                            publicApiUrl: state.publicApiUrl,
+                            bundleName: bundleName(selected.bundleId),
+                          }}
+                          role={state.canManage ? 'admin' : undefined}
+                          step={shownStep}
+                        />
+                        {shownStep === 'delivery' && (
+                          <div className="connection-step-actions connection-recipe-footer">
+                            <span>Optional delivery reports:</span>
+                            <ConsoleLink href={tabHref('credentials')}>
+                              Reporting credentials
+                            </ConsoleLink>
+                            <ConsoleLink href={guideHref! + '#reporting'}>
+                              Reporting recipe
+                            </ConsoleLink>
+                          </div>
+                        )}
+                      </section>
                     )}
                   </div>
                 </div>
               </TabsContent>
-              <TabsContent value="credentials" className="min-w-0">
-                <section
-                  id="app-credentials"
-                  className="workspace-panel connection-credentials-panel space-y-4 p-4"
-                >
-                  {(busy || !selected.enabled || recovery) && (
-                    <p className="text-sm text-muted-foreground">
-                      {busy
-                        ? 'An operation is in progress.'
-                        : !selected.enabled
-                          ? 'This connection is revoked; new credentials cannot be issued.'
-                          : 'Resolve the pending credential creation before issuing another credential.'}
-                    </p>
-                  )}
-                  <div>
-                    <h3 className="font-semibold">App credentials</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      These work only for {bundleName(selected.bundleId)} / {selected.channel}.
-                      Secrets appear once; save them in your app’s secret manager.
-                    </p>
-                  </div>
-                  <div className="connection-credential-groups">
-                    {readCredentialControls}
-                    <Disclosure className="connection-reporting-credentials">
-                      <DisclosureTrigger className="cursor-pointer text-sm font-medium">
-                        Optional delivery reports &amp; credentials
-                      </DisclosureTrigger>
-                      <DisclosureContent className="space-y-3">
-                        <p className="mt-3 text-sm text-muted-foreground">
-                          A separate credential lets your app report what it observed.
-                        </p>
-                        <Button
-                          variant="outline"
-                          disabled={
-                            !state.canManage || busy || !selected.enabled || Boolean(recovery)
-                          }
-                          onClick={(event) => {
-                            credentialTriggerRef.current = event.currentTarget;
-                            void command({
-                              action: 'issue',
-                              id: selected.id,
-                              kind: 'receipt-write',
-                              key: crypto.randomUUID(),
-                            });
-                          }}
-                        >
-                          Create reporting credential
-                        </Button>
-                        {issuedCredentials('receipt-write')}
-                      </DisclosureContent>
-                    </Disclosure>
-                  </div>
-                  {credentialRecovery}
-                  <Disclosure className="max-w-lg space-y-2">
-                    <DisclosureTrigger className="cursor-pointer text-sm font-medium">
-                      Advanced credential actions
-                    </DisclosureTrigger>
-                    <DisclosureContent className="space-y-2">
-                      <Label htmlFor="connection-credential-id">Revoke by credential ID</Label>
-                      <div className="flex flex-wrap gap-2">
-                        <Input
-                          id="connection-credential-id"
-                          className="min-w-0 flex-1 basis-52"
-                          value={credentialId}
-                          onChange={(event) => setCredentialId(event.target.value)}
-                          placeholder="Credential ID, not its secret"
-                        />
-                        <Button
-                          variant="outline"
-                          disabled={
-                            !state.canManage ||
-                            busy ||
-                            !credentialId.trim() ||
-                            knownRevokedCredential
-                          }
-                          onClick={(event) => {
-                            revokeTriggerRef.current = event.currentTarget;
-                            setConfirm('credential');
-                          }}
-                        >
-                          Revoke credential
-                        </Button>
-                      </div>
-                      {knownRevokedCredential && (
-                        <p className="text-sm text-muted-foreground">
-                          This credential is already revoked.
-                        </p>
-                      )}
-                    </DisclosureContent>
-                  </Disclosure>
-                </section>
+              <TabsContent value="credentials" className="connection-credentials">
+                <h2 className="sr-only">App credentials</h2>
+                <p className="connection-tab-intro" id="app-credentials">
+                  Credentials work only for {bundleName(selected.bundleId)} on the{' '}
+                  <code className="connection-channel">{selected.channel}</code> channel. Each
+                  secret appears once; save it in your app’s secret manager.
+                </p>
+                {(busy || !selected.enabled || recovery) && (
+                  <p className="connection-tab-notice">
+                    {busy
+                      ? 'An operation is in progress.'
+                      : !selected.enabled
+                        ? 'This connection is revoked; new credentials cannot be issued.'
+                        : 'Resolve the pending credential creation before issuing another credential.'}
+                  </p>
+                )}
+                {credentialRecovery}
+                {credentialSection('content-read', 'workspace-panel')}
+                {credentialSection('receipt-write', 'workspace-panel')}
+                <Disclosure className="connection-advanced">
+                  <DisclosureTrigger>Advanced credential actions</DisclosureTrigger>
+                  <DisclosureContent className="connection-advanced-content">
+                    <Label htmlFor="connection-credential-id">Revoke by credential ID</Label>
+                    <div className="flex flex-wrap gap-2">
+                      <Input
+                        id="connection-credential-id"
+                        className="min-w-0 flex-1 basis-52"
+                        value={credentialId}
+                        onChange={(event) => setCredentialId(event.target.value)}
+                        placeholder="Credential ID, not its secret"
+                      />
+                      <Button
+                        variant="outline"
+                        disabled={
+                          !state.canManage || busy || !credentialId.trim() || knownRevokedCredential
+                        }
+                        onClick={(event) => {
+                          revokeTriggerRef.current = event.currentTarget;
+                          setConfirm('credential');
+                        }}
+                      >
+                        Revoke credential
+                      </Button>
+                    </div>
+                    {knownRevokedCredential && (
+                      <p className="text-sm text-muted-foreground">
+                        This credential is already revoked.
+                      </p>
+                    )}
+                  </DisclosureContent>
+                </Disclosure>
               </TabsContent>
               <TabsContent value="delivery" className="min-w-0 space-y-3">
                 <ConnectionReports
@@ -1152,64 +1148,58 @@ function ConnectionWorkspace({
                   enabled={selected.enabled}
                 />
               </TabsContent>
-              <TabsContent value="settings" className="workspace-panel connection-settings">
-                <Disclosure className="text-sm">
-                  <DisclosureTrigger className="cursor-pointer font-medium">
-                    Connection identity details
-                  </DisclosureTrigger>
-                  <DisclosureContent>
-                    <dl className="connection-identities">
-                      <div>
-                        <dt>Workspace</dt>
-                        <dd>{state.workspaceName}</dd>
-                      </div>
-                      <div>
-                        <dt>Workspace ID</dt>
-                        <dd>
-                          <code className="break-all">{state.workspaceId}</code>
-                          <CopyButton value={state.workspaceId} label="Copy workspace ID" />
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Bundle ID</dt>
-                        <dd>
-                          <code className="break-all">{selected.bundleId}</code>
-                          <CopyButton value={selected.bundleId} label="Copy bundle ID" />
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Connection ID</dt>
-                        <dd>
-                          <code className="min-w-0 break-all text-xs">{selected.id}</code>
-                          <CopyButton value={selected.id} label="Copy connection ID" />
-                        </dd>
-                      </div>
-                    </dl>
-                  </DisclosureContent>
-                </Disclosure>
-                <Disclosure>
-                  <DisclosureTrigger className="cursor-pointer text-sm font-medium">
-                    Revoke this connection
-                  </DisclosureTrigger>
-                  <DisclosureContent>
-                    <div className="space-y-3 pt-3">
-                      <p className="text-sm text-muted-foreground">
-                        Block all credentials for this app. This cannot recall cached files or stop
-                        prepared sessions.
-                      </p>
-                      <Button
-                        variant="destructive"
-                        disabled={!state.canManage || busy || !selected.enabled}
-                        onClick={(event) => {
-                          revokeTriggerRef.current = event.currentTarget;
-                          setConfirm('integration');
-                        }}
-                      >
-                        Revoke connection
-                      </Button>
+              <TabsContent value="settings" className="connection-settings">
+                <section className="workspace-panel connection-settings-section">
+                  <h3>Identifiers</h3>
+                  <p>Use these IDs in SDK configuration and support requests.</p>
+                  <dl className="connection-identities">
+                    <div>
+                      <dt>Workspace</dt>
+                      <dd>{state.workspaceName}</dd>
                     </div>
-                  </DisclosureContent>
-                </Disclosure>
+                    <div>
+                      <dt>Workspace ID</dt>
+                      <dd>
+                        <code>{state.workspaceId}</code>
+                        <CopyButton value={state.workspaceId} label="Copy workspace ID" iconOnly />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Bundle ID</dt>
+                      <dd>
+                        <code>{selected.bundleId}</code>
+                        <CopyButton value={selected.bundleId} label="Copy bundle ID" iconOnly />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Connection ID</dt>
+                      <dd>
+                        <code>{selected.id}</code>
+                        <CopyButton value={selected.id} label="Copy connection ID" iconOnly />
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+                <section className="workspace-panel connection-settings-section connection-danger-zone">
+                  <div>
+                    <h3>Revoke this connection</h3>
+                    <p>
+                      {selected.enabled
+                        ? 'Block all credentials for this app. This cannot recall cached files or stop prepared sessions.'
+                        : 'This connection is revoked. Its credentials no longer have access.'}
+                    </p>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    disabled={!state.canManage || busy || !selected.enabled}
+                    onClick={(event) => {
+                      revokeTriggerRef.current = event.currentTarget;
+                      setConfirm('integration');
+                    }}
+                  >
+                    Revoke connection
+                  </Button>
+                </section>
               </TabsContent>
             </Tabs>
           </div>

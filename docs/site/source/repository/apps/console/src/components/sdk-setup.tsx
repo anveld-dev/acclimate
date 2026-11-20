@@ -94,7 +94,7 @@ function InstallSnippet({ command }: { command: string }) {
 
 function EnvironmentSnippet({ apiUrl }: { apiUrl: string }) {
   return (
-    <pre className="whitespace-pre-wrap break-all rounded-md bg-muted p-3">
+    <pre className="sdk-environment-snippet">
       {`ACCLIMATE_URL=${apiUrl}\nACCLIMATE_TOKEN=<content-read credential>\nACCLIMATE_SCOPE=<stable app identity>`}
     </pre>
   );
@@ -246,7 +246,9 @@ export function SdkSetup({
     </div>
   );
   return (
-    <section className="sdk-setup sdk-setup-workspace sdk-recipe-lab min-w-0 text-sm">
+    <section
+      className={`sdk-setup sdk-setup-workspace sdk-recipe-lab min-w-0 text-sm${step ? ' sdk-setup-step' : ''}`}
+    >
       {!step && (
         <header className="sdk-setup-header">
           <div className="min-w-0">
@@ -578,8 +580,9 @@ export function SdkSetup({
             className="sdk-step sdk-agent-step space-y-3"
             aria-labelledby="sdk-agent-heading"
           >
-            <h3 id="sdk-agent-heading">
-              <StepNumber value={4} />
+            {/* On a connection page the surrounding step panel already names this step. */}
+            <h3 id="sdk-agent-heading" className={step ? 'sr-only' : undefined}>
+              {!step && <StepNumber value={4} />}
               Connect your agent, then compare a change
             </h3>
             {runtime === 'custom' ? (

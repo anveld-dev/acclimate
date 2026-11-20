@@ -141,7 +141,7 @@
         "cases": 12,
         "repetitions": 2,
         "minCases": 10,
-        "minRepetitions": 1,
+        "minRepetitions": 2,
         "sufficient": true,
         "noise": {
           "source": "binary-worst-case",
@@ -294,7 +294,7 @@
         "cases": 6,
         "repetitions": 3,
         "minCases": 4,
-        "minRepetitions": 1,
+        "minRepetitions": 2,
         "sufficient": true,
         "noise": {
           "source": "binary-worst-case",
@@ -310,12 +310,12 @@
           "results": [
             {
               "effect": 0,
-              "passRate": 0.075,
+              "passRate": 0.125,
               "indeterminateRate": 0
             },
             {
               "effect": 3.9923797151533345,
-              "passRate": 0.825,
+              "passRate": 0.9,
               "indeterminateRate": 0
             }
           ]
@@ -381,7 +381,7 @@
         "cases": 5,
         "repetitions": 1,
         "minCases": 10,
-        "minRepetitions": 1,
+        "minRepetitions": 2,
         "sufficient": false,
         "noise": {
           "source": "binary-worst-case",
@@ -414,7 +414,7 @@
         },
         "warnings": [
           "The inventory has 5 cases; the policy needs at least 10. Every verdict will be indeterminate.",
-          "Cases run once. Repetitions 2-3 separate run-to-run noise from real case differences and are required for the fixed-case bootstrap."
+          "Some cases have 1 repetition(s); the policy needs 2. Every verdict will be indeterminate."
         ]
       }
     }

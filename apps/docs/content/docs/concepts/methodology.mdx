@@ -56,12 +56,14 @@ Write the settings in an `inference` block. Omitted fields take the defaults sho
     "method": "paired-t",
     "confidence": 0.95,
     "minCases": 10,
-    "minRepetitions": 1,
+    "minRepetitions": 2,
     "sdFloor": 0.1,
     "maximumMissingPercent": 15
   }
 }
 ```
+
+`minRepetitions` defaults to 2: with one trial per case, run-to-run noise cannot be told apart from a real difference between cases, so a run that tries any case only once is indeterminate. Declare `"minRepetitions": 1` only for deterministic tasks or a fixture test. Under `method: "none"` it defaults to 1.
 
 `method: "none"` compares the point estimate with the threshold for these exact cases. It has no noise model and its false-pass rate is not controlled; use it only for deterministic graders and fixture tests. With `none`, missing data makes the verdict indeterminate.
 
@@ -95,12 +97,13 @@ Every verdict, policy receipt and CLI summary carries an `inference` block:
 
 These checks are the same in every schema version:
 
-- `policy.maximum_case_regression`: the largest oriented case regression is at most `maximumCaseRegression`. This is a point comparison per case, so noise alone can trigger it.
-- `policy.maximum_candidate_task_failures`: candidate trials that failed the task, failed in infrastructure or were not scored.
+- `policy.maximum_case_regression`: the largest oriented regression among the checked cases is at most `maximumCaseRegression`. This is a point comparison per case, so noise alone can trigger it. When no case is checked, the verdict has no such check.
+- `policy.maximum_regressed_cases`: with the optional `maximumRegressedCases`, the checked cases whose mean dropped by more than `maximumCaseRegression`, minus those whose mean rose by more than it, number at most `maximumRegressedCases`. It replaces the worst-case check, so one noisy case alone does not fail the gate. It is off by default.
+- `policy.maximum_candidate_task_failures`: candidate trials over the checked cases that failed the task, failed in infrastructure or were not scored.
 - `policy.protected_case_threshold`: every repetition of a named case meets its threshold.
 - Candidate threshold and cost limits.
 
-`perCaseChecks` chooses which cases the regression and task-failure checks cover. The default `all-cases` covers every case. `protected-cases` covers only `requiredCases` and cases named in `protectedCaseThresholds`, which avoids failing a statistical gate on the noise of a single unimportant case. Verdicts report both `candidateTaskFailures` (all cases) and `protectedCandidateTaskFailures`, plus `parentTaskFailures`.
+`perCaseChecks` chooses which cases the regression and task-failure checks cover. The default `protected-cases` covers only `requiredCases` and cases named in `protectedCaseThresholds`. A policy that protects no case has no per-case regression check, and the mean-level test governs. `all-cases` covers every case. Combined with `maximumCaseRegression: 0` it fails the gate whenever any one case scores lower, which noise alone does often on a large suite, so `doctor --policy` and `plan` warn that one noisy case can fail the gate. A zero-tolerance guard on every case can make a real improvement all but impossible to accept; prefer protected cases, a tolerance, or `maximumRegressedCases`. Verdicts report both `candidateTaskFailures` (all cases) and `protectedCandidateTaskFailures`, plus `parentTaskFailures`.
 
 ## Reward scale
 
@@ -118,22 +121,26 @@ Analysis never imputes: a metric with missing trials reports means only for comp
 
 ## Error rates
 
-The false-pass rate is the pass rate when the candidate is no better than the threshold. The table shows Monte Carlo pass rates for a superiority threshold of 0, from 2,000 simulated comparisons per cell. Each case's success rate is drawn from U(0.2, 0.8), rewards are binary, and the per-case regression check is disabled to isolate the mean-difference test. Monte Carlo error is about ±1 percentage point at 5%.
+The false-pass rate is the pass rate when the candidate is no better than the threshold. The table shows Monte Carlo pass rates for a superiority threshold of 0, from 2,000 simulated comparisons per cell. Each case's success rate is drawn from U(0.2, 0.8) and rewards are binary. The policy protects no case, so the default `perCaseChecks` runs no per-case regression check and the table isolates the mean-difference test. Monte Carlo error is about ±1 percentage point at 5%.
 
 | Policy | Cases × reps | Δ = 0 (false pass) | Δ = +0.05 | Δ = +0.10 | Indeterminate |
 | --- | --- | --- | --- | --- | --- |
-| paired-t 95% (default) | 5 × 1 | 0.0% | 0.0% | 0.0% | 100.0% |
-| paired-t 95% (default) | 10 × 1 | 5.0% | 7.6% | 12.7% | 0.0% |
+| paired-t 95% (default) | 5 × 2 | 0.0% | 0.0% | 0.0% | 100.0% |
+| paired-t 95% (default) | 10 × 1 | 0.0% | 0.0% | 0.0% | 100.0% |
+| paired-t 95% (default) | 10 × 2 | 5.1% | 10.0% | 16.8% | 0.0% |
 | paired-t 95% (default) | 10 × 3 | 4.3% | 10.8% | 19.2% | 0.0% |
-| paired-t 95% (default) | 30 × 1 | 5.0% | 11.8% | 19.2% | 0.0% |
+| paired-t 95% (default) | 30 × 2 | 5.5% | 14.4% | 31.2% | 0.0% |
 | paired-t 95% (default) | 30 × 3 | 5.1% | 19.4% | 39.7% | 0.0% |
 | paired-t 95% (default) | 60 × 3 | 5.7% | 26.7% | 63.0% | 0.0% |
-| point estimate (`method: "none"`) | 5 × 1 | 62.6% | 70.9% | 74.7% | 0.0% |
+| point estimate (`method: "none"`) | 5 × 2 | 59.4% | 68.3% | 76.4% | 0.0% |
+| point estimate (`method: "none"`) | 10 × 1 | 60.3% | 69.5% | 76.2% | 0.0% |
+| point estimate (`method: "none"`) | 10 × 2 | 56.1% | 69.7% | 80.5% | 0.0% |
 | point estimate (`method: "none"`) | 10 × 3 | 50.6% | 68.3% | 79.3% | 0.0% |
+| point estimate (`method: "none"`) | 30 × 2 | 53.3% | 75.0% | 89.5% | 0.0% |
 | point estimate (`method: "none"`) | 30 × 3 | 49.4% | 78.1% | 92.0% | 0.0% |
 | point estimate (`method: "none"`) | 60 × 3 | 50.1% | 83.5% | 97.7% | 0.0% |
 
-The default keeps false passes near the nominal 5%. The point-estimate rule passes a candidate that is no better about half the time. Regenerate the table with `tsx scripts/evaluation/policy-calibration.ts 2000` from a checkout; the SDK test suite checks a smaller version of the zero-effect row on every run.
+The default keeps false passes near the nominal 5%. With one repetition per case it is indeterminate, because the default `minRepetitions` is 2. The point-estimate rule passes a candidate that is no better about half the time. Regenerate the table with `tsx scripts/evaluation/policy-calibration.ts 2000` from a checkout; the SDK test suite checks a smaller version of the zero-effect row on every run.
 
 ## Power and minimum detectable effect
 
@@ -150,7 +157,7 @@ acclimate-eval plan --policy quality-policy.json
 acclimate-eval plan --policy quality-policy.json --aa aa-comparison.json --effects 0,0.05,0.1
 ```
 
-Use `python -m acclimate plan` with the Python SDK. `plan` reads your installed case inventory and reports whether it meets the policy's minimums, the MDE, and simulated pass rates at each effect using the same check as real verdicts. Without `--aa` it assumes the worst case for binary rewards (both arms near 50%). With an A/A comparison (the same version on both arms) it uses the observed noise. `doctor --policy` reports the same readiness warnings, including runs with one repetition. The functions are `planEvaluation` in `@acclimate/sdk/evaluation` and `acclimate.evaluation_plan.plan_evaluation`.
+Use `python -m acclimate plan` with the Python SDK. `plan` reads your installed case inventory and reports whether it meets the policy's minimums, the MDE, and simulated pass rates at each effect using the same check as real verdicts. Without `--aa` it assumes the worst case for binary rewards (both arms near 50%). With an A/A comparison (the same version on both arms) it uses the observed noise. `doctor --policy` reports the same readiness warnings: too few cases or repetitions, a policy that accepts one repetition, `perCaseChecks: "all-cases"` with `maximumCaseRegression: 0` (one noisy case can fail the gate), and per-case limits that check no case because none is protected. The functions are `planEvaluation` in `@acclimate/sdk/evaluation` and `acclimate.evaluation_plan.plan_evaluation`.
 
 Repetitions reduce run-to-run noise within a case. They do not replace cases: the test's degrees of freedom come from cases. Use two or three repetitions when tasks are stochastic, and more cases when you need to detect small effects.
 
@@ -189,6 +196,10 @@ grade: async ({ output, expected }) =>
 `passAtK(n, successes, k)` (Python `pass_at_k`) is the unbiased estimate that at least one of `k` attempts passes, from `n` binary attempts of one case. Average it across cases for a suite figure.
 
 Policies still decide on the scalar reward. Component values are not part of the comparison record yet, so a policy cannot gate on them directly.
+
+## Connected learning confidence
+
+Connected learning declares its own policies: development and cumulative checks use a one-sided 90% bound and the audit a 95% bound. In the default non-inferiority audit mode, the audit shows only that the release is not meaningfully worse on held-out cases. The only evidence of improvement is the 90% cumulative development check, so describe such a release as a 90%-confidence improvement on the development cases, never as a 95%-confidence improvement. Only `auditMode: "superiority"` makes the 95% audit evidence of a gain.
 
 ## Caveats
 

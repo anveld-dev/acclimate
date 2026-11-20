@@ -74,7 +74,7 @@ python -m acclimate check --config "$EVALUATOR_CONFIG" --name first-change --pol
 python -m acclimate export --config "$EVALUATOR_CONFIG" --name first-change --out review
 ```
 
-To require a non-decreasing mean reward and zero regression on each case, save this policy as `quality-policy.json` and pass `--policy quality-policy.json`:
+To require statistical evidence that the mean reward improved, with zero regression on each case you list in `requiredCases`, save this policy as `quality-policy.json` and pass `--policy quality-policy.json`. The default test needs at least 10 cases with two repetitions each:
 
 ```json
 {

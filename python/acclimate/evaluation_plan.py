@@ -87,9 +87,19 @@ def plan_evaluation(*, policy: dict, descriptor: dict, calibration: dict | None 
     if repetitions < settings["minRepetitions"]:
         warnings.append(f"Some cases have {repetitions} repetition(s); the policy needs {settings['minRepetitions']}. "
                         "Every verdict will be indeterminate.")
-    if repetitions < 2:
+    elif repetitions < 2:
         warnings.append("Cases run once. Repetitions 2-3 separate run-to-run noise from real case differences "
                         "and are required for the fixed-case bootstrap.")
+    per_case_checks = policy.get("perCaseChecks", "protected-cases")
+    if (per_case_checks == "all-cases" and policy["maximumCaseRegression"] == 0
+            and "maximumRegressedCases" not in policy):
+        warnings.append("perCaseChecks is all-cases with maximumCaseRegression 0: one noisy case can fail the gate. "
+                        "Use protected-cases, a nonzero maximumCaseRegression or maximumRegressedCases.")
+    protected_cases = {*policy["requiredCases"], *policy.get("protectedCaseThresholds", {})}
+    case_limits = [name for name in ("maximumCandidateTaskFailures", "maximumRegressedCases") if name in policy]
+    if per_case_checks == "protected-cases" and not protected_cases and case_limits:
+        warnings.append(f"perCaseChecks is protected-cases and the policy protects no case, so {' and '.join(case_limits)} "
+                        "never fails. Declare requiredCases or protectedCaseThresholds, or set perCaseChecks to all-cases.")
     if not statistical:
         warnings.append("inference.method is none: the policy compares point estimates and its false-pass rate "
                         "is not controlled.")

@@ -148,9 +148,29 @@ export function planEvaluation(options: PlanOptions): EvaluationPlan {
     warnings.push(
       `Some cases have ${repetitions} repetition(s); the policy needs ${settings.minRepetitions}. Every verdict will be indeterminate.`,
     );
-  if (repetitions < 2)
+  else if (repetitions < 2)
     warnings.push(
       'Cases run once. Repetitions 2-3 separate run-to-run noise from real case differences and are required for the fixed-case bootstrap.',
+    );
+  const perCaseChecks = policy.perCaseChecks ?? 'protected-cases';
+  if (
+    perCaseChecks === 'all-cases' &&
+    policy.maximumCaseRegression === 0 &&
+    policy.maximumRegressedCases === undefined
+  )
+    warnings.push(
+      'perCaseChecks is all-cases with maximumCaseRegression 0: one noisy case can fail the gate. Use protected-cases, a nonzero maximumCaseRegression or maximumRegressedCases.',
+    );
+  const protectedCases = new Set([
+    ...policy.requiredCases,
+    ...Object.keys(policy.protectedCaseThresholds ?? {}),
+  ]);
+  const caseLimits = (['maximumCandidateTaskFailures', 'maximumRegressedCases'] as const).filter(
+    (name) => policy[name] !== undefined,
+  );
+  if (perCaseChecks === 'protected-cases' && protectedCases.size === 0 && caseLimits.length)
+    warnings.push(
+      `perCaseChecks is protected-cases and the policy protects no case, so ${caseLimits.join(' and ')} never fails. Declare requiredCases or protectedCaseThresholds, or set perCaseChecks to all-cases.`,
     );
   if (!statistical)
     warnings.push(

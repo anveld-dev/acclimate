@@ -18,7 +18,10 @@ export interface PolicyInference {
   confidence?: ConfidenceLevel;
   /** Fewer distinct cases make the verdict indeterminate. Default 10 (paired-t) or 1 (none). */
   minCases?: number;
-  /** Fewer planned repetitions for any case make the verdict indeterminate. Default 1. */
+  /**
+   * Fewer planned repetitions for any case make the verdict indeterminate. Default 2 (paired-t)
+   * or 1 (none): one trial per case cannot separate run-to-run noise from a real difference.
+   */
   minRepetitions?: number;
   /** Lower limit on the case-difference standard deviation. Default 0.1 x reward-scale width. */
   sdFloor?: number;
@@ -62,10 +65,19 @@ export interface EvaluationPolicyV1 {
   /** Statistical method and data requirements. Omitted means the paired-t defaults. */
   inference?: PolicyInference;
   /**
-   * Cases covered by the per-case regression and task-failure checks. Default `all-cases` in every
-   * schema version. `protected-cases` limits them to required and threshold-protected cases.
+   * Cases covered by the per-case regression and task-failure checks. Default `protected-cases`
+   * in every schema version: required and threshold-protected cases only, so a policy that
+   * protects no case has no per-case regression check and the mean-level test governs.
+   * `all-cases` covers every case.
    */
   perCaseChecks?: 'all-cases' | 'protected-cases';
+  /**
+   * Net regressed-case allowance over the `perCaseChecks` cases: cases whose case-mean dropped
+   * by more than `maximumCaseRegression`, minus cases that improved by more than it. When set,
+   * it replaces the worst-case check, so one noisy case alone does not fail the gate. Off by
+   * default.
+   */
+  maximumRegressedCases?: number;
 }
 
 export interface EvaluationPolicyV2 extends Omit<EvaluationPolicyV1, 'schemaVersion'> {
@@ -124,12 +136,98 @@ export const connectedPolicyDefaults = {
 
 export const reservedPolicyIds = ['connected-development', 'connected-audit'] as const;
 
+/**
+ * Every check code a verdict can contain. `decision` checks pass or fail; `unknown` checks mark
+ * missing evidence and make the verdict indeterminate. The error-code reference renders this
+ * table, and the service accepts only these codes in a policy receipt.
+ */
+export const policyCheckCodes = {
+  'policy.minimum_mean_improvement': {
+    result: 'decision',
+    meaning:
+      'The lower confidence bound (or the point estimate under `none`) clears `minimumMeanImprovement`.',
+  },
+  'policy.non_inferiority': {
+    result: 'decision',
+    meaning: 'Audit stage: the lower bound clears minus `nonInferiorityMargin`.',
+  },
+  'policy.step_non_inferiority': {
+    result: 'decision',
+    meaning: 'Connected development step: the lower bound clears minus `stepMargin`.',
+  },
+  'policy.development_benefit': {
+    result: 'decision',
+    meaning: 'Connected development step: a point gain, an attested replay or a cost saving.',
+  },
+  'policy.maximum_case_regression': {
+    result: 'decision',
+    meaning:
+      'No checked case regressed by more than `maximumCaseRegression`. Absent when the `perCaseChecks` set is empty.',
+  },
+  'policy.maximum_regressed_cases': {
+    result: 'decision',
+    meaning:
+      'Checked cases that regressed by more than `maximumCaseRegression`, minus those that improved by more, are at most `maximumRegressedCases`.',
+  },
+  'policy.protected_case_threshold': {
+    result: 'decision',
+    meaning: 'Every repetition of a case in `protectedCaseThresholds` meets its threshold.',
+  },
+  'policy.candidate_threshold': {
+    result: 'decision',
+    meaning: 'The candidate mean meets `candidateThreshold`.',
+  },
+  'policy.maximum_candidate_task_failures': {
+    result: 'decision',
+    meaning:
+      'Candidate task failures over the checked cases are at most `maximumCandidateTaskFailures`.',
+  },
+  'policy.maximum_candidate_cost': {
+    result: 'decision',
+    meaning: 'The candidate cost is at most `cost.maximumCandidateUsd`.',
+  },
+  'policy.maximum_cost_increase': {
+    result: 'decision',
+    meaning: 'The cost increase is at most `cost.maximumIncreaseUsd`.',
+  },
+  'policy.minimum_cost_savings': {
+    result: 'decision',
+    meaning: 'The cost saving is at least `minimumCostSavingsUsd`.',
+  },
+  'inference.minimum_cases': {
+    result: 'unknown',
+    meaning: 'Fewer distinct cases than `inference.minCases`.',
+  },
+  'inference.minimum_repetitions': {
+    result: 'unknown',
+    meaning: 'A case has fewer repetitions than `inference.minRepetitions` (default 2).',
+  },
+  'inference.zero_variance': {
+    result: 'unknown',
+    meaning: 'Every case difference is identical and there is no SD floor.',
+  },
+  'evidence.incomplete': {
+    result: 'unknown',
+    meaning: 'Pairs are missing, or more trials are missing than `maximumMissingPercent` allows.',
+  },
+  'cost.unknown': {
+    result: 'unknown',
+    meaning: 'A cost limit is declared and some cost is unknown.',
+  },
+  'analysis.nonfinite': {
+    result: 'unknown',
+    meaning: 'An intermediate result is not a finite number.',
+  },
+} as const satisfies Record<string, { result: 'decision' | 'unknown'; meaning: string }>;
+
+export type PolicyCheckCode = keyof typeof policyCheckCodes;
+
 /** Inference settings applied when a policy omits a field. */
 export const defaultInference = {
   method: 'paired-t',
   confidence: 0.95,
   minCases: 10,
-  minRepetitions: 1,
+  minRepetitions: 2,
   sdFloorScaleFraction: 0.1,
   maximumMissingPercent: 15,
 } as const;
@@ -357,6 +455,7 @@ export function validateEvaluationPolicy(
         'targetEffect',
         'inference',
         'perCaseChecks',
+        'maximumRegressedCases',
       ],
       [],
     ) ||
@@ -400,6 +499,9 @@ export function validateEvaluationPolicy(
     (value.maximumCandidateTaskFailures != null &&
       (!Number.isSafeInteger(value.maximumCandidateTaskFailures) ||
         (value.maximumCandidateTaskFailures as number) < 0)) ||
+    (value.maximumRegressedCases != null &&
+      (!Number.isSafeInteger(value.maximumRegressedCases) ||
+        (value.maximumRegressedCases as number) < 0)) ||
     (value.minimumCostSavingsUsd != null && !nonnegative(value.minimumCostSavingsUsd)) ||
     (value.minimumRepetitionsPerCase != null &&
       (!nonnegative(value.minimumRepetitionsPerCase) ||
@@ -503,6 +605,9 @@ export function validateEvaluationPolicy(
     ...(inference && { inference }),
     ...(value.perCaseChecks != null && {
       perCaseChecks: value.perCaseChecks as 'all-cases' | 'protected-cases',
+    }),
+    ...(value.maximumRegressedCases != null && {
+      maximumRegressedCases: value.maximumRegressedCases as number,
     }),
   };
 }
@@ -945,7 +1050,7 @@ export function checkComparison(options: {
             threshold: policy.minimumMeanImprovement,
             thresholdSource: 'minimumMeanImprovement',
           };
-  const perCaseChecks = policy.perCaseChecks ?? 'all-cases';
+  const perCaseChecks = policy.perCaseChecks ?? 'protected-cases';
   const result: PolicyVerdict = {
     ...(gaps.total ? { evidenceGaps: gaps } : {}),
     schemaVersion: 1,
@@ -1049,7 +1154,7 @@ export function checkComparison(options: {
     if (!Number.isFinite(value)) throw new RangeError();
     return value;
   };
-  const check = (code: string, passed: boolean) =>
+  const check = (code: PolicyCheckCode, passed: boolean) =>
     result.checks.push({ code, result: passed ? 'pass' : 'fail' });
   const scale = policy.metric.scale;
   let minimum = Infinity;
@@ -1081,6 +1186,8 @@ export function checkComparison(options: {
     const reward = (outcome: Comparison['results'][number]['parent'], fallback: number) =>
       usable(outcome) ? (outcome.reward as number) : fallback;
     let checkedRegression = 0;
+    let checkedCases = 0;
+    let netRegressedCases = 0;
     for (const [id, rows] of groups) {
       const parent = mean(rows.map((pair) => reward(pair.parent, bestReward)));
       const candidate = mean(rows.map((pair) => reward(pair.candidate, worstReward)));
@@ -1088,8 +1195,12 @@ export function checkComparison(options: {
       parentMeans.push(parent);
       candidateMeans.push(candidate);
       improvements.push(gain);
-      if (perCaseChecks === 'all-cases' || protectedCase(id))
+      if (perCaseChecks === 'all-cases' || protectedCase(id)) {
+        checkedCases++;
         checkedRegression = Math.max(checkedRegression, -gain);
+        if (-gain > policy.maximumCaseRegression) netRegressedCases++;
+        else if (gain > policy.maximumCaseRegression) netRegressedCases--;
+      }
       const thresholds = policy.protectedCaseThresholds ?? {};
       if (own(thresholds, id))
         check(
@@ -1171,8 +1282,12 @@ export function checkComparison(options: {
       for (const code of insufficient) result.checks.push({ code, result: 'unknown' });
       inference.status = 'insufficient_data';
     }
-    if (passed !== null) check(decision.check, passed);
-    check('policy.maximum_case_regression', checkedRegression <= policy.maximumCaseRegression);
+    if (passed !== null) check(decision.check as PolicyCheckCode, passed);
+    // A policy that checks no case has no per-case regression check; the mean-level test governs.
+    if (policy.maximumRegressedCases !== undefined)
+      check('policy.maximum_regressed_cases', netRegressedCases <= policy.maximumRegressedCases);
+    else if (checkedCases)
+      check('policy.maximum_case_regression', checkedRegression <= policy.maximumCaseRegression);
     if (policy.candidateThreshold !== undefined)
       check(
         'policy.candidate_threshold',
@@ -1274,7 +1389,7 @@ export function resolveInference(policy: EvaluationPolicy): ResolvedInference {
     method: declared.method,
     confidence: declared.confidence ?? defaultInference.confidence,
     minCases: declared.minCases ?? (statistical ? defaultInference.minCases : 1),
-    minRepetitions: declared.minRepetitions ?? defaultInference.minRepetitions,
+    minRepetitions: declared.minRepetitions ?? (statistical ? defaultInference.minRepetitions : 1),
     ...(declared.sdFloor !== undefined && { sdFloor: declared.sdFloor }),
     maximumMissingPercent:
       declared.maximumMissingPercent ?? (statistical ? defaultInference.maximumMissingPercent : 0),

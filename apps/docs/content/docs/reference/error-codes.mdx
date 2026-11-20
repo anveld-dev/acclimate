@@ -138,4 +138,29 @@ Execution state overrides the default exit: a diagnostic with `executionState` `
 | `artifact.mapper_failed` | 1 | `fix_application` | toReviewArtifact threw or returned an invalid value. |
 | `internal.error` | 4 | `fix_config` | An unexpected error occurred. Rerun with --verbose or ACCLIMATE_DEBUG=1 for details. |
 
+### Policy check codes
+
+A verdict lists the checks it ran in `checks`. A `pass or fail` check decides the verdict; an `unknown` check marks missing evidence and makes the verdict indeterminate unless another check failed.
+
+| Check | Result | Meaning |
+| --- | --- | --- |
+| `policy.minimum_mean_improvement` | pass or fail | The lower confidence bound (or the point estimate under `none`) clears `minimumMeanImprovement`. |
+| `policy.non_inferiority` | pass or fail | Audit stage: the lower bound clears minus `nonInferiorityMargin`. |
+| `policy.step_non_inferiority` | pass or fail | Connected development step: the lower bound clears minus `stepMargin`. |
+| `policy.development_benefit` | pass or fail | Connected development step: a point gain, an attested replay or a cost saving. |
+| `policy.maximum_case_regression` | pass or fail | No checked case regressed by more than `maximumCaseRegression`. Absent when the `perCaseChecks` set is empty. |
+| `policy.maximum_regressed_cases` | pass or fail | Checked cases that regressed by more than `maximumCaseRegression`, minus those that improved by more, are at most `maximumRegressedCases`. |
+| `policy.protected_case_threshold` | pass or fail | Every repetition of a case in `protectedCaseThresholds` meets its threshold. |
+| `policy.candidate_threshold` | pass or fail | The candidate mean meets `candidateThreshold`. |
+| `policy.maximum_candidate_task_failures` | pass or fail | Candidate task failures over the checked cases are at most `maximumCandidateTaskFailures`. |
+| `policy.maximum_candidate_cost` | pass or fail | The candidate cost is at most `cost.maximumCandidateUsd`. |
+| `policy.maximum_cost_increase` | pass or fail | The cost increase is at most `cost.maximumIncreaseUsd`. |
+| `policy.minimum_cost_savings` | pass or fail | The cost saving is at least `minimumCostSavingsUsd`. |
+| `inference.minimum_cases` | unknown | Fewer distinct cases than `inference.minCases`. |
+| `inference.minimum_repetitions` | unknown | A case has fewer repetitions than `inference.minRepetitions` (default 2). |
+| `inference.zero_variance` | unknown | Every case difference is identical and there is no SD floor. |
+| `evidence.incomplete` | unknown | Pairs are missing, or more trials are missing than `maximumMissingPercent` allows. |
+| `cost.unknown` | unknown | A cost limit is declared and some cost is unknown. |
+| `analysis.nonfinite` | unknown | An intermediate result is not a finite number. |
+
 {/* END GENERATED */}

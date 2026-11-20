@@ -19,6 +19,25 @@ class EvaluationPlanTests(unittest.TestCase):
             with self.subTest(patch=patch), self.assertRaises(PlanError):
                 plan_evaluation(**{**options, **patch})
 
+    def test_per_case_warnings(self):
+        options = VECTORS["vectors"][0]["options"]
+
+        def warnings(**patch):
+            return "\n".join(plan_evaluation(**{**options, "policy": {**options["policy"], **patch},
+                                                 "simulations": 0})["warnings"])
+        self.assertIn("one noisy case can fail the gate", warnings(perCaseChecks="all-cases", maximumCaseRegression=0))
+        self.assertNotIn("noisy case", warnings(maximumCaseRegression=0))
+        self.assertNotIn("noisy case", warnings(perCaseChecks="all-cases", maximumCaseRegression=0, maximumRegressedCases=1))
+        self.assertIn("protects no case, so maximumCandidateTaskFailures never fails",
+                      warnings(maximumCandidateTaskFailures=0))
+
+    def test_one_repetition_needs_an_explicit_minimum(self):
+        options = VECTORS["vectors"][2]["options"]
+        plan = plan_evaluation(**{**options, "policy": {**options["policy"],
+                                                        "inference": {"method": "paired-t", "minRepetitions": 1}}})
+        self.assertEqual(plan["minRepetitions"], 1)
+        self.assertTrue(any(warning.startswith("Cases run once") for warning in plan["warnings"]))
+
 
 if __name__ == "__main__":
     unittest.main()

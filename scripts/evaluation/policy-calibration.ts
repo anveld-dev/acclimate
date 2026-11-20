@@ -5,8 +5,9 @@
 //
 // Each cell simulates comparisons with binary rewards: per-case success rates drawn from
 // U(0.2, 0.8) and the candidate shifted by the true effect. Pass rates at effect 0 are the
-// false-pass rate of a superiority threshold of 0. The per-case regression check is disabled
-// (maximumCaseRegression: 1) so the table isolates the mean-difference test.
+// false-pass rate of a superiority threshold of 0. The policy protects no case, so the default
+// perCaseChecks (protected-cases) runs no per-case regression check and the table isolates the
+// mean-difference test. Rows with one repetition show the default minRepetitions of 2.
 import { planEvaluation } from '../../packages/sdk/src/evaluation/plan.js';
 import type { EvaluationPolicy } from '../../packages/sdk/src/evaluation/policy.js';
 
@@ -23,13 +24,14 @@ const base: EvaluationPolicy = {
 };
 const policies: Array<[string, EvaluationPolicy]> = [
   ['paired-t 95% (default)', base],
-  ['point estimate (method none)', { ...base, inference: { method: 'none' } }],
+  ['point estimate (`method: "none"`)', { ...base, inference: { method: 'none' } }],
 ];
 const cells = [
-  [5, 1],
+  [5, 2],
   [10, 1],
+  [10, 2],
   [10, 3],
-  [30, 1],
+  [30, 2],
   [30, 3],
   [60, 3],
 ];

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { planEvaluation } from '../../src/evaluation/plan.js';
 import type { EvaluationPolicy } from '../../src/evaluation/policy.js';
@@ -45,7 +46,54 @@ test('too few cases make every simulated verdict indeterminate and the plan says
   assert.equal(plan.sufficient, false);
   assert.ok(plan.simulation.results.every((row) => row.indeterminateRate === 1));
   assert.match(plan.warnings.join('\n'), /needs at least 10/);
-  assert.match(plan.warnings.join('\n'), /Cases run once/);
+  assert.match(plan.warnings.join('\n'), /1 repetition\(s\); the policy needs 2/);
+  const once = planEvaluation({
+    policy: { ...policy, inference: { method: 'paired-t', minRepetitions: 1 } },
+    descriptor: descriptor(12, 1),
+    simulations: 0,
+  });
+  assert.equal(once.sufficient, true);
+  assert.match(once.warnings.join('\n'), /Cases run once/);
+});
+
+test('the shared plan vectors match', () => {
+  const vectors = JSON.parse(
+    readFileSync(
+      new URL(
+        '../../../../contracts/fixtures/evaluation-policy/plan-vectors.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  );
+  for (const vector of vectors.vectors)
+    assert.deepEqual(planEvaluation(vector.options), vector.expected, vector.name);
+});
+
+test('the plan warns about per-case checks that are too strict or check nothing', () => {
+  const warnings = (patch: Partial<EvaluationPolicy>) =>
+    planEvaluation({
+      policy: { ...policy, ...patch } as EvaluationPolicy,
+      descriptor: descriptor(12, 2),
+      simulations: 0,
+    }).warnings.join('\n');
+  assert.match(
+    warnings({ perCaseChecks: 'all-cases', maximumCaseRegression: 0 }),
+    /one noisy case can fail the gate/,
+  );
+  assert.doesNotMatch(warnings({ maximumCaseRegression: 0 }), /noisy case/);
+  assert.doesNotMatch(
+    warnings({ perCaseChecks: 'all-cases', maximumCaseRegression: 0, maximumRegressedCases: 1 }),
+    /noisy case/,
+  );
+  assert.match(
+    warnings({ maximumCandidateTaskFailures: 0 }),
+    /protects no case, so maximumCandidateTaskFailures never fails/,
+  );
+  assert.doesNotMatch(
+    warnings({ maximumCandidateTaskFailures: 0, requiredCases: ['case-0'] }),
+    /protects no case/,
+  );
 });
 
 test('minimum detectable effect follows the declared confidence and an A/A calibration', () => {

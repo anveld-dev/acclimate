@@ -8,6 +8,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { EVALUATION_ERROR_CODES, EXIT_CODES } from '../packages/sdk/src/evaluation/errors.js';
+import { policyCheckCodes } from '../packages/sdk/src/evaluation/policy.js';
 
 export const ERROR_CODES_PAGE = fileURLToPath(
   new URL('../apps/docs/content/docs/reference/error-codes.mdx', import.meta.url),
@@ -35,6 +36,10 @@ export function renderErrorCodeTables(): string {
     ([code, info]) =>
       `| \`${code}\` | ${info.exitCode} | \`${info.nextAction}\` | ${info.message.replace(/\|/g, '\\|')} |`,
   );
+  const checks = Object.entries(policyCheckCodes).map(
+    ([code, info]) =>
+      `| \`${code}\` | ${info.result === 'decision' ? 'pass or fail' : 'unknown'} | ${info.meaning.replace(/\|/g, '\\|')} |`,
+  );
   return [
     BEGIN,
     '',
@@ -51,6 +56,14 @@ export function renderErrorCodeTables(): string {
     '| Code | Exit | Next action | Meaning |',
     '| --- | --- | --- | --- |',
     ...codes,
+    '',
+    '### Policy check codes',
+    '',
+    'A verdict lists the checks it ran in `checks`. A `pass or fail` check decides the verdict; an `unknown` check marks missing evidence and makes the verdict indeterminate unless another check failed.',
+    '',
+    '| Check | Result | Meaning |',
+    '| --- | --- | --- |',
+    ...checks,
     '',
     END,
   ].join('\n');

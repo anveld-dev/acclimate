@@ -9,7 +9,9 @@ import {
   formatStatistic,
   parseEvaluationPolicy,
   PolicyError,
+  policyCheckCodes,
   reservedPolicyIds,
+  resolveInference,
   validateEvaluationPolicy,
 } from '../../src/evaluation/policy.js';
 import { studentTQuantile, studentTTable } from '../../src/evaluation/student-t.js';
@@ -430,6 +432,51 @@ test('inference block validation rejects unknown, fractional and out-of-range se
     sdFloor: 0,
   });
   assert.equal(parsed.perCaseChecks, 'protected-cases');
+});
+
+test('the defaults need two repetitions per case and check only protected cases', () => {
+  const base = { ...fixtures.vectors[0].policy };
+  delete base.inference;
+  assert.equal(resolveInference(base).minRepetitions, 2);
+  assert.equal(resolveInference({ ...base, inference: { method: 'none' } }).minRepetitions, 1);
+  assert.equal(
+    resolveInference({ ...base, inference: { method: 'paired-t', minRepetitions: 1 } })
+      .minRepetitions,
+    1,
+  );
+  const vector = inferenceVectors.vectors.find(
+    (item: any) => item.name === 'default-protected-cases-mean-governs',
+  );
+  const result = checkComparison(expandInferenceVector(vector) as any);
+  assert.equal(result.perCaseChecks, 'protected-cases');
+  assert.equal(result.summary.worstCaseRegression, 1);
+  assert.ok(!result.checks.some((check) => check.code === 'policy.maximum_case_regression'));
+});
+
+test('every reported check is in the check-code catalog', () => {
+  for (const vector of inferenceVectors.vectors) {
+    if (vector.expected.error) continue;
+    for (const { code, result } of checkComparison(expandInferenceVector(vector) as any).checks)
+      assert.equal(
+        policyCheckCodes[code as keyof typeof policyCheckCodes]?.result,
+        result === 'unknown' ? 'unknown' : 'decision',
+        `${vector.name}: ${code}`,
+      );
+  }
+});
+
+test('maximumRegressedCases is an optional nonnegative integer', () => {
+  const base = { ...fixtures.vectors[0].policy };
+  for (const maximumRegressedCases of [-1, 1.5, '1', true])
+    assert.throws(
+      () => validateEvaluationPolicy({ ...base, maximumRegressedCases }),
+      (error: unknown) => error instanceof PolicyError && error.code === 'policy.invalid',
+    );
+  assert.equal(
+    validateEvaluationPolicy({ ...base, maximumRegressedCases: 0 }).maximumRegressedCases,
+    0,
+  );
+  assert.equal('maximumRegressedCases' in validateEvaluationPolicy(base), false);
 });
 
 test('terminal statistics use fixed precision and state the method, bound and minimums', () => {

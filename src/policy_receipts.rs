@@ -69,6 +69,7 @@ fn valid(report: &Report) -> bool {
         | "policy.protected_case_threshold"
         | "policy.minimum_cost_savings"
         | "policy.maximum_case_regression"
+        | "policy.maximum_regressed_cases"
         | "policy.candidate_threshold"
         | "policy.maximum_candidate_task_failures"
         | "policy.maximum_candidate_cost"

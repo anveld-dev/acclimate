@@ -60,12 +60,25 @@ class EvaluationPolicyV1(TypedDict):
     targetEffect: NotRequired[float]
     inference: NotRequired[PolicyInference]
     perCaseChecks: NotRequired[Literal["all-cases", "protected-cases"]]
+    maximumRegressedCases: NotRequired[int]
 
 
 EvaluationPolicy = EvaluationPolicyV1
 
 RESERVED_POLICY_IDS = ("connected-development", "connected-audit")
-DEFAULT_INFERENCE = {"method": "paired-t", "confidence": 0.95, "minCases": 10, "minRepetitions": 1,
+#: Every check code a verdict can contain: ``decision`` checks pass or fail, ``unknown`` checks mark
+#: missing evidence. Kept identical to ``policyCheckCodes`` in the TypeScript SDK and checked against
+#: the error-code reference page.
+POLICY_CHECK_CODES = {
+    **dict.fromkeys(("policy.minimum_mean_improvement", "policy.non_inferiority", "policy.step_non_inferiority",
+                     "policy.development_benefit", "policy.maximum_case_regression", "policy.maximum_regressed_cases",
+                     "policy.protected_case_threshold", "policy.candidate_threshold",
+                     "policy.maximum_candidate_task_failures", "policy.maximum_candidate_cost",
+                     "policy.maximum_cost_increase", "policy.minimum_cost_savings"), "decision"),
+    **dict.fromkeys(("inference.minimum_cases", "inference.minimum_repetitions", "inference.zero_variance",
+                     "evidence.incomplete", "cost.unknown", "analysis.nonfinite"), "unknown"),
+}
+DEFAULT_INFERENCE = {"method": "paired-t", "confidence": 0.95, "minCases": 10, "minRepetitions": 2,
                      "sdFloorScaleFraction": 0.1, "maximumMissingPercent": 15}
 CONNECTED_POLICY_DEFAULTS = {
     stage: {"inference": {"method": "paired-t", "confidence": confidence, "minCases": 2, "minRepetitions": 1,
@@ -328,7 +341,8 @@ def validate_evaluation_policy(value: Any, expected_descriptor: dict | None = No
         raise PolicyError("policy.invalid", missing)
     allowed = [*_REQUIRED_POLICY_FIELDS, "candidateThreshold", "maximumCandidateTaskFailures", "cost",
                "protectedCaseThresholds", "minimumCostSavingsUsd", "minimumRepetitionsPerCase",
-               "nonInferiorityMargin", "stepMargin", "auditMode", "targetEffect", "inference", "perCaseChecks"]
+               "nonInferiorityMargin", "stepMargin", "auditMode", "targetEffect", "inference", "perCaseChecks",
+               "maximumRegressedCases"]
     version = value["schemaVersion"]
     metric = value["metric"]
     if (not _fields(value, allowed, []) or type(version) is not int or version not in (1, 2, 3)
@@ -364,6 +378,11 @@ def validate_evaluation_policy(value: Any, expected_descriptor: dict | None = No
     if value.get("maximumCandidateTaskFailures") is not None and (
         not _integer(value["maximumCandidateTaskFailures"])
         or not 0 <= value["maximumCandidateTaskFailures"] <= 2**53 - 1
+    ):
+        raise PolicyError("policy.invalid")
+    if value.get("maximumRegressedCases") is not None and (
+        not _integer(value["maximumRegressedCases"])
+        or not 0 <= value["maximumRegressedCases"] <= 2**53 - 1
     ):
         raise PolicyError("policy.invalid")
     if value.get("minimumCostSavingsUsd") is not None and not _nonnegative(value["minimumCostSavingsUsd"]):
@@ -431,6 +450,8 @@ def validate_evaluation_policy(value: Any, expected_descriptor: dict | None = No
         result["inference"] = inference
     if value.get("perCaseChecks") is not None:
         result["perCaseChecks"] = value["perCaseChecks"]
+    if value.get("maximumRegressedCases") is not None:
+        result["maximumRegressedCases"] = int(value["maximumRegressedCases"])
     return result  # type: ignore[return-value]
 
 
@@ -442,7 +463,7 @@ def resolve_inference(policy: EvaluationPolicyV1) -> dict:
         "method": declared["method"],
         "confidence": declared.get("confidence", DEFAULT_INFERENCE["confidence"]),
         "minCases": declared.get("minCases", DEFAULT_INFERENCE["minCases"] if statistical else 1),
-        "minRepetitions": declared.get("minRepetitions", DEFAULT_INFERENCE["minRepetitions"]),
+        "minRepetitions": declared.get("minRepetitions", DEFAULT_INFERENCE["minRepetitions"] if statistical else 1),
         "maximumMissingPercent": declared.get(
             "maximumMissingPercent", DEFAULT_INFERENCE["maximumMissingPercent"] if statistical else 0),
     }
@@ -620,7 +641,7 @@ def check_comparison(*, comparison: dict, expected_descriptor: dict,
     else:
         decision = {"check": "policy.minimum_mean_improvement", "threshold": policy["minimumMeanImprovement"],
                     "thresholdSource": "minimumMeanImprovement"}
-    per_case_checks = policy.get("perCaseChecks", "all-cases")
+    per_case_checks = policy.get("perCaseChecks", "protected-cases")
     inference: PolicyInferenceResult = {
         "method": settings["method"], "estimand": "sampled-cases" if statistical else "observed-cases",
         "status": "incomplete", "stage": stage_name, **decision,  # type: ignore[typeddict-item]
@@ -719,6 +740,8 @@ def check_comparison(*, comparison: dict, expected_descriptor: dict,
             return outcome["reward"] if usable(outcome) else fallback
 
         checked_regression = 0
+        checked_cases = 0
+        net_regressed_cases = 0
         for case_id, rows in groups.items():
             parent = mean([reward_of(row["parent"], best_reward) for row in rows])
             candidate = mean([reward_of(row["candidate"], worst_reward) for row in rows])
@@ -727,7 +750,12 @@ def check_comparison(*, comparison: dict, expected_descriptor: dict,
             candidate_means.append(candidate)
             improvements.append(gain)
             if per_case_checks == "all-cases" or protected_case(case_id):
+                checked_cases += 1
                 checked_regression = max(checked_regression, -gain)
+                if -gain > policy["maximumCaseRegression"]:
+                    net_regressed_cases += 1
+                elif gain > policy["maximumCaseRegression"]:
+                    net_regressed_cases -= 1
             if case_id in thresholds:
                 check("policy.protected_case_threshold", all(
                     row["candidate"]["executionStatus"] == "completed" and usable(row["candidate"])
@@ -788,7 +816,11 @@ def check_comparison(*, comparison: dict, expected_descriptor: dict,
             inference["status"] = "insufficient_data"
         if passed is not None:
             check(decision["check"], passed)
-        check("policy.maximum_case_regression", checked_regression <= policy["maximumCaseRegression"])
+        # A policy that checks no case has no per-case regression check; the mean-level test governs.
+        if "maximumRegressedCases" in policy:
+            check("policy.maximum_regressed_cases", net_regressed_cases <= policy["maximumRegressedCases"])
+        elif checked_cases:
+            check("policy.maximum_case_regression", checked_regression <= policy["maximumCaseRegression"])
         if "candidateThreshold" in policy:
             check("policy.candidate_threshold",
                   arithmetic(orientation * candidate_mean) >= arithmetic(orientation * policy["candidateThreshold"]))

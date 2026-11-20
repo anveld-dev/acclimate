@@ -275,9 +275,10 @@ zero-filled. Finite arithmetic overflow returns `indeterminate`.
 ## How this relates to the policy verdict
 
 The policy gate uses the `paired-t` question with a one-sided lower bound, a minimum case count,
-an SD floor and conservative imputation of up to 15% missing trials per arm. Its default
-false-pass rate at zero true effect stays near the nominal 5% (4.3% to 5.7% across 10 to 60 cases
-in 2,000-run simulations), while a point-estimate comparison passes about half of such candidates.
+at least two repetitions per case, an SD floor and conservative imputation of up to 15% missing
+trials per arm. Its default false-pass rate at zero true effect stays near the nominal 5% (4.3% to
+5.7% across 10 to 60 cases in 2,000-run simulations), while a point-estimate comparison passes about
+half of such candidates.
 Run `acclimate-eval plan --policy quality-policy.json` to see the minimum detectable effect for your
 inventory. The Methodology page in the documentation (Concepts) has the full table.
 

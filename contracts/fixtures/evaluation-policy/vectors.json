@@ -1154,6 +1154,7 @@
         "maximumCaseRegression": 0,
         "requiredCases": [],
         "maximumCandidateTaskFailures": 0,
+        "perCaseChecks": "all-cases",
         "inference": {
           "method": "none"
         }

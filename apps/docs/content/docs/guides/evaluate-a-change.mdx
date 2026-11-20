@@ -69,7 +69,7 @@ This policy is a statistical non-inferiority gate. It passes when the one-sided 
 }
 ```
 
-List release-critical case IDs in `requiredCases`; the per-case regression and task-failure limits apply to them. To gate on one part of the grade instead of the scalar reward, have `grade` return named `components`, such as `{ reward, components: { correctness: 1, citations: 0.5 } }`, and set `metric.component` to the name, for example `"component": "correctness"`. A scored arm without that component counts as missing evidence. Before collecting evidence, check that your cases can detect the effect you care about:
+List release-critical case IDs in `requiredCases`; the per-case regression and task-failure limits apply to them. With none listed, the test on the mean decides, and every case needs at least two repetitions. To gate on one part of the grade instead of the scalar reward, have `grade` return named `components`, such as `{ reward, components: { correctness: 1, citations: 0.5 } }`, and set `metric.component` to the name, for example `"component": "correctness"`. A scored arm without that component counts as missing evidence. Before collecting evidence, check that your cases can detect the effect you care about:
 
 ```sh
 acclimate-eval plan --policy quality-policy.json

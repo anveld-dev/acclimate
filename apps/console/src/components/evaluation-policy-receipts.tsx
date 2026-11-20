@@ -69,6 +69,7 @@ const checkNames: Record<string, string> = {
   'inference.minimum_repetitions': 'Too few repetitions for the policy test',
   'inference.zero_variance': 'No observed variation and no SD floor',
   'policy.maximum_case_regression': 'Maximum per-case regression',
+  'policy.maximum_regressed_cases': 'Maximum net regressed cases',
   'policy.candidate_threshold': 'Candidate quality threshold',
   'policy.maximum_candidate_task_failures': 'Maximum candidate task failures',
   'policy.maximum_candidate_cost': 'Maximum candidate cost',

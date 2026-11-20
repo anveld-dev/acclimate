@@ -6,8 +6,8 @@ import unittest
 
 from acclimate._student_t import CONFIDENCE_LEVELS, NORMAL_QUANTILES, QUANTILES, student_t_quantile
 from acclimate.evaluation_policy import (
-    CONNECTED_POLICY_DEFAULTS, RESERVED_POLICY_IDS, PolicyError, check_comparison, parse_evaluation_policy,
-    validate_evaluation_policy,
+    CONNECTED_POLICY_DEFAULTS, POLICY_CHECK_CODES, RESERVED_POLICY_IDS, PolicyError, check_comparison, parse_evaluation_policy,
+    resolve_inference, validate_evaluation_policy,
 )
 
 
@@ -263,6 +263,35 @@ class EvaluationPolicyTests(unittest.TestCase):
                                              "inference": {"method": "paired-t", "confidence": 0.975, "minCases": 20, "sdFloor": 0}})
         self.assertEqual(parsed["inference"], {"method": "paired-t", "confidence": 0.975, "minCases": 20, "sdFloor": 0})
         self.assertEqual(parsed["perCaseChecks"], "protected-cases")
+
+    def test_defaults_need_two_repetitions_and_check_only_protected_cases(self):
+        base = {key: value for key, value in FIXTURES["vectors"][0]["policy"].items() if key != "inference"}
+        self.assertEqual(resolve_inference(base)["minRepetitions"], 2)
+        self.assertEqual(resolve_inference({**base, "inference": {"method": "none"}})["minRepetitions"], 1)
+        self.assertEqual(resolve_inference(
+            {**base, "inference": {"method": "paired-t", "minRepetitions": 1}})["minRepetitions"], 1)
+        vector = next(item for item in INFERENCE["vectors"] if item["name"] == "default-protected-cases-mean-governs")
+        result = check_comparison(**expand_inference_vector(vector))
+        self.assertEqual(result["perCaseChecks"], "protected-cases")
+        self.assertEqual(result["summary"]["worstCaseRegression"], 1)
+        self.assertNotIn("policy.maximum_case_regression", [check["code"] for check in result["checks"]])
+
+    def test_every_reported_check_is_in_the_catalog(self):
+        for vector in INFERENCE["vectors"]:
+            if "error" in vector["expected"]:
+                continue
+            for check in check_comparison(**expand_inference_vector(vector))["checks"]:
+                with self.subTest(vector=vector["name"], code=check["code"]):
+                    self.assertEqual(POLICY_CHECK_CODES[check["code"]],
+                                     "unknown" if check["result"] == "unknown" else "decision")
+
+    def test_maximum_regressed_cases_is_an_optional_nonnegative_integer(self):
+        base = FIXTURES["vectors"][0]["policy"]
+        for value in (-1, 1.5, "1", True):
+            with self.subTest(value=value), self.assertRaises(PolicyError):
+                validate_evaluation_policy({**base, "maximumRegressedCases": value})
+        self.assertEqual(validate_evaluation_policy({**base, "maximumRegressedCases": 0})["maximumRegressedCases"], 0)
+        self.assertNotIn("maximumRegressedCases", validate_evaluation_policy(base))
 
 
 if __name__ == "__main__":

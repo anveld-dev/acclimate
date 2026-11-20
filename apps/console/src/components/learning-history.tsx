@@ -1,4 +1,5 @@
 import { ReceiptTime } from './receipt-time';
+import { StatusBadge } from './status-badge';
 import { useEffect, useRef, useState } from 'react';
 import type { Comparison, Evaluation } from '@acclimate/sdk';
 import type { ConsoleState } from '../server/channel';
@@ -253,7 +254,7 @@ export function LearningHistory({ state }: { state: Ready }) {
                 <div className="flex flex-wrap justify-end gap-1">
                   <Badge variant="outline">{request.status}</Badge>
                   {request.candidateVersionId === state.resolution.version.id && (
-                    <Badge variant="secondary">Current release</Badge>
+                    <StatusBadge tone="success">Current release</StatusBadge>
                   )}
                 </div>
               </li>

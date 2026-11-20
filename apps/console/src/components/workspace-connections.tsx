@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SdkSetup } from './sdk-setup';
 import { isCurrentDelivery } from '../lib/delivery-release';
+import { WorkspaceEmptyState } from './workspace-empty-state';
 import { PageHeader } from './page-header';
 import { WorkspaceMenuButton } from './workspace-chrome';
 import { ListToolbar } from './list-toolbar';
@@ -12,7 +13,7 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { DeliveryReceipt, ConnectionCredential, Page } from '@acclimate/sdk';
 import { Button } from './ui/button';
 import { DirectorySearch } from './ui/directory-search';
-import { ArrowUpRight, Check, ChevronRight, Plus, Radio } from 'lucide-react';
+import { ArrowUpRight, Check, ChevronRight, Plug, Plus, Radio } from 'lucide-react';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { NativeSelect } from './ui/native-select';
@@ -663,7 +664,30 @@ function ConnectionWorkspace({
             </div>
           )}
           {!selected &&
-            (!rows.length ? (
+            (!rows.length &&
+            !query.trim() &&
+            access === 'all' &&
+            !filterBundle &&
+            !filterChannel &&
+            state.bundles.length > 0 &&
+            state.canManage ? (
+              <WorkspaceEmptyState
+                icon={Plug}
+                title="No connections yet"
+                description="A connection gives one app its own credentials for a bundle and channel, and can collect that app’s delivery reports. SDK clients can fetch content without one."
+                actions={
+                  <Button
+                    disabled={busy}
+                    onClick={(event) => {
+                      createTriggerRef.current = event.currentTarget;
+                      setCreating(true);
+                    }}
+                  >
+                    <Plus aria-hidden="true" /> Create your first connection
+                  </Button>
+                }
+              />
+            ) : !rows.length ? (
               <div className="space-y-2 rounded border border-dashed p-4">
                 <p>
                   {query.trim() || access !== 'all'

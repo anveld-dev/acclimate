@@ -468,7 +468,7 @@ export function WorkspaceMembers({
               search || roleFilter !== 'all'
                 ? `${matchingMembers.length} of ${members.length}`
                 : members.length
-            } members${access.ok && access.nextMemberCursor ? ' loaded' : ''}`}
+            } ${members.length === 1 ? 'member' : 'members'}${access.ok && access.nextMemberCursor ? ' loaded' : ''}`}
           >
             <DirectorySearch
               id="member-search"

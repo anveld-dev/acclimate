@@ -333,3 +333,19 @@
   border-top: 1px solid var(--border);
   font-size: var(--type-12);
 }
+
+/* Artifact references are identifiers: monospace, compact, and wrapped at any character. */
+tr[data-reference] > td {
+  font-family: var(--font-mono);
+  font-size: var(--type-12);
+  line-height: var(--leading-12);
+  word-break: break-all;
+  color: var(--muted-foreground);
+}
+
+@media (pointer: coarse) {
+  .case-browser-controls select,
+  .case-browser-search input {
+    min-height: 44px;
+  }
+}

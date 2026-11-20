@@ -1,4 +1,5 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { evaluationRunName, shortRevision } from '../lib/evaluation-run-name';
 import { evaluationPairs } from '../lib/evaluation-pairs';
 import { artifactChanges } from '../lib/artifact-changes';
 import { StatusBadge } from './status-badge';
@@ -1565,7 +1566,13 @@ export function ImprovementWorkspace({
                           </h2>
                           {comparison && (
                             <p className="evaluation-evidence-dataset">
-                              {comparison.datasetRevision}
+                              {evaluationRunName(
+                                comparison.datasetRevision,
+                                comparison.runtime?.configId,
+                              )}{' '}
+                              <code title={comparison.datasetRevision}>
+                                {shortRevision(comparison.datasetRevision)}
+                              </code>
                             </p>
                           )}
                         </div>
@@ -1682,7 +1689,8 @@ export function ImprovementWorkspace({
                           <div className="evaluation-panel-heading">
                             <h2 className="font-semibold">Evaluation results</h2>
                             <span className="text-muted-foreground">
-                              {candidateRequests.length} loaded
+                              {candidateRequests.length}
+                              {requestCursor ? ' loaded' : ''}
                             </span>
                           </div>
                           <p className="evaluation-section-description text-muted-foreground">
@@ -1765,7 +1773,10 @@ export function ImprovementWorkspace({
                                           className="evaluation-run-name"
                                           title={request.datasetRevision}
                                         >
-                                          {request.datasetRevision}
+                                          {evaluationRunName(
+                                            request.datasetRevision,
+                                            request.runtime?.configId,
+                                          )}
                                         </span>
                                       </span>
                                       <span className="evaluation-run-meta">
@@ -1778,6 +1789,7 @@ export function ImprovementWorkspace({
                                         {request.expectedCases.length === 1 ? 'pair' : 'pairs'}
                                       </span>
                                       <span className="evaluation-run-meta" title={request.id}>
+                                        <code>{shortRevision(request.datasetRevision)}</code> ·
                                         Request {request.id.slice(0, 8)}
                                       </span>
                                     </span>
@@ -2012,27 +2024,52 @@ export function ImprovementWorkspace({
                   page.
                 </DialogDescription>
               </DialogHeader>
-              <p>
-                Bundle: <strong>{state.bundleName || state.bundleId}</strong>
-              </p>
-              <p>
-                Target: <strong>{state.channel}</strong> · revision {releaseReview?.revision}
-              </p>
-              <p className="break-all">Published parent: {state.resolution.version.id}</p>
-              <p className="break-all">
-                Candidate: {releaseReview?.versionId}
-                {initial.draft
-                  ? ` · generation ${releaseReview?.generation}`
-                  : ' · immutable suggestion snapshot'}
-              </p>
-              {releaseReview?.comparisonId ? (
-                <p className="break-all">Selected evidence: {releaseReview.comparisonId}</p>
-              ) : (
-                <>
-                  <p>No evaluation supports this release.</p>
-                  <p className="whitespace-pre-wrap break-words">Reason: {releaseReview?.reason}</p>
-                </>
-              )}
+              {/* Lead with what changes in words; exact identities stay for verification. */}
+              <dl className="release-decision-summary">
+                <div>
+                  <dt>Bundle</dt>
+                  <dd>{state.bundleName || state.bundleId}</dd>
+                </div>
+                <div>
+                  <dt>Replaces</dt>
+                  <dd>
+                    {state.channel} · revision {releaseReview?.revision}
+                    <code>{state.resolution.version.id}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Publishes</dt>
+                  <dd>
+                    {initial.draft
+                      ? `Saved draft · generation ${releaseReview?.generation}`
+                      : 'Suggestion snapshot'}
+                    <code>{releaseReview?.versionId}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Evidence</dt>
+                  {releaseReview?.comparisonId ? (
+                    <dd>
+                      <span className="inline-flex flex-wrap items-center gap-2">
+                        Selected comparison
+                        {comparison?.id === releaseReview.comparisonId && (
+                          <StatusBadge tone={comparison.complete ? 'success' : 'warning'}>
+                            {comparison.complete ? 'Complete evidence' : 'Partial evidence'}
+                          </StatusBadge>
+                        )}
+                      </span>
+                      <code>{releaseReview.comparisonId}</code>
+                    </dd>
+                  ) : (
+                    <dd>
+                      No evaluation supports this release.
+                      <span className="whitespace-pre-wrap break-words">
+                        Reason: {releaseReview?.reason}
+                      </span>
+                    </dd>
+                  )}
+                </div>
+              </dl>
               {releaseReview?.comparisonId && blockers.length > 0 && (
                 <section className="space-y-2" aria-label="Override policy">
                   <h3>Override the policy verdicts for this candidate</h3>

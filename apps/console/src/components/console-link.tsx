@@ -13,10 +13,19 @@ export function consoleDestination(href: string) {
 export function ConsoleLink({
   href,
   children,
+  exactActive = false,
   ...props
-}: Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> & { href: string }) {
+}: Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> & {
+  href: string;
+  /** Mark the link current only for an exact path and search match; callers own aria-current. */
+  exactActive?: boolean;
+}) {
   return (
-    <Link {...consoleDestination(href)} {...props}>
+    <Link
+      {...consoleDestination(href)}
+      {...(exactActive ? { activeOptions: { exact: true, includeHash: false } } : {})}
+      {...props}
+    >
       {children}
     </Link>
   );

@@ -1,4 +1,5 @@
 import { ReceiptTime } from './receipt-time';
+import { StatusBadge } from './status-badge';
 import { ReleaseComparison } from './release-comparison';
 import './release-comparison.css';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
@@ -97,6 +98,10 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
     fragment === '#revision-' + linkedRelease.revision &&
     !page.items.some((item) => item.id === linkedRelease.id);
   const loadedItems = showLinked ? [...page.items, linkedRelease] : page.items;
+  // "Loaded" matters only while older releases remain unfetched or a linked one is appended.
+  const partial = Boolean(page.nextBeforeRevision || showLinked);
+  // Search earns its space once there are enough releases to scan.
+  const searchable = Boolean(query) || partial || loadedItems.length > 5;
   const term = query.trim().toLowerCase();
   const matches = loadedItems.filter((item) => matchesRelease(item, term));
   const requestedRevision = releaseRevision(/^#revision-(.+)$/.exec(fragment)?.[1]);
@@ -386,27 +391,30 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
         </p>
       )}
       <section className="release-history release-history-layout">
-        <div className="release-history-header">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">Release history</h2>
-            {!state.canEdit && <span className="text-sm text-muted-foreground">Read only</span>}
+        {/* The Releases tab names this view; the heading remains for assistive navigation. */}
+        <h2 className="sr-only">Release history</h2>
+        {!state.canEdit && (
+          <div className="release-history-header">
+            <span className="text-sm text-muted-foreground">Read only</span>
           </div>
-        </div>
+        )}
         {loadedItems.length ? (
           <div className="release-workbench">
             <div className="release-picker" aria-label="Release revisions">
               <div className="release-picker-search">
-                <div className="grid w-full max-w-sm gap-1.5">
-                  <Label htmlFor="release-search">Find a release</Label>
-                  <Input
-                    id="release-search"
-                    ref={searchRef}
-                    type="search"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Revision, version ID, or digest"
-                  />
-                </div>
+                {searchable && (
+                  <div className="grid w-full max-w-sm gap-1.5">
+                    <Label htmlFor="release-search">Find a release</Label>
+                    <Input
+                      id="release-search"
+                      ref={searchRef}
+                      type="search"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Revision, version ID, or digest"
+                    />
+                  </div>
+                )}
                 {term && (
                   <Button
                     variant="ghost"
@@ -421,8 +429,8 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
                 )}
                 <span role="status" className="pb-1 text-xs text-muted-foreground">
                   {term
-                    ? `${matches.length} of ${loadedItems.length} loaded releases`
-                    : `${loadedItems.length} loaded ${loadedItems.length === 1 ? 'release' : 'releases'}`}
+                    ? `${matches.length} of ${loadedItems.length} ${partial ? 'loaded ' : ''}releases`
+                    : `${loadedItems.length} ${partial ? 'loaded ' : ''}${loadedItems.length === 1 ? 'release' : 'releases'}`}
                 </span>
               </div>
 
@@ -450,9 +458,11 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
                       <strong>
                         <span className="sr-only">Compare </span>Revision {item.revision}
                       </strong>
-                      {item.revision === state.resolution.revision && <Badge>Current</Badge>}
+                      {item.revision === state.resolution.revision && (
+                        <StatusBadge tone="success">Current</StatusBadge>
+                      )}
                       {showLinked && linkedRelease?.id === item.id && (
-                        <Badge variant="outline">Linked revision</Badge>
+                        <StatusBadge tone="info">Linked revision</StatusBadge>
                       )}
                       <ReceiptTime value={item.createdAt} />
                       <code>{item.version.id.slice(0, 8)}</code>

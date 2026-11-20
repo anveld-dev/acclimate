@@ -379,22 +379,19 @@ export function ChangesPipeline({
             ) : (
               !loading && <p className="text-muted-foreground">{empty}</p>
             )}
-            <div className="flex flex-wrap gap-2">
-              {label === 'Drafting' && (
-                <>
-                  {moreDrafts}
-                  {moreSuggestions}
-                </>
-              )}
-              {label === 'Evaluating' && (
-                <Button asChild variant="link" className="min-h-9 px-0">
-                  <ConsoleLink href={historyHref}>View evaluation history</ConsoleLink>
-                </Button>
-              )}
-            </div>
+            {label === 'Drafting' && (moreDrafts || moreSuggestions) && (
+              <div className="flex flex-wrap gap-2">
+                {moreDrafts}
+                {moreSuggestions}
+              </div>
+            )}
           </section>
         ))}
-        <section aria-label="Released" className="pipeline-column">
+        <section
+          aria-label="Released"
+          className="pipeline-column"
+          data-empty={released.length ? undefined : true}
+        >
           <h3>
             Released <StatusBadge>{released.length}</StatusBadge>
           </h3>
@@ -434,8 +431,8 @@ export function ChangesPipeline({
           ) : (
             <p className="text-muted-foreground">No channel releases.</p>
           )}
-          <Button asChild variant="link" className="min-h-9 px-0">
-            <ConsoleLink href={releasesHref}>View releases</ConsoleLink>
+          <Button asChild variant="link" className="min-h-9 justify-self-start px-0">
+            <ConsoleLink href={releasesHref}>All releases</ConsoleLink>
           </Button>
         </section>
       </div>

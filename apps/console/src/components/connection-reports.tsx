@@ -1,4 +1,5 @@
 import { ReceiptTime } from './receipt-time';
+import { StatusBadge } from './status-badge';
 import { useState, type ReactNode } from 'react';
 import type { DeliveryReceipt, Page } from '@acclimate/sdk';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
@@ -114,8 +115,8 @@ function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
             <span className="connection-report-stage">
               <span className="font-medium">{stage}</span>
               <Badge variant="outline">{r.source}</Badge>
-              {r.stale && <Badge variant="secondary">Stale mapping</Badge>}
-              {r.delayed && <Badge variant="secondary">Delayed report</Badge>}
+              {r.stale && <StatusBadge tone="warning">Stale mapping</StatusBadge>}
+              {r.delayed && <StatusBadge tone="warning">Delayed report</StatusBadge>}
             </span>
             <span className="connection-report-received text-muted-foreground">
               <ReceiptTime value={r.receivedAt} />

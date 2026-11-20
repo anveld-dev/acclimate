@@ -10,8 +10,11 @@ export function PageHeader({
   variant = 'workspace',
   label,
   titleId,
+  titleAccessory,
 }: {
   title: string;
+  /** Context that qualifies the title, such as the selected channel. */
+  titleAccessory?: ReactNode;
   titleId?: string;
   description?: string;
   actions?: ReactNode;
@@ -33,9 +36,18 @@ export function PageHeader({
       )}
       <div className={`page-header-primary${bundle ? ' bundle-scope-primary' : ''}`}>
         <div className={`page-header-identity${bundle ? ' bundle-scope-identity' : ''}`}>
-          <h1 id={titleId} tabIndex={titleId ? -1 : undefined}>
-            {title}
-          </h1>
+          {titleAccessory ? (
+            <div className="page-header-title-row">
+              <h1 id={titleId} tabIndex={titleId ? -1 : undefined}>
+                {title}
+              </h1>
+              {titleAccessory}
+            </div>
+          ) : (
+            <h1 id={titleId} tabIndex={titleId ? -1 : undefined}>
+              {title}
+            </h1>
+          )}
           {description && <p className={bundle ? 'sr-only' : undefined}>{description}</p>}
         </div>
         {actions && <div className={bundle ? 'bundle-context' : 'page-actions'}>{actions}</div>}

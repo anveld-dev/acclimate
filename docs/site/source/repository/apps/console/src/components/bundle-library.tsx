@@ -1,4 +1,5 @@
 import { ListToolbar } from './list-toolbar';
+import { ReceiptTime } from './receipt-time';
 import { DirectorySearch } from './ui/directory-search';
 import { CopyButton } from './copy-button';
 import { SyntaxCode } from './syntax-code';
@@ -484,6 +485,7 @@ export function BundleLibrary({ state, workspaceId }: { state: LibraryState; wor
                 <div className="bundle-directory-heading directory-heading" aria-hidden="true">
                   <span>Bundle</span>
                   <span>Published channels</span>
+                  <span>Created</span>
                   <span />
                 </div>
                 <ul className="divide-y">
@@ -532,7 +534,7 @@ export function BundleLibrary({ state, workspaceId }: { state: LibraryState; wor
                               <h3 className="break-words font-medium">
                                 {primary ? (
                                   <ConsoleLink
-                                    className="bundle-directory-link underline-offset-4 hover:underline"
+                                    className="bundle-directory-link"
                                     aria-description={`Opens the ${primary.name} channel`}
                                     href={bundleHref(
                                       { workspaceId, bundleId: bundle.id, channel: primary.name },
@@ -579,6 +581,9 @@ export function BundleLibrary({ state, workspaceId }: { state: LibraryState; wor
                               </span>
                             )}
                           </div>
+                          <span className="bundle-directory-created">
+                            <ReceiptTime value={bundle.createdAt} relative />
+                          </span>
                           <DisclosureTrigger
                             className="bundle-reference-trigger"
                             title="SDK reference"

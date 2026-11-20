@@ -311,13 +311,16 @@
   padding: 16px 0 0;
 }
 .changes-overview .changes-overview-toolbar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: clamp(12px, 3vw, 44px);
+  gap: 12px 16px;
   padding: 0 0 20px;
   margin: 0 0 22px;
   border-bottom: 1px solid var(--border);
+}
+.changes-overview .changes-overview-toolbar .changes-overview-base {
+  margin: 0 0 0 auto;
 }
 .changes-overview-toolbar h2 {
   color: var(--foreground);
@@ -405,16 +408,6 @@
 }
 .changes-overview[data-version-selected] .changes-overview-queues {
   margin: 18px 0 0;
-}
-
-.changes-history-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  margin-block-end: 8px;
-  font-size: var(--type-14);
-  color: var(--muted-foreground);
 }
 
 .changes-overview[data-history] {
@@ -566,6 +559,17 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* Empty stages keep their place in the flow but recede, so populated stages lead. */
+.pipeline-column[data-empty] {
+  border-style: dashed;
+  background: transparent;
+}
+.pipeline-column[data-empty] > h3 {
+  color: var(--muted-foreground);
+}
+.pipeline-column[data-empty] > p {
+  font-size: var(--type-13);
+}
 @media (max-width: 950px) {
   .changes-pipeline {
     grid-template-columns: minmax(0, 1fr);
@@ -594,12 +598,5 @@
 }
 
 .changes-overview-view {
-  grid-column: 3;
-  justify-self: end;
-}
-@container changes-overview (max-width: 780px) {
-  .changes-overview-view {
-    grid-column: 2;
-    grid-row: 1;
-  }
+  flex: 0 0 auto;
 }

@@ -587,3 +587,8 @@
 .ledger-selected-identity dd {
   overflow-wrap: anywhere;
 }
+
+.ledger-request-dataset {
+  font-family: var(--font-mono);
+  font-size: var(--type-12);
+}

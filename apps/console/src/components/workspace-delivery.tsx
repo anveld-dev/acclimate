@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
-import { ArrowUpRight, ChevronRight, Radio, RefreshCw } from 'lucide-react';
+import { ArrowRight, ChevronRight, Radio, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
 import { OutcomeLookup } from './outcome-lookup';
 import { PageTitle } from './shared';
+import { WorkspaceEmptyState } from './workspace-empty-state';
 import { workspaceHref } from '../navigation';
 import { readDeliveryObservations } from '../server/delivery-observations-actions';
 import type { DeliveryObservationsResult } from '../server/delivery-observations-core';
@@ -77,16 +78,28 @@ export function WorkspaceDelivery({
       {!result.ok ? (
         <p role="alert">{result.message}</p>
       ) : !apps.length ? (
-        <div className="workspace-panel space-y-3 p-4">
-          <p>No connected app observations are available. Delivery is unknown.</p>
-          <a
-            href={workspaceHref(workspaceId, canManage ? 'connections' : 'bundles')}
-            className="inline-flex items-center gap-1 underline"
-          >
-            {canManage ? 'Open connections' : 'Browse bundles'}
-            <ArrowUpRight size={14} />
-          </a>
-        </div>
+        <WorkspaceEmptyState
+          icon={Radio}
+          title="No delivery reports yet"
+          description="A connected app can report which bundle version it fetched. Until one does, Acclimate can't confirm what your apps are running."
+          steps={
+            canManage
+              ? [
+                  'Create a connection for the app’s bundle and channel.',
+                  'Give the app its content-read credential.',
+                  'Turn on optional reporting so the app sends a receipt after each fetch.',
+                ]
+              : undefined
+          }
+          actions={
+            <Button asChild variant={canManage ? 'default' : 'outline'}>
+              <a href={workspaceHref(workspaceId, canManage ? 'connections' : 'bundles')}>
+                {canManage ? 'Set up a connection' : 'Browse bundles'}
+                <ArrowRight aria-hidden="true" />
+              </a>
+            </Button>
+          }
+        />
       ) : (
         <>
           <div className="delivery-station">

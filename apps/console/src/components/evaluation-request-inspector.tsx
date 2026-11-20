@@ -32,7 +32,7 @@ export function EvaluationRequestInspector({
   onLanguageChange,
   consoleOrigin,
   publicApiUrl,
-  projectId,
+  workspaceId,
   bundleId,
   children,
   showDownload = true,
@@ -42,12 +42,12 @@ export function EvaluationRequestInspector({
   language: EvaluatorLanguage;
   onLanguageChange(value: EvaluatorLanguage): void;
   publicApiUrl: string;
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   children?: ReactNode;
   showDownload?: boolean;
 }) {
-  const handoff = evaluationHandoff(publicApiUrl, projectId, bundleId, request.id, request);
+  const handoff = evaluationHandoff(publicApiUrl, workspaceId, bundleId, request.id, request);
   const setupCommand = isCheckoutCodexEvaluator(request)
     ? checkoutCodexRunCommand(bundleId, request.id)
     : undefined;
@@ -136,17 +136,17 @@ export function EvaluationRequestInspector({
           )}
           {requested ? 'Runner handoff' : 'Public handoff'}
         </h4>
-        <code className="run-file-name">evaluation-request.json</code>
+        <code className="run-file-name">handoff.json</code>
         {requested && <p>Run in your app with the request ID and frozen public configuration.</p>}
         <div className="run-handoff-actions">
           {showDownload && <EvaluationHandoffDownload handoff={handoff} />}
-          <CopyButton value={handoff} label="Copy request JSON" />
+          <CopyButton value={handoff} label="Copy handoff JSON" />
           <CopyButton value={request.id} label="Copy request ID" />
         </div>
         {requested && runCommand && (
           <div className="space-y-2">
             <p>
-              Give the evaluator owner the downloaded request. Run the commands on the evaluator
+              Give the evaluator owner the downloaded handoff. Run the commands on the evaluator
               machine with its private configuration.
             </p>
             {nativeRunner ? (
@@ -175,7 +175,7 @@ export function EvaluationRequestInspector({
             <CopyButton
               label="Copy instructions for evaluator owner"
               value={[
-                `Evaluate request ${request.id}. Save the public JSON at the end of this message as evaluation-request.json.`,
+                `Evaluate request ${request.id}. Save the handoff JSON at the end of this message as handoff.json.`,
                 ...(nativeRunner
                   ? ['Run these commands from the native Codex reviewer checkout.']
                   : [
@@ -262,7 +262,7 @@ export function EvaluationRequestInspector({
                 {
                   schemaVersion: 1,
                   serviceUrl: publicApiUrl,
-                  projectId,
+                  workspaceId,
                   evaluatorPrincipalId: 'YOUR_DEDICATED_EVALUATOR_PRINCIPAL',
                   evaluatorToken: 'YOUR_SCOPED_EVALUATOR_TOKEN',
                   journalRoot: '/absolute/private/evaluation-journals',
@@ -274,7 +274,7 @@ export function EvaluationRequestInspector({
             />
             <p>
               Replace the configuration path with your private file. For recovery, use the original
-              service, project, evaluator principal and journal directory.
+              service, workspace, evaluator principal and journal directory.
             </p>
             {!requested && <p>Check the original worker and journal before repeating a command.</p>}
             <CopyButton value={setupCommand} label="Copy setup-required command" />

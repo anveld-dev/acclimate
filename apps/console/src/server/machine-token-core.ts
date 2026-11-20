@@ -26,17 +26,17 @@ export type MachineTokenEvent = {
   createdAt: string;
 };
 export type MachineTokenCommand =
-  | { kind: 'list'; projectId: string }
+  | { kind: 'list'; workspaceId: string }
   | {
       kind: 'issue';
-      projectId: string;
+      workspaceId: string;
       name: string;
       rights: MachineTokenRight[];
       expiresInDays: number;
       reason?: string;
     }
-  | { kind: 'rotate'; projectId: string; id: string; overlapSeconds: number }
-  | { kind: 'revoke'; projectId: string; id: string; reason: string };
+  | { kind: 'rotate'; workspaceId: string; id: string; overlapSeconds: number }
+  | { kind: 'revoke'; workspaceId: string; id: string; reason: string };
 export type MachineTokenResult =
   | {
       ok: true;
@@ -59,7 +59,7 @@ export async function machineTokenCommand(
 ): Promise<MachineTokenResult> {
   if (!input || !['list', 'issue', 'rotate', 'revoke'].includes(input.kind))
     return { ok: false, message: 'Invalid token action.' };
-  if (!workspace(input.projectId)) return { ok: false, message: 'Invalid workspace.' };
+  if (!workspace(input.workspaceId)) return { ok: false, message: 'Invalid workspace.' };
   if ('id' in input && !uuid.test(input.id)) return { ok: false, message: 'Invalid token.' };
   if (
     input.kind === 'issue' &&
@@ -72,7 +72,7 @@ export async function machineTokenCommand(
     return { ok: false, message: 'Enter a reason for revoking this token.' };
   try {
     const request = accessTransport(env, fetcher);
-    const base = `/v1/workspaces/${encodeURIComponent(input.projectId)}`;
+    const base = `/v1/workspaces/${encodeURIComponent(input.workspaceId)}`;
     if (input.kind === 'list') {
       const [tokens, events] = await Promise.all([
         request(`${base}/machine-tokens`),

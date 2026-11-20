@@ -17,7 +17,7 @@ export const runIntegrationCommand = createServerFn({ method: 'POST' })
   });
 
 export const readConnections = createServerFn({ method: 'GET' })
-  .validator((input: { projectId: string; integrationId?: string }) => input)
+  .validator((input: { workspaceId: string; connectionId?: string }) => input)
   .handler(async ({ data }) => {
     setResponseHeader('Cache-Control', 'private, no-store');
     const { requestEnvironment } = await import('./selection');
@@ -35,7 +35,7 @@ export const runConnectionCommand = createServerFn({ method: 'POST' })
   });
 
 export const readConnectionLearning = createServerFn({ method: 'GET' })
-  .validator((input: Pick<LearningRequest, 'projectId' | 'integrationId'>) => input)
+  .validator((input: Pick<LearningRequest, 'workspaceId' | 'connectionId'>) => input)
   .handler(async ({ data }) => {
     setResponseHeader('Cache-Control', 'private, no-store');
     const { requestEnvironment } = await import('./selection');
@@ -53,7 +53,7 @@ export const runConnectionLearning = createServerFn({ method: 'POST' })
   });
 
 export const readLearningOutcome = createServerFn({ method: 'GET' })
-  .validator((input: { projectId: string; integrationId: string; outcomeId: string }) => input)
+  .validator((input: { workspaceId: string; connectionId: string; outcomeId: string }) => input)
   .handler(async ({ data }) => {
     setResponseHeader('Cache-Control', 'private, no-store');
     const { requestEnvironment } = await import('./selection');

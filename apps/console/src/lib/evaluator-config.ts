@@ -4,7 +4,7 @@ export type MachineTokenRight = (typeof MACHINE_TOKEN_RIGHTS)[number];
 
 export type EvaluatorConfigInput = {
   publicApiUrl: string;
-  projectId: string;
+  workspaceId: string;
   principalId: string;
   journalRoot: string;
   /** Omit to read the token from ACCLIMATE_EVALUATOR_TOKEN or `evaluatorTokenFile`. */
@@ -26,7 +26,7 @@ export function evaluatorConfig(input: EvaluatorConfigInput): string {
       {
         schemaVersion: 1,
         serviceUrl,
-        projectId: input.projectId,
+        workspaceId: input.workspaceId,
         evaluatorPrincipalId: input.principalId,
         ...(input.token ? { evaluatorToken: input.token } : {}),
         journalRoot: input.journalRoot,

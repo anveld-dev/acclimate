@@ -10,13 +10,13 @@ test('a rendered form keeps its own target even after another tab changes rememb
     CONSOLE_CHANNEL: 'canary',
     CONSOLE_SESSION_TOKEN: 'fixture-person',
   };
-  const rendered = { projectId: 'work-a', bundleId: 'bundle-a', channel: 'stable' };
+  const rendered = { workspaceId: 'work-a', bundleId: 'bundle-a', channel: 'stable' };
   const bound = bundleEnvironment(remembered, rendered);
   assert.equal(bound.CONSOLE_PROJECT, 'work-a');
   assert.equal(bound.CONSOLE_BUNDLE, 'bundle-a');
   assert.equal(bound.CONSOLE_CHANNEL, 'stable');
   assert.equal(bound.CONSOLE_SESSION_TOKEN, 'fixture-person');
-  const workspace = scopedEnvironment(remembered, { projectId: 'work-a' });
+  const workspace = scopedEnvironment(remembered, { workspaceId: 'work-a' });
   assert.equal(workspace.CONSOLE_BUNDLE, undefined);
   assert.equal(workspace.CONSOLE_CHANNEL, undefined);
 });
@@ -30,15 +30,15 @@ test('missing or malformed form scope never inherits a remembered bundle', () =>
   for (const scope of [
     undefined,
     {},
-    { projectId: 'work-a', bundleId: 'new' },
-    { projectId: 'work-a', bundleId: '../bad', channel: 'stable' },
+    { workspaceId: 'work-a', bundleId: 'new' },
+    { workspaceId: 'work-a', bundleId: '../bad', channel: 'stable' },
   ]) {
     assert.throws(() => bundleEnvironment(remembered, scope as never));
   }
 });
 
 test('published views identify their channel while bundle changes do not pretend suggestions are channel-owned', () => {
-  const scope = { projectId: 'acme', bundleId: 'review', channel: 'stable' };
+  const scope = { workspaceId: 'acme', bundleId: 'review', channel: 'stable' };
   assert.equal(bundleHref(scope, 'content'), '/w/acme/bundles/review/channels/stable/content');
   const changes = bundleHref(scope, 'changes', {
     draft: 'saved-id',
@@ -50,7 +50,7 @@ test('published views identify their channel while bundle changes do not pretend
   assert.equal(url.searchParams.get('channel'), 'stable');
   assert.equal(url.searchParams.get('path'), 'skills/review/SKILL.md');
   assert.deepEqual(parseConsoleLocation(url.pathname), {
-    projectId: 'acme',
+    workspaceId: 'acme',
     bundleId: 'review',
     view: 'changes',
   });

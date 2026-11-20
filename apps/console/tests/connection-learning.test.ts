@@ -7,7 +7,7 @@ import { learningPolicy } from '../src/server/connection-learning-policy';
 
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const roundId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-const target = { projectId: 'workspace', integrationId: id };
+const target = { workspaceId: 'workspace', connectionId: id };
 const env = {
   ...consoleEnvironment,
   CONSOLE_SERVICE_TOKEN: 'fixture-console-token',
@@ -76,13 +76,13 @@ function fixture(
 
     if (url.includes('/v1/workspaces?'))
       return Response.json({
-        items: [{ id: target.projectId, name: 'Workspace', role: options.role ?? 'admin' }],
+        items: [{ id: target.workspaceId, name: 'Workspace', role: options.role ?? 'admin' }],
         nextCursor: null,
       });
     if (/\/connections\?/.test(url))
       return Response.json({
         items: [
-          { id, projectId: target.projectId, bundleId: 'bundle', channel: 'stable', enabled: true },
+          { id, workspaceId: target.workspaceId, bundleId: 'bundle', channel: 'stable', enabled: true },
         ],
         nextCursor: null,
       });
@@ -396,7 +396,7 @@ test('learning rejects cross-connection status, out-of-scope targets and request
         {
           ...target,
           action: 'stop',
-          integrationId: roundId,
+          connectionId: roundId,
         },
         f.fetcher,
       )
@@ -404,7 +404,7 @@ test('learning rejects cross-connection status, out-of-scope targets and request
     false,
   );
   assert.equal(f.requests.filter((request) => request.method === 'POST').length, 0);
-  const mismatched = fixture({ status: { ...enrollment, integrationId: roundId } });
+  const mismatched = fixture({ status: { ...enrollment, connectionId: roundId } });
   assert.equal(
     (await connectionLearning(env, { ...target, action: 'read' }, mismatched.fetcher)).ok,
     false,

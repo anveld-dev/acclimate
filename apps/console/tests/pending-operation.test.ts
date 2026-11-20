@@ -42,7 +42,7 @@ const scope = {
   owner: 'draft' as const,
   actorScope: 'session-one',
   serviceIdentity: 'service-one',
-  projectId: 'p',
+  workspaceId: 'p',
   bundleId: bundle,
   channel: 'stable',
 };
@@ -73,7 +73,7 @@ test('each page sees submissions from another editor only as related operations'
   assert.deepEqual(loadPending(storage, scope), original);
   for (const isolated of [
     { actorScope: 'other-account' },
-    { projectId: 'other' },
+    { workspaceId: 'other' },
     { bundleId: 'other-bundle' },
     { channel: 'canary' },
     { serviceIdentity: 'other-service' },
@@ -82,6 +82,7 @@ test('each page sees submissions from another editor only as related operations'
   resolvePending(storage, original.scope);
   assert.equal(findRelatedPending(storage, otherPage), null);
 });
+// The service's internal retained-operation key, not a route.
 function fingerprint(path: string, body: string) {
   return (
     'sha256:' +
@@ -117,7 +118,7 @@ test('lost response survives reload; not_observed retries exact bytes and origin
   await assert.rejects(
     exactOperation(
       env,
-      { projectId: 'p', key, operationPath: record.action, body: record.body! },
+      { workspaceId: 'p', key, operationPath: record.action, body: record.body! },
       fetcher,
     ),
   );
@@ -125,7 +126,7 @@ test('lost response survives reload; not_observed retries exact bytes and origin
   const reloaded = loadPending(storage, scope)!;
   const result = await exactOperation<{ generation: number }>(
     env,
-    { projectId: 'p', key: reloaded.key, operationPath: reloaded.action, body: reloaded.body! },
+    { workspaceId: 'p', key: reloaded.key, operationPath: reloaded.action, body: reloaded.body! },
     fetcher,
   );
   assert.equal(result.generation, 3);
@@ -188,7 +189,7 @@ test('changed exact bytes cannot adopt an existing receipt', async () => {
     exactOperation(
       env,
       {
-        projectId: 'p',
+        workspaceId: 'p',
         key,
         operationPath: path,
         body: JSON.stringify({ ...body, expectedGeneration: 99 }),
@@ -244,7 +245,7 @@ test('closed operations do not send another write; close is repeatable and uses 
   await assert.rejects(
     exactOperation(
       env,
-      { projectId: 'p', key, operationPath: path, body: JSON.stringify(body) },
+      { workspaceId: 'p', key, operationPath: path, body: JSON.stringify(body) },
       async (_url, init) => {
         if (init?.method === 'POST') posts++;
         return Response.json({ status: 'closed', operationId: key });
@@ -256,7 +257,7 @@ test('closed operations do not send another write; close is repeatable and uses 
   for (let i = 0; i < 2; i++)
     assert.equal(
       (
-        await closeOperation(env, { projectId: 'p', key }, async (url, init) => {
+        await closeOperation(env, { workspaceId: 'p', key }, async (url, init) => {
           assert.match(String(url), /\/close$/);
           assert.equal(new Headers(init?.headers).get('Idempotency-Key'), key);
           return Response.json({ status: 'closed', operationId: key });
@@ -282,7 +283,7 @@ test('disabled editing, auth loss, noncanonical routes and crossed scope send no
     await assert.rejects(
       exactOperation(
         { ...env, CONSOLE_CHANNEL: 'stable' },
-        { projectId: 'p', key, operationPath, body: JSON.stringify(body) },
+        { workspaceId: 'p', key, operationPath, body: JSON.stringify(body) },
         fetcher,
       ),
     );
@@ -290,17 +291,17 @@ test('disabled editing, auth loss, noncanonical routes and crossed scope send no
   await assert.rejects(
     exactOperation(
       { ...env, CONSOLE_ALLOW_EDITS: 'false' },
-      { projectId: 'p', key, operationPath: path, body: JSON.stringify(body) },
+      { workspaceId: 'p', key, operationPath: path, body: JSON.stringify(body) },
       fetcher,
     ),
   );
   await assert.rejects(
-    closeOperation({ ...env, CONSOLE_ALLOW_EDITS: 'false' }, { projectId: 'p', key }, fetcher),
+    closeOperation({ ...env, CONSOLE_ALLOW_EDITS: 'false' }, { workspaceId: 'p', key }, fetcher),
   );
   await assert.rejects(
     exactOperation(
       { ...env, CONSOLE_SESSION_TOKEN: undefined },
-      { projectId: 'p', key, operationPath: path, body: JSON.stringify(body) },
+      { workspaceId: 'p', key, operationPath: path, body: JSON.stringify(body) },
       fetcher,
     ),
   );
@@ -308,7 +309,7 @@ test('disabled editing, auth loss, noncanonical routes and crossed scope send no
   await assert.rejects(
     exactOperation(
       env,
-      { projectId: 'p', key, operationPath: path, body: JSON.stringify(body) },
+      { workspaceId: 'p', key, operationPath: path, body: JSON.stringify(body) },
       async () =>
         Response.json({ error: { code: 'denied', message: 'lost permission' } }, { status: 403 }),
     ),
@@ -346,7 +347,7 @@ test('canonical operation families preserve exact bytes through browser freezing
     let posts = 0;
     await exactOperation(
       { ...env, CONSOLE_CHANNEL: 'stable' },
-      { projectId: 'p', operationPath: record.action, body: record.body!, key: record.key },
+      { workspaceId: 'p', operationPath: record.action, body: record.body!, key: record.key },
       async (_url, init) => {
         if (init?.method === 'GET')
           return Response.json({ status: 'not_observed', operationId: key });
@@ -358,6 +359,44 @@ test('canonical operation families preserve exact bytes through browser freezing
     );
     assert.equal(posts, 1);
   }
+});
+
+test('records stored before 0.2.0 recover under the canonical route and internal fingerprint', async () => {
+  const exact = '{"expectedRevision":4}';
+  const legacy = `/v1/projects/p/bundles/${bundle}/channels/stable/promotions`;
+  const canonical = `/v1/workspaces/p/bundles/${bundle}/channels/stable/releases`;
+  const storage = new MemoryStorage();
+  const record = freezePendingExact(
+    storage,
+    { ...scope, owner: 'releases' },
+    canonical,
+    exact,
+    key,
+  );
+  const slot = storage.key(0)!;
+  storage.setItem(slot, JSON.stringify({ ...record, action: legacy }));
+  const loaded = loadPending(storage, { ...scope, owner: 'releases' })!;
+  assert.equal(loaded.action, canonical);
+  assert.equal(findRelatedPending(storage, scope)?.action, canonical);
+  const sent: string[] = [];
+  const result = await exactOperation<{ id: string }>(
+    { ...env, CONSOLE_CHANNEL: 'stable' },
+    { workspaceId: 'p', operationPath: loaded.action, body: loaded.body!, key },
+    async (url) => {
+      sent.push(new URL(String(url)).pathname + new URL(String(url)).search);
+      return Response.json({
+        status: 'committed',
+        operationId: key,
+        path: canonical,
+        requestFingerprint: fingerprint(canonical, exact),
+        result: { id: 'release' },
+      });
+    },
+  );
+  assert.deepEqual(result, { id: 'release' });
+  assert.equal(sent.length, 1);
+  assert.ok(!sent[0].includes('projects') && !sent[0].includes('promotions'));
+  assert.equal(forgetPending(storage, { ...scope, owner: 'releases' })?.action, canonical);
 });
 
 test('invalid operation targets never enter recovery storage or reach transport', async () => {
@@ -380,6 +419,9 @@ test('invalid operation targets never enter recovery storage or reach transport'
     path.replace('stable', '..'),
     path.replace('stable', 'a\\b'),
     path.replace('/drafts/', '/credentials/'),
+    // Removed 0.1 route spellings are never frozen or sent.
+    path.replace('/v1/workspaces/', '/v1/projects/'),
+    `/v1/workspaces/p/bundles/${bundle}/channels/stable/promotions`,
   ];
   for (const operationPath of invalid) {
     const storage = new MemoryStorage();
@@ -391,7 +433,7 @@ test('invalid operation targets never enter recovery storage or reach transport'
     await assert.rejects(
       exactOperation(
         { ...env, CONSOLE_CHANNEL: 'stable' },
-        { projectId: 'p', operationPath, body: '{}', key },
+        { workspaceId: 'p', operationPath, body: '{}', key },
         fetcher,
       ),
     );

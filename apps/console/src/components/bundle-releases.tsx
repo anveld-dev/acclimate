@@ -46,7 +46,7 @@ import type { ConsoleState } from '../server/channel';
 export function BundleReleases({ state }: { state: Extract<ConsoleState, { status: 'ready' }> }) {
   const router = useRouter();
   const restoreReturnRef = useRef<HTMLElement | null>(null);
-  const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
+  const scope = { workspaceId: state.workspaceId, bundleId: state.bundleId, channel: state.channel };
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
   const [page, setPage] = useState(state.history);
@@ -86,7 +86,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
     return () => {
       ignore = true;
     };
-  }, [fragment, linkedRelease, page, state.projectId, state.bundleId, state.channel]);
+  }, [fragment, linkedRelease, page, state.workspaceId, state.bundleId, state.channel]);
   useEffect(() => {
     if (linkedRelease && fragment === '#revision-' + linkedRelease.revision) {
       document.getElementById(fragment.slice(1))?.focus();
@@ -126,7 +126,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
     owner: 'releases',
     actorScope: state.actorScope,
     serviceIdentity: state.serviceIdentity,
-    projectId: state.projectId,
+    workspaceId: state.workspaceId,
     bundleId: state.bundleId,
     channel: state.channel,
   };
@@ -138,7 +138,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
     } catch {
       setError('Recovery storage unavailable. Enable session storage before restoring.');
     }
-  }, [state.actorScope, state.serviceIdentity, state.projectId, state.bundleId, state.channel]);
+  }, [state.actorScope, state.serviceIdentity, state.workspaceId, state.bundleId, state.channel]);
 
   async function loadMore() {
     if (!page.nextBeforeRevision || loading) return;

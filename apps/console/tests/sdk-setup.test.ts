@@ -15,7 +15,7 @@ import type { ConsoleState } from '../src/server/channel';
 
 // Setup only reads this selection; delivery data stays in the server-owned ready state.
 const state = {
-  projectId: 'project-one',
+  workspaceId: 'project-one',
   bundleId: 'bundle-two',
   channel: 'preview',
   publicApiUrl: 'https://api.example',
@@ -45,7 +45,7 @@ test('downloaded delivery recipe targets the selected bundle and channel', () =>
   assert.equal(
     decodeURIComponent(download[1].replaceAll('&#x27;', "'").replaceAll('&#39;', "'")),
     basicDeliveryRecipes({
-      projectId: state.projectId,
+      workspaceId: state.workspaceId,
       bundleId: state.bundleId,
       channel: state.channel,
     }).typescript,

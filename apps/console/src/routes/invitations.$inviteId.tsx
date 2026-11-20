@@ -55,8 +55,8 @@ function JoinWorkspace() {
                 const joined = await runInvitationCommand({
                   data: { kind: 'accept', id: inviteId },
                 });
-                if (joined.ok && joined.projectId) {
-                  window.location.assign(`/w/${encodeURIComponent(joined.projectId)}/bundles`);
+                if (joined.ok && joined.workspaceId) {
+                  window.location.assign(`/w/${encodeURIComponent(joined.workspaceId)}/bundles`);
                 } else setMessage(joined.ok ? 'Could not confirm membership.' : joined.message);
               } catch {
                 setMessage('Could not confirm membership. Try again.');
@@ -70,7 +70,7 @@ function JoinWorkspace() {
         )}
         {invitation?.status === 'accepted' && (
           <Button asChild>
-            <a href={`/w/${encodeURIComponent(invitation.projectId!)}/bundles`}>Open workspace</a>
+            <a href={`/w/${encodeURIComponent(invitation.workspaceId!)}/bundles`}>Open workspace</a>
           </Button>
         )}
         <Button variant="outline" asChild>

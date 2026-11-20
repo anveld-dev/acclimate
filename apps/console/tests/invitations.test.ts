@@ -13,7 +13,7 @@ const env = {
 test('email invitation sends only recipient and role using the server-selected credentials', async () => {
   const result = await invitationCommand(
     env,
-    { kind: 'create', projectId: 'p', email: 'person@example.test', role: 'editor' },
+    { kind: 'create', workspaceId: 'p', email: 'person@example.test', role: 'editor' },
     async (url, init) => {
       assert.equal(new URL(String(url)).pathname, '/v1/workspaces/p/invitations');
       assert.equal(init?.method, 'POST');
@@ -33,12 +33,14 @@ test('a preview does not accept an invitation; acceptance uses an explicit POST'
   const calls: string[] = [];
   const fetcher: typeof fetch = async (url, init) => {
     calls.push(`${init?.method} ${new URL(String(url)).pathname}`);
-    return Response.json(init?.method === 'POST' ? { projectId: 'p' } : { id, status: 'pending' });
+    return Response.json(
+      init?.method === 'POST' ? { workspaceId: 'p' } : { id, status: 'pending' },
+    );
   };
   await invitationCommand(env, { kind: 'preview', id }, fetcher);
   assert.deepEqual(calls, [`GET /v1/invitations/${id}`]);
   const accepted = await invitationCommand(env, { kind: 'accept', id }, fetcher);
-  assert.deepEqual(accepted, { ok: true, projectId: 'p' });
+  assert.deepEqual(accepted, { ok: true, workspaceId: 'p' });
   assert.equal(calls[1], `POST /v1/invitations/${id}/accept`);
 });
 
@@ -53,7 +55,7 @@ test('invalid paths and missing sessions never reach the service', async () => {
     false,
   );
   assert.equal(
-    (await invitationCommand(env, { kind: 'list', projectId: '..' }, fetcher)).ok,
+    (await invitationCommand(env, { kind: 'list', workspaceId: '..' }, fetcher)).ok,
     false,
   );
   assert.equal(

@@ -55,7 +55,7 @@ function fixture(
     else if (method === 'POST')
       body = {
         id,
-        projectId: 'project',
+        workspaceId: 'project',
         bundleId: 'bundle',
         channel: 'stable',
         displayName: 'App',
@@ -67,7 +67,7 @@ function fixture(
         items: [
           {
             id,
-            projectId: 'project',
+            workspaceId: 'project',
             bundleId: 'bundle',
             channel: 'stable',
             displayName: 'App',
@@ -76,7 +76,7 @@ function fixture(
           },
           {
             id: other,
-            projectId: 'project',
+            workspaceId: 'project',
             bundleId: 'other-bundle',
             channel: 'stable',
             displayName: 'Other',
@@ -111,8 +111,8 @@ test('list filters selected bundle, reads actual receipts with console session, 
 });
 test('all receipt views preserve the selected page and reject a single out-of-scope item', async () => {
   const receipt: DeliveryReceipt = {
-    projectId: 'project',
-    integrationId: id,
+    workspaceId: 'project',
+    connectionId: id,
     bundleId: 'bundle',
     channel: null,
     eventId: other,
@@ -125,9 +125,9 @@ test('all receipt views preserve the selected page and reject a single out-of-sc
     delayed: false,
   };
   const mismatches = [
-    { projectId: 'other-project' },
+    { workspaceId: 'other-project' },
     { bundleId: 'other-bundle' },
-    { integrationId: other },
+    { connectionId: other },
   ];
   for (const mismatch of [undefined, ...mismatches]) {
     const page = { items: [receipt, { ...receipt, eventId: key, ...mismatch }], nextCursor: other };
@@ -135,7 +135,7 @@ test('all receipt views preserve the selected page and reject a single out-of-sc
     const list = await readIntegrationState(env, f.fetcher);
     const detail = await readConnectionsState(
       { ...env, CONSOLE_BUNDLE: 'other-bundle' },
-      { projectId: 'project', integrationId: id },
+      { workspaceId: 'project', connectionId: id },
       f.fetcher,
     );
     const history = await integrationCommand(
@@ -253,7 +253,7 @@ test('canonical connection create keeps the rendered target when another tab cha
     },
     {
       action: 'create',
-      projectId: 'project',
+      workspaceId: 'project',
       bundleId: 'bundle',
       channel: 'stable',
       displayName: ' Application ',
@@ -277,7 +277,7 @@ test('workspace connection index includes every bundle independently of the sele
   const f = fixture();
   const result = await readConnectionsState(
     { ...env, CONSOLE_BUNDLE: undefined, CONSOLE_CHANNEL: 'canary' },
-    { projectId: 'project' },
+    { workspaceId: 'project' },
     f.fetcher,
   );
   assert.equal(result.ok, true);
@@ -299,7 +299,7 @@ test('workspace connection detail selects the bookmarked native ID and verifies 
   const f = fixture();
   const result = await readConnectionsState(
     env,
-    { projectId: 'project', integrationId: other },
+    { workspaceId: 'project', connectionId: other },
     f.fetcher,
   );
   assert.equal(result.ok, true);
@@ -315,8 +315,8 @@ test('workspace connection detail selects the bookmarked native ID and verifies 
 test('canonical commands deny another workspace and a mismatched rendered record binding', async () => {
   const { connectionCommand } = await import('../src/server/integration-core');
   for (const target of [
-    { projectId: 'outside-project', bundleId: 'bundle', channel: 'stable' },
-    { projectId: 'project', bundleId: 'other-bundle', channel: 'stable' },
+    { workspaceId: 'outside-project', bundleId: 'bundle', channel: 'stable' },
+    { workspaceId: 'project', bundleId: 'other-bundle', channel: 'stable' },
   ]) {
     const f = fixture();
     const result = await connectionCommand(
@@ -337,7 +337,7 @@ test('canonical commands reject missing scope rather than falling back to rememb
   const f = fixture();
   const input = {
     action: 'create',
-    projectId: 'project',
+    workspaceId: 'project',
     channel: 'stable',
     displayName: 'App',
     key,
@@ -368,7 +368,7 @@ test('workspace connection index traverses independent integration cursor pages'
     }
     return response;
   };
-  const result = await readConnectionsState(env, { projectId: 'project' }, fetcher);
+  const result = await readConnectionsState(env, { workspaceId: 'project' }, fetcher);
   assert.equal(result.ok, true);
   if (!result.ok) throw Error('Expected paginated workspace connections');
   assert.deepEqual(
@@ -383,7 +383,7 @@ test('an unavailable bookmarked connection never silently selects another record
   const f = fixture();
   const result = await readConnectionsState(
     env,
-    { projectId: 'project', integrationId: key },
+    { workspaceId: 'project', connectionId: key },
     f.fetcher,
   );
   assert.equal(result.ok, false);
@@ -397,25 +397,29 @@ test('directory projects the latest service-received status without receipt or c
   const { readConnectionsState } = await import('../src/server/integration-core');
   const f = fixture();
   const receivedAt = '2026-11-17T10:00:00Z';
-  const result = await readConnectionsState(env, { projectId: 'project' }, async (input, init) => {
-    if (String(input).includes('/connection-observations?'))
-      return Response.json({
-        items: [
-          {
-            id,
-            latestObservation: {
-              stage: 'verified',
-              receivedAt,
-              eventId: 'excluded-event',
-              credential: 'excluded-secret',
+  const result = await readConnectionsState(
+    env,
+    { workspaceId: 'project' },
+    async (input, init) => {
+      if (String(input).includes('/connection-observations?'))
+        return Response.json({
+          items: [
+            {
+              id,
+              latestObservation: {
+                stage: 'verified',
+                receivedAt,
+                eventId: 'excluded-event',
+                credential: 'excluded-secret',
+              },
             },
-          },
-          { id: other, latestObservation: null },
-        ],
-        nextCursor: null,
-      });
-    return f.fetcher(input, init);
-  });
+            { id: other, latestObservation: null },
+          ],
+          nextCursor: null,
+        });
+      return f.fetcher(input, init);
+    },
+  );
   assert(result.ok);
   assert.deepEqual(result.state.reports, {
     [id]: { stage: 'verified', receivedAt },

@@ -9,7 +9,7 @@ import {
 
 test('minimal delivery recipes parse and preserve exact selected scope without code interpolation', () => {
   const selection = {
-    projectId: 'project"quoted',
+    workspaceId: 'project"quoted',
     bundleId: 'bundle\\path',
     channel: 'preview\n雪',
   };
@@ -62,7 +62,7 @@ print(json.dumps(ast.literal_eval(assignment.value)))`,
 });
 
 test('generated delivery scripts parse as Node ES modules', () => {
-  const selection = { projectId: 'p', bundleId: 'b', channel: 'stable' };
+  const selection = { workspaceId: 'p', bundleId: 'b', channel: 'stable' };
   for (const recipe of [basicDeliveryRecipes(selection), deliveryRecipes(selection)]) {
     const check = spawnSync(process.execPath, ['--input-type=module', '--check'], {
       input: recipe.typescript,
@@ -73,11 +73,12 @@ test('generated delivery scripts parse as Node ES modules', () => {
   }
 });
 
-test('optional observation recipes bind the project and leave start reporting to a real app event', () => {
-  const code = deliveryRecipes({ projectId: 'private-project', bundleId: 'b', channel: 'stable' });
+test('optional observation recipes bind the workspace and leave start reporting to a real app event', () => {
+  const code = deliveryRecipes({ workspaceId: 'private-workspace', bundleId: 'b', channel: 'stable' });
   for (const recipe of Object.values(code)) {
-    assert.match(recipe, /private-project/);
+    assert.match(recipe, /private-workspace/);
     assert.match(recipe, /ACCLIMATE_RECEIPT_TOKEN/);
+    assert.match(recipe, /ACCLIMATE_INTEGRATION was renamed to ACCLIMATE_CONNECTION in 0\.2\.0/);
     assert.match(recipe, /client\.prepare/);
     assert.doesNotMatch(recipe, /spawn|subprocess/);
   }

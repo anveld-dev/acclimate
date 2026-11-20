@@ -10,12 +10,12 @@ import type { DeliveryObservationsResult } from '../server/delivery-observations
 import { DeliveryApp } from './delivery-app';
 
 export function WorkspaceDelivery({
-  projectId,
+  workspaceId,
   initial,
   initialAppId,
   canManage = false,
 }: {
-  projectId: string;
+  workspaceId: string;
   initialAppId?: string;
   canManage?: boolean;
   initial: DeliveryObservationsResult;
@@ -28,16 +28,16 @@ export function WorkspaceDelivery({
   useEffect(() => {
     setResult(initial);
     setError('');
-  }, [initial, projectId]);
+  }, [initial, workspaceId]);
   async function load(cursor?: string) {
     setBusy(true);
     setError('');
     try {
       const next = await readDeliveryObservations({
-        data: { projectId, cursor, integrationId: cursor ? undefined : initialAppId },
+        data: { workspaceId, cursor, connectionId: cursor ? undefined : initialAppId },
       });
       setResult((previous) => {
-        if (!cursor || !previous.ok || !next.ok || previous.projectId !== next.projectId)
+        if (!cursor || !previous.ok || !next.ok || previous.workspaceId !== next.workspaceId)
           return next;
         const items = new Map(previous.page.items.map((item) => [item.id, item]));
         for (const item of next.page.items) items.set(item.id, item);
@@ -60,7 +60,7 @@ export function WorkspaceDelivery({
         const bestTime = Date.parse(best?.latestObservation?.receivedAt ?? '');
         return !best || (Number.isFinite(time) && !(time <= bestTime)) ? app : best;
       }, undefined);
-  const home = workspaceHref(projectId, 'delivery');
+  const home = workspaceHref(workspaceId, 'delivery');
   return (
     <section className="workspace-delivery delivery-console space-y-4">
       <PageTitle
@@ -80,7 +80,7 @@ export function WorkspaceDelivery({
         <div className="workspace-panel space-y-3 p-4">
           <p>No connected app observations are available. Delivery is unknown.</p>
           <a
-            href={workspaceHref(projectId, canManage ? 'connections' : 'bundles')}
+            href={workspaceHref(workspaceId, canManage ? 'connections' : 'bundles')}
             className="inline-flex items-center gap-1 underline"
           >
             {canManage ? 'Open connections' : 'Browse bundles'}
@@ -149,10 +149,10 @@ export function WorkspaceDelivery({
                 <DeliveryApp
                   key={selected.id + ':' + refresh}
                   app={selected}
-                  projectId={projectId}
+                  workspaceId={workspaceId}
                   canManage={canManage}
                 />
-                <OutcomeLookup target={{ projectId, integrationId: selected.id }} />
+                <OutcomeLookup target={{ workspaceId, connectionId: selected.id }} />
               </div>
             ) : (
               <div className="p-4">

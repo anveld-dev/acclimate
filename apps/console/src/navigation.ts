@@ -3,7 +3,7 @@ import type { BundleScope } from './server/selection';
 export type WorkspaceView = 'bundles' | 'connections' | 'delivery' | 'members';
 export type BundleView = 'content' | 'changes' | 'releases' | 'connect';
 export type ConsoleLocation = {
-  projectId: string;
+  workspaceId: string;
   bundleId?: string;
   channel?: string;
   view: WorkspaceView | BundleView;
@@ -18,15 +18,15 @@ export function releaseRevision(value: unknown): string | undefined {
     return revision;
 }
 
-export function workspaceHref(projectId: string, view: WorkspaceView = 'bundles') {
-  return `/w/${part(projectId)}/${view === 'members' ? 'settings/members' : view}`;
+export function workspaceHref(workspaceId: string, view: WorkspaceView = 'bundles') {
+  return `/w/${part(workspaceId)}/${view === 'members' ? 'settings/members' : view}`;
 }
 export function bundleHref(
   scope: BundleScope,
   view: BundleView,
   search: Record<string, string | number | undefined> = {},
 ) {
-  const base = `/w/${part(scope.projectId)}/bundles/${part(scope.bundleId)}`;
+  const base = `/w/${part(scope.workspaceId)}/bundles/${part(scope.bundleId)}`;
   const path =
     view === 'changes' ? `${base}/changes` : `${base}/channels/${part(scope.channel)}/${view}`;
   const query = new URLSearchParams();
@@ -40,21 +40,21 @@ export function parseConsoleLocation(path: string): ConsoleLocation | null {
     const parts = path.split('/').filter(Boolean).map(decodeURIComponent);
     if (parts[0] !== 'w' || !parts[1] || parts.some((p) => !/^[^\x00-\x20\x7f/]{1,200}$/.test(p)))
       return null;
-    const projectId = parts[1];
+    const workspaceId = parts[1];
     if (parts.length === 3 && ['bundles', 'connections', 'delivery'].includes(parts[2]))
-      return { projectId, view: parts[2] as WorkspaceView };
+      return { workspaceId, view: parts[2] as WorkspaceView };
     if (parts.length === 4 && parts[2] === 'settings' && parts[3] === 'members')
-      return { projectId, view: 'members' };
+      return { workspaceId, view: 'members' };
     if (parts[2] !== 'bundles' || !parts[3]) return null;
     const bundleId = parts[3];
     if (parts.length === 5 && parts[4] === 'changes')
-      return { projectId, bundleId, view: 'changes' };
+      return { workspaceId, bundleId, view: 'changes' };
     if (
       parts.length === 7 &&
       parts[4] === 'channels' &&
       ['content', 'releases', 'connect'].includes(parts[6])
     )
-      return { projectId, bundleId, channel: parts[5], view: parts[6] as BundleView };
+      return { workspaceId, bundleId, channel: parts[5], view: parts[6] as BundleView };
     return null;
   } catch {
     return null;

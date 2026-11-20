@@ -12,8 +12,8 @@ import { runAgent, scoreResult, savedCases } from &#x27;./dist/support-agent.mjs
 export const cases = savedCases;
 export const revisionFiles = [&#x27;package-lock.json&#x27;];
 
-export async function execute({ bundle, input, signal, context }) {
-  const result = await runAgent({ bundle, task: input, signal, job: context });
+export async function execute({ version, input, signal, context }) {
+  const result = await runAgent({ version, task: input, signal, job: context });
   return { output: result.answer, usage: result.measuredUsage };
 }
 
@@ -21,9 +21,9 @@ export async function grade({ output, expected }) {
   return scoreResult(output, expected); // { reward, explanation? }
 }</code></pre>
 <p>Run <code>npx --no-install acclimate-eval describe</code> from that directory. Give its public JSON to the person creating the console request. Keep case contents and credentials on the evaluator machine.</p>
-<p>Ask the service operator for a project read/write evaluator principal and its private JSON configuration. Save the downloaded request as <code>evaluation-request.json</code> in the application directory. Use the physical absolute path from <code>realpath /path/to/evaluator.json</code> and the physical path for <code>journalRoot</code>. Keep the config file at mode 0600 and its enclosing directory at 0700. On macOS, <code>/var</code> points to <code>/private/var</code>.</p>
-<pre><code>npx --no-install acclimate-eval doctor --config /private/evaluator.json --handoff evaluation-request.json
-npx --no-install acclimate-eval compare --config /private/evaluator.json --handoff evaluation-request.json --policy /private/quality-policy.json --live</code></pre>
+<p>Ask the service operator for a workspace read/write evaluator principal and its private JSON configuration. Save the downloaded handoff as <code>handoff.json</code> in the application directory. Use the physical absolute path from <code>realpath /path/to/evaluator.json</code> and the physical path for <code>journalRoot</code>. Keep the config file at mode 0600 and its enclosing directory at 0700. On macOS, <code>/var</code> points to <code>/private/var</code>.</p>
+<pre><code>npx --no-install acclimate-eval doctor --config /private/evaluator.json --handoff handoff.json
+npx --no-install acclimate-eval compare --config /private/evaluator.json --handoff handoff.json --policy /private/quality-policy.json --live</code></pre>
 <p><code>--live</code> runs your agent and grader for both versions. Supplying a policy reports its verdict to the console. Omit <code>--policy</code> to collect comparison evidence alone.</p></section>
 <section id="python"><h2>Python evaluator</h2>
 <p>Install the SDK release in the application environment. Substitute the path to your release artifact.</p>
@@ -37,15 +37,15 @@ cases = saved_cases
 revision_files = [&quot;support_agent.py&quot;, &quot;requirements.lock&quot;]
 
 async def execute(run):
-    result = await run_agent(bundle=run.bundle, task=run.input, cancellation=run.cancellation)
+    result = await run_agent(version=run.version, task=run.input, cancellation=run.cancellation)
     return ExecutionResult(output=result.answer, usage=result.measured_usage)
 
 def grade(run):
     verdict = score_result(run.output, run.expected)
     return GradeResult(reward=verdict.reward, explanation=verdict.explanation)</code></pre>
 <p>Run <code>python -m acclimate describe</code> from that directory. Give its public JSON to the person creating the console request. Keep case contents and credentials on the evaluator machine.</p>
-<p>Ask the service operator for a project read/write evaluator principal and its private JSON configuration. Save the downloaded request as <code>evaluation-request.json</code> in the application directory. Use the physical absolute path from <code>realpath /path/to/evaluator.json</code> and the physical path for <code>journalRoot</code>. Keep the config file at mode 0600 and its enclosing directory at 0700. On macOS, <code>/var</code> points to <code>/private/var</code>.</p>
-<pre><code>python -m acclimate doctor --config /private/evaluator.json --handoff evaluation-request.json
-python -m acclimate compare --config /private/evaluator.json --handoff evaluation-request.json --policy /private/quality-policy.json --live</code></pre>
+<p>Ask the service operator for a workspace read/write evaluator principal and its private JSON configuration. Save the downloaded handoff as <code>handoff.json</code> in the application directory. Use the physical absolute path from <code>realpath /path/to/evaluator.json</code> and the physical path for <code>journalRoot</code>. Keep the config file at mode 0600 and its enclosing directory at 0700. On macOS, <code>/var</code> points to <code>/private/var</code>.</p>
+<pre><code>python -m acclimate doctor --config /private/evaluator.json --handoff handoff.json
+python -m acclimate compare --config /private/evaluator.json --handoff handoff.json --policy /private/quality-policy.json --live</code></pre>
 <p><code>--live</code> runs your agent and grader for both versions. Supplying a policy reports its verdict to the console. Omit <code>--policy</code> to collect comparison evidence alone.</p></section>
 </main></body></html>

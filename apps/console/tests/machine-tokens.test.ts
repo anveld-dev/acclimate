@@ -24,7 +24,7 @@ test('issuing sends only name, rights, expiry and reason over the admin session'
     env,
     {
       kind: 'issue',
-      projectId: 'p',
+      workspaceId: 'p',
       name: ' ci ',
       rights: ['evaluate'],
       expiresInDays: 30,
@@ -57,17 +57,17 @@ test('list, rotate and revoke use the workspace token routes', async () => {
     if (path.endsWith('/revoke')) return Response.json({ token: { ...token, status: 'revoked' } });
     return Response.json({ items: [token] });
   };
-  const listed = await machineTokenCommand(env, { kind: 'list', projectId: 'p' }, fetcher);
+  const listed = await machineTokenCommand(env, { kind: 'list', workspaceId: 'p' }, fetcher);
   assert.equal(listed.ok && listed.items?.length, 1);
   assert.equal(listed.ok && listed.publicApiUrl, env.CONSOLE_PUBLIC_API_URL);
   await machineTokenCommand(
     env,
-    { kind: 'rotate', projectId: 'p', id, overlapSeconds: 3600 },
+    { kind: 'rotate', workspaceId: 'p', id, overlapSeconds: 3600 },
     fetcher,
   );
   await machineTokenCommand(
     env,
-    { kind: 'revoke', projectId: 'p', id, reason: ' moved ' },
+    { kind: 'revoke', workspaceId: 'p', id, reason: ' moved ' },
     fetcher,
   );
   assert.deepEqual(calls.slice(2), [
@@ -83,17 +83,17 @@ test('invalid input never reaches the service and service messages surface', asy
     throw new Error();
   };
   for (const input of [
-    { kind: 'list', projectId: '..' },
-    { kind: 'revoke', projectId: 'p', id: '../x', reason: 'r' },
-    { kind: 'revoke', projectId: 'p', id, reason: ' ' },
-    { kind: 'issue', projectId: 'p', name: 'ci', rights: ['admin'], expiresInDays: 1 },
-    { kind: 'issue', projectId: 'p', name: 'ci', rights: [], expiresInDays: 1 },
+    { kind: 'list', workspaceId: '..' },
+    { kind: 'revoke', workspaceId: 'p', id: '../x', reason: 'r' },
+    { kind: 'revoke', workspaceId: 'p', id, reason: ' ' },
+    { kind: 'issue', workspaceId: 'p', name: 'ci', rights: ['admin'], expiresInDays: 1 },
+    { kind: 'issue', workspaceId: 'p', name: 'ci', rights: [], expiresInDays: 1 },
   ] as const)
     assert.equal((await machineTokenCommand(env, input as never, never)).ok, false);
   assert.equal(calls, 0);
   const refused = await machineTokenCommand(
     env,
-    { kind: 'issue', projectId: 'p', name: 'CI', rights: ['evaluate'], expiresInDays: 1 },
+    { kind: 'issue', workspaceId: 'p', name: 'CI', rights: ['evaluate'], expiresInDays: 1 },
     async () =>
       Response.json(
         { error: { code: 'invalid_content', message: 'Name must be lowercase', requestId: 'r' } },
@@ -101,7 +101,7 @@ test('invalid input never reaches the service and service messages surface', asy
       ),
   );
   assert.deepEqual(refused, { ok: false, message: 'Name must be lowercase' });
-  const denied = await machineTokenCommand(env, { kind: 'list', projectId: 'p' }, async () =>
+  const denied = await machineTokenCommand(env, { kind: 'list', workspaceId: 'p' }, async () =>
     Response.json({ error: { code: 'denied', message: 'no', requestId: 'r' } }, { status: 403 }),
   );
   assert.equal(denied.ok === false && denied.denied, true);
@@ -110,7 +110,7 @@ test('invalid input never reaches the service and service messages surface', asy
 test('the downloaded evaluator.json is ready for the SDK evaluator', () => {
   const file = evaluatorConfig({
     publicApiUrl: 'https://api.example.test',
-    projectId: 'p',
+    workspaceId: 'p',
     principalId: 'machine:ci',
     journalRoot: '/home/ci/.acclimate/journal',
     token: 'acm_secret',
@@ -118,7 +118,7 @@ test('the downloaded evaluator.json is ready for the SDK evaluator', () => {
   assert.deepEqual(JSON.parse(file), {
     schemaVersion: 1,
     serviceUrl: 'https://api.example.test',
-    projectId: 'p',
+    workspaceId: 'p',
     evaluatorPrincipalId: 'machine:ci',
     evaluatorToken: 'acm_secret',
     journalRoot: '/home/ci/.acclimate/journal',
@@ -127,7 +127,7 @@ test('the downloaded evaluator.json is ready for the SDK evaluator', () => {
   const tokenless = JSON.parse(
     evaluatorConfig({
       publicApiUrl: 'https://api.example.test/',
-      projectId: 'p',
+      workspaceId: 'p',
       principalId: 'machine:ci',
       journalRoot: '/j',
     }),
@@ -138,7 +138,7 @@ test('the downloaded evaluator.json is ready for the SDK evaluator', () => {
   assert.throws(() =>
     evaluatorConfig({
       publicApiUrl: 'https://a.test',
-      projectId: 'p',
+      workspaceId: 'p',
       principalId: 'm',
       journalRoot: 'x',
     }),

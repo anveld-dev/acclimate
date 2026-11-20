@@ -72,7 +72,11 @@ export function ChangesPipeline({
   const { resolution } = state;
   const released = state.history.items.slice(0, 3);
   const releasedVersions = new Set(state.history.items.map((release) => release.version.id));
-  const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
+  const scope = {
+    workspaceId: state.workspaceId,
+    bundleId: state.bundleId,
+    channel: state.channel,
+  };
   const historyHref = bundleHref(scope, 'changes', { history: 1 });
   const releasesHref = bundleHref(scope, 'releases');
   const drafting: Candidate[] = [];

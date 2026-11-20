@@ -41,7 +41,7 @@ const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 type Issued = { secret: string; token: MachineToken };
 
 /** Workspace admins issue, rotate and revoke evaluator tokens without a service restart. */
-export function WorkspaceEvaluatorTokens({ projectId }: { projectId: string }) {
+export function WorkspaceEvaluatorTokens({ workspaceId }: { workspaceId: string }) {
   const [tokens, setTokens] = useState<MachineToken[]>();
   const [events, setEvents] = useState<MachineTokenEvent[]>([]);
   const [publicApiUrl, setPublicApiUrl] = useState('');
@@ -56,11 +56,11 @@ export function WorkspaceEvaluatorTokens({ projectId }: { projectId: string }) {
   const [issued, setIssued] = useState<Issued>();
   const [revoking, setRevoking] = useState<MachineToken>();
   const [revokeReason, setRevokeReason] = useState('');
-  const scope = useRef(projectId);
-  scope.current = projectId;
+  const scope = useRef(workspaceId);
+  scope.current = workspaceId;
 
-  async function refresh(target = projectId) {
-    const value = await runMachineTokenCommand({ data: { kind: 'list', projectId: target } });
+  async function refresh(target = workspaceId) {
+    const value = await runMachineTokenCommand({ data: { kind: 'list', workspaceId: target } });
     if (target !== scope.current) return;
     if (!value.ok) {
       if (value.denied) setHidden(true);
@@ -77,11 +77,11 @@ export function WorkspaceEvaluatorTokens({ projectId }: { projectId: string }) {
     setHidden(false);
     setIssued(undefined);
     setMessage('');
-    void refresh(projectId).catch(() => {
-      if (scope.current === projectId) setMessage('Could not load evaluator tokens.');
+    void refresh(workspaceId).catch(() => {
+      if (scope.current === workspaceId) setMessage('Could not load evaluator tokens.');
     });
     // refresh reads the current project from its argument.
-  }, [projectId]);
+  }, [workspaceId]);
 
   async function run(command: MachineTokenCommand) {
     if (pending) return;
@@ -89,7 +89,7 @@ export function WorkspaceEvaluatorTokens({ projectId }: { projectId: string }) {
     setMessage('');
     try {
       const result = await runMachineTokenCommand({ data: command });
-      if (command.projectId !== scope.current) return;
+      if (command.workspaceId !== scope.current) return;
       if (!result.ok) {
         setMessage(result.message);
         return;
@@ -102,7 +102,7 @@ export function WorkspaceEvaluatorTokens({ projectId }: { projectId: string }) {
           `Revoked ${result.token?.name ?? 'token'}. It stops working on its next request.`,
         );
       }
-      await refresh(command.projectId);
+      await refresh(command.workspaceId);
     } catch {
       setMessage('Could not confirm the token change. Refresh the token list before trying again.');
     } finally {
@@ -149,7 +149,7 @@ export function WorkspaceEvaluatorTokens({ projectId }: { projectId: string }) {
       {issued && (
         <IssuedSecret
           issued={issued}
-          projectId={projectId}
+          workspaceId={workspaceId}
           publicApiUrl={publicApiUrl}
           onDone={() => setIssued(undefined)}
         />
@@ -214,7 +214,7 @@ export function WorkspaceEvaluatorTokens({ projectId }: { projectId: string }) {
                         onClick={() =>
                           void run({
                             kind: 'rotate',
-                            projectId,
+                            workspaceId,
                             id: token.id,
                             overlapSeconds: 3600,
                           })
@@ -266,7 +266,7 @@ export function WorkspaceEvaluatorTokens({ projectId }: { projectId: string }) {
               if (!validIssue) return;
               void run({
                 kind: 'issue',
-                projectId,
+                workspaceId,
                 name,
                 rights,
                 expiresInDays: Number(days),
@@ -361,7 +361,7 @@ export function WorkspaceEvaluatorTokens({ projectId }: { projectId: string }) {
             onSubmit={(event) => {
               event.preventDefault();
               if (revoking && revokeReason.trim())
-                void run({ kind: 'revoke', projectId, id: revoking.id, reason: revokeReason });
+                void run({ kind: 'revoke', workspaceId, id: revoking.id, reason: revokeReason });
             }}
             className="space-y-4"
           >
@@ -405,12 +405,12 @@ export function WorkspaceEvaluatorTokens({ projectId }: { projectId: string }) {
 /** Shown once after issue or rotation. The secret never reaches a URL or local storage. */
 function IssuedSecret({
   issued,
-  projectId,
+  workspaceId,
   publicApiUrl,
   onDone,
 }: {
   issued: Issued;
-  projectId: string;
+  workspaceId: string;
   publicApiUrl: string;
   onDone: () => void;
 }) {
@@ -420,7 +420,7 @@ function IssuedSecret({
   function download() {
     const content = evaluatorConfig({
       publicApiUrl,
-      projectId,
+      workspaceId,
       principalId: issued.token.principalId,
       journalRoot,
       token: embed ? issued.secret : undefined,

@@ -9,7 +9,7 @@ import {
 } from '../src/navigation';
 import { consoleDestination } from '../src/components/console-link';
 
-const scope = { projectId: 'workspace', bundleId: 'bundle', channel: 'canary' };
+const scope = { workspaceId: 'workspace', bundleId: 'bundle', channel: 'canary' };
 
 test('channel switch retains Content filters and selected path without leaking unrelated detail', () => {
   const search = channelSwitchSearch('content', {

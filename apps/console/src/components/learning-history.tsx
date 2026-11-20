@@ -43,7 +43,11 @@ export function RewardBreakdown({ comparison }: { comparison: Comparison }) {
 
 /** Bundle-wide evidence history. Deliberately no line joining different experiments. */
 export function LearningHistory({ state }: { state: Ready }) {
-  const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
+  const scope = {
+    workspaceId: state.workspaceId,
+    bundleId: state.bundleId,
+    channel: state.channel,
+  };
   const [requests, setRequests] = useState<Evaluation[]>([]);
   const [reports, setReports] = useState<Record<string, Comparison>>({});
   const [unavailable, setUnavailable] = useState<string[]>([]);

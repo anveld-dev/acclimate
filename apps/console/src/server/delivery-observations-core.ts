@@ -7,45 +7,45 @@ import { requireSession, type Environment } from './selection';
 
 export type DeliveryObservationsResult =
   | { ok: false; message: string }
-  | { ok: true; projectId: string; projectName: string; page: Page<ConnectionObservation> };
+  | { ok: true; workspaceId: string; projectName: string; page: Page<ConnectionObservation> };
 
 /** Reading app observations deliberately does not enter the admin Connections context. */
 export async function readDeliveryObservationsState(
   env: Environment,
-  input: { projectId: string; cursor?: string; integrationId?: string },
+  input: { workspaceId: string; cursor?: string; connectionId?: string },
   fetcher: typeof fetch = fetch,
 ): Promise<DeliveryObservationsResult> {
   try {
     requireSession(env);
     if (
       !input ||
-      typeof input.projectId !== 'string' ||
-      !/^[^\x00-\x20\x7f/]{1,200}$/.test(input.projectId) ||
+      typeof input.workspaceId !== 'string' ||
+      !/^[^\x00-\x20\x7f/]{1,200}$/.test(input.workspaceId) ||
       (input.cursor !== undefined && !/^[a-f0-9-]{36}$/i.test(input.cursor)) ||
-      (input.integrationId !== undefined && !/^[a-f0-9-]{36}$/i.test(input.integrationId))
+      (input.connectionId !== undefined && !/^[a-f0-9-]{36}$/i.test(input.connectionId))
     )
       return { ok: false, message: 'Select a workspace and a valid delivery page.' };
     const api = consoleClient(env, fetcher);
     const projects = await allPages((cursor) => api.listWorkspaces({ cursor, limit: 100 }));
-    const project = projects.find((item) => item.id === input.projectId);
+    const project = projects.find((item) => item.id === input.workspaceId);
     if (!project)
       return { ok: false, message: 'Access denied. Current workspace read access is required.' };
-    const response = await api.listConnectionObservations(input.projectId, {
+    const response = await api.listConnectionObservations(input.workspaceId, {
       cursor: input.cursor,
       limit: 50,
     });
     if (
-      input.integrationId &&
-      !response.items.some((item) => item.id === input.integrationId) &&
+      input.connectionId &&
+      !response.items.some((item) => item.id === input.connectionId) &&
       response.nextCursor
     ) {
       const remaining = await allPages((cursor) =>
-        api.listConnectionObservations(input.projectId, {
+        api.listConnectionObservations(input.workspaceId, {
           cursor: cursor ?? response.nextCursor!,
           limit: 100,
         }),
       );
-      const linked = remaining.find((item) => item.id === input.integrationId);
+      const linked = remaining.find((item) => item.id === input.connectionId);
       if (linked) response.items.push(linked);
     }
     // Workspace only the public observation DTO, even if an upstream version adds fields.
@@ -60,7 +60,7 @@ export async function readDeliveryObservationsState(
         latestObservation: item.latestObservation ? publicReport(item.latestObservation) : null,
       })),
     };
-    return { ok: true, projectId: project.id, projectName: project.name, page };
+    return { ok: true, workspaceId: project.id, projectName: project.name, page };
   } catch (error) {
     return {
       ok: false,

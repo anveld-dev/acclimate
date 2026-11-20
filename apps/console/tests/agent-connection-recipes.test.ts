@@ -14,7 +14,7 @@ import {
 // No provider, service or repository implementation imports are needed.
 async function runFixture(
   language: 'typescript' | 'python',
-  behavior: 'success' | 'rejected' | 'uncertain' | 'collision',
+  behavior: 'success' | 'rejected' | 'uncertain' | 'collision' | 'renamed',
 ) {
   const root = await mkdtemp(join(tmpdir(), 'acclimate-console-agent-'));
   const job = join(root, 'job');
@@ -22,7 +22,7 @@ async function runFixture(
   const resultPath = join(job, 'acclimate-agent-result.json');
   const instructionPath = join(job, 'AGENTS.md');
   const recipes = agentConnectionRecipes({
-    projectId: 'project',
+    workspaceId: 'project',
     bundleId: 'bundle',
     channel: 'stable',
   });
@@ -47,7 +47,7 @@ export class AcclimateClient {
   async prepare({destination}) {
     const absolutePath = join(destination, 'AGENTS.md');
     await writeFile(absolutePath, 'Prepared instruction');
-    return { version: { id: 'version-one', digest: 'digest-one' }, instructions: 'Prepared instruction',
+    return { version: { version: { id: 'version-one', digest: 'digest-one' } }, instructions: 'Prepared instruction',
       skillFiles: [], files: [{ kind: 'instruction', absolutePath }], cleanup: () => unlink(absolutePath) };
   }
 }`,
@@ -68,14 +68,14 @@ export async function runAgent({instruction, approvedMemory, task}) {
         `
 from pathlib import Path
 class AcclimateClient:
-    def __init__(self, *args): pass
+    def __init__(self, *args, **kwargs): pass
     def prepare(self, *args, destination, **kwargs): return Prepared(destination)
 class Prepared:
     def __init__(self, root):
         self.path = Path(root) / 'AGENTS.md'
         self.path.write_text('Prepared instruction')
         self.instructions = 'Prepared instruction'
-        self.version = dict(id='version-one', digest='digest-one')
+        self.version = dict(version=dict(id='version-one', digest='digest-one'))
         self.skill_files = []
         self.files = [dict(kind='instruction', absolutePath=str(self.path))]
     def cleanup(self): self.path.unlink()
@@ -105,10 +105,17 @@ def run_agent(*, instruction, skill_files, approved_memory, task):
         ACCLIMATE_CACHE: join(root, 'cache'),
         ACCLIMATE_JOB_DIR: job,
         AGENT_TASK: 'Check the latest receipt',
+        ...(behavior === 'renamed'
+          ? { ACCLIMATE_INTEGRATION: 'old-connection', ACCLIMATE_CONNECTION: '' }
+          : {}),
       },
     });
     assert.ifError(child.error);
-    if (behavior === 'success') {
+    if (behavior === 'renamed') {
+      assert.notEqual(child.status, 0);
+      assert.match(child.stderr, /ACCLIMATE_INTEGRATION was renamed to ACCLIMATE_CONNECTION in 0\.2\.0/);
+      await assert.rejects(access(instructionPath), { code: 'ENOENT' });
+    } else if (behavior === 'success') {
       assert.equal(child.status, 0, child.stderr);
       const result = JSON.parse(await readFile(resultPath, 'utf8'));
       assert.equal(result.versionId, 'version-one');
@@ -135,7 +142,7 @@ for (const language of ['typescript', 'python'] as const) {
   test(`${language} copied agent recipe retains a private bound result before input cleanup`, () =>
     runFixture(language, 'success'));
   test(`${language} copied agent recipe preserves inputs when termination or retention is unresolved`, async () => {
-    for (const behavior of ['rejected', 'uncertain', 'collision'] as const)
+    for (const behavior of ['rejected', 'uncertain', 'collision', 'renamed'] as const)
       await runFixture(language, behavior);
   });
 }
@@ -161,9 +168,9 @@ test('the application module recipe exports one contract for delivery and evalua
     ));
     const check = spawnSync(process.execPath, ['--input-type=module', '-e', `
       const app = await import(${JSON.stringify(join(root, 'application.mjs'))});
-      const bundle = { payload: { files: [{ kind: 'instruction', text: 'Be brief.' }] } };
+      const version = { payload: { files: [{ kind: 'instruction', text: 'Be brief.' }] } };
       const [item] = app.cases;
-      const run = await app.execute({ bundle, input: item.input, signal: new AbortController().signal });
+      const run = await app.execute({ version, instructions: 'Be brief.', input: item.input, signal: new AbortController().signal });
       console.log(JSON.stringify(await app.grade({ output: run.output, expected: item.expected })));`], { encoding: 'utf8' });
     assert.equal(check.status, 0, check.stderr);
     assert.deepEqual(JSON.parse(check.stdout), { reward: 1 });
@@ -176,7 +183,7 @@ test('the application module recipe exports one contract for delivery and evalua
 });
 
 test('native delivery recipe keeps receipts through the plugin and makes the cache optional', () => {
-  const recipe = nativeDeliveryRecipe({ projectId: 'p', bundleId: 'b', channel: 'stable' }, 'claude');
+  const recipe = nativeDeliveryRecipe({ workspaceId: 'p', bundleId: 'b', channel: 'stable' }, 'claude');
   assert.match(recipe, /const delivery = await client\.prepare\(/);
   assert.match(recipe, /await prepare\(delivery\)/);
   assert.match(recipe, /~\/\.cache\/acclimate\/typescript/);

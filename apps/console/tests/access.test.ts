@@ -104,7 +104,7 @@ test('lookup confirms identity; mismatched confirmation never mutates', async ()
   const f = fixture();
   const lookup = await accessCommand(
     env,
-    { kind: 'userLookup', projectId: 'p', userId },
+    { kind: 'userLookup', workspaceId: 'p', userId },
     f.fetcher,
   );
   assert.deepEqual(lookup, {
@@ -116,7 +116,7 @@ test('lookup confirms identity; mismatched confirmation never mutates', async ()
     env,
     {
       kind: 'setMembership',
-      projectId: 'p',
+      workspaceId: 'p',
       userId,
       role: 'admin',
       confirmedIdentity: { issuer: 'https://issuer.example', subject: 'another-person' },
@@ -135,7 +135,7 @@ test('membership command rechecks verified identity and leaves actor to session 
     env,
     {
       kind: 'setMembership',
-      projectId: 'p',
+      workspaceId: 'p',
       userId,
       role: 'viewer',
       confirmedIdentity: { issuer: 'https://issuer.example', subject: 'person' },
@@ -178,7 +178,7 @@ test('operator creation and confirmed removal use session authority without acto
     env,
     {
       kind: 'removeMembership',
-      projectId: 'p',
+      workspaceId: 'p',
       userId,
       confirmedIdentity: { issuer: 'https://issuer.example', subject: 'person' },
     },
@@ -244,7 +244,7 @@ test('membership commands keep their explicit workspace when the remembered sele
     { ...env, CONSOLE_PROJECT: 'another-workspace' },
     {
       kind: 'removeMembership',
-      projectId: 'p',
+      workspaceId: 'p',
       userId,
       confirmedIdentity: { issuer: 'https://issuer.example', subject: 'person' },
     },

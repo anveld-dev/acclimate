@@ -48,7 +48,7 @@ function fixture(revokedAt: string | null, errorDetails?: unknown) {
       items: [
         {
           id,
-          projectId: 'project',
+          workspaceId: 'project',
           bundleId: 'bundle',
           channel: 'stable',
           credentials: [{ id: original, kind: 'content-read', revokedAt }],

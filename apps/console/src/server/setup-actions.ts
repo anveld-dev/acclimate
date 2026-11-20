@@ -15,11 +15,11 @@ export const readSetup = createServerFn({ method: 'GET' }).handler(async () => {
   return listSetup(await requestEnvironment());
 });
 export const readWorkspaceBundles = createServerFn({ method: 'GET' })
-  .validator((input: { projectId: string }) => input)
+  .validator((input: { workspaceId: string }) => input)
   .handler(async ({ data }) => {
     setResponseHeader('Cache-Control', 'private, no-store');
     return listSetup(
-      scopedEnvironment(await requestEnvironment(), { projectId: data.projectId }),
+      scopedEnvironment(await requestEnvironment(), { workspaceId: data.workspaceId }),
       fetch,
       true,
     );
@@ -45,13 +45,17 @@ export const createWorkspaceContent = createServerFn({ method: 'POST' })
       const env = await requestEnvironment();
       const result = await createSetup(env, data);
       storeSelection(env, {
-        projectId: data.projectId,
+        workspaceId: data.workspaceId,
         bundleId: result.bundle.id,
         channel: data.channel,
       });
       return {
         ok: true as const,
-        selection: { projectId: data.projectId, bundleId: result.bundle.id, channel: data.channel },
+        selection: {
+          workspaceId: data.workspaceId,
+          bundleId: result.bundle.id,
+          channel: data.channel,
+        },
       };
     } catch (error) {
       return setupFailure(error);
@@ -59,16 +63,16 @@ export const createWorkspaceContent = createServerFn({ method: 'POST' })
   });
 
 export const reconcileSetup = createServerFn({ method: 'POST' })
-  .validator((input: { projectId: string; key: string }) => input)
+  .validator((input: { workspaceId: string; key: string }) => input)
   .handler(async ({ data }) => {
     setResponseHeader('Cache-Control', 'private, no-store');
     try {
       const env = await requestEnvironment();
-      const operation = await setupClient(env).getOperation(data.projectId, data.key);
+      const operation = await setupClient(env).getOperation(data.workspaceId, data.key);
       if (operation.status === 'committed' && 'bundle' in operation.result) {
         const result = operation.result;
         storeSelection(env, {
-          projectId: data.projectId,
+          workspaceId: data.workspaceId,
           bundleId: result.bundle.id,
           channel: result.resolution.channel,
         });
@@ -76,7 +80,7 @@ export const reconcileSetup = createServerFn({ method: 'POST' })
           ok: true as const,
           committed: true,
           selection: {
-            projectId: data.projectId,
+            workspaceId: data.workspaceId,
             bundleId: result.bundle.id,
             channel: result.resolution.channel,
           },
@@ -89,13 +93,13 @@ export const reconcileSetup = createServerFn({ method: 'POST' })
   });
 
 export const closeSetup = createServerFn({ method: 'POST' })
-  .validator((input: { projectId: string; key: string }) => input)
+  .validator((input: { workspaceId: string; key: string }) => input)
   .handler(async ({ data }) => {
     setResponseHeader('Cache-Control', 'private, no-store');
     try {
       const env = await requestEnvironment();
       const operation = await closeOperation(
-        scopedEnvironment(env, { projectId: data.projectId }),
+        scopedEnvironment(env, { workspaceId: data.workspaceId }),
         data,
       );
       return { ok: true as const, operation };

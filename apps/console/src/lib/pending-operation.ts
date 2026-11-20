@@ -1,10 +1,10 @@
-import { validateOperationTarget } from './operation-target';
+import { canonicalOperationPath, validateOperationTarget } from './operation-target';
 // Only submitted text lives here. Unresolved metadata outlives explicit text forgetting.
 const owners = ['draft', 'releases', 'improvement', 'library'] as const;
 export type PendingScope = {
   owner: (typeof owners)[number];
   actorScope: string;
-  projectId: string;
+  workspaceId: string;
   bundleId?: string;
   channel?: string;
   serviceIdentity: string;
@@ -28,7 +28,7 @@ function slot(scope: PendingScope) {
     JSON.stringify([
       scope.actorScope,
       scope.serviceIdentity,
-      scope.projectId,
+      scope.workspaceId,
       scope.bundleId,
       scope.channel,
       scope.owner,
@@ -61,7 +61,7 @@ export function loadPending(storage: PendingStorage, scope: PendingScope): Pendi
   )
     throw Error('Invalid recovery record.');
   if (record.body && Date.now() - record.createdAt > MAX_AGE) return forgetPending(storage, scope);
-  return record;
+  return { ...record, action: canonicalOperationPath(record.action) };
 }
 export function freezePending(
   storage: PendingStorage,
@@ -84,7 +84,7 @@ export function freezePendingExact(
   disclosure?: PendingOperation['disclosure'],
 ): PendingOperation {
   try {
-    validateOperationTarget(scope.projectId, action, scope);
+    validateOperationTarget(scope.workspaceId, action, scope);
   } catch {
     throw Error('Unsupported pending operation.');
   }
@@ -123,6 +123,7 @@ export function forgetPending(
   const raw = storage.getItem(slot(scope));
   if (!raw) return null;
   const record = { ...JSON.parse(raw), body: undefined, disclosure: undefined } as PendingOperation;
+  if (typeof record.action === 'string') record.action = canonicalOperationPath(record.action);
   storage.setItem(slot(scope), JSON.stringify(record));
   return record;
 }

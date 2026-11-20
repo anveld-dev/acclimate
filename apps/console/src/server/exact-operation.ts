@@ -2,7 +2,12 @@ import { operationFingerprintPath, validateOperationTarget } from '../lib/operat
 import { createHash } from 'node:crypto';
 import { ApiError } from '@acclimate/sdk';
 import { requireSession, type Environment } from './selection';
-export type ExactRequest = { projectId: string; operationPath: string; key: string; body: string };
+export type ExactRequest = {
+  workspaceId: string;
+  operationPath: string;
+  key: string;
+  body: string;
+};
 export type OperationOutcome =
   | { status: 'not_observed' | 'closed'; operationId: string }
   | {
@@ -12,9 +17,9 @@ export type OperationOutcome =
       requestFingerprint?: string;
       result: Record<string, any>;
     };
-function canonical(env: Environment, projectId: string, path: string) {
-  validateOperationTarget(projectId, path, {
-    projectId: env.CONSOLE_PROJECT,
+function canonical(env: Environment, workspaceId: string, path: string) {
+  validateOperationTarget(workspaceId, path, {
+    workspaceId: env.CONSOLE_PROJECT,
     bundleId: env.CONSOLE_BUNDLE,
     channel: env.CONSOLE_CHANNEL,
   });
@@ -63,18 +68,18 @@ async function request(
 }
 export async function lookupOperation(
   env: Environment,
-  input: { projectId: string; key: string; operationPath?: string },
+  input: { workspaceId: string; key: string; operationPath?: string },
   fetcher: typeof fetch = fetch,
 ): Promise<OperationOutcome> {
   validateKey(input.key);
   canonical(
     env,
-    input.projectId,
-    input.operationPath || `/v1/workspaces/${input.projectId}/bundle-setups`,
+    input.workspaceId,
+    input.operationPath || `/v1/workspaces/${input.workspaceId}/bundle-setups`,
   );
   return request(
     env,
-    `/v1/workspaces/${encodeURIComponent(input.projectId)}/operations/${encodeURIComponent(input.key)}${input.operationPath ? `?operationPath=${encodeURIComponent(input.operationPath)}` : ''}`,
+    `/v1/workspaces/${encodeURIComponent(input.workspaceId)}/operations/${encodeURIComponent(input.key)}${input.operationPath ? `?operationPath=${encodeURIComponent(input.operationPath)}` : ''}`,
     'GET',
     undefined,
     undefined,
@@ -83,19 +88,19 @@ export async function lookupOperation(
 }
 export async function closeOperation(
   env: Environment,
-  input: { projectId: string; key: string; operationPath?: string },
+  input: { workspaceId: string; key: string; operationPath?: string },
   fetcher: typeof fetch = fetch,
 ): Promise<OperationOutcome> {
   edits(env);
   validateKey(input.key);
   canonical(
     env,
-    input.projectId,
-    input.operationPath || `/v1/workspaces/${input.projectId}/bundle-setups`,
+    input.workspaceId,
+    input.operationPath || `/v1/workspaces/${input.workspaceId}/bundle-setups`,
   );
   return request(
     env,
-    `/v1/workspaces/${encodeURIComponent(input.projectId)}/operations/${encodeURIComponent(input.key)}/close`,
+    `/v1/workspaces/${encodeURIComponent(input.workspaceId)}/operations/${encodeURIComponent(input.key)}/close`,
     'POST',
     input.key,
     JSON.stringify({ operationPath: input.operationPath }),
@@ -108,7 +113,7 @@ export async function exactOperation<T>(
   fetcher: typeof fetch = fetch,
 ): Promise<T> {
   edits(env);
-  canonical(env, input.projectId, input.operationPath);
+  canonical(env, input.workspaceId, input.operationPath);
   if (
     !/^[a-f0-9-]{36}$/i.test(input.key) ||
     typeof input.body !== 'string' ||

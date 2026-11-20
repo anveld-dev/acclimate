@@ -10,13 +10,13 @@ export async function navigationState(
 ) {
   const access = await readAccessState(env, fetcher);
   const location = parseConsoleLocation(path);
-  const projectId = location?.projectId ?? env.CONSOLE_PROJECT;
-  const project = access.ok ? access.projects.find((p) => p.id === projectId) : undefined;
+  const workspaceId = location?.workspaceId ?? env.CONSOLE_PROJECT;
+  const project = access.ok ? access.projects.find((p) => p.id === workspaceId) : undefined;
   const base = {
     access,
     actorScope: actorScope(env),
     location,
-    projectId: project?.id,
+    workspaceId: project?.id,
     projectName: project?.name,
     role: project?.role,
     bundleId: location?.bundleId,
@@ -25,7 +25,7 @@ export async function navigationState(
   };
   if (!project || !location?.bundleId) return base;
   try {
-    const client = setupClient(scopedEnvironment(env, { projectId: project.id }), fetcher);
+    const client = setupClient(scopedEnvironment(env, { workspaceId: project.id }), fetcher);
     const bundles = await allPages((cursor) =>
       client.listBundles(project.id, { limit: 100, cursor }),
     );

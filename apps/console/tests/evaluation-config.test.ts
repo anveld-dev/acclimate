@@ -45,10 +45,10 @@ test('default public handoff identifies the actual public API and exact request 
   assert.deepEqual(handoff, {
     schemaVersion: 1,
     serviceUrl: 'https://api.example.test',
-    projectId: 'project',
+    workspaceId: 'project',
     bundleId: bundle,
     requestId: request,
-    configuration: appDescriptor,
+    descriptor: appDescriptor,
   });
   assert.equal('adapter' in handoff, false);
   assert.equal('evaluatorToken' in handoff, false);
@@ -71,7 +71,7 @@ test('historical public configuration remains inspectable without inventing new 
   const handoff = JSON.parse(
     evaluationHandoff('https://api.example.test', 'project', bundle, request, legacy),
   );
-  assert.deepEqual(handoff.configuration, legacy);
+  assert.deepEqual(handoff.descriptor, legacy);
 });
 
 test('handoff commands follow the installed evaluator and require live opt-in where declared', () => {
@@ -84,8 +84,7 @@ test('handoff commands follow the installed evaluator and require live opt-in wh
     assert.equal(applicationEvaluatorCommand(language, 'describe'), entry + ' describe');
     assert.equal(
       applicationEvaluatorCommand(language, 'compare', true),
-      entry +
-        ' compare --config /absolute/private/evaluator.json --handoff evaluation-request.json --live',
+      entry + ' compare --config /absolute/private/evaluator.json --handoff handoff.json --live',
     );
     assert.doesNotMatch(applicationEvaluatorCommand(language, 'compare'), /--live/);
     assert.match(

@@ -72,7 +72,7 @@ export function SkillPermissionFields({
 
 type Restore = Omit<
   Extract<LearningRequest, { action: 'restore' }>,
-  'action' | 'projectId' | 'integrationId'
+  'action' | 'workspaceId' | 'connectionId'
 >;
 
 export function RestoreDelivery({

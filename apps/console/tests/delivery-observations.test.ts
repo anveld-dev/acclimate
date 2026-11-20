@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { IntegrationObservation } from '@acclimate/sdk';
+import type { ConnectionObservation } from '@acclimate/sdk';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readDeliveryObservationsState } from '../src/server/delivery-observations-core';
@@ -8,7 +8,7 @@ import { WorkspaceDelivery } from '../src/components/workspace-delivery';
 import { consoleEnvironment } from './console-fixture';
 import { parseConsoleLocation, workspaceHref } from '../src/navigation';
 
-const observation: IntegrationObservation = {
+const observation: ConnectionObservation = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   displayName: 'Agent service',
   bundleId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
@@ -29,7 +29,7 @@ test('workspace readers discover delivery without entering credential administra
     const requests: { url: string; method: string; headers: Headers }[] = [];
     const result = await readDeliveryObservationsState(
       consoleEnvironment,
-      { projectId: 'project' },
+      { workspaceId: 'project' },
       async (input, init) => {
         const url = String(input);
         requests.push({ url, method: init?.method ?? 'GET', headers: new Headers(init?.headers) });
@@ -74,7 +74,7 @@ test('revoked membership and malformed pages do not query or issue credentials',
   let calls = 0;
   const denied = await readDeliveryObservationsState(
     consoleEnvironment,
-    { projectId: 'project' },
+    { workspaceId: 'project' },
     async () => {
       calls++;
       return Response.json({ items: [], nextCursor: null });
@@ -84,7 +84,7 @@ test('revoked membership and malformed pages do not query or issue credentials',
   assert.equal(calls, 1);
   const invalid = await readDeliveryObservationsState(
     consoleEnvironment,
-    { projectId: 'project', cursor: '../bad' },
+    { workspaceId: 'project', cursor: '../bad' },
     async () => {
       throw Error('unexpected');
     },
@@ -95,10 +95,10 @@ test('revoked membership and malformed pages do not query or issue credentials',
 test('delivery screen keeps one receipt identity and separates application and server times', () => {
   const html = renderToStaticMarkup(
     createElement(WorkspaceDelivery, {
-      projectId: 'project',
+      workspaceId: 'project',
       initial: {
         ok: true,
-        projectId: 'project',
+        workspaceId: 'project',
         projectName: 'Project',
         page: {
           items: [
@@ -126,20 +126,20 @@ test('delivery screen keeps one receipt identity and separates application and s
   assert.doesNotMatch(html, /Issue credential|Revoke credential|secret/);
   assert.equal(workspaceHref('project', 'delivery'), '/w/project/delivery');
   assert.deepEqual(parseConsoleLocation('/w/project/delivery'), {
-    projectId: 'project',
+    workspaceId: 'project',
     view: 'delivery',
   });
 });
 
 test('delivery links administrators to the exact connection and gives readers bundle navigation', () => {
-  function screen(canManage: boolean, items: IntegrationObservation[]) {
+  function screen(canManage: boolean, items: ConnectionObservation[]) {
     return renderToStaticMarkup(
       createElement(WorkspaceDelivery, {
-        projectId: 'team',
+        workspaceId: 'team',
         canManage,
         initial: {
           ok: true,
-          projectId: 'team',
+          workspaceId: 'team',
           projectName: 'Team',
           page: { items, nextCursor: null },
         },

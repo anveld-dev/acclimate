@@ -69,6 +69,7 @@ import { ComparisonEvidence, comparisonIncompleteReason } from './comparison-evi
 import { reviewNextStep } from '../lib/review-next-step';
 import { mergeHistory, refreshKnownActive } from '../lib/improvement-history';
 import { requestEvidence } from '../lib/evaluation-history';
+import { canonicalOperationPath } from '../lib/operation-target';
 import { evaluationRequestLabels } from '../lib/evaluation-request-labels';
 import {
   freezePending,
@@ -109,7 +110,11 @@ export function ImprovementWorkspace({
   }, []);
   const { setPendingChanges, discardVersion } = usePendingChanges();
   const lastDiscardVersion = useRef(discardVersion);
-  const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
+  const scope = {
+    workspaceId: state.workspaceId,
+    bundleId: state.bundleId,
+    channel: state.channel,
+  };
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [proposalReadError, setProposalReadError] = useState(false);
   const [requests, setRequests] = useState<Evaluation[]>([]);
@@ -213,7 +218,7 @@ export function ImprovementWorkspace({
   const [evaluatorLanguage, setEvaluatorLanguage] = useState<EvaluatorLanguage>('javascript');
   const [requestLanguages, setRequestLanguages] = useState<Record<string, EvaluatorLanguage>>({});
   const [consoleOrigin, setConsoleOrigin] = useState('');
-  const languageKey = `acclimate-evaluator-language:${state.serviceIdentity}:${state.actorScope}:${state.projectId}:${state.bundleId}`;
+  const languageKey = `acclimate-evaluator-language:${state.serviceIdentity}:${state.actorScope}:${state.workspaceId}:${state.bundleId}`;
   useEffect(() => {
     setConsoleOrigin(window.location.origin);
     try {
@@ -276,7 +281,7 @@ export function ImprovementWorkspace({
     initialCandidate: initial.candidate,
     comparison: initial.comparison,
     actor: state.actorScope,
-    project: state.projectId,
+    project: state.workspaceId,
     bundle: state.bundleId,
     channel: state.channel,
   });
@@ -286,7 +291,7 @@ export function ImprovementWorkspace({
     initialCandidate: initial.candidate,
     comparison: initial.comparison,
     actor: state.actorScope,
-    project: state.projectId,
+    project: state.workspaceId,
     bundle: state.bundleId,
     channel: state.channel,
   };
@@ -318,7 +323,7 @@ export function ImprovementWorkspace({
     return () => {
       scopeEpoch.current++;
     };
-  }, [state.actorScope, state.projectId, state.bundleId, state.channel]);
+  }, [state.actorScope, state.workspaceId, state.bundleId, state.channel]);
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState('');
   async function invoke(data: Record<string, unknown>) {
@@ -517,11 +522,11 @@ export function ImprovementWorkspace({
       stopped = true;
       clearTimeout(timer);
     };
-  }, [initial.proposal, state.actorScope, state.projectId, state.bundleId, state.channel]);
+  }, [initial.proposal, state.actorScope, state.workspaceId, state.bundleId, state.channel]);
   useEffect(() => {
     setComparison(null);
     setComparisonId(initial.comparison || '');
-  }, [candidate, state.actorScope, state.projectId, state.bundleId, state.channel]);
+  }, [candidate, state.actorScope, state.workspaceId, state.bundleId, state.channel]);
   useEffect(() => {
     let stale = false;
     setDetail(null);
@@ -542,7 +547,7 @@ export function ImprovementWorkspace({
     candidateReadAttempt,
     candidate,
     state.actorScope,
-    state.projectId,
+    state.workspaceId,
     state.bundleId,
     state.channel,
   ]);
@@ -569,7 +574,7 @@ export function ImprovementWorkspace({
     initial.request,
     candidate,
     state.actorScope,
-    state.projectId,
+    state.workspaceId,
     state.bundleId,
     state.channel,
   ]);
@@ -642,7 +647,7 @@ export function ImprovementWorkspace({
     initial.comparison,
     candidate,
     state.actorScope,
-    state.projectId,
+    state.workspaceId,
     state.bundleId,
     state.channel,
   ]);
@@ -788,7 +793,10 @@ export function ImprovementWorkspace({
         throw Error('Submitted text is unavailable. Check or close the earlier operation.');
       // Early development envelopes wrapped the exact body. Keep that safe same-route replay readable.
       const parsed = current.body ? JSON.parse(current.body) : null;
-      const wrapped = parsed?.operationPath === current.action && typeof parsed.body === 'string';
+      const wrapped =
+        typeof parsed?.operationPath === 'string' &&
+        canonicalOperationPath(parsed.operationPath) === current.action &&
+        typeof parsed.body === 'string';
       const operationPath = current.action;
       const body = wrapped ? parsed.body : current.body;
       const disclosure = current.disclosure || (wrapped ? parsed.disclosure : undefined);
@@ -1594,7 +1602,7 @@ export function ImprovementWorkspace({
                               <EvaluationHandoffDownload
                                 handoff={evaluationHandoff(
                                   state.publicApiUrl,
-                                  state.projectId,
+                                  state.workspaceId,
                                   state.bundleId,
                                   selectedRequest.id,
                                   selectedRequest,
@@ -1808,7 +1816,7 @@ export function ImprovementWorkspace({
                                       request.id !== selectedRequest?.id || !selectedCheckCommand
                                     }
                                     publicApiUrl={state.publicApiUrl}
-                                    projectId={state.projectId}
+                                    workspaceId={state.workspaceId}
                                     bundleId={state.bundleId}
                                   >
                                     {initial.request === request.id && !pendingRun && (

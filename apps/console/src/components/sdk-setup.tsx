@@ -22,7 +22,7 @@ import { NativeSelect } from './ui/native-select';
 import releaseMetadata from '../../../../scripts/packaging/release-metadata.json';
 
 type Ready = Extract<ConsoleState, { status: 'ready' }>;
-type SetupScope = Pick<Ready, 'projectId' | 'bundleId' | 'bundleName' | 'channel' | 'publicApiUrl'>;
+type SetupScope = Pick<Ready, 'workspaceId' | 'bundleId' | 'bundleName' | 'channel' | 'publicApiUrl'>;
 type Language = 'typescript' | 'python';
 
 function SdkLanguage({
@@ -92,7 +92,7 @@ export function UseInAnApp({ state }: { state: SetupScope }) {
   const [language, setLanguage] = useState<Language>('typescript');
   const [open, setOpen] = useState(false);
   const install = sdkInstallCommand(language);
-  const ids = `Project: ${state.projectId}\nBundle: ${state.bundleId}\nChannel: ${state.channel}`;
+  const ids = `Workspace: ${state.workspaceId}\nBundle: ${state.bundleId}\nChannel: ${state.channel}`;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -114,7 +114,7 @@ export function UseInAnApp({ state }: { state: SetupScope }) {
         <div className="flex flex-wrap gap-2 border-t pt-3">
           <Button asChild>
             <ConsoleLink
-              href={connectionHref(state.projectId, state)}
+              href={connectionHref(state.workspaceId, state)}
               onClick={() => setOpen(false)}
             >
               Connect an app
@@ -154,7 +154,7 @@ export function SdkSetup({
     return () => window.removeEventListener('hashchange', openLinkedSection);
   }, []);
   const selection = {
-    projectId: state.projectId,
+    workspaceId: state.workspaceId,
     bundleId: state.bundleId,
     channel: state.channel,
   };
@@ -196,7 +196,7 @@ export function SdkSetup({
     ? `npm run build:packages\nnpm pack --workspace @acclimate/sdk${plugin ? ' --workspace ' + plugin.package : ''}`
     : 'python3 -m pip wheel --no-deps --wheel-dir artifacts ./python';
   const canManage = role === 'admin';
-  const credentialsHref = connectionHref(state.projectId, {
+  const credentialsHref = connectionHref(state.workspaceId, {
     bundleId: state.bundleId,
     channel: state.channel,
   });
@@ -438,7 +438,7 @@ export function SdkSetup({
                     code={JSON.stringify(
                       {
                         serviceUrl: state.publicApiUrl,
-                        projectId: state.projectId,
+                        workspaceId: state.workspaceId,
                         bundleId: state.bundleId,
                         rights: ['read', 'write'],
                         purpose:
@@ -454,7 +454,7 @@ export function SdkSetup({
                     the console.
                   </p>
                   <ConsoleLink
-                    href={workspaceHref(state.projectId, 'delivery')}
+                    href={workspaceHref(state.workspaceId, 'delivery')}
                     className="underline"
                   >
                     View reported delivery observations
@@ -655,8 +655,8 @@ export function SdkSetup({
             <DisclosureTrigger>Optional delivery reports</DisclosureTrigger>
             <DisclosureContent className="sdk-detail-content">
               <p>
-                Set <code>ACCLIMATE_INTEGRATION</code> to your connection ID to scope the TypeScript
-                client’s delivery to that connection. To report observations, set{' '}
+                Set <code>ACCLIMATE_CONNECTION</code> to your connection ID to scope the client’s
+                delivery to that connection. To report observations, set{' '}
                 <code>ACCLIMATE_RECEIPT_TOKEN</code> to a separate reporting credential.
               </p>
               <p>
@@ -680,9 +680,7 @@ export function SdkSetup({
               <p>
                 Connect reporting to your application’s actual start event. Call{' '}
                 <code>
-                  {isTypeScript
-                    ? 'reporter.reportStarted(bundle)'
-                    : "bundle['reporter'].report_started()"}
+                  {isTypeScript ? 'prepared.reportStarted()' : 'prepared.report_started()'}
                 </code>{' '}
                 after you observe the job start. Keep missing observations as unknown.
               </p>
@@ -713,8 +711,8 @@ export function SdkSetup({
                 <div>
                   <dt>Workspace</dt>
                   <dd>
-                    <code>{state.projectId}</code>
-                    <CopyButton value={state.projectId} label="Copy workspace ID" iconOnly />
+                    <code>{state.workspaceId}</code>
+                    <CopyButton value={state.workspaceId} label="Copy workspace ID" iconOnly />
                   </dd>
                 </div>
                 <div>

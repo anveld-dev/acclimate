@@ -30,7 +30,7 @@ test('stored versions use fixed scope and reject mismatched bytes', async () => 
   };
   const result = await readVersion(
     env,
-    { versionId: 'v1', projectId: 'other', bundleId: 'other' },
+    { versionId: 'v1', workspaceId: 'other', bundleId: 'other' },
     fetcher,
   );
   assert.deepEqual(result, {
@@ -74,7 +74,7 @@ test('history validates canonical positive i64 cursors and fixes scope and limit
   }
   assert.equal(called, false);
   assert.equal(
-    (await readHistory(env, { beforeRevision: '42', projectId: 'other' }, fetcher)).ok,
+    (await readHistory(env, { beforeRevision: '42', workspaceId: 'other' }, fetcher)).ok,
     true,
   );
 });

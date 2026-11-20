@@ -16,7 +16,7 @@ export function usePolicyReceipts(
   const key = JSON.stringify([
     actor,
     service,
-    scope.projectId,
+    scope.workspaceId,
     scope.bundleId,
     scope.channel,
     candidate,

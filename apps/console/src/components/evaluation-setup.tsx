@@ -101,9 +101,9 @@ export function EvaluationSetup({
                 </a>
               </p>
               <p>
-                Evaluation needs a dedicated project read/write machine principal from your service
-                operator. Connections delivery credentials cannot read unpublished candidates or run
-                evaluations; propose and promote access are not needed.
+                Evaluation needs a dedicated workspace read/write machine principal from your
+                service operator. Connections delivery credentials cannot read unpublished
+                candidates or run evaluations; propose and promote access are not needed.
               </p>
               <p>
                 Keep its private configuration and durable journal on the evaluator machine. Run{' '}
@@ -155,7 +155,7 @@ export function EvaluationSetup({
                       public configuration.
                     </p>
                     <p>
-                      Ask your operator for a dedicated project read/write machine principal.
+                      Ask your operator for a dedicated workspace read/write machine principal.
                       Delivery credentials cannot read unpublished candidates or run evaluations.
                     </p>
                     <p>

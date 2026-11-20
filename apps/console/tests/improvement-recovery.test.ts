@@ -54,6 +54,7 @@ const operationPath =
   '/v1/workspaces/project/bundles/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/evaluation-requests';
 const key = '11111111-1111-4111-8111-111111111111';
 const frozenBody = JSON.stringify({ ...localEvaluationDescriptor, requireBoundEvidence: true });
+// The service fingerprints under its internal pre-0.2.0 operation key, not the route.
 const fingerprint = `sha256:${createHash('sha256')
   .update('POST\0')
   .update(
@@ -161,6 +162,22 @@ test('new console requests require bound evidence and exact commands cannot cros
           ),
           key,
           body: '{}',
+        },
+        fetcher,
+      )
+    ).ok,
+    false,
+  );
+  // The removed route spelling is never forwarded to the service.
+  assert.equal(
+    (
+      await improvement(
+        env,
+        {
+          action: 'submitFrozen',
+          operationPath: operationPath.replace('/v1/workspaces/', '/v1/projects/'),
+          key,
+          body: frozenBody,
         },
         fetcher,
       )

@@ -90,13 +90,13 @@ test('only separate operator capability reveals creation and explicit adoption',
 });
 
 test('adoption review captures exact ID and identity, rejecting malformed or incomplete claims', () => {
-  for (const projectId of [' workspace', '.', '..'])
-    assert.equal(reviewWorkspaceAdoption(projectId, 'reason', identity), null);
+  for (const workspaceId of [' workspace', '.', '..'])
+    assert.equal(reviewWorkspaceAdoption(workspaceId, 'reason', identity), null);
   assert.equal(reviewWorkspaceAdoption('workspace', '  ', identity), null);
   assert.equal(reviewWorkspaceAdoption('workspace', 'x'.repeat(2001), identity), null);
   const actor = { ...identity };
   const review = reviewWorkspaceAdoption('workspace.Exact', '  Planned cutover  ', actor)!;
-  assert.equal(review.projectId, 'workspace.Exact');
+  assert.equal(review.workspaceId, 'workspace.Exact');
   assert.equal(review.reason, 'Planned cutover');
   actor.subject = 'other';
   assert.equal(adoptionIdentityMatches(review, identity), true);
@@ -120,7 +120,7 @@ test('historic adoption reports current access without promising a membership re
 
 test('app setup publishes the configured public API URL and scopes administration to current admin', () => {
   const state = {
-    projectId: 'workspace',
+    workspaceId: 'workspace',
     bundleId: 'bundle',
     channel: 'stable',
     publicApiUrl: 'https://api.example.com',

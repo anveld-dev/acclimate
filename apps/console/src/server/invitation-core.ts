@@ -8,13 +8,13 @@ export type Invitation = {
   deliveryStatus: 'queued' | 'sending' | 'sent' | 'failed';
   expiresAt: string;
   sentAt: string | null;
-  projectId?: string;
+  workspaceId?: string;
   projectName?: string;
 };
 export type InvitationCommand =
-  | { kind: 'list'; projectId: string }
-  | { kind: 'create'; projectId: string; email: string; role: 'viewer' | 'editor' | 'admin' }
-  | { kind: 'resend' | 'revoke'; projectId: string; id: string }
+  | { kind: 'list'; workspaceId: string }
+  | { kind: 'create'; workspaceId: string; email: string; role: 'viewer' | 'editor' | 'admin' }
+  | { kind: 'resend' | 'revoke'; workspaceId: string; id: string }
   | { kind: 'preview' | 'accept'; id: string };
 export type InvitationResult =
   | {
@@ -22,7 +22,7 @@ export type InvitationResult =
       items?: Invitation[];
       available?: boolean;
       invitation?: Invitation;
-      projectId?: string;
+      workspaceId?: string;
     }
   | { ok: false; message: string };
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -36,15 +36,15 @@ export async function invitationCommand(
   if ('id' in input && !uuid.test(input.id))
     return { ok: false, message: 'Invalid invitation link.' };
   if (
-    'projectId' in input &&
-    (!/^[a-zA-Z0-9_.-]{1,128}$/.test(input.projectId) || ['.', '..'].includes(input.projectId))
+    'workspaceId' in input &&
+    (!/^[a-zA-Z0-9_.-]{1,128}$/.test(input.workspaceId) || ['.', '..'].includes(input.workspaceId))
   )
     return { ok: false, message: 'Invalid workspace.' };
   try {
     const request = accessTransport(env, fetcher);
     const base =
-      'projectId' in input
-        ? `/v1/workspaces/${encodeURIComponent(input.projectId)}/invitations`
+      'workspaceId' in input
+        ? `/v1/workspaces/${encodeURIComponent(input.workspaceId)}/invitations`
         : `/v1/invitations/${input.id}`;
     if (input.kind === 'list') {
       const value = await request(base);
@@ -53,7 +53,7 @@ export async function invitationCommand(
     }
     if (input.kind === 'preview') return { ok: true, invitation: await request(base) };
     if (input.kind === 'accept')
-      return { ok: true, projectId: (await request(`${base}/accept`, 'POST')).projectId };
+      return { ok: true, workspaceId: (await request(`${base}/accept`, 'POST')).workspaceId };
     if (input.kind === 'revoke') {
       await request(`${base}/${input.id}`, 'DELETE');
       return { ok: true };

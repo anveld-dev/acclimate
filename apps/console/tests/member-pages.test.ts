@@ -41,7 +41,7 @@ test('last administrator conflict is actionable while unknown service messages r
     env,
     {
       kind: 'removeMembership',
-      projectId: 'workspace',
+      workspaceId: 'workspace',
       userId,
       confirmedIdentity: { issuer: 'https://fixture.invalid', subject: 'person' },
     },
@@ -95,7 +95,7 @@ test('member names are display metadata and never replace the verified identity'
     env,
     {
       kind: 'setMembership',
-      projectId: 'workspace',
+      workspaceId: 'workspace',
       userId,
       role: 'editor',
       confirmedIdentity: { issuer: 'https://fixture.invalid', subject: 'different-subject' },

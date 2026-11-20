@@ -386,6 +386,9 @@ def resolve_and_cache(
         }
         if resolution is not None:
             result["resolution"] = resolution
+        connection_id = getattr(client, "connection_id", None)
+        if connection_id is not None:
+            result["connection"] = {"workspaceId": workspace_id, "connectionId": connection_id}
         if reporter is not None:
             try:
                 source = "network" if downloaded else "offline" if stale else "cache"

@@ -1,5 +1,7 @@
 """These application mistakes must remain static errors; never execute this file."""
-from acclimate import AcclimateClient, Evaluation, FinishEvaluationRequest, StartEvaluationRequest
+from acclimate import (
+    AcclimateClient, Evaluation, FinishEvaluationRequest, StartEvaluationRequest, VerifiedVersionConnection,
+)
 from acclimate.evaluation import (
     Case, EvaluationApp, EvaluationError, ExecuteInput, ExecutionResult, GradeInput, GradeResult, define_evaluation,
 )
@@ -63,7 +65,5 @@ typo_code = EvaluationError("config.schmea")  # reject: arg-type
 def legacy_offline_option(client: AcclimateClient) -> None:
     client.prepare("p", "b", channel="stable", offline_max_age=60)  # reject: call-arg
 
-
-# The client option renamed in 0.2.0 is gone, not aliased.
-def renamed_connection_option() -> AcclimateClient:
-    return AcclimateClient("https://acclimate.example", "token", "app", integration_id="c")  # reject: call-arg
+# A connection names both its workspace and its connection, with the canonical keys.
+partial_connection: VerifiedVersionConnection = {"workspaceId": "w"}  # reject: typeddict-item

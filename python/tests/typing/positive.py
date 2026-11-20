@@ -35,6 +35,7 @@ from acclimate import (
     ComparisonRequest,
     Comparison,
     VerifiedVersion,
+    VerifiedVersionConnection,
     EvaluationDescriptor,
     EvaluationHandoff,
     EvaluationRequest,
@@ -132,6 +133,11 @@ def delivery(client: AcclimateClient, api_error: ApiError) -> None:
     stale = resolve_and_cache(client, "workspace", "bundle", channel="stable", cache_dir="/private/cache",
                               offline={"max_age_ms": 300_000})
     assert_type(stale["stale"], bool)
+    connection = version.get("connection")
+    if connection is not None:
+        assert_type(connection, VerifiedVersionConnection)
+        assert_type(connection["workspaceId"], str)
+        assert_type(connection["connectionId"], str)
     pinned = client.prepare("p", "b", version_id="v", offline={"pinned_version_id": "v"})
     pinned.cleanup()
     assert_type(api_error.request_id, str)

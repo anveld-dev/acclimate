@@ -185,12 +185,19 @@ class Comparison(ComparisonRequest):
     createdAt: str
 
 
+class VerifiedVersionConnection(TypedDict):
+    workspaceId: str
+    connectionId: str
+
+
 class VerifiedVersion(TypedDict):
     version: VersionMetadata
     payload: BundlePayload
     resolution: NotRequired[ChannelResolution]
     resolvedAt: float
     stale: bool
+    # Present when the SDK resolved the bundle for an explicitly scoped connection.
+    connection: NotRequired[VerifiedVersionConnection]
 
 
 class EvaluationDescriptor(TypedDict):
@@ -829,6 +836,7 @@ __all__ = [
     "ComparisonRequest",
     "Comparison",
     "VerifiedVersion",
+    "VerifiedVersionConnection",
     "EvaluationDescriptor",
     "EvaluationHandoff",
     "EvaluationRequest",

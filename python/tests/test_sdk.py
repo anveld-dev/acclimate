@@ -209,6 +209,21 @@ class SDKTest(unittest.TestCase):
                 self.assertTrue(Path(prepared.files[0]["absolutePath"]).is_file())
             self.assertFalse(Path(prepared.files[0]["absolutePath"]).exists())
 
+    def test_connection_scoped_client_records_the_connection_like_typescript(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = os.path.realpath(tmp)
+            kw = dict(cache_dir=tmp + "/cache", channel="stable")
+            self.assertNotIn("connection", resolve_and_cache(self.client, "p", "b1", **kw))
+            connection = "0D6B1E8C-0000-4000-8000-000000000001"
+            scoped = AcclimateClient("http://127.0.0.1:%d" % self.server.server_port, "secret", "principal",
+                                     connection_id=connection)
+            verified = resolve_and_cache(scoped, "p", "b1", **kw)
+            self.assertEqual(verified["connection"], {"workspaceId": "p", "connectionId": connection.lower()})
+            Handler.mode = "unavailable"
+            stale = resolve_and_cache(scoped, "p", "b1", **kw, offline={"max_age_ms": 60_000})
+            self.assertTrue(stale["stale"])
+            self.assertEqual(stale["connection"], verified["connection"])
+
     def test_offline_pinned_version_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
             kw = dict(cache_dir=os.path.realpath(tmp) + "/cache", version_id=VERSION["id"])

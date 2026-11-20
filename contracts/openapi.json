@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Acclimate content service",
-    "version": "0.2.0",
+    "version": "0.1.0",
     "description": "Acclimate content service: versioned agent bundles, channels and releases, paired comparisons, evaluation requests run by application-owned evaluators, and connected learning. This document is the source of truth for routes, fields, status codes and error codes. Compatibility and deprecation rules are in the versioning and compatibility reference."
   },
   "security": [

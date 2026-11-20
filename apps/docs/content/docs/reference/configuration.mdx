@@ -113,7 +113,7 @@ The console derives `CONSOLE_SESSION_TOKEN` from the request's session cookie. S
 | `ACCLIMATE_SERVICE_ENV`, `ACCLIMATE_CONSOLE_ENV` | Absolute paths to the private service and console runtime files. |
 | `ACCLIMATE_POSTGRES_PASSWORD_FILE` | Absolute path to the private raw PostgreSQL password file. Its password must match the encoded value in `DATABASE_URL`. |
 | `ACCLIMATE_KEYCLOAK_ENV`, `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE` | Absolute paths to the private Keycloak runtime file and separate raw database password file for the overlay. |
-| `ACCLIMATE_VERSION` | Tag for the service and console images. Defaults to `latest`. Pin the exact release version without the Git tag's leading `v`, for example `0.2.0`. |
+| `ACCLIMATE_VERSION` | Tag for the service and console images. Defaults to `latest`. Pin the exact release version without the Git tag's leading `v`, for example `0.1.0`. |
 | `ACCLIMATE_SERVICE_IMAGE`, `ACCLIMATE_CONSOLE_IMAGE` | Optional complete image references. An explicit reference overrides the corresponding default GHCR image and version tag. |
 
 In the Keycloak runtime file, set `KC_DB_PASSWORD` to the raw password from the identity database's password file. For the initial realm import, set `ACCLIMATE_CONSOLE_ORIGIN` and `ACCLIMATE_OIDC_CLIENT_SECRET` to the values of the console's `CONSOLE_ORIGIN` and `CONSOLE_OIDC_CLIENT_SECRET`. Set `KC_BOOTSTRAP_ADMIN_USERNAME` and `KC_BOOTSTRAP_ADMIN_PASSWORD` for the temporary administrator. See [Self-host Acclimate](/docs/operate/self-host) for the file setup and first sign-in.

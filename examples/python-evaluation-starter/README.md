@@ -14,7 +14,7 @@ python3.11 -m venv .venv
 For an offline or air-gapped install, verify the release files against `SHA256SUMS` and install the wheel directly:
 
 ```sh
-.venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.2.0-py3-none-any.whl
+.venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
 ```
 
 The package installs an `acclimate` command. `python -m acclimate` runs the same CLI.

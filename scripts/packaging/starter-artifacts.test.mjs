@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { archiveStarters } from './starter-artifacts.mjs';
+import { actionPinMismatches, assertActionPins } from './release-metadata.mjs';
 const inventories = JSON.parse(await readFile(new URL('./starter-files.json', import.meta.url), 'utf8'));
 
 async function fixture() {
@@ -105,4 +106,21 @@ test('an artifact filename cannot escape the release directory', async () => {
     metadata.starters[0].file = '../escape.tgz';
     await assert.rejects(archiveStarters(root, output, metadata), /Invalid starter artifact identity/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('every CI action tag in examples and docs names the root package version', async () => {
+  await assertActionPins(new URL('../..', import.meta.url).pathname);
+  const root = await mkdtemp(join(tmpdir(), 'acclimate-action-pins-'));
+  try {
+    const pin = (tag) => `      - uses: anveld-dev/acclimate/examples/ci@${tag}\n`;
+    await mkdir(join(root, 'examples/ci/workflows'), { recursive: true });
+    await mkdir(join(root, 'apps/docs/content/docs/guides'), { recursive: true });
+    await mkdir(join(root, 'docs/research'), { recursive: true });
+    await writeFile(join(root, 'examples/ci/workflows/pr-check.yml'), pin('v1.2.3') + pin('v1.2.2'));
+    await writeFile(join(root, 'apps/docs/content/docs/guides/ci.mdx'), pin('0123456789abcdef0123456789abcdef01234567 # v1.2.2'));
+    await writeFile(join(root, 'docs/research/old.md'), pin('v0.0.1'));
+    assert.deepEqual(await actionPinMismatches(root, '1.2.3'), ['examples/ci/workflows/pr-check.yml:2: v1.2.2']);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

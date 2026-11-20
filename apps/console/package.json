@@ -1,6 +1,6 @@
 {
   "name": "@acclimate/console",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "dev:vite": "vite --host 127.0.0.1 --port 3100 --strictPort"
   },
   "dependencies": {
-    "@acclimate/sdk": "0.2.0",
+    "@acclimate/sdk": "0.1.0",
     "@base-ui/react": "^1.9.0",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-javascript": "^6.2.5",

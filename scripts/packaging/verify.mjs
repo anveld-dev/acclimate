@@ -6,13 +6,14 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { join, resolve } from 'node:path';
-import { writeReleaseMetadata } from './release-metadata.mjs';
+import { assertActionPins, writeReleaseMetadata } from './release-metadata.mjs';
 import { archiveStarters } from './starter-artifacts.mjs';
 import { releaseSourceFingerprint } from './source-fingerprint.mjs';
 import { verifyPackageBuildReceipt } from './build-receipt.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const version = JSON.parse(await readFile(join(root, 'packages/sdk/package.json'), 'utf8')).version;
+await assertActionPins(root);
 const publicMetadata = await writeReleaseMetadata(root);
 const sourceFingerprint = await releaseSourceFingerprint(root);
 const outputIndex = process.argv.indexOf('--output');

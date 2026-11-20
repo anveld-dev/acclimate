@@ -2,7 +2,7 @@
 
 ## Install
 
-Install the plugin tarball together with the matching `@acclimate/sdk` tarball from the same release; the SDK is a `^0.2.0` peer, so your app keeps one copy. The `/native` entry needs the optional peer `@cursor/sdk` `^1.3.1` (Node 22.13 or later).
+Install the plugin tarball together with the matching `@acclimate/sdk` tarball from the same release; the SDK is a `^0.1.0` peer, so your app keeps one copy. The `/native` entry needs the optional peer `@cursor/sdk` `^1.3.1` (Node 22.13 or later).
 
 ## Cursor local SDK delivery
 

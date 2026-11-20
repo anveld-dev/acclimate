@@ -4,10 +4,10 @@ Stage a verified Acclimate version where Codex discovers it: the instruction bec
 
 ## Install
 
-Install the plugin tarball together with the matching `@acclimate/sdk` tarball from the same release. The SDK is a peer (`^0.2.0`), so your app has one copy and `instanceof DeliveryError` works. This package has no Codex dependency; install `@openai/codex-sdk` yourself (the release was tested with 0.169.0).
+Install the plugin tarball together with the matching `@acclimate/sdk` tarball from the same release. The SDK is a peer (`^0.1.0`), so your app has one copy and `instanceof DeliveryError` works. This package has no Codex dependency; install `@openai/codex-sdk` yourself (the release was tested with 0.169.0).
 
 ```sh
-npm install "$release/acclimate-sdk-0.2.0.tgz" "$release/acclimate-codex-plugin-0.2.0.tgz"
+npm install "$release/acclimate-sdk-0.1.0.tgz" "$release/acclimate-codex-plugin-0.1.0.tgz"
 ```
 
 ## Use

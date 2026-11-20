@@ -40,7 +40,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
       - id: gate
-        uses: anveld-dev/acclimate/examples/ci@v0.2.0
+        uses: anveld-dev/acclimate/examples/ci@v0.1.0
         with:
           app: /opt/acclimate/evaluator
           policy: /opt/acclimate/evaluator/quality-policy.json
@@ -55,7 +55,13 @@ jobs:
           comment: true
 ```
 
-To pin the action to code you reviewed, vendor it instead: extract the CI starter into your repository, for example as `.github/actions/acclimate`, and use `uses: ./.github/actions/acclimate`.
+A tag such as `v0.1.0` can be moved, so security-conscious teams should pin the action to the full commit SHA that the release tag points to, and keep the version in a comment for readers and update tools:
+
+```yaml
+uses: anveld-dev/acclimate/examples/ci@FULL_40_CHARACTER_COMMIT_SHA # v0.1.0
+```
+
+Look up the SHA with `git ls-remote https://github.com/anveld-dev/acclimate refs/tags/v0.1.0^{}`. To run only code you reviewed, vendor the action instead: extract the CI starter into your repository, for example as `.github/actions/acclimate`, and use `uses: ./.github/actions/acclimate`.
 
 The step fails when the check doesn't pass. It writes a Markdown summary to the job page and annotations that name failed criteria, regressed cases and missing evidence. With `comment: true`, it keeps one PR comment up to date. If you make the check required, remove `paths:`. A skipped workflow leaves a required check pending. Reuse makes unchanged bundles cheap to check.
 

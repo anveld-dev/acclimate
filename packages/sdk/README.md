@@ -8,7 +8,7 @@ Requires Node.js 22.22 or later on Linux or macOS. The durable evaluator also ne
 npm install @acclimate/sdk
 ```
 
-For an air-gapped install, verify the release files against `SHA256SUMS` and run `npm install --offline --ignore-scripts /path/to/acclimate-sdk-0.2.0.tgz`.
+For an air-gapped install, verify the release files against `SHA256SUMS` and run `npm install --offline --ignore-scripts /path/to/acclimate-sdk-0.1.0.tgz`.
 
 ## Evaluate a change
 

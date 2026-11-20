@@ -6,7 +6,7 @@ description: Inspect proposals and comparison evidence, then release or restore 
 Use the operator CLI to read evidence and make authorized channel changes. It ships in the TypeScript SDK as `acclimate-operator`, so it runs wherever the SDK is installed, including a CI release job. Set `ACCLIMATE_URL`, `ACCLIMATE_TOKEN`, and `ACCLIMATE_SCOPE` for a scoped principal on a trusted TLS endpoint.
 
 ```sh
-npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.2.0.tgz
+npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
 npx acclimate-operator history --workspace WORKSPACE --bundle BUNDLE --channel live --limit 20
 npx acclimate-operator review --workspace WORKSPACE --bundle BUNDLE --channel live \
   --comparison COMPARISON --proposal PROPOSAL

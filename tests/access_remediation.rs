@@ -96,7 +96,7 @@ async fn fixture() -> (sqlx::PgPool, axum::Router, String) {
 async fn final_admin_survives_self_changes_and_crossed_writer_races() {
     let (db, app, p) = fixture().await;
     let (a, sa) = user(&db, &p, Some("admin")).await;
-    let base = format!("/v1/projects/{p}/memberships");
+    let base = format!("/v1/workspaces/{p}/memberships");
     for (method, body) in [("DELETE", json!(null)), ("PUT", json!({"role":"editor"}))] {
         let result = call(
             &app,
@@ -211,7 +211,7 @@ async fn bounded_member_pages_and_nullable_current_role_require_browser_admin() 
     for _ in 0..27 {
         user(&db, &p, Some("editor")).await;
     }
-    let base = format!("/v1/projects/{p}");
+    let base = format!("/v1/workspaces/{p}");
     for session in [None, Some(sv.as_str())] {
         assert_eq!(
             call(
@@ -333,7 +333,7 @@ async fn lost_issuance_returns_only_typed_original_metadata_and_revocation_state
     .unwrap();
     sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'stable',1,$3)").bind(&p).bind(bundle).bind(version).execute(&db).await.unwrap();
     sqlx::query("INSERT INTO integrations(id,project_id,bundle_id,channel,display_name) VALUES($1,$2,$3,'stable','Fixture')").bind(integration).bind(&p).bind(bundle).execute(&db).await.unwrap();
-    let base = format!("/v1/projects/{p}/integrations/{integration}/credentials");
+    let base = format!("/v1/workspaces/{p}/connections/{integration}/credentials");
     let key = Uuid::new_v4().to_string();
     let issued = call(
         &app,

@@ -1,4 +1,3 @@
-use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, auth::Actor, db, err};
 use axum::{
     Json, Router,
@@ -12,7 +11,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Row, Transaction};
 
-/// The installed evaluator promises retained operations only for this route grammar.
+/// The installed evaluator promises retained operations only for this grammar of
+/// internal operation keys (see `internal_operation_path`).
 pub(crate) fn guided_project(project: &str) -> bool {
     !project.is_empty()
         && project.len() <= 128
@@ -65,7 +65,59 @@ fn guided_evaluator_body(path: &str, body: &[u8]) -> bool {
     }
 }
 
-// This is the sole action/namespace definition for execution, replay, lookup and close.
+// Operation keys are internal storage keys, not routes. Handlers record each
+// retained operation under its original `/v1/projects/{p}/...` path (with
+// `promotions` for releases) in `operation_records`, `idempotency` and the
+// request fingerprint, so operations retained before 0.2.0 still replay. The
+// public API only accepts and returns the canonical `/v1/workspaces/...` spelling.
+fn internal_operation_path(public: &str) -> Option<String> {
+    let mut segments: Vec<_> = public.split('/').collect();
+    if !matches!(segments.as_slice(), ["", "v1", "workspaces", _, ..]) {
+        return None;
+    }
+    segments[2] = "projects";
+    if let [
+        "",
+        "v1",
+        "projects",
+        _,
+        "bundles",
+        _,
+        "channels",
+        _,
+        action @ "releases",
+    ] = segments.as_mut_slice()
+    {
+        *action = "promotions";
+    }
+    // Reject an internal-only spelling such as a `promotions` action.
+    let internal = segments.join("/");
+    (public_operation_path(&internal) == public).then_some(internal)
+}
+fn public_operation_path(internal: &str) -> String {
+    let mut segments: Vec<_> = internal.split('/').collect();
+    if !matches!(segments.as_slice(), ["", "v1", "projects", _, ..]) {
+        return internal.into();
+    }
+    segments[2] = "workspaces";
+    if let [
+        "",
+        "v1",
+        "workspaces",
+        _,
+        "bundles",
+        _,
+        "channels",
+        _,
+        action @ "promotions",
+    ] = segments.as_mut_slice()
+    {
+        *action = "releases";
+    }
+    segments.join("/")
+}
+// This is the sole action/namespace definition for execution, replay, lookup and
+// close. It parses internal operation keys, not request routes.
 fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
     let suffix = path.strip_prefix(&format!("/v1/projects/{project}/"))?;
     let p: Vec<_> = suffix.split('/').collect();
@@ -367,8 +419,11 @@ struct OperationScope {
 }
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route("/v1/projects/{project}/operations/{id}", get(operation))
-        .workspace_route("/v1/projects/{project}/operations/{id}/close", post(close))
+        .route("/v1/workspaces/{project}/operations/{id}", get(operation))
+        .route(
+            "/v1/workspaces/{project}/operations/{id}/close",
+            post(close),
+        )
 }
 async fn operation(
     State(s): State<AppState>,
@@ -403,27 +458,18 @@ async fn outcome(
 ) -> ApiResult<Json<Value>> {
     validate_key(&id)?;
     let requested_path = scope.operation_path.as_deref().unwrap_or("");
-    let canonical = requested_path.starts_with("/v1/workspaces/");
-    let legacy_path = canonical.then(|| {
-        let mut segments: Vec<_> = requested_path.split('/').collect();
-        segments[2] = "projects";
-        if let [
-            "",
-            "v1",
-            "projects",
-            _,
-            "bundles",
-            _,
-            "channels",
-            _,
-            action @ "releases",
-        ] = segments.as_mut_slice()
-        {
-            *action = "promotions";
-        }
-        segments.join("/")
-    });
-    let path = legacy_path.as_deref().unwrap_or(requested_path);
+    let internal_path = if requested_path.is_empty() {
+        String::new()
+    } else {
+        internal_operation_path(requested_path).ok_or_else(|| {
+            err(
+                StatusCode::BAD_REQUEST,
+                "invalid_content",
+                "Unsupported operation path",
+            )
+        })?
+    };
+    let path = internal_path.as_str();
     if !path.is_empty() && rights(&p, path).is_none() {
         return Err(err(
             StatusCode::BAD_REQUEST,
@@ -488,11 +534,7 @@ async fn outcome(
         )
         .await?;
     }
-    let response_path = if canonical && actual_path == path {
-        requested_path
-    } else {
-        &actual_path
-    };
+    let response_path = public_operation_path(&actual_path);
     let value = if let Some(row) = committed {
         json!({"status":"committed","operationId":id,"path":response_path,"requestFingerprint":format!("sha256:{}",hex::encode(row.get::<Vec<u8>,_>("fingerprint"))),"result":serde_json::from_slice::<Value>(&row.get::<Vec<u8>,_>("response_body")).map_err(db)?})
     } else if closing || row.is_some() {
@@ -718,6 +760,39 @@ mod tests {
                 "p",
                 &route.replace(bundle, &bundle.to_uppercase())
             ));
+        }
+    }
+    #[test]
+    fn operation_paths_are_public_only_and_stored_internally() {
+        let bundle = "11111111-1111-4111-8111-111111111111";
+        for (public, internal) in [
+            (
+                format!("/v1/workspaces/p/bundles/{bundle}/channels/releases/releases"),
+                format!("/v1/projects/p/bundles/{bundle}/channels/releases/promotions"),
+            ),
+            (
+                format!("/v1/workspaces/p/bundles/{bundle}/channels/promotions/drafts"),
+                format!("/v1/projects/p/bundles/{bundle}/channels/promotions/drafts"),
+            ),
+            (
+                "/v1/workspaces/p/bundle-setups".to_owned(),
+                "/v1/projects/p/bundle-setups".to_owned(),
+            ),
+        ] {
+            assert_eq!(
+                internal_operation_path(&public).as_deref(),
+                Some(internal.as_str())
+            );
+            assert_eq!(public_operation_path(&internal), public);
+        }
+        for rejected in [
+            "/v1/projects/p/bundle-setups",
+            "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/channels/c/promotions",
+            "v1/workspaces/p/bundle-setups",
+            "/v1/workspaces",
+            "/bundle-setups",
+        ] {
+            assert!(internal_operation_path(rejected).is_none());
         }
     }
     #[test]

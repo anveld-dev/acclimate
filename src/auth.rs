@@ -23,7 +23,7 @@ pub fn validate_grants(grants: &[Grant]) -> Result<(), &'static str> {
             || grant.principal_id.trim().is_empty()
             || grant.project_id.trim().is_empty()
         {
-            return Err("grant token, principal and project must be nonempty");
+            return Err("grant token, principal and workspace must be nonempty");
         }
         if grant.principal_id.trim().contains(':') {
             return Err("grant principal must not use a reserved namespace");
@@ -34,7 +34,7 @@ pub fn validate_grants(grants: &[Grant]) -> Result<(), &'static str> {
             return Err("a token cannot identify multiple principals");
         }
         if !pairs.insert((&grant.token, &grant.project_id)) {
-            return Err("duplicate token and project grant");
+            return Err("duplicate token and workspace grant");
         }
         let mut rights = HashSet::new();
         for right in &grant.rights {
@@ -120,7 +120,11 @@ pub(crate) fn actor(h: &HeaderMap, s: &AppState, project: &str, right: &str) -> 
     }
     if let Some(machine) = crate::machine_tokens::trusted(h) {
         if machine.project_id != project {
-            return Err(err(StatusCode::FORBIDDEN, "denied", "No grant for project"));
+            return Err(err(
+                StatusCode::FORBIDDEN,
+                "denied",
+                "No grant for workspace",
+            ));
         }
         if !rights_allow(&machine.rights, right) {
             return Err(err(
@@ -156,7 +160,7 @@ pub(crate) fn actor(h: &HeaderMap, s: &AppState, project: &str, right: &str) -> 
         .grants
         .iter()
         .find(|g| g.token == raw && g.project_id == project)
-        .ok_or_else(|| err(StatusCode::FORBIDDEN, "denied", "No grant for project"))?;
+        .ok_or_else(|| err(StatusCode::FORBIDDEN, "denied", "No grant for workspace"))?;
     if !rights_allow(&g.rights, right) {
         return Err(err(
             StatusCode::FORBIDDEN,
@@ -402,7 +406,7 @@ pub(crate) async fn session_context(
         .and_then(|v| uuid::Uuid::parse_str(v).ok())
     {
         let parts: Vec<_> = request.uri().path().split('/').collect();
-        if parts.len() >= 4 && parts[1] == "v1" && matches!(parts[2], "workspaces" | "projects") {
+        if parts.len() >= 4 && parts[1] == "v1" && parts[2] == "workspaces" {
             let role: Option<String> = match sqlx::query_scalar(
                 "SELECT role FROM project_memberships WHERE project_id=$1 AND user_id=$2",
             )
@@ -415,7 +419,7 @@ pub(crate) async fn session_context(
                 Err(e) => return crate::db(e).into_response(),
             };
             let Some(role) = role else {
-                return err(StatusCode::FORBIDDEN, "denied", "No project membership")
+                return err(StatusCode::FORBIDDEN, "denied", "No workspace membership")
                     .into_response();
             };
             request

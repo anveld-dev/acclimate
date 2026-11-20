@@ -77,7 +77,7 @@ async fn native_save_reload_repair_publication_rollback_and_provider_gate() {
         provider: Some(Arc::new(IncompleteModel)),
     };
     let app = router(state.clone());
-    let root = format!("/v1/projects/{project}");
+    let root = format!("/v1/workspaces/{project}");
     for target in ["unknown", "codex"] {
         let (status,_)=call(&app,"POST",&format!("{root}/bundle-setups"),json!({"name":"incomplete","origin":"created","channel":"stable","reason":"initial","compatibilityTarget":target,"payload":payload(false)})).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -139,7 +139,7 @@ async fn native_save_reload_repair_publication_rollback_and_provider_gate() {
     assert_eq!(status, StatusCode::OK, "{repaired}");
     let (status,published)=call(&app,"POST",&publish,json!({"expectedGeneration":2,"expectedRevision":"1","unevaluatedReason":"reviewed repair"})).await;
     assert_eq!(status, StatusCode::OK, "{published}");
-    let promotions = format!("{base}/channels/stable/promotions");
+    let promotions = format!("{base}/channels/stable/releases");
     let (status,rollback)=call(&app,"POST",&promotions,json!({"versionId":initial,"expectedRevision":"2","unevaluatedReason":"compatible rollback"})).await;
     assert_eq!(status, StatusCode::CREATED, "{rollback}");
     // Immutable versions can also retain incomplete work; every fresh release checks stored policy.

@@ -1,4 +1,3 @@
-use crate::WorkspaceRoutes;
 use crate::pagination::{ListQuery, Page};
 use crate::{ApiResult, AppState, CaseKey, ComparisonRequest, db, err, path};
 use axum::{
@@ -101,32 +100,32 @@ fn optional_time(r: &PgRow, column: &str) -> Option<String> {
 }
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route(
-            "/v1/projects/{p}/evaluation-capabilities",
+        .route(
+            "/v1/workspaces/{p}/evaluation-capabilities",
             get(capabilities),
         )
-        .workspace_route(
-            "/v1/projects/{p}/bundles/{b}/evaluation-requests",
+        .route(
+            "/v1/workspaces/{p}/bundles/{b}/evaluation-requests",
             get(list).post(create),
         )
-        .workspace_route(
-            "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}",
+        .route(
+            "/v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}",
             get(detail),
         )
-        .workspace_route(
-            "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/start",
+        .route(
+            "/v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/start",
             post(start),
         )
-        .workspace_route(
-            "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/finish",
+        .route(
+            "/v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/finish",
             post(finish),
         )
-        .workspace_route(
-            "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/interrupt",
+        .route(
+            "/v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/interrupt",
             post(interrupt),
         )
-        .workspace_route(
-            "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/abandon",
+        .route(
+            "/v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/abandon",
             post(abandon),
         )
 }
@@ -194,7 +193,11 @@ async fn capabilities(
         .await
         .map_err(db)?;
     if !exists {
-        return Err(err(StatusCode::NOT_FOUND, "not_found", "Project not found"));
+        return Err(err(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Workspace not found",
+        ));
     }
     let has = |right| {
         crate::auth::actor(&h, &s, &p, right).is_ok_and(|other| other.principal == actor.principal)
@@ -224,7 +227,7 @@ async fn capabilities(
         [(header::CACHE_CONTROL, "private, no-store")],
         Json(serde_json::json!({
             "schemaVersion": 1,
-            "projectId": p,
+            "workspaceId": p,
             "principalId": actor.principal,
             "checkedAt": Utc::now(),
             "readUnpublished": true,
@@ -285,6 +288,7 @@ async fn create(
     let a = crate::auth::actor(&h, &s, &p, "evaluate")?;
     let q: CreateEvaluationRequest =
         serde_json::from_slice(&body).map_err(|_| invalid("Malformed request"))?;
+    // Internal operation key, not a route: see commands::internal_operation_path.
     let route = format!("/v1/projects/{p}/bundles/{b}/evaluation-requests");
     let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
@@ -478,6 +482,7 @@ async fn transition(
     action: &str,
 ) -> ApiResult<Response> {
     let a = crate::auth::actor(&h, &s, &p, "evaluate")?;
+    // Internal operation key, not a route: see commands::internal_operation_path.
     let route = format!("/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/{action}");
     let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,

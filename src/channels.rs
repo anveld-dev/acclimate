@@ -193,6 +193,7 @@ pub(crate) async fn promote(
             "Malformed request",
         )
     })?;
+    // Internal operation key, not a route: see commands::internal_operation_path.
     let route = format!("/v1/projects/{p}/bundles/{b}/channels/{c}/promotions");
     let mut command = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,

@@ -163,7 +163,7 @@ impl Fixture {
         json!({"parentVersionId":self.parent,"parentDigest":"parent","candidateVersionId":self.candidate,"candidateDigest":"candidate","datasetRevision":"fixtures-v1","runtime":{"model":"fixture"},"graderRevision":"grader-v1","expectedCases":[{"caseId":"a","repetition":0}]})
     }
     fn root(&self) -> String {
-        format!("/v1/projects/{}/bundles/{}", self.project, self.bundle)
+        format!("/v1/workspaces/{}/bundles/{}", self.project, self.bundle)
     }
     async fn request(&self, who: As<'_>) -> String {
         let (s, e) = call(
@@ -258,7 +258,7 @@ async fn admins_issue_rotate_and_revoke_narrow_evaluator_tokens_without_restart(
     assert_ne!(stored, secret);
 
     // The capability snapshot reports the narrow right.
-    let caps = format!("/v1/projects/{}/evaluation-capabilities", f.project);
+    let caps = format!("/v1/workspaces/{}/evaluation-capabilities", f.project);
     let (s, c) = call(&f.app, "GET", &caps, As::Machine(&secret), Value::Null).await;
     assert_eq!(s, StatusCode::OK, "{c}");
     assert_eq!(c["principalId"], "machine:ci");
@@ -344,7 +344,7 @@ async fn admins_issue_rotate_and_revoke_narrow_evaluator_tokens_without_restart(
     assert_eq!(v["status"], "completed");
 
     // Evaluate never publishes, promotes, authors versions or changes channels.
-    let promote = format!("{}/channels/stable/promotions", f.root());
+    let promote = format!("{}/channels/stable/releases", f.root());
     let release = json!({"versionId":f.candidate,"expectedRevision":"1","comparisonId":c["id"]});
     for who in [As::Machine(&successor), As::Machine("static-evaluate")] {
         assert_eq!(
@@ -401,7 +401,7 @@ async fn admins_issue_rotate_and_revoke_narrow_evaluator_tokens_without_restart(
         call(
             &f.app,
             "GET",
-            &format!("/v1/projects/{}/evaluation-capabilities", f.other),
+            &format!("/v1/workspaces/{}/evaluation-capabilities", f.other),
             As::Machine(&successor),
             Value::Null
         )
@@ -642,7 +642,7 @@ async fn abandoned_attempts_are_fenced_and_their_evidence_never_counts() {
         .0,
         StatusCode::CONFLICT
     );
-    let promote = format!("{}/channels/stable/promotions", f.root());
+    let promote = format!("{}/channels/stable/releases", f.root());
     let (s, v) = call(
         &f.app,
         "POST",

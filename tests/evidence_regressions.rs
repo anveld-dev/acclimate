@@ -88,7 +88,7 @@ async fn fixture() -> Fixture {
         grants: Arc::new(grants),
         provider: None,
     });
-    let root = format!("/v1/projects/{project}/bundles/{bundle}");
+    let root = format!("/v1/workspaces/{project}/bundles/{bundle}");
     let identity = json!({"parentVersionId":parent,"parentDigest":"parent","candidateVersionId":candidate,"candidateDigest":"candidate","datasetRevision":"dataset-v1","runtime":{"configId":"app","configRevision":"opaque-1","model":"none"},"graderRevision":"grader-v1","expectedCases":[{"caseId":"a","repetition":0}]});
     Fixture {
         db,

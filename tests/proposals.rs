@@ -125,7 +125,7 @@ async fn persisted_proposals_are_bounded_validated_and_recovered() {
         provider: None,
     };
     let app = router(state.clone());
-    let root = format!("/v1/projects/{project}/bundles");
+    let root = format!("/v1/workspaces/{project}/bundles");
     let (status, bundle) = call(&app, "POST", &root, json!({"name":"proposer test"})).await;
     assert_eq!(status, StatusCode::CREATED, "{bundle}");
     let base = format!("{root}/{}", bundle["id"].as_str().unwrap());
@@ -302,7 +302,7 @@ async fn worker_preserves_mixed_bundle_for_instruction_and_memory_edits() {
         provider: Some(Arc::new(SelectedEditModel)),
     };
     let app = router(state.clone());
-    let root = format!("/v1/projects/{project}/bundles");
+    let root = format!("/v1/workspaces/{project}/bundles");
     let (status, bundle) = call(&app, "POST", &root, json!({"name":"mixed bundle"})).await;
     assert_eq!(status, StatusCode::CREATED);
     let base = format!("{root}/{}", bundle["id"].as_str().unwrap());

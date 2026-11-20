@@ -95,7 +95,8 @@ async fn observations_bind_live_owner_preserve_order_expire_and_never_control_li
         ]),
     };
     let app = router(state.clone());
-    let path = format!("/v1/projects/{project}/bundles/{bundle}/evaluation-requests/{id}/progress");
+    let path =
+        format!("/v1/workspaces/{project}/bundles/{bundle}/evaluation-requests/{id}/progress");
     let report = json!({"attemptId":"attempt","sequence":1,"phase":"executing","completed":0,"total":2,"case":{"caseId":"a","repetition":0}});
     assert_eq!(
         call(&app, "GET", &path, "reader", None, Value::Null)

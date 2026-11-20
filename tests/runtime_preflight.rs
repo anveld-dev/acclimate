@@ -86,3 +86,20 @@ fn legacy_modes_and_implicit_databases_are_rejected_before_connecting() {
         );
     }
 }
+#[test]
+fn a_grant_with_the_old_project_id_key_names_the_rename_without_echoing_it() {
+    let output = service("127.0.0.1:0")
+        .env(
+            "ACCLIMATE_AUTH",
+            r#"[{"token":"secret-fixture","principalId":"worker","projectId":"fixture","rights":["read"]}]"#,
+        )
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        error.contains("projectId was renamed to workspaceId in 0.2.0"),
+        "{error}"
+    );
+    assert!(!error.contains("secret-fixture") && !error.contains("Connection refused"));
+}

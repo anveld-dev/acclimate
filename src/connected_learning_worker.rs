@@ -1,4 +1,3 @@
-use crate::WorkspaceRoutes;
 use crate::{
     ApiResult, AppState, CaseKey, ComparisonRequest, PromoteRequest, ProposalRequest,
     connected_learning::{Descriptor, repetitions, selection::Stage},
@@ -31,16 +30,16 @@ const REVIEW_DECLINED: &str = "Reviewer declined promotion";
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route("/v1/projects/{project}/integrations/{integration}/learning/field-requalifications/{version}",
+        .route("/v1/workspaces/{project}/connections/{integration}/learning/field-requalifications/{version}",
             axum::routing::get(field_requalification::inspect))
-        .workspace_route("/v1/projects/{project}/integrations/{integration}/learning/field-requalifications",
+        .route("/v1/workspaces/{project}/connections/{integration}/learning/field-requalifications",
             post(field_requalification::submit))
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/field-audits",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/field-audits",
             post(field_audits::submit),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/rounds/{round}/review",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/rounds/{round}/review",
             post(review),
         )
 }
@@ -2243,6 +2242,7 @@ async fn review(
             "A declined review cannot override an application policy",
         ));
     }
+    // Internal operation key, not a route: see commands::internal_operation_path.
     let route = format!(
         "/v1/projects/{}/integrations/{integration}/learning/rounds/{round_id}/review",
         connection.project

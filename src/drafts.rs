@@ -1,4 +1,3 @@
-use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, BundlePayload, PromoteRequest, VersionMetadata, db, err, path};
 use axum::{
     Json, Router,
@@ -103,29 +102,29 @@ async fn associate(
 }
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route("/v1/projects/{project}/bundle-setups", post(setup))
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts",
+        .route("/v1/workspaces/{project}/bundle-setups", post(setup))
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts",
             get(list).post(create),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}",
             get(get_draft),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/history",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/history",
             get(history),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/save",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/save",
             post(save),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/discard",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/discard",
             post(discard),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish",
             post(publish),
         )
 }
@@ -147,6 +146,7 @@ async fn create(
     }
     let a = crate::auth::actor(&h, &s, &p, "evaluate")?;
     let req: Create = decode(&body)?;
+    // Internal operation key, not a route: see commands::internal_operation_path.
     let route = format!("/v1/projects/{p}/bundles/{b}/channels/{c}/drafts");
     let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
@@ -236,6 +236,7 @@ async fn change(
     {
         return Err(invalid());
     }
+    // Internal operation key, not a route: see commands::internal_operation_path.
     let route = format!("/v1/projects/{p}/bundles/{b}/channels/{c}/drafts/{d}/{kind}");
     let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
@@ -451,6 +452,7 @@ async fn setup(
     let a = crate::auth::actor(&h, &s, &p, "write")?;
     crate::auth::actor(&h, &s, &p, "promote")?;
     let req: Setup = decode(&body)?;
+    // Internal operation key, not a route: see commands::internal_operation_path.
     let route = format!("/v1/projects/{p}/bundle-setups");
     let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
@@ -491,7 +493,7 @@ async fn setup(
         crate::channels::Publication::Standard,
     )
     .await?;
-    let out = serde_json::json!({"bundle":{"id":b.to_string(),"projectId":p,"name":req.name.trim(),"origin":req.origin,"sourceLabel":source,"compatibilityTarget":req.compatibility_target,"createdAt":row.get::<DateTime<Utc>,_>("created_at").to_rfc3339()},"version":v,"resolution":{"channel":req.channel,"revision":"1","version":v},"promotion":promotion});
+    let out = serde_json::json!({"bundle":{"id":b.to_string(),"workspaceId":p,"name":req.name.trim(),"origin":req.origin,"sourceLabel":source,"compatibilityTarget":req.compatibility_target,"createdAt":row.get::<DateTime<Utc>,_>("created_at").to_rfc3339()},"version":v,"resolution":{"channel":req.channel,"revision":"1","version":v},"promotion":promotion});
     crate::commands::finish_mutation(cmd, StatusCode::CREATED, out).await
 }
 #[cfg(test)]

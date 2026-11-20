@@ -161,6 +161,46 @@ pub(crate) fn digest(b: &[u8]) -> String {
     format!("sha256:{}", hex::encode(Sha256::digest(b)))
 }
 
+/// Public JSON keys renamed in 0.2.0, as (old, new).
+pub(crate) const RENAMED_KEYS: [(&str, &str); 2] = [
+    ("projectId", "workspaceId"),
+    ("integrationId", "connectionId"),
+];
+
+/// A JSON body extractor for request bodies whose keys were renamed in 0.2.0.
+/// An old key gets a 400 that names the rename; anything else behaves like `Json`.
+pub(crate) struct RenamedJson<T>(pub(crate) T);
+
+impl<S: Send + Sync, T: serde::de::DeserializeOwned> axum::extract::FromRequest<S>
+    for RenamedJson<T>
+{
+    type Rejection = Response;
+
+    async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Response> {
+        let Json(value) = Json::<Value>::from_request(req, state)
+            .await
+            .map_err(IntoResponse::into_response)?;
+        if let Some((old, new)) = RENAMED_KEYS
+            .iter()
+            .find(|(old, _)| value.get(old).is_some())
+        {
+            return Err(err(
+                StatusCode::BAD_REQUEST,
+                "invalid_content",
+                format!("{old} was renamed to {new} in 0.2.0"),
+            )
+            .into_response());
+        }
+        serde_json::from_value(value).map(RenamedJson).map_err(|e| {
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("Failed to deserialize the JSON body into the target type: {e}"),
+            )
+                .into_response()
+        })
+    }
+}
+
 pub(crate) fn path(s: &str) -> ApiResult<Uuid> {
     Uuid::parse_str(s).map_err(|_| err(StatusCode::BAD_REQUEST, "invalid_content", "Invalid UUID"))
 }
@@ -191,27 +231,6 @@ async fn request_limits(request: axum::extract::Request, next: axum::middleware:
         .into_response(),
     }
 }
-// Keep both spellings on the same method router and retain the original
-// handler-owned operation keys for replay across service upgrades.
-fn workspace_route_path(legacy: &str) -> String {
-    legacy
-        .replacen("/v1/projects", "/v1/workspaces", 1)
-        .replace("/integrations", "/connections")
-        .replace("/integration-observations", "/connection-observations")
-        .replace("/promotions", "/releases")
-}
-
-trait WorkspaceRoutes {
-    fn workspace_route(self, legacy: &str, methods: axum::routing::MethodRouter<AppState>) -> Self;
-}
-
-impl WorkspaceRoutes for Router<AppState> {
-    fn workspace_route(self, legacy: &str, methods: axum::routing::MethodRouter<AppState>) -> Self {
-        self.route(&workspace_route_path(legacy), methods.clone())
-            .route(legacy, methods)
-    }
-}
-
 pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(commands::routes())
@@ -227,44 +246,44 @@ pub fn router(state: AppState) -> Router {
         .merge(machine_tokens::routes())
         .route("/health", get(|| async { "ok" }))
         .route("/ready", get(runtime::readiness))
-        .workspace_route(
-            "/v1/projects/{project}/bundles",
+        .route(
+            "/v1/workspaces/{project}/bundles",
             post(bundles::create_bundle),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/versions",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/versions",
             post(bundles::create_version),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/versions/{version}",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/versions/{version}",
             get(bundles::get_version),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/versions/{version}/payload",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/versions/{version}/payload",
             get(bundles::get_payload),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/channels/{channel}",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}",
             get(channels::resolve),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/promotions",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/releases",
             get(channels::list_promotions).post(channels::promote),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/comparisons",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/comparisons",
             post(improvement::create_comparison).get(improvement::list_comparisons),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/comparisons/{id}",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/comparisons/{id}",
             get(improvement::get_comparison),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/proposals",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/proposals",
             post(improvement::create_proposal).get(improvement::list_proposals),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/proposals/{id}",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/proposals/{id}",
             get(improvement::get_proposal),
         )
         .fallback(|| async { err(StatusCode::NOT_FOUND, "not_found", "Route not found") })

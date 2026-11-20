@@ -106,6 +106,7 @@ pub(crate) async fn create_bundle(
             "Invalid name",
         ));
     }
+    // Internal operation key, not a route: see commands::internal_operation_path.
     let route = format!("/v1/projects/{project}/bundles");
     let mut command =
         match crate::commands::begin_mutation(&s, &a, &project, &route, &h, &body).await? {
@@ -162,6 +163,7 @@ pub(crate) async fn create_version(
     validate_payload(&req.payload)
         .map_err(|e| crate::err(StatusCode::BAD_REQUEST, "invalid_content", e))?;
     let payload = crate::encode_payload(&req.payload)?;
+    // Internal operation key, not a route: see commands::internal_operation_path.
     let route = format!("/v1/projects/{project}/bundles/{bundle}/versions");
     let mut command =
         match crate::commands::begin_mutation(&s, &a, &project, &route, &h, &body).await? {

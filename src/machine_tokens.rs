@@ -3,7 +3,6 @@
 //! Workspace administrators issue, list, rotate and revoke these through the API
 //! without restarting the service. Only a SHA-256 digest of each secret is stored,
 //! and the secret is returned once. Static `ACCLIMATE_AUTH` grants keep working.
-use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, auth, db, err};
 use axum::{
     Json, Router,
@@ -28,10 +27,16 @@ const MAX_ACTIVE_PER_WORKSPACE: i64 = 100;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route("/v1/projects/{p}/machine-tokens", get(list).post(issue))
-        .workspace_route("/v1/projects/{p}/machine-tokens/{id}/revoke", post(revoke))
-        .workspace_route("/v1/projects/{p}/machine-tokens/{id}/rotate", post(rotate))
-        .workspace_route("/v1/projects/{p}/machine-token-events", get(events))
+        .route("/v1/workspaces/{p}/machine-tokens", get(list).post(issue))
+        .route(
+            "/v1/workspaces/{p}/machine-tokens/{id}/revoke",
+            post(revoke),
+        )
+        .route(
+            "/v1/workspaces/{p}/machine-tokens/{id}/rotate",
+            post(rotate),
+        )
+        .route("/v1/workspaces/{p}/machine-token-events", get(events))
 }
 
 pub(crate) fn is_machine_token(token: &str) -> bool {
@@ -147,7 +152,7 @@ fn view(r: &sqlx::postgres::PgRow) -> Value {
     };
     json!({
         "id": r.get::<Uuid, _>("id"),
-        "projectId": r.get::<String, _>("project_id"),
+        "workspaceId": r.get::<String, _>("project_id"),
         "name": r.get::<String, _>("name"),
         "principalId": r.get::<String, _>("principal_id"),
         "rights": r.get::<Vec<String>, _>("rights"),
@@ -242,6 +247,7 @@ async fn event(
     sqlx::query("INSERT INTO machine_token_events(project_id,token_id,action,actor_principal,reason,detail) VALUES($1,$2,$3,$4,$5,$6)")
         .bind(project).bind(token).bind(action).bind(&actor.principal).bind(reason).bind(detail)
         .execute(&mut **tx).await.map_err(db)?;
+    // Internal operation key, not a route: see commands::internal_operation_path.
     let path = format!("/v1/projects/{project}/machine-tokens/{token}/{action}");
     crate::workspaces::audit(
         tx,

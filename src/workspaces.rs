@@ -1,4 +1,3 @@
-use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, auth, db, err};
 use axum::{
     Json, Router,
@@ -13,19 +12,19 @@ use uuid::Uuid;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route("/v1/projects/{project}/users/{user}", get(verified_user))
-        .workspace_route("/v1/projects/{project}/memberships", get(memberships))
-        .workspace_route("/v1/projects", get(projects).post(create_project))
-        .workspace_route("/v1/projects/{project}/bundles", get(bundles))
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/channels",
+        .route("/v1/workspaces/{project}/users/{user}", get(verified_user))
+        .route("/v1/workspaces/{project}/memberships", get(memberships))
+        .route("/v1/workspaces", get(projects).post(create_project))
+        .route("/v1/workspaces/{project}/bundles", get(bundles))
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/channels",
             get(channels),
         )
         .route("/v1/auth/sessions", post(login))
         .route("/v1/auth/workspace-adoptions", post(adopt_workspace))
         .route("/v1/auth/session", get(session).delete(logout))
-        .workspace_route(
-            "/v1/projects/{project}/memberships/{user}",
+        .route(
+            "/v1/workspaces/{project}/memberships/{user}",
             put(membership).delete(remove_membership),
         )
 }
@@ -184,7 +183,7 @@ async fn bundles(
     let (cursor, limit) = p.bounds()?;
     let rows=sqlx::query("SELECT id,name,created_at,origin,source_label,compatibility_target FROM bundles WHERE project_id=$1 AND id::text>$2 ORDER BY id::text LIMIT $3").bind(&project).bind(cursor).bind(limit+1).fetch_all(&mut *tx).await.map_err(db)?;
     tx.commit().await.map_err(db)?;
-    Ok(page(rows.iter().map(|r|json!({"id":r.get::<Uuid,_>("id"),"name":r.get::<String,_>("name"),"projectId":project,"createdAt":r.get::<chrono::DateTime<chrono::Utc>,_>("created_at"),"origin":r.get::<String,_>("origin"),"sourceLabel":r.get::<Option<String>,_>("source_label"),"compatibilityTarget":r.get::<String,_>("compatibility_target")})).collect(),limit,"id"))
+    Ok(page(rows.iter().map(|r|json!({"id":r.get::<Uuid,_>("id"),"name":r.get::<String,_>("name"),"workspaceId":project,"createdAt":r.get::<chrono::DateTime<chrono::Utc>,_>("created_at"),"origin":r.get::<String,_>("origin"),"sourceLabel":r.get::<Option<String>,_>("source_label"),"compatibilityTarget":r.get::<String,_>("compatibility_target")})).collect(),limit,"id"))
 }
 async fn channels(
     State(s): State<AppState>,
@@ -453,6 +452,8 @@ fn service(h: &HeaderMap, s: &AppState) -> String {
         .map(|g| g.principal_id.clone())
         .unwrap_or_else(|| "console".into())
 }
+// `path` is an internal audit key in the retained-operation grammar
+// (`/v1/projects/...`), not a public route.
 pub(crate) async fn audit(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     project: &str,
@@ -555,13 +556,14 @@ async fn require_operator(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Adoption {
+    #[serde(rename = "workspaceId")]
     project_id: String,
     reason: String,
 }
 async fn adopt_workspace(
     State(s): State<AppState>,
     h: HeaderMap,
-    Json(v): Json<Adoption>,
+    crate::RenamedJson(v): crate::RenamedJson<Adoption>,
 ) -> ApiResult<Json<Value>> {
     machine(&h, &s)?;
     let (user, session) = identity(&h)?;
@@ -654,7 +656,7 @@ async fn adopt_workspace(
     .map_err(db)?;
     tx.commit().await.map_err(db)?;
     Ok(Json(
-        json!({ "projectId":v.project_id, "userId":user, "reason":reason, "createdAt":created_at, "alreadyAdopted":already_adopted, "currentRole":current_role }),
+        json!({ "workspaceId":v.project_id, "userId":user, "reason":reason, "createdAt":created_at, "alreadyAdopted":already_adopted, "currentRole":current_role }),
     ))
 }
 

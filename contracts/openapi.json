@@ -49,6 +49,7 @@
       },
       "put": {
         "operationId": "configureConnectionLearning",
+        "summary": "Enroll a connection in connected learning",
         "parameters": [
           {
             "name": "workspaceId",
@@ -63,80 +64,34 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        }
-      }
-    },
-    "/v1/projects/{projectId}/integrations/{integrationId}/learning": {
-      "get": {
-        "operationId": "getLearningEnrollmentLegacy",
-        "summary": "Inspect the connection’s delivery and private development incumbent",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integrationId",
-            "in": "path",
-            "required": true,
-            "schema": {
               "type": "string",
               "format": "uuid"
             }
           }
         ],
-        "responses": {
-          "200": {
-            "description": "Enrollment status and recent rounds",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LearningEnrollmentInspection"
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxCorrectionsPerRound": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "default": 5
+                  }
                 }
               }
             }
           }
         },
-        "deprecated": true
-      },
-      "put": {
-        "operationId": "configureConnectionLearningLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integrationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
-          "default": {
-            "description": "Service response"
+          "200": {
+            "description": "Enrollment settings and status"
           }
-        },
-        "deprecated": true
+        }
       }
     },
     "/v1/workspaces/{workspaceId}/bundles": {
@@ -196,7 +151,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -274,191 +229,6 @@
             "description": "Service response"
           }
         }
-      },
-      "put": {
-        "operationId": "enrollLearning",
-        "summary": "Enroll a connection in connected learning",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integrationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "maxCorrectionsPerRound": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 10,
-                    "default": 5
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Enrollment settings and status"
-          }
-        }
-      }
-    },
-    "/v1/projects/{projectId}/bundles": {
-      "post": {
-        "operationId": "createBundleLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "description": "Replay same key and exact request bytes within 24h. Different bytes conflict."
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Bundle"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateBundleRequest"
-              }
-            }
-          }
-        },
-        "deprecated": true
-      },
-      "get": {
-        "operationId": "listBundlesLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/versions": {
@@ -527,7 +297,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -587,135 +357,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/projects/{projectId}/bundles/{bundleId}/versions": {
-      "post": {
-        "operationId": "createVersionLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "description": "Replay same key and exact request bytes within 24h. Different bytes conflict."
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VersionMetadata"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateVersionRequest"
-              }
-            }
-          }
-        },
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/versions/{versionId}": {
@@ -748,6 +389,16 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-Acclimate-Connection-Id",
+            "in": "header",
+            "required": false,
+            "description": "Qualify the read by this connection's delivery. A scoped delivery credential implies its own connection.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -782,7 +433,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -832,123 +483,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/projects/{projectId}/bundles/{bundleId}/versions/{versionId}": {
-      "get": {
-        "operationId": "getVersionLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "versionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VersionMetadata"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/versions/{versionId}/payload": {
@@ -981,6 +515,16 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-Acclimate-Connection-Id",
+            "in": "header",
+            "required": false,
+            "description": "Qualify the read by this connection's delivery. A scoped delivery credential implies its own connection.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -1015,7 +559,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1065,123 +609,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/projects/{projectId}/bundles/{bundleId}/versions/{versionId}/payload": {
-      "get": {
-        "operationId": "getPayloadLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "versionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Exact immutable UTF-8 payload bytes; hash these bytes before JSON parsing.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BundlePayload"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/channels/{channel}": {
@@ -1221,6 +648,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-Acclimate-Connection-Id",
+            "in": "header",
+            "required": false,
+            "description": "Qualify the read by this connection's delivery. A scoped delivery credential implies its own connection.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -1273,7 +710,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1323,148 +760,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/projects/{projectId}/bundles/{bundleId}/channels/{channel}": {
-      "get": {
-        "operationId": "resolveChannelLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "channel",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "If-None-Match",
-            "in": "header",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChannelResolution"
-                }
-              }
-            },
-            "headers": {
-              "ETag": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Opaque channel validator; retain the server value."
-              }
-            }
-          },
-          "304": {
-            "description": "Unchanged mapping, no response body.",
-            "headers": {
-              "ETag": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/channels/{channel}/releases": {
@@ -1550,7 +845,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1687,7 +982,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1747,290 +1042,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/projects/{projectId}/bundles/{bundleId}/channels/{channel}/promotions": {
-      "get": {
-        "operationId": "listPromotionsLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "channel",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20
-            }
-          },
-          {
-            "name": "beforeRevision",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "pattern": "^[1-9][0-9]*$"
-            },
-            "description": "Exclusive older-than bound. Opaque cursor, newest revision first."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromotionPage"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "deprecated": true
-      },
-      "post": {
-        "operationId": "promoteLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "channel",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "description": "Replay same key and exact request bytes within 24h. Different bytes conflict."
-          },
-          {
-            "name": "X-Acclimate-Durable-Operation",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true"
-              ]
-            },
-            "description": "Retain the audited command outcome. Matching closed fences apply to marked and unmarked retries."
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Promotion"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PromoteRequest"
-              }
-            }
-          }
-        },
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/proposals": {
@@ -2111,7 +1122,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2199,174 +1210,6 @@
         }
       }
     },
-    "/v1/projects/{projectId}/bundles/{bundleId}/proposals": {
-      "post": {
-        "operationId": "createProposalLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "description": "Replay same key and exact request bytes within 24h. Different bytes conflict."
-          },
-          {
-            "name": "X-Acclimate-Durable-Operation",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true"
-              ]
-            },
-            "description": "Retain the audited command outcome. Matching closed fences apply to marked and unmarked retries."
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Proposal"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProposalRequest"
-              }
-            }
-          }
-        },
-        "deprecated": true
-      },
-      "get": {
-        "operationId": "listProposalsLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "deprecated": true
-      }
-    },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/proposals/{proposalId}": {
       "get": {
         "operationId": "getProposal",
@@ -2431,7 +1274,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2481,123 +1324,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/projects/{projectId}/bundles/{bundleId}/proposals/{proposalId}": {
-      "get": {
-        "operationId": "getProposalLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "proposalId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Proposal"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/comparisons": {
@@ -2666,7 +1392,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2754,162 +1480,6 @@
         }
       }
     },
-    "/v1/projects/{projectId}/bundles/{bundleId}/comparisons": {
-      "post": {
-        "operationId": "createComparisonLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "description": "Replay same key and exact request bytes within 24h. Different bytes conflict."
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Comparison"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ComparisonRequest"
-              }
-            }
-          }
-        },
-        "deprecated": true
-      },
-      "get": {
-        "operationId": "listComparisonsLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "deprecated": true
-      }
-    },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/comparisons/{comparisonId}": {
       "get": {
         "operationId": "getComparison",
@@ -2974,7 +1544,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3024,123 +1594,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/projects/{projectId}/bundles/{bundleId}/comparisons/{comparisonId}": {
-      "get": {
-        "operationId": "getComparisonLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "comparisonId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Comparison"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "deprecated": true
       }
     },
     "/health": {
@@ -3291,145 +1744,6 @@
         "description": "Chronological created_at/id keyset pagination. Pass the scoped nextCursor returned by the preceding page."
       }
     },
-    "/v1/projects/{projectId}/bundles/{bundleId}/evaluation-requests": {
-      "post": {
-        "operationId": "createEvaluationLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          },
-          {
-            "name": "X-Acclimate-Durable-Operation",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true"
-              ]
-            },
-            "description": "Retain the audited command outcome. Matching closed fences apply to marked and unmarked retries."
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Evaluation"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Scoped authorization/validation/conflict failure",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EvaluationRequest"
-              }
-            }
-          }
-        },
-        "deprecated": true
-      },
-      "get": {
-        "operationId": "listEvaluationsLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvaluationPage"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Scoped authorization/validation/conflict failure",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Chronological created_at/id keyset pagination. Pass the scoped nextCursor returned by the preceding page.",
-        "deprecated": true
-      }
-    },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/evaluation-requests/{evaluationId}": {
       "get": {
         "operationId": "getEvaluation",
@@ -3481,60 +1795,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/projects/{projectId}/bundles/{bundleId}/evaluation-requests/{evaluationId}": {
-      "get": {
-        "operationId": "getEvaluationLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "evaluationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Evaluation"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Scoped authorization/validation/conflict failure",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/start": {
@@ -3610,80 +1870,6 @@
         }
       }
     },
-    "/v1/projects/{projectId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/start": {
-      "post": {
-        "operationId": "startEvaluationLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "evaluationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Evaluation"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Scoped authorization/validation/conflict failure",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StartEvaluationRequest"
-              }
-            }
-          }
-        },
-        "deprecated": true
-      }
-    },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/finish": {
       "post": {
         "operationId": "finishEvaluation",
@@ -3755,80 +1941,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/projects/{projectId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/finish": {
-      "post": {
-        "operationId": "finishEvaluationLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "evaluationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Evaluation"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Scoped authorization/validation/conflict failure",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FinishEvaluationRequest"
-              }
-            }
-          }
-        },
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/interrupt": {
@@ -3978,155 +2090,6 @@
         "description": "Abandon a requested or running attempt whose outcome is unknown, such as a cancelled CI job. Requires `evaluate` (or a workspace editor). The attempt's later reports are refused, promotion rejects comparisons bound to it, and a new request for the same candidate may start. It never claims the original worker stopped. Connected-learning requests return `managed_evaluation`."
       }
     },
-    "/v1/projects/{projectId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/interrupt": {
-      "post": {
-        "operationId": "interruptEvaluationLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "evaluationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Evaluation"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Scoped authorization/validation/conflict failure",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InterruptEvaluationRequest"
-              }
-            }
-          }
-        },
-        "deprecated": true
-      }
-    },
-    "/v1/projects/{projectId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/abandon": {
-      "post": {
-        "operationId": "abandonEvaluationLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "evaluationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Evaluation"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Scoped authorization/validation/conflict failure",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AbandonEvaluationRequest"
-              }
-            }
-          }
-        },
-        "deprecated": true,
-        "description": "Abandon a requested or running attempt whose outcome is unknown, such as a cancelled CI job. Requires `evaluate` (or a workspace editor). The attempt's later reports are refused, promotion rejects comparisons bound to it, and a new request for the same candidate may start. It never claims the original worker stopped. Connected-learning requests return `managed_evaluation`."
-      }
-    },
     "/v1/workspaces/{workspaceId}/operations/{operationId}": {
       "get": {
         "operationId": "getOperation",
@@ -4179,61 +2142,6 @@
           }
         },
         "description": "Setup/draft lookup by key or route lookup by canonical operationPath. Rechecks effective current action authority before returning a result."
-      }
-    },
-    "/v1/projects/{projectId}/operations/{operationId}": {
-      "get": {
-        "operationId": "getOperationLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "operationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "operationPath",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Operation"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Scoped authorization/validation/conflict failure",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Setup/draft lookup by key or route lookup by canonical operationPath. Rechecks effective current action authority before returning a result.",
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/operations/{operationId}/close": {
@@ -4302,73 +2210,6 @@
         "description": "Existing commit wins; otherwise fence the matching global or route-scoped identity. Repeatable; late marked and unmarked writes cannot pass the fence."
       }
     },
-    "/v1/projects/{projectId}/operations/{operationId}/close": {
-      "post": {
-        "operationId": "closeOperationLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "operationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Operation"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Scoped authorization/validation/conflict failure",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CloseOperationRequest"
-              }
-            }
-          }
-        },
-        "description": "Existing commit wins; otherwise fence the matching global or route-scoped identity. Repeatable; late marked and unmarked writes cannot pass the fence.",
-        "deprecated": true
-      }
-    },
     "/v1/workspaces/{workspaceId}/memberships": {
       "get": {
         "operationId": "listWorkspaceMembers",
@@ -4423,61 +2264,6 @@
         "description": "Current browser administrator only; not a global directory or machine-token grant."
       }
     },
-    "/v1/projects/{projectId}/memberships": {
-      "get": {
-        "operationId": "listWorkspaceMembersLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkspaceMemberPage"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Scoped authorization/validation/conflict failure",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Current browser administrator only; not a global directory or machine-token grant.",
-        "deprecated": true
-      }
-    },
     "/v1/workspaces/{workspaceId}/users/{userId}": {
       "get": {
         "operationId": "lookupVerifiedUser",
@@ -4522,53 +2308,6 @@
           }
         },
         "description": "Current browser administrator only. Null role means verified identity with no membership in this workspace."
-      }
-    },
-    "/v1/projects/{projectId}/users/{userId}": {
-      "get": {
-        "operationId": "lookupVerifiedUserLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VerifiedUser"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Scoped authorization/validation/conflict failure",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Current browser administrator only. Null role means verified identity with no membership in this workspace.",
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/comparisons/{comparisonId}/policy-receipts": {
@@ -4635,7 +2374,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4750,7 +2489,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4811,250 +2550,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/projects/{projectId}/bundles/{bundleId}/comparisons/{comparisonId}/policy-receipts": {
-      "get": {
-        "operationId": "listComparisonPolicyReceiptsLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "comparisonId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ComparisonPolicyReceipts"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Read policy verdicts reported by the evaluator for this comparison.",
-        "deprecated": true
-      },
-      "post": {
-        "operationId": "reportComparisonPolicyReceiptLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "comparisonId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ComparisonPolicyReceipt"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Record a policy verdict from the evaluator that submitted this terminal comparison. Repeated reports for the same comparison and policy digest return the original receipt.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ComparisonPolicyReport"
-              }
-            }
-          }
-        },
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/versions/{versionId}/policy-receipts": {
@@ -5121,7 +2616,7 @@
             }
           },
           "403": {
-            "description": "Project right denied.",
+            "description": "Workspace right denied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5174,124 +2669,6 @@
         "description": "Read visible failed or indeterminate policy verdicts for the candidate version."
       }
     },
-    "/v1/projects/{projectId}/bundles/{bundleId}/versions/{versionId}/policy-receipts": {
-      "get": {
-        "operationId": "listCandidatePolicyReceiptsLegacy",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "versionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ComparisonPolicyReceipts"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid content, unsupported schema, or invalid request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Project right denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scoped record not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision, parent, or mutation-key conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request exceeds size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Read visible failed or indeterminate policy verdicts for the candidate version.",
-        "deprecated": true
-      }
-    },
     "/v1/workspaces/{p}/evaluation-capabilities": {
       "get": {
         "summary": "GET /v1/workspaces/{p}/evaluation-capabilities",
@@ -5322,40 +2699,9 @@
         ]
       }
     },
-    "/v1/projects/{p}/evaluation-capabilities": {
-      "get": {
-        "summary": "GET /v1/workspaces/{p}/evaluation-capabilities",
-        "responses": {
-          "200": {
-            "description": "Point-in-time machine authority snapshot",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvaluationCapabilities"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "p",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
-      }
-    },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/corrections": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/corrections",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/corrections",
         "responses": {
           "default": {
             "description": "Service response"
@@ -5379,40 +2725,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/corrections": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/corrections",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/rechecks": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/rechecks",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/rechecks",
         "responses": {
           "default": {
             "description": "Service response"
@@ -5436,40 +2753,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/rechecks": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/rechecks",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/stop": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/stop",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/stop",
         "responses": {
           "default": {
             "description": "Service response"
@@ -5493,40 +2781,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/stop": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/stop",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/restore": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/restore",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/restore",
         "responses": {
           "default": {
             "description": "Service response"
@@ -5550,40 +2809,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/restore": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/restore",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/renew": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/renew",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/renew",
         "responses": {
           "default": {
             "description": "Service response"
@@ -5607,40 +2837,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/renew": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/renew",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/outcomes": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/outcomes",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/outcomes",
         "responses": {
           "default": {
             "description": "Service response"
@@ -5664,40 +2865,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/outcomes": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/outcomes",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/outcomes/{outcome}": {
       "get": {
-        "summary": "GET /v1/workspaces/{project}/connections/{integration}/learning/outcomes/{outcome}",
+        "summary": "GET /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/outcomes/{outcome}",
         "responses": {
           "default": {
             "description": "Service response"
@@ -5729,48 +2901,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/outcomes/{outcome}": {
-      "get": {
-        "summary": "GET /v1/workspaces/{project}/connections/{integration}/learning/outcomes/{outcome}",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "outcome",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/incident-replays": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/incident-replays",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/incident-replays",
         "responses": {
           "default": {
             "description": "Service response"
@@ -5794,45 +2929,12 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/incident-replays": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/incident-replays",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/work": {
       "get": {
-        "summary": "GET /v1/workspaces/{project}/connections/{integration}/learning/work",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
+        "operationId": "getLearningWork",
+        "summary": "Get assigned evaluator work",
         "parameters": [
           {
             "name": "workspaceId",
@@ -5847,44 +2949,28 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/work": {
-      "get": {
-        "summary": "GET /v1/workspaces/{project}/connections/{integration}/learning/work",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
-        "deprecated": true
+        "responses": {
+          "200": {
+            "description": "Connected evaluator assignments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningWork"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/workspaces/{workspaceId}/connection-observations": {
       "get": {
-        "summary": "GET /v1/workspaces/{project}/connection-observations",
+        "summary": "GET /v1/workspaces/{workspaceId}/connection-observations",
         "responses": {
           "default": {
             "description": "Service response"
@@ -5900,32 +2986,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integration-observations": {
-      "get": {
-        "summary": "GET /v1/workspaces/{project}/connection-observations",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections": {
       "get": {
-        "summary": "GET /v1/workspaces/{project}/connections",
+        "summary": "GET /v1/workspaces/{workspaceId}/connections",
         "responses": {
           "default": {
             "description": "Service response"
@@ -5943,7 +3008,7 @@
         ]
       },
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections",
         "responses": {
           "default": {
             "description": "Service response"
@@ -5959,51 +3024,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations": {
-      "get": {
-        "summary": "GET /v1/workspaces/{project}/connections",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
-      },
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/revoke": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/revoke",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/revoke",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6027,40 +3052,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/revoke": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/revoke",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/credentials": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/credentials",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/credentials",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6084,40 +3080,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/credentials": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/credentials",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/credentials/{credential}/revoke": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/credentials/{credential}/revoke",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/credentials/{credential}/revoke",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6149,48 +3116,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/credentials/{credential}/revoke": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/credentials/{credential}/revoke",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "credential",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/receipts": {
       "get": {
-        "summary": "GET /v1/workspaces/{project}/connections/{integration}/receipts",
+        "summary": "GET /v1/workspaces/{workspaceId}/connections/{connectionId}/receipts",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6216,7 +3146,7 @@
         ]
       },
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/receipts",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/receipts",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6240,62 +3170,6 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/receipts": {
-      "get": {
-        "summary": "GET /v1/workspaces/{project}/connections/{integration}/receipts",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
-      },
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/receipts",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces": {
@@ -6316,29 +3190,9 @@
         }
       }
     },
-    "/v1/projects": {
-      "get": {
-        "summary": "GET /v1/workspaces",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "deprecated": true
-      },
-      "post": {
-        "summary": "POST /v1/workspaces",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "deprecated": true
-      }
-    },
     "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels": {
       "get": {
-        "summary": "GET /v1/workspaces/{project}/bundles/{bundle}/channels",
+        "summary": "GET /v1/workspaces/{workspaceId}/bundles/{bundle}/channels",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6362,40 +3216,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/bundles/{bundle}/channels": {
-      "get": {
-        "summary": "GET /v1/workspaces/{project}/bundles/{bundle}/channels",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundle",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/memberships/{user}": {
       "put": {
-        "summary": "PUT /v1/workspaces/{project}/memberships/{user}",
+        "summary": "PUT /v1/workspaces/{workspaceId}/memberships/{user}",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6421,7 +3246,7 @@
         ]
       },
       "delete": {
-        "summary": "DELETE /v1/workspaces/{project}/memberships/{user}",
+        "summary": "DELETE /v1/workspaces/{workspaceId}/memberships/{user}",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6445,67 +3270,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/memberships/{user}": {
-      "put": {
-        "summary": "PUT /v1/workspaces/{project}/memberships/{user}",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "user",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
-      },
-      "delete": {
-        "summary": "DELETE /v1/workspaces/{project}/memberships/{user}",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "user",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundle-setups": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/bundle-setups",
+        "summary": "POST /v1/workspaces/{workspaceId}/bundle-setups",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6521,32 +3290,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/bundle-setups": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/bundle-setups",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts": {
       "get": {
-        "summary": "GET /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts",
+        "summary": "GET /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6580,7 +3328,7 @@
         ]
       },
       "post": {
-        "summary": "POST /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts",
+        "summary": "POST /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6612,83 +3360,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts": {
-      "get": {
-        "summary": "GET /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundle",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "channel",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
-      },
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundle",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "channel",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}": {
       "get": {
-        "summary": "GET /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}",
+        "summary": "GET /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6728,56 +3404,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}": {
-      "get": {
-        "summary": "GET /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundle",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "channel",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "draft",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/history": {
       "get": {
-        "summary": "GET /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/history",
+        "summary": "GET /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/history",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6817,56 +3448,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/history": {
-      "get": {
-        "summary": "GET /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/history",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundle",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "channel",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "draft",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/save": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/save",
+        "summary": "POST /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/save",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6906,56 +3492,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/save": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/save",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundle",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "channel",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "draft",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/discard": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/discard",
+        "summary": "POST /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/discard",
         "responses": {
           "default": {
             "description": "Service response"
@@ -6995,56 +3536,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/discard": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/discard",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundle",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "channel",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "draft",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish",
+        "summary": "POST /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish",
         "responses": {
           "default": {
             "description": "Service response"
@@ -7084,56 +3580,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundle",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "channel",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "draft",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/invitations": {
       "get": {
-        "summary": "GET /v1/workspaces/{project}/invitations",
+        "summary": "GET /v1/workspaces/{workspaceId}/invitations",
         "responses": {
           "default": {
             "description": "Service response"
@@ -7151,7 +3602,7 @@
         ]
       },
       "post": {
-        "summary": "POST /v1/workspaces/{project}/invitations",
+        "summary": "POST /v1/workspaces/{workspaceId}/invitations",
         "responses": {
           "default": {
             "description": "Service response"
@@ -7167,51 +3618,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/invitations": {
-      "get": {
-        "summary": "GET /v1/workspaces/{project}/invitations",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
-      },
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/invitations",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/invitations/{invite}/resend": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/invitations/{invite}/resend",
+        "summary": "POST /v1/workspaces/{workspaceId}/invitations/{invite}/resend",
         "responses": {
           "default": {
             "description": "Service response"
@@ -7235,40 +3646,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/invitations/{invite}/resend": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/invitations/{invite}/resend",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "invite",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/field-requalifications": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/field-requalifications",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/field-requalifications",
         "responses": {
           "default": {
             "description": "Service response"
@@ -7292,40 +3674,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/field-requalifications": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/field-requalifications",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/field-audits": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/field-audits",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/field-audits",
         "responses": {
           "default": {
             "description": "Service response"
@@ -7349,40 +3702,11 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/field-audits": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/field-audits",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/rounds/{round}/review": {
       "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/rounds/{round}/review",
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/rounds/{round}/review",
         "responses": {
           "default": {
             "description": "Service response"
@@ -7414,43 +3738,6 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{project}/integrations/{integration}/learning/rounds/{round}/review": {
-      "post": {
-        "summary": "POST /v1/workspaces/{project}/connections/{integration}/learning/rounds/{round}/review",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integration",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "round",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
       }
     },
     "/v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/progress": {
@@ -7521,115 +3808,6 @@
             }
           }
         ]
-      }
-    },
-    "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/progress": {
-      "get": {
-        "summary": "GET /v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/progress",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "p",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "b",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
-      },
-      "post": {
-        "summary": "POST /v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/progress",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "p",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "b",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "deprecated": true
-      }
-    },
-    "/v1/projects/{projectId}/integrations/{integrationId}/learning/work": {
-      "get": {
-        "operationId": "getLearningWork",
-        "summary": "Get assigned evaluator work",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "integrationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Connected evaluator assignments",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LearningWork"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/v1/workspaces/{workspaceId}/machine-tokens": {
@@ -8311,7 +4489,7 @@
             "type": "string",
             "minLength": 1
           },
-          "projectId": {
+          "workspaceId": {
             "type": "string"
           },
           "createdAt": {
@@ -8325,7 +4503,7 @@
         "required": [
           "id",
           "name",
-          "projectId",
+          "workspaceId",
           "createdAt",
           "compatibilityTarget"
         ]
@@ -9983,7 +6161,7 @@
         "additionalProperties": false,
         "required": [
           "id",
-          "projectId",
+          "workspaceId",
           "name",
           "principalId",
           "rights",
@@ -10003,7 +6181,7 @@
             "type": "string",
             "format": "uuid"
           },
-          "projectId": {
+          "workspaceId": {
             "type": "string"
           },
           "name": {
@@ -10266,7 +6444,7 @@
         "additionalProperties": false,
         "required": [
           "schemaVersion",
-          "projectId",
+          "workspaceId",
           "principalId",
           "checkedAt",
           "readUnpublished",
@@ -10278,7 +6456,7 @@
           "schemaVersion": {
             "const": 1
           },
-          "projectId": {
+          "workspaceId": {
             "type": "string"
           },
           "principalId": {
@@ -10430,7 +6608,7 @@
       },
       "EvaluationHandoff": {
         "type": "object",
-        "description": "The public handoff file the console downloads for an evaluation request and the evaluator CLI reads with --handoff. It names the request and its frozen configuration. It carries no credential or private path. projectId is the workspace ID.",
+        "description": "The handoff file the console downloads as handoff.json for an evaluation request. The evaluator CLI's request command writes it and --handoff reads it. It names the evaluation request and its frozen descriptor. It carries no credential or private path.",
         "additionalProperties": false,
         "properties": {
           "schemaVersion": {
@@ -10441,7 +6619,7 @@
             "type": "string",
             "format": "uri"
           },
-          "projectId": {
+          "workspaceId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9._-]{1,128}$",
             "not": {
@@ -10461,17 +6639,17 @@
             "format": "uuid",
             "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
           },
-          "configuration": {
+          "descriptor": {
             "$ref": "#/components/schemas/EvaluationDescriptor"
           }
         },
         "required": [
           "schemaVersion",
           "serviceUrl",
-          "projectId",
+          "workspaceId",
           "bundleId",
           "requestId",
-          "configuration"
+          "descriptor"
         ]
       }
     }

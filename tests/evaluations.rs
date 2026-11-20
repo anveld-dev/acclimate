@@ -79,7 +79,7 @@ async fn evaluation_attempts_bind_principal_settings_inventory_and_terminal_stat
         grants: Arc::new(grants),
         provider: None,
     });
-    let root = format!("/v1/projects/{p}/bundles/{b}");
+    let root = format!("/v1/workspaces/{p}/bundles/{b}");
     let collection = format!("{root}/evaluation-requests");
     let identity = json!({"parentVersionId":parent,"parentDigest":"parent","candidateVersionId":candidate,"candidateDigest":"candidate","datasetRevision":"fixtures-v1","runtime":{"model":"fixture"},"graderRevision":"grader-v1","expectedCases":[{"caseId":"a","repetition":0}]});
     let (s, e) = call(&app, "POST", &collection, "one", identity.clone()).await;
@@ -347,7 +347,7 @@ async fn evaluation_requests_keep_display_labels_and_validate_retries() {
         }]),
         provider: None,
     });
-    let collection = format!("/v1/projects/{p}/bundles/{b}/evaluation-requests");
+    let collection = format!("/v1/workspaces/{p}/bundles/{b}/evaluation-requests");
     let identity = json!({"parentVersionId":parent,"parentDigest":"parent","candidateVersionId":candidate,"candidateDigest":"candidate","datasetRevision":"fixtures-v1","runtime":{"model":"fixture"},"graderRevision":"grader-v1","expectedCases":[{"caseId":"a","repetition":0}]});
     let (s, plain) = call(&app, "POST", &collection, "one", identity.clone()).await;
     assert_eq!(s, StatusCode::CREATED, "{plain}");

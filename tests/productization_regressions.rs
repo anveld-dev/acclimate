@@ -81,9 +81,9 @@ async fn browser_reads_work_with_one_pool_connection_and_machine_prefix_still_wo
     let (state, project, people) = fixture(1).await;
     let app = router(state.clone());
     for path in [
-        format!("/v1/projects/{project}/bundles"),
+        format!("/v1/workspaces/{project}/bundles"),
         format!(
-            "/v1/projects/{project}/bundles/{}/comparisons",
+            "/v1/workspaces/{project}/bundles/{}/comparisons",
             Uuid::new_v4()
         ),
     ] {
@@ -101,7 +101,7 @@ async fn browser_reads_work_with_one_pool_connection_and_machine_prefix_still_wo
         .oneshot(request(
             "GET",
             &format!(
-                "/v1/projects/{project}/bundles/{}/channels/stable",
+                "/v1/workspaces/{project}/bundles/{}/channels/stable",
                 Uuid::new_v4()
             ),
             None,
@@ -124,13 +124,13 @@ async fn crossed_admin_updates_do_not_deadlock() {
     for _ in 0..5 {
         let a = app.clone().oneshot(request(
             "PUT",
-            &format!("/v1/projects/{project}/memberships/{}", people[1].0),
+            &format!("/v1/workspaces/{project}/memberships/{}", people[1].0),
             Some(&people[0].1),
             r#"{"role":"admin"}"#,
         ));
         let b = app.clone().oneshot(request(
             "PUT",
-            &format!("/v1/projects/{project}/memberships/{}", people[0].0),
+            &format!("/v1/workspaces/{project}/memberships/{}", people[0].0),
             Some(&people[1].1),
             r#"{"role":"admin"}"#,
         ));
@@ -169,7 +169,7 @@ async fn integration_replay_rechecks_current_administrator_membership() {
     sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'stable',1,$3)")
         .bind(&project).bind(bundle).bind(version).execute(&state.db).await.unwrap();
     let app = router(state.clone());
-    let path = format!("/v1/projects/{project}/integrations");
+    let path = format!("/v1/workspaces/{project}/connections");
     let body =
         serde_json::json!({"displayName":"replay fixture","bundleId":bundle,"channel":"stable"})
             .to_string();

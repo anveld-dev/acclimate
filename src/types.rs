@@ -7,6 +7,7 @@ use uuid::Uuid;
 pub struct Grant {
     pub token: String,
     pub principal_id: String,
+    #[serde(rename = "workspaceId")]
     pub project_id: String,
     pub rights: Vec<String>,
 }
@@ -32,6 +33,7 @@ pub struct Bundle {
     pub compatibility_target: String,
     pub id: String,
     pub name: String,
+    #[serde(rename = "workspaceId")]
     pub project_id: String,
     pub created_at: String,
 }

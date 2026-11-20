@@ -1,5 +1,4 @@
 //! Optional activity reports. No lease, takeover, cancellation, or replay semantics.
-use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, CaseKey, db, err, path};
 use axum::{
     Json, Router,
@@ -41,8 +40,8 @@ enum Phase {
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route(
-            "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/progress",
+        .route(
+            "/v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/progress",
             get(read).post(report),
         )
         .layer(DefaultBodyLimit::max(2048))

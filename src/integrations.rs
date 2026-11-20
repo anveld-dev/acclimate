@@ -1,5 +1,4 @@
 //! Opt-in application observations; integration credentials never grant project access.
-use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, db, err, path};
 use axum::{
     Json, Router,
@@ -17,28 +16,28 @@ use uuid::Uuid;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route(
-            "/v1/projects/{project}/integration-observations",
+        .route(
+            "/v1/workspaces/{project}/connection-observations",
             get(observations),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations",
+        .route(
+            "/v1/workspaces/{project}/connections",
             get(list).post(create),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/revoke",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/revoke",
             post(revoke),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/credentials",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/credentials",
             post(issue),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/credentials/{credential}/revoke",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/credentials/{credential}/revoke",
             post(revoke_credential),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/receipts",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/receipts",
             get(receipts).post(receive),
         )
 }
@@ -71,7 +70,7 @@ async fn admin(
     Ok(tx)
 }
 fn integration(r: &sqlx::postgres::PgRow) -> Value {
-    json!({"id":r.get::<Uuid,_>("id"),"projectId":r.get::<String,_>("project_id"),"bundleId":r.get::<Uuid,_>("bundle_id"),"channel":r.get::<String,_>("channel"),"displayName":r.get::<String,_>("display_name"),"enabled":r.get::<bool,_>("enabled"),"createdAt":r.get::<DateTime<Utc>,_>("created_at"),"credentials":r.try_get::<Value,_>("credentials").unwrap_or_else(|_|json!([]))})
+    json!({"id":r.get::<Uuid,_>("id"),"workspaceId":r.get::<String,_>("project_id"),"bundleId":r.get::<Uuid,_>("bundle_id"),"channel":r.get::<String,_>("channel"),"displayName":r.get::<String,_>("display_name"),"enabled":r.get::<bool,_>("enabled"),"createdAt":r.get::<DateTime<Utc>,_>("created_at"),"credentials":r.try_get::<Value,_>("credentials").unwrap_or_else(|_|json!([]))})
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -98,6 +97,7 @@ async fn create(
     if a.user_id.is_none() {
         crate::auth::actor(&h, &s, &p, "promote")?;
     }
+    // Internal operation key, not a route: see commands::internal_operation_path.
     let route = format!("/v1/projects/{p}/integrations");
     let mut command =
         match crate::commands::begin_admin_mutation(&s, &a, &p, &route, &h, &body).await? {
@@ -415,7 +415,9 @@ async fn delivery_history(
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Receipt {
     pub event_id: Uuid,
+    #[serde(rename = "connectionId")]
     pub integration_id: Uuid,
+    #[serde(rename = "workspaceId")]
     pub project_id: String,
     pub bundle_id: Uuid,
     pub channel: Option<String>,
@@ -452,7 +454,7 @@ async fn receive(
     State(s): State<AppState>,
     Path((p, i)): Path<(String, Uuid)>,
     h: HeaderMap,
-    Json(b): Json<Receipt>,
+    crate::RenamedJson(b): crate::RenamedJson<Receipt>,
 ) -> ApiResult<Json<Value>> {
     let r = credential(&s, &h).await?.ok_or_else(denied)?;
     if r.get::<String, _>("kind") != "receipt-write"

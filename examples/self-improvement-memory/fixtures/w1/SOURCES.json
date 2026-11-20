@@ -22,5 +22,9 @@
   "replication-audit.json": {
     "source": "examples/real-app-learning/replication-audit.json",
     "sha256": "219431880c0f5f12c61254c4d0eeb40e61ba14f5a5d9926841e71903e1f68b1c"
+  },
+  "held-out.json": {
+    "source": "Authored for W1 phase 5",
+    "sha256": "96d4b082896de26931b1b8f9c8c15a92c68e8e58a3c70f39a79d01785f25015b"
   }
 }

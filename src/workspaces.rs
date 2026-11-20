@@ -331,12 +331,20 @@ async fn create_project(
     let (user, session) = identity(&h)?;
     let mut tx = s.db.begin().await.map_err(db)?;
     require_operator(&s, &mut tx, user, session).await?;
-    sqlx::query("INSERT INTO projects(id,name) VALUES($1,$2)")
-        .bind(&v.id)
-        .bind(&v.name)
-        .execute(&mut *tx)
-        .await
-        .map_err(db)?;
+    let inserted =
+        sqlx::query("INSERT INTO projects(id,name) VALUES($1,$2) ON CONFLICT(id) DO NOTHING")
+            .bind(&v.id)
+            .bind(&v.name)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+    if inserted.rows_affected() == 0 {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "workspace_exists",
+            "Workspace ID is already registered",
+        ));
+    }
     sqlx::query("INSERT INTO project_memberships(project_id,user_id,role) VALUES($1,$2,'admin')")
         .bind(&v.id)
         .bind(user)

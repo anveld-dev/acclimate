@@ -198,6 +198,36 @@ async fn exact_issuer_account_switch_revocation_and_typed_logout() {
 }
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
+async fn creating_a_registered_workspace_returns_conflict_without_granting_access() {
+    let (db, s, project) = fixture().await;
+    acclimate_service::backfill_projects(&s).await.unwrap();
+    let app = router(s);
+    let operator = login(&app, "operator", None).await;
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/v1/workspaces",
+        common::CONSOLE_TOKEN,
+        operator["secret"].as_str(),
+        json!({"id":project,"name":"Attempted replacement"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"]["code"], "workspace_exists");
+    let (name, memberships): (String, i64) = sqlx::query_as(
+        "SELECT name,(SELECT count(*) FROM project_memberships WHERE project_id=p.id)
+         FROM projects p WHERE p.id=$1",
+    )
+    .bind(&project)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(name, project);
+    assert_eq!(memberships, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn adoption_is_explicit_serialized_immutable_and_never_regrants() {
     let (db, s, p) = fixture().await;
     acclimate_service::backfill_projects(&s).await.unwrap();

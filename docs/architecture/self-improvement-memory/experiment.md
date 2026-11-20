@@ -4,7 +4,7 @@ This file plans the paper-sized test of the main transfer claim of [arXiv 2611.1
 
 The product loop is the experiment loop. The driver sets up bundles, starts and pauses loops, runs the evaluator with the right policy model, and reads the held-out curves. It never proposes, screens, selects, releases or writes memory. The service does all of that, as it would for any enrolled bundle.
 
-This is a draft. Before the first live model call, a frozen copy with SHA-256 digests goes to `docs/research/self-improvement-memory/preregistration.md`. It follows the conventions of `docs/research/real-app-learning-experiment/preregistration.md`: frozen inputs with digests, zero-call checks, run order, turn accounting and a deviations log.
+This is a draft. Before the pilot, freeze the protocol and inputs with SHA-256 digests. After the pilot passes, archive the final preregistration with its pilot results before S1. It follows the conventions of `docs/research/real-app-learning-experiment/preregistration.md`: frozen inputs with digests, zero-call checks, run order, turn accounting and a deviations log.
 
 ## 1. What the paper reports
 
@@ -95,14 +95,14 @@ At five rollouts, measurement noise of one held-out difference is about 2.0 to 2
 
 ### 6.1 Setup of a new bundle (Source, HT, CS)
 
-1. Create a machine token for the app principal with the `evaluate` right.
+1. Configure a private static app grant with the `evaluate` right on the isolated service. Keep the app principal ID across checkpoint copies. The public learning routes also accept a workspace machine token with this right.
 2. Create the bundle with a neutral slug. Publish the start payload as its first version: H0 bytes for Source and CS, and H_S bytes for HT (resolved from B_S with the SDK, digest verified). Release it to the channel `learning` with the kept channel release route.
 3. `PUT /v1/workspaces/{workspaceId}/bundles/{bundleId}/learning`:
 
    ```json
    {
      "channel": "learning",
-     "appPrincipalId": "machine:…",
+     "appPrincipalId": "experiment-evaluator",
      "setting": {"domain": "cli-support", "benchmark": "llm-0.38-argv", "policyModel": "gpt-6.2-sol"},
      "heldOut": {"digest": "sha256:…", "cases": 60}
    }
@@ -125,15 +125,15 @@ On the Full SIM copy of the checkpoint, B_S is `paused` after round 10.
 
 The loop runs rounds back to back, so the driver stops it. A run's **counted rounds** are its `completed` rounds. A `failed` round makes no decision and is not counted, and it is logged against K5. When the run has 9 counted rounds and a round is active, the driver calls `POST /pause`. That round runs to its end and no new round starts. If it fails, the driver calls `POST /resume` and repeats. If a round after the 10th counted round is ever observed, the driver calls `POST /stop` and the run is invalid if that round reached `selecting` (K1).
 
-The target round index is `r = number − first number + 1`, so Full SIM's rounds 11 to 20 are r = 1 to 10.
+The target index `r` counts completed rounds. Keep the separate bundle round number in the ledger. When no rounds fail, Full SIM's bundle rounds 11 to 20 are r = 1 to 10.
 
 ### 6.4 Each round
 
 The driver does nothing inside a round except serve evaluations. After each round ends it:
 
 1. Reads `GET …/learning/rounds/{roundId}` (candidates, evaluations, selection) and `GET …/learning/memory?revision=` at the round's `memory_revision`.
-2. Matches the retained evaluation's `version_id` to the channel head and its `score` to the evaluator's local log (§8.1).
-3. Writes one line to `artifacts/sim-experiment/<stage>/b<block>/<code>/rounds.jsonl`. `<code>` is the blinded condition code.
+2. Matches the retained evaluation's version to the round's adopted or kept version and its score to the local log (§8.1). At the end, checks that the final retained version equals the learning channel head.
+3. Writes the public round document with its pinned memory, retained-evaluation identity, optimizer request records and turn counts to `artifacts/sim-experiment/<stage>/b<block>/<code>/rounds.jsonl`. `<code>` is the blinded condition code. The following illustrates the evidence represented by each row.
 
 ```json
 {
@@ -153,7 +153,7 @@ The driver does nothing inside a round except serve evaluations. After each roun
 }
 ```
 
-`summary.json` per run holds the totals, the round-10 retained version and the memory document at the end.
+`summary.json` per run holds the totals, the final retained version and the memory document at the end. `ledger.json` hashes the run files and, for each source, the stopped database checkpoint.
 
 ## 7. Randomization and blinding
 
@@ -161,9 +161,9 @@ No paired comparison exists in the loop, so there is no arm order to balance. Th
 
 | What | Rule |
 | --- | --- |
-| Target start order in a block | A permutation of the three conditions from `seed = sha256(preregDigest ‖ "start" ‖ block)` |
-| Rollout order in every evaluation | The evaluator shuffles the (case, rollout) pairs with `seed = sha256(preregDigest ‖ block ‖ code ‖ number ‖ role ‖ sample)` |
-| Condition labels | Coded A, B, C per block by a seeded permutation. The key is sealed in `artifacts/sim-experiment/key.json` and opened only after `analyze.py` is frozen and run on coded data. |
+| Target start order in a block | Sort the three conditions by SHA-256 of the JSON array `[preregDigest, "start", block, originalIndex]`. Submit them in that order to separate services. |
+| Rollout order in every evaluation | Offline evaluations sort case/rollout pairs by SHA-256 of `[preregDigest, block, code, number, role, sample, originalIndex]`. The SDK owns the in-loop case schedule. Apply the seed with case ID added to assign local rollout labels within each case. |
+| Condition labels | Coded A, B, C per block by sorting conditions on SHA-256 of `[preregDigest, "codes", block, originalIndex]`. The key is sealed in `artifacts/sim-experiment/key.json` and opened only after `analyze.py` is frozen and run on coded data. |
 | Case IDs | E keeps its `cli-…` IDs. H IDs are random (§4.2). |
 
 The assignment of condition to bundle is not random: Full SIM is by definition the continued bundle. Bundles, versions and requests carry no label, so the optimizer and graders cannot see it.
@@ -195,9 +195,9 @@ The assignment of condition to bundle is not random: Full SIM is by definition t
 | Problem reuse | Share of target samples whose `diagnosis.problem` names an existing ID. For Full SIM, the share naming a problem opened in the source run (`opened_round ≤ 10`). |
 | Prediction precision | Over adopted attempts, the number of `fixed` cases divided by the number of `predicted` cases. Null comparison: the fix rate among incumbent-failing E cases the attempt did not predict. Interpreted only with at least 100 pooled predictions. Cases with 1 to 4 passing incumbent rollouts are reported separately as flaky. |
 | Unpredicted regressions | Per adopted attempt, E cases that pass on the incumbent and fail on the candidate (`CASE_PASS_ROLLOUTS`) and were not predicted |
-| Winner's curse | For each adopted round, the adopted candidate's `evolve_score` minus the next round's `incumbent_score`, which re-measures the same version with fresh rollouts. This is the best-of-5 inflation. It needs the loop to keep re-scoring the incumbent every round ([loop.md](loop.md) open question 5). |
-| Overfitting gap | `incumbent_score` gain from target round 1 to the round after round 10, minus the held-out gain |
-| Context growth | Rendered optimizer input bytes and tokens per round, by prompt key |
+| Winner's curse | For each adopted round, the adopted candidate's `evolve_score` minus the next round's `incumbent_score`, which re-measures the same version with fresh rollouts. For the final adoption, use the offline final evolve measurement. This is the best-of-5 inflation. It needs the loop to keep re-scoring the incumbent every round ([loop.md](loop.md) open question 5). |
+| Overfitting gap | Evolve gain from the round-1 incumbent score to an offline remeasurement of the final retained harness, minus the held-out gain. The offline measurement runs after the loop is paused and creates no learning round. |
+| Context growth | Rendered optimizer input bytes by prompt key, and total provider-reported tokens per request and round |
 | Turns and tokens | Per condition, and per adopted step still on the channel at round 10. Information only. |
 
 ## 9. Statistics
@@ -274,14 +274,14 @@ These checks live in the driver and in read-only queries on the driver's own clu
 | K2 Context | Any round `failed` with `optimizer-context-too-large`. Memory and history only grow within a run, so the loop cannot continue on that bundle. Full SIM, which carries up to 20 attempts of memory beside 10 rounds of target history, is hit first. | Stop the stage for a maintainer decision. A larger-context optimizer model is an amendment and restarts every block. |
 | K3 Pilot | `format-rejected` above 20% of samples; no `adopted` round in the 6 pilot source rounds; the pilot's measured input growth projects Full SIM's round-20 input (10 rounds of history, up to 20 attempts) above 50% of the optimizer's context; any K1 event | Fix and repeat the pilot, or pause for a maintainer decision. Pilot data is discarded. |
 | K4 Harm | After 5 completed blocks, the upper 95% bound of mean T1 is below −5 pp. `analyze.py` reports only whether it fired. | Stop and report. Harm-only, so it does not inflate T1's type I error. |
-| K5 Infrastructure | A service exit, a run stuck for 2 hours, a loop paused with `failed-rounds`, or more than 5% of a stage's rollouts failing for infrastructure reasons (the evaluator retries such a rollout once before reporting it). The first experiment lost its lease under concurrent lint (`docs/research/real-app-learning-experiment/README.md:69`). | Restart the run with the same seeds, at most twice: a source run from scratch, a target run from a fresh checkpoint copy. No repository lint or builds during live stages. |
+| K5 Infrastructure | A service exit, a run stuck for 2 hours, a loop paused with `failed-rounds`, or more than 5% of a run's rollouts failing for infrastructure reasons (the evaluator retries such a rollout once before reporting it). The first experiment lost its lease under concurrent lint (`docs/research/real-app-learning-experiment/README.md:69`). | Restart the run with the same seeds, at most twice: a source run from scratch, a target run from a fresh checkpoint copy. No repository lint or builds during live stages. |
 | K6 Drift | The provider announces a change to `gpt-6-luna` or `gpt-6.2-sol` during a stage | Pause. Blocks from before and after are not mixed in one contrast without a recorded amendment. |
 
 There is no efficacy stop and no efficacy peeking. Analysts see only integrity and infrastructure counts until every block is done.
 
 ### 10.1 SQL sketches
 
-Run after each run against its stopped cluster. `$1, $2` are the workspace and bundle, `$3, $4` the run's first and last round numbers.
+Run read-only after the service stops, while the private PostgreSQL instance is still available. `$1, $2` are the workspace and bundle, `$3, $4` the run's first and last round numbers.
 
 ```sql
 -- One setting, evolve revision and optimizer model per run
@@ -342,7 +342,7 @@ Everything here is in the README names. N1 and N2 are specified by their owners.
 | **N1.** No round starts on an empty evolve split, so a new bundle's round 1 sees the setup cases | `start_round` precondition | loop.md |
 | **N2.** A per-evaluation case concurrency, for wall clock only (§14 uses 8) | `serveLearningLoop` option `caseConcurrency`, default 1 | evaluator-and-contracts.md |
 
-The driver still checks N1 (§6.1 step 6) and discards a bundle whose round 1 pinned an earlier `evolve_revision`.
+The driver verifies N1 (§6.1 step 6). The SDK exposes neither a per-evaluation case-order hook nor the evaluation ID and pinned setting in execution callbacks. The driver binds callback evidence through app-authorized `GET /work` and reader-authorized round details. Full in-loop case randomization would require a scheduler hook.
 
 ## 12. Driver
 
@@ -367,10 +367,10 @@ All in `examples/self-improvement-memory/`, following the layout of `examples/re
 
 | File | Role |
 | --- | --- |
-| `run.py` | Entry point: `python3 examples/self-improvement-memory/run.py --stage S1 --blocks 1-10 --pg-bin …`. Owns clusters through `qualify.Harness`, takes checkpoints and makes target copies. `--service-bin` selects the pre-change build for stage C. Resumes by block and condition. |
-| `block.ts` | One block: §6 setup, the Full SIM transition, round counting and pause, seeded start order, round records |
+| `run.py` | Entry point: `python3 examples/self-improvement-memory/run.py --stage S1 --blocks 1-10 --pg-bin …`. Owns clusters through `qualify.Harness`, takes checkpoints and makes target copies. `--service-bin` selects the frozen service executable. Resumes by block and condition. Stage C needs its own pre-change driver. |
+| `block.ts` | One block: §6 setup, the Full SIM transition, round counting and pause, round records. The Python entry point submits targets in the seeded order. |
 | `conditions.ts` | The §3 table as data |
-| `evaluator.ts` | The `serveLearningLoop` handler: Codex turn (ported from `run.ts:103-163` at the tag), grading (from `run.ts:165-177`), seeded rollout order, the infrastructure retry, the local rollout log, the policy-model check |
+| `evaluator.ts` | The `serveLearningLoop` handler: Codex turn (ported from `run.ts:103-163` at the tag), grading (from `run.ts:165-177`), seeded offline rollout order and in-loop labels, the infrastructure retry, the local rollout log, the policy-model check |
 | `heldout.ts` | The local H store, `heldOut.digest`, and round-0 and retention scoring |
 | `adapter.ts` | The optimizer proxy (ported from `run.ts:198-229` at the tag). Logs each request's bytes, digest and token usage and runs the K1 request checks before forwarding. |
 | `checks.sql` | §10.1 |
@@ -390,7 +390,7 @@ Raw evidence stays under `artifacts/sim-experiment/` and is not published, as wi
 | `examples/self-improvement-memory/tests/sim-experiment.test.ts` (`npm run test:sim-experiment`, model-free, owned PostgreSQL) | A fake optimizer returns fixed edits, diagnoses, screens and selections, and a fake policy returns seeded argv. One block runs a 2-round source and the 3 target conditions for 2 rounds on tiny fixtures from a real checkpoint copy. Asserts: 5 samples per round; Full SIM's first target round pins the source memory revision and renders an empty history, and HT and CS start at 0; diagnoses predate their evaluations; Full SIM and HT start digests match; no H ID reaches the adapter; held-out reports carry no traces; the retained evaluation binds the channel head; the pause stops at exactly the planned count; the §10.1 queries return the expected rows. |
 | `examples/self-improvement-memory/test_analyze.py` | Synthetic blocks with a known effect. The paired t, signed-rank, intervals, d_z and Holm results match SciPy references. |
 | `examples/self-improvement-memory/test_freeze.py` | Disjointness rejects a duplicated input under a new ID. Each negative control fails the grader. |
-| K1 unit tests in `adapter.ts` | A request with an H case ID, a whole H input, a condition code or a key outside its kind's set is refused and aborts the stage. `setting` on every kind and `parserError` on a retry are not flagged. An input shared with E is not flagged. |
+| K1 unit tests in `tests/adapter.test.ts` | A request with an H case ID, a whole H input, a condition code or a key outside its kind's set is refused and aborts the stage. `setting` on every kind and `parserError` on a retry are not flagged. An input shared with E is not flagged. |
 
 ## 14. Turn and token estimates
 
@@ -417,14 +417,14 @@ A round's rollouts are `5·|E|` for the incumbent, up to `5·5·|E|` for the sur
 | **Round** | **≤ 1,500**, plus 7 optimizer calls (5 `propose`, `screen`, `select`) and up to 5 format retries |
 | **Run, 10 rounds** | **≤ 15,000** |
 
-Per block: source 15,000 + H0 round 0 under luna 300; targets 3 × 15,000 + round 0 of H_S and H0 under sol 600 + retention 900. **61,800 rollouts** and 280 optimizer calls.
+Per block: source 15,000 + H0 round 0 under luna 300; targets 3 × 15,000 + round 0 of H_S and H0 under sol 600 + retention 900. **62,400 rollouts**, including 600 offline evolve rollouts, and 280 optimizer calls.
 
 ### 14.3 Totals, worst case, main anchor
 
 | Stage | Rollouts | Optimizer calls | Input tokens | Output tokens | Serial turn-hours |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| S0c pilot | 14,400 | 63 | 0.25 B | 0.6 M | 22 |
-| S1 + S2, 10 blocks | 618,000 | 2,800 | 10.7 B | 26 M | 954 |
+| S0c pilot | 14,700 | 63 | 0.25 B | 0.6 M | 22 |
+| S1 + S2, 10 blocks | 624,000 | 2,800 | 10.8 B | 26 M | 964 |
 
 - Input tokens include optimizer calls at 60,000 each (about 0.17 B). At the slow anchor the main stages use about 15.6 B input tokens and 1,777 serial turn-hours.
 - **Critical path.** With case concurrency 8 (N2), a round takes about 17 minutes of rollouts (1,500 / 8 × 5.56 s) plus about 10 minutes of optimizer calls, so a run takes about 4.5 hours and a block about 9.5 hours (source, then the three targets together). At concurrency 1, a round takes about 2.5 hours and a block 50 to 55 hours.
@@ -485,5 +485,5 @@ It is unpaired and differs from the new loop in k, memory, gating, triggers and 
 Shared questions are in the [README](README.md#open-questions). These are owned here.
 
 1. **Stage C.** Run the pre-change Flat control? It is descriptive only (§16).
-2. **`gpt-6.2-sol` as a Codex task model.** Availability, rate limits, latency and token use are unverified.
+2. **`gpt-6.2-sol` as a Codex task model.** The bundled Codex CLI catalog lists this task model. Entitlement for the pilot credentials, rate limits, latency and token use await live verification.
 3. **Optimizer context.** Full SIM's round 20 carries 10 rounds of target history and up to 20 attempts. The pilot's projection decides whether `gpt-6-luna` fits, or whether the optimizer model must change before S1 (K2, K3).

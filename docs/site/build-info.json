@@ -106,7 +106,7 @@
     "docs/architecture/self-improvement-memory/README.md": "686cfdd4b5c018336bb91eed48ea2c0969de93eff0d259df32e43b17bb179f63",
     "docs/architecture/self-improvement-memory/decisions.md": "75de1f3a64cb9d150aab842dbac62155af90b6958fb5abdb93968416fd6ae67b",
     "docs/architecture/self-improvement-memory/evaluator-and-contracts.md": "98bc4b4ca9d0d54b730c03ca1e15f5a394621d5ca0e4a66913fa725dd5e585d2",
-    "docs/architecture/self-improvement-memory/experiment.md": "11e582cd199fd453d7396068b2f0f67fd133d34b3b6d731b4debb778df84113f",
+    "docs/architecture/self-improvement-memory/experiment.md": "b49de1a16c2ae968014348f77be80bed0ea29828f9a5ccfec2e6b33e5835890a",
     "docs/architecture/self-improvement-memory/loop.md": "3e3a42f76c1e193c494b5cf9638176dfaf50c9619515461548348041c4268ca3",
     "docs/architecture/self-improvement-memory/memory.md": "ccdf4c44c24536055d3633ca7480a3f1d9dfa433bffbf4816e2d2573e9ff637a",
     "docs/architecture/self-improvement-memory/optimizer.md": "859bd65bcb9a594b769c8ee572ec834dcd327fb2cd7a0593d10cabb3a453dd7e",
@@ -324,7 +324,7 @@
     "src/commands.rs": "b39936ed32dbe46901aa2715b7fa9ab105a28b524edb83f0eb276d842758f0a2",
     "src/lib.rs": "24794c699a083ecaac657feaeb039fb23be71ca06385ef7fc7a200c8a1094395",
     "src/types.rs": "a4e33826b13b7a45585aac2ac9de7d0ad2f8286516cee7d9fe85f83a9da228ff",
-    "src/workspaces.rs": "02bbb7907b7ca0f7adb04ed343d1c8aa7d05891950d3090892b1c5189dbed7cb",
+    "src/workspaces.rs": "9b1276bdb1a03ef56a3bf7470fc6f4c75cf506b469c3aeb785f3def5f55945b7",
     "tests/integrations.rs": "777b86a48b0fe15f367cddf01444250ddb7ec5c34f6a4126c1235e72da5ec78e",
     "tests/productization_regressions.rs": "cedec3a41e32a299da5035d0cff52c10e8a565dc3d0990c4a9d19ff08319280e"
   }

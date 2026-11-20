@@ -510,7 +510,7 @@ async fn await_sql(f: &Fixture, query: &str, round: Uuid) {
         }
     })
     .await
-    .expect("database state did not become ready");
+    .unwrap_or_else(|_| panic!("database state did not become ready for round {round}: {query}"));
 }
 
 #[tokio::test]
@@ -525,13 +525,37 @@ async fn restart_replays_all_new_states_and_keeps_if_channel_moves_after_selecti
         _ => json!({"decision":"adopt","sample":2,"reason":"Adopt the revision."}),
     })).await;
     prepare(&mut f).await;
+    // Hold each transition after its call output commits so the worker can
+    // be restarted at that checkpoint independent of when the poll runs.
+    sqlx::raw_sql(
+        "
+        CREATE FUNCTION test_replay_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            RAISE EXCEPTION 'fixture interrupted round advancement';
+        END $$;
+        CREATE TRIGGER test_proposing_guard BEFORE UPDATE ON learning_rounds FOR EACH ROW
+        WHEN (OLD.state='proposing' AND NEW.state IS DISTINCT FROM OLD.state)
+        EXECUTE FUNCTION test_replay_guard();
+        CREATE TRIGGER test_screening_guard BEFORE UPDATE ON learning_rounds FOR EACH ROW
+        WHEN (OLD.state='screening' AND NEW.state IS DISTINCT FROM OLD.state)
+        EXECUTE FUNCTION test_replay_guard();",
+    )
+    .execute(&f.state.db)
+    .await
+    .unwrap();
     let item = incumbent(&f, 1).await;
     let id = Uuid::parse_str(item["roundId"].as_str().unwrap()).unwrap();
-    for (kind, state) in [("propose", "proposing"), ("screen", "screening")] {
+    for (kind, sample, state) in [("propose", 5, "proposing"), ("screen", 0, "screening")] {
         let query = format!("SELECT EXISTS(SELECT 1 FROM learning_rounds r JOIN learning_optimizer_calls c ON r.id=c.round_id
-            WHERE r.id=$1 AND r.state='{state}' AND c.kind='{kind}' AND c.status='succeeded')");
+            WHERE r.id=$1 AND r.state='{state}' AND c.kind='{kind}' AND c.sample={sample} AND c.status='succeeded')");
         await_sql(&f, &query, id).await;
         f.crash_worker().await;
+        sqlx::query(&format!(
+            "DROP TRIGGER test_{state}_guard ON learning_rounds"
+        ))
+        .execute(&f.state.db)
+        .await
+        .unwrap();
         f.spawn_worker();
     }
     let candidate = f.item("evolve", 1).await;
@@ -659,8 +683,10 @@ async fn failed_survivor_deadline_advances_to_held_out() {
     assert_eq!(server.requests.lock().unwrap().len(), 6);
 }
 
+#[derive(Default)]
 struct BlockFirstCall {
     requests: std::sync::atomic::AtomicUsize,
+    entered: tokio::sync::Notify,
     release: tokio::sync::Notify,
 }
 
@@ -675,6 +701,7 @@ impl OptimizerModel for BlockFirstCall {
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
                 == 0
             {
+                self.entered.notify_one();
                 self.release.notified().await;
             }
             Ok(proposal(
@@ -692,33 +719,63 @@ impl OptimizerModel for BlockFirstCall {
     }
 }
 
+async fn blocked_proposal() -> (Fixture, Arc<BlockFirstCall>, Value) {
+    let mut f = Fixture::new().await;
+    let model = Arc::new(BlockFirstCall::default());
+    f.state.optimizer = Some(model.clone());
+    prepare(&mut f).await;
+    let item = incumbent(&f, 1).await;
+    // The claim is visible in PostgreSQL before the task enters the model.
+    tokio::time::timeout(Duration::from_secs(60), model.entered.notified())
+        .await
+        .expect("first proposal did not enter the model");
+    (f, model, item)
+}
+
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn orphan_claim_requeues_and_exhausted_claim_fails() {
-    let mut f = Fixture::new().await;
-    let model = Arc::new(BlockFirstCall {
-        requests: Default::default(),
-        release: Default::default(),
-    });
-    f.state.optimizer = Some(model);
-    prepare(&mut f).await;
-    let item = incumbent(&f, 1).await;
+    {
+        let (mut f, _, item) = blocked_proposal().await;
+        let id = Uuid::parse_str(item["roundId"].as_str().unwrap()).unwrap();
+        let digest: String = sqlx::query_scalar(
+            "SELECT input_digest FROM learning_optimizer_calls
+             WHERE round_id=$1 AND kind='propose' AND sample=1 AND status='running' AND attempts=1",
+        )
+        .bind(id)
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+        f.crash_worker().await;
+        f.ok("POST", "/pause", "admin", None, Value::Null).await;
+        f.spawn_worker();
+        await_sql(&f,"SELECT EXISTS(SELECT 1 FROM learning_optimizer_calls WHERE round_id=$1 AND kind='propose' AND sample=1 AND status='succeeded' AND attempts=2)",id).await;
+        let recovered_digest: String = sqlx::query_scalar(
+            "SELECT input_digest FROM learning_optimizer_calls WHERE round_id=$1 AND kind='propose' AND sample=1",
+        )
+        .bind(id)
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+        assert_eq!(recovered_digest, digest);
+        f.crash_worker().await;
+    }
+
+    // Give the exhausted claim its own round so advancement can never
+    // consume a success before we set up the orphan at its attempt limit.
+    let (mut f, _, item) = blocked_proposal().await;
     let id = Uuid::parse_str(item["roundId"].as_str().unwrap()).unwrap();
-    await_sql(&f,"SELECT EXISTS(SELECT 1 FROM learning_optimizer_calls WHERE round_id=$1 AND sample=1 AND status='running' AND attempts=1)",id).await;
+    f.crash_worker().await;
+    f.ok("POST", "/pause", "admin", None, Value::Null).await;
     let digest: String = sqlx::query_scalar(
-        "SELECT input_digest FROM learning_optimizer_calls WHERE round_id=$1 AND sample=1",
+        "UPDATE learning_optimizer_calls SET attempts=3
+         WHERE round_id=$1 AND kind='propose' AND sample=1 AND status='running' AND attempts=1
+         RETURNING input_digest",
     )
     .bind(id)
     .fetch_one(&f.state.db)
     .await
     .unwrap();
-    f.crash_worker().await;
-    f.spawn_worker();
-    f.ok("POST", "/pause", "admin", None, Value::Null).await;
-    await_sql(&f,"SELECT EXISTS(SELECT 1 FROM learning_optimizer_calls WHERE round_id=$1 AND sample=1 AND status='succeeded' AND attempts=2)",id).await;
-    f.crash_worker().await;
-    sqlx::query("UPDATE learning_optimizer_calls SET status='running',attempts=3,output=NULL WHERE round_id=$1 AND sample=1")
-        .bind(id).execute(&f.state.db).await.unwrap();
     f.spawn_worker();
     let doc = retained(&f, 1).await;
     assert_eq!(doc["candidates"][0]["dropReason"], "provider-failed");
@@ -730,17 +787,17 @@ async fn orphan_claim_requeues_and_exhausted_claim_fails() {
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn live_call_is_not_requeued_and_late_reply_after_stop_is_discarded() {
-    let mut f = Fixture::new().await;
-    let model = Arc::new(BlockFirstCall {
-        requests: Default::default(),
-        release: Default::default(),
-    });
-    f.state.optimizer = Some(model.clone());
-    prepare(&mut f).await;
-    let item = incumbent(&f, 1).await;
+    let (f, model, item) = blocked_proposal().await;
     let id = Uuid::parse_str(item["roundId"].as_str().unwrap()).unwrap();
-    await_sql(&f,"SELECT EXISTS(SELECT 1 FROM learning_optimizer_calls WHERE round_id=$1 AND status='running' AND attempts=1)",id).await;
     tokio::time::sleep(Duration::from_secs(5)).await; // cross a sweep while the provider is blocked
+    let claim: (String, i32) = sqlx::query_as(
+        "SELECT status,attempts FROM learning_optimizer_calls WHERE round_id=$1 AND kind='propose' AND sample=1",
+    )
+    .bind(id)
+    .fetch_one(&f.state.db)
+    .await
+    .unwrap();
+    assert_eq!(claim, ("running".into(), 1));
     f.ok("POST", "/stop", "admin", None, Value::Null).await;
     model.release.notify_one();
     let doc = f

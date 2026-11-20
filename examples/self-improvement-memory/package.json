@@ -1,0 +1,8 @@
+{
+  "name": "@acclimate/sim-experiment",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:sim-experiment": "cd ../.. && tsx --tsconfig examples/self-improvement-memory/tsconfig.json --test examples/self-improvement-memory/tests/*.test.ts"
+  }
+}

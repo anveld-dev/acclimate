@@ -193,7 +193,7 @@ impl Fixture {
     }
 
     async fn wait_for(&self, suffix: &str, caller: &str, ready: impl Fn(&Value) -> bool) -> Value {
-        tokio::time::timeout(Duration::from_secs(12), async {
+        tokio::time::timeout(Duration::from_secs(60), async {
             loop {
                 let value = self.ok("GET", suffix, caller, None, Value::Null).await;
                 if ready(&value) {

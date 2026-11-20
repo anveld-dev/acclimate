@@ -1,7 +1,7 @@
 {
   "baseline.json": {
-    "source": "examples/real-app-learning/baseline.json",
-    "sha256": "1a760943b79185b7cff38cea52e06f67b8fe32cd090f560dd4453e0019db103b"
+    "source": "Adapted from examples/real-app-learning/baseline.json for prompt-only W1",
+    "sha256": "8362bd86039edfca394fd271b5ae153301e3c279b444fec76996310f3b668c25"
   },
   "tasks.py": {
     "source": "examples/real-app-learning/tasks.py",

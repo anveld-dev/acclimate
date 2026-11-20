@@ -4,7 +4,7 @@ This example runs the Acclimate learning loop on W1, an LLM CLI support workload
 
 ## Prepare and check the fixtures
 
-Run from the repository root with Node, Rust, PostgreSQL 16 and Python 3.11 or newer. Paid stages use macOS `sandbox-exec` to seal the experiment repository and evidence from Codex subprocesses. The example uses a clean checkout of [LLM at 46f0461d](https://github.com/simonw/llm/tree/46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f) outside the Acclimate repository as the Codex task working directory. Install the grader into a dedicated virtual environment.
+Run from the repository root with Node, Rust, PostgreSQL 16 and Python 3.11 or newer. Install the grader into a dedicated virtual environment. The requirements pin the LLM version and commit used for Click grading. Task models receive only the harness and case request.
 
 ```sh
 npm ci --ignore-scripts
@@ -17,38 +17,42 @@ SIM_PYTHON=/tmp/w1-sim-venv/bin/python \
 /tmp/w1-sim-venv/bin/python examples/self-improvement-memory/freeze.py --check
 ```
 
-These steps make zero model calls. The TypeScript runner starts private PostgreSQL 16 clusters on loopback, uses the real Rust service and provides scripted optimizer replies and fake policy outputs. Set `SIM_PG_BIN` to override `/opt/homebrew/opt/postgresql@16/bin`. The Python tests check canonical Click parsing, disjointness, negative controls and known-answer statistics.
+These steps make zero live model calls. The TypeScript runner starts private PostgreSQL 16 clusters on loopback, uses the real Rust service and sends all three models’ requests to one local fake OpenAI-compatible server. Set `SIM_PG_BIN` to override `/opt/homebrew/opt/postgresql@16/bin`. The Python tests check canonical Click parsing, disjointness, negative controls and known-answer statistics.
 
 ## Freeze and run
 
-Set paths for the grader environment, the pinned LLM checkout and the evidence directory.
+Set up a private CLIProxyAPI instance with Codex sign-in using the [deployment guide](../../deploy/README.md#cliproxyapi-with-codex-sign-in). Use one Codex credential with access to all three exact model IDs. Keep its configuration and routing fixed through the study. Set `SIM_PROXY_API_KEY` in the driver's environment to the client key configured in CLIProxyAPI. Set the following paths and record the exact revision of the running proxy. The example revision is the one inspected for compatibility.
 
 ```sh
 sim_python=/tmp/w1-sim-venv/bin/python
-sim_llm=/absolute/path/to/clean/llm
+sim_proxy_config=/absolute/path/to/config.yaml
+sim_proxy_revision=f5c5681a8361c9da53e93c60b6507816eee7468b
+sim_proxy_base_url=http://127.0.0.1:8317/v1
 sim_out="$PWD/artifacts/sim-experiment"
 sim_pg=/opt/homebrew/opt/postgresql@16/bin
 
 "$sim_python" examples/self-improvement-memory/freeze.py \
-  --source-tree "$sim_llm" --pg-bin "$sim_pg" \
+  --proxy-base-url "$sim_proxy_base_url" --proxy-revision "$sim_proxy_revision" \
+  --proxy-config "$sim_proxy_config" --pg-bin "$sim_pg" \
   --output "$sim_out/pilot-freeze.json"
 ```
 
-The freeze is zero-call. Review and archive it before S0c. It records fixture and code hashes, the executable hash, tool versions, model settings, and both split commitments. Build the service from the commit being registered and use the same service binary for every condition. Use `--service-bin` on both scripts if the binary is outside `target/debug`.
+The freeze is zero-call. Review and archive it before S0c. It records fixture and code hashes, the executable hash, tool versions, model settings, both split commitments, and the proxy revision, config SHA-256 and base URL. Verify that the running proxy uses that revision and config. Build the service from the commit being registered and use the same service binary for every condition. Use `--service-bin` on both scripts if the binary is outside `target/debug`.
 
-**Paid S0c.** Authenticate the Codex CLI with an account that can run `gpt-6-luna` and `gpt-6.2-sol` at low effort. The optimizer proxy uses the same Codex account for the fixed `gpt-6.2-astra` optimizer at high effort. The private Acclimate operator, app and model-proxy tokens are generated locally. Select the provider and credentials before freezing and verify the available context and concurrency for that account. Keep the provider fixed through the study. Use a dedicated Codex configuration without external MCP servers or user instructions. Each model turn uses an ephemeral Codex session, and optimizer turns have shell tools disabled.
+**Paid S0c.** Task calls use `gpt-6-luna` and `gpt-6.2-sol` at `low` effort through the SDK’s `openai()` adapter. The service sends optimizer requests for `gpt-6.2-astra` at `high` effort through the driver’s loopback audit relay, which checks the request and forwards it unchanged to the same frozen Chat Completions URL. The driver's private operator, evaluator and relay tokens are generated locally. The relay uses `SIM_PROXY_API_KEY` for the upstream hop. Request ledgers record the upstream endpoint and model. Keep the config and OAuth credential store private.
 
 ```sh
 "$sim_python" examples/self-improvement-memory/run.py --stage S0c --live \
-  --source-tree "$sim_llm" --pg-bin "$sim_pg" --output "$sim_out" \
+  --proxy-config "$sim_proxy_config" --pg-bin "$sim_pg" --output "$sim_out" \
   --freeze "$sim_out/pilot-freeze.json"
 ```
 
-S0c runs two three-round source legs and three one-round targets from the first source. Review `S0c/pilot.json` for rates, token growth and the cost projection. If either target round-zero W1 held-out score (H0 or H_S under `gpt-6.2-sol`) reaches 85%, stop before S1 for a maintainer decision. For other K3 failures, resolve the finding and run a new pilot. Archive the prior pilot directory and use a fresh evidence root for the repeat. When K3 passes, generate the final preregistration and record it with the frozen protocol before S1. This step makes zero model calls.
+S0c runs two three-round source legs and three one-round targets from the first source. Review `S0c/pilot.json` for repeated-case disagreement, rates, token growth and the cost projection. Re-estimate noise and cost with the prompt-only setup because the historical Codex-agent calibration used repository access. If either target round-zero W1 held-out score (H0 or H_S under `gpt-6.2-sol`) reaches 85%, stop before S1 for a maintainer decision. For other K3 failures, resolve the finding and run a new pilot. Archive the prior pilot directory and use a fresh evidence root for the repeat. When K3 passes, generate the final preregistration and record it with the frozen protocol before S1. This step makes zero model calls.
 
 ```sh
 "$sim_python" examples/self-improvement-memory/freeze.py \
-  --source-tree "$sim_llm" --pg-bin "$sim_pg" \
+  --proxy-base-url "$sim_proxy_base_url" --proxy-revision "$sim_proxy_revision" \
+  --proxy-config "$sim_proxy_config" --pg-bin "$sim_pg" \
   --pilot-report "$sim_out/S0c/pilot.json" --output "$sim_out/preregistration.json"
 ```
 
@@ -56,10 +60,10 @@ S0c runs two three-round source legs and three one-round targets from the first 
 
 ```sh
 "$sim_python" examples/self-improvement-memory/run.py --stage S1 --live --blocks 1-10 \
-  --source-tree "$sim_llm" --pg-bin "$sim_pg" --output "$sim_out" \
+  --proxy-config "$sim_proxy_config" --pg-bin "$sim_pg" --output "$sim_out" \
   --freeze "$sim_out/preregistration.json"
 "$sim_python" examples/self-improvement-memory/run.py --stage S2 --live --blocks 1-10 \
-  --source-tree "$sim_llm" --pg-bin "$sim_pg" --output "$sim_out" \
+  --proxy-config "$sim_proxy_config" --pg-bin "$sim_pg" --output "$sim_out" \
   --freeze "$sim_out/preregistration.json"
 ```
 

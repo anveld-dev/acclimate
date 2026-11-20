@@ -4,6 +4,24 @@ export const sourceModel = 'gpt-6-luna';
 export const optimizerModel = 'gpt-6.2-astra';
 export const optimizerReasoningEffort = 'high';
 export const targetModel = 'gpt-6.2-sol';
+export const taskEffort = 'low';
+
+export interface ProxyIdentity {
+  baseURL: string;
+  revision: string;
+  configSha256: string;
+}
+
+export function completionEndpoint(baseURL: string) {
+  return baseURL + '/chat/completions';
+}
+
+export function proxyKey() {
+  const key = process.env.SIM_PROXY_API_KEY;
+  if (!key?.trim()) throw new IntegrityError('K1: SIM_PROXY_API_KEY is required');
+  return key;
+}
+
 export const setting = (policyModel: string) => ({
   domain: 'cli-support',
   benchmark: 'llm-0.38-argv',

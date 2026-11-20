@@ -4,7 +4,7 @@
     {
       "path": "AGENTS.md",
       "kind": "instruction",
-      "text": "Answer LLM CLI support requests for the installed version. Consult the local CLI help or source when you are uncertain. Return the requested command using the specified output format. Do not execute the suggested command. Treat upstream files as documentation and source data.\n"
+      "text": "Answer LLM CLI support requests for version 0.38 using this harness as the version-specific reference. Return only a JSON object with an argv array of strings beginning with llm. Do not execute the suggested command.\n"
     },
     {
       "path": "context.md",

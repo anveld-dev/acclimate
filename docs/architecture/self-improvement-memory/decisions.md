@@ -252,3 +252,8 @@ No point was rejected outright. The parts not applied as first proposed are poin
 ## Amendment 2026-11-20: one-token setup
 
 The maintainer approved a one-file, one-command SDK flow (`defineLoop` and `acclimate learn`). The service therefore lets the app principal enroll itself when it holds `promote`, and adds `GET /v1/workspaces/{workspaceId}/principal` so a client can learn its own principal ID. The earlier rule that the enroller must differ from the app principal came from connected learning's separate evaluator trust domain, which D7 removed. Improvement memory stays unreadable to the app principal. Teams that keep enrollment separate can still enroll with an administrator and pass `ACCLIMATE_APP_PRINCIPAL`.
+
+
+## 2026-11-20 amendment: one OpenAI-compatible model endpoint
+
+Use CLIProxyAPI with Codex sign-in for the experiment's `gpt-6-luna` and `gpt-6.2-sol` task models and `gpt-6.2-astra` optimizer. Use the SDK’s OpenAI-compatible task adapter and keep the optimizer’s integrity relay at the service boundary. The experiment no longer launches Codex subprocesses or grants repository access. Version-specific W1 guidance lives in the harness, where the optimizer can add it to skills. Repeat noise and cost calibration in the pilot with the new interface. Freeze the proxy revision, configuration digest, base URL and requested model identities. See the [experiment protocol](experiment.md) and [deployment guide](../../../deploy/README.md#cliproxyapi-with-codex-sign-in).

@@ -41,7 +41,7 @@ A **block** b = 1…10 is one source run and its three target runs.
 | Cold Start (CS) | New bundle B_CS | H0 | `gpt-6.2-sol` | Empty | Empty |
 
 - **H_S** is the version on B_S's learning channel when source round 10 ends: round 10's `adopted_version_id` when it adopted, else its `parent_version_id`.
-- **H0** is `examples/self-improvement-memory/fixtures/w1/baseline.json`, moved unchanged from `examples/real-app-learning/baseline.json` in phase 2 with its digest ([removal.md](removal.md)). Earlier calibration was measured with it (§9.1).
+- **H0** is `examples/self-improvement-memory/fixtures/w1/baseline.json`, adapted from `examples/real-app-learning/baseline.json` for prompt-only W1. Its digest is frozen with the fixtures. Earlier calibration used the previous baseline and repository access (§9.1).
 - **Memory** is per workspace + bundle (D6), so a new bundle starts empty. HT and CS build their own memory during the target run, where the paper's conditions have none (deviation V1).
 - **Setting.** Every loop has `setting = {domain: "cli-support", benchmark: "llm-0.38-argv", policyModel}`. Only `policyModel` changes at the transition, so rules 2 and 4 see it in each attempt's `provenance`. The evolve split and the held-out split are the same in every run, so `evolve_revision` contents and `heldOut.digest` match across conditions.
 - **Optimizer model.** `ACCLIMATE_MODEL=gpt-6.2-astra` and `ACCLIMATE_MODEL_REASONING_EFFORT=high` are frozen for `propose`, `screen` and `select` in every stage and condition. The study uses a separate, stronger optimizer, following the paper’s optimizer ablation (Appendix E.4.2). Both task models use low effort.
@@ -51,13 +51,15 @@ Problem-Only is not run: it needs a memory view, which would be a mode (D2).
 
 ## 4. Workload and splits
 
+All conditions use the same Codex-authenticated CLIProxyAPI endpoint. The source task model is `gpt-6-luna` and the target task model is `gpt-6.2-sol`, both at `low` effort. The optimizer is fixed at `gpt-6.2-astra` with `high` effort. Its loopback audit relay preserves the service’s OpenAI-compatible request.
+
 ### 4.1 Workload
 
 | ID | Workload | Grader | Source |
 | --- | --- | --- | --- |
 | W1 | LLM CLI support: `llm` 0.38 at `46f0461d…`, Click 8.5.1 | Exact Click route and parameters (`click-argv-v2`), binary (`fixtures/w1/grade.py`, from `examples/real-app-learning/grade.py:38-46` at 4096ff1b) | `examples/self-improvement-memory/fixtures/w1/`, moved in phase 2 |
 
-The task agent is a Codex SDK turn that returns `{argv}` against the pinned source tree, ported from `examples/real-app-learning/run.ts:103-163` at tag `pre-learning-loop`.
+The task model receives two Chat Completions messages. The system message is the delivered harness rendered as instruction files, skills and memory files, in that order, each under a `# path` heading. The user message is the case input. The model returns a JSON object containing an `argv` array. The task model has no tools or repository access. The harness supplies the version-specific W1 knowledge, so the optimizer can learn which CLI details to write into skills. The pinned LLM package is used by the grader.
 
 ### 4.2 Splits
 
@@ -230,7 +232,7 @@ The loop ships before the experiment runs. The result does not change product be
 
 ### 9.1 Measurement noise
 
-From A/A calibrations in `docs/research/real-app-learning-experiment/`:
+S0c re-measures repeat-rollout noise and cost on the prompt-only task. Record the fraction of complete held-out evaluation/case groups with mixed pass/fail outcomes and estimate the noise of a difference between two held-out runs using their within-case variance and five repeats. Record token use and latency by model and update the precision and cost estimates before S1. Earlier Codex-agent runs had source access. Their A/A calibration below is historical context and cannot establish comparability or calibrate the new measurements.
 
 | Source | Cases | Reps per arm | Paired SD of case means |
 | --- | ---: | ---: | ---: |
@@ -249,7 +251,7 @@ If the disagreement is trial noise, the SD of a case-mean difference scales as `
 
 ### 9.2 Power at n = 10
 
-Each `D_b` also carries run-to-run variation of the loop, `σ_b`, which no existing data measures after 10 rounds. The only proxy is five candidates from one baseline in the five-admission rerun, with development gains +2.5, +2.5, 0, −1.25 and +15 pp (`5-admission-rerun.md:48-52`): SD 6.5 pp, about 5 pp after removing the 3.9 pp measurement SE. Full SIM and HT start from the same bytes, which may correlate them and shrink `σ_D`. If uncorrelated, `σ_D ≈ sqrt(2σ_b² + 2.1²)`.
+Each `D_b` also carries run-to-run variation of the loop, `σ_b`, which no existing data measures after 10 rounds. The only proxy is five candidates from one baseline in the five-admission rerun, with development gains +2.5, +2.5, 0, −1.25 and +15 pp (`5-admission-rerun.md:48-52`): SD 6.5 pp, about 5 pp after removing the 3.9 pp measurement SE. Full SIM and HT start from the same bytes, which may correlate them and shrink `σ_D`. The historical 2.1 pp noise gives the illustrative uncorrelated calculation `σ_D ≈ sqrt(2σ_b² + 2.1²)`. Update it with S0c measurements.
 
 Two-sided paired t at α = 0.05, noncentral t, computed:
 
@@ -271,9 +273,9 @@ These checks live in the driver and in read-only queries on the driver's own clu
 
 | ID | Trigger | Action |
 | --- | --- | --- |
-| K1 Integrity | Any of: an H case ID or the fingerprint of a whole H input appears in an optimizer request; a held-out report carries `trace` or `error`; the fenced data of an optimizer request holds a key outside its kind's set (`setting`, `harness`, `feedback`, `history` and `improvementMemory` for every kind, plus `candidates` for `screen` and `select`, plus `parserError` on a retry, as in [optimizer.md](optimizer.md) "Data keys"); a condition code or bundle slug appears in an optimizer request or a delivered payload; memory JSON or a `P<n>` ID appears in a delivered payload or task prompt; a sample's evaluation appears in `GET /work` before the adapter returned that sample's `propose` reply, or the stored `diagnosis` differs from that reply; an adopted attempt's `predicted` differs from its candidate's `diagnosis.predicted`; Full SIM's round 11 does not pin the source run's final memory revision, or an HT or CS round 1 pins a nonzero one; Full SIM and HT start digests differ; `evolve_revision`, the E content digest or `heldOut.digest` differs within a block; the round’s optimizer model or reasoning effort, or the adapter’s request model or reasoning effort, differs from the frozen protocol; an evaluation ran under a policy model other than its round's `setting.policyModel`; the rendered `history` lists fewer rounds than the earlier rounds with the same `setting`, or `improvementMemory` lists fewer attempts than `memory_revision`; any `POST /outcomes`, evolve-case change, manual channel release or `channel-moved` round during a run; a round after the 10th counted round reached `selecting` | Stop the stage. Fix. Restart every affected run (target runs from a fresh checkpoint copy). |
+| K1 Integrity | Any of: an H case ID or the fingerprint of a whole H input appears in an optimizer request; a held-out report carries `trace` or `error`; the fenced data of an optimizer request holds a key outside its kind's set (`setting`, `harness`, `feedback`, `history` and `improvementMemory` for every kind, plus `candidates` for `screen` and `select`, plus `parserError` on a retry, as in [optimizer.md](optimizer.md) "Data keys"); a condition code or bundle slug appears in an optimizer request or a delivered payload; memory JSON or a `P<n>` ID appears in a delivered payload or task prompt; a sample's evaluation appears in `GET /work` before the adapter returned that sample's `propose` reply, or the stored `diagnosis` differs from that reply; an adopted attempt's `predicted` differs from its candidate's `diagnosis.predicted`; Full SIM's round 11 does not pin the source run's final memory revision, or an HT or CS round 1 pins a nonzero one; Full SIM and HT start digests differ; `evolve_revision`, the E content digest or `heldOut.digest` differs within a block; the round’s optimizer model or reasoning effort differs from the frozen protocol, or task and optimizer call ledgers differ from the frozen Chat Completions endpoint, model or effort; an evaluation ran under a policy model other than its round's `setting.policyModel`; the rendered `history` lists fewer rounds than the earlier rounds with the same `setting`, or `improvementMemory` lists fewer attempts than `memory_revision`; any `POST /outcomes`, evolve-case change, manual channel release or `channel-moved` round during a run; a round after the 10th counted round reached `selecting` | Stop the stage. Fix. Restart every affected run (target runs from a fresh checkpoint copy). |
 | K2 Context | Any round `failed` with `optimizer-context-too-large`. Memory and history only grow within a run, so the loop cannot continue on that bundle. Full SIM, which carries up to 20 attempts of memory beside 10 rounds of target history, is hit first. | Stop the stage for a maintainer decision. A larger-context optimizer model is an amendment and restarts every block. |
-| K3 Pilot | Either target round-zero W1 held-out score (H0 or H_S under `gpt-6.2-sol`) is ≥ 85%; `format-rejected` above 20% of samples; no `adopted` round in the 6 pilot source rounds; the pilot's measured input growth projects Full SIM's round-20 input (10 rounds of history, up to 20 attempts) above 50% of the optimizer's context; any K1 event | Stop before S1 for a maintainer decision if either baseline reaches the ceiling threshold. For other failures, fix and repeat the pilot or pause for a maintainer decision. Pilot data is excluded from efficacy analysis. |
+| K3 Pilot | Either target round-zero W1 held-out score (H0 or H_S under `gpt-6.2-sol`) is ≥ 85%; `format-rejected` above 20% of samples; no `adopted` round in the 6 pilot source rounds; the pilot's measured input growth projects Full SIM's round-20 input (10 rounds of history, up to 20 attempts) above 50% of the optimizer's context; missing token usage for either task model; any K1 event | Stop before S1 for a maintainer decision if either baseline reaches the ceiling threshold. For other failures, fix and repeat the pilot or pause for a maintainer decision. Pilot data is excluded from efficacy analysis. |
 | K4 Harm | After 5 completed blocks, the upper 95% bound of mean T1 is below −5 pp. `analyze.py` reports only whether it fired. | Stop and report. Harm-only, so it does not inflate T1's type I error. |
 | K5 Infrastructure | A service exit, a run stuck for 2 hours, a loop paused with `failed-rounds`, or more than 5% of a run's rollouts failing for infrastructure reasons (the evaluator retries such a rollout once before reporting it). The first experiment lost its lease under concurrent lint (`docs/research/real-app-learning-experiment/README.md:69`). | Restart the run with the same seeds, at most twice: a source run from scratch, a target run from a fresh checkpoint copy. No repository lint or builds during live stages. |
 | K6 Drift | The provider announces a change to `gpt-6-luna`, `gpt-6.2-sol` or `gpt-6.2-astra` during a stage | Pause. Blocks from before and after are not mixed in one contrast without a recorded amendment. |
@@ -355,14 +357,14 @@ The driver does:
 
 - own the PostgreSQL clusters, services, checkpoints and copies;
 - create workspaces, app principals, bundles, start versions and the learning channel, and enroll each loop;
-- run one evaluator per bundle with `serveLearningLoop` and `caseConcurrency: 8`: execute a Codex turn with the stage's policy model, grade with `fixtures/w1/grade.py`, report evolve rollouts with `trace` and `error` and held-out rollouts with `score` and `passed` only, and log every rollout locally;
+- run one evaluator per bundle with `serveLearningLoop` and `caseConcurrency: 8`: call the frozen Chat Completions endpoint with the stage’s policy model, grade with `fixtures/w1/grade.py`, report evolve rollouts with `trace` and `error` and held-out rollouts with `score` and `passed` only, and log every rollout locally;
 - hold H and compute `heldOut.digest`;
 - proxy every optimizer request through the logging adapter and run the K1 request checks;
 - pause each run after 10 counted rounds and perform the Full SIM transition;
 - score round 0 and retention outside the loop with the same evaluator function;
 - write round records, run the SQL checks, and run the analysis.
 
-The driver does not render prompts, call the optimizer itself, choose candidates, release versions, write memory or report outcomes. The old plan's trigger split, corrections, calibration settings, idle-flush settings and audit cohorts are gone with the machinery they fed.
+The SDK renders task prompts. The service constructs optimizer requests and owns candidate selection, version releases and memory writes. The old plan's trigger split, corrections, calibration settings, idle-flush settings and audit cohorts are gone with the machinery they fed.
 
 ### 12.2 Files
 
@@ -373,9 +375,9 @@ All in `examples/self-improvement-memory/`, following the layout of `examples/re
 | `run.py` | Entry point: `python3 examples/self-improvement-memory/run.py --stage S1 --blocks 1-10 --pg-bin …`. Owns clusters through `qualify.Harness`, takes checkpoints and makes target copies. `--service-bin` selects the frozen service executable. Resumes by block and condition. Stage C needs its own pre-change driver. |
 | `block.ts` | One block: §6 setup, the Full SIM transition, round counting and pause, round records. The Python entry point submits targets in the seeded order. |
 | `conditions.ts` | The §3 table as data |
-| `evaluator.ts` | The `serveLearningLoop` handler: Codex turn (ported from `run.ts:103-163` at the tag), grading (from `run.ts:165-177`), seeded offline rollout order and in-loop labels, the infrastructure retry, the local rollout log, the policy-model check |
+| `evaluator.ts` | The `serveLearningLoop` handler: SDK OpenAI-compatible call, grading (from `run.ts:165-177`), seeded offline rollout order and in-loop labels, the infrastructure retry, the local rollout log, the policy-model check |
 | `heldout.ts` | The local H store, `heldOut.digest`, and round-0 and retention scoring |
-| `adapter.ts` | The optimizer proxy (ported from `run.ts:198-229` at the tag). Logs each request's bytes, digest and token usage and runs the K1 request checks before forwarding. |
+| `adapter.ts` | The optimizer audit relay. Checks each service request and forwards the body unchanged to the same frozen CLIProxyAPI endpoint used by the task model. Logs endpoint, model, effort, bytes, digest and token usage. |
 | `checks.sql` | §10.1 |
 | `fixtures/w1/baseline.json`, `tasks.py`, `40-case-additions.json`, `grade.py`, `check-replication.py`, `replication-audit.json`, `SOURCES.json` | H0, E, the grader and the earlier audit cases, moved in phase 2. `SOURCES.json` holds each file's original path and SHA-256. |
 | `fixtures/w1/held-out.json` | The 60 H cases with references and negative controls |
@@ -462,7 +464,8 @@ It is unpaired and differs from the new loop in k, memory, gating, triggers and 
 | Exact Click matching under-credits equivalent argv | The same grader applies to every condition, so it affects levels more than contrasts |
 | Memory and history change token use | Tokens per condition and per adopted step are reported |
 | Shared latent events across E and H families | H inputs are new and checked for disjointness by fingerprint. Families overlap by design. |
-| The optimizer is the source policy model | Fixed in every condition. Only the policy model changes. |
+| Task performance depends on model priors and harness knowledge | All conditions use the same prompt-only interface. Re-measure repeat-rollout noise and cost in S0c. Historical repository-enabled Codex runs are a different workload setup. |
+| Proxy translation can change provider semantics | Fix the CLIProxyAPI revision, configuration and Codex credential across conditions. Verify the requested model IDs and live behavior in S0c. The inspected Codex route does not enforce `json_object` mode. |
 | Provider drift | One calendar window for every block, and K6 |
 | Thin traces (V6) give the optimizer less to diagnose | The same for every condition. Mechanism metrics show whether diagnoses still predict fixes. |
 
@@ -475,18 +478,19 @@ It is unpaired and differs from the new loop in k, memory, gating, triggers and 
 
 ## 19. Freeze checklist
 
-- The Acclimate service commit, and the Rust, Node, Python, PostgreSQL, Codex CLI and SDK versions. The pre-change build commit if stage C runs.
-- Model IDs and effort for both policy models and for `ACCLIMATE_MODEL`, and every `ACCLIMATE_MODEL*` and `ACCLIMATE_LEARNING_*` value.
+- The Acclimate service commit, and the Rust, Node, Python, PostgreSQL and Acclimate SDK versions. The pre-change build commit if stage C runs.
+- CLIProxyAPI release or full commit, SHA-256 of the actual config file and the base URL (default `http://127.0.0.1:8317/v1`). Verify the config digest before each stage. The operator identifies the running proxy build and preserves the Codex OAuth routing.
+- Model IDs and effort for both task models and the optimizer, and every nonsecret `ACCLIMATE_MODEL*` and `ACCLIMATE_LEARNING_*` setting. Task calls and forwarded optimizer calls use the frozen URL with `/chat/completions` appended. Record the requested identities, without credential values, and check them against the freeze before publishing each attempt, including retention. These checks cover the client-to-proxy boundary.
 - SHA-256 of every fixture file, the grader, `baseline.json`, the driver files, `analyze.py`, `checks.sql`, and `EIGHT_RULES` as built.
 - `heldOut.digest`, the E content digest, the `setting` values, and the seed rules in §7.
 - n, N, |E|, |H| and the trace format.
 - Zero-call and disjointness results.
-- The pilot report: tokens and latency for both policy models, trace sizes, input growth per round, keep rate and format-rejection rate, and the updated estimates.
+- The pilot report tied to the pre-pilot freeze: repeated-case disagreement, tokens and latency for both policy models, trace sizes, input growth per round, keep rate and format-rejection rate, and the updated estimates.
 
 ## 20. Open questions
 
 Shared questions are in the [README](README.md#open-questions). These are owned here.
 
 1. **Stage C.** Run the pre-change Flat control? It is descriptive only (§16).
-2. **`gpt-6.2-sol` as a Codex task model.** The bundled Codex CLI catalog lists this task model. Entitlement for the pilot credentials, rate limits, latency and token use await live verification.
+2. **Codex model access through CLIProxyAPI.** Entitlement for the three exact model IDs, effective output limits, JSON validity, rate limits, latency and token use await live verification.
 3. **Optimizer context.** Full SIM's round 20 carries 10 rounds of target history and up to 20 attempts. The pilot’s projection checks whether the frozen Astra configuration fits. A failure stops progression before S1 (K2, K3).

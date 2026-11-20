@@ -3,7 +3,7 @@ import { appendFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { fingerprint, type Case } from './heldout.js';
-import { IntegrityError, sha256 } from './conditions.js';
+import { completionEndpoint, IntegrityError, sha256, type ProxyIdentity } from './conditions.js';
 
 type Kind = 'propose' | 'screen' | 'select';
 export type OptimizerData = {
@@ -50,11 +50,6 @@ export function requestGuard(evolve: Case[], held: Case[], forbidden: string[]) 
   };
 }
 
-export interface OptimizerReply {
-  content: string;
-  inputTokens: number | null;
-  outputTokens: number | null;
-}
 export function optimizerAdapter(options: {
   model: string;
   reasoningEffort: string;
@@ -62,10 +57,13 @@ export function optimizerAdapter(options: {
   ledger: string;
   guard: ReturnType<typeof requestGuard>;
   inspect: (data: OptimizerData, kind: Kind) => Promise<{ round: number; sample: number | null }>;
-  respond: (prompt: string, data: OptimizerData, kind: Kind) => Promise<OptimizerReply>;
+  proxy: ProxyIdentity;
+  apiKey: string;
+  signal: AbortSignal;
   recordReply: (round: number, sample: number, content: string, returnedAt: string) => void;
   abort: (error: unknown) => void;
 }) {
+  const endpoint = completionEndpoint(options.proxy.baseURL);
   const server = createServer((req, res) => {
     void (async () => {
       if (
@@ -125,6 +123,7 @@ export function optimizerAdapter(options: {
         sample,
         kind,
         model,
+        endpoint,
         reasoningEffort,
         retry: Object.hasOwn(data, 'parserError'),
         digest: sha256(raw),
@@ -141,13 +140,41 @@ export function optimizerAdapter(options: {
         options.ledger,
         JSON.stringify({ event: 'request', requestId, ...identity }) + '\n',
       );
-      const reply = await options.respond(
-        messages.map(({ content }) => content).join('\n\n'),
-        data,
-        kind,
-      );
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer ' + options.apiKey },
+        body: raw,
+        redirect: 'manual',
+        signal: AbortSignal.any([options.signal, AbortSignal.timeout(540_000)]),
+      });
+      const body = await response.text();
+      const headers = {
+        'content-type': response.headers.get('content-type') ?? 'application/json',
+      };
+      const retryAfter = response.headers.get('retry-after');
+      if (!response.ok) {
+        res
+          .writeHead(
+            response.status,
+            retryAfter ? { ...headers, 'retry-after': retryAfter } : headers,
+          )
+          .end(body);
+        return;
+      }
+      let reply: {
+        choices?: { message?: { content?: string } }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      } | null = null;
+      try {
+        reply = JSON.parse(body);
+      } catch {
+        res.writeHead(response.status, headers).end(body);
+        return;
+      }
+      const content = reply?.choices?.[0]?.message?.content;
       const returnedAt = new Date().toISOString();
-      if (sample !== null) options.recordReply(round, sample, reply.content, returnedAt);
+      if (sample !== null && typeof content === 'string')
+        options.recordReply(round, sample, content, returnedAt);
       appendFileSync(
         options.ledger,
         JSON.stringify({
@@ -155,33 +182,18 @@ export function optimizerAdapter(options: {
           requestId,
           ...identity,
           milliseconds: Date.now() - start,
-          inputTokens: reply.inputTokens,
-          outputTokens: reply.outputTokens,
+          inputTokens: reply?.usage?.prompt_tokens ?? null,
+          outputTokens: reply?.usage?.completion_tokens ?? null,
           returnedAt,
         }) + '\n',
       );
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          choices: [{ finish_reason: 'stop', message: { content: reply.content } }],
-        }),
-      );
+      res.writeHead(response.status, headers).end(body);
     })().catch((error: unknown) => {
       if (error instanceof IntegrityError) {
         options.abort(error);
         res.writeHead(400).end();
-      } else if (
-        error instanceof Error &&
-        /context[_ ](?:length|window)|maximum context|prompt is too long|too many (?:input )?tokens/iu.test(
-          error.message,
-        )
-      ) {
-        res.writeHead(413).end();
       } else {
-        console.error(
-          'Optimizer callback failed:',
-          error instanceof Error ? error.name : 'unknown',
-        );
+        console.error('Optimizer relay failed:', error instanceof Error ? error.name : 'unknown');
         res.writeHead(502).end();
       }
     });

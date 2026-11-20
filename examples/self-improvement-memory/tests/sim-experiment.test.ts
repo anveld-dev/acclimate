@@ -40,6 +40,7 @@ type Round = {
     returnedAt: string;
     sample: number;
     model: string;
+    endpoint: string;
     reasoningEffort: string;
   }[];
 };
@@ -70,6 +71,12 @@ test(
         { timeout: 220_000 },
       );
       assert.equal(result.stderr, '');
+      const setup = await read<{ proxy: { baseURL: string } }>(path.join(directory, 'seed.json'));
+      const endpoint = setup.proxy.baseURL + '/chat/completions';
+      const observed = await lines<{ endpoint: string; model: string; reasoningEffort: string }>(
+        path.join(directory, 'proxy-requests.jsonl'),
+      );
+      const expectedCalls = new Map<string, number>([['gpt-6.2-astra', 0]]);
       const key = (
         await read<Record<string, Record<string, string>>>(path.join(directory, 'key.json'))
       )['1'];
@@ -101,7 +108,10 @@ test(
           assert.equal(round.optimizerModel, 'gpt-6.2-astra');
           assert.equal(round.optimizerReasoningEffort, 'high');
           for (const call of round.optimizer) {
+            assert.equal(call.endpoint, endpoint);
             assert.equal(call.model, 'gpt-6.2-astra');
+            if (call.event === 'request')
+              expectedCalls.set(call.model, expectedCalls.get(call.model)! + 1);
             assert.equal(call.reasoningEffort, 'high');
           }
           assert.equal(round.candidates.length, 5);
@@ -124,18 +134,36 @@ test(
           assert.equal(retained?.versionId, round.adoptedVersionId);
           assert.deepEqual(round.turns, { incumbent: 5, candidate: 25, retained: 5, rescore: 0 });
         }
-        const rollouts = await lines<{ turns: number; role: string }>(
-          path.join(root, 'rollouts.jsonl'),
-        );
+        const rollouts = await lines<{
+          turns: number;
+          role: string;
+          model: string;
+          endpoint: string;
+          reasoningEffort: string;
+        }>(path.join(root, 'rollouts.jsonl'));
         assert.equal(
           rollouts.reduce((total, row) => total + row.turns, 0),
           summary.turns,
         );
+        const taskModel = condition === 'source' ? 'gpt-6-luna' : 'gpt-6.2-sol';
+        for (const row of rollouts) {
+          assert.equal(row.endpoint, endpoint);
+          assert.equal(row.model, taskModel);
+          assert.equal(row.reasoningEffort, 'low');
+        }
+        expectedCalls.set(taskModel, (expectedCalls.get(taskModel) ?? 0) + summary.turns);
         assert.equal(rollouts.filter((row) => row.role !== 'round-zero').length, 70);
         assert(
           !(await readFile(path.join(root, 'optimizer.jsonl'), 'utf8')).includes('h-8c8a8bae'),
         );
       }
+      const actualCalls = new Map<string, number>();
+      for (const call of observed) {
+        assert.equal(call.endpoint, endpoint);
+        assert.equal(call.reasoningEffort, call.model === 'gpt-6.2-astra' ? 'high' : 'low');
+        actualCalls.set(call.model, (actualCalls.get(call.model) ?? 0) + 1);
+      }
+      assert.deepEqual(actualCalls, expectedCalls);
       assert.equal(summaries.get('source')?.finalDigest, summaries.get('full')?.startDigest);
       assert.equal(summaries.get('full')?.startDigest, summaries.get('transfer')?.startDigest);
       assert.equal(summaries.get('source')?.startDigest, summaries.get('cold')?.startDigest);

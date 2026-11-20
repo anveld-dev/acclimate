@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 from threading import Event
+from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -19,6 +20,7 @@ from scripts.productization.qualify import Harness
 
 NODE = ["node", "--import", "tsx", str(HERE / "main.ts")]
 CEILING_THRESHOLD = 0.85
+BLOCK_COUNT = 10
 DEFAULTS = {
     "ACCLIMATE_MODEL": "gpt-6.2-astra",
     "ACCLIMATE_MODEL_REASONING_EFFORT": "high",
@@ -28,6 +30,10 @@ DEFAULTS = {
     "ACCLIMATE_LEARNING_EVALUATION_SECONDS": "7200",
     "ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS": "3",
 }
+
+
+MODELS = {"source": "gpt-6-luna", "target": "gpt-6.2-sol", "optimizer": DEFAULTS["ACCLIMATE_MODEL"],
+          "effort": "low", "optimizerReasoningEffort": DEFAULTS["ACCLIMATE_MODEL_REASONING_EFFORT"]}
 
 
 class IntegrityStop(RuntimeError):
@@ -46,6 +52,9 @@ def write(path, value):
 
 def node(config, *, capture=False, cancelled=None):
     env = dict(os.environ, TSX_TSCONFIG_PATH=str(HERE / "tsconfig.json"))
+    if config.get("modelFree"):
+        from fake_proxy import API_KEY
+        env["SIM_PROXY_API_KEY"] = API_KEY
     proc = subprocess.Popen(NODE, cwd=ROOT, env=env, text=True, stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE if capture else None)
     try:
@@ -106,11 +115,29 @@ def checkpoint_hash(directory):
     return hasher.hexdigest()
 
 
+def verify_calls(path, proxy, model, effort, *, requests_only=False):
+    if not path.is_file():
+        raise IntegrityStop(f"K1: missing model call ledger: {path}")
+    with path.open() as ledger:
+        rows = [json.loads(line) for line in ledger]
+    calls = [row for row in rows if not requests_only or row.get("event") == "request"]
+    if not calls or any(
+        (row.get("endpoint"), row.get("model"), row.get("reasoningEffort")) !=
+        (proxy["baseURL"] + "/chat/completions", model, effort)
+        for row in rows
+    ):
+        raise IntegrityStop(f"K1: model calls differ from frozen proxy identity: {path}")
+
+
+
 def run_attempt(options, config, destination, source_dir=None, cancelled=None):
     checkpoint = source_dir / "checkpoint" if source_dir else None
-    identity = {key: config[key] for key in ("seed", "block", "code", "rounds", "serviceSettings")}
+    identity = {key: config[key] for key in ("seed", "block", "code", "rounds", "serviceSettings", "proxy", "models")}
     if source_dir:
         source_ledger = read(source_dir / "ledger.json")
+        if any(source_ledger["identity"].get(key) != identity[key]
+               for key in ("seed", "block", "serviceSettings", "proxy", "models")):
+            raise IntegrityStop(f"Source checkpoint was made under a different freeze: {source_dir}")
         if source_ledger["files"] != ledger_hashes(source_dir) or source_ledger["checkpoint"] != checkpoint_hash(checkpoint):
             raise IntegrityStop(f"Source checkpoint or ledger changed: {source_dir}")
         identity["sourceCheckpoint"] = source_ledger["checkpoint"]
@@ -135,6 +162,11 @@ def run_attempt(options, config, destination, source_dir=None, cancelled=None):
                 node(dict(config, scratch=str(harness.dir / "assets"), directory=str(work),
                           database=harness.env["DATABASE_URL"]), cancelled=cancelled)
                 summary = read(work / "summary.json")
+                verify_calls(work / "rollouts.jsonl", config["proxy"],
+                             config["models"]["source" if config["condition"] == "source" else "target"],
+                             config["models"]["effort"])
+                verify_calls(work / "optimizer.jsonl", config["proxy"], config["models"]["optimizer"],
+                             config["models"]["optimizerReasoningEffort"], requests_only=True)
                 findings = harness.pg(
                     "psql", harness.env["DATABASE_URL"], "-XqAt", "-v", "ON_ERROR_STOP=1",
                     "-v", f"project={summary['project']}", "-v", f"bundle={summary['bundleId']}",
@@ -206,7 +238,7 @@ def parse_blocks(spec):
     for value in spec.split(","):
         start, _, end = value.partition("-")
         blocks.update(range(int(start), int(end or start) + 1))
-    if not blocks or not blocks.issubset(range(1, 11)):
+    if not blocks or not blocks.issubset(range(1, BLOCK_COUNT + 1)):
         raise ValueError("Blocks must be in 1–10")
     return sorted(blocks)
 
@@ -219,12 +251,12 @@ def main():
     parser.add_argument("--service-bin", type=Path, default=ROOT / "target/debug/acclimate-service")
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/sim-experiment")
     parser.add_argument("--freeze", type=Path)
-    parser.add_argument("--source-tree", type=Path)
+    parser.add_argument("--proxy-config", type=Path)
     parser.add_argument("--live", action="store_true", help="Authorize paid model calls")
     options = parser.parse_args()
     model_free = options.stage == "S0a"
-    if not model_free and not (options.live and options.freeze and options.source_tree):
-        parser.error("Paid stages require --live, --freeze and --source-tree")
+    if not model_free and not (options.live and options.freeze and options.proxy_config):
+        parser.error("Paid stages require --live, --freeze and --proxy-config")
     if model_free and options.live:
         parser.error("S0a is model-free")
     os.umask(0o077)
@@ -232,20 +264,31 @@ def main():
     options.output.mkdir(parents=True, exist_ok=True)
     options.pg_bin = options.pg_bin.resolve()
     if model_free:
-        setup = read(options.output / "seed.json") if (options.output / "seed.json").exists() else {"seed": "model-free-v1"}
-        write(options.output / "seed.json", setup)
-        seed, settings = setup["seed"], DEFAULTS
-    else:
-        from freeze import verify
-        frozen = verify(options.freeze, options.source_tree, options.service_bin, options.pg_bin)
-        if options.stage in ("S1", "S2") and not frozen["pilot"]:
-            parser.error("S1 and S2 require the post-pilot freeze")
-        seed = frozen["seed"]
-        settings = frozen["serviceSettings"]
+        from fake_proxy import fake_proxy
+        seed_path = options.output / "seed.json"
+        setup = read(seed_path) if seed_path.exists() else {"seed": "model-free-v2"}
+        port = urlsplit(setup["proxy"]["baseURL"]).port if "proxy" in setup else 0
+        with fake_proxy(options.output, port) as proxy:
+            if "proxy" in setup and setup["proxy"] != proxy:
+                raise IntegrityStop("Model-free proxy fixture changed")
+            setup["proxy"] = proxy
+            write(seed_path, setup)
+            run(options, setup["seed"], DEFAULTS, proxy, MODELS)
+        return
+    from freeze import verify
+    frozen = verify(options.freeze, options.proxy_config, options.service_bin, options.pg_bin)
+    if options.stage in ("S1", "S2") and not frozen["pilot"]:
+        parser.error("S1 and S2 require the post-pilot freeze")
+    run(options, frozen["seed"], frozen["serviceSettings"], frozen["proxy"], frozen["models"],
+        frozen["optimizerContext"])
+
+
+def run(options, seed, settings, proxy, models, optimizer_context=None):
+    model_free = options.stage == "S0a"
     blocks = [1] if model_free else [1, 2] if options.stage == "S0c" else parse_blocks(options.blocks)
     for block in blocks:
         base = dict(block=block, seed=seed, project=f"sim-study-{block}", binary=str(options.service_bin.resolve()),
-                    modelFree=model_free, evidenceRoot=str(options.output), python=sys.executable, sourceTree=str((options.source_tree or ROOT).resolve()),
+                    modelFree=model_free, python=sys.executable, proxy=proxy, models=models,
                     serviceSettings=settings)
         block_dir = options.output / options.stage / f"b{block}"
         source_dir = (options.output / "S1" / f"b{block}" if options.stage == "S2" else block_dir) / "S"
@@ -272,13 +315,13 @@ def main():
                         source_dir, block_dir)
     if options.stage == "S0c":
         from analyze import pilot_report
-        pilot_report(options.output, frozen["optimizerContext"])
+        pilot_report(options.output, optimizer_context, seed)
     if options.stage == "S2":
         from analyze import harm_stop
         if harm_stop(options.output):
             raise IntegrityStop("K4: harm stop fired after five paired blocks")
         # Retention uses a fresh common window once the target legs are terminal.
-        for block in range(1, frozen["n"] + 1):
+        for block in range(1, BLOCK_COUNT + 1):
             target = options.output / "S2" / f"b{block}"
             if not (target / "S.missing.json").exists() and not all(
                 (target / code / "ledger.json").exists() or (target / f"{code}.missing.json").exists() for code in "ABC"
@@ -286,9 +329,15 @@ def main():
                 return
         key = options.output / "key.json"
         mapping = read(key) if key.exists() else {}
-        for block in range(1, frozen["n"] + 1):
+        for block in range(1, BLOCK_COUNT + 1):
             target = options.output / "S2" / f"b{block}"
-            if (target / "S.missing.json").exists() or (target / "retention" / "ledger.json").exists():
+            if (target / "S.missing.json").exists():
+                continue
+            retention = target / "retention"
+            if (retention / "ledger.json").exists():
+                ledger = read(retention / "ledger.json")
+                if ledger.get("seed") != seed or ledger["files"] != ledger_hashes(retention):
+                    raise IntegrityStop(f"Frozen retention ledger mismatch: {retention}")
                 continue
             versions = {"source": read(options.output / "S1" / f"b{block}" / "S" / "summary.json")["finalVersion"]}
             for code, condition in mapping[str(block)].items():
@@ -303,7 +352,8 @@ def main():
                 work.mkdir(mode=0o700)
                 try:
                     node(dict(base, action="retention", block=block, directory=str(work), versions=versions))
-                    write(work / "ledger.json", {"files": ledger_hashes(work)})
+                    verify_calls(work / "retention.jsonl", proxy, models["source"], models["effort"])
+                    write(work / "ledger.json", {"seed": seed, "files": ledger_hashes(work)})
                     work.rename(target / "retention")
                     break
                 except RuntimeError as error:

@@ -1,7 +1,7 @@
 use acclimate_service::{ModelError, OpenAiModel, OptimizerModel};
 use axum::{
     Json, Router,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
     routing::post,
 };
@@ -20,35 +20,44 @@ impl Drop for Server {
     }
 }
 
-async fn serve(reply: impl Fn(Value) -> Response + Send + Sync + 'static) -> Server {
+async fn serve(reply: impl Fn(HeaderMap, Value) -> Response + Send + Sync + 'static) -> Server {
+    serve_with_effort(None, reply).await
+}
+
+async fn serve_with_effort(
+    effort: Option<&str>,
+    reply: impl Fn(HeaderMap, Value) -> Response + Send + Sync + 'static,
+) -> Server {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let reply = std::sync::Arc::new(reply);
     let router = Router::new().route(
-        "/completion",
-        post(move |Json(body): Json<Value>| {
+        "/v1/chat/completions",
+        post(move |headers: HeaderMap, Json(body): Json<Value>| {
             let reply = reply.clone();
-            async move { reply(body) }
+            async move { reply(headers, body) }
         }),
     );
     let worker = tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
     let model = OpenAiModel::new(
-        &format!("http://{address}/completion"),
+        &format!("http://{address}/v1/chat/completions"),
         "fixture".into(),
-        " fixture/model ",
+        " gpt-6.2-astra ",
         30,
         1234,
     )
+    .unwrap()
+    .with_reasoning_effort(effort.map(str::to_owned))
     .unwrap();
     Server { worker, model }
 }
 
 #[tokio::test]
 async fn sends_all_roles_with_rules_fencing_and_settings() {
-    let fixture = serve(|body| {
-        assert_eq!(body["model"], "fixture/model");
+    let fixture = serve(|_, body| {
+        assert_eq!(body["model"], "gpt-6.2-astra");
         assert_eq!(body["max_completion_tokens"], 1234);
         assert_eq!(body["response_format"], json!({"type":"json_object"}));
         assert_eq!(body.as_object().unwrap().len(), 4);
@@ -108,7 +117,7 @@ async fn distinguishes_context_provider_format_and_response_size_errors() {
             "size",
         ),
     ] {
-        let fixture = serve(move |_| (status, Json(body.clone())).into_response()).await;
+        let fixture = serve(move |_, _| (status, Json(body.clone())).into_response()).await;
         let result = fixture.model.propose(&json!({})).await.unwrap_err();
         match (error, result) {
             ("context", ModelError::ContextTooLarge) | ("format", ModelError::Format(_)) => {}
@@ -124,15 +133,25 @@ async fn distinguishes_context_provider_format_and_response_size_errors() {
 }
 
 #[tokio::test]
-async fn retries_transient_http_failure_with_identical_input() {
+async fn retries_proxy_rate_limit_with_identical_input_and_settings() {
     let calls = AtomicUsize::new(0);
-    let fixture = serve(move |body| {
+    let fixture = serve_with_effort(Some("high"), move |headers, body| {
+        assert_eq!(headers[header::AUTHORIZATION], "Bearer fixture");
+        assert_eq!(body["model"], "gpt-6.2-astra");
+        assert_eq!(body["response_format"], json!({"type":"json_object"}));
+        assert_eq!(body["max_completion_tokens"], 1234);
+        assert_eq!(body["reasoning_effort"], "high");
         assert_eq!(
             body["messages"][1]["content"],
             "<untrusted-data>\n{}\n</untrusted-data>"
         );
         if calls.fetch_add(1, Ordering::Relaxed) == 0 {
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                [(header::RETRY_AFTER, "1")],
+                Json(json!({"error":{"message":"rate limit"}})),
+            )
+                .into_response()
         } else {
             Json(json!({"choices":[{"finish_reason":"stop","message":{"content":"{}"}}]}))
                 .into_response()

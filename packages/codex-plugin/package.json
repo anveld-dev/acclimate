@@ -16,10 +16,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./native": {
-      "types": "./dist/native.d.ts",
-      "import": "./dist/native.js"
     }
   },
   "files": [
@@ -31,12 +27,6 @@
     "node": ">=22"
   },
   "peerDependencies": {
-    "@acclimate/sdk": "^0.1.0",
-    "@openai/codex-sdk": "^0.169.0"
-  },
-  "peerDependenciesMeta": {
-    "@openai/codex-sdk": {
-      "optional": true
-    }
+    "@acclimate/sdk": "^0.1.0"
   }
 }

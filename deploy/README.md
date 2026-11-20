@@ -24,6 +24,23 @@ Set mode 0600 on runtime files and use a private parent directory. Compose reads
 
 After installing the lockfile dependencies, `npm run check:console-config` checks explicit console configuration without starting a process. Neither it nor a build contacts the identity provider. Required application configuration is checked again by the actual Vite and built server entrypoints before listening. Builds require no runtime secrets.
 
+## CLIProxyAPI with Codex sign-in
+
+Acclimate supports OpenAI-compatible Chat Completions endpoints for the optimizer. Follow the CLIProxyAPI setup guide and pin the proxy build. In the current v8 config, set `server.port` to `8317` (the default) and put a private client API key in `access.api-keys`. Bind the listener to an interface reachable by the service on a private network. Use loopback when both processes run directly on the same host. Inside Compose, use the proxy's reachable hostname since loopback refers to the service container. [CLIProxyAPI setup guide](https://help.router-for.me/) · [Example configuration](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/config.example.yaml)
+
+Run `cli-proxy-api -config /private/config.yaml -codex-login` to sign in with Codex, then start the proxy with `cli-proxy-api -config /private/config.yaml`. Check that the intended model ID is available to the signed-in account. [CLI flags](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/cmd/server/main.go)
+
+Set these values in the service environment.
+
+| Setting | Value |
+| --- | --- |
+| `ACCLIMATE_MODEL_ENDPOINT` | Full URL, for example `http://127.0.0.1:8317/v1/chat/completions`. The service posts to the URL as written. |
+| `ACCLIMATE_MODEL_TOKEN` | Required nonempty proxy client key from `access.api-keys`. The service sends it as a bearer token. |
+| `ACCLIMATE_MODEL` | `gpt-6.2-astra` for the experiment, or the model ID served by your proxy. |
+| `ACCLIMATE_MODEL_REASONING_EFFORT` | `high` for the experiment. |
+
+The optimizer requests JSON mode and includes `max_completion_tokens` (default 32,768). The inspected CLIProxyAPI Codex translator maps `max_completion_tokens` to `max_output_tokens` and `reasoning_effort` to `reasoning.effort`. Its format switch has no `json_object` case, so JSON mode is unenforced on that route. The optimizer prompts for JSON and validates the returned content. The service retries HTTP 429 using its fixed 5- and 30-second backoffs. [Codex Chat Completions translator](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/internal/translator/codex/openai/chat-completions/codex_openai_request.go)
+
 ## Build and start
 
 Export the path/hostname variables above into the deployment shell, without putting secret values in command arguments. Validate and build first:

@@ -14,21 +14,18 @@ import {
   type LearningSetting,
 } from '@acclimate/sdk';
 import { serveLearningLoop } from '@acclimate/sdk/learning';
-import {
-  optimizerAdapter,
-  requestGuard,
-  type OptimizerData,
-  type OptimizerReply,
-} from './adapter.js';
+import { optimizerAdapter, requestGuard } from './adapter.js';
 import {
   conditions,
   IntegrityError,
   optimizerModel,
   optimizerReasoningEffort,
   setting,
+  proxyKey,
+  type ProxyIdentity,
   type Condition,
 } from './conditions.js';
-import { codexTurn, evaluator } from './evaluator.js';
+import { evaluator } from './evaluator.js';
 import { heldOut, meanScore, type Case } from './heldout.js';
 
 export interface RunSummary {
@@ -63,13 +60,11 @@ export interface RunOptions {
   held: Case[];
   python: string;
   grader: string;
-  sourceTree: string;
-  evidenceRoot: string;
+  proxy: ProxyIdentity;
   modelFree: boolean;
   targetZero?: boolean;
   finalEvolve?: boolean;
   serviceSettings: Record<string, string>;
-  respond?: (data: OptimizerData, kind: 'propose' | 'screen' | 'select') => Promise<OptimizerReply>;
   signal?: AbortSignal;
 }
 
@@ -102,6 +97,7 @@ export async function runCondition(options: RunOptions): Promise<RunSummary> {
       options.serviceSettings.ACCLIMATE_MODEL_REASONING_EFFORT === optimizerReasoningEffort,
     'optimizer settings differ from frozen protocol',
   );
+  const apiKey = proxyKey();
   const modelToken = crypto.randomUUID();
   const operatorToken = crypto.randomUUID();
   const appToken = crypto.randomUUID();
@@ -112,8 +108,6 @@ export async function runCondition(options: RunOptions): Promise<RunSummary> {
   const appStop = new AbortController();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   mkdirSync(scratch, { recursive: true, mode: 0o700 });
-  const author = path.join(scratch, 'author');
-  mkdirSync(author, { mode: 0o700 });
   const base = `http://127.0.0.1:${await port()}`;
   const client = new AcclimateClient({
     baseUrl: base,
@@ -192,18 +186,9 @@ export async function runCondition(options: RunOptions): Promise<RunSummary> {
             : null,
       };
     },
-    async respond(prompt, data, kind) {
-      return options.respond
-        ? await options.respond(data, kind)
-        : await codexTurn(
-            optimizerModel,
-            author,
-            AbortSignal.any([signal, AbortSignal.timeout(540_000)]),
-            [process.cwd(), options.evidenceRoot],
-            undefined,
-            optimizerReasoningEffort,
-          )(prompt);
-    },
+    proxy: options.proxy,
+    apiKey,
+    signal,
     recordReply(round, sample, content, returnedAt) {
       try {
         const { diagnosis } = JSON.parse(content) as { diagnosis: LearningDiagnosis };
@@ -277,15 +262,8 @@ export async function runCondition(options: RunOptions): Promise<RunSummary> {
   const runner = evaluator({
     model: plan.model,
     modelFree: options.modelFree,
-    sourceTree: options.sourceTree,
-    privateRoots: [process.cwd(), options.evidenceRoot, scratch],
-    fake: (input, rollout, version) => {
-      if (input.startsWith('Locate'))
-        return rollout < 3 ? ['llm', 'templates', 'path'] : ['llm', 'logs', 'path'];
-      return rollout < 2 || version.payload.files[0].text.includes('Check command routing.')
-        ? ['llm', 'logs', 'path']
-        : ['llm', 'templates', 'path'];
-    },
+    proxy: options.proxy,
+    apiKey,
     grader: options.grader,
     python: options.python,
     ledger: path.join(directory, 'rollouts.jsonl'),

@@ -10,8 +10,9 @@ import shlex
 import subprocess
 import sys
 import unicodedata
+from urllib.parse import urlsplit
 
-from run import CEILING_THRESHOLD, DEFAULTS, HERE, ROOT, node
+from run import BLOCK_COUNT, CEILING_THRESHOLD, DEFAULTS, HERE, MODELS, ROOT, node
 
 FIXTURES = HERE / "fixtures/w1"
 LLM_COMMIT = "46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f"
@@ -83,16 +84,18 @@ def cmd(*args, cwd=ROOT):
     return subprocess.check_output(args, cwd=cwd, text=True).strip()
 
 
-def build_record(source_tree, service_bin, pg_bin):
-    source_tree = source_tree.resolve()
-    if source_tree.is_relative_to(ROOT):
-        raise ValueError("Use an LLM checkout outside the private experiment repository")
-    if not Path("/usr/bin/sandbox-exec").is_file():
-        raise ValueError("Paid stages require macOS sandbox-exec for fixture isolation")
-    if cmd("git", "rev-parse", "HEAD", cwd=source_tree) != LLM_COMMIT or cmd(
-        "git", "status", "--porcelain", "--untracked-files=all", cwd=source_tree
-    ):
-        raise ValueError("Use a clean W1 source tree at " + LLM_COMMIT)
+def proxy_record(base_url, revision, config):
+    url = urlsplit(base_url)
+    if (url.scheme not in ("http", "https") or not url.hostname or url.username is not None
+            or "?" in base_url or "#" in base_url or any(c.isspace() for c in base_url)
+            or not url.path.endswith("/v1")):
+        raise ValueError("Use an OpenAI-compatible base URL ending in /v1")
+    if not re.fullmatch(r"[0-9a-f]{40}|v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", revision):
+        raise ValueError("Pin CLIProxyAPI to a full commit SHA or release tag")
+    return {"baseURL": base_url, "revision": revision, "configSha256": digest(config.read_bytes())}
+
+
+def build_record(service_bin, pg_bin):
     code = {
         str(path.relative_to(ROOT)): digest(path.read_bytes())
         for path in sorted(HERE.rglob("*"))
@@ -108,8 +111,7 @@ def build_record(source_tree, service_bin, pg_bin):
         "toolVersions": {
             "rust": cmd("rustc", "--version"), "node": cmd("node", "--version"),
             "python": cmd(sys.executable, "--version"), "postgres": cmd(str(pg_bin / "postgres"), "--version"),
-            "codexCli": cmd("codex", "--version"), "scipy": version("scipy"),
-            "codexSdk": load(ROOT / "node_modules/@openai/codex-sdk/package.json")["version"],
+            "scipy": version("scipy"),
             "acclimateSdk": load(ROOT / "packages/sdk/package.json")["version"],
             "llm": version("llm"), "click": version("click"),
         },
@@ -127,23 +129,18 @@ def passing_pilot(pilot, optimizer_context):
                         for condition in ("full", "cold")))
 
 
-def freeze(source_tree, service_bin, pg_bin, pilot_path, optimizer_context):
+def freeze(proxy, service_bin, pg_bin, pilot_path, optimizer_context):
     checks = zero_call_checks()
     commitments = node({"action": "freeze", "python": sys.executable, "seed": "", "block": 1}, capture=True)
     pilot = load(pilot_path) if pilot_path else None
     if pilot_path and not passing_pilot(pilot, optimizer_context):
         raise ValueError("Use a passing pilot report for the frozen optimizer context")
     document = {
-        "schemaVersion": 1, **build_record(source_tree, service_bin, pg_bin),
-        "serviceSettings": DEFAULTS,
-        "runtimeSettings": {"ACCLIMATE_MODEL_ENDPOINT": "ephemeral loopback adapter",
-                            "ACCLIMATE_MODEL_TOKEN": "ephemeral, redacted"},
-        "models": {"source": "gpt-6-luna", "target": "gpt-6.2-sol",
-                   "optimizer": DEFAULTS["ACCLIMATE_MODEL"], "effort": "low",
-                   "optimizerReasoningEffort": DEFAULTS["ACCLIMATE_MODEL_REASONING_EFFORT"]},
+        "schemaVersion": 2, **build_record(service_bin, pg_bin),
+        "serviceSettings": DEFAULTS, "proxy": proxy, "models": MODELS,
         "optimizerContext": optimizer_context,
         "setting": {"domain": "cli-support", "benchmark": "llm-0.38-argv"},
-        "n": 10, "N": 10, "k": 5, "rolloutsPerCase": 5, "caseConcurrency": 8,
+        "n": BLOCK_COUNT, "N": 10, "k": 5, "rolloutsPerCase": 5, "caseConcurrency": 8,
         "heldOut": commitments["heldOut"], "evolve": commitments["evolve"],
         "seedRules": "Sort by SHA-256 of the JSON array [seed, ...order components, originalIndex]. "
                      "Use start/block and codes/block for starts and labels. "
@@ -153,15 +150,22 @@ def freeze(source_tree, service_bin, pg_bin, pilot_path, optimizer_context):
         "checks": checks, "pilot": pilot,
         "pilotSha256": digest(pilot_path.read_bytes()) if pilot_path else None,
     }
+    if pilot and pilot.get("freezeSeed") != digest(canonical({**document, "pilot": None, "pilotSha256": None})):
+        raise ValueError("Pilot report belongs to a different freeze")
     return {**document, "seed": digest(canonical(document))}
 
 
-def verify(path, source_tree, service_bin, pg_bin):
+def verify(path, proxy_config, service_bin, pg_bin):
     document = load(path)
     seed = document.pop("seed")
     if digest(canonical(document)) != seed:
         raise ValueError("Preregistration digest mismatch")
-    for key, value in build_record(source_tree, service_bin, pg_bin).items():
+    if document.get("schemaVersion") != 2 or document.get("models") != MODELS:
+        raise ValueError("Preregistration does not match the frozen model identities")
+    proxy = document["proxy"]
+    if proxy_record(proxy["baseURL"], proxy["revision"], proxy_config) != proxy:
+        raise ValueError("CLIProxyAPI configuration differs from the freeze")
+    for key, value in build_record(service_bin, pg_bin).items():
         if document.get(key) != value:
             raise ValueError(f"Preregistration no longer matches the environment: {key}")
     if document.get("serviceSettings") != DEFAULTS:
@@ -174,7 +178,9 @@ def verify(path, source_tree, service_bin, pg_bin):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Run the zero-call fixture checks only")
-    parser.add_argument("--source-tree", type=Path)
+    parser.add_argument("--proxy-base-url", default="http://127.0.0.1:8317/v1")
+    parser.add_argument("--proxy-revision")
+    parser.add_argument("--proxy-config", type=Path)
     parser.add_argument("--service-bin", type=Path, default=ROOT / "target/debug/acclimate-service")
     parser.add_argument("--pg-bin", type=Path, default=Path("/opt/homebrew/opt/postgresql@16/bin"))
     parser.add_argument("--optimizer-context", type=int, default=272_000)
@@ -184,9 +190,10 @@ def main():
     if args.check:
         print(json.dumps(zero_call_checks(), sort_keys=True))
         return
-    if not args.output or not args.source_tree or args.optimizer_context < 1:
-        parser.error("--output, --source-tree and a positive optimizer context are required")
-    result = freeze(args.source_tree, args.service_bin, args.pg_bin, args.pilot_report, args.optimizer_context)
+    if not args.output or not args.proxy_revision or not args.proxy_config or args.optimizer_context < 1:
+        parser.error("--output, --proxy-revision, --proxy-config and a positive optimizer context are required")
+    proxy = proxy_record(args.proxy_base_url, args.proxy_revision, args.proxy_config)
+    result = freeze(proxy, args.service_bin, args.pg_bin, args.pilot_report, args.optimizer_context)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x", encoding="utf-8") as out:
         json.dump(result, out, indent=2, sort_keys=True, ensure_ascii=False)

@@ -5,22 +5,22 @@ description: Enroll a released bundle, sync cases and serve evaluations with one
 
 ## Five-minute setup
 
-Release your bundle on a channel and configure the service optimizer. Issue a workspace machine token with **Promote** and **Evaluate** and set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` in your shell. Use Node.js 22.22 or later and authenticate the Codex runtime separately. [Optimizer settings](/docs/reference/configuration) · [Machine-token access](/docs/operate/evaluator-access)
+Release your bundle on a channel and configure the service optimizer. Issue a workspace machine token with **Promote** and **Evaluate** and set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` in your shell. Use Node.js 22.22 or later and set up an OpenAI-compatible endpoint. The example uses [CLIProxyAPI with Codex sign-in](#use-codex-through-cliproxyapi). [Optimizer settings](/docs/reference/configuration) · [Machine-token access](/docs/operate/evaluator-access)
 
 ```bash
-npm install @acclimate/sdk @acclimate/codex-plugin @openai/codex-sdk
+npm install @acclimate/sdk
+export OPENAI_BASE_URL=http://127.0.0.1:8317/v1
 ```
 
 In an ESM project (`"type": "module"`), save this as `acclimate.loop.ts`. Ask the agent for a final JSON object with an `action` field.
 
 ```ts
-import { defineLoop, exact } from '@acclimate/sdk/learning';
-import { codex } from '@acclimate/codex-plugin';
+import { defineLoop, exact, openai } from '@acclimate/sdk/learning';
 
 export default defineLoop({
   bundle: 'support-agent',
   channel: 'stable',
-  agent: codex({ model: 'gpt-6.2-sol', parse: text => JSON.parse(text) as { action: string } }),
+  agent: openai({ model: 'gpt-6.2-sol', parse: text => JSON.parse(text) as { action: string } }),
   cases: './cases.jsonl',
   grade: exact('action'),
 });
@@ -39,6 +39,29 @@ npx acclimate learn
 
 The CLI looks up your token's principal, finds the bundle by name, enrolls it, commits the held-out digest and syncs the evolve split. It serves evaluations from the same process and prints incumbent, candidate, selection and held-out results. Keep the `.acclimate/` journal across restarts and out of version control. Use `--once` to exit after a completed round or `--config` to select a different config file.
 
+## Use Codex through CLIProxyAPI
+
+Install CLIProxyAPI, then sign in with your Codex account and start the proxy. On macOS with Homebrew, run the following. The sample config includes client keys. Edit `$(brew --prefix)/etc/cliproxyapi.conf` to set your own under `access.api-keys` (`api-keys` in older configurations). For a local-only proxy, set `server.host` to `127.0.0.1`. [CLIProxyAPI install guide](https://github.com/router-for-me/CLIProxyAPIDocs/blob/main/docs/en/introduction/quick-start.md) · [Example configuration](https://github.com/router-for-me/CLIProxyAPI/blob/main/config.example.yaml)
+
+```sh
+brew install cliproxyapi
+cliproxyapi -codex-login
+brew services start cliproxyapi
+export OPENAI_BASE_URL=http://127.0.0.1:8317/v1
+# Set this only when the proxy requires a client key.
+export OPENAI_API_KEY='<proxy-client-key>'
+```
+
+Use a model listed by your proxy at `/v1/models`. For a service optimizer running on the same host, set these variables in the **service** environment. Use a reachable proxy address if the service runs elsewhere.
+
+```sh
+export ACCLIMATE_MODEL_ENDPOINT=http://127.0.0.1:8317/v1/chat/completions
+export ACCLIMATE_MODEL=gpt-6.2-astra
+export ACCLIMATE_MODEL_TOKEN='<proxy-client-key>'
+```
+
+The optimizer requires a nonempty `ACCLIMATE_MODEL_TOKEN`. Use a placeholder value if the local proxy has client authentication disabled.
+
 ## Cases and settings
 
 - Supply a relative `.jsonl` or `.json` path, or an inline array of `{ caseId?, input, expected }`. Input and expected each accept up to 64 KiB of JSON. Use unique IDs up to 128 characters from letters, digits and `._:-`. Omitted IDs hash the canonical JSON input.
@@ -49,7 +72,9 @@ The CLI looks up your token's principal, finds the bundle by name, enrolls it, c
 
 ## Run and grade your agent
 
-Use `claude({ model, effort?, parse? })` from `@acclimate/claude-plugin` with `@anthropic-ai/claude-agent-sdk` installed, or `codex({ model, effort?, parse? })` with `@openai/codex-sdk`. Both prepare the verified bundle for a fresh native session per rollout and retain the latest 16 KiB of transcript. The output is the final text, or the result of your `parse` callback.
+Acclimate learning supports OpenAI-compatible endpoints only. The `openai` adapter sends one Chat Completions request per rollout, with the verified bundle as the system message and the case input as the user message. The default render groups instruction, skill and memory files in that order. It preserves the payload order within each group and uses `# path` headers. Pass `render(version)` to customize the system message and `parse(text)` to transform the assistant text before grading. `effort` sets `reasoning_effort` on endpoints that support it.
+
+The adapter reads `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) and `OPENAI_API_KEY`. You can override them with `baseURL` and `apiKey`. Evolve traces contain compact JSON with the assistant text, finish reason and usage, or the error body on failure. The runner caps traces at 16 KiB.
 
 For your own runtime, replace `agent` with `execute({ version, input, signal, ... })` and return `{ output, trace? }`. Adapters default to live execution. Custom callbacks default to model-free, so set `live: true` if yours calls a model. `caseConcurrency` defaults to 1.
 

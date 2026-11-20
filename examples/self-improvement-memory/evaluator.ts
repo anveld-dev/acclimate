@@ -1,11 +1,16 @@
 import { spawn } from 'node:child_process';
-import { appendFileSync, realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-
-import { Codex } from '@openai/codex-sdk';
-import type { LearningLoopApp } from '@acclimate/sdk/learning';
+import { appendFileSync } from 'node:fs';
+import { openai, type LearningLoopApp } from '@acclimate/sdk/learning';
 import type { VerifiedVersion } from '@acclimate/sdk';
-import { IntegrityError, ordered } from './conditions.js';
+import {
+  IntegrityError,
+  ordered,
+  sourceModel,
+  targetModel,
+  taskEffort,
+  completionEndpoint,
+  type ProxyIdentity,
+} from './conditions.js';
 import { meanScore, type Case } from './heldout.js';
 
 async function grade(
@@ -35,69 +40,6 @@ async function grade(
     child.stdin.end(JSON.stringify({ output, expected }));
   });
 }
-const argvSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['argv'],
-  properties: { argv: { type: 'array', items: { type: 'string' } } },
-};
-
-const codexWrapper = fileURLToPath(new URL('./codex-exec.sh', import.meta.url));
-
-export function codexSandbox(privateRoots: string[]) {
-  const roots = [...new Set(privateRoots.map((root) => realpathSync(root)))];
-  return (
-    '(version 1) (allow default) ' +
-    roots.map((root) => `(deny file-read* (subpath ${JSON.stringify(root)}))`).join(' ')
-  );
-}
-
-export function codexTurn(
-  model: string,
-  cwd: string,
-  signal: AbortSignal,
-  privateRoots: string[],
-  outputSchema?: unknown,
-  reasoningEffort: 'low' | 'high' = 'low',
-) {
-  const code = Object.fromEntries(
-    Object.entries(process.env).filter(
-      (entry): entry is [string, string] => entry[1] !== undefined,
-    ),
-  );
-  const codex = new Codex({
-    codexPathOverride: codexWrapper,
-    env: { ...code, SIM_CODEX_SANDBOX: codexSandbox(privateRoots), SIM_CODEX_CWD: cwd },
-    config: {
-      features: {
-        shell_tool: outputSchema !== undefined,
-        skip_host_skill_discovery: true,
-        enable_mcp_apps: false,
-      },
-      shell_environment_policy: { inherit: 'none' },
-    },
-  });
-  return async (prompt: string) => {
-    const result = await codex
-      .startThread({
-        model,
-        modelReasoningEffort: reasoningEffort,
-        workingDirectory: cwd,
-        skipGitRepoCheck: true,
-        sandboxMode: 'read-only',
-        networkAccessEnabled: false,
-        webSearchMode: 'disabled',
-        approvalPolicy: 'never',
-      })
-      .run(prompt, { signal, outputSchema });
-    return {
-      content: result.finalResponse,
-      inputTokens: result.usage?.input_tokens ?? null,
-      outputTokens: result.usage?.output_tokens ?? null,
-    };
-  };
-}
-
 export interface TrialContext {
   id: string;
   number: number;
@@ -109,6 +51,8 @@ export interface RolloutRow extends TrialContext {
   rollout: number;
   digest: string;
   model: string;
+  endpoint: string;
+  reasoningEffort: string;
   score: number;
   passed: boolean;
   infraFailure: boolean;
@@ -123,11 +67,10 @@ export interface RolloutRow extends TrialContext {
 export function evaluator(options: {
   model: string;
   modelFree: boolean;
-  fake?: (input: string, rollout: number, version: VerifiedVersion) => string[];
+  proxy: ProxyIdentity;
+  apiKey: string;
   seed: (string | number)[];
   ledger: string;
-  sourceTree: string;
-  privateRoots: string[];
   python: string;
   grader: string;
   held: Case[];
@@ -136,6 +79,13 @@ export function evaluator(options: {
   context: (version: VerifiedVersion) => Promise<TrialContext>;
   abort: (error: unknown) => void;
 }) {
+  const endpoint = completionEndpoint(options.proxy.baseURL);
+  const agent = openai({
+    model: options.model,
+    baseURL: options.proxy.baseURL,
+    apiKey: options.apiKey,
+    effort: taskEffort,
+  });
   const rows: RolloutRow[] = [];
   const byId = new Map([...options.evolve, ...options.held].map((item) => [item.caseId, item]));
   async function score(
@@ -162,13 +112,14 @@ export function evaluator(options: {
       options.abort(error);
       throw error;
     }
-    const prompt =
-      guidance +
-      '\nUse upstream source and docs as reference. Return JSON with argv beginning with llm. Do not run the suggested command. Request: ' +
-      item.input;
+    if (agent.model !== model || ![sourceModel, targetModel].includes(model)) {
+      const error = new IntegrityError('K1: task model differs from frozen condition');
+      options.abort(error);
+      throw error;
+    }
     const start = Date.now();
     let turns = 0;
-    let reply: Awaited<ReturnType<ReturnType<typeof codexTurn>>> | undefined;
+    let reply: Awaited<ReturnType<typeof agent.execute>> | undefined;
     let output: string[] | undefined;
     let error: string | null = null;
     let infraFailure = false;
@@ -176,27 +127,23 @@ export function evaluator(options: {
       signal.throwIfAborted();
       turns++;
       try {
-        if (options.modelFree) {
-          output = options.fake?.(item.input, rollout, version) ?? ['llm', 'logs', 'path'];
-        } else {
-          reply = await codexTurn(
-            model,
-            options.sourceTree,
-            AbortSignal.any([signal, AbortSignal.timeout(80_000)]),
-            options.privateRoots,
-            argvSchema,
-          )(prompt);
-        }
+        reply = await agent.execute({
+          version,
+          input: item.input,
+          caseId: item.caseId,
+          rollout,
+          signal: AbortSignal.any([signal, AbortSignal.timeout(80_000)]),
+        });
         break;
       } catch {
         error = 'policy turn failed';
       }
     }
     let value = 0;
-    if (reply || output) {
+    if (reply) {
       error = null;
       try {
-        output ??= (JSON.parse(reply!.content) as { argv: string[] }).argv;
+        output = (JSON.parse(reply.output) as { argv: string[] }).argv;
         if (!Array.isArray(output) || output.some((arg) => typeof arg !== 'string'))
           throw new Error();
       } catch {
@@ -221,12 +168,17 @@ export function evaluator(options: {
     } else {
       infraFailure = true;
     }
+    const { usage } = JSON.parse(reply?.trace ?? '{}') as {
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
     const row: RolloutRow = {
       ...context,
       caseId: item.caseId,
       rollout,
       digest: version.version.digest,
       model,
+      endpoint,
+      reasoningEffort: taskEffort,
       score: value,
       passed: value === 1,
       turns,
@@ -234,8 +186,8 @@ export function evaluator(options: {
       error,
       trace: output ? JSON.stringify({ argv: output }) : null,
       milliseconds: Date.now() - start,
-      inputTokens: reply?.inputTokens ?? null,
-      outputTokens: reply?.outputTokens ?? null,
+      inputTokens: usage?.prompt_tokens ?? null,
+      outputTokens: usage?.completion_tokens ?? null,
     };
     rows.push(row);
     appendFileSync(options.ledger, JSON.stringify(row) + '\n');

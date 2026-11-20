@@ -21,16 +21,15 @@ The first start pulls the released images, or builds from source in 10 to 20 min
 
 ## Run a learning loop
 
-Install `@acclimate/sdk`, `@acclimate/codex-plugin` and `@openai/codex-sdk` in your TypeScript project. Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` using a machine token with **Promote** and **Evaluate**. With a bundle released and the service optimizer configured, save this as `acclimate.loop.ts`.
+Install `@acclimate/sdk` in your TypeScript project. Acclimate learning supports OpenAI-compatible endpoints only. For Codex, sign in through CLIProxyAPI and set `OPENAI_BASE_URL=http://127.0.0.1:8317/v1`. Set `OPENAI_API_KEY` if your proxy requires one. [CLIProxyAPI setup](apps/docs/content/docs/guides/learning-loop.mdx#use-codex-through-cliproxyapi) Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` using a machine token with **Promote** and **Evaluate**. With a bundle released and the service optimizer configured, save this as `acclimate.loop.ts`.
 
 ```ts
-import { defineLoop, exact } from '@acclimate/sdk/learning';
-import { codex } from '@acclimate/codex-plugin';
+import { defineLoop, exact, openai } from '@acclimate/sdk/learning';
 
 export default defineLoop({
   bundle: 'support-agent',
   channel: 'stable',
-  agent: codex({ model: 'gpt-6.2-sol', parse: text => JSON.parse(text) as { action: string } }),
+  agent: openai({ model: 'gpt-6.2-sol', parse: text => JSON.parse(text) as { action: string } }),
   cases: './cases.jsonl',
   grade: exact('action'),
 });
@@ -48,7 +47,7 @@ const job = await createAcclimate().job('support-agent', { channel: 'stable', in
 await job.expect({ action: 'refund' });
 ```
 
-To move to a new model, change `codex({ model })` and run `npx acclimate learn` again. The loop records the new setting and keeps its improvement memory, so later rounds build on what earlier models learned.
+To move to a new model, change `openai({ model })` and run `npx acclimate learn` again. The loop records the new setting and keeps its improvement memory, so later rounds build on what earlier models learned.
 
 ## Deliver content to jobs
 

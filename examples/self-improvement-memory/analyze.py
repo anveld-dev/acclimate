@@ -237,7 +237,7 @@ def harm_stop(root):
     return False
 
 
-def pilot_report(root, optimizer_context):
+def pilot_report(root, optimizer_context, freeze_seed):
     policy = defaultdict(list)
     target_codes = read(root / "key.json").get("1", {}) if (root / "key.json").exists() else {}
     target_round_zero = {}
@@ -269,7 +269,23 @@ def pilot_report(root, optimizer_context):
     measured = [r["inputTokens"] for r in replies if r["inputTokens"] is not None]
     projected = max(measured) + 17 * max(0, *token_growth) if measured and token_growth else None
     ceiling_reached = any(score >= CEILING_THRESHOLD for score in target_round_zero.values())
+    def repeat_noise(rows):
+        repeats = defaultdict(list)
+        for row in rows:
+            if not row["infraFailure"] and row["role"] in ("round-zero", "retained", "rescore"):
+                repeats[row["id"], row["caseId"]].append(row["score"])
+        complete = [scores for scores in repeats.values() if len(scores) == 5]
+        if not complete:
+            return {"mixedCaseRate": None, "heldOutDifferenceNoise": None}
+        variance = np.mean([np.var(scores, ddof=1) for scores in complete])
+        held_cases = len({case_id for _, case_id in repeats})
+        return {
+            "mixedCaseRate": sum(len(set(scores)) > 1 for scores in complete) / len(complete),
+            "heldOutDifferenceNoise": float(np.sqrt(2 * variance / (5 * held_cases))),
+        }
+
     report = {
+        "freezeSeed": freeze_seed,
         "targetRoundZero": target_round_zero,
         "targetCeilingThreshold": CEILING_THRESHOLD,
         "targetCeilingReached": ceiling_reached,
@@ -277,6 +293,7 @@ def pilot_report(root, optimizer_context):
                            "meanInputTokens": means([r["inputTokens"] for r in rows if r["inputTokens"] is not None]),
                            "meanOutputTokens": means([r["outputTokens"] for r in rows if r["outputTokens"] is not None]),
                            "meanMilliseconds": means([r["milliseconds"] for r in rows]),
+                           **repeat_noise(rows),
                            "meanTraceBytes": means([len((r["trace"] or "").encode()) for r in rows])}
                    for model, rows in policy.items()},
         "optimizer": {"replies": len(replies), "meanInputTokens": means(measured),
@@ -289,6 +306,8 @@ def pilot_report(root, optimizer_context):
         and len([r for r in rounds if r["state"] == "completed"]) == 9 and rejection <= .20
         and any(r["decision"] == "adopted" for r in source)
         and projected is not None and projected <= optimizer_context / 2
+        and all(any(r["inputTokens"] is not None and r["outputTokens"] is not None for r in rows)
+                for rows in policy.values())
         and set(target_round_zero) == {"full", "cold"} and not ceiling_reached,
     }
     anchors = list(report["policy"].values())

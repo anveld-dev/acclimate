@@ -12,6 +12,7 @@ import time
 from typing import Any
 from uuid import UUID, uuid4
 
+from ._learning_openai import _TranscriptError
 from ._evaluation_shared import atomic_private_write, ensure_private_directory, read_private_bytes
 from .client import AcclimateClient, ApiError, TransportError
 from .delivery import DeliveryError, resolve_and_cache
@@ -84,7 +85,10 @@ def _run(
         if private:
             return _failure(True, "")
         message = redact_diagnostic_text(f"{stage}.failed {error}".replace(token, "[redacted]"))
-        return _failure(False, message.encode(errors="replace")[:4096].decode(errors="ignore"))
+        failed = _failure(False, message.encode(errors="replace")[:4096].decode(errors="ignore"))
+        if isinstance(error, _TranscriptError):
+            failed["trace"] = _trace(error.trace, token)
+        return failed
     if not private:
         score.update(trace=_trace(trace, token) if isinstance(trace, str) else None, error=None)
     return score

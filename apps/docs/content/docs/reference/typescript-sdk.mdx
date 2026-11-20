@@ -18,9 +18,7 @@ Install `@acclimate/sdk` with Node.js 22.22 or later. See [install the SDKs](/do
 | `@acclimate/sdk/evaluation/manifest` | `createEvaluationManifest`, `restoreEvaluationManifest`, `canonicalEvaluationJson` |
 | `@acclimate/sdk/evaluation/cli` | `evaluationMain`, `evaluationReadMain`, `parseEvaluatorArguments`, `reportEvaluatorError`, `verboseRequested`, `sdkVersion`, `EVALUATOR_COMMANDS`, `ADAPTER_FREE_COMMANDS` |
 | `@acclimate/sdk/evaluation/app-cli` | `applicationMain`, `loadApplication`, `resolveApplicationFile`, `defineApplication`, and the `ApplicationAdapter` type |
-| `@acclimate/sdk/learning` | `defineLoop`, `exact`, `tests`, `serveLearningLoop`, `heldOutDigest`, `addEvolveCases`, `createLearningOutcomeReporter` |
-| `@acclimate/codex-plugin`, `@acclimate/codex-plugin/native` | `codex` creates the native Codex learning adapter. |
-| `@acclimate/claude-plugin`, `@acclimate/claude-plugin/native` | `claude` creates the native Claude learning adapter. |
+| `@acclimate/sdk/learning` | `defineLoop`, `openai`, `exact`, `tests`, `serveLearningLoop`, `heldOutDigest`, `addEvolveCases`, `createLearningOutcomeReporter` |
 | `@acclimate/sdk/native-files` | `prepareNativeFiles`, `nativeSource` and `transcriptTail`, for plugin authors. |
 
 The root entry also exports every wire type, such as `Bundle`, `VersionMetadata`, `Release` and `Page`, plus option types such as `ClientOptions`, `CachePolicy`, `OfflinePolicy` and `PrepareDeliveryOptions`. The types match [`contracts/openapi.json`](/docs/reference/http-api).
@@ -73,5 +71,7 @@ Import loop wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningR
 Each loop method takes the workspace ID and bundle ID first. `getPrincipal(workspaceId)` returns `{ principalId, kind, rights }` for the authenticated caller. `listLearningEvolveCases` accepts `{ after?, limit? }` and returns `{ items, next, evolveRevision }`. See the [HTTP contract](/docs/reference/http-api#learning-loop) for the request shapes.
 
 Use `defineLoop(config)` with `LoopConfig`, `LoopAgent`, `LoopCase`, `LoopExecute` and `LoopGrade` to configure the one-command setup. For direct evaluator control, use `serveLearningLoop` with `LearningLoopApp` and `LearningLoopOptions`. [Learning evaluator CLI](/docs/reference/evaluator-cli#learning-evaluator)
+
+`openai({ model, baseURL?, apiKey?, effort?, parse?, render? })` returns a `LoopAgent` whose `.model` supplies the default `setting.policyModel`. The options are typed as `OpenAIOptions`. `render(version)` receives the verified version and returns system text. `parse(text)` receives the first assistant message's text and returns the graded output. Both callbacks may be asynchronous. HTTP failures throw `OpenAIHttpError` with `.status` and a key-redacted `.trace`. [OpenAI-compatible endpoint setup](/docs/guides/learning-loop#run-and-grade-your-agent)
 
 `getLearningRound` returns candidates and the selector decision. `getLearningMemory` returns the latest improvement memory or a specific revision when you supply `revision`. Read memory as a workspace reader other than the app principal.

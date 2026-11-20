@@ -36,33 +36,3 @@ test('K1 refuses held-out IDs, normalized private inputs, condition codes and bu
     assert.throws(() => check('propose', { ...clean, history: [{ text }] }), IntegrityError);
   }
 });
-
-test('Codex read fence allows the task tree and seals the held-out store', async () => {
-  if (process.platform !== 'darwin') return;
-  const { execFileSync, spawnSync } = await import('node:child_process');
-  const { mkdtemp, mkdir, rm, writeFile } = await import('node:fs/promises');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const { codexSandbox } = await import('../evaluator.js');
-  const root = await mkdtemp(join(tmpdir(), 'acclimate-sim-fence-'));
-  try {
-    const store = join(root, 'heldout');
-    await mkdir(store);
-    await writeFile(join(store, 'held-out.json'), 'private');
-    await writeFile(join(root, 'reference.md'), 'public');
-    const prefix = ['-p', codexSandbox([store]), '/bin/cat'];
-    assert.equal(
-      execFileSync('/usr/bin/sandbox-exec', [...prefix, join(root, 'reference.md')], {
-        encoding: 'utf8',
-      }),
-      'public',
-    );
-    const denied = spawnSync('/usr/bin/sandbox-exec', [...prefix, join(store, 'held-out.json')], {
-      encoding: 'utf8',
-    });
-    assert.equal(denied.status, 1);
-    assert.equal(denied.stdout, '');
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});

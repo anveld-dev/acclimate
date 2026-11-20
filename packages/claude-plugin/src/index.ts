@@ -77,6 +77,3 @@ export async function prepare(
     },
   };
 }
-
-export { claude } from './learning.js';
-export type { ClaudeLoopOptions, ClaudeNativeClient } from './learning.js';

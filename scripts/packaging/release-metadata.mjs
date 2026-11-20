@@ -13,15 +13,19 @@ export async function releaseMetadata(root) {
   const version = manifests[0].version;
   if (manifests.some(value => value.version !== version) || pythonVersion !== version)
     throw new Error('SDK, plugins and wheel must belong to the same release version');
-  // Plugins declare tested peer ranges; the release records the exact versions this
-  // checkout tested (the root devDependencies) so install guidance stays reproducible.
+  // Record the tested native integration versions for reproducible install guidance,
+  // including harnesses that applications install independently of the plugins.
   const rootManifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   const nativePeers = {};
+  for (const [name, version] of [
+    ['@openai/codex-sdk', rootManifest.dependencies?.['@openai/codex-sdk']],
+    ['@anthropic-ai/claude-agent-sdk', rootManifest.devDependencies?.['@anthropic-ai/claude-agent-sdk']],
+  ]) {
+    if (version) nativePeers[name] = version;
+  }
   for (const manifest of manifests)
     for (const [name, range] of Object.entries(manifest.peerDependencies ?? {}))
       if (!name.startsWith('@acclimate/')) nativePeers[name] = rootManifest.devDependencies?.[name] ?? range;
-  if (rootManifest.dependencies?.['@openai/codex-sdk'])
-    nativePeers['@openai/codex-sdk'] = rootManifest.dependencies['@openai/codex-sdk'];
   return {
     schemaVersion: 1,
     version,

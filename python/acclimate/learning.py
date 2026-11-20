@@ -14,6 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 from ._evaluation_shared import EvaluationError
+from ._learning_openai import OpenAIAgent, OpenAIHttpError, openai
 from .client import AcclimateClient, ApiError
 from .errors import AcclimateError, UsageError
 from .evaluation_manifest import canonical_evaluation_json
@@ -22,7 +23,10 @@ from .types import (
     LearningLoop, LearningLoopRequest, LearningSetting, VerifiedVersion,
 )
 
-__all__ = ["LoopDefinition", "define_loop", "exact", "tests", "held_out_digest", "serve_learning_loop"]
+__all__ = [
+    "LoopDefinition", "define_loop", "exact", "tests", "held_out_digest", "serve_learning_loop",
+    "OpenAIAgent", "OpenAIHttpError", "openai",
+]
 
 Execute = Callable[[VerifiedVersion, LearningJson, int], Any]
 Grade = Callable[[Any, LearningJson], float | LearningHeldOutRollout]
@@ -56,8 +60,9 @@ def define_loop(
     *,
     bundle: str,
     channel: str,
-    execute: Execute,
-    policy_model: str,
+    execute: Execute | None = None,
+    agent: OpenAIAgent | None = None,
+    policy_model: str | None = None,
     cases: str | Path,
     grade: Grade,
     split: float = 0.5,
@@ -65,6 +70,14 @@ def define_loop(
     benchmark: str | None = None,
 ) -> LoopDefinition:
     """Define the application, case file, grader and learning setting."""
+    if (agent is None) == (execute is None):
+        raise UsageError("Pass either an agent or an execute function.")
+    if agent is not None:
+        execute = agent
+        if policy_model is None:
+            policy_model = agent.model
+    if policy_model is None:
+        raise UsageError("Pass a policy_model with custom execution.", "policy_model")
     filename = Path(cases)
     setting: LearningSetting = {
         "domain": bundle if domain is None else domain,

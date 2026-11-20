@@ -94,14 +94,13 @@ Create `acclimate_loop.py` next to a JSON or JSONL file of examples. Each exampl
 `input` and `expected`, and may supply a stable `caseId`.
 
 ```python
-from acclimate.learning import define_loop, exact
-from my_agent import run_my_agent
+import json
+from acclimate.learning import define_loop, exact, openai
 
 loop = define_loop(
     bundle="support-agent",
     channel="stable",
-    execute=run_my_agent,
-    policy_model="gpt-6.2-sol",
+    agent=openai("gpt-6.2-sol", parse=json.loads),
     cases="cases.jsonl",
     grade=exact("action"),
 )
@@ -123,9 +122,9 @@ python -m acclimate learn --config ./acclimate_loop.py --once
 The command resolves the bundle by name, reconciles enrollment, syncs evolve
 cases, and prints round progress. `--once` exits after a completed round.
 Case paths are relative to the loop file. The setting defaults to the bundle
-name as `domain`, the case filename as `benchmark`, and the supplied
-`policy_model` as `policyModel`. Pass `domain` or `benchmark` to override
-the defaults.
+name as `domain`, the case filename as `benchmark`, and the agent model as
+`policyModel`. Pass `policy_model`, `domain` or `benchmark` to override those
+defaults.
 
 The default split assigns a case to held-out when the unsigned big-endian
 SHA-256 digest of its UTF-8 case ID is below `2**255`. A missing case ID
@@ -135,7 +134,9 @@ expectations local. Removing an evolve example retires it. Give edited examples
 a new case ID because the service treats case content as immutable. Production
 outcomes survive file sync.
 
-Implement `execute(version, input, rollout)` as a synchronous function that
+`openai(model, base_url=None, api_key=None, effort=None, parse=None, render=None)` uses an OpenAI-compatible Chat Completions endpoint. It reads `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) and `OPENAI_API_KEY` when the corresponding options are omitted. `render(version)` receives the verified version and returns system text. `parse(text)` transforms the assistant text before grading. Both callbacks are synchronous. HTTP failures raise `OpenAIHttpError` with `.status` and a key-redacted `.trace`. [CLIProxyAPI setup](/docs/guides/learning-loop#use-codex-through-cliproxyapi)
+
+For custom execution, pass `policy_model` and implement `execute(version, input, rollout)` as a synchronous function that
 returns output or `(output, trace)`. Rollout indexes run from zero through four.
 Use `exact()` for whole-output JSON equality or `exact("action")` to compare
 the top-level `action` field to the expected value. Use `tests(command, cwd=None)`

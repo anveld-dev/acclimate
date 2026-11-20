@@ -15,7 +15,7 @@ def test_pilot_records_target_ceiling_before_stopping(tmp_path, monkeypatch):
     monkeypatch.setattr(analyze, "evidence", lambda _: ({"roundZero": {"score": .85}}, [], []))
 
     with pytest.raises(ValueError, match="Stop before S1 for a maintainer decision"):
-        analyze.pilot_report(tmp_path, 272_000)
+        analyze.pilot_report(tmp_path, 272_000, "fixture-seed")
 
     report = read(tmp_path / "S0c" / "pilot.json")
     assert report["targetRoundZero"] == {"cold": .85}

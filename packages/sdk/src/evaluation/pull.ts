@@ -22,11 +22,13 @@ export async function pullPayload(options: {
 }) {
   const config = await readEvaluatorConfig(options.configPath);
   const { client } = createEvaluationTransport(config);
-  let resolved;
+  let resolved, source;
   try {
+    source = await client.inspectSource(config.workspaceId, options.bundleId, options.channel);
+    if (!source) throw new EvaluationError('bundle.missing', { field: '--bundle', reason: 'This channel has no release.' });
     resolved = await resolveAndCache(
       client,
-      { workspaceId: config.workspaceId, bundleId: options.bundleId, channel: options.channel },
+      { workspaceId: config.workspaceId, bundleId: options.bundleId, versionId: source.version.id },
       { cacheDir: path.join(config.journalRoot, 'command-cache') },
     );
   } catch (error) {
@@ -64,7 +66,7 @@ export async function pullPayload(options: {
     channel: options.channel,
     versionId: resolved.version.id,
     digest: resolved.version.digest,
-    revision: resolved.resolution?.revision ?? null,
+    revision: source.revision,
     files: resolved.payload.files.length,
     out,
   };

@@ -12,12 +12,13 @@ LATENCY_BUDGET_MS = 150
 
 def enroll_measured(w, grader, case_ids, *, admissions, policies=None):
     w.learning_path = w.integration_path + '/learning'
-    audit = w.sdk('reviewDescriptors', cohorts={'audit': {'duplicate-review': 'duplicated effects'}})['audit']
+    w.measurement_grader = grader
+    descriptors = w.sdk('reviewDescriptors', cohorts={'development': {case: case for case in case_ids},
+        'audit': {'duplicate-review': 'duplicated effects'}})
     enrollment = dict(
         installationId='application-evaluator', permittedPaths=['AGENTS.md'], maxProposalAdmissions=admissions,
-        automaticRollout=False, evaluatorPrincipal='evaluator', outcomePrincipal='other', audits=[audit],
-        development=dict(datasetRevision=grader + '-cases-v1', graderRevision=grader, runtime={'executor': 'application'},
-                         expectedCases=[dict(caseId=case, repetition=rep) for case in case_ids for rep in range(2)]))
+        evaluatorPrincipal='evaluator', outcomePrincipal='other', audits=[descriptors['audit']],
+        development=descriptors['development'])
     if policies is not None:
         enrollment['selectionPolicies'] = policies
     install_enrollment(w, enrollment)
@@ -47,7 +48,7 @@ def measured_pairs(context):
                                         'runtime', 'datasetRevision', 'graderRevision', 'expectedCases')}
     def scored(value, status):
         reward = float(value)
-        if report['graderRevision'] == 'latency-budget-v1':
+        if w.measurement_grader == 'latency-budget-v1':
             reward /= LATENCY_BUDGET_MS
         return dict(reward=reward, executionStatus=status, gradingStatus='scored', usage={'costUsd': 0})
     report['evaluation'] = dict(requestId=request_id, attemptId=w.attempt)

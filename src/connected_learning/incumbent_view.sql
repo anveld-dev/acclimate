@@ -1,9 +1,8 @@
 SELECT COALESCE(head.version_id,delivery.version_id),COALESCE(head.chain_length,0),
        r.cumulative_estimate,r.cumulative_bound,
-       CASE WHEN r.state='awaiting_review' THEN 'awaitingReview'
-            WHEN r.state='audit' THEN 'auditPending'
+       CASE WHEN r.state='audit' THEN 'auditPending'
             WHEN r.cumulative_request_id IS NOT NULL AND r.state='development' THEN 'checkingCumulative'
-            WHEN e.stopped_at IS NOT NULL OR NOT i.enabled
+            WHEN NOT e.rollout_authorized OR e.stopped_at IS NOT NULL OR NOT i.enabled
                  OR e.proposal_admissions >= e.max_proposal_admissions
                  OR NOT EXISTS (SELECT FROM connected_learning_available_audits a
                      WHERE (a.project_id,a.integration_id)=(e.project_id,e.integration_id))

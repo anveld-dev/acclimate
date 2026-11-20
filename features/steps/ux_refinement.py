@@ -47,7 +47,7 @@ def invalid_feedback(context):
     expect(p.get_by_role('button', name='Check result', exact=True)).to_have_count(0)
     assert records(p) == [], 'Locally rejected content must not freeze a pending submission'
     assert w.call('GET', w.channel + '/drafts')['items'] == []
-    assert w.call('GET', w.channel)['version'] == w.original['version']
+    assert w.call('GET', w.channel + '/releases')['items'][0]['version'] == w.original['version']
 
 
 @when('I correct the invalid path and save the draft')
@@ -68,7 +68,7 @@ def corrected_snapshot(context):
     assert actual == payload(INVALID_TEXT)
     expect_editor_value(page(context).get_by_role('textbox', name='Content', exact=True), INVALID_TEXT)
     assert records(page(context)) == []
-    assert w.call('GET', w.channel)['version'] == w.original['version']
+    assert w.call('GET', w.channel + '/releases')['items'][0]['version'] == w.original['version']
 
 
 @given('I saved a browser draft before an external newer generation')
@@ -129,7 +129,7 @@ def latest_reload(context):
     assert w.call('GET', w.ux_draft_path) == w.ux_external_draft
     assert len(w.call('GET', w.ux_draft_path + '/history')['items']) == 2
     assert records(p) == []
-    assert w.call('GET', w.channel)['version'] == w.original['version']
+    assert w.call('GET', w.channel + '/releases')['items'][0]['version'] == w.original['version']
 
 
 @when('I open a bookmarked content path missing from that channel')
@@ -168,7 +168,7 @@ def recovered_memory(context):
     expect(p.get_by_label('Content of memory/team.md', exact=True)).to_have_text('Reusable project notes.')
     expect(p.get_by_role('link', name='Clear selection', exact=True)).to_have_count(0)
     assert w.call('GET', w.channel + '/drafts')['items'] == []
-    assert w.call('GET', w.channel)['version'] == w.original['version']
+    assert w.call('GET', w.channel + '/releases')['items'][0]['version'] == w.original['version']
 
 
 @when('I enter custom evaluator JSON and try to leave its review page')
@@ -216,7 +216,7 @@ def exact_custom_evaluator(context):
     assert w.call('GET', w.bundle + '/evaluation-requests')['items'] == []
     assert w.call('GET', w.bundle + '/comparisons')['items'] == []
     assert saved_draft(w) == w.ux_evaluation_draft
-    assert w.call('GET', w.channel)['version'] == w.original['version']
+    assert w.call('GET', w.channel + '/releases')['items'][0]['version'] == w.original['version']
 
 
 @given('I started a new bundle with unused typed instructions')
@@ -282,7 +282,7 @@ def exact_imported_publication(context):
     assert bundle['origin'] == 'imported'
     assert bundle['name'] == 'Real files imported through the browser'
     bundle_path = w.root + '/bundles/' + bundle['id']
-    resolution = w.call('GET', bundle_path + '/channels/stable')
+    resolution, = w.call('GET', bundle_path + '/channels/stable/releases')['items']
     actual = w.call('GET', bundle_path + '/versions/' + resolution['version']['id'] + '/payload')
     assert actual['schemaVersion'] == 1
     assert sorted(actual['files'], key=lambda entry: entry['path']) == sorted(w.ux_import_files, key=lambda entry: entry['path'])

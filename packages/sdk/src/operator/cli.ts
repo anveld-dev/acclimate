@@ -7,7 +7,6 @@ import type {
   Comparison,
   Outcome,
   ProposalRequest,
-  PolicyOverride,
 } from '../types.js';
 
 const commands: Record<string, string[]> = {
@@ -15,14 +14,12 @@ const commands: Record<string, string[]> = {
   proposal: ['id'],
   review: ['comparison', 'proposal'],
   history: ['limit', 'before'],
-  promote: ['version', 'comparison', 'expected-revision', 'key', 'ack-policy', 'override-reason'],
-  rollback: ['version', 'reason', 'expected-revision', 'key'],
 };
 const common = ['workspace', 'bundle', 'channel', 'output'];
 export function parseArgs(args: string[]) {
   const command = args.shift();
   if (!command || !commands[command])
-    throw new Error('Expected request-proposal, proposal, review, history, promote, or rollback');
+    throw new Error('Expected request-proposal, proposal, review, or history');
   const flags: Record<string, string[]> = {};
   while (args.length) {
     const arg = args.shift()!;
@@ -36,7 +33,7 @@ export function parseArgs(args: string[]) {
     const name = arg.slice(2),
       value = args.shift();
     if (!value || value.startsWith('--')) throw new Error(`--${name} requires a value`);
-    if (flags[name] && !['path', 'evidence', 'ack-policy'].includes(name)) throw new Error(`Duplicate --${name}`);
+    if (flags[name] && !['path', 'evidence'].includes(name)) throw new Error(`Duplicate --${name}`);
     (flags[name] ??= []).push(value);
   }
   return { command, flags };
@@ -204,7 +201,7 @@ export async function run(args: string[], client?: AcclimateClient) {
     const [parent, candidate, current, proposal] = await Promise.all([
       verified(client, workspace, bundle, comparison.parentVersionId),
       verified(client, workspace, bundle, comparison.candidateVersionId),
-      client.resolveChannel(workspace, bundle, channel),
+      client.inspectSource(workspace, bundle, channel),
       one(flags, 'proposal') ? client.getProposal(workspace, bundle, one(flags, 'proposal')!) : null,
     ]);
     if (
@@ -213,7 +210,7 @@ export async function run(args: string[], client?: AcclimateClient) {
       candidate.version.parentVersionId !== parent.version.id
     )
       throw new Error('Comparison versions or digests do not match verified payloads');
-    if (!current.resolution || current.resolution.channel !== channel)
+    if (!current || current.channel !== channel)
       throw new Error('Invalid channel resolution');
     if (
       proposal &&
@@ -238,7 +235,7 @@ export async function run(args: string[], client?: AcclimateClient) {
       workspace,
       bundle,
       channel,
-      current: current.resolution,
+      current: current,
       parent: parent.version,
       candidate: candidate.version,
       proposal,
@@ -246,34 +243,6 @@ export async function run(args: string[], client?: AcclimateClient) {
       policyReview,
       changes: changes(parent.payload, candidate.payload),
     };
-  } else {
-    const channel = required(flags, 'channel'),
-      versionId = required(flags, 'version'),
-      expectedRevision = required(flags, 'expected-revision');
-    if (!/^(0|[1-9][0-9]*)$/.test(expectedRevision))
-      throw new Error('--expected-revision must be a canonical revision');
-    let policyOverride: PolicyOverride | undefined;
-    if (flags['ack-policy'] || flags['override-reason']) {
-      const reason = required(flags, 'override-reason');
-      if (!flags['ack-policy']?.length) throw new Error('Acknowledge each reviewed receipt with --ack-policy COMPARISON_ID@sha256:DIGEST');
-      const receipts = flags['ack-policy'].map((value) => {
-        const match = /^([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})@(sha256:[a-f0-9]{64})$/.exec(value);
-        if (!match) throw new Error('Expected --ack-policy COMPARISON_ID@sha256:DIGEST');
-        return { comparisonId: match[1], policyDigest: match[2] };
-      });
-      policyOverride = { reason, receipts };
-    }
-    const request =
-      command === 'promote'
-        ? { versionId, expectedRevision, comparisonId: required(flags, 'comparison'), ...(policyOverride ? { policyOverride } : {}) }
-        : { versionId, expectedRevision, unevaluatedReason: required(flags, 'reason') };
-    result = await client.createRelease(
-      workspace,
-      bundle,
-      channel,
-      request,
-      one(flags, 'key') ?? randomUUID(),
-    );
   }
   // JSON escapes C0 controls; additionally escape terminal control and bidi characters.
   const text =
@@ -292,9 +261,6 @@ export const operatorUsage = [
   '  proposal --id PROPOSAL',
   '  review --channel NAME --comparison COMPARISON [--proposal PROPOSAL]',
   '  history --channel NAME [--limit 1..100] [--before REVISION]',
-  '  promote --channel NAME --version CANDIDATE --comparison COMPARISON --expected-revision REVISION',
-  '          [--override-reason TEXT --ack-policy COMPARISON_ID@sha256:DIGEST...] [--key KEY]',
-  '  rollback --channel NAME --version PREVIOUS --reason TEXT --expected-revision REVISION [--key KEY]',
   '',
   'Set ACCLIMATE_URL, ACCLIMATE_TOKEN and ACCLIMATE_SCOPE. Output is JSON; errors go to stderr.',
 ].join('\n');

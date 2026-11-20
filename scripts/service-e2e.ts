@@ -257,17 +257,13 @@ try {
     { versionId: parent.id, expectedRevision: '0', unevaluatedReason: 'Initial fixture seed' },
     'seed-channel',
   );
-  const channel = await client.resolveChannel(project, bundle.id, 'stable');
-  assert.equal(channel.resolution?.version.id, parent.id);
-  assert(channel.etag);
-  assert(
-    (await client.resolveChannel(project, bundle.id, 'stable', { etag: channel.etag! }))
-      .notModified,
-  );
+  await expectApiError(() => client.resolveChannel(project, bundle.id, 'stable'), 409, 'connected_learning_required');
+  const source = await client.inspectSource(project, bundle.id, 'stable');
+  assert.equal(source?.version.id, seeded.version.id);
   const cacheDir = path.join(temp, 'verified-cache');
   const verified = await resolveAndCache(
     client,
-    { workspaceId: project, bundleId: bundle.id, channel: 'stable' },
+    { workspaceId: project, bundleId: bundle.id, versionId: parent.id },
     { cacheDir },
   );
   assert.equal(verified.version.id, parent.id);
@@ -354,22 +350,6 @@ try {
     400,
     'invalid_content',
   );
-  await expectApiError(
-    () =>
-      client.createRelease(
-        project,
-        bundle.id,
-        'stable',
-        {
-          versionId: candidate.id,
-          expectedRevision: seeded.revision,
-          comparisonId: incompleteRow.id,
-        },
-        'promotion-incomplete',
-      ),
-    409,
-    'parent_conflict',
-  );
   const uploaded = await submitComparison(
     client,
     project,
@@ -378,40 +358,10 @@ try {
     'comparison-complete',
   );
   assert.equal(uploaded.complete, true);
-  const promoted = await client.createRelease(
-    project,
-    bundle.id,
-    'stable',
-    { versionId: candidate.id, expectedRevision: seeded.revision, comparisonId: uploaded.id },
-    'promotion-good',
-  );
-  await expectApiError(
-    () =>
-      client.createRelease(
-        project,
-        bundle.id,
-        'stable',
-        { versionId: parent.id, expectedRevision: seeded.revision, unevaluatedReason: 'stale CAS' },
-        'promotion-stale',
-      ),
-    409,
-    'revision_conflict',
-  );
-  const rollback = await client.createRelease(
-    project,
-    bundle.id,
-    'stable',
-    {
-      versionId: parent.id,
-      expectedRevision: promoted.revision,
-      unevaluatedReason: 'Fixture rollback',
-    },
-    'promotion-rollback',
-  );
-  assert.equal(rollback.previousVersionId, candidate.id);
+  assert.equal((await client.listReleases(project, bundle.id, 'stable')).items.length, 1);
   const active = await resolveAndCache(
     client,
-    { workspaceId: project, bundleId: bundle.id, channel: 'stable' },
+    { workspaceId: project, bundleId: bundle.id, versionId: parent.id },
     { cacheDir: path.join(temp, 'active-cache') },
   );
   const pinned = await prepareCodex(active);
@@ -499,7 +449,7 @@ try {
   });
   assert.equal((await restarted.getVersion(project, bundle.id, parent.id)).digest, parent.digest);
   assert.equal(
-    (await restarted.resolveChannel(project, bundle.id, 'stable')).resolution?.version.id,
+    (await restarted.inspectSource(project, bundle.id, 'stable'))?.version.id,
     parent.id,
   );
   assert.equal(

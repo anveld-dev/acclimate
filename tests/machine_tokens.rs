@@ -393,7 +393,11 @@ async fn admins_issue_rotate_and_revoke_narrow_evaluator_tokens_without_restart(
             )
             .await
             .0,
-            StatusCode::FORBIDDEN
+            if action == "publish" {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::FORBIDDEN
+            }
         );
     }
     // A workspace token never crosses workspaces.
@@ -652,7 +656,7 @@ async fn abandoned_attempts_are_fenced_and_their_evidence_never_counts() {
     )
     .await;
     assert_eq!(s, StatusCode::CONFLICT, "{v}");
-    assert_eq!(v["error"]["code"], "evidence_abandoned");
+    assert_eq!(v["error"]["code"], "connected_learning_required");
 
     // A new attempt for the same candidate content may start and settle.
     let retry = f.request(As::Machine("static-evaluate")).await;
@@ -701,7 +705,7 @@ async fn abandoned_attempts_are_fenced_and_their_evidence_never_counts() {
         json!({"versionId":f.candidate,"expectedRevision":"1","comparisonId":c["id"]}),
     )
     .await;
-    assert_eq!(s, StatusCode::CREATED, "{v}");
+    assert_eq!(s, StatusCode::CONFLICT, "{v}");
 
     // Inactivity abandons stale unmanaged attempts only.
     let stale = f.request(As::Machine("static-evaluate")).await;

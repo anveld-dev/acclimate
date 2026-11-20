@@ -52,7 +52,7 @@ async fn upgrade_preserves_enrollment_policies_and_requires_fresh_rollout_author
 
     migrator.run(&mut connection).await.unwrap();
     let rollout: bool = sqlx::query_scalar(
-        "SELECT automatic_rollout FROM connected_learning_enrollments WHERE integration_id = $1",
+        "SELECT rollout_authorized FROM connected_learning_enrollments WHERE integration_id = $1",
     )
     .bind(integration)
     .fetch_one(&mut connection)

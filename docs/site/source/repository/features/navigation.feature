@@ -13,12 +13,6 @@ Feature: Navigate by workspace and bundle ownership
     And workspace switching precedes navigation and the account remains at the bottom of the rail
     And bundle identity and tabs occupy separate header rows
 
-  @NAV-02
-  Scenario: Edit the selected published entry in one draft editor
-    Given a published bundle with instructions, a skill and reusable memory
-    When I open the published memory and choose Edit entry
-    Then the new draft selects that memory path and text in one editor
-
   @NAV-03
   Scenario: A saved draft bookmark survives another tab selecting a different bundle
     Given a published bundle containing "Review code."
@@ -70,22 +64,6 @@ Feature: Navigate by workspace and bundle ownership
     When I reopen the bundle library with its previous operation record
     And I look up the pending creation result
     Then the original bundle opens once and the previous storage key is gone
-
-  @NAV-10
-  Scenario: Browser Back restores the published entry and its search
-    Given a published bundle with instructions, a skill and reusable memory
-    When I search for memory, edit that entry and go Back
-    Then the published memory and its URL search are restored
-
-  @NAV-11 @hosted
-  Scenario: Switching workspace asks before discarding browser edits
-    Given an administrator created a workspace with published content
-    And the operator can also access another workspace
-    When I edit content and try to switch workspace
-    And I cancel that workspace switch
-    Then the original workspace and unsaved text remain selected
-    When I confirm leaving edits to switch workspace
-    Then the other workspace opens without saving the abandoned text
 
   @NAV-12 @hosted
   Scenario: A role downgrade clears a stale membership-management form

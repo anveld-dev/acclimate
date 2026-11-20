@@ -127,7 +127,7 @@ def manual_confirmation(context):
     expect(dialog).to_contain_text('generation 1')
     expect(dialog).to_contain_text(w.manual_saved['snapshotVersion']['id'])
     expect(dialog).to_contain_text('Operator reviewed the saved diff without evaluation.')
-    assert w.call('GET',w.channel)['revision']=='1'
+    assert w.call('GET',w.channel+'/releases')['items'][0]['revision']=='1'
     assert w.call('GET',w.bundle+'/evaluation-requests')['items']==[]
 
 
@@ -174,7 +174,7 @@ def independent_reasons(context):
     expect(p.get_by_label('Manual release reason',exact=True)).to_have_value('Independent manual review rationale.')
     p.get_by_label('Manual release reason',exact=True).fill('')
     expect(p.get_by_role('button',name='Review manual release',exact=True)).to_be_disabled()
-    assert w.call('GET',w.channel)['revision']=='1'
+    assert w.call('GET',w.channel+'/releases')['items'][0]['revision']=='1'
     assert w.call('GET',w.bundle+'/comparisons')['items']==[]
 
 
@@ -220,7 +220,7 @@ def setup_scope(context):
     expect(p.get_by_role('navigation',name='Bundle navigation',exact=True).locator('[aria-current=page]')).to_have_count(0)
     expect(p.get_by_role('link',name='Back to content',exact=True)).to_be_visible()
     assert w.call('GET',w.bundle+'/evaluation-requests')['items']==[]
-    assert w.call('GET',w.channel)['revision']=='1'
+    assert w.call('GET',w.channel+'/releases')['items'][0]['revision']=='1'
 
 
 @when('I search and rename an entry using only the keyboard')
@@ -281,4 +281,4 @@ def keyboard_preserved(context):
     expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Reusable project notes.')
     tab_to(p,p.get_by_role('button',name='Use in an app',exact=True))
     assert w.call('GET',w.channel+'/drafts')['items']==[]
-    assert w.call('GET',w.channel)['revision']=='1'
+    assert w.call('GET',w.channel+'/releases')['items'][0]['revision']=='1'

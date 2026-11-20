@@ -335,7 +335,17 @@ pub(crate) async fn content_scope<'a>(
         && !s.grants.iter().any(|g| g.token == token)
         && s.access.console_token() != token;
     if !integration_token && connection.is_none() {
-        return Ok((crate::auth::read_transaction(s, h, p).await?, None));
+        let tx = crate::auth::read_transaction(s, h, p).await?;
+        // Members inspect the source in the console. Jobs resolve an enrolled
+        // connection, while evaluators can still read exact candidate versions.
+        if channel.is_some() && crate::auth::actor(h, s, p, "read")?.user_id.is_none() {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "connected_learning_required",
+                "Use an enrolled connection to resolve a delivery version",
+            ));
+        }
+        return Ok((tx, None));
     }
     let mut tx = if integration_token {
         s.db.begin().await.map_err(db)?
@@ -364,8 +374,9 @@ pub(crate) async fn content_scope<'a>(
     if channel.is_some_and(|c| c != source) {
         return Err(denied());
     }
-    let effective: Option<String> = sqlx::query_scalar("SELECT delivery_channel FROM connected_learning_enrollments WHERE project_id=$1 AND integration_id=$2")
-        .bind(p).bind(id).fetch_optional(&mut *tx).await.map_err(db)?;
+    let effective: String = sqlx::query_scalar("SELECT delivery_channel FROM connected_learning_enrollments WHERE project_id=$1 AND integration_id=$2")
+        .bind(p).bind(id).fetch_optional(&mut *tx).await.map_err(db)?
+        .ok_or_else(|| err(StatusCode::CONFLICT, "connected_learning_required", "Enroll this connection before starting a job"))?;
     if let Some(version) = version
         && !delivery_history(
             &mut tx,
@@ -383,7 +394,7 @@ pub(crate) async fn content_scope<'a>(
     {
         return Err(denied());
     }
-    Ok((tx, effective))
+    Ok((tx, Some(effective)))
 }
 
 struct DeliveryVersion<'a> {
@@ -403,9 +414,9 @@ async fn delivery_history(
     sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM promotions p
            JOIN versions v ON (v.project_id,v.bundle_id,v.id)=(p.project_id,p.bundle_id,p.version_id)
-           LEFT JOIN connected_learning_enrollments e ON e.project_id=p.project_id AND e.bundle_id=p.bundle_id AND e.integration_id=$3
+           JOIN connected_learning_enrollments e ON e.project_id=p.project_id AND e.bundle_id=p.bundle_id AND e.integration_id=$3
            WHERE p.project_id=$1 AND p.bundle_id=$2 AND p.version_id=$5
-             AND ((p.channel=$4 AND (e.source_revision IS NULL OR p.revision <= e.source_revision)) OR p.channel=e.delivery_channel)
+             AND ((p.channel=$4 AND p.revision <= e.source_revision) OR p.channel=e.delivery_channel)
              AND ($6::text IS NULL OR v.digest=$6) AND ($7::bigint IS NULL OR p.revision=$7))",
     ).bind(project).bind(bundle).bind(integration).bind(source).bind(version.id).bind(version.digest).bind(version.revision)
         .fetch_one(&mut **tx).await.map_err(db)

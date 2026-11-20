@@ -26,8 +26,7 @@
     "action.yml",
     "ci.py",
     "ci.sh",
-    "workflows/pr-check.yml",
-    "workflows/release.yml"
+    "workflows/pr-check.yml"
   ],
   "native-repository": [
     "README.md",

@@ -36,10 +36,7 @@ function fakeClient() {
   const client = {
     baseUrl: 'http://fixture',
     scope: 'fixture',
-    resolveChannel: async () => ({
-      resolution: { channel: 'stable', revision: '1', version: parent },
-      notModified: false,
-    }),
+    inspectSource: async () => ({ channel: 'stable', revision: '1', version: parent }),
     getVersion: async (_p: string, _b: string, id: string) => versions.get(id),
     getPayload: async (_p: string, _b: string, id: string) => bytes(payloads.get(id)!),
     createVersion: async (

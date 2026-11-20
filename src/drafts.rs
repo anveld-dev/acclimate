@@ -123,10 +123,6 @@ pub(crate) fn routes() -> Router<AppState> {
             "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/discard",
             post(discard),
         )
-        .route(
-            "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish",
-            post(publish),
-        )
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -176,10 +172,6 @@ async fn create(
 struct Change {
     expected_generation: i64,
     payload: Option<BundlePayload>,
-    expected_revision: Option<String>,
-    comparison_id: Option<String>,
-    unevaluated_reason: Option<String>,
-    policy_override: Option<crate::PolicyOverride>,
 }
 async fn save(
     s: State<AppState>,
@@ -197,14 +189,6 @@ async fn discard(
 ) -> ApiResult<Response> {
     change(s, p, h, b, "discard").await
 }
-async fn publish(
-    s: State<AppState>,
-    p: Path<(String, String, String, String)>,
-    h: HeaderMap,
-    b: Bytes,
-) -> ApiResult<Response> {
-    change(s, p, h, b, "publish").await
-}
 async fn change(
     State(s): State<AppState>,
     Path((p, b, c, d)): Path<(String, String, String, String)>,
@@ -215,25 +199,9 @@ async fn change(
     if crate::connected_learning::internal_channel(&c) {
         return Err(err(StatusCode::NOT_FOUND, "not_found", "Channel not found"));
     }
-    let a = crate::auth::actor(
-        &h,
-        &s,
-        &p,
-        if kind == "publish" {
-            "promote"
-        } else {
-            "write"
-        },
-    )?;
+    let a = crate::auth::actor(&h, &s, &p, "write")?;
     let req: Change = decode(&body)?;
-    if req.expected_generation < 1
-        || (kind != "save" && req.payload.is_some())
-        || (kind != "publish"
-            && (req.expected_revision.is_some()
-                || req.comparison_id.is_some()
-                || req.unevaluated_reason.is_some()
-                || req.policy_override.is_some()))
-    {
+    if req.expected_generation < 1 || (kind == "discard" && req.payload.is_some()) {
         return Err(invalid());
     }
     // Operation key: the canonical route, see commands::operation_path.
@@ -256,60 +224,22 @@ async fn change(
     if out.status != "open" {
         return Err(err(StatusCode::CONFLICT, "draft_closed", "Draft is closed"));
     }
-    match kind {
-        "save" => {
-            let bytes = payload(req.payload.as_ref().ok_or_else(invalid)?)?;
-            let v = snapshot(
-                &mut cmd.tx,
-                &p,
-                b,
-                Some(path(&out.base_version_id)?),
-                bytes,
-                &a.principal,
-            )
-            .await?;
-            out.generation = out.generation.checked_add(1).ok_or_else(invalid)?;
-            associate(&mut cmd.tx, &p, b, &c, id, out.generation, &v.id).await?;
-            out.snapshot_version = v;
-        }
-        "discard" => out.status = "discarded".into(),
-        _ => {
-            let revision = req.expected_revision.ok_or_else(invalid)?;
-            sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-                .bind(format!("promotion:{p}:{b}:{c}"))
-                .execute(&mut *cmd.tx)
-                .await
-                .map_err(db)?;
-            let current=sqlx::query("SELECT version_id,revision FROM channels WHERE project_id=$1 AND bundle_id=$2 AND name=$3 FOR UPDATE").bind(&p).bind(b).bind(&c).fetch_one(&mut *cmd.tx).await.map_err(db)?;
-            if current.get::<Uuid, _>("version_id").to_string() != out.base_version_id
-                || current.get::<i64, _>("revision").to_string() != out.base_revision
-                || revision != out.base_revision
-            {
-                return Err(err(
-                    StatusCode::CONFLICT,
-                    "base_conflict",
-                    "Channel base changed",
-                ));
-            }
-            let promotion = crate::channels::promote_in_tx(
-                &mut cmd.tx,
-                &p,
-                b,
-                &c,
-                &a.principal,
-                PromoteRequest {
-                    version_id: out.snapshot_version.id.clone(),
-                    expected_revision: revision,
-                    comparison_id: req.comparison_id,
-                    unevaluated_reason: req.unevaluated_reason,
-                    policy_override: req.policy_override,
-                },
-                crate::channels::Publication::Standard,
-            )
-            .await?;
-            out.status = "published".into();
-            out.promotion_id = Some(promotion.id);
-        }
+    if kind == "save" {
+        let bytes = payload(req.payload.as_ref().ok_or_else(invalid)?)?;
+        let v = snapshot(
+            &mut cmd.tx,
+            &p,
+            b,
+            Some(path(&out.base_version_id)?),
+            bytes,
+            &a.principal,
+        )
+        .await?;
+        out.generation = out.generation.checked_add(1).ok_or_else(invalid)?;
+        associate(&mut cmd.tx, &p, b, &c, id, out.generation, &v.id).await?;
+        out.snapshot_version = v;
+    } else {
+        out.status = "discarded".into();
     }
     sqlx::query("UPDATE drafts SET generation=$5,snapshot_version_id=$6,status=$7,promotion_id=$8,updated_at=now() WHERE project_id=$1 AND bundle_id=$2 AND channel=$3 AND id=$4").bind(&p).bind(b).bind(&c).bind(id).bind(out.generation).bind(path(&out.snapshot_version.id)?).bind(&out.status).bind(out.promotion_id.as_deref().map(path).transpose()?).execute(&mut *cmd.tx).await.map_err(db)?;
     let out = read(&mut cmd.tx, &p, b, &c, id).await?;
@@ -488,9 +418,8 @@ async fn setup(
             expected_revision: "0".into(),
             comparison_id: None,
             unevaluated_reason: Some(req.reason),
-            policy_override: None,
         },
-        crate::channels::Publication::Standard,
+        crate::channels::Publication::Seed,
     )
     .await?;
     let out = serde_json::json!({"bundle":{"id":b.to_string(),"workspaceId":p,"name":req.name.trim(),"origin":req.origin,"sourceLabel":source,"compatibilityTarget":req.compatibility_target,"createdAt":row.get::<DateTime<Utc>,_>("created_at").to_rfc3339()},"version":v,"resolution":{"channel":req.channel,"revision":"1","version":v},"promotion":promotion});

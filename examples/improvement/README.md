@@ -13,12 +13,4 @@ Each turn uses a fresh private prepared workspace, a read-only native sandbox, d
 
 Review the saved skill and every case response before deciding whether to release. Print the proposed action with:
 
-```sh
-npx tsx examples/improve-review.ts promote --summary /private/path/summary.json
-```
-
-After explicit review, releasing requires both `--apply` and `--expected-revision REV`. The service checks the revision, parent and complete matching comparison. A stale or incomplete report cannot promote. Example:
-
-```sh
-npx tsx examples/improve-review.ts promote --summary /private/path/summary.json --apply --expected-revision REV
-```
+Use the comparison to inspect the candidate. Connected learning handles releases for enrolled apps. [Connected learning](../../contracts/learning.md)

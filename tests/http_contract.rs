@@ -303,7 +303,7 @@ async fn idempotency_replay_conflict_distinct_paths_and_parallel_duplicates() {
 
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn channel_etag_cas_comparisons_and_promotion_history() {
+async fn only_the_initial_version_can_be_published_from_the_api() {
     let h = Harness::new().await;
     let bundle = h.bundle().await;
     let base = format!("{}/{bundle}", h.root());
@@ -325,26 +325,11 @@ async fn channel_etag_cas_comparisons_and_promotion_history() {
     let seed: Value = serde_json::from_slice(&b).unwrap();
     assert_eq!(seed["revision"], "1");
     assert_eq!(seed["unevaluatedReason"], "initial seed");
-    let (s, _, head) = h
+    let (s, bytes, _) = h
         .req("GET", &channel, Some("read"), None, Value::Null, None)
         .await;
-    assert_eq!(s, StatusCode::OK);
-    let etag = head
-        .get("etag")
-        .and_then(|v| v.to_str().ok())
-        .unwrap()
-        .to_owned();
-    let (s, _, _) = h
-        .req(
-            "GET",
-            &channel,
-            Some("read"),
-            None,
-            Value::Null,
-            Some(("if-none-match", &etag)),
-        )
-        .await;
-    assert_eq!(s, StatusCode::NOT_MODIFIED);
+    assert_eq!(s, StatusCode::CONFLICT);
+    assert_eq!(err_code(&bytes), "connected_learning_required");
     let cand = h.version(&bundle, json!(p), "candidate", "candidate").await;
     let c = cand["id"].as_str().unwrap().to_owned();
     let empty_comparison = json!({"parentVersionId":p,"candidateVersionId":c,"parentDigest":parent["digest"],"candidateDigest":cand["digest"],"datasetRevision":"dataset-1","runtime":{"engine":"unit"},"graderRevision":"grader-1","expectedCases":[{"caseId":"one","repetition":0},{"caseId":"two","repetition":0}],"results":[{"caseId":"one","repetition":0,"parent":{"executionStatus":"completed","gradingStatus":"scored","reward":0.2,"outputRef":null,"error":null,"usage":null},"candidate":{"executionStatus":"completed","gradingStatus":"scored","reward":0.3,"outputRef":null,"error":null,"usage":null}}]});
@@ -447,93 +432,29 @@ async fn channel_etag_cas_comparisons_and_promotion_history() {
             None,
         )
         .await;
-    assert_eq!(s, StatusCode::CREATED, "{}", String::from_utf8_lossy(&b));
-    let promotion: Value = serde_json::from_slice(&b).unwrap();
-    assert_eq!(promotion["previousVersionId"], p);
-    assert_eq!(promotion["comparisonId"], good["id"]);
-    assert_eq!(promotion["revision"], "2");
-    // Competing channel updates using the same observed revision must have one winner.
-    let a = h.version(&bundle, json!(c), "race-a", "race-a").await;
-    let z = h.version(&bundle, json!(c), "race-z", "race-z").await;
-    let mut tasks = Vec::new();
-    for (i, v) in [a.clone(), z].into_iter().enumerate() {
-        let app = h.app.clone();
-        let uri = promote_uri.clone();
-        let payload =
-            json!({"versionId":v["id"],"expectedRevision":"2","unevaluatedReason":"race"});
-        tasks.push(tokio::spawn(async move {
-            let r = app
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri(uri)
-                        .header("authorization", "Bearer rw")
-                        .header("idempotency-key", format!("race-promote-{i}"))
-                        .header("content-type", "application/json")
-                        .body(Body::from(payload.to_string()))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            r.status()
-        }));
+    assert_eq!(s, StatusCode::CONFLICT);
+    assert_eq!(err_code(&b), "connected_learning_required");
+    for name in ["stable", "new-channel"] {
+        let (s, b, _) = h
+            .req(
+                "POST",
+                &format!("{base}/channels/{name}/releases"),
+                Some("rw"),
+                Some("second-seed"),
+                json!({"expectedRevision":"0","versionId":p,"unevaluatedReason":"another seed"}),
+                None,
+            )
+            .await;
+        assert_eq!(s, StatusCode::CONFLICT);
+        assert_eq!(err_code(&b), "connected_learning_required");
     }
-    let outcomes = [
-        tasks.remove(0).await.unwrap(),
-        tasks.remove(0).await.unwrap(),
-    ];
-    assert_eq!(
-        outcomes
-            .iter()
-            .filter(|&&s| s == StatusCode::CREATED)
-            .count(),
-        1
-    );
-    assert_eq!(
-        outcomes
-            .iter()
-            .filter(|&&s| s == StatusCode::CONFLICT)
-            .count(),
-        1
-    );
-    let stale = json!({"parentVersionId":c,"candidateVersionId":a["id"],"parentDigest":cand["digest"],"candidateDigest":a["digest"],"datasetRevision":"dataset-2","runtime":{"engine":"unit"},"graderRevision":"grader-1","expectedCases":[{"caseId":"one","repetition":0}],"results":[{"caseId":"one","repetition":0,"parent":{"executionStatus":"completed","gradingStatus":"scored","reward":0.2,"outputRef":null,"error":null,"usage":null},"candidate":{"executionStatus":"completed","gradingStatus":"scored","reward":0.3,"outputRef":null,"error":null,"usage":null}}]});
-    let (s, b, _) = h
-        .req(
-            "POST",
-            &comp_uri,
-            Some("rw"),
-            Some("stale-evidence"),
-            stale,
-            None,
-        )
+    let (_, body, _) = h
+        .req("GET", &promote_uri, Some("read"), None, Value::Null, None)
         .await;
-    assert_eq!(s, StatusCode::CREATED, "{}", String::from_utf8_lossy(&b));
-    let stale_id = serde_json::from_slice::<Value>(&b).unwrap()["id"].clone();
-    let (s, b, _) = h
-        .req(
-            "POST",
-            &promote_uri,
-            Some("rw"),
-            Some("stale-promote"),
-            json!({"versionId":a["id"],"expectedRevision":"3","comparisonId":stale_id}),
-            None,
-        )
-        .await;
-    assert_eq!(s, StatusCode::CONFLICT, "{}", String::from_utf8_lossy(&b));
-    let (s,b,_)=h.req("POST",&promote_uri,Some("rw"),Some("rollback"),json!({"versionId":p,"expectedRevision":"3","unevaluatedReason":"rollback after review"}),None).await;
-    assert_eq!(s, StatusCode::CREATED, "{}", String::from_utf8_lossy(&b));
-    let rollback: Value = serde_json::from_slice(&b).unwrap();
-    assert_eq!(rollback["revision"], "4");
-    assert_eq!(rollback["unevaluatedReason"], "rollback after review");
-    let history: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM promotions WHERE project_id=$1 AND bundle_id=$2")
-            .bind(&h.project)
-            .bind(Uuid::parse_str(&bundle).unwrap())
-            .fetch_one(&h.db)
-            .await
-            .unwrap();
-    assert_eq!(history, 4);
-    let _ = h.db; // Keep the dedicated test pool alive through all assertions.
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["items"],
+        json!([seed])
+    );
 }
 
 #[tokio::test]
@@ -564,17 +485,29 @@ async fn paginated_history_is_scoped_stable_and_includes_rollback() {
         .version(&bundle, first["id"].clone(), "second", "history-v2")
         .await;
     let uri = format!("{}/{bundle}/channels/stable/releases", h.root());
-    let mut records = Vec::new();
-    for (i, version) in [&first, &second, &first].iter().enumerate() {
-        let (status, body, _) = h.req("POST", &uri, Some("rw"), Some(&format!("history-{i}")),
-            json!({"versionId":version["id"],"expectedRevision":i.to_string(),"unevaluatedReason":if i == 2 {"rollback"} else {"review"}}), None).await;
-        assert_eq!(status, StatusCode::CREATED);
-        records.push(serde_json::from_slice::<Value>(&body).unwrap());
+    // Model retained history from before automatic-only delivery.
+    let bundle_id = Uuid::parse_str(&bundle).unwrap();
+    let seed =
+        json!({"versionId":first["id"],"expectedRevision":"0","unevaluatedReason":"initial seed"});
+    let (status, body, _) = h
+        .req("POST", &uri, Some("rw"), Some("history-seed"), seed, None)
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let mut records = vec![serde_json::from_slice::<Value>(&body).unwrap()];
+    for (index, version) in [&second, &first, &second].into_iter().enumerate() {
+        let revision = index as i64 + 2;
+        sqlx::query("INSERT INTO promotions(id,project_id,bundle_id,channel,revision,version_id,unevaluated_reason,reviewer) VALUES($1,$2,$3,'stable',$4,$5,'historical release','fixture')")
+            .bind(Uuid::new_v4()).bind(&h.project).bind(bundle_id).bind(revision)
+            .bind(Uuid::parse_str(version["id"].as_str().unwrap()).unwrap()).execute(&h.db).await.unwrap();
+        let (_, body, _) = h
+            .req("GET", &uri, Some("read"), None, Value::Null, None)
+            .await;
+        records.push(serde_json::from_slice::<Value>(&body).unwrap()["items"][0].clone());
     }
     let (status, body, _) = h
         .req(
             "GET",
-            &format!("{uri}?limit=2"),
+            &format!("{uri}?limit=2&beforeRevision=4"),
             Some("read"),
             None,
             Value::Null,
@@ -586,9 +519,7 @@ async fn paginated_history_is_scoped_stable_and_includes_rollback() {
     assert_eq!(page["items"], json!([records[2], records[1]]));
     assert_eq!(page["items"][0]["version"], first);
     assert_eq!(page["nextBeforeRevision"], "2");
-    let (status, body, _) = h.req("POST", &uri, Some("rw"), Some("history-new"), json!({"versionId":second["id"],"expectedRevision":"3","unevaluatedReason":"new release"}), None).await;
-    assert_eq!(status, StatusCode::CREATED);
-    let new_record: Value = serde_json::from_slice(&body).unwrap();
+    let new_record = &records[3];
     let (status, body, _) = h
         .req(
             "GET",
@@ -622,7 +553,7 @@ async fn paginated_history_is_scoped_stable_and_includes_rollback() {
         .req("GET", &uri, Some("read"), None, Value::Null, None)
         .await;
     let all: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(all["items"][0], new_record);
+    assert_eq!(&all["items"][0], new_record);
     for query in [
         "limit=0",
         "limit=101",

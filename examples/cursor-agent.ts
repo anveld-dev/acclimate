@@ -14,17 +14,19 @@ import { optionalReceipts, settleOptional } from './optional-receipts.js';
 
 if (!process.argv.includes('--live')) throw new Error('Pass --live to request a paid Cursor session.');
 const token = process.env.ACCLIMATE_TOKEN;
+const connectionId = process.env.ACCLIMATE_CONNECTION;
 const bundleId = process.env.ACCLIMATE_BUNDLE;
 const apiKey = process.env.CURSOR_API_KEY;
 const model = process.env.CURSOR_MODEL;
 const jobDirectory = process.env.ACCLIMATE_JOB_DIR;
-if (!token || !bundleId || !apiKey || !model || !jobDirectory)
-  throw new Error('Set ACCLIMATE_TOKEN, ACCLIMATE_BUNDLE, CURSOR_API_KEY, CURSOR_MODEL and ACCLIMATE_JOB_DIR.');
+if (!token || !bundleId || !connectionId || !apiKey || !model || !jobDirectory)
+  throw new Error('Set ACCLIMATE_TOKEN, ACCLIMATE_BUNDLE, ACCLIMATE_CONNECTION, CURSOR_API_KEY, CURSOR_MODEL and ACCLIMATE_JOB_DIR.');
 const workspaceId = process.env.ACCLIMATE_WORKSPACE ?? 'demo';
 const reporter = optionalReceipts(process.env, workspaceId);
 const client = new AcclimateClient({
   baseUrl: process.env.ACCLIMATE_URL ?? 'http://127.0.0.1:3000',
   token,
+  connectionId,
   scope: process.env.ACCLIMATE_SCOPE ?? 'demo-app',
 });
 // cacheDir defaults to defaultCacheDir(): ~/.cache/acclimate/typescript.

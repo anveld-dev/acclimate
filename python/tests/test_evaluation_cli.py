@@ -69,8 +69,8 @@ class CommandTests(unittest.TestCase):
                 if "/operations/" in route:
                     key = route.rsplit("/", 1)[1]
                     return self.reply(state["receipts"].get(key, {"status": "not_observed", "operationId": key}))
-                if route.endswith("/channels/stable"):
-                    return self.reply({"channel": "stable", "revision": state["revision"], "version": owner.parent})
+                if route.endswith("/channels/stable/releases"):
+                    return self.reply({"items": [{"channel": "stable", "revision": state["revision"], "version": owner.parent}]})
                 for identifier, version, payload in ((PARENT, owner.parent, owner.original), (CANDIDATE, owner.candidate, owner.payload)):
                     if route.endswith("/versions/" + identifier + "/payload"):
                         return self.reply(encoded(payload), raw=True)

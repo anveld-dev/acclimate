@@ -8,7 +8,6 @@ import {
   Code2,
   Download,
   Ellipsis,
-  Pencil,
   Search,
   ShieldCheck,
   WrapText,
@@ -184,9 +183,7 @@ export function BundleContent({
             <p className="p-4 text-sm text-muted-foreground">
               {filtered
                 ? 'No matching entries. Clear filters to see all content.'
-                : state.canEdit
-                  ? 'No published entries. Create a draft to add content.'
-                  : 'No published entries. Ask a workspace editor to add content.'}
+                : 'No published entries.'}
             </p>
           )}
         </FileNavigator>
@@ -227,18 +224,6 @@ export function BundleContent({
                   </div>
                 </div>
                 <div className="content-entry-actions flex flex-wrap items-center gap-2">
-                  {state.canEdit && (
-                    <Button asChild>
-                      <ConsoleLink
-                        href={bundleHref(scope, 'changes', { draft: 'new', path: selected.path })}
-                        aria-label="Edit entry"
-                        title="Edit entry"
-                      >
-                        <Pencil aria-hidden="true" className="compact-source-action-icon" />
-                        <span className="source-action-label">Edit entry</span>
-                      </ConsoleLink>
-                    </Button>
-                  )}
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
@@ -440,9 +425,7 @@ export function BundleContent({
                   ? `“${requestedPath}” ${filtered ? 'isn’t in these search results' : 'isn’t available in this channel'}. Choose an entry from the list.`
                   : filtered
                     ? 'No entries match these filters.'
-                    : state.canEdit
-                      ? 'Add your first entry in a draft, then save and review its release.'
-                      : 'Published content will appear here after an editor releases it.'}
+                    : 'No entries in this version.'}
               </p>
               {filtered && <p className="break-all text-sm">Search for “{String(search.q)}”</p>}
               {(filtered || requestedPath) && (
@@ -459,13 +442,7 @@ export function BundleContent({
                   )}
                 </div>
               )}
-              {!requestedPath && !filtered && state.canEdit && (
-                <Button asChild>
-                  <ConsoleLink href={bundleHref(scope, 'changes', { draft: 'new' })}>
-                    New draft
-                  </ConsoleLink>
-                </Button>
-              )}
+
             </div>
           )}
         </div>

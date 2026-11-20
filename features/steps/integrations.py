@@ -9,6 +9,15 @@ def integration(context):
     context.world.create_integration()
 
 
+@given('the application enrolls this bundle for automatic delivery')
+def enrolled_delivery(context):
+    from scripts.bdd.learning import authorize_enrollment, review_enrollment
+    w = context.world
+    if not hasattr(w, 'integration') or w.integration['bundleId'] != w.setup['bundle']['id']:
+        w.create_integration()
+    authorize_enrollment(w, review_enrollment(w))
+
+
 @when("I inspect the integration's recent reports")
 def reports(context):
     w = context.world

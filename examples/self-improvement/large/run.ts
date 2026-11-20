@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compare, submitComparison } from '@acclimate/sdk';
-import { resolveAndCache, ApiError } from '@acclimate/sdk';
+import { resolveAndCache } from '@acclimate/sdk';
 import type { VerifiedVersion } from '@acclimate/sdk';
 import { Luna, model } from '../luna.js';
 import { startService } from '../service.js';
@@ -102,19 +102,6 @@ try {
   const requiresHelper = candidate.payload.files.some(
     (f) => f.path === 'skills/payment-triage/scripts/triage.py',
   );
-  const initial = verifyDelivery
-    ? await client.createRelease(
-        project,
-        bundle.id,
-        'qualification',
-        {
-          versionId: parent.version.id,
-          expectedRevision: '0',
-          unevaluatedReason: 'Disposable audit starting version',
-        },
-        randomUUID(),
-      )
-    : undefined;
   const runtime = {
     app: 'large-distributed-v2-1',
     model,
@@ -282,42 +269,12 @@ try {
     'Large audit did not pass its preregistered accuracy, safety and consistency gates',
   );
   let delivery: unknown = null;
-  if (verifyDelivery && initial && frozen.future) {
-    const warm = await resolveAndCache(
-      client,
-      { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
-      cache,
-    );
-    assert.equal(warm.version.id, parent.version.id);
-    await save('review.json', {
-      decision: 'Approve disposable qualified release',
-      comparisonId: comparison.id,
-      candidateVersion: candidate.version,
-      sourceCandidateDigest: candidateSource.version.digest,
-    });
-    const promotion = await client.createRelease(
-      project,
-      bundle.id,
-      'qualification',
-      {
-        versionId: candidate.version.id,
-        comparisonId: comparison.id,
-        expectedRevision: initial.revision,
-      },
-      randomUUID(),
-    );
-    const fetched = await resolveAndCache(
-      client,
-      { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
-      cache,
-    );
-    assert.equal(fetched.version.id, candidate.version.id);
-    assert.equal(fetched.stale, false);
+  if (verifyDelivery && frozen.future) {
     const next = frozen.future;
     const futureRun = await luna.job(
-      fetched,
+      candidate,
       { id: next.id, incidents: next.manifest },
-      'fresh-release',
+      'held-out-candidate',
       {
         prompt,
         schema: inventorySchema(next.manifest.map((i) => i.id)),
@@ -341,9 +298,7 @@ try {
     delivery = {
       future,
       control,
-      promotion,
-      versionId: fetched.version.id,
-      cacheRefreshed: true,
+      versionId: candidate.version.id,
       helperObserved: helperObserved(
         futureRun.commands,
         next.manifest.map((i) => i.id),
@@ -372,21 +327,6 @@ try {
           ),
         ).correct === next.incidents.length,
       'Fresh helper computation failed',
-    );
-    await assert.rejects(
-      () =>
-        client.createRelease(
-          project,
-          bundle.id,
-          'qualification',
-          {
-            versionId: parent.version.id,
-            expectedRevision: initial.revision,
-            unevaluatedReason: 'Stale revision must fail',
-          },
-          randomUUID(),
-        ),
-      (e) => e instanceof ApiError && e.status === 409,
     );
   }
   await save('summary.json', { ...result, lunaCalls: luna.calls, delivery });

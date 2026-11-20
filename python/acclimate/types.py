@@ -67,10 +67,8 @@ class PolicyOverride(TypedDict):
 
 class CreateReleaseRequest(TypedDict):
     versionId: str
-    expectedRevision: str
-    comparisonId: NotRequired[str]
-    unevaluatedReason: NotRequired[str]
-    policyOverride: NotRequired[PolicyOverride]
+    expectedRevision: Literal["0"]
+    unevaluatedReason: str
 
 
 class Release(TypedDict):
@@ -402,14 +400,6 @@ class DiscardDraftRequest(TypedDict):
     expectedGeneration: int
 
 
-class PublishDraftRequest(TypedDict):
-    expectedGeneration: int
-    expectedRevision: str
-    comparisonId: NotRequired[str]
-    unevaluatedReason: NotRequired[str]
-    policyOverride: NotRequired[PolicyOverride]
-
-
 class DraftSnapshot(TypedDict):
     generation: int
     version: VersionMetadata
@@ -518,19 +508,13 @@ class DeliveryReceipt(DeliveryReceiptRequest):
     delayed: bool
 
 
-class OfflineMaxAge(TypedDict):
-    """Use a cached channel resolution up to this age after a transport failure or HTTP 503."""
-
-    max_age_ms: int
-
-
 class OfflinePinnedVersion(TypedDict):
     """Use the cached copy of this exact version after a transport failure or HTTP 503."""
 
     pinned_version_id: str
 
 
-OfflinePolicy = OfflineMaxAge | OfflinePinnedVersion
+OfflinePolicy = OfflinePinnedVersion
 
 
 class LearningEvaluationDescriptor(EvaluationDescriptor):
@@ -556,13 +540,11 @@ class LearningEnrollmentRequest(TypedDict):
     maxProposalAdmissions: int
     development: LearningEvaluationDescriptor
     audits: list[LearningEvaluationDescriptor]
-    automaticRollout: bool
     outcomePrincipal: str
     evaluatorPrincipal: str
     selectionPolicies: NotRequired[LearningSelectionPolicies]
     skillPackages: NotRequired[LearningSkillPackages]
     maxCorrectionsPerRound: NotRequired[int]
-    expectedAutomaticRollout: NotRequired[bool]
     automaticRollback: NotRequired[bool]
 
 
@@ -575,7 +557,7 @@ class LearningEnrollment(TypedDict):
     permittedPaths: list[str]
     maxProposalAdmissions: int
     development: LearningEvaluationDescriptor
-    automaticRollout: bool
+    requiresRolloutAuthorization: bool
     automaticRollback: bool
     outcomePrincipal: str
     evaluatorPrincipal: str
@@ -592,12 +574,6 @@ class LearningEnrollment(TypedDict):
     policyEpoch: NotRequired[int]
 
 
-class LearningRestoreTarget(TypedDict):
-    kind: Literal["delivery", "source"]
-    revision: str
-    versionId: str
-
-
 class LearningEnrollmentStatus(LearningEnrollment):
     """Enrollment plus recent rounds. Round, calibration and history entries follow the OpenAPI schema."""
 
@@ -608,20 +584,6 @@ class LearningEnrollmentStatus(LearningEnrollment):
     developmentIncumbent: NotRequired[dict[str, Any]]
     policyHistory: NotRequired[list[dict[str, Any]]]
     noiseCalibration: NotRequired[dict[str, Any]]
-    restoreTargets: NotRequired[list[LearningRestoreTarget]]
-
-
-class LearningRestoreRequest(TypedDict):
-    restoreId: str
-    expectedRevision: str
-    target: LearningRestoreTarget
-    reason: str
-
-
-class LearningReviewReceipt(TypedDict):
-    roundId: str
-    state: Literal["promoted", "rejected"]
-    promotionId: NotRequired[str]
 
 
 class LearningRenewalRequest(TypedDict):
@@ -864,7 +826,6 @@ __all__ = [
     "CreateDraftRequest",
     "SaveDraftRequest",
     "DiscardDraftRequest",
-    "PublishDraftRequest",
     "DraftSnapshot",
     "DraftPage",
     "DraftSnapshotPage",
@@ -881,7 +842,6 @@ __all__ = [
     "ConnectionCredential",
     "DeliveryReceiptRequest",
     "DeliveryReceipt",
-    "OfflineMaxAge",
     "OfflinePinnedVersion",
     "OfflinePolicy",
     "LearningEvaluationDescriptor",
@@ -889,10 +849,7 @@ __all__ = [
     "LearningSkillPackages",
     "LearningEnrollmentRequest",
     "LearningEnrollment",
-    "LearningRestoreTarget",
     "LearningEnrollmentStatus",
-    "LearningRestoreRequest",
-    "LearningReviewReceipt",
     "LearningRenewalRequest",
     "LearningRenewalReceipt",
     "LearningLesson",

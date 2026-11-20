@@ -10,14 +10,14 @@ Feature: Durable drafts
     When I save a draft containing "Review retries."
     And the service restarts
     Then I can reopen the same saved snapshot containing "Review retries."
-    And applications still resolve the original release
+    And the source still contains only the original release
 
   @DRAFT-02
   Scenario: Keep both saved generations as immutable history
     Given I have saved a draft containing "Review retries."
     When I save another generation containing "Review duplicate retries."
     Then draft history contains both snapshots with their original text
-    And applications still resolve the original release
+    And the source still contains only the original release
 
   @DRAFT-03
   Scenario: A stale tab cannot overwrite a newer save
@@ -67,7 +67,7 @@ Feature: Durable drafts
     Then the draft is listed as discarded
     When I try to publish the discarded draft
     Then publication is rejected
-    And applications still resolve the original release
+    And the source still contains only the original release
 
   @DRAFT-09
   Scenario Outline: Invalid edits cannot partially replace a saved snapshot
@@ -91,9 +91,8 @@ Feature: Durable drafts
     Then all 3 drafts are returned once
 
   @DRAFT-11
-  Scenario: Returning a channel to the same version does not revive a stale draft
+  Scenario: A saved draft stays open after a manual publication attempt
     Given I have saved a draft containing "Review retries."
-    And the channel advances while retaining the same published version
     When I try to publish the saved draft manually
     Then publication is rejected
     And the saved draft remains available

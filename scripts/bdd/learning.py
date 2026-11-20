@@ -16,13 +16,13 @@ def wait_for_round(w, state, *, attempt=1):
     raise AssertionError(f'Round for {w.outcome_id}, attempt {attempt}, did not reach {state}')
 
 
-def review_enrollment(w, *, automatic=False, development=None, audit=None, audit_protected_thresholds=None):
+def review_enrollment(w, *, reserve=False, development=None, audit=None, audit_protected_thresholds=None):
     w.learning_path = w.integration_path + '/learning'
     w.cohorts = {
         'development': development or {'retry-review': 'retries', 'backoff-review': 'backoff'},
         'audit': audit or {'duplicate-review': 'duplicated effects', 'idempotency-review': 'idempotency'},
     }
-    if automatic:
+    if reserve:
         w.cohorts['reserve'] = {'timeout-review': 'timeout'}
     descriptors = w.sdk('reviewDescriptors', cohorts=w.cohorts)
     audits = [value for phase, value in descriptors.items() if phase != 'development']
@@ -34,8 +34,8 @@ def review_enrollment(w, *, automatic=False, development=None, audit=None, audit
         selectionPolicies=dict(development=quality,
                                audit=dict(quality, id='review-audit', nonInferiorityMargin=0.75,
                                           protectedCaseThresholds=audit_protected_thresholds or {})),
-        installationId='review-fixture', permittedPaths=['AGENTS.md'], maxProposalAdmissions=4 if automatic else 1,
-        automaticRollout=automatic, automaticRollback=True,
+        installationId='review-fixture', permittedPaths=['AGENTS.md'], maxProposalAdmissions=4 if reserve else 1,
+        automaticRollback=True,
         development=descriptors['development'], audits=audits,
         evaluatorPrincipal='evaluator', outcomePrincipal='other')
 
@@ -76,14 +76,15 @@ def calibrate(w):
     raise AssertionError(f'Baseline calibration did not settle: {calibration}')
 
 
+def authorize_enrollment(w, enrollment):
+    w.prepare_browser_identity()
+    if 'admin' not in w.sessions:
+        w.sign_in('admin', 'operator')
+    w.call('PUT', w.learning_path, enrollment, actor='admin')
+
+
 def install_enrollment(w, enrollment):
-    actor = w.actor
-    if enrollment['automaticRollout']:
-        actor = 'admin'
-        w.prepare_browser_identity()
-        if actor not in w.sessions:
-            w.sign_in(actor, 'operator')
-    w.call('PUT', w.learning_path, enrollment, actor=actor)
+    authorize_enrollment(w, enrollment)
     calibrate(w)
     w.original_delivery = w.call('GET', w.channel, actor='content-reader')
     w.history_path = w.bundle + '/channels/learn-' + w.integration['id'] + '/releases'

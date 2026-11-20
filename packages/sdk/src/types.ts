@@ -39,10 +39,12 @@ export interface PolicyOverride {
   reason: string;
   receipts: Array<{ comparisonId: string; policyDigest: string }>;
 }
-export type CreateReleaseRequest = { versionId: string; expectedRevision: string } & (
-  | { comparisonId: string; unevaluatedReason?: never; policyOverride?: PolicyOverride }
-  | { unevaluatedReason: string; comparisonId?: never; policyOverride?: never }
-);
+/** A bundle can have one initial release. Later versions ship through connected learning. */
+export interface CreateReleaseRequest {
+  versionId: string;
+  expectedRevision: '0';
+  unevaluatedReason: string;
+}
 export interface Release {
   id: string;
   channel: string;
@@ -300,10 +302,6 @@ export interface SaveDraftRequest {
 export interface DiscardDraftRequest {
   expectedGeneration: number;
 }
-export type PublishDraftRequest = { expectedGeneration: number; expectedRevision: string } & (
-  | { comparisonId: string; unevaluatedReason?: never; policyOverride?: PolicyOverride }
-  | { unevaluatedReason: string; comparisonId?: never; policyOverride?: never }
-);
 export interface DraftSnapshot {
   generation: number;
   version: VersionMetadata;
@@ -411,16 +409,14 @@ export interface LearningEnrollmentRequest {
   maxCorrectionsPerRound?: number;
   development: LearningEvaluationDescriptor;
   audits: LearningEvaluationDescriptor[];
-  automaticRollout: boolean;
-  /** Require the stored rollout mode to match before applying an enrollment update. */
-  expectedAutomaticRollout?: boolean;
   /** Defaults to enabled on enrollment. Omitting it on an update preserves the stored setting. */
   automaticRollback?: boolean;
   outcomePrincipal: string;
   evaluatorPrincipal: string;
 }
 export interface LearningEnrollment
-  extends Omit<LearningEnrollmentRequest, 'audits' | 'expectedAutomaticRollout'> {
+  extends Omit<LearningEnrollmentRequest, 'audits'> {
+  requiresRolloutAuthorization: boolean;
   automaticRollback: boolean;
   audits?: LearningEvaluationDescriptor[];
   auditCount: number;
@@ -450,7 +446,6 @@ export interface LearningRound {
     | 'development'
     | 'developed'
     | 'audit'
-    | 'awaiting_review'
     | 'promoted'
     | 'rejected';
   decision?: string | null;
@@ -485,7 +480,6 @@ export interface LearningDevelopmentIncumbent {
       | 'awaitingSteps'
       | 'checkingCumulative'
       | 'auditPending'
-      | 'awaitingReview'
       | 'unavailable';
     acceptedStepsRemaining: number;
   };
@@ -539,7 +533,6 @@ export interface LearningEnrollmentStatus extends LearningEnrollment {
   };
   deliveredVersionId: string;
   deliveredRevision: string;
-  restoreTargets?: LearningRestoreTarget[];
 }
 export interface LearningPowerProjection {
   caseCount: number;
@@ -553,22 +546,6 @@ export interface LearningPowerProjection {
   effect: number;
   casesNeededAtTarget: number | null;
   pairedTrials: number;
-}
-export interface LearningRestoreTarget {
-  kind: 'delivery' | 'source';
-  revision: string;
-  versionId: string;
-}
-export interface LearningRestoreRequest {
-  restoreId: string;
-  expectedRevision: string;
-  target: LearningRestoreTarget;
-  reason: string;
-}
-export interface LearningReviewReceipt {
-  roundId: string;
-  state: 'promoted' | 'rejected';
-  promotionId?: string;
 }
 export interface LearningRenewalRequest {
   /** Rotate only between rounds; each historical decision retains its original epoch. */

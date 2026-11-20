@@ -7,7 +7,6 @@ This starter evaluates the agent files committed at one Git commit, compares the
 | `ci.sh`, `ci.py` | The wrapper. It needs Git and Python 3.8 or later. |
 | `action.yml` | A GitHub composite action around the wrapper. |
 | `workflows/pr-check.yml` | A fork-safe `pull_request` workflow to copy. |
-| `workflows/release.yml` | A post-merge job that releases the evaluated candidate with a separate credential. |
 
 The full guide covers runner choice, credentials, cancellation, forks and releasing: [Run a pull request check](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/guides/ci-pr-check.mdx).
 
@@ -131,13 +130,6 @@ After each run, the wrapper exports review evidence once per request to `reviews
 
 `requests/` holds one directory per candidate, release and evaluator. Delete directories you no longer need to reuse or recover, for example with `find "$OUTPUT/requests" -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} +`. The journal, config, private request intent and case inventory stay on the worker.
 
-## Release after merge
+## Delivery after merge
 
-An authorized reviewer, or the job in `workflows/release.yml`, releases the evaluated candidate with the operator CLI from the SDK:
-
-```sh
-acclimate-operator promote --workspace "$WORKSPACE" --bundle "$BUNDLE" --channel stable \
-  --version "$CANDIDATE" --comparison "$COMPARISON" --expected-revision "$REVISION"
-```
-
-Give that job its own releasing credential in a protected environment. The PR check's credential needs only evaluate rights.
+The PR check records advisory evidence. Enroll your app and run its connected evaluator for automatic releases. [Connected learning](../../contracts/learning.md)

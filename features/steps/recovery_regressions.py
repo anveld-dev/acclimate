@@ -231,7 +231,8 @@ def cleanup_secret_kept(context):
     secret=p.get_by_label('One-time credential secret',exact=True)
     secret.focus()
     assert secret.evaluate('el=>el.selectionStart===0 && el.selectionEnd===el.value.length')
-    assert w.call('GET',w.channel,actor='cleanup-issued')['version']==w.original['version']
+    result = w.call('GET', w.channel, actor='cleanup-issued', expected=409)
+    assert result['error']['code'] == 'connected_learning_required'
     rows=w.call('GET',w.root+'/connections',actor='admin')['items']
     integration=next(row for row in rows if row['id']==w.integration['id'])
     assert len(integration['credentials'])==1 and not integration['credentials'][0]['revokedAt']
@@ -239,4 +240,5 @@ def cleanup_secret_kept(context):
     assert w.cleanup_failure_secret not in stored and 'aci_' not in stored
     p.get_by_role('button',name='I saved it · close',exact=True).click()
     expect(p.get_by_label('One-time credential secret',exact=True)).to_have_count(0)
-    assert w.call('GET',w.channel,actor='cleanup-issued')['version']==w.original['version']
+    result = w.call('GET', w.channel, actor='cleanup-issued', expected=409)
+    assert result['error']['code'] == 'connected_learning_required'

@@ -236,6 +236,15 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
         call(&app, "POST", &receipt, write, bad).await.0,
         StatusCode::FORBIDDEN
     );
+    assert_eq!(
+        call(&app, "POST", &receipt, write, event.clone()).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let integration = Uuid::parse_str(ids[0].as_str()).unwrap();
+    sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'delivery',1,$3)")
+        .bind(&p).bind(b).bind(v).execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO connected_learning_enrollments(project_id,integration_id,bundle_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,development,audits,rollout_authorized,outcome_principal,evaluator_principal,authorized_by) VALUES($1,$2,$3,'stable',1,'delivery','test',ARRAY['guide.md'],1,'{}','[{}]',false,'outcome','evaluator','legacy')")
+        .bind(&p).bind(integration).bind(b).execute(&db).await.unwrap();
     let (status, first) = call(&app, "POST", &receipt, write, event.clone()).await;
     assert_eq!(status, StatusCode::OK);
     let (_, second) = call(&app, "POST", &receipt, write, event.clone()).await;
@@ -426,9 +435,33 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         call(&app, "PUT", &legacy_endpoint, owner, legacy.clone())
             .await
             .0,
-        StatusCode::OK
+        StatusCode::BAD_REQUEST
     );
-    legacy["automaticRollout"] = json!(true);
+    // Simulate an upgraded legacy enrollment. The API cannot create a new one.
+    let legacy_channel = format!("learn-{legacy_id}");
+    sqlx::query(
+        "INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,$3,1,$4)",
+    )
+    .bind(&p)
+    .bind(bundle)
+    .bind(&legacy_channel)
+    .bind(baseline)
+    .execute(&db)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO connected_learning_enrollments(project_id,integration_id,bundle_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,development,audits,rollout_authorized,outcome_principal,evaluator_principal,authorized_by)
+        VALUES($1,$2,$3,'stable',1,$4,'fixture',ARRAY['guide.md'],2,$5,$6,false,'outcome','evaluator',$7)")
+        .bind(&p).bind(legacy_id).bind(bundle).bind(&legacy_channel).bind(&legacy["development"]).bind(&legacy["audits"]).bind(format!("user:{user}")).execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO connected_learning_policy_epochs(project_id,integration_id,epoch,development,selection_policies)
+        SELECT project_id,integration_id,policy_epoch,development,selection_policies FROM connected_learning_enrollments WHERE integration_id=$1")
+        .bind(legacy_id).execute(&db).await.unwrap();
+    legacy.as_object_mut().unwrap().remove("automaticRollout");
+    assert_eq!(
+        call(&app, "GET", &legacy_endpoint, owner, Value::Null)
+            .await
+            .1["requiresRolloutAuthorization"],
+        true
+    );
     assert_eq!(
         call(&app, "PUT", &legacy_endpoint, owner, legacy.clone())
             .await
@@ -475,69 +508,19 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         actual
     );
     assert_eq!(actual.1["automaticRollback"], true);
-    let mut stale_rollback = settings.clone();
-    stale_rollback["automaticRollback"] = json!(false);
-    stale_rollback["expectedAutomaticRollout"] = actual.1["automaticRollout"].clone();
-    let mut stopped_rollout = settings.clone();
-    stopped_rollout["automaticRollout"] = json!(false);
-    stopped_rollout["expectedAutomaticRollout"] = json!(true);
-    let updated = call(&app, "PUT", &enrollment, "other-operator", stopped_rollout).await;
-    assert_eq!(updated.0, StatusCode::OK);
-    assert_eq!(updated.1["automaticRollout"], false);
-    assert!(updated.1.get("expectedAutomaticRollout").is_none());
-    // An old command returns its original receipt without re-enabling rollout.
+    let mut stale = settings.clone();
+    stale["automaticRollout"] = json!(false);
     assert_eq!(
-        call_with_key(
-            &app,
-            "PUT",
-            &enrollment,
-            owner,
-            settings.clone(),
-            Some(&enrollment_key)
-        )
-        .await,
-        actual
+        call(&app, "PUT", &enrollment, owner, stale).await.0,
+        StatusCode::BAD_REQUEST
     );
-    assert_eq!(
-        call_with_key(
-            &app,
-            "PUT",
-            &enrollment,
-            owner,
-            stale_rollback.clone(),
-            Some(&enrollment_key)
-        )
-        .await
-        .0,
-        StatusCode::CONFLICT
-    );
-    let stale = call(&app, "PUT", &enrollment, owner, stale_rollback.clone()).await;
-    assert_eq!(stale.0, StatusCode::CONFLICT);
-    let current = call(&app, "GET", &enrollment, owner, Value::Null).await.1;
-    assert_eq!(current["automaticRollout"], false);
-    assert_eq!(current["automaticRollback"], true);
-    assert_eq!(current["authorizedBy"], format!("user:{user}"));
-    stale_rollback["automaticRollout"] = json!(false);
-    stale_rollback["expectedAutomaticRollout"] = json!(false);
-    let applied = call(&app, "PUT", &enrollment, owner, stale_rollback).await;
-    assert_eq!(applied.0, StatusCode::OK);
-    assert_eq!(applied.1["automaticRollout"], false);
-    assert_eq!(applied.1["automaticRollback"], false);
-    let edited = call(&app, "PUT", &enrollment, owner, settings.clone()).await;
-    assert_eq!(edited.0, StatusCode::OK);
-    assert_eq!(edited.1["automaticRollout"], true);
-    assert_eq!(edited.1["automaticRollback"], false);
-    let authorizations: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM connected_learning_authorizations
-        WHERE (project_id,integration_id)=($1,$2)",
-    )
-    .bind(&p)
-    .bind(enrollment_id)
-    .fetch_one(&db)
-    .await
-    .unwrap();
-    assert_eq!(authorizations, 2);
-
+    assert_eq!(actual.1["requiresRolloutAuthorization"], false);
+    assert!(actual.1.get("automaticRollout").is_none());
+    let mut rollback = settings.clone();
+    rollback["automaticRollback"] = json!(false);
+    let changed = call(&app, "PUT", &enrollment, owner, rollback).await;
+    assert_eq!(changed.0, StatusCode::OK);
+    assert_eq!(changed.1["automaticRollback"], false);
     let mut settings = settings;
     settings["automaticRollback"] = json!(true);
     assert_eq!(
@@ -649,7 +632,13 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     let sibling_learning = format!("{sibling}/learning");
     let (left, right) = tokio::join!(
         call(&app, "POST", &renew, owner, concurrent_renewal),
-        call(&app, "PUT", &sibling_learning, owner, concurrent_enrollment),
+        call(
+            &app,
+            "PUT",
+            &sibling_learning,
+            owner,
+            concurrent_enrollment.clone()
+        ),
     );
     assert!(
         (left.0 == StatusCode::OK && right.0 == StatusCode::CONFLICT)
@@ -666,6 +655,11 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     .await
     .unwrap();
     assert_eq!(owner_count, 1);
+    if right.0 == StatusCode::CONFLICT {
+        concurrent_enrollment["audits"] = json!([descriptor("sibling-fresh")]);
+        let enrolled = call(&app, "PUT", &sibling_learning, owner, concurrent_enrollment).await;
+        assert_eq!(enrolled.0, StatusCode::OK, "{}", enrolled.1);
+    }
     let mut read_tokens = vec![];
     for path in [&connection, &sibling] {
         let (status, token) = call(
@@ -885,32 +879,18 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             .fetch_one(&db)
             .await
             .unwrap();
-    sqlx::query(
-        "UPDATE connected_learning_rounds SET state='awaiting_review',
-        audit_comparison_id=$2,review_started_at=now()-interval '15 days' WHERE id=$1",
-    )
-    .bind(round_id)
-    .bind(audit_comparison)
-    .execute(&db)
-    .await
-    .unwrap();
-    let expired = call(
-        &app,
-        "POST",
-        &format!("{enrollment}/rounds/{round_id}/review"),
-        owner,
-        json!({"approve":true}),
-    )
-    .await;
-    assert_eq!(expired.0, StatusCode::CONFLICT);
-    let decision: (String, bool) =
-        sqlx::query_as("SELECT decision,audit_released FROM connected_learning_rounds WHERE id=$1")
-            .bind(round_id)
-            .fetch_one(&db)
-            .await
-            .unwrap();
-    assert_eq!(decision, ("expired_review".into(), false));
-
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &format!("{enrollment}/rounds/{round_id}/review"),
+            owner,
+            json!({"approve":true})
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
     // An old queue timestamp does not expire a newly started evaluation.
     sqlx::query(
         "UPDATE connected_learning_rounds SET state='audit',decision=NULL,
@@ -1266,7 +1246,16 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         json!({"expectedRevision":"1","versionId":baseline,"unevaluatedReason":"Review source again"}),
     )
     .await;
-    assert_eq!(source_change.0, StatusCode::CREATED, "{}", source_change.1);
+    assert_eq!(source_change.0, StatusCode::CONFLICT, "{}", source_change.1);
+    // Historical source movement still invalidates an old private search chain.
+    sqlx::query(
+        "UPDATE channels SET revision=2 WHERE project_id=$1 AND bundle_id=$2 AND name='stable'",
+    )
+    .bind(&p)
+    .bind(bundle)
+    .execute(&db)
+    .await
+    .unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
             let latest: (Uuid, i32, String) = sqlx::query_as(
@@ -1542,65 +1531,20 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         StatusCode::CONFLICT
     );
 
-    // A stopped enrollment still serves its private channel and supports reviewed recovery.
-    let restore = format!("{enrollment}/restore");
-    let reviewed = json!({
-        "restoreId":Uuid::new_v4(), "expectedRevision":"2", "reason":"Restore previously reviewed instructions",
-        "target":{"kind":"delivery", "versionId":baseline, "revision":"1"}
-    });
-    let available = call(&app, "GET", &enrollment, owner, Value::Null).await.1;
-    assert!(
-        available["restoreTargets"]
-            .as_array()
-            .unwrap()
-            .contains(&reviewed["target"])
-    );
-    for forbidden in ["outcome", "evaluator", "observer"] {
-        assert_eq!(
-            call(&app, "POST", &restore, forbidden, reviewed.clone())
-                .await
-                .0,
-            StatusCode::FORBIDDEN
-        );
-    }
-    let (restored, concurrent_retry) = tokio::join!(
-        call(&app, "POST", &restore, owner, reviewed.clone()),
-        call(&app, "POST", &restore, owner, reviewed.clone()),
-    );
-    assert_eq!(restored.0, StatusCode::OK, "{}", restored.1);
-    assert_eq!(concurrent_retry, restored);
-    assert_eq!(restored.1["revision"], "3");
-    assert_eq!(restored.1["version"]["id"], baseline.to_string());
-    let mut refresh = json!({
-        "restoreId":Uuid::new_v4(), "expectedRevision":"3", "reason":"Adopt an operator-reviewed source correction",
-        "target":{"kind":"source", "revision":"1", "versionId":replacement}
-    });
-    let published = call(&app, "POST", &format!("{resolve}/releases"), owner,
-        json!({"expectedRevision":"2","versionId":replacement,"unevaluatedReason":"Reviewed source update"})).await;
-    assert_eq!(published.0, StatusCode::CREATED, "{}", published.1);
+    let before = call(&app, "GET", &enrollment, owner, Value::Null).await.1;
+    let retired = call(
+        &app,
+        "POST",
+        &format!("{enrollment}/restore"),
+        owner,
+        json!({"expectedRevision":"2","target":{"versionId":baseline}}),
+    )
+    .await;
+    assert_eq!(retired.0, StatusCode::NOT_FOUND);
+    assert!(before.get("restoreTargets").is_none());
     assert_eq!(
-        call(&app, "POST", &restore, owner, refresh.clone()).await.0,
-        StatusCode::CONFLICT
-    );
-    refresh["target"]["revision"] = json!("3");
-    let updated = call(&app, "POST", &restore, owner, refresh).await;
-    assert_eq!(updated.0, StatusCode::OK, "{}", updated.1);
-    assert_eq!(updated.1["revision"], "4");
-    assert_eq!(
-        call(&app, "POST", &restore, owner, reviewed.clone()).await,
-        restored
-    );
-    let mut reused = reviewed.clone();
-    reused["reason"] = json!("different review");
-    assert_eq!(
-        call(&app, "POST", &restore, owner, reused).await.0,
-        StatusCode::CONFLICT
-    );
-    let mut stale = reviewed;
-    stale["restoreId"] = json!(Uuid::new_v4());
-    assert_eq!(
-        call(&app, "POST", &restore, owner, stale).await.0,
-        StatusCode::CONFLICT
+        call(&app, "GET", &enrollment, owner, Value::Null).await.1["deliveredVersionId"],
+        before["deliveredVersionId"]
     );
     assert_eq!(
         call(&app, "GET", &work, "evaluator", Value::Null).await.1["active"],

@@ -74,7 +74,7 @@ Use the `evaluate` right for evaluators and CI. It allows these operations:
 | `evaluate` | `read` plus the evaluator operations above. |
 | `write` | Content writes. It also implies `evaluate`, so existing evaluator grants continue to work. |
 | `propose` | Request service-generated proposals. |
-| `promote` | Publish drafts and record releases. |
+| `promote` | Seed a bundle and authorize connected learning as a workspace administrator. |
 
 The capability snapshot at `GET /v1/workspaces/{workspace}/evaluation-capabilities` reports `rights`, `credential` and the `abandonment` policy alongside `writeEvaluation`.
 

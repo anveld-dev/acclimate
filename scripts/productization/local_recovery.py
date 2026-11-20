@@ -47,7 +47,7 @@ def qualify(h, setup=None, world=None):
         setup = setup or h.call('POST', '/v1/workspaces/' + h.project + '/bundle-setups', dict(name='Recovery fixture', origin='created', channel='stable', payload=payload('Survives backend reconnect.'), reason='Explicit recovery fixture.'))
         bundle = setup['bundle']['id']
         channel_path = '/v1/workspaces/' + h.project + '/bundles/' + bundle + '/channels/stable'
-        original = h.call('GET', channel_path)
+        original = setup['resolution']
         # Establish the issuer before the supervisor snapshots the service env.
         world.hosted()
         h.stop_service()
@@ -90,7 +90,8 @@ def qualify(h, setup=None, world=None):
                 wait_health(h.base)
                 assert process.poll() is None
                 os.kill(web_pid, 0)
-                current = h.call('GET', channel_path)
+                release = h.call('GET', channel_path + '/releases?limit=1')['items'][0]
+                current = {key: release[key] for key in ('channel','revision','version')}
                 assert current == original, 'Recovery changed the published version'
                 response = fixture.page.goto(fixture.base + content_path, wait_until='networkidle')
                 assert response.status == 200

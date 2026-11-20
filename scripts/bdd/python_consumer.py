@@ -3,10 +3,10 @@ import json
 import sys
 import uuid
 from pathlib import Path
-from acclimate import AcclimateClient, ApiError, TransportError, DeliveryError, resolve_and_cache, prepare_files, DeliveryReporter
+from acclimate import AcclimateClient, ApiError, TransportError, DeliveryError, UsageError, resolve_and_cache, prepare_files, DeliveryReporter
 
 c=json.loads(Path(sys.argv[1]).read_text())
-client=AcclimateClient(c['baseUrl'],c['token'],c['scope'],retries=0,timeout=2)
+client=AcclimateClient(c['baseUrl'],c['token'],c['scope'],retries=0,timeout=2,connection_id=c.get('connectionId'))
 p,b=c['workspaceId'],c['bundleId']
 key=lambda:uuid.uuid4().hex
 
@@ -35,7 +35,7 @@ def delivery():
         if reporter: reporter.close(0)
 
 def author():
-    resolution,_,_=client.resolve_channel(p,b,'stable')
+    resolution=client.inspect_source(p,b,'stable')
     parent=resolution['version']
     content=dict(schemaVersion=1,files=[dict(path='AGENTS.md',kind='instruction',text='Python review retries.')])
     draft=client.create_draft(p,b,'stable',dict(baseVersionId=parent['id'],baseRevision=resolution['revision'],payload=content),key())
@@ -51,12 +51,10 @@ def author():
     report=client.create_comparison(p,b,dict(identity,evaluation=dict(requestId=evaluation['id'],attemptId=attempt_id),
         results=[dict(caseId='review',repetition=0,parent=outcome,candidate=outcome)]),key())
     client.finish_evaluation(p,b,evaluation['id'],dict(attemptId=attempt_id,comparisonId=report['id']),key())
-    published=client.publish_draft(p,b,'stable',draft['id'],dict(expectedGeneration=2,expectedRevision=resolution['revision'],comparisonId=report['id']),key())
-    current,_,_=client.resolve_channel(p,b,'stable')
-    return dict(draft=saved,history=history,published=published,current=current)
+    return dict(draft=saved,history=history,comparison=report)
 
 try:
     result=author() if c['action']=='pythonAuthor' else delivery()
     print(json.dumps(result))
-except (ApiError,TransportError,DeliveryError) as error:
+except (ApiError,TransportError,DeliveryError,UsageError) as error:
     print(json.dumps(dict(error=dict(name=type(error).__name__,code=getattr(error,'code',None),status=getattr(error,'status',None)))))

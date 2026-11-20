@@ -14,8 +14,6 @@ import {
 } from '../src/lib/pending-operation';
 import { exactOperation, closeOperation } from '../src/server/exact-operation';
 import { uniqueSkillName } from '../src/lib/unique-skill-name';
-import { draftCommand } from '../src/server/drafts';
-import { editChannel } from '../src/server/edit-channel';
 class MemoryStorage implements PendingStorage {
   data = new Map<string, string>();
   get length() {
@@ -134,52 +132,6 @@ test('lost response survives reload; not_observed retries exact bytes and origin
   ]);
   resolvePending(storage, scope);
   assert.equal(loadPending(storage, scope), null);
-});
-
-test('receipt reconciliation wins before stale generation/revision preflight and uses current session', async () => {
-  const exact = JSON.stringify(body);
-  let calls = 0;
-  const result = await draftCommand(
-    env,
-    { action: 'retry', key, operationPath: path, body: exact },
-    async (_url, init) => {
-      calls++;
-      assert.equal(init?.method, 'GET');
-      assert.equal(new Headers(init?.headers).get('X-Acclimate-Session'), 'current-session');
-      return Response.json({
-        status: 'committed',
-        operationId: key,
-        path,
-        requestFingerprint: fingerprint(path, exact),
-        result: { id: draft, generation: 3 },
-      });
-    },
-  );
-  assert.equal(result.ok, true);
-  assert.equal(calls, 1);
-  const releasePath = `/v1/workspaces/p/bundles/${bundle}/channels/stable/releases`;
-  const restored = await editChannel(
-    env,
-    { action: 'rollback', key, expectedRevision: '1', versionId: 'old-version', reason: 'Restore' },
-    async (_url, init) => {
-      assert.equal(init?.method, 'GET');
-      return Response.json({
-        status: 'committed',
-        operationId: key,
-        path: releasePath,
-        requestFingerprint: fingerprint(
-          releasePath,
-          JSON.stringify({
-            versionId: 'old-version',
-            expectedRevision: '1',
-            unevaluatedReason: 'Manual rollback (not evaluated): Restore',
-          }),
-        ),
-        result: { revision: '2', version: { id: 'old-version' } },
-      });
-    },
-  );
-  assert.equal(restored.ok, true);
 });
 
 test('changed exact bytes cannot adopt an existing receipt', async () => {

@@ -4,7 +4,7 @@ import { readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compare, submitComparison } from '@acclimate/sdk';
-import { resolveAndCache, ApiError } from '@acclimate/sdk';
+import { resolveAndCache } from '@acclimate/sdk';
 import type { BundlePayload, VerifiedVersion } from '@acclimate/sdk';
 import { Luna, model } from '../luna.js';
 import { startService } from '../service.js';
@@ -79,7 +79,7 @@ try {
     randomUUID(),
   );
   assert.equal(rootMeta.digest, starter.sourceDigest);
-  const initial = await client.createRelease(
+  await client.createRelease(
     project,
     bundle.id,
     'qualification',
@@ -90,23 +90,12 @@ try {
     },
     randomUUID(),
   );
-  let working = await client.createRelease(
-    project,
-    bundle.id,
-    'working',
-    {
-      versionId: rootMeta.id,
-      expectedRevision: '0',
-      unevaluatedReason: 'Disposable development channel',
-    },
-    randomUUID(),
-  );
   const cache = { cacheDir: path.join(output, 'cache') };
   const fetchVersion = (id: string) =>
     resolveAndCache(client, { workspaceId: project, bundleId: bundle.id, versionId: id }, cache);
   const root = await resolveAndCache(
     client,
-    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
+    { workspaceId: project, bundleId: bundle.id, versionId: rootMeta.id },
     cache,
   );
   await save('parent.json', root);
@@ -295,17 +284,6 @@ try {
         accepted,
       };
       if (accepted) {
-        working = await client.createRelease(
-          project,
-          bundle.id,
-          'working',
-          {
-            versionId: candidate.version.id,
-            comparisonId: trial.comparison.id,
-            expectedRevision: working.revision,
-          },
-          randomUUID(),
-        );
         incumbent = candidate;
       }
       const candidateMistakes = findings(
@@ -369,42 +347,17 @@ try {
       audit.candidate.unsafe === 0,
     'Final audit failed: do not feed audit answers back or release',
   );
-  // Warm the same channel cache immediately before release, so an old cache entry cannot hide delayed refresh.
-  const warm = await resolveAndCache(
-    client,
-    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
-    cache,
-  );
-  assert.equal(warm.version.id, root.version.id);
   await save('final-review.json', {
-    decision: 'Approve disposable qualification release',
+    decision: 'candidate passed the final audit',
     sourceAcceptedVersionId: incumbent.version.id,
-    releaseVersionId: candidate.version.id,
+    candidateVersionId: candidate.version.id,
     comparisonId: audit.comparison.id,
     parent: audit.parent,
     candidate: audit.candidate,
   });
-  const promotion = await client.createRelease(
-    project,
-    bundle.id,
-    'qualification',
-    {
-      versionId: candidate.version.id,
-      comparisonId: audit.comparison.id,
-      expectedRevision: initial.revision,
-    },
-    randomUUID(),
-  );
-  const refreshed = await resolveAndCache(
-    client,
-    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
-    cache,
-  );
-  assert.equal(refreshed.version.id, candidate.version.id);
-  assert.equal(refreshed.stale, false);
   const future = grade(
     frozen.release[0]!,
-    (await luna.job(refreshed, frozen.release[0]!, 'fresh-release', { prompt, schema })).output,
+    (await luna.job(candidate, frozen.release[0]!, 'held-out-candidate', { prompt, schema })).output,
   );
   const control = grade(
     frozen.release[0]!,
@@ -414,21 +367,6 @@ try {
   assert(
     future.correct === future.total && future.correct > control.correct,
     'Fresh SDK job did not retain the improvement',
-  );
-  await assert.rejects(
-    () =>
-      client.createRelease(
-        project,
-        bundle.id,
-        'qualification',
-        {
-          versionId: root.version.id,
-          expectedRevision: initial.revision,
-          unevaluatedReason: 'Stale release must be rejected',
-        },
-        randomUUID(),
-      ),
-    (e) => e instanceof ApiError && e.status === 409,
   );
   assert.equal(createHash('sha256').update(JSON.stringify(frozen)).digest('hex'), digest);
   const summary = {
@@ -440,7 +378,7 @@ try {
     starterVersion: starter.sourceVersionId,
     originalVersionId: root.version.id,
     sourceAcceptedVersionId: incumbent.version.id,
-    releasedVersionId: candidate.version.id,
+    candidateVersionId: candidate.version.id,
     audit: {
       parent: audit.parent,
       candidate: audit.candidate,
@@ -449,7 +387,6 @@ try {
     },
     future,
     control,
-    promotion,
     costUsd: null,
     limits: [
       'One synthetic policy domain; no broad generalization claim.',

@@ -19,6 +19,9 @@ const development = {
   graderRevision: 'grader-r1',
   runtime: { model: 'model-r1' },
   expectedCases: [{ caseId: 'dev-case-1', repetition: 0 }],
+  fixtureProtocol: 'installed-v1' as const,
+  datasetDigest: '1'.repeat(64),
+  caseFingerprints: ['2'.repeat(64)],
 };
 const audit = {
   ...development,
@@ -35,7 +38,6 @@ const setup = {
   permittedPaths: 'instructions.md',
   maxProposalAdmissions: '3',
   descriptors: JSON.stringify({ development, audits: [audit] }),
-  automaticRollout: false,
 };
 const enrollment: LearningEnrollmentStatus = {
   ...learningPolicy(setup),
@@ -47,6 +49,7 @@ const enrollment: LearningEnrollmentStatus = {
   stoppedAt: null,
   proposalAdmissions: 2,
   renewalRevision: 1,
+  requiresRolloutAuthorization: false,
   remainingAudits: 0,
   auditCount: 1,
   automaticRollback: true,
@@ -59,14 +62,10 @@ function fixture(
   options: {
     role?: string;
     status?: LearningEnrollmentStatus | null;
-    concurrentRollout?: boolean;
     omitRollbackPolicy?: boolean;
-    policyReceipts?: unknown[];
-    staleOverride?: boolean;
   } = {},
 ) {
   let status = options.status === undefined ? enrollment : options.status;
-  let concurrentRollout = options.concurrentRollout;
   const requests: { url: string; method: string; headers: Headers; body: unknown }[] = [];
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -100,43 +99,20 @@ function fixture(
       });
     }
     if (url.endsWith('/learning') && method === 'PUT') {
-      if (status && concurrentRollout !== undefined) {
-        status = { ...status, automaticRollout: concurrentRollout };
-        concurrentRollout = undefined;
-      }
-      const { expectedAutomaticRollout, ...policy } = body;
-      if (
-        expectedAutomaticRollout !== undefined &&
-        expectedAutomaticRollout !== status?.automaticRollout
-      )
-        return Response.json({ error: { code: 'learning_conflict' } }, { status: 409 });
-      status = { ...(status ?? enrollment), ...policy };
+      status = { ...(status ?? enrollment), ...body, requiresRolloutAuthorization: false };
       return Response.json(status);
     }
-    if (url.endsWith('/policy-receipts') && method === 'GET')
-      return Response.json({ items: options.policyReceipts ?? [] });
-    if (url.endsWith('/review') && options.staleOverride)
-      return Response.json({ error: { code: 'policy_override_required' } }, { status: 409 });
     if (url.endsWith('/stop') && method === 'POST') {
       status = { ...enrollment, ...status, stoppedAt: '2026-11-17T15:00:00Z' };
       return Response.json(status);
     }
-    if (url.endsWith('/restore') && method === 'POST' && status) {
-      status = {
-        ...status,
-        deliveredVersionId: body.target.versionId,
-        deliveredRevision: (BigInt(status.deliveredRevision) + 1n).toString(),
-      };
-      return Response.json({ id: 'restore-promotion' });
-    }
-    if (url.endsWith('/renew') || url.endsWith(`/rounds/${roundId}/review`))
-      return Response.json({ ok: true });
+    if (url.endsWith('/renew')) return Response.json({ ok: true });
     throw Error(`Unexpected request ${method} ${url}`);
   };
   return { fetcher, requests };
 }
 
-test('connect learning is opt-in and returns the effective delivery target without evaluator controls', async () => {
+test('connected setup enrolls the connection and returns the effective delivery target without evaluator controls', async () => {
   const f = fixture({ status: null });
   assert.deepEqual(await connectionLearning(env, { ...target, action: 'read' }, f.fetcher), {
     ok: true,
@@ -144,7 +120,7 @@ test('connect learning is opt-in and returns the effective delivery target witho
   });
   const result = await connectionLearning(env, { ...target, action: 'enroll', setup }, f.fetcher);
   assert(result.ok && result.status);
-  assert.equal(result.status.automaticRollout, false);
+  assert.equal(result.status.requiresRolloutAuthorization, false);
   assert.equal(result.status.automaticRollback, true);
   assert.equal(result.status.deliveredVersionId, 'effective-version');
   assert.equal(result.status.remainingAudits, 0);
@@ -160,25 +136,26 @@ test('connect learning is opt-in and returns the effective delivery target witho
   assert.deepEqual(write.body, learningPolicy(setup));
 });
 
-test('rollout toggles retain installed settings and repeated requests avoid another write', async () => {
-  const f = fixture();
-  for (let repeat = 0; repeat < 2; repeat++) {
-    const result = await connectionLearning(
-      env,
-      { ...target, action: 'rollout', automaticRollout: true },
-      f.fetcher,
-    );
-    assert(result.ok && result.status?.automaticRollout);
+test('an administrator authorizes a legacy enrollment once and can stop learning', async () => {
+  const f = fixture({ status: { ...enrollment, requiresRolloutAuthorization: true } });
+  const before = await connectionLearning(env, { ...target, action: 'read' }, f.fetcher);
+  assert(before.ok && before.status?.requiresRolloutAuthorization);
+  for (let i = 0; i < 2; i++) {
+    const result = await connectionLearning(env, { ...target, action: 'authorize' }, f.fetcher);
+    assert(result.ok && result.status && !result.status.requiresRolloutAuthorization);
   }
-  const writes = f.requests.filter((request) => request.method === 'PUT');
-  assert.equal(writes.length, 1);
-  assert.deepEqual(writes[0]?.body, {
-    ...learningPolicy(setup),
-    automaticRollout: true,
-    expectedAutomaticRollout: false,
-  });
+  assert.deepEqual(f.requests.filter(r => r.method === 'PUT').map(r => r.body), [learningPolicy(setup)]);
   const stopped = await connectionLearning(env, { ...target, action: 'stop' }, f.fetcher);
   assert(stopped.ok && stopped.status?.stoppedAt);
+});
+
+test('retired rollout controls are rejected without contacting the service', async () => {
+  const f = fixture();
+  for (const action of ['rollout', 'restore', 'review']) {
+    const result = await connectionLearning(env, { ...target, action } as Parameters<typeof connectionLearning>[1], f.fetcher);
+    assert(!result.ok);
+  }
+  assert.equal(f.requests.length, 0);
 });
 
 test('automatic rollback defaults to enabled when a status response omits the policy', async () => {
@@ -207,14 +184,13 @@ test('automatic rollback is scoped and independently switchable', async () => {
     );
     assert(updated.ok && updated.status);
     assert.equal(updated.status.automaticRollback, automaticRollback);
-    assert.equal(updated.status.automaticRollout, false);
   }
   const writes = f.requests.filter((request) => request.method === 'PUT');
   assert.deepEqual(
     writes.map((request) => request.body),
     [
-      { ...learningPolicy(setup), automaticRollback: true, expectedAutomaticRollout: false },
-      { ...learningPolicy(setup), automaticRollback: false, expectedAutomaticRollout: false },
+      { ...learningPolicy(setup), automaticRollback: true },
+      { ...learningPolicy(setup), automaticRollback: false },
     ],
   );
   const denied = fixture({ role: 'editor' });
@@ -224,51 +200,7 @@ test('automatic rollback is scoped and independently switchable', async () => {
     denied.fetcher,
   );
   assert(!result.ok);
-  assert(denied.requests.every((request) => request.method === 'GET'));
-
-  const enabled = fixture({ status: { ...enrollment, automaticRollback: true } });
-  const rollout = await connectionLearning(
-    env,
-    { ...target, action: 'rollout', automaticRollout: true },
-    enabled.fetcher,
-  );
-  assert(rollout.ok && rollout.status?.automaticRollout && rollout.status.automaticRollback);
-  const rolloutWrite = enabled.requests.find((request) => request.method === 'PUT');
-  assert.deepEqual(rolloutWrite?.body, {
-    ...learningPolicy(setup),
-    automaticRollout: true,
-    expectedAutomaticRollout: false,
-  });
-});
-
-test('a rollback toggle cannot overwrite a concurrent rollout policy change', async () => {
-  const f = fixture({
-    status: { ...enrollment, automaticRollback: false },
-    concurrentRollout: true,
-  });
-  const toggle = { ...target, action: 'rollback', automaticRollback: true } as const;
-  const conflict = await connectionLearning(env, toggle, f.fetcher);
-  assert(!conflict.ok);
-  assert.match(conflict.message, /Refresh/);
-  const read = await connectionLearning(env, { ...target, action: 'read' }, f.fetcher);
-  assert(read.ok && read.status?.automaticRollout);
-  assert.equal(read.status.automaticRollback, false);
-
-  const retried = await connectionLearning(env, toggle, f.fetcher);
-  assert(retried.ok && retried.status?.automaticRollout && retried.status.automaticRollback);
-  const writes = f.requests.filter((request) => request.method === 'PUT');
-  assert.deepEqual(
-    writes.map((request) => request.body),
-    [
-      { ...learningPolicy(setup), automaticRollback: true, expectedAutomaticRollout: false },
-      {
-        ...learningPolicy(setup),
-        automaticRollout: true,
-        automaticRollback: true,
-        expectedAutomaticRollout: true,
-      },
-    ],
-  );
+  assert(denied.requests.every(r => r.method === 'GET'));
 });
 
 test('post-rollout inspection carries only counts, the original parent and the rollback promotion', async () => {
@@ -325,7 +257,7 @@ test('new enrollment carries explicit rollback policy and rejects invalid values
   );
 });
 
-test('renewal and review bind the current selected connection, operation identity and decision', async () => {
+test('renewal binds the selected connection and operation identity', async () => {
   const f = fixture();
   assert.equal(
     (
@@ -344,22 +276,7 @@ test('renewal and review bind the current selected connection, operation identit
     ).ok,
     true,
   );
-  assert.equal(
-    (
-      await connectionLearning(
-        env,
-        {
-          ...target,
-          action: 'review',
-          roundId,
-          approve: false,
-        },
-        f.fetcher,
-      )
-    ).ok,
-    true,
-  );
-  const [renew, review] = f.requests.filter((request) => request.method === 'POST');
+  const [renew] = f.requests.filter((request) => request.method === 'POST');
   assert(renew.url.endsWith(`/workspaces/workspace/connections/${id}/learning/renew`));
   assert.deepEqual(renew.body, {
     renewalId: roundId,
@@ -367,11 +284,6 @@ test('renewal and review bind the current selected connection, operation identit
     proposalAdmissions: 5,
     audits: [audit],
   });
-  assert.equal(renew.headers.get('idempotency-key'), roundId);
-  assert(
-    review.url.endsWith(`/workspaces/workspace/connections/${id}/learning/rounds/${roundId}/review`),
-  );
-  assert.deepEqual(review.body, { approve: false });
 });
 
 test('learning rejects cross-connection status, out-of-scope targets and requests without live admin edit access', async () => {
@@ -457,10 +369,10 @@ const stages = {
 };
 
 test('automatic enrollment binds installed fixtures, scoped skills and separate stage objectives', () => {
-  assert.throws(() => learningPolicy({ ...setup, automaticRollout: true }), /commitments/);
+  assert.throws(() => learningPolicy({ ...setup, automaticRollout: false }), /requires automatic rollout/);
+  assert.throws(() => learningPolicy({ ...setup, descriptors: JSON.stringify({ development: { ...development, fixtureProtocol: undefined }, audits: [audit] }) }), /commitments/);
   const policy = learningPolicy({
     ...setup,
-    automaticRollout: true,
     descriptors: JSON.stringify({ development: committedDevelopment, audits: [committedAudit] }),
     createSkillNames: 'refunds',
     retireSkillNames: 'old-refunds',
@@ -541,7 +453,6 @@ test('operators can remove structural permissions while retaining enrolled selec
   assert(!JSON.stringify(result).includes('audit-case-1'));
   assert.deepEqual(f.requests.find((entry) => entry.method === 'PUT')?.body, {
     ...learningPolicy(setup),
-    expectedAutomaticRollout: false,
     skillPackages: { createSkillNames: [], retireSkillNames: [] },
     selectionPolicies: stages,
   });
@@ -566,41 +477,6 @@ test('a skill permission update submits explicitly reviewed future paths', async
     createSkillNames: ['refunds'],
     retireSkillNames: [],
   });
-});
-
-test('reviewed restores bind the exact connection, current revision, selected target and reason even after stop', async () => {
-  const restoreTarget = { kind: 'source' as const, versionId: roundId, revision: '12' };
-  const f = fixture({
-    status: { ...enrollment, stoppedAt: '2026-11-17T15:00:00Z', restoreTargets: [restoreTarget] },
-  });
-  const read = await connectionLearning(env, { ...target, action: 'read' }, f.fetcher);
-  assert(read.ok && read.status);
-  assert.deepEqual(read.status.restoreTargets, [restoreTarget]);
-  const request = {
-    ...target,
-    action: 'restore' as const,
-    restoreId: id,
-    expectedRevision: '9',
-    target: restoreTarget,
-    reason: 'Apply reviewed refund policy.',
-  };
-  const result = await connectionLearning(env, request, f.fetcher);
-  assert(result.ok && result.status);
-  assert.equal(result.status.deliveredRevision, '10');
-  assert.equal(result.status.deliveredVersionId, roundId);
-  const write = f.requests.find((entry) => entry.method === 'POST');
-  assert(write);
-  assert(write.url.endsWith(`/connections/${id}/learning/restore`));
-  assert.equal(write.headers.get('idempotency-key'), id);
-  assert.deepEqual(write.body, {
-    restoreId: id,
-    expectedRevision: '9',
-    target: restoreTarget,
-    reason: request.reason,
-  });
-  const invalid = await connectionLearning(env, { ...request, expectedRevision: '9.0' }, f.fetcher);
-  assert(!invalid.ok);
-  assert.equal(f.requests.filter((entry) => entry.method === 'POST').length, 1);
 });
 
 test('read-only outcome lookup scopes the UUID and omits private data from the browser response', async () => {
@@ -659,75 +535,4 @@ test('read-only outcome lookup scopes the UUID and omits private data from the b
       '/workspaces/workspace/connections/' + id + '/learning/outcomes/' + roundId,
     ),
   );
-});
-
-test('connected review displays the candidate’s blocking policies, forwards only reviewed receipts and rejects a stale decision', async () => {
-  const digest = 'sha256:' + 'a'.repeat(64);
-  const candidate = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
-  const status: LearningEnrollmentStatus = {
-    ...enrollment,
-    rounds: [
-      {
-        id: roundId,
-        outcomeId: id,
-        state: 'awaiting_review',
-        reason: null,
-        parentVersionId: id,
-        candidateVersionId: candidate,
-        proposalId: null,
-        developmentRequestId: id,
-        auditRequestId: roundId,
-        developmentComparisonId: id,
-        auditComparisonId: roundId,
-        promotionId: null,
-      },
-    ],
-  };
-  const receipt = {
-    comparisonId: id,
-    requestId: roundId,
-    policy: { id: 'cost', revision: 'v2', sha256: digest },
-    verdict: 'indeterminate',
-    reportedBy: 'private-machine-name',
-    checks: [{ code: 'cost.unknown', result: 'unknown' }],
-  };
-  const f = fixture({ status, policyReceipts: [{ ...receipt, verdict: 'pass' }, receipt] });
-  const read = await connectionLearning(env, { ...target, action: 'read' }, f.fetcher);
-  assert(read.ok);
-  assert.deepEqual(read.status?.rounds[0].blockingPolicies, [
-    {
-      comparisonId: id,
-      requestId: roundId,
-      policyId: 'cost',
-      revision: 'v2',
-      policyDigest: digest,
-      verdict: 'indeterminate',
-    },
-  ]);
-  assert(
-    f.requests.some((r) =>
-      r.url.endsWith('/bundles/bundle/versions/' + candidate + '/policy-receipts'),
-    ),
-  );
-  const policyOverride = {
-    reason: 'Accept unmetered local execution',
-    receipts: [{ comparisonId: id, policyDigest: digest }],
-  };
-  const decision = { ...target, action: 'review' as const, roundId, approve: true, policyOverride };
-  const accepted = await connectionLearning(env, decision, f.fetcher);
-  assert(accepted.ok);
-  assert.deepEqual(f.requests.find((r) => r.url.endsWith('/review'))?.body, {
-    approve: true,
-    policyOverride,
-  });
-  const rejected = await connectionLearning(env, { ...decision, approve: false }, f.fetcher);
-  assert(!rejected.ok);
-  assert.equal(f.requests.filter((r) => r.url.endsWith('/review')).length, 1);
-  const stale = await connectionLearning(
-    env,
-    decision,
-    fixture({ status, staleOverride: true }).fetcher,
-  );
-  assert(!stale.ok);
-  assert.match(stale.message, /Refresh learning status and review the current receipts/);
 });

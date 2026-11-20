@@ -65,8 +65,8 @@ function fixture(deny = false, parentBytes = p, parentDigest = parent.digest) {
     if (method === 'POST') return Response.json({ id: 'promoted' }, { status: 201 });
     if (path.endsWith('/policy-receipts')) return Response.json({ items: [] });
     if (path.endsWith('/comparisons/cmp')) return Response.json(comparison);
-    if (path.endsWith('/channels/live'))
-      return Response.json({ channel: 'live', revision: '3', version: parent });
+    if (path.endsWith('/channels/live/releases'))
+      return Response.json({ items: [{ channel: 'live', revision: '3', version: parent }] });
     if (path.endsWith('/versions/p/payload')) return new Response(parentBytes);
     if (path.endsWith('/versions/c/payload')) return new Response(c);
     if (path.endsWith('/versions/p')) return Response.json({ ...parent, digest: parentDigest });
@@ -121,50 +121,12 @@ test('review preserves digest errors and does not misclassify authenticated malf
     (error) => error instanceof DeliveryError && error.code === 'unsupported_schema');
   assert.ok(mismatch.calls.every((call) => call.method === 'GET'));
 });
-test('promotion and rollback require their explicit evidence and revision', async () => {
+test('manual release commands fail without sending a request', async () => {
   const { client, calls } = fixture();
-  await assert.rejects(
-    run(['promote', ...scope, '--version', 'c', '--comparison', 'cmp'], client),
-    /expected-revision/,
-  );
-  await run(
-    [
-      'promote',
-      ...scope,
-      '--version',
-      'c',
-      '--comparison',
-      'cmp',
-      '--expected-revision',
-      '3',
-      '--key',
-      'k',
-    ],
-    client,
-  );
-  await run(
-    ['rollback', ...scope, '--version', 'p', '--reason', 'regression', '--expected-revision', '4'],
-    client,
-  );
-  assert.deepEqual(
-    calls.map((c) => c.body),
-    [
-      { versionId: 'c', expectedRevision: '3', comparisonId: 'cmp' },
-      { versionId: 'p', expectedRevision: '4', unevaluatedReason: 'regression' },
-    ],
-  );
-});
-
-test('promotion requires an explicit reason and exact receipt identities for an override', async () => {
-  const { client, calls } = fixture();
-  const args = ['promote', ...scope, '--version', 'c', '--comparison', 'cmp', '--expected-revision', '3'];
-  const comparisonId = '5ea10529-8f9e-435f-8b6e-ac42343d69b4';
-  const policyDigest = 'sha256:' + 'a'.repeat(64);
-  const acknowledgement = ['--ack-policy', comparisonId + '@' + policyDigest];
-  await assert.rejects(run([...args, ...acknowledgement], client), /override-reason/);
+  for (const command of ['promote', 'rollback']) {
+    await assert.rejects(run([command, ...scope], client), /Expected request-proposal/);
+  }
   assert.equal(calls.length, 0);
-  await run([...args, ...acknowledgement, '--override-reason', 'Reviewed exception'], client);
-  assert.deepEqual(calls[0].body.policyOverride, { reason: 'Reviewed exception', receipts: [{ comparisonId, policyDigest }] });
 });
 
 test('the packaged entry prints usage and reports errors as JSON with exit 1', async () => {
@@ -177,7 +139,7 @@ test('the packaged entry prints usage and reports errors as JSON with exit 1', a
   try {
     assert.equal(await operatorMain(['--help']), 0);
     assert.equal(await operatorMain([]), 1);
-    assert.equal(await operatorMain(['promote', '--workspace', 'p']), 1);
+    assert.equal(await operatorMain(['history', '--workspace', 'p']), 1);
   } finally {
     process.stdout.write = stdout;
     process.stderr.write = stderr;

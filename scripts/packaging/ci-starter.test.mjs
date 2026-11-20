@@ -759,7 +759,7 @@ test('an unchanged candidate, release and evaluator reuse their result across co
         authorization: request.headers.authorization }) + '\\n');
       const release = JSON.parse(readFileSync(${JSON.stringify(releaseFile)}, 'utf8'));
       response.writeHead(release ? 200 : 404, { 'content-type': 'application/json' });
-      response.end(JSON.stringify(release ?? { error: { code: 'not_found', message: 'Channel not found' } }));
+      response.end(JSON.stringify(release ? { items: [release] } : { error: { code: 'not_found', message: 'Channel not found' } }));
     });
     server.listen(0, '127.0.0.1', () => console.log(server.address().port));
   `], { stdio: ['ignore', 'pipe', 'inherit'] });
@@ -788,7 +788,7 @@ test('an unchanged candidate, release and evaluator reuse their result across co
     assert.equal(original.status, 0, original.stderr);
     assert.equal(original.summary.reuse.status, 'new');
     const seen = (await readFile(seenFile, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
-    assert.deepEqual(seen[0], { url: '/v1/workspaces/workspace/bundles/bundle-under-test/channels/canary',
+    assert.deepEqual(seen[0], { url: '/v1/workspaces/workspace/bundles/bundle-under-test/channels/canary/releases?limit=1',
       authorization: 'Bearer reuse-token' });
     const reused = await at(second);
     assert.equal(reused.status, 0, reused.stderr);

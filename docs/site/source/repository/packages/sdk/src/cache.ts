@@ -15,17 +15,21 @@ import {
 import { join, resolve } from 'node:path';
 import type { AcclimateClient } from './client.js';
 import { ApiError } from './client.js';
-import type { BundlePayload, ChannelResolution, VerifiedVersion, VersionMetadata } from './types.js';
+import type {
+  BundlePayload,
+  ChannelResolution,
+  VerifiedVersion,
+  VersionMetadata,
+} from './types.js';
 import { DeliveryError } from './validation.js';
 import { verifyPayloadBytes } from './verification.js';
 export { DeliveryError, validatePayload } from './validation.js';
 export type Selection =
   | { workspaceId: string; bundleId: string; channel: string }
   | { workspaceId: string; bundleId: string; versionId: string };
-export type OfflinePolicy = false | { maxAgeMs: number } | { pinnedVersionId: string };
+export type OfflinePolicy = false | { pinnedVersionId: string };
 export interface CachePolicy {
   cacheDir: string;
-  maxResolutionAgeMs?: number;
   offline?: OfflinePolicy;
   maxCacheBytes?: number;
   /** Optional app reporting; observer errors never affect delivery. */
@@ -123,96 +127,75 @@ export async function resolveAndCache(
   selection: Selection,
   policy: CachePolicy,
 ): Promise<VerifiedVersion> {
-  const now = Date.now(),
-    maxAge = policy.maxResolutionAgeMs ?? 0,
-    offline = policy.offline ?? false;
-  let resolution: ChannelResolution | undefined,
-    resolvedAt = now,
-    stale = false;
+  const now = Date.now();
+  const offline = policy.offline ?? false;
+  let resolution: ChannelResolution | undefined;
   if (
-    policy.maxResolutionAgeMs !== undefined &&
-    (!Number.isFinite(policy.maxResolutionAgeMs) ||
-      policy.maxResolutionAgeMs < 0 ||
-      policy.maxResolutionAgeMs > 30 * 24 * 60 * 60 * 1000)
+    offline !== false &&
+    ('channel' in selection ||
+      typeof offline.pinnedVersionId !== 'string' ||
+      !offline.pinnedVersionId)
   )
-    throw new AcclimateUsageError('maxResolutionAgeMs must be between 0 and 30 days', 'maxResolutionAgeMs');
+    throw new AcclimateUsageError(
+      'Offline reads require an exact version. New jobs resolve the connection online.',
+      'offline',
+    );
   if (
     policy.maxCacheBytes !== undefined &&
     (!Number.isFinite(policy.maxCacheBytes) ||
       policy.maxCacheBytes < 1 ||
       policy.maxCacheBytes > 1024 * 1024 * 1024)
   )
-    throw new AcclimateUsageError('maxCacheBytes must be between 1 and 1073741824', 'maxCacheBytes');
+    throw new AcclimateUsageError(
+      'maxCacheBytes must be between 1 and 1073741824',
+      'maxCacheBytes',
+    );
   if (typeof policy.cacheDir !== 'string' || !policy.cacheDir)
     throw new AcclimateUsageError('cacheDir is required', 'cacheDir');
-  if (
-    typeof offline === 'object' &&
-    'maxAgeMs' in offline &&
-    (!Number.isFinite(offline.maxAgeMs) ||
-      offline.maxAgeMs < 0 ||
-      offline.maxAgeMs > 30 * 24 * 60 * 60 * 1000)
-  )
-    throw new AcclimateUsageError('offline.maxAgeMs must be between 0 and 30 days', 'offline.maxAgeMs');
   await ensurePrivateDir(policy.cacheDir);
   if ('channel' in selection) {
     const mapDir = join(
       resolve(policy.cacheDir),
-      keyFor(client, [selection.workspaceId, selection.bundleId, 'channel', selection.channel]),
-    );
-    const old = await loadEntry(mapDir);
-    const age =
-      old && typeof old.resolvedAt === 'number' ? Math.max(0, now - old.resolvedAt) : Infinity;
-    try {
-      const response = await client.resolveChannel(
+      keyFor(client, [
         selection.workspaceId,
         selection.bundleId,
+        'learning-channel',
         selection.channel,
-        { etag: old?.etag },
-      );
-      if (response.notModified) {
-        if (!old?.resolution)
-          throw new DeliveryError(
-            'cache_miss',
-            'Service returned 304 without a cached channel mapping',
-          );
-        if (old.resolution.channel !== selection.channel)
-          throw new DeliveryError(
-            'invalid_response',
-            'Cached channel resolution does not match request',
-          );
-        validateVersion(old.resolution.version, selection.bundleId);
-        resolution = old.resolution;
-        resolvedAt = now;
-        await saveEntry(mapDir, { resolution, resolvedAt, etag: response.etag ?? old.etag });
-      } else {
-        resolution = response.resolution ?? undefined;
-        if (
-          !resolution ||
-          resolution.channel !== selection.channel ||
-          typeof resolution.revision !== 'string' ||
-          !/^\d+$/.test(resolution.revision)
-        )
-          throw new DeliveryError('invalid_response', 'Channel resolution response was malformed');
-        validateVersion(resolution.version, selection.bundleId);
-        resolvedAt = now;
-        await saveEntry(mapDir, { resolution, resolvedAt, etag: response.etag });
-      }
-    } catch (error) {
-      if (!isTransportFailure(error)) throw error;
-      const permitted =
-        offline !== false &&
-        old?.resolution &&
-        ((typeof offline === 'object' &&
-          'pinnedVersionId' in offline &&
-          old.resolution.version.id === offline.pinnedVersionId) ||
-          (typeof offline === 'object' && 'maxAgeMs' in offline && age <= offline.maxAgeMs));
-      if (!permitted) throw error;
+      ]),
+    );
+    const old = await loadEntry(mapDir);
+    const response = await client.resolveChannel(
+      selection.workspaceId,
+      selection.bundleId,
+      selection.channel,
+      { etag: old?.etag },
+    );
+    if (response.notModified) {
+      if (!old?.resolution)
+        throw new DeliveryError(
+          'cache_miss',
+          'Service returned 304 without a cached channel mapping',
+        );
+      if (old.resolution.channel !== selection.channel)
+        throw new DeliveryError(
+          'invalid_response',
+          'Cached channel resolution does not match request',
+        );
+      validateVersion(old.resolution.version, selection.bundleId);
       resolution = old.resolution;
-      resolvedAt = old.resolvedAt;
-      stale = true;
+      await saveEntry(mapDir, { resolution, resolvedAt: now, etag: response.etag ?? old.etag });
+    } else {
+      resolution = response.resolution ?? undefined;
+      if (
+        !resolution ||
+        resolution.channel !== selection.channel ||
+        typeof resolution.revision !== 'string' ||
+        !/^\d+$/.test(resolution.revision)
+      )
+        throw new DeliveryError('invalid_response', 'Channel resolution response was malformed');
+      validateVersion(resolution.version, selection.bundleId);
+      await saveEntry(mapDir, { resolution, resolvedAt: now, etag: response.etag });
     }
-    if (!stale && maxAge > 0 && now - resolvedAt > maxAge)
-      throw new DeliveryError('stale_resolution', 'Channel mapping exceeds maxResolutionAgeMs');
   }
   let version: VersionMetadata,
     pinnedOffline = false,
@@ -239,7 +222,12 @@ export async function resolveAndCache(
       const index = await loadEntry(
         join(
           resolve(policy.cacheDir),
-          keyFor(client, [selection.workspaceId, selection.bundleId, 'version', selection.versionId]),
+          keyFor(client, [
+            selection.workspaceId,
+            selection.bundleId,
+            'version',
+            selection.versionId,
+          ]),
         ),
       );
       if (!index?.version || !Number.isFinite(index.cachedAt))
@@ -304,8 +292,8 @@ export async function resolveAndCache(
     version,
     payload,
     resolution,
-    resolvedAt: pinnedOffline ? pinnedAt : resolvedAt,
-    stale: stale || pinnedOffline,
+    resolvedAt: pinnedOffline ? pinnedAt : now,
+    stale: pinnedOffline,
     ...(client.connectionId
       ? {
           connection: Object.freeze({

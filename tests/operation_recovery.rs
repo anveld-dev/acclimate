@@ -140,25 +140,25 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
     assert_eq!(status, 201, "{seed}");
     let bundle = seed["bundle"]["id"].as_str().unwrap();
     let version = seed["version"]["id"].as_str().unwrap();
-    let promotions = format!("/v1/workspaces/{p}/bundles/{bundle}/channels/stable/releases");
+    let versions = format!("/v1/workspaces/{p}/bundles/{bundle}/versions");
     let key = Uuid::new_v4().to_string();
-    let body = json!({"versionId":version,"expectedRevision":"1","unevaluatedReason":"Reviewed original intent"});
-    let original = call(&app, "POST", &promotions, &key, &body, false, None).await;
+    let body = json!({"parentVersionId":version,"payload":{"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":"Reviewed original intent"}]}});
+    let original = call(&app, "POST", &versions, &key, &body, false, None).await;
     assert_eq!(original.0, 201, "{}", original.1);
     // The marked upgrade sees the old unmarked receipt before stale revision checks.
     assert_eq!(
-        call(&app, "POST", &promotions, &key, &body, true, None).await,
+        call(&app, "POST", &versions, &key, &body, true, None).await,
         original
     );
     sqlx::query("UPDATE idempotency SET expires_at=now()-interval '1 minute' WHERE project_id=$1 AND key=$2").bind(&p).bind(&key).execute(&state.db).await.unwrap();
     assert_eq!(
-        call(&app, "POST", &promotions, &key, &body, false, None).await,
+        call(&app, "POST", &versions, &key, &body, false, None).await,
         original
     );
     let recovered = call(
         &app,
         "GET",
-        &lookup(&p, &key, &promotions),
+        &lookup(&p, &key, &versions),
         "unused",
         &json!({}),
         false,
@@ -168,10 +168,10 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
     assert_eq!(recovered.0, 200);
     assert_eq!(recovered.1["result"], original.1);
     // The stored key and fingerprint are the exact canonical route the client called.
-    assert_eq!(recovered.1["path"], promotions);
+    assert_eq!(recovered.1["path"], versions);
     let mut fingerprint = Sha256::new();
     fingerprint.update(b"POST\0");
-    fingerprint.update(promotions.as_bytes());
+    fingerprint.update(versions.as_bytes());
     fingerprint.update([0]);
     fingerprint.update(body.to_string().as_bytes());
     assert_eq!(
@@ -181,9 +181,9 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
     let changed = call(
         &app,
         "POST",
-        &promotions,
+        &versions,
         &key,
-        &json!({"versionId":version,"expectedRevision":"2","unevaluatedReason":"Different bytes"}),
+        &json!({"parentVersionId":version,"payload":{"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":"Different bytes"}]}}),
         true,
         None,
     )
@@ -196,7 +196,7 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
         "POST",
         &close,
         &key,
-        &json!({"operationPath":promotions}),
+        &json!({"operationPath":versions}),
         false,
         None,
     )
@@ -212,7 +212,7 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
             "POST",
             &other_close,
             &other_key,
-            &json!({"operationPath":promotions}),
+            &json!({"operationPath":versions}),
             false,
             None
         )
@@ -226,20 +226,20 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
             .0,
         201
     );
-    let delayed=call(&app,"POST",&promotions,&other_key,&json!({"versionId":version,"expectedRevision":"2","unevaluatedReason":"Delayed unmarked request"}),false,None).await;
+    let delayed=call(&app,"POST",&versions,&other_key,&json!({"parentVersionId":version,"payload":{"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":"Delayed unmarked request"}]}}),false,None).await;
     assert_eq!(delayed.1["error"]["code"], "operation_closed");
     // Conversely the global setup receipt does not block another unrelated added-route key.
     let same_key = "seed";
-    let another=call(&app,"POST",&promotions,same_key,&json!({"versionId":version,"expectedRevision":"2","unevaluatedReason":"Independent route namespace"}),true,None).await;
+    let another=call(&app,"POST",&versions,same_key,&json!({"parentVersionId":version,"payload":{"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":"Independent route namespace"}]}}),true,None).await;
     assert_eq!(another.0, 201, "{}", another.1);
     // Closing an unmarked legacy commit adopts it durably, so repeat close cannot
     // turn a known commit into a tombstone after the old 24-hour receipt expires.
     let legacy_key = Uuid::new_v4().to_string();
-    let legacy_body = json!({"versionId":version,"expectedRevision":"3","unevaluatedReason":"Legacy close adoption"});
+    let legacy_body = json!({"parentVersionId":version,"payload":{"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":"Legacy close adoption"}]}});
     let legacy_commit = call(
         &app,
         "POST",
-        &promotions,
+        &versions,
         &legacy_key,
         &legacy_body,
         false,
@@ -253,7 +253,7 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
         "POST",
         &legacy_close,
         &legacy_key,
-        &json!({"operationPath":promotions}),
+        &json!({"operationPath":versions}),
         false,
         None,
     )
@@ -266,7 +266,7 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
             "POST",
             &legacy_close,
             &legacy_key,
-            &json!({"operationPath":promotions}),
+            &json!({"operationPath":versions}),
             false,
             None
         )
@@ -277,7 +277,7 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
         call(
             &app,
             "POST",
-            &promotions,
+            &versions,
             &legacy_key,
             &legacy_body,
             false,
@@ -441,8 +441,11 @@ async fn legacy_key_only_close_uses_the_committed_draft_action_and_drafts_channe
     assert_eq!(created.0, 201, "{}", created.1);
     let published_key = Uuid::new_v4().to_string();
     let publish_path = format!("{draft_path}/{}/publish", created.1["id"].as_str().unwrap());
-    let published=call(&app,"POST",&publish_path,&published_key,&json!({"expectedGeneration":1,"expectedRevision":"1","unevaluatedReason":"Reviewed publication"}),false,None).await;
-    assert_eq!(published.0, 200, "{}", published.1);
+    // Model a committed operation from the retired draft publication endpoint.
+    let published = json!({"id":created.1["id"],"status":"published"});
+    sqlx::query("INSERT INTO operation_records(principal_id,project_id,namespace,key,path,status,fingerprint,response_status,response_body) VALUES('recovery-principal',$1,'',$2,$3,'committed',$4,200,$5)")
+        .bind(&p).bind(&published_key).bind(&publish_path).bind(vec![0u8;32])
+        .bind(serde_json::to_vec(&published).unwrap()).execute(&state.db).await.unwrap();
     let mut promote_only = state.clone();
     let mut grants = (*state.grants).clone();
     grants[0].rights = vec!["promote".into()];
@@ -460,7 +463,7 @@ async fn legacy_key_only_close_uses_the_committed_draft_action_and_drafts_channe
     )
     .await;
     assert_eq!(result.0, 200, "{}", result.1);
-    assert_eq!(result.1["result"], published.1);
+    assert_eq!(result.1["result"], published);
     let key = Uuid::new_v4().to_string();
     let channel_drafts = format!("/v1/workspaces/{p}/bundles/{bundle}/channels/drafts/releases");
     assert_eq!(

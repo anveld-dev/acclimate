@@ -7,15 +7,15 @@ from acclimate import AcclimateClient, DeliveryReporter
 
 
 def main():
-    for key in ("ACCLIMATE_URL", "ACCLIMATE_TOKEN", "ACCLIMATE_SCOPE", "ACCLIMATE_WORKSPACE", "ACCLIMATE_BUNDLE"):
+    for key in ("ACCLIMATE_URL", "ACCLIMATE_TOKEN", "ACCLIMATE_SCOPE", "ACCLIMATE_WORKSPACE", "ACCLIMATE_BUNDLE", "ACCLIMATE_CONNECTION"):
         if not os.environ.get(key):
             raise ValueError("Set " + key)
     base_url = os.environ["ACCLIMATE_URL"]
     workspace_id, bundle_id = os.environ["ACCLIMATE_WORKSPACE"], os.environ["ACCLIMATE_BUNDLE"]
     scope = os.environ["ACCLIMATE_SCOPE"]
-    client = AcclimateClient(base_url, os.environ["ACCLIMATE_TOKEN"], scope)
+    client = AcclimateClient(base_url, os.environ["ACCLIMATE_TOKEN"], scope, connection_id=os.environ["ACCLIMATE_CONNECTION"])
     reporter = None
-    if os.environ.get("ACCLIMATE_RECEIPT_TOKEN") or os.environ.get("ACCLIMATE_CONNECTION"):
+    if os.environ.get("ACCLIMATE_RECEIPT_TOKEN"):
         try:
             # Reporting has its own short deadline and never retries automatically.
             receipt_client = AcclimateClient(base_url, os.environ["ACCLIMATE_RECEIPT_TOKEN"],

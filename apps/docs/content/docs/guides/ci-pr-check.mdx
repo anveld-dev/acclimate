@@ -1,11 +1,11 @@
 ---
 title: Run a pull request check
-description: Gate pull requests on your quality policy with the Acclimate GitHub Action or the CI wrapper, then release the evaluated candidate after merge.
+description: Gate pull requests on your quality policy with the Acclimate GitHub Action or the CI wrapper.
 ---
 
-A PR check evaluates the agent files committed at one Git commit. It compares them with the channel's current release on your saved cases, applies your quality policy and fails the check when the policy fails. The check never releases. A separate job with a separate credential releases after merge.
+A PR check evaluates the agent files committed at one Git commit. It compares them with the channel's current release on your saved cases, applies your quality policy and fails the check when the policy fails. The result informs the pull request. Connected learning runs its own evaluations and delivers passing changes automatically.
 
-The check uses the CI starter from your [SDK release](/docs/get-started/install): `ci.sh` (the wrapper), `action.yml` (a GitHub composite action), and `workflows/pr-check.yml` and `workflows/release.yml` to copy. You also need a trusted evaluator installed on the runner, with its private cases and a quality policy.
+The check uses the CI starter from your [SDK release](/docs/get-started/install): `ci.sh` (the wrapper), `action.yml` (a GitHub composite action), and `workflows/pr-check.yml`. You also need a trusted evaluator installed on the runner, with its private cases and a quality policy.
 
 ## Choose a runner
 
@@ -83,7 +83,7 @@ Outputs: `result`, `verdict`, `comparison-id`, `request-id`, `candidate-version-
 
 ## Grant the least privilege
 
-Give the PR check a workspace evaluator token that holds only the `evaluate` right. Issue it under **Settings → Members → Evaluator tokens**. The `evaluate` right lets the evaluator create and run evaluation requests, record policy receipts and abandon its own uncertain attempts, but it can't publish or release, so a compromised PR job can't change a channel. Keep the releasing credential in a protected GitHub environment that only the post-merge release job can use. See [provision evaluator access](/docs/operate/evaluator-access#grant-access).
+Give the PR check a workspace evaluator token that holds only the `evaluate` right. Issue it under **Settings → Members → Evaluator tokens**. The `evaluate` right lets the evaluator create and run evaluation requests, record policy receipts and abandon its own uncertain attempts. See [provision evaluator access](/docs/operate/evaluator-access#grant-access).
 
 Store the token as a secret and pass it as the `token` input. The token is never written to a file or a config. The wrapper writes a temporary, token-free owner-only copy of the config inside the output directory, deletes it when the run ends, and hands the token to each evaluator process in `ACCLIMATE_EVALUATOR_TOKEN`. Outside GitHub, pass `--token-env NAME` or `--token-file FILE` to the wrapper, or set `evaluatorTokenFile` in the evaluator config.
 
@@ -116,14 +116,7 @@ A cancelled run isn't a verdict. Rerunning the same commit starts a fresh reques
 
 ## Release after merge
 
-Copy `workflows/release.yml` to release the candidate after a merge to `main`. The `gate` job runs the same check on `main`. When the bundle, release and evaluator are unchanged since the PR, it reuses the PR's request, so the released candidate is the one that was reviewed. The `release` job runs only when the gate passes. It uses a protected `acclimate-release` environment that holds the releasing token, installs the SDK release, and promotes with the operator CLI:
-
-```sh
-acclimate-operator promote --workspace "$WORKSPACE" --bundle "$BUNDLE" --channel stable \
-  --version "$CANDIDATE" --comparison "$COMPARISON" --expected-revision "$REVISION" --key "release-$GITHUB_SHA"
-```
-
-The service checks the releasing principal's permission, the evidence and the expected channel revision. See the [operator CLI](/docs/reference/operator-cli) and [review and release](/docs/guides/review-and-release).
+CI records a comparison for the pull request. Your enrolled connection uses corrections, development tests and a held-out audit to decide what to deliver. [Set up connected learning](/docs/guides/connected-learning)
 
 ## Use the wrapper in another CI system
 

@@ -191,7 +191,7 @@ export function ReleaseComparison({
           )}
           {!release.comparisonId ? (
             <>
-              <StatusBadge>Manual release</StatusBadge>
+              <StatusBadge>{release.revision === '1' ? 'Initial release' : 'No comparison recorded'}</StatusBadge>
               <p>{release.unevaluatedReason || 'No release reason recorded.'}</p>
             </>
           ) : summary && typeof evidence === 'object' ? (

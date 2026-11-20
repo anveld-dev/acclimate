@@ -1,4 +1,3 @@
-"""Review connected learning decisions through the console and their public evidence."""
 import re
 from urllib.parse import parse_qs, urlsplit
 
@@ -28,178 +27,50 @@ def blocking_receipt(w, phase, **threshold):
     return receipt
 
 
-def evaluate_connected_candidate(w):
-    enroll_reviews(w)
-    grade_through_audit(w)
-    assert w.finish()['status'] == 'completed'
-    return wait_for_round(w, 'awaiting_review')
-
-
-@given('its audited candidate is awaiting rollout with one blocking policy')
+@given('a connected audit is blocked by a recorded application policy')
 def audited_candidate(context):
     w = context.world
-    w.round = evaluate_connected_candidate(w)
-    w.first_receipt = blocking_receipt(w, 'development', minimumMeanImprovement=1.01)
+    enroll_reviews(w)
+    grade_through_audit(w)
+    w.round = wait_for_round(w, 'audit')
+    blocking_receipt(w, 'development', minimumMeanImprovement=1.01)
+    assert w.finish()['status'] == 'completed'
+    w.rejected = wait_for_round(w, 'rejected')
+    assert w.rejected['auditComparisonId'] and not w.rejected['promotionId']
 
 
-def rollout_dialog(w):
-    return w.browser_fixture.page.get_by_role('dialog', name='Roll out this candidate?', exact=True)
-
-
-def expect_receipts(dialog, *receipts):
-    expect(dialog.get_by_role('link')).to_have_count(len(receipts))
-    for receipt in receipts:
-        policy = receipt['policy']
-        label = f"{policy['id']} · {policy['revision']} · {receipt['verdict']}"
-        link = dialog.get_by_role('link', name=label, exact=True)
-        expect(link).to_be_visible()
-        target = parse_qs(urlsplit(link.get_attribute('href')).query)
-        assert target['comparison'] == [receipt['comparisonId']]
-        assert target['request'] == [receipt['requestId']]
-
-
-@when('the reviewer opens the rollout dialog and acknowledges the first policy')
-def open_review(context):
+@when('a signed-in administrator tries to approve that blocked round')
+def approve_closed_round(context):
     w = context.world
-    open_learning(w).get_by_role('button', name='Review rollout', exact=True).click()
-    dialog = rollout_dialog(w)
-    expect(dialog.get_by_text(w.round['candidateVersionId'], exact=True)).to_be_visible()
-    expect_receipts(dialog, w.first_receipt)
-    dialog.get_by_label('Reason for overriding these policies').fill('Reviewed development coverage.')
+    w.call('POST', w.learning_path + '/rounds/' + w.round['id'] + '/review',
+           dict(approve=True), actor='admin', expected=404)
 
 
-@when('the evaluator records another blocking policy before the reviewer confirms')
-def additional_policy(context):
+@then('the rejection and original delivery survive restart')
+def rejection_survives(context):
     w = context.world
-    w.second_receipt = blocking_receipt(w, 'audit', minimumMeanImprovement=0, candidateThreshold=1.01)
-    expect_receipts(rollout_dialog(w), w.first_receipt)
-
-
-@when('the reviewer submits the open rollout dialog')
-def stale_approval(context):
-    w = context.world
-    rollout_dialog(w).get_by_role('button', name='Roll out candidate', exact=True).click()
-
-
-@then('the console explains the conflict and the connection still serves the original revision')
-def conflict(context):
-    w = context.world
-    region = w.browser_fixture.page.get_by_role('region', name='Continuous learning')
-    expect(region.get_by_role('alert')).to_contain_text('Refresh learning status and review the current receipts')
-    assert w.call('GET', w.channel, actor='content-reader') == w.original_delivery
-    assert w.call('GET', w.history_path)['items'] == w.original_history
-    assert wait_for_round(w, 'awaiting_review')['promotionId'] is None
-
-
-@when('a different reviewer approves that candidate and retries the recorded decision')
-def competing_approval(context):
-    w = context.world
-    w.review_path = w.learning_path + '/rounds/' + w.round['id'] + '/review'
-    receipt = w.first_receipt
-    w.winning_override = dict(reason='Release after inspecting the retry traces.', receipts=[
-        dict(comparisonId=receipt['comparisonId'], policyDigest=receipt['policy']['sha256'])])
-    approval = dict(approve=True, policyOverride=w.winning_override)
-    w.winning_review = w.call('POST', w.review_path, approval, actor='operator')
     w.h.restart()
-    assert w.call('POST', w.review_path, approval, actor='operator') == w.winning_review
-
-
-@then('the console identifies the reviewer and reason that won the race')
-def competing_review_notice(context):
-    w = context.world
-    region = w.browser_fixture.page.get_by_role('region', name='Continuous learning')
-    alert = region.get_by_role('alert')
-    expect(alert).to_contain_text('approved by operator')
-    expect(alert).to_contain_text(w.winning_override['reason'])
-
-
-@then('the release retains one decision even if its author sends a different acknowledgment')
-def original_review_retained(context):
-    w = context.world
-    for actor, override in [('admin', w.winning_override),
-                            ('operator', dict(w.winning_override, reason='Changed reason.')),
-                            ('operator', dict(w.winning_override, receipts=[]))]:
-        result = w.call('POST', w.review_path, dict(approve=True, policyOverride=override), actor=actor, expected=409)
-        assert result['error']['code'] == 'review_already_decided'
-    history = w.call('GET', w.history_path)['items']
-    assert len(history) == len(w.original_history) + 1
-    release = history[0]
-    assert release['id'] == w.winning_review['promotionId'] and release['reviewer'] == 'operator'
-    assert release['policyOverride'] == w.winning_override
-    assert w.call('GET', w.channel, actor='content-reader')['revision'] == release['revision']
-
-
-@when('the signed-in reviewer declines the rollout and repeats the decision after restart')
-def repeat_decline(context):
-    w = context.world
-    w.prepare_browser_identity()
-    w.review_path = w.learning_path + '/rounds/' + w.round['id'] + '/review'
-    declined = w.call('POST', w.review_path, dict(approve=False), actor='admin')
-    assert declined == dict(roundId=w.round['id'], state='rejected')
-    w.h.restart()
-    assert w.call('POST', w.review_path, dict(approve=False), actor='admin') == declined
-
-
-@then('a competing reviewer sees who declined and the original delivery is still served')
-def decline_retained(context):
-    w = context.world
-    for approve in (False, True):
-        result = w.call('POST', w.review_path, dict(approve=approve), actor='operator', expected=409)['error']
-        assert result['code'] == 'review_already_decided'
-        assert result['details'] == dict(roundId=w.round['id'], state='rejected', reviewer='user:' + w.sessions['admin']['userId'])
-    assert w.call('GET', w.history_path)['items'] == w.original_history
+    assert wait_for_round(w, 'rejected')['reason'] == w.rejected['reason']
     assert w.call('GET', w.channel, actor='content-reader') == w.original_delivery
 
 
-@when('the reviewer refreshes learning status and reviews both policies')
-def refresh_review(context):
+@then('the connection shows the rejection reason without an approval action')
+def blocked_policy_reason(context):
     w = context.world
-    p = w.browser_fixture.page
-    p.get_by_role('button', name='Refresh learning status', exact=True).click()
-    p.get_by_role('button', name='Review rollout', exact=True).click()
-    dialog = rollout_dialog(w)
-    expect_receipts(dialog, w.first_receipt, w.second_receipt)
-    expect(dialog.get_by_label('Reason for overriding these policies')).to_have_value('')
-    expect(dialog.get_by_role('button', name='Roll out candidate', exact=True)).to_be_disabled()
-
-
-@when('the reviewer approves with a new reason')
-def approve(context):
-    w = context.world
-    w.override_reason = 'Reviewed development and audit coverage for this connection.'
-    dialog = rollout_dialog(w)
-    dialog.get_by_label('Reason for overriding these policies').fill(w.override_reason)
-    dialog.get_by_role('button', name='Roll out candidate', exact=True).click()
-
-
-@then('exactly one release records the candidate, reviewer, new reason and both receipts')
-def released(context):
-    w = context.world
-    region = w.browser_fixture.page.get_by_role('region', name='Continuous learning')
-    expect(region.get_by_role('button', name='Review rollout', exact=True)).to_have_count(0)
-    expect(region.get_by_text('Released · outcome', exact=False)).to_be_visible()
-    round_ = wait_for_round(w, 'promoted')
-    release, *previous = w.call('GET', w.history_path)['items']
-    assert previous == w.original_history
-    assert release['id'] == round_['promotionId']
-    assert release['version']['id'] == w.round['candidateVersionId']
-    assert release['previousVersionId'] == w.original_delivery['version']['id']
-    assert release['comparisonId'] == w.round['auditComparisonId']
-    assert release['reviewer'] == 'user:' + w.sessions['admin']['userId']
-    decision = release['policyOverride']
-    assert decision['reason'] == w.override_reason
-    expected = [(r['comparisonId'], r['policy']['sha256']) for r in (w.first_receipt, w.second_receipt)]
-    assert sorted((r['comparisonId'], r['policyDigest']) for r in decision['receipts']) == sorted(expected)
-    delivery = w.call('GET', w.channel, actor='content-reader')
-    assert delivery['version'] == release['version']
-    assert int(delivery['revision']) == int(w.original_delivery['revision']) + 1
+    panel = open_learning(w)
+    expand = panel.get_by_role('button', name=re.compile('Rejected · outcome ' + w.outcome_id[:8]))
+    if expand.get_attribute('aria-expanded') != 'true':
+        expand.click()
+    expect(panel.get_by_text(w.rejected['reason'], exact=True).first).to_be_visible()
+    expect(panel.get_by_role('button', name='Roll out this candidate')).to_have_count(0)
 
 
 @given('an independently graded field job triggered automatic rollback')
 def automatic_rollback(context):
     w = context.world
-    reviewed = evaluate_connected_candidate(w)
-    w.call('POST', w.learning_path + '/rounds/' + reviewed['id'] + '/review', dict(approve=True))
+    enroll_reviews(w)
+    grade_through_audit(w)
+    assert w.finish()['status'] == 'completed'
     w.round = wait_for_round(w, 'promoted')
     w.served = w.call('GET', w.channel, actor='content-reader')
     assert w.served['version']['id'] == w.round['candidateVersionId']
@@ -307,7 +178,7 @@ def trace_later_job(context):
 @given('a candidate improved development but lost a protected code-review instruction in audit')
 def rejected_audit(context):
     w = context.world
-    enroll_reviews(w, automatic=True, audit={
+    enroll_reviews(w, reserve=True, audit={
         'duplicate-review': 'duplicated effects', 'idempotency-review': 'idempotency',
         'code-review': 'Review code.',
     }, audit_protected_thresholds={'code-review': 1})
@@ -373,7 +244,7 @@ def displayed_regression(context):
 @given('an automatic rollout is waiting for its evaluator to finish a passing audit')
 def pending_audit(context):
     w = context.world
-    enroll_reviews(w, automatic=True)
+    enroll_reviews(w, reserve=True)
     grade_through_audit(w)
     w.round = wait_for_round(w, 'audit')
     assert w.call('GET', w.evaluation_path)['status'] == 'running'

@@ -30,25 +30,18 @@ def allowed(context):
     context.world.python_result=context.world.sdk('pythonDelivery',offline=True)
 
 
-@then('Python receives "{text}" from a stale cached mapping')
-def cached(context,text):
-    result=context.world.python_result
-    assert result['instruction']==text and result['stale'] is True
-
-
-@when('a Python application saves two generations, records comparison evidence and publishes')
+@when('a Python application saves two generations and records comparison evidence')
 def author(context):
-    context.world.python_result=context.world.sdk('pythonAuthor')
+    context.world.python_result = context.world.sdk('pythonAuthor')
 
 
-@then('Python and the service agree on the released snapshot and its two saved generations')
-def released(context):
-    w=context.world
-    result=w.python_result
-    assert result['published']['status']=='published'
-    assert result['current']['version']==result['draft']['snapshotVersion']
-    assert [entry['generation'] for entry in result['history']['items']]==[2,1]
-    assert w.call('GET',w.channel)['version']==result['current']['version']
+@then('Python preserves both saved generations and the connected job still receives the seed')
+def saved_candidate(context):
+    w = context.world
+    result = w.python_result
+    assert result['comparison']['candidateVersionId'] == result['draft']['snapshotVersion']['id']
+    assert [entry['generation'] for entry in result['history']['items']] == [2, 1]
+    assert w.sdk('pythonDelivery')['version'] == w.original['version']
 
 
 @when('Python prepares and explicitly reports its own session start')

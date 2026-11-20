@@ -105,28 +105,25 @@ class AcclimateClient:
         workspace_id: str,
         bundle_id: str,
         *,
-        channel: str | None = None,
-        version_id: str | None = None,
+        channel: str,
         cache_dir: str | Path | None = None,
         destination: str | Path | None = None,
-        offline: OfflinePolicy | None = None,
         max_cache_bytes: int = 20 * 1024 * 1024,
         reporter: DeliveryReporter | None = None,
     ) -> "PreparedDelivery":
         """Resolve and stage verified content for one job. Use as a context manager or call cleanup.
 
-        ``offline`` permits fallback on a transport failure or HTTP 503 only:
-        ``{"max_age_ms": 300_000}`` for a cached channel, or
-        ``{"pinned_version_id": version_id}`` for one exact cached version.
+        New jobs resolve their enrolled connection online. Each job keeps that version until cleanup.
         """
         from .delivery import prepare_files, resolve_and_cache, _remove_job_directory
 
+        if not self.connection_id or not channel:
+            raise UsageError("Start jobs with an enrolled connection and its channel", "selection")
         if cache_dir is None:
             cache_dir = Path.home().resolve() / ".cache" / "acclimate" / "python"
         version = resolve_and_cache(
-            self, workspace_id, bundle_id, channel=channel, version_id=version_id,
+            self, workspace_id, bundle_id, channel=channel,
             cache_dir=str(cache_dir),
-            offline=offline,
             max_cache_bytes=max_cache_bytes, reporter=reporter,
         )
         if destination is None:
@@ -336,6 +333,14 @@ class AcclimateClient:
             delivery=True,
         )
 
+    def inspect_source(self, workspace_id: str, bundle_id: str, channel: str) -> ChannelResolution | None:
+        """Read source history for evaluation or management."""
+        releases = self.list_releases(workspace_id, bundle_id, channel, limit=1)["items"]
+        if not releases:
+            return None
+        release = releases[0]
+        return {"channel": release["channel"], "revision": release["revision"], "version": release["version"]}
+
     def list_releases(
         self, workspace_id: str, bundle_id: str, channel: str, *,
         limit: int = 20, before_revision: str | None = None,
@@ -356,6 +361,8 @@ class AcclimateClient:
         request: CreateReleaseRequest,
         key: str,
     ) -> Release:
+        if request.get("expectedRevision") != "0" or not request.get("unevaluatedReason") or request.get("comparisonId") or request.get("policyOverride"):
+            raise UsageError("Only the initial release can be seeded. Subsequent releases use connected learning.", "expectedRevision")
         return self._request(
             "POST",
             self._base(workspace_id, bundle_id)
@@ -483,9 +490,6 @@ class AcclimateClient:
     def discard_draft(self, workspace_id: str, bundle_id: str, channel: str, draft_id: str, request: DiscardDraftRequest, key: str) -> Draft:
         return self._request("POST", self._draft(workspace_id, bundle_id, channel, draft_id) + "/discard", request, key)
 
-    def publish_draft(self, workspace_id: str, bundle_id: str, channel: str, draft_id: str, request: PublishDraftRequest, key: str) -> Draft:
-        return self._request("POST", self._draft(workspace_id, bundle_id, channel, draft_id) + "/publish", request, key)
-
     def create_evaluation(self, workspace_id: str, bundle_id: str, request: EvaluationRequest, key: str) -> Evaluation:
         return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests", request, key)
 
@@ -609,19 +613,6 @@ class AcclimateClient:
             audit["outcomeId"] if key is None else key,
         )
 
-    def review_learning_round(
-        self, workspace_id: str, connection_id: str, round_id: str, approve: bool, key: str, *,
-        policy_override: PolicyOverride | None = None,
-    ) -> LearningReviewReceipt:
-        body: dict[str, Any] = {"approve": approve}
-        if policy_override is not None:
-            body["policyOverride"] = policy_override
-        return self._request(
-            "POST",
-            self._learning(workspace_id, connection_id) + "/rounds/" + self._part(round_id) + "/review",
-            body, key,
-        )
-
     def renew_learning(
         self, workspace_id: str, connection_id: str, renewal: LearningRenewalRequest, key: str | None = None
     ) -> LearningRenewalReceipt:
@@ -630,14 +621,6 @@ class AcclimateClient:
             renewal["renewalId"] if key is None else key,
         )
 
-    def restore_learning(
-        self, workspace_id: str, connection_id: str, restore: LearningRestoreRequest, key: str | None = None
-    ) -> Release:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/restore", restore,
-            restore["restoreId"] if key is None else key,
-        )
 
-
-# Delivery uses this client for service reads. Load its public return type once the client exists.
+# Resolve the public return type once the client exists.
 from .delivery import PreparedDelivery

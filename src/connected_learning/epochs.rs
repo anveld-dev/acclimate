@@ -221,24 +221,10 @@ pub(super) async fn renew(
         .or(settings.selection_policies.as_ref());
     let previous_epoch = row.get::<i64, _>("policy_epoch");
     let epoch = if rotate {
-        if settings.automatic_rollout {
-            crate::auth::authorize_transaction(&mut tx, &actor, &project, "promote").await?;
-        }
-        let reviews = sqlx::query(
-            "SELECT * FROM connected_learning_rounds
-            WHERE (project_id,integration_id)=($1,$2) AND state='awaiting_review'",
-        )
-        .bind(&project)
-        .bind(integration)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(db)?;
-        for round in reviews {
-            crate::connected_learning_worker::expire_review(&mut tx, &round).await?;
-        }
+        crate::auth::authorize_transaction(&mut tx, &actor, &project, "promote").await?;
         let active: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM connected_learning_rounds WHERE project_id=$1 AND integration_id=$2
-             AND state IN ('proposing','development','audit','awaiting_review'))"
+             AND state IN ('proposing','development','audit'))"
         ).bind(&project).bind(integration).fetch_one(&mut *tx).await.map_err(db)?;
         if active {
             return Err(conflict(
@@ -275,7 +261,7 @@ pub(super) async fn renew(
         previous_epoch
     };
     if rotate || !request.audits.is_empty() {
-        validate_descriptors(development, &request.audits, settings.automatic_rollout)?;
+        validate_descriptors(development, &request.audits)?;
         if let Some(policies) = policies {
             policies.development.validate(&[development], None)?;
             let spent = sqlx::query_scalar::<_, i32>(
@@ -286,9 +272,7 @@ pub(super) async fn renew(
                 .audits
                 .iter()
                 .enumerate()
-                .filter(|(i, d)| {
-                    !spent.contains(&(*i as i32)) && (!settings.automatic_rollout || d.committed())
-                })
+                .filter(|(i, d)| !spent.contains(&(*i as i32)) && d.committed())
                 .map(|(_, d)| d)
                 .chain(&request.audits)
                 .collect::<Vec<_>>();

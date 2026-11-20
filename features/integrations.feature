@@ -5,6 +5,7 @@ Feature: Optional application delivery reports
   Background:
     Given a published bundle containing "Review code."
     And I created an integration for this bundle and channel
+    And the application enrolls this bundle for automatic delivery
 
   @INTEGRATION-01
   Scenario: New integrations have unknown delivery rather than invented success

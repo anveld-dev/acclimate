@@ -9,17 +9,12 @@ def open_member(context):
     w.browser_actor='member'
     w.browser().select_bundle()
 
-@then('browser content editing is {editing}')
-def rights(context,editing):
+@then('the member can inspect content and delivery')
+def rights(context):
     w=context.world
     p=w.browser_fixture.page
-    edit=p.get_by_role('link',name='Edit entry',exact=True)
-    if editing=='available':
-        edit.click()
-        expect(p.get_by_role('textbox', name='Content', exact=True)).to_be_editable()
-    else:
-        expect(edit).to_have_count(0)
-        expect(p.get_by_role('textbox', name='Content', exact=True)).to_have_count(0)
+    expect(p.get_by_test_id('entry-content')).to_have_text('Review code.')
+    expect(p.get_by_role('link', name='Edit entry', exact=True)).to_have_count(0)
     # Observe delivery as an ordinary workspace member without granting credential administration.
     connection=w.call('POST',w.root+'/connections',dict(bundleId=w.setup['bundle']['id'],
         channel='stable',displayName='Reader delivery fixture'),actor='admin')

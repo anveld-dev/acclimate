@@ -14,7 +14,6 @@ export const roundLabels: Record<string, string> = {
   proposing: 'Generating proposal',
   development: 'Comparing versions',
   audit: 'Independent comparison',
-  awaiting_review: 'Awaiting decision',
   promoted: 'Released',
   rejected: 'Rejected',
 };

@@ -10,7 +10,7 @@ Feature: Bounded service proposals
   Scenario: A valid proposal creates a reviewable immutable candidate
     When I request a proposal that may edit only "AGENTS.md"
     Then the proposal succeeds with a candidate changing only "AGENTS.md"
-    And applications still resolve the original release
+    And the source still contains only the original release
 
   @PROPOSAL-02
   Scenario: Provider edits outside the allowed paths are rejected
@@ -18,7 +18,7 @@ Feature: Bounded service proposals
     When I request a proposal that may edit only "AGENTS.md"
     Then the proposal fails without a candidate
     And the service rejects the returned memory edit as outside the allowed paths
-    And applications still resolve the original release
+    And the source still contains only the original release
 
   @PROPOSAL-03
   Scenario: Provider errors do not become pretend improvements
@@ -26,14 +26,14 @@ Feature: Bounded service proposals
     When I request a proposal that may edit only "AGENTS.md"
     Then the proposal fails without a candidate
     And the service reports a provider request failure
-    And applications still resolve the original release
+    And the source still contains only the original release
 
   @PROPOSAL-04
   Scenario: Disabled proposal generation reports failure honestly
     Given proposal generation is not configured
     When I request a proposal that may edit only "AGENTS.md"
     Then the proposal fails without a candidate
-    And applications still resolve the original release
+    And the source still contains only the original release
 
   @PROPOSAL-05
   Scenario: A refreshed client can find and inspect its proposal
@@ -46,7 +46,7 @@ Feature: Bounded service proposals
     Given the provider fixture uses supersede proposal output
     When I request a proposal that may edit only "memory/team.md, memory/team-v2.md"
     Then the candidate replaces the old memory note with the new note
-    And applications still resolve the original release
+    And the source still contains only the original release
 
   @PROPOSAL-07
   Scenario: A candidate over the growth limit is retried

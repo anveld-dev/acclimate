@@ -40,12 +40,13 @@ export async function improve(client: AcclimateClient, config: Config, model: Mo
   if ((await realpath(outputDir)) !== outputDir) throw new Error('Output path contains a symlink');
   if ((await readdir(outputDir)).length) throw new Error('Output directory must be empty');
   const cacheDir = path.join(outputDir, 'cache');
+  const source = await client.inspectSource(config.workspace, config.bundle, config.channel);
+  if (!source) throw new Error('Seed the bundle before comparing a candidate.');
   const parent = await resolveAndCache(
     client,
-    { workspaceId: config.workspace, bundleId: config.bundle, channel: config.channel },
+    { workspaceId: config.workspace, bundleId: config.bundle, versionId: source.version.id },
     { cacheDir },
   );
-  if (!parent.resolution) throw new Error('Channel resolution missing');
   const skill = parent.payload.files.find((f) => f.path === config.skillPath && f.kind === 'skill');
   if (!skill || !config.skillPath.endsWith('/SKILL.md'))
     throw new Error('Allowed path must be an existing skill manifest');
@@ -157,7 +158,7 @@ export async function improve(client: AcclimateClient, config: Config, model: Mo
     workspace: config.workspace,
     bundle: config.bundle,
     channel: config.channel,
-    channelRevision: parent.resolution.revision,
+    channelRevision: source.revision,
     parent: parent.version,
     candidate: candidate.version,
     proposalId: final.id,

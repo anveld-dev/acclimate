@@ -35,7 +35,7 @@ npx acclimate-eval describe
 npx acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff "$HANDOFF" --live
 ```
 
-## Deliver a pinned version to a job
+## Start a job with its connection’s release
 
 ```ts
 import { AcclimateClient } from '@acclimate/sdk';
@@ -44,6 +44,7 @@ const client = new AcclimateClient({
   baseUrl: process.env.ACCLIMATE_URL!,
   token: process.env.ACCLIMATE_TOKEN!,
   scope: 'support-agent',
+  connectionId: process.env.ACCLIMATE_CONNECTION!,
 });
 const prepared = await client.prepare({ workspaceId, bundleId, channel: 'stable' });
 try {

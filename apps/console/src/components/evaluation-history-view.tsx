@@ -1,6 +1,6 @@
 import { ReceiptTime } from './receipt-time';
 import { Fragment, useId, useLayoutEffect, useRef, type ReactNode } from 'react';
-import type { Comparison, Evaluation, EvaluationProgressView, Outcome } from '@acclimate/sdk';
+import type { Comparison, Evaluation, EvaluationRequest, EvaluationProgressView, Outcome } from '@acclimate/sdk';
 import type { EvaluationHistoryViewProps, RequestEvidence } from '../lib/changes-workspace';
 import { evaluationEvidenceSummary, notComparableReasons } from '../lib/evaluation-history';
 import { evaluationPairs, formatReward, pairCounts, pairLabels } from '../lib/evaluation-pairs';
@@ -97,7 +97,13 @@ function OutcomeView({ label, outcome }: { label: string; outcome: Outcome | und
   );
 }
 
-function Provenance({ request, comparison }: { request: Evaluation; comparison?: Comparison }) {
+type RunMetadata = EvaluationRequest & {
+  id?: string;
+  attemptId?: string | null;
+  comparisonId?: string | null;
+};
+
+export function RunProvenance({ request, comparison }: { request: RunMetadata; comparison?: Comparison }) {
   const runtime = Object.entries(request.runtime ?? {});
   return (
     <div className="evaluation-ledger-provenance">
@@ -302,7 +308,7 @@ function Detail({
         <Disclosure>
           <DisclosureTrigger>Run details</DisclosureTrigger>
           <DisclosureContent className="space-y-3 pt-3">
-            <Provenance
+            <RunProvenance
               request={request}
               comparison={'comparison' in evidence ? evidence.comparison : undefined}
             />

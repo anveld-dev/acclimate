@@ -17,7 +17,9 @@ import type { BundlePayload, Release, ReleasePage } from '../../packages/sdk/src
 const live = process.argv.includes('--live');
 const database = process.env.EVALUATION_TEST_DATABASE_URL;
 if (!database || !/^postgres(?:ql)?:\/\//.test(database))
-  throw new Error('EVALUATION_TEST_DATABASE_URL must point to the owned disposable qualification database');
+  throw new Error(
+    'EVALUATION_TEST_DATABASE_URL must point to the owned disposable qualification database',
+  );
 const root = process.cwd();
 const dir = await mkdtemp(path.join(await realpath(os.tmpdir()), 'acclimate-roadmap-'));
 const project = `roadmap-${randomUUID()}`,
@@ -159,14 +161,25 @@ try {
     servicePort = await listen(reservation);
   await new Promise<void>((resolve) => reservation.close(() => resolve()));
   // Share the private production fixture contract; machine grants keep their exact rights.
-  const productionEnv = JSON.parse(execFileSync(process.env.ACCLIMATE_TEST_PYTHON || 'python3',
-    ['-m', 'scripts.testing.production'], {
-      cwd: root,
-      input: JSON.stringify({database_url: database, bind: `127.0.0.1:${servicePort}`,
-        project, tokens: {operator: token}, login_token: randomUUID() + randomUUID(),
-        console_token: randomUUID() + randomUUID(), base_env: process.env}),
-      encoding: 'utf8',
-    })) as NodeJS.ProcessEnv;
+  const productionEnv = JSON.parse(
+    execFileSync(
+      process.env.ACCLIMATE_TEST_PYTHON || 'python3',
+      ['-m', 'scripts.testing.production'],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          database_url: database,
+          bind: `127.0.0.1:${servicePort}`,
+          project,
+          tokens: { operator: token },
+          login_token: randomUUID() + randomUUID(),
+          console_token: randomUUID() + randomUUID(),
+          base_env: process.env,
+        }),
+        encoding: 'utf8',
+      },
+    ),
+  ) as NodeJS.ProcessEnv;
   service = spawn(path.join(root, 'target/debug/acclimate-service'), [], {
     cwd: root,
     env: {
@@ -220,7 +233,7 @@ try {
   );
   const old = await resolveAndCache(
     client,
-    { workspaceId: project, bundleId: bundle.id, channel: 'fixture' },
+    { workspaceId: project, bundleId: bundle.id, versionId: parent.id },
     { cacheDir: path.join(dir, 'old-cache') },
   );
   const oldWorkspace = await prepare(old);
@@ -315,7 +328,7 @@ try {
     assert.equal(draftCalls, 1);
     assert.equal(reviewCalls, 4);
     assert.equal(
-      (await client.resolveChannel(project, bundle.id, 'fixture')).resolution?.version.id,
+      (await client.inspectSource(project, bundle.id, 'fixture'))?.version.id,
       parent.id,
     );
     if (!summary.complete) {
@@ -343,87 +356,26 @@ try {
         JSON.stringify(review, null, 2) + '\n',
         { mode: 0o600, flag: 'wx' },
       );
-      // Only this named disposable fixture reviewer applies the reviewed operation.
-      const promoted = (await operator(
-        'promote',
-        '--version',
-        summary.candidate.id,
-        '--comparison',
-        summary.comparisonId,
-        '--expected-revision',
-        seed.revision,
-      )) as Release;
-      const next = await resolveAndCache(
-        client,
-        { workspaceId: project, bundleId: bundle.id, channel: 'fixture' },
-        { cacheDir: path.join(dir, 'old-cache') },
+      const history = (await operator('history', '--limit', '2')) as ReleasePage;
+      assert.deepEqual(
+        history.items.map((item) => item.id),
+        [seed.id],
       );
-      const nextWorkspace = await prepare(next);
+      const candidate = await resolveAndCache(
+        client,
+        { workspaceId: project, bundleId: bundle.id, versionId: summary.candidate.id },
+        { cacheDir: path.join(dir, 'candidate-cache') },
+      );
+      const candidateWorkspace = await prepare(candidate);
       try {
-        const proposed = JSON.parse(
-          await readFile(path.join(dir, 'review/candidate-payload.json'), 'utf8'),
-        ) as BundlePayload;
-        assert.equal(nextWorkspace.versionId, summary.candidate.id);
         assert.equal(
-          await readFile(nextWorkspace.skillPaths[0]!, 'utf8'),
-          proposed.files.find((f) => f.kind === 'skill')!.text,
+          await readFile(candidateWorkspace.skillPaths[0]!, 'utf8'),
+          candidate.payload.files.find((file) => file.kind === 'skill')!.text,
         );
-        assert.equal(oldWorkspace.versionId, parent.id);
         assert.equal(await readFile(oldWorkspace.skillPaths[0]!, 'utf8'), payload.files[1]!.text);
       } finally {
-        await nextWorkspace.cleanup();
+        await candidateWorkspace.cleanup();
       }
-      await assert.rejects(
-        () =>
-          client.createRelease(
-            project,
-            bundle.id,
-            'fixture',
-            {
-              versionId: parent.id,
-              expectedRevision: seed.revision,
-              unevaluatedReason: 'stale fixture',
-            },
-            randomUUID(),
-          ),
-        (error: unknown) =>
-          error instanceof ApiError && error.status === 409 && error.code === 'revision_conflict',
-      );
-      const rolledBack = (await operator(
-        'rollback',
-        '--version',
-        parent.id,
-        '--reason',
-        'Fixture rollback',
-        '--expected-revision',
-        promoted.revision,
-      )) as Release;
-      const restored = await resolveAndCache(
-        client,
-        { workspaceId: project, bundleId: bundle.id, channel: 'fixture' },
-        { cacheDir: path.join(dir, 'old-cache') },
-      );
-      const restoredWorkspace = await prepare(restored);
-      try {
-        assert.equal(restored.version.digest, parent.digest);
-        assert.equal(
-          await readFile(restoredWorkspace.skillPaths[0]!, 'utf8'),
-          payload.files[1]!.text,
-        );
-      } finally {
-        await restoredWorkspace.cleanup();
-      }
-      const history = (await operator('history', '--limit', '2')) as ReleasePage;
-      assert.equal(history.items[0]!.revision, rolledBack.revision);
-      assert.equal(history.items[1]!.comparisonId, summary.comparisonId);
-      assert.ok(history.nextBeforeRevision);
-      const older = (await operator(
-        'history',
-        '--before',
-        history.nextBeforeRevision!,
-      )) as ReleasePage;
-      assert.equal(older.items.length, 1);
-      assert.equal(older.items[0]!.revision, seed.revision);
       const result = {
         summaryPath,
         artifacts: dir,
@@ -431,11 +383,8 @@ try {
         fixtureReviewer: principal,
         proposalId: summary.proposalId,
         operatorReview: true,
-        refresh: true,
         pinnedSkill: true,
-        casDenied: true,
-        rollback: true,
-        history: 3,
+        history: history.items.length,
         live,
         sdkVersion,
         draftCalls,

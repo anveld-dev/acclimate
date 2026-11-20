@@ -243,15 +243,13 @@ test('enrollment PUT preserves an explicit false rollout precondition', async ()
           expectedCases: [{ caseId: 'holdout', repetition: 0 }],
         },
       ],
-      automaticRollout: true,
-      expectedAutomaticRollout: false,
       outcomePrincipal: 'outcome',
       evaluatorPrincipal: 'evaluator',
     },
     outcomeId,
   );
   assert.equal(requests[0]?.method, 'PUT');
-  assert.equal((await requests[0]?.json()).expectedAutomaticRollout, false);
+  assert(!('automaticRollout' in (await requests[0]!.json())));
 });
 
 test('corrections and rechecks use independent stable ids against their original connection', async () => {

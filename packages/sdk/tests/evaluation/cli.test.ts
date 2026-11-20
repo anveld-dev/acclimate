@@ -154,8 +154,8 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
           return reply({ items: [...policyReceipts.values()] });
         if (route === '/v1/workspaces/project/bundles')
           return reply({ items: [{ id: bundleId }], nextCursor: null });
-        if (route.endsWith('/channels/stable'))
-          return reply({ channel: 'stable', revision: state.revision, version: parent });
+        if (route.endsWith('/channels/stable/releases'))
+          return reply({ items: [{ channel: 'stable', revision: state.revision, version: parent }] });
         if (
           route.endsWith(`/versions/${parentId}/payload`) ||
           route.endsWith(`/versions/${candidateId}/payload`)

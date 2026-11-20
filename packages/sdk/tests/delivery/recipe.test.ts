@@ -66,11 +66,10 @@ for (const reporting of ['disabled', 'healthy', 'denied', 'stalled'] as const) {
         ACCLIMATE_CACHE: join(dir, 'cache'),
         ACCLIMATE_JOB_DIR: join(dir, 'job'),
         ACCLIMATE_RECEIPT_TOKEN: '',
-        ACCLIMATE_CONNECTION: '',
+        ACCLIMATE_CONNECTION: 'a7100000-0000-4000-8000-000000000001',
       };
       if (reporting !== 'disabled') {
         env.ACCLIMATE_RECEIPT_TOKEN = 'receipt-only';
-        env.ACCLIMATE_CONNECTION = 'i';
       }
       const child = spawn(process.execPath, ['--import', 'tsx', 'examples/delivery-check.ts'], {
         env,

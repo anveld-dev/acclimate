@@ -377,7 +377,8 @@ try {
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    const value = await response.json();
+    const raw = await response.text();
+    const value = raw && JSON.parse(raw);
     assert(
       expected === undefined ? response.ok : response.status === expected,
       `${method} ${route} returned ${response.status}: ${JSON.stringify(value)}`,
@@ -498,20 +499,19 @@ try {
     await stop();
   }
 
-  async function enroll(connection: string, installationId: string, automaticRollout: boolean) {
+  async function enroll(connection: string, installationId: string, admissions = 4) {
     const apps = evaluationApps(installationId);
     const body = {
       installationId,
-      automaticRollout,
       permittedPaths: ['AGENTS.md'],
-      maxProposalAdmissions: automaticRollout ? 4 : 1,
+      maxProposalAdmissions: admissions,
       selectionPolicies: qualificationPolicies,
       development: descriptor(apps.development),
-      audits: apps.audits.slice(0, automaticRollout ? 4 : 1).map(descriptor),
+      audits: apps.audits.slice(0, admissions).map(descriptor),
       evaluatorPrincipal: 'evaluator',
       outcomePrincipal: 'other',
     };
-    if (automaticRollout) {
+    {
       await api(
         'PUT',
         learning(connection),
@@ -524,6 +524,7 @@ try {
         400,
       );
     }
+    await api('PUT', learning(connection), { ...body, automaticRollout: false }, 'admin', 400);
     await api('PUT', learning(connection), body, 'other', 403);
     await api('PUT', learning(connection), body, 'admin');
     await api('PUT', learning(connection), body, 'admin');
@@ -597,13 +598,13 @@ try {
         channel: 'stable',
       })
     ).id;
-  const [automatic, manual, sibling] = await Promise.all([
+  const [automatic, limited, sibling] = await Promise.all([
     makeConnection('Automatic refund harness'),
-    makeConnection('Review-required refund harness'),
+    makeConnection('Limited refund harness'),
     makeConnection('Unenrolled sibling harness'),
   ]);
-  const autoApps = await enroll(automatic, 'auto-refund-fixture', true);
-  const manualApps = await enroll(manual, 'manual-refund-fixture', false);
+  const autoApps = await enroll(automatic, 'auto-refund-fixture');
+  const limitedApps = await enroll(limited, 'limited-refund-fixture', 1);
   const fresh = async (connection?: string) => {
     const result = await client('operator', connection).resolveChannel(
       project,
@@ -624,7 +625,7 @@ try {
       { cacheDir: path.join(dir, 'delivery-cache') },
     );
   assert.equal((await fresh(automatic)).id, baseline.id);
-  assert.equal((await fresh(manual)).id, baseline.id);
+  assert.equal((await fresh(limited)).id, baseline.id);
 
   async function submit(
     connection: string,
@@ -811,7 +812,7 @@ try {
     workspaceId: project,
     connectionId: automatic,
   });
-  const siblingTaskBundle = await installedBundle(sibling);
+  const siblingTaskBundle = await installedBundle(limited);
   await assert.rejects(() => reporter(siblingTaskBundle, terminalOutcome), TypeError);
   const accepted = await reporter(initialTaskBundle, terminalOutcome);
   assert.deepEqual(accepted, { outcomeId: first, accepted: true, eligible: true });
@@ -873,7 +874,7 @@ try {
   );
   const developmentReads: number[] = [];
   const pauseAutoDriver = enableDriver(automatic, 'auto-refund-fixture', autoApps);
-  enableDriver(manual, 'manual-refund-fixture', manualApps);
+  const pauseSecondDriver = enableDriver(limited, 'limited-refund-fixture', limitedApps);
 
   const promoted = await waitFor('first promotion under evaluator load', async () => {
     const start = performance.now();
@@ -901,11 +902,11 @@ try {
     JSON.parse(Buffer.from(pinned).toString()).files[0].text,
     'Follow the specified refund response rules.\n',
   );
-  assert.equal((await fresh(sibling)).id, baseline.id);
-  assert.equal((await fresh()).id, baseline.id);
+  await assert.rejects(() => fresh(sibling), { status: 409 });
+  await assert.rejects(() => fresh(), { status: 409 });
   await assert.rejects(
     () => client('operator', sibling).getPayload(project, bundle.id, firstVersion.id),
-    { status: 403 },
+    { status: 409 },
   );
   const negative = await submit(automatic, firstVersion, `${beta}\nrefund-escalation = Give up.`);
   const rejected = await observe(automatic, negative, 'rejected');
@@ -1022,15 +1023,7 @@ try {
     'evaluator',
     409,
   );
-  const lateApproval = await api(
-    'POST',
-    `${learning(automatic)}/rounds/${second.id}/review`,
-    { approve: true },
-    'admin',
-    409,
-  );
-  assert.equal(lateApproval.error.code, 'review_already_decided');
-  assert.equal(lateApproval.error.details.promotionId, second.promotionId);
+  await api('POST', learning(automatic) + '/rounds/' + second.id + '/review', { approve: true }, 'admin', 404);
   assert.equal((await lookup()).corrections[0]?.incidentReplay, 'pass');
   await api('POST', incidentPath, passedIncident, 'evaluator');
   await api('POST', incidentPath, { ...passedIncident, verdict: 'regression' }, 'evaluator', 409);
@@ -1046,21 +1039,14 @@ try {
   assert(second.auditComparisonId && second.developmentComparisonId && second.promotionId);
   assert.notEqual(second.auditRequestId, rejected.auditRequestId);
   assert.equal((await fresh(automatic)).id, second.candidateVersionId);
-  assert.equal((await fresh(sibling)).id, baseline.id);
-  assert.equal((await fresh()).id, baseline.id);
+  await assert.rejects(() => fresh(sibling), { status: 409 });
+  await assert.rejects(() => fresh(), { status: 409 });
 
-  const manualOutcome = await submit(manual, baseline, alpha);
-  const review = await observe(manual, manualOutcome, 'awaiting_review');
-  assert(review.auditComparisonId && review.developmentComparisonId);
-  assert.equal(review.promotionId, null);
-  assert.equal((await fresh(manual)).id, baseline.id);
-  const reviewPath = `${learning(manual)}/rounds/${review.id}/review`;
-  await api('POST', reviewPath, { approve: true }, 'evaluator', 403);
-  await api('POST', reviewPath, { approve: true });
-  const reviewed = await observe(manual, manualOutcome, 'promoted');
-  assert.equal((await fresh(manual)).id, reviewed.candidateVersionId);
+  const limitedOutcome = await submit(limited, baseline, alpha);
+  const reviewed = await observe(limited, limitedOutcome, 'promoted');
+  assert.equal((await fresh(limited)).id, reviewed.candidateVersionId);
   assert.equal((await fresh(automatic)).id, second.candidateVersionId);
-  assert.equal((await fresh(sibling)).id, baseline.id);
+  await assert.rejects(() => fresh(sibling), { status: 409 });
 
   async function scores(id: string | null, request: string | null) {
     assert(id && request);
@@ -1102,23 +1088,24 @@ try {
   };
   await api('POST', `${learning(automatic)}/outcomes`, newOutcome, 'other', 409);
 
-  const reviewedVersion = await fresh(manual);
-  const exhaustedOutcome = await submit(manual, reviewedVersion, beta);
-  const exhausted = await api('GET', learning(manual));
+  const reviewedVersion = await fresh(limited);
+  await pauseSecondDriver();
+  const exhaustedOutcome = await submit(limited, reviewedVersion, beta);
+  const exhausted = await api('GET', learning(limited));
   assert.equal(exhausted.proposalAdmissions, exhausted.maxProposalAdmissions);
   assert.equal(exhausted.remainingAudits, 0);
   assert(!exhausted.rounds.some((round: Round) => round.outcomeId === exhaustedOutcome));
   assert.equal(
-    (await operator.getLearningOutcome(project, manual, exhaustedOutcome)).corrections[0]?.state,
+    (await operator.getLearningOutcome(project, limited, exhaustedOutcome)).corrections[0]?.state,
     'admissions_exhausted',
   );
-  const renewPath = `${learning(manual)}/renew`;
-  const oldAudit = descriptor(manualApps.audits[0]!);
+  const renewPath = `${learning(limited)}/renew`;
+  const oldAudit = descriptor(limitedApps.audits[0]!);
   const renewal = {
     renewalId: randomUUID(),
     expectedRevision: 0,
     proposalAdmissions: 1,
-    audits: [descriptor(manualApps.audits[1]!)],
+    audits: [descriptor(limitedApps.audits[1]!)],
   };
   await api('POST', renewPath, renewal, 'evaluator', 403);
   await api(
@@ -1146,21 +1133,21 @@ try {
   assert.deepEqual(await api('POST', renewPath, renewal), renewed);
   await api('POST', renewPath, { ...renewal, renewalId: randomUUID() }, 'admin', 409);
   const pendingRevocation = exhaustedOutcome;
-  const beforeRevoke = await observe(manual, pendingRevocation, 'awaiting_review');
+  const beforeRevoke = await observe(limited, pendingRevocation, 'development');
   assert.equal(beforeRevoke.promotionId, null);
-  await api('POST', `/connections/${manual}/revoke`, {});
+  await api('POST', `/connections/${limited}/revoke`, {});
   await api(
     'POST',
-    `${learning(manual)}/rounds/${beforeRevoke.id}/review`,
+    `${learning(limited)}/rounds/${beforeRevoke.id}/review`,
     { approve: true },
     'admin',
-    409,
+    404,
   );
-  const afterRevoke = await observe(manual, pendingRevocation, 'rejected');
+  const afterRevoke = await observe(limited, pendingRevocation, 'rejected');
   assert.equal(afterRevoke.promotionId, null);
   await api(
     'POST',
-    `${learning(manual)}/outcomes`,
+    `${learning(limited)}/outcomes`,
     {
       ...newOutcome,
       versionId: reviewedVersion.id,
@@ -1169,8 +1156,8 @@ try {
     'other',
     409,
   );
-  await assert.rejects(() => fresh(manual), { status: 403 });
-  assert.equal((await fresh(sibling)).id, baseline.id);
+  await assert.rejects(() => fresh(limited), { status: 403 });
+  await assert.rejects(() => fresh(sibling), { status: 409 });
 
   const autoExecutions = executions.filter(({ dataset }) =>
     dataset.startsWith('auto-refund-fixture-'),
@@ -1294,9 +1281,16 @@ try {
   const auditServedTask = (body: Awaited<ReturnType<typeof runServedTask>>) =>
     auditClient.reportLearningFieldAudit(project, rollbackConnection, body);
 
-  const healthyOutcome = await submit(rollbackConnection, baseline, alpha);
-  const awaitingAudit = await observe(rollbackConnection, healthyOutcome, 'audit');
-  await stopDevelopmentDriver();
+  const blockedConnection = await makeConnection('Candidate blocked by app policy');
+  const blockedApps = rollbackApps('blocked-refund-fixture');
+  await api('PUT', learning(blockedConnection), {
+    ...rollbackEnrollment, installationId: 'blocked-refund-fixture',
+    development: descriptor(blockedApps.development), audits: blockedApps.audits.map(descriptor),
+  });
+  const pauseBlocked = enableDriver(blockedConnection, 'blocked-refund-fixture', { ...blockedApps, audits: [] });
+  const blockedOutcome = await submit(blockedConnection, baseline, alpha);
+  const awaitingAudit = await observe(blockedConnection, blockedOutcome, 'audit');
+  await pauseBlocked();
   assert(awaitingAudit.developmentComparisonId && awaitingAudit.developmentRequestId);
   const request = await auditClient.getEvaluation(
     project,
@@ -1359,21 +1353,17 @@ try {
       verdict: result.verdict,
     },
   );
-  const pauseRollbackDriver = enableDriver(
-    rollbackConnection,
-    rollbackInstallation,
-    rollbackEvaluation,
-  );
-  const blocked = await observe(rollbackConnection, healthyOutcome, 'awaiting_review');
-  assert.equal((await fresh(rollbackConnection)).id, baseline.id);
-  const blockedReview = learning(rollbackConnection) + '/rounds/' + blocked.id + '/review';
-  await api('POST', blockedReview, { approve: true }, 'admin', 409);
-  const policyOverride = {
-    reason: 'Review accepts measured incremental improvement',
-    receipts: [{ comparisonId: receipt.comparisonId, policyDigest: receipt.policy.sha256 }],
-  };
-  await api('POST', blockedReview, { approve: true, policyOverride }, 'evaluator', 403);
-  await api('POST', blockedReview, { approve: true, policyOverride }, 'admin');
+  const finishBlocked = enableDriver(blockedConnection, 'blocked-refund-fixture', blockedApps);
+  const blocked = await observe(blockedConnection, blockedOutcome, 'rejected');
+  assert.match(blocked.reason ?? '', /policy blocks/);
+  assert.equal((await fresh(blockedConnection)).id, baseline.id);
+  await api('POST', learning(blockedConnection) + '/rounds/' + blocked.id + '/review', {
+    approve: true, policyOverride: { reason: 'Override', receipts: [{ comparisonId: receipt.comparisonId, policyDigest: receipt.policy.sha256 }] },
+  }, 'admin', 404);
+  await finishBlocked();
+  await stopDevelopmentDriver();
+  const pauseRollbackDriver = enableDriver(rollbackConnection, rollbackInstallation, rollbackEvaluation);
+  const healthyOutcome = await submit(rollbackConnection, baseline, alpha);
   const healthyRound = await observe(rollbackConnection, healthyOutcome, 'promoted');
   const healthy = await installedBundle(rollbackConnection);
   assert.equal(healthy.version.id, healthyRound.candidateVersionId);
@@ -1532,12 +1522,12 @@ try {
   const restoredApproval = approvals.items.find(
     (promotion) => promotion.id === rollback.rollbackPromotionId,
   );
-  assert.deepEqual(restoredApproval?.policyOverride, policyOverride);
-  assert.equal(restoredApproval?.policyApprovalPromotionId, healthyRound.promotionId);
+  assert.equal(restoredApproval?.reviewer, "service:connected-learning");
+  assert.equal(restoredApproval?.version.id, healthy.version.id);
   assert.equal(BigInt(rolledBack.resolution!.revision), BigInt(bad.resolution!.revision) + 1n);
   assert.equal((await fresh(automatic)).id, second.candidateVersionId);
-  assert.equal((await fresh(sibling)).id, baseline.id);
-  assert.equal((await fresh()).id, baseline.id);
+  await assert.rejects(() => fresh(sibling), { status: 409 });
+  await assert.rejects(() => fresh(), { status: 409 });
   assert.equal(
     runRefundTask(bad.payload, { kind: 'refund-escalation' }),
     'Give up.',
@@ -1604,7 +1594,7 @@ try {
     tooLate.outcomeId,
   );
   assert.equal(lateTicket.fieldAudit?.triggeredRollback, false);
-  assert.equal(proposalCountBeforeRollback, 9, 'each teaching admission has one initial proposal');
+  assert.equal(proposalCountBeforeRollback, 10, 'each teaching admission has one initial proposal');
   assert.equal(
     modelRequests.length,
     proposalCountBeforeRollback,
@@ -1639,29 +1629,11 @@ try {
       reason: 'Exercise withdrawn content requalification.',
     },
     'admin',
-    409,
+    404,
   );
 
-  // Stop preserves delivery. A reviewer can still explicitly restore without reissuing connection credentials.
-  const restorePath = `${learning(automatic)}/restore`;
-  const stoppedVersion = await installedBundle(automatic);
-  const restore = {
-    restoreId: randomUUID(),
-    expectedRevision: stoppedVersion.resolution!.revision,
-    target: {
-      kind: 'delivery',
-      revision: initialTaskBundle.resolution!.revision,
-      versionId: baseline.id,
-    },
-    reason: 'Restore the original approved behavior after stopping.',
-  };
-  await api('POST', restorePath, restore, 'evaluator', 403);
-  const restored = await api('POST', restorePath, restore);
-  assert.equal(restored.version.id, baseline.id);
-  assert.deepEqual(await api('POST', restorePath, restore), restored);
-  await api('POST', restorePath, { ...restore, restoreId: randomUUID() }, 'admin', 409);
-  await api('POST', restorePath, { ...restore, reason: 'Changed reviewer decision' }, 'admin', 409);
-  assert.equal((await fresh(automatic)).id, baseline.id);
+  await api('POST', learning(automatic) + '/restore', {}, 'admin', 404);
+  assert.equal((await fresh(automatic)).id, second.candidateVersionId);
 
   // Exercise an enrolled package policy, a bounded development retry, distinct release policy, and policy rotation.
   const structural = await makeConnection('Authorized skill packages');
@@ -1757,26 +1729,10 @@ try {
     development: initialDevelopment,
     audits: auditApps,
   });
-  const creationReview = await waitFor('revised skill proposal to reach review', async () => {
-    const view = await api<{ rounds: Round[] }>('GET', learning(structural));
-    return view.rounds.find(
-      (round) => round.outcomeId === create && round.state === 'awaiting_review',
-    );
-  });
-  assert.match(creationReview.reason ?? '', /adds or removes bundle files/);
-  await api(
-    'POST',
-    `${learning(structural)}/rounds/${creationReview.id}/review`,
-    { approve: true },
-    'admin',
-  );
-  const creationView = await waitFor('revised skill proposal to be promoted', async () => {
+  const creationView = await waitFor('structural edit to be rejected', async () => {
     const view = await api('GET', learning(structural));
-    return view.rounds.some(
-      (round: Round) => round.outcomeId === create && round.state === 'promoted',
-    )
-      ? view
-      : undefined;
+    return view.rounds.some((round: Round) => round.outcomeId === create &&
+      round.state === 'rejected' && round.reason?.includes('adds or removes')) ? view : undefined;
   });
   const attempts = creationView.rounds
     .filter((round: Round) => round.outcomeId === create)
@@ -1785,7 +1741,7 @@ try {
     attempts.map((round: Round) => [round.attempt, round.state]),
     [
       [1, 'rejected'],
-      [2, 'promoted'],
+      [2, 'rejected'],
     ],
   );
   assert.equal(attempts[1].policyEpoch, 0);
@@ -1810,38 +1766,13 @@ try {
     await scores(attempts[1].auditComparisonId, attempts[1].auditRequestId),
     Array(12).fill(0),
   );
-  const withSkill = await installedBundle(structural);
-  assert(withSkill.payload.files.some((f) => f.path === 'skills/refunds/SKILL.md'));
-  assert.equal(runRefundTask(withSkill.payload, { kind: 'refund' }), expectedResponse.refund);
+  assert.equal((await fresh(structural)).id, baseline.id);
   await pauseOldInstallation();
-  const rotated = await api('POST', `${learning(structural)}/renew`, rotation);
+  const rotated = await api('POST', learning(structural) + '/renew', rotation);
   assert.equal(rotated.policyEpoch, 1);
-  enableDriver(structural, structuralInstallation, {
-    development: updatedDevelopment,
-    audits: auditApps,
-  });
-  const retirement = await skillFeedback('Consolidate both rules in the root instructions.');
-  const retirementReview = await observe(structural, retirement, 'awaiting_review');
-  await api(
-    'POST',
-    `${learning(structural)}/rounds/${retirementReview.id}/review`,
-    { approve: true },
-    'admin',
-  );
-  const retiredRound = await observe(structural, retirement, 'promoted');
-  assert.equal(retiredRound.parentVersionId, withSkill.version.id);
-  const retired = await installedBundle(structural);
-  assert(!retired.payload.files.some((f) => f.path.startsWith('skills/refunds/')));
-  assert.equal(
-    runRefundTask(retired.payload, { kind: 'refund-status' }),
-    expectedResponse['refund-status'],
-  );
-  const finalRounds = (await api('GET', learning(structural))).rounds;
-  assert.equal(finalRounds.find((r: Round) => r.id === retiredRound.id).policyEpoch, 1);
-  assert.equal(finalRounds.find((r: Round) => r.id === attempts[1].id).policyEpoch, 0);
 
   const scannerConnection = await makeConnection('Unsafe proposed text fails before evaluation');
-  const scannerApps = await enroll(scannerConnection, 'scanner-fixture', false);
+  const scannerApps = await enroll(scannerConnection, 'scanner-fixture', 1);
   await calibrateOnly(scannerConnection, 'scanner-fixture', scannerApps.development);
   const scannerOutcome = await submit(
     scannerConnection,
@@ -1854,7 +1785,7 @@ try {
   assert.equal(scannerFailure.candidateVersionId, null);
 
   const lessonConnection = await makeConnection('Lesson changes require human review');
-  const lessonApps = await enroll(lessonConnection, 'lesson-review-fixture', true);
+  const lessonApps = await enroll(lessonConnection, 'lesson-review-fixture');
   const lessonDelivery = (await installedBundle(lessonConnection)).resolution!;
   const lessonId = randomUUID();
   await api(
@@ -1874,13 +1805,13 @@ try {
     'other',
   );
   const stopLessonDriver = enableDriver(lessonConnection, 'lesson-review-fixture', lessonApps);
-  const lessonReview = await observe(lessonConnection, lessonId, 'awaiting_review');
+  const lessonReview = await observe(lessonConnection, lessonId, 'rejected');
   assert.match(lessonReview.reason ?? '', /app lesson instructions/);
   assert.equal((await fresh(lessonConnection)).id, baseline.id);
   await stopLessonDriver();
 
   const staleConnection = await makeConnection('Queued lesson with a stale path');
-  const staleApps = await enroll(staleConnection, 'stale-lesson-fixture', true);
+  const staleApps = await enroll(staleConnection, 'stale-lesson-fixture');
   const staleDelivery = (await installedBundle(staleConnection)).resolution!;
   const staleId = randomUUID();
   await api(
@@ -1914,7 +1845,7 @@ try {
 
   // The general development suite improves, while the private incident still fails.
   const incidentConnection = await makeConnection('Private incident gate');
-  const incidentApps = await enroll(incidentConnection, 'incident-fixture', true);
+  const incidentApps = await enroll(incidentConnection, 'incident-fixture');
   const incidentJob = randomUUID();
   const incidentReporter = createLearningOutcomeReporter({
     client: client('other', incidentConnection),
@@ -2264,27 +2195,9 @@ try {
     },
     randomUUID(),
   );
-  const sourcePromotion = await operator.createRelease(
-    project,
-    bundle.id,
-    'stable',
-    {
-      versionId: sourceUpdate.id,
-      expectedRevision: '1',
-      unevaluatedReason: 'Qualified source correction.',
-    },
-    randomUUID(),
-  );
-  const reset = await waitFor('source publish discards the chain', async () => {
-    const view = await api<LearningEnrollmentStatus>('GET', learning(external.connection));
-    return view.rounds.some((round) => round.id === external.first.id && round.state === 'rejected')
-      ? view
-      : undefined;
-  });
-  assert.equal(reset.developmentIncumbent?.chainLength, 0);
-  assert.equal(reset.developmentIncumbent?.versionId, baseline.id);
-  assert.equal(reset.remainingAudits, 1);
-
+  const releasePath = '/bundles/' + bundle.id + '/channels/stable/releases';
+  await api('POST', releasePath, { versionId: sourceUpdate.id, expectedRevision: '1', unevaluatedReason: 'Manual change' }, 'admin', 409);
+  await api('POST', releasePath.replace('stable','another'), { versionId: baseline.id, expectedRevision: '0', unevaluatedReason: 'Second seed' }, 'admin', 409);
   evidence.developmentChains = {
     compounded,
     drifted,
@@ -2296,26 +2209,10 @@ try {
     chainAge,
     rotatedChain,
   };
-  const beforeRefresh = await installedBundle(automatic);
-  const refresh = {
-    restoreId: randomUUID(),
-    expectedRevision: beforeRefresh.resolution!.revision,
-    target: { kind: 'source', revision: sourcePromotion.revision, versionId: sourceUpdate.id },
-    reason: 'Refresh the stopped connection to the reviewed source release.',
-  };
-  const refreshed = await api('POST', restorePath, refresh);
-  assert.equal(refreshed.version.id, sourceUpdate.id);
-  assert.equal((await fresh(automatic)).id, sourceUpdate.id);
-  assert.equal((await fresh(structural)).id, retired.version.id);
-  evidence.recoveryOperations = {
-    stoppedRestore: restored.id,
-    sourceRefresh: refreshed.id,
-    failedWithdrawalReplay: triggeringLoss.outcomeId,
-  };
   evidence.structuralLearning = {
     unchanged: formatRounds.map((round) => round.id),
     attempts: attempts.map((r: Round) => r.id),
-    retirement: retiredRound.id,
+    structuralEditRejected: true,
   };
   evidence.project = project;
   evidence.rounds = [promoted, rejected, second, reviewed, afterRevoke];
@@ -2332,11 +2229,10 @@ try {
   );
   evidence.delivery = {
     pinned: baseline.id,
-    sibling: (await fresh(sibling)).id,
-    source: (await fresh()).id,
+    unenrolledDeliveryBlocked: true,
     automatic: (await fresh(automatic)).id,
-    manualBeforeRevocation: reviewed.candidateVersionId,
-    structural: retired.version.id,
+    limitedBeforeRevocation: reviewed.candidateVersionId,
+    structural: (await fresh(structural)).id,
   };
   evidence.restartPreservedDevelopmentRequest = pending.developmentRequestId;
   evidence.stopAndRevokeVerified = true;

@@ -533,7 +533,7 @@ def channel_release(config, token, bundle, channel):
     if (url.scheme != "https" and not loopback) or url.username or url.password or url.query or url.fragment:
         return None
     quote = lambda value: urllib.parse.quote(value, safe="")
-    route = "/v1/workspaces/" + quote(workspace) + "/bundles/" + quote(bundle) + "/channels/" + quote(channel)
+    route = "/v1/workspaces/" + quote(workspace) + "/bundles/" + quote(bundle) + "/channels/" + quote(channel) + "/releases?limit=1"
     request = urllib.request.Request(base.rstrip("/") + route,
                                      headers={"Authorization": "Bearer " + token, "Accept": "application/json"})
     try:
@@ -551,10 +551,10 @@ def channel_release(config, token, bundle, channel):
     except (OSError, ValueError):
         return None
     try:
-        value = json.loads(body)
+        value = json.loads(body)["items"][0]
         version = value["version"]
         release = {"versionId": version["id"], "digest": version["digest"], "revision": value["revision"]}
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, IndexError, TypeError):
         return None
     if not (isinstance(release["versionId"], str) and re.fullmatch(UUID, release["versionId"])
             and isinstance(release["digest"], str) and re.fullmatch(r"sha256:[0-9a-f]{64}", release["digest"])

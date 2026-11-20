@@ -48,7 +48,7 @@ Write clients that ignore response fields they don't recognize and treat an unkn
 
 ### Field names
 
-JSON fields are camelCase on the wire and in both SDKs' request and response objects. Python method arguments, keyword options and object attributes are snake_case. For example, the Python client's `ApiError.request_id` carries the error body's `requestId`, and `prepare(..., version_id=...)` sends a version ID that responses return as `versionId`.
+JSON fields are camelCase on the wire and in both SDKs' request and response objects. Python method arguments, keyword options and object attributes are snake_case. For example, the Python client's `ApiError.request_id` carries the error body's `requestId`, and `get_version(workspace_id, bundle_id, version_id)` reads the specified immutable version.
 
 ## Document schema versions
 

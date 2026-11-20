@@ -17,7 +17,6 @@ mod corrections;
 pub(crate) mod epochs;
 mod incident;
 pub(crate) mod repetitions;
-mod restore;
 pub(crate) mod selection;
 pub(crate) mod statistics;
 
@@ -46,10 +45,6 @@ pub(crate) fn routes() -> Router<AppState> {
         .route(
             "/v1/workspaces/{project}/connections/{integration}/learning/stop",
             post(stop),
-        )
-        .route(
-            "/v1/workspaces/{project}/connections/{integration}/learning/restore",
-            post(restore::restore),
         )
         .route(
             "/v1/workspaces/{project}/connections/{integration}/learning/renew",
@@ -131,9 +126,10 @@ struct Enrollment {
     audits: Vec<Descriptor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     selection_policies: Option<selection::Policies>,
+    // Older clients send true explicitly. Reject false rather than interpreting
+    // an old manual enrollment request as permission for automatic releases.
+    #[serde(default = "automatic_rollout")]
     automatic_rollout: bool,
-    #[serde(default, skip_serializing)]
-    expected_automatic_rollout: Option<bool>,
     automatic_rollback: Option<bool>,
     outcome_principal: String,
     evaluator_principal: String,
@@ -215,6 +211,10 @@ fn bounded(value: &str, limit: usize) -> bool {
     !value.trim().is_empty() && value.len() <= limit
 }
 
+fn automatic_rollout() -> bool {
+    true
+}
+
 fn default_batch_size() -> i32 {
     5
 }
@@ -233,11 +233,7 @@ fn validate(config: &Enrollment) -> ApiResult<()> {
     {
         return Err(invalid("Invalid enrollment controls"));
     }
-    validate_descriptors(
-        &config.development,
-        &config.audits,
-        config.automatic_rollout,
-    )?;
+    validate_descriptors(&config.development, &config.audits)?;
     if let Some(policies) = &config.selection_policies {
         policies
             .development
@@ -249,11 +245,7 @@ fn validate(config: &Enrollment) -> ApiResult<()> {
     Ok(())
 }
 
-fn validate_descriptors(
-    development: &Descriptor,
-    audits: &[Descriptor],
-    automatic: bool,
-) -> ApiResult<()> {
+fn validate_descriptors(development: &Descriptor, audits: &[Descriptor]) -> ApiResult<()> {
     let mut revisions = HashSet::new();
     let mut case_ids = HashSet::new();
     for descriptor in std::iter::once(development).chain(audits) {
@@ -263,23 +255,20 @@ fn validate_descriptors(
             .iter()
             .map(|case| &case.case_id)
             .collect();
-        if automatic && !descriptor.committed() {
+        if !descriptor.committed() {
             return Err(invalid(
                 "Automatic rollout requires installed-v1 development and audit fixtures",
             ));
         }
-        if descriptor.fixture_protocol.is_some() && !descriptor.committed()
-            || descriptor.runtime.contains_key(FIXTURE_DATASET_KEY)
+        if descriptor.runtime.contains_key(FIXTURE_DATASET_KEY)
             || descriptor.runtime.contains_key(FIXTURE_INPUTS_KEY)
-            || (descriptor.committed()
-                && (descriptor.dataset_digest.is_none()
-                    || descriptor.case_fingerprints.len() != ids.len()
-                    || descriptor.runtime.len() > 62))
+            || descriptor.dataset_digest.is_none()
+            || descriptor.case_fingerprints.len() != ids.len()
+            || descriptor.runtime.len() > 62
             || !bounded(&descriptor.dataset_revision, 1024)
             || !revisions.insert(&descriptor.dataset_revision)
             || !bounded(&descriptor.grader_revision, 1024)
             || descriptor.runtime.is_empty()
-            || descriptor.runtime.len() > 64
             || descriptor
                 .runtime
                 .iter()
@@ -318,13 +307,12 @@ fn config(row: &PgRow) -> ApiResult<Enrollment> {
         max_corrections_per_round: row.get("max_corrections_per_round"),
         development: serde_json::from_value(row.get("development")).map_err(db)?,
         audits: serde_json::from_value(row.get("audits")).map_err(db)?,
-        automatic_rollout: row.get("automatic_rollout"),
+        automatic_rollout: true,
         selection_policies: row
             .get::<Option<Value>, _>("selection_policies")
             .map(serde_json::from_value)
             .transpose()
             .map_err(db)?,
-        expected_automatic_rollout: None,
         automatic_rollback: Some(row.get("automatic_rollback")),
         outcome_principal: row.get("outcome_principal"),
         evaluator_principal: row.get("evaluator_principal"),
@@ -335,6 +323,8 @@ fn enrollment_view(row: &PgRow, enabled: bool, include_audits: bool) -> ApiResul
     let settings = config(row)?;
     let audit_count = settings.audits.len();
     let mut value = serde_json::to_value(settings).map_err(db)?;
+    value.as_object_mut().unwrap().remove("automaticRollout");
+    value["requiresRolloutAuthorization"] = json!(!row.get::<bool, _>("rollout_authorized"));
     value["auditCount"] = json!(audit_count);
     value["policyEpoch"] = json!(row.get::<i64, _>("policy_epoch"));
     value["enabled"] = json!(enabled);
@@ -393,11 +383,11 @@ async fn enroll(
     {
         return Err(denied());
     }
-    if request.automatic_rollout {
-        if actor.user_id.is_none() {
-            return Err(denied());
-        }
-        crate::auth::actor(&h, &s, &project, "promote")?;
+    if !request.automatic_rollout {
+        return Err(invalid("Connected learning requires automatic rollout"));
+    }
+    if actor.user_id.is_none() {
+        return Err(denied());
     }
     let enrolled_grant = |principal: &str, rights: &[&str]| {
         s.grants.iter().any(|grant| {
@@ -420,9 +410,7 @@ async fn enroll(
     };
     let mut tx = s.db.begin().await.map_err(db)?;
     crate::auth::authorize_transaction(&mut tx, &actor, &project, "admin").await?;
-    if request.automatic_rollout {
-        crate::auth::authorize_transaction(&mut tx, &actor, &project, "promote").await?;
-    }
+    crate::auth::authorize_transaction(&mut tx, &actor, &project, "promote").await?;
     if request
         .skill_packages
         .as_ref()
@@ -440,7 +428,6 @@ async fn enroll(
         &actor.principal,
         serde_json::to_value(&request).map_err(db)?,
     )?;
-    let expected_rollout = request.expected_automatic_rollout.take();
     let connection = sqlx::query("SELECT bundle_id,channel,enabled FROM integrations WHERE project_id=$1 AND id=$2 FOR UPDATE")
         .bind(&project).bind(integration).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(absent)?;
     if let Some(row) = sqlx::query(
@@ -520,34 +507,30 @@ async fn enroll(
         if request.selection_policies.is_none() {
             request.selection_policies = frozen.selection_policies.clone();
         }
-        let previous_rollout = frozen.automatic_rollout;
-        if expected_rollout.is_some_and(|expected| expected != previous_rollout) {
-            return Err(conflict("Automatic rollout changed before this update"));
-        }
+        let needs_authorization = !row.get::<bool, _>("rollout_authorized");
         let previous_rollback = frozen.automatic_rollback;
         request.automatic_rollback = request.automatic_rollback.or(previous_rollback);
-        frozen.automatic_rollout = request.automatic_rollout;
         frozen.automatic_rollback = request.automatic_rollback;
         if frozen != request {
             return Err(conflict("Enrollment settings are frozen"));
         }
-        if !previous_rollout && request.automatic_rollout {
-            let registered: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM connected_learning_enrollments e
-                 CROSS JOIN LATERAL jsonb_array_elements(e.audits) WITH ORDINALITY AS a(descriptor,n)
-                 WHERE (e.project_id,e.integration_id)=($1,$2)
-                 AND descriptor->>'fixtureProtocol'='installed-v1'
-                )",
-            )
-            .bind(&project).bind(integration).fetch_one(&mut *tx).await.map_err(db)?;
-            if !request.development.committed() || !registered {
+        if needs_authorization {
+            if row
+                .get::<Option<chrono::DateTime<chrono::Utc>>, _>("stopped_at")
+                .is_some()
+            {
+                return Err(conflict("Learning has been stopped"));
+            }
+            if !request.development.committed()
+                || epochs::remaining_audits(&mut tx, &project, integration).await? == 0
+            {
                 return Err(invalid(
-                    "Install committed development and registered audit fixtures before enabling automatic rollout",
+                    "Renew with committed development fixtures and a fresh committed audit before authorizing rollout",
                 ));
             }
         }
         if !packages_changed
-            && previous_rollout == request.automatic_rollout
+            && !needs_authorization
             && previous_rollback == request.automatic_rollback
         {
             return crate::commands::DurableCommand::finish_optional(
@@ -557,15 +540,15 @@ async fn enroll(
             )
             .await;
         }
-        let reauthorize = (!previous_rollout && request.automatic_rollout)
+        let reauthorize = needs_authorization
             || (previous_rollback != request.automatic_rollback
                 && request.automatic_rollback == Some(true));
         if reauthorize {
             validate_grants()?;
             record_authorization(&mut tx, &project, integration, &actor.principal).await?;
         }
-        let row = sqlx::query("UPDATE connected_learning_enrollments SET automatic_rollout=$3,authorized_by=COALESCE($4,authorized_by),automatic_rollback=$5,skill_packages=$6,permitted_paths=$7 WHERE project_id=$1 AND integration_id=$2 RETURNING *")
-            .bind(&project).bind(integration).bind(request.automatic_rollout).bind(reauthorize.then_some(&actor.principal)).bind(request.automatic_rollback)
+        let row = sqlx::query("UPDATE connected_learning_enrollments SET rollout_authorized=true,authorized_by=COALESCE($3,authorized_by),automatic_rollback=$4,skill_packages=$5,permitted_paths=$6 WHERE project_id=$1 AND integration_id=$2 RETURNING *")
+            .bind(&project).bind(integration).bind(reauthorize.then_some(&actor.principal)).bind(request.automatic_rollback)
             .bind(request.skill_packages.as_ref().map(serde_json::to_value).transpose().map_err(db)?)
             .bind(&request.permitted_paths)
             .fetch_one(&mut *tx).await.map_err(db)?;
@@ -578,11 +561,6 @@ async fn enroll(
     }
     if !connection.get::<bool, _>("enabled") {
         return Err(absent());
-    }
-    if expected_rollout.is_some() {
-        return Err(conflict(
-            "Learning enrollment must exist for a rollout precondition",
-        ));
     }
     request
         .selection_policies
@@ -622,16 +600,15 @@ async fn enroll(
             unevaluated_reason: Some(
                 "Connection delivery seeded from enrolled source channel".into(),
             ),
-            policy_override: None,
         },
         crate::channels::Publication::Restore(&source),
     )
     .await?;
-    let row = sqlx::query("INSERT INTO connected_learning_enrollments(project_id,integration_id,bundle_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,development,audits,automatic_rollout,outcome_principal,evaluator_principal,authorized_by,automatic_rollback,selection_policies,skill_packages,max_corrections_per_round) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *")
+    let row = sqlx::query("INSERT INTO connected_learning_enrollments(project_id,integration_id,bundle_id,source_channel,source_revision,delivery_channel,installation_id,permitted_paths,max_proposal_admissions,development,audits,rollout_authorized,outcome_principal,evaluator_principal,authorized_by,automatic_rollback,selection_policies,skill_packages,max_corrections_per_round) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,$13,$14,$15,$16,$17,$18) RETURNING *")
         .bind(&project).bind(integration).bind(bundle).bind(&source).bind(current.get::<i64, _>("revision")).bind(delivery).bind(&request.installation_id)
         .bind(&request.permitted_paths).bind(request.max_proposal_admissions)
         .bind(serde_json::to_value(&request.development).map_err(db)?).bind(serde_json::to_value(&request.audits).map_err(db)?)
-        .bind(request.automatic_rollout).bind(&request.outcome_principal).bind(&request.evaluator_principal).bind(&actor.principal).bind(request.automatic_rollback.unwrap_or(true))
+        .bind(&request.outcome_principal).bind(&request.evaluator_principal).bind(&actor.principal).bind(request.automatic_rollback.unwrap_or(true))
         .bind(request.selection_policies.as_ref().map(serde_json::to_value).transpose().map_err(db)?)
         .bind(request.skill_packages.as_ref().map(serde_json::to_value).transpose().map_err(db)?)
         .bind(request.max_corrections_per_round)
@@ -733,19 +710,6 @@ async fn inspect(
             } else { 0 },
         },
     });
-    let can_restore = match crate::auth::actor(&h, &s, &project, "promote") {
-        Ok(actor) if row.get::<bool, _>("enabled") && !app_principal(&row, &actor.principal) => {
-            crate::auth::authorize_transaction(&mut tx, &actor, &project, "promote")
-                .await
-                .is_ok()
-        }
-        _ => false,
-    };
-    view["restoreTargets"] = if can_restore {
-        json!(restore::targets(&mut tx, &project, integration).await?)
-    } else {
-        json!([])
-    };
     let rounds: Vec<Value> = sqlx::query_scalar(include_str!("connected_learning/round_view.sql"))
         .bind(&project)
         .bind(integration)
@@ -1037,7 +1001,7 @@ async fn work(
             SELECT r.project_id,r.integration_id,r.bundle_id,q.sequence,COALESCE(r.release_candidate_id,r.candidate_version_id),r.parent_revision
             FROM connected_learning_rounds r
             CROSS JOIN LATERAL connected_field_requirements(r.project_id,r.integration_id,COALESCE(r.release_candidate_id,r.candidate_version_id),r.parent_revision) q
-            WHERE (r.project_id,r.integration_id)=($1,$2) AND r.state IN ('development','audit','awaiting_review')
+            WHERE (r.project_id,r.integration_id)=($1,$2) AND r.state IN ('development','audit')
             AND q.replay IS NULL ON CONFLICT DO NOTHING")
             .bind(&project).bind(integration).execute(&mut *tx).await.map_err(db)?;
         let replays: Vec<(String, Value)> =

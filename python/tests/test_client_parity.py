@@ -166,17 +166,10 @@ class ParityTest(unittest.TestCase):
             ),
             (lambda: c.report_learning_field_replay("w", "c", replay), "POST", "/field-requalifications", "o3:v:7"),
             (lambda: c.report_learning_field_audit("w", "c", audit), "POST", "/field-audits", "o2"),
-            (lambda: c.review_learning_round("w", "c", "r1", True, "k3"), "POST", "/rounds/r1/review", "k3"),
             (
                 lambda: c.renew_learning("w", "c", {"renewalId": "n1", "expectedRevision": 1,
                                                     "proposalAdmissions": 1, "audits": []}),
                 "POST", "/renew", "n1",
-            ),
-            (
-                lambda: c.restore_learning("w", "c", {"restoreId": "s1", "expectedRevision": "2", "reason": "x",
-                                                      "target": {"kind": "source", "revision": "1",
-                                                                 "versionId": "v"}}),
-                "POST", "/restore", "s1",
             ),
         ]
         for call, method, suffix, key in cases:
@@ -184,12 +177,8 @@ class ParityTest(unittest.TestCase):
                 call()
                 got = self.last()
                 self.assertEqual((got["method"], got["path"], got["key"]), (method, base + suffix, key))
-        self.client.review_learning_round(
-            "w", "c", "r1", False, "k4", policy_override={"reason": "ok", "receipts": []}
-        )
-        self.assertEqual(self.last()["body"], {"approve": False, "policyOverride": {"reason": "ok", "receipts": []}})
-        self.client.review_learning_round("w", "c", "r1", True, "k5")
-        self.assertEqual(self.last()["body"], {"approve": True})
+        for removed in ("review_learning_round", "restore_learning", "publish_draft"):
+            self.assertFalse(hasattr(c, removed))
 
     def test_connection_id_marks_delivery_reads_only(self):
         connection = "0D6B1E8C-0000-4000-8000-000000000001"

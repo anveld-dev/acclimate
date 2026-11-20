@@ -9,10 +9,6 @@ import { improve, type Model } from './improvement/workflow.js';
 import { improve as improveService } from './service-proposer/workflow.js';
 
 const args = process.argv.slice(2);
-const flag = (name: string) => {
-  const i = args.indexOf(name);
-  return i < 0 ? undefined : args[i + 1];
-};
 const required = (name: string, alias?: string) => {
   const value = process.env[name] ?? (alias ? process.env[alias] : undefined);
   if (!value) throw new Error(`${name} is required`);
@@ -130,39 +126,4 @@ if (args[0] === 'run' || args[0] === 'run-service') {
     ? await improveService(acclimate, config, model)
     : await improve(acclimate, { ...config, authorModel }, model);
   console.log(JSON.stringify(result, null, 2));
-} else if (args[0] === 'promote') {
-  const summaryFile = flag('--summary');
-  if (!summaryFile) throw new Error('--summary is required');
-  const summary = JSON.parse(await readFile(summaryFile, 'utf8'));
-  const expectedRevision = flag('--expected-revision');
-  const plan = {
-    workspace: summary.workspace,
-    bundle: summary.bundle,
-    channel: summary.channel,
-    versionId: summary.candidate.id,
-    comparisonId: summary.comparisonId,
-    expectedRevision: expectedRevision ?? summary.channelRevision,
-  };
-  if (!args.includes('--apply'))
-    console.log(
-      JSON.stringify(
-        { plan, message: 'Review plan; pass --apply and --expected-revision to promote.' },
-        null,
-        2,
-      ),
-    );
-  else {
-    if (!expectedRevision) throw new Error('--expected-revision is required with --apply');
-    const result = await client().createRelease(
-      plan.workspace,
-      plan.bundle,
-      plan.channel,
-      { versionId: plan.versionId, comparisonId: plan.comparisonId, expectedRevision },
-      randomUUID(),
-    );
-    console.log(JSON.stringify(result, null, 2));
-  }
-} else
-  throw new Error(
-    'Usage: improve-review.ts run --live | run-service --live | promote --summary FILE [--apply --expected-revision REV]',
-  );
+} else throw new Error('Usage: improve-review.ts run --live | run-service --live');

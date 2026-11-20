@@ -71,12 +71,21 @@ def main():
     parser.add_argument('--tags',help='Additional Behave tag expression')
     parser.add_argument('--skip-build',action='store_true',help='Use existing Rust, SDK and console builds')
     parser.add_argument('--parallel', action='store_true', help='Run the console feature alongside the other features')
+    parser.add_argument('--shard', nargs=2, type=int, metavar=('INDEX', 'COUNT'),
+                        help='Run one 1-based partition of the reviewed behavior IDs')
     parser.add_argument('--dev-console',action='store_true',help='Exercise Vite development modules instead of the production console')
     args=parser.parse_args()
     pg=pg_bin(args.pg_bin)
     os.chdir(ROOT)
-    if catalog(ROOT)!=json.loads((ROOT/'scripts/bdd/inventory.json').read_text()):
+    inventory=json.loads((ROOT/'scripts/bdd/inventory.json').read_text())
+    if catalog(ROOT)!=inventory:
         sys.exit('Feature stories differ from the reviewed behavior inventory. Review and update scripts/bdd/inventory.json.')
+    shard_tags=None
+    if args.shard:
+        index, count=args.shard
+        if not 1 <= index <= count <= len(inventory):
+            parser.error('--shard requires 1 <= INDEX <= COUNT <= the number of behaviors')
+        shard_tags=' or '.join('@'+identifier for identifier in sorted(inventory)[index-1::count])
     out=args.output.resolve() if args.output else ROOT/'artifacts'/('bdd-dev' if args.dev_console else 'bdd')
     out.mkdir(parents=True,exist_ok=True)
     out.chmod(0o700)
@@ -93,12 +102,13 @@ def main():
     lanes={'service':'not @browser and not @sdk and not @adapter and not @runtime','sdk':'@sdk','browser':'@browser','identity':'@adapter','runtime':'@runtime'}
     if args.lane!='all': command+=['--tags',lanes[args.lane]]
     if args.tags: command+=['--tags',args.tags]
+    if shard_tags: command+=['--tags',shard_tags]
     if args.name: command+=['--name',args.name]
     code=run_behave(command, out, args.parallel)
     if not (out/'results.json').exists(): return code or 1
     complete=write_report(ROOT/'scripts/bdd/inventory.json',out/'results.json',out)
     print('Behavior report: '+str(out/'coverage.md'),flush=True)
-    full=args.lane=='all' and not args.name and not args.tags
+    full=args.lane=='all' and not (args.name or args.tags or args.shard)
     if full and not complete:
         print('Full coverage failed: a behavior or variant is missing, skipped, undefined or failing.',file=sys.stderr)
         return 1

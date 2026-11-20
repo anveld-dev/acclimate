@@ -1,0 +1,21 @@
+name: Install the Chromium test runtime
+description: Reuse Ubuntu package downloads across browser jobs on the same runner image.
+runs:
+  using: composite
+  steps:
+    - id: runner
+      shell: bash
+      run: echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/playwright-apt/*.deb
+        key: playwright-apt-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.runner.outputs.image }}-${{ hashFiles('scripts/bdd/requirements.txt') }}
+    - name: Install system dependencies and Chromium
+      shell: bash
+      run: |
+        archives="$RUNNER_TEMP/playwright-apt"
+        mkdir -p "$archives"
+        apt_conf=/etc/apt/apt.conf.d/99acclimate-playwright
+        trap 'sudo rm -f "$apt_conf"' EXIT
+        printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\n' "$archives" | sudo tee "$apt_conf" >/dev/null
+        python -m playwright install --with-deps --only-shell chromium

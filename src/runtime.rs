@@ -78,7 +78,7 @@ impl RuntimeStatus {
             changed.await;
         }
     }
-    // Hold only while claiming, never across provider execution. The coordinator
+    // Hold only while claiming work. The coordinator
     // crosses the write barrier after setting draining to settle earlier claims.
     pub async fn claim_permit(&self) -> Option<RwLockReadGuard<'_, ()>> {
         let permit = self.claims.read().await;

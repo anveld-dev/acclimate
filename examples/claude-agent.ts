@@ -7,7 +7,7 @@
  *   -> retain the result -> cleanup
  *
  * Evaluation: the same module exports `cases`, `execute` and `grade`, so
- * `acclimate-eval describe|doctor|compare` runs the same `runClaude` for each version:
+ * `acclimate-eval try` can call the same `runClaude` for a local payload:
  *   execute({ version }) -> prepare(version) -> query({ ...claudeSessionOptions(p), model, abortController })
  *   -> cleanup
  *

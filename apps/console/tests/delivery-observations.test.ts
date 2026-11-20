@@ -148,6 +148,7 @@ test('delivery links administrators to the exact connection and gives readers bu
   }
 
   const settings = '/w/team/connections?connection=' + observation.id;
+  assert.match(screen(false, [observation]), /Bundle releases/);
   assert.ok(screen(true, [observation]).includes(settings));
   assert.ok(!screen(false, [observation]).includes(settings));
   assert.match(screen(true, []), /href="\/w\/team\/connections"/);

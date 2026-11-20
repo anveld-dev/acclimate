@@ -563,8 +563,8 @@
   gap: 10px;
 }
 .connection-page-heading h1 { overflow-wrap: anywhere; }
-.delivery-comparison-status { margin-block: 4px 12px; }
-.delivery-comparison-status [data-slot='badge'] { font-size: var(--type-16); }
+.delivery-current-status { margin-block: 4px 12px; }
+.delivery-current-status [data-slot='badge'] { font-size: var(--type-16); }
 .delivery-versions h3 {
   font: 600 clamp(var(--type-20), 2.1vw, var(--type-28)) / 1.25 var(--font-mono);
   letter-spacing: -0.03em;

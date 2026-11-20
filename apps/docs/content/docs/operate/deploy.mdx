@@ -7,7 +7,7 @@ Deploy the Acclimate service and console on a single host with PostgreSQL 16, Ke
 
 ## Configure Keycloak and DNS
 
-Point your console and API hostnames at the deployment. Set `CONSOLE_HOST` and `API_HOST` without a scheme or path, and set `ACME_EMAIL` for certificate issuance. Keep the API, console, and PostgreSQL listeners behind the proxy and allow outbound access to the issuer and any configured proposer endpoint.
+Point your console and API hostnames at the deployment. Set `CONSOLE_HOST` and `API_HOST` without a scheme or path, and set `ACME_EMAIL` for certificate issuance. Keep the API, console, and PostgreSQL listeners behind the proxy and allow outbound access to the issuer.
 
 Use your existing Keycloak deployment or add `compose.keycloak.yaml` to co-host Keycloak. The co-hosted recipe pins Keycloak 26.8.2 and gives it a separate PostgreSQL instance and volume. Follow `deploy/keycloak/README.md` to set the identity hostname and private file paths, start Keycloak, and create the first user.
 

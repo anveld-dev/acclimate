@@ -1,5 +1,5 @@
 import { AcclimateError } from './errors.js';
-import type { EvaluationDescriptor, EvaluationHandoff } from './types.js';
+import type { EvaluationDescriptor } from './evaluation/types.js';
 
 const encoder = new TextEncoder();
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -10,7 +10,7 @@ export class EvaluationConfigurationError extends AcclimateError<
 > {
   constructor(
     code: 'descriptor.mismatch' | 'config.schema' | 'config.url' | 'guided_target_unsupported',
-    /** The descriptor or handoff field that failed validation, when known. */
+    /** The configuration or descriptor field that failed validation, when known. */
     readonly field?: string,
     /** Why the field failed, when there is more to say than its documented limits. */
     readonly reason?: string,
@@ -119,12 +119,10 @@ export function validateEvaluationDescriptor(value: unknown): EvaluationDescript
 export interface GuidedTarget {
   workspaceId: string;
   bundleId?: string;
-  requestId?: string;
   principalId?: string;
-  channel?: string;
 }
 
-/** The same subset recognized by retained operation routing; legacy raw clients stay broader. */
+/** Validate the evaluator’s configured workspace, bundle and principal. */
 export function assertGuidedTarget(scope: GuidedTarget): void {
   if (
     !scope ||
@@ -133,10 +131,6 @@ export function assertGuidedTarget(scope: GuidedTarget): void {
     ['.', '..'].includes(scope.workspaceId) ||
     (scope.bundleId !== undefined &&
       (typeof scope.bundleId !== 'string' || !uuid.test(scope.bundleId))) ||
-    (scope.requestId !== undefined &&
-      (typeof scope.requestId !== 'string' || !uuid.test(scope.requestId))) ||
-    (scope.channel !== undefined &&
-      (typeof scope.channel !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(scope.channel))) ||
     (scope.principalId !== undefined &&
       (!scalarString(scope.principalId, 1024) ||
         scope.principalId !== scope.principalId.trim() ||
@@ -166,84 +160,4 @@ export function validateEvaluationServiceUrl(value: unknown): string {
   )
     throw new EvaluationConfigurationError('config.url');
   return value; // Exact configured spelling is part of durable journal identity.
-}
-
-export function validateEvaluationHandoff(value: unknown): EvaluationHandoff {
-  if (
-    !object(value) ||
-    value.schemaVersion !== 1 ||
-    Object.keys(value).length !== 6 ||
-    Object.keys(value).some(
-      (key) =>
-        ![
-          'schemaVersion',
-          'serviceUrl',
-          'workspaceId',
-          'bundleId',
-          'requestId',
-          'descriptor',
-        ].includes(key),
-    )
-  )
-    throw new EvaluationConfigurationError('config.schema');
-  if (
-    typeof value.workspaceId !== 'string' ||
-    typeof value.bundleId !== 'string' ||
-    typeof value.requestId !== 'string'
-  )
-    throw new EvaluationConfigurationError('config.schema');
-  assertGuidedTarget({
-    workspaceId: value.workspaceId,
-    bundleId: value.bundleId,
-    requestId: value.requestId,
-  });
-  return {
-    schemaVersion: 1,
-    serviceUrl: validateEvaluationServiceUrl(value.serviceUrl),
-    workspaceId: value.workspaceId,
-    bundleId: value.bundleId,
-    requestId: value.requestId,
-    descriptor: validateEvaluationDescriptor(value.descriptor),
-  };
-}
-
-export type EvaluationMismatchField =
-  | 'datasetRevision'
-  | 'graderRevision'
-  | 'runtime.configId'
-  | 'runtime.configRevision'
-  | 'runtime'
-  | 'expectedCases';
-
-/** Structural agreement also supports historical descriptors without new authoring identity fields. */
-export function evaluationDescriptorDifferences(
-  actual: EvaluationDescriptor,
-  expected: EvaluationDescriptor,
-): EvaluationMismatchField[] {
-  const differences: EvaluationMismatchField[] = [];
-  if (actual.datasetRevision !== expected.datasetRevision) differences.push('datasetRevision');
-  if (actual.graderRevision !== expected.graderRevision) differences.push('graderRevision');
-  const left = actual.runtime ?? {},
-    right = expected.runtime ?? {};
-  if (left.configId !== right.configId) differences.push('runtime.configId');
-  if (left.configRevision !== right.configRevision) differences.push('runtime.configRevision');
-  const otherKeys = new Set(
-    [...Object.keys(left), ...Object.keys(right)].filter(
-      (key) => !['configId', 'configRevision'].includes(key),
-    ),
-  );
-  if ([...otherKeys].some((key) => left[key] !== right[key])) differences.push('runtime');
-  const inventory = (value: EvaluationDescriptor) =>
-    (value.expectedCases ?? [])
-      .map((item) => JSON.stringify([item.caseId, item.repetition]))
-      .sort();
-  const a = inventory(actual),
-    b = inventory(expected);
-  if (
-    new Set(a).size !== a.length ||
-    new Set(b).size !== b.length ||
-    JSON.stringify(a) !== JSON.stringify(b)
-  )
-    differences.push('expectedCases');
-  return differences;
 }

@@ -37,24 +37,11 @@ test('missing or malformed form scope never inherits a remembered bundle', () =>
   }
 });
 
-test('published views identify their channel while bundle changes do not pretend suggestions are channel-owned', () => {
+test('published views identify their channel and removed routes do not parse', () => {
   const scope = { workspaceId: 'acme', bundleId: 'review', channel: 'stable' };
   assert.equal(bundleHref(scope, 'content'), '/w/acme/bundles/review/channels/stable/content');
-  const changes = bundleHref(scope, 'changes', {
-    draft: 'saved-id',
-    path: 'skills/review/SKILL.md',
-  });
-  const url = new URL(changes, 'https://console.invalid');
-  assert.equal(url.pathname, '/w/acme/bundles/review/changes');
-  assert.equal(url.searchParams.get('draft'), 'saved-id');
-  assert.equal(url.searchParams.get('channel'), 'stable');
-  assert.equal(url.searchParams.get('path'), 'skills/review/SKILL.md');
-  assert.deepEqual(parseConsoleLocation(url.pathname), {
-    workspaceId: 'acme',
-    bundleId: 'review',
-    view: 'changes',
-  });
   for (const path of [
+    '/w/acme/bundles/review/changes',
     '/w/acme/bundles/%2Fsecret/changes',
     '/w/acme/bundles/review/channels/stable/unknown',
     '/w/acme%00/bundles',

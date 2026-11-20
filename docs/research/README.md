@@ -1,8 +1,8 @@
 # Research and scope decisions
 
-The current product is a small content-improvement service with application-side SDK plugins and caching. It does not own agent execution. Start with the [current design](../design/README.md).
+This index preserves historical research and results from earlier designs. See the [current design](../design/README.md) for shipped behavior and [self-improvement memory](../architecture/self-improvement-memory/README.md) for the planned loop.
 
-## Current questions
+## Historical investigations
 
 - [Connected learning on LLM CLI support](real-app-learning-experiment/README.md) reports a paired development gain and a held-out tie. [Pre-registration](real-app-learning-experiment/preregistration.md) [Replication](real-app-learning-experiment/replication.md) and [replication pre-registration](real-app-learning-experiment/replication-preregistration.md).
 

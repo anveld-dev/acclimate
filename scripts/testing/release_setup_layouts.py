@@ -12,7 +12,7 @@ from playwright.sync_api import expect
 from scripts.bdd.run import pg_bin
 from scripts.bdd.world import World
 from scripts.bdd.layout import capture_layout
-from scripts.testing.compact_console import FILES, visit, sdk_acceptance
+from scripts.testing.compact_console import FILES, select_release, visit, sdk_acceptance
 from scripts.testing.desktop_layouts import build_fingerprint
 
 
@@ -27,13 +27,12 @@ def run(args):
         world.fresh_scenario(SimpleNamespace(effective_tags=[]))
         world.publish_initial('', files=FILES)
         candidate = dict(schemaVersion=1, files=[dict(f, text=f['text'] + '\nCheck operation identity before retrying.\n') for f in FILES])
-        world.draft = world.call('POST', world.channel + '/drafts', dict(baseVersionId=world.original['version']['id'], baseRevision=world.original['revision'], payload=candidate))
-        world.draft_path = world.channel + '/drafts/' + world.draft['id']
-        world.request_evaluation(); world.start_attempt(); world.comparison(); world.finish(); world.publish_evidence()
+        first = world.call('POST', world.bundle + '/versions', dict(parentVersionId=world.original['version']['id'], payload=candidate))
+        world.manual_release(first, reason='Second version fixture.')
         current = world.call('GET', world.channel)
         next_payload = dict(schemaVersion=1, files=[dict(f, text=f['text'] + '\nKeep the reviewed receipt with each operation.\n') for f in FILES])
-        draft = world.call('POST', world.channel + '/drafts', dict(baseVersionId=current['version']['id'], baseRevision=current['revision'], payload=next_payload))
-        world.call('POST', world.channel + '/releases', dict(versionId=draft['snapshotVersion']['id'], expectedRevision=current['revision'], unevaluatedReason='Manual policy clarification. No evaluation is claimed for this revision.'))
+        latest = world.call('POST', world.bundle + '/versions', dict(parentVersionId=current['version']['id'], payload=next_payload))
+        world.call('POST', world.channel + '/releases', dict(versionId=latest['id'], expectedRevision=current['revision'], unevaluatedReason='Disposable third release.'))
         browser = world.browser()
         page = browser.page
         routes = dict(releases=browser.bundle_path('releases'), setup=browser.bundle_path('connect'))
@@ -103,28 +102,27 @@ def run(args):
             page.set_viewport_size(dict(width=1440, height=1000))
             visit(page, browser, routes['releases'])
             expect(page.get_by_role('button', name='Restore revision 3', exact=True)).to_have_count(0)
-            expect(page.get_by_role('link', name='Inspect evidence for revision 2', exact=True)).to_be_visible()
-            expect(page.get_by_role('link', name='Inspect evidence for revision 3', exact=True)).to_have_count(0)
+            expect(page.get_by_role('region', name='Selected release', exact=True)).to_contain_text('Disposable third release.')
             details = page.get_by_role('button', name='Release details for revision 3', exact=True)
             details.hover()
             expect(page.get_by_role('tooltip')).to_contain_text('Release details for revision 3')
             details.click()
             dialog = page.get_by_role('dialog', name='Release details', exact=True)
-            expect(dialog).to_contain_text('Manual policy clarification.')
+            expect(dialog).to_be_visible()
             capture_layout(page, output, 'release-details-dialog')
             page.keyboard.press('Escape'); expect(details).to_be_focused()
+            select_release(page, 1)
             restore = page.get_by_role('button', name='Restore revision 1', exact=True)
             restore.click()
             expect(page.get_by_role('button', name='Restore version', exact=True)).to_be_disabled()
-            expect(page.get_by_role('dialog')).to_contain_text('without inheriting evaluation support')
             capture_layout(page, output, 'release-restore-dialog')
             page.keyboard.press('Escape'); expect(restore).to_be_focused()
-            checks.append('Revision-specific actions, evidence availability, details tooltip/dialog focus and empty-reason restore guard')
+            checks.append('Revision-specific actions, details tooltip/dialog focus and empty-reason restore guard')
             # Repeated immutable content remains a distinct channel decision; page through all.
             current = world.call('GET', world.channel)
             for index in range(49):
-                version = world.original['version']['id'] if index % 2 == 0 else draft['snapshotVersion']['id']
-                current = world.call('POST', world.channel + '/releases', dict(versionId=version, expectedRevision=str(3 + index), unevaluatedReason='Repeated-content history fixture. ' + ('Long policy rationale. ' * 30 if index == 47 else '')))
+                version = world.original['version']['id'] if index % 2 == 0 else latest['id']
+                current = world.call('POST', world.channel + '/releases', dict(versionId=version, expectedRevision=current['revision'], unevaluatedReason='Repeated-content history fixture. ' + ('Long release reason. ' * 30 if index == 47 else '')))
             visit(page, browser, routes['releases'])
             expect(page.get_by_test_id('release-decision')).to_have_count(20)
             page.get_by_role('button', name='Load older releases', exact=True).click()
@@ -133,8 +131,9 @@ def run(args):
             expect(page.get_by_test_id('release-decision')).to_have_count(52)
             expect(page.get_by_role('button', name='Load older releases', exact=True)).to_have_count(0)
             assert len(set(page.get_by_test_id('release-decision').evaluate_all('els => els.map(e=>e.getAttribute("aria-label"))'))) == 52
-            historical = page.get_by_test_id('release-decision').filter(has=page.get_by_role('heading', name='Revision 51', exact=True)).locator('.release-reason')
-            expect(historical).to_contain_text('Long policy rationale. ' * 30)
+            select_release(page, 51)
+            historical = page.get_by_role('region', name='Selected release', exact=True)
+            expect(historical).to_contain_text('Long release reason. ' * 30)
             assert historical.evaluate('e => e.scrollHeight <= e.clientHeight + 1')
             for width in (1024, 1440, 390):
                 page.set_viewport_size(dict(width=width, height=1000))
@@ -173,7 +172,7 @@ def run(args):
             checks.append('Actual coarse-pointer context keeps release and setup controls at least 44px')
         assert not browser.errors, browser.errors
         assert before == build_fingerprint(), 'Build changed during qualification'
-        summary = dict(passed=True, checks=checks, browserErrors=browser.errors, paidModelCalls=0, fixtureOnly=True, sourceBuildSha256=before, limits=['Simulated evaluation records, no provider/model calls.', 'Only listed interactions were tested; viewport reflow is not native zoom.'])
+        summary = dict(passed=True, checks=checks, browserErrors=browser.errors, paidModelCalls=0, fixtureOnly=True, sourceBuildSha256=before, limits=['Disposable versioned releases.', 'Only listed interactions were tested; viewport reflow is not native zoom.'])
         (output / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
         print(json.dumps(summary, indent=2), flush=True)
     except BaseException as error:

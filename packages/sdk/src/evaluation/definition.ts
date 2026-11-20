@@ -1,4 +1,4 @@
-import type { BundleFile, CompatibilityTarget, EvaluationDescriptor } from '../types.js';
+import type { BundleFile, CompatibilityTarget } from '../types.js';
 import { types as nodeTypes } from 'node:util';
 import { validateEvaluationDescriptor } from '../validation.js';
 import { DefinitionError, EvaluationError, OutputValidationError } from './errors.js';
@@ -6,6 +6,7 @@ import type {
   EvaluationApp,
   EvaluationCase,
   EvaluationDefinition,
+  EvaluationDescriptor,
   EvaluationExecutionResult,
   EvaluationGradeResult,
   ExecuteInput,
@@ -17,7 +18,6 @@ import type { CollectionSchedule } from './collection.js';
 export { OutputValidationError } from './errors.js';
 import type { RunControls } from './controls.js';
 export const MAX_ARTIFACT = 1024 * 1024,
-  MAX_REQUEST = 2 * 1024 * 1024,
   MAX_PRIVATE = 128 * 1024 * 1024;
 export interface CapturedDefinition<I = unknown, E = unknown, O = unknown> {
   descriptor: EvaluationDescriptor;
@@ -149,7 +149,6 @@ export function bindEvaluationRuntime<I, E, O>(
       runtime: { ...captured.descriptor.runtime, ...commitments },
     }),
   );
-  assertReportBudget(descriptor);
   const bound = Object.freeze({ descriptor }) as EvaluationApp<I, E, O>;
   definitions.set(bound, { ...captured, descriptor });
   return bound;
@@ -183,7 +182,6 @@ export function bindEvaluationRepetitions<I, E, O>(
   const descriptor = deepFreeze(
     validateEvaluationDescriptor({ ...captured.descriptor, expectedCases }),
   );
-  assertReportBudget(descriptor);
   const bound = Object.freeze({ descriptor }) as EvaluationApp<I, E, O>;
   definitions.set(bound, { ...captured, descriptor, cases: deepFreeze(cases) });
   return bound;
@@ -358,7 +356,6 @@ export function defineEvaluation<I, E, O>(
       cause: error,
     });
   }
-  assertReportBudget(descriptor);
   const app = Object.freeze({
     descriptor: deepFreeze(structuredClone(descriptor)),
   }) as EvaluationApp<I, E, O>;
@@ -398,45 +395,4 @@ export function declaredScheduling(definition: {
   if (!Number.isInteger(gradeRetries) || gradeRetries < 0 || gradeRetries > 5)
     throw new DefinitionError('gradeRetries', 'Use an integer from 0 to 5.');
   return { concurrency: String(concurrency), gradeRetries: String(gradeRetries) };
-}
-export function assertReportBudget(descriptor: EvaluationDescriptor): void {
-  const worst = {
-    executionStatus: 'infrastructure_failed',
-    gradingStatus: 'missing',
-    reward: -Number.MAX_VALUE,
-    outputRef: '\\'.repeat(1024),
-    error: 'e'.repeat(128),
-    usage: {
-      inputTokens: Number.MAX_VALUE,
-      outputTokens: Number.MAX_VALUE,
-      costUsd: Number.MAX_VALUE,
-    },
-  };
-  const report = {
-    ...descriptor,
-    parentVersionId: '0'.repeat(36),
-    candidateVersionId: '0'.repeat(36),
-    parentDigest: 'sha256:' + '0'.repeat(64),
-    candidateDigest: 'sha256:' + '0'.repeat(64),
-    evaluation: { requestId: '0'.repeat(36), attemptId: '0'.repeat(36) },
-    results: descriptor.expectedCases.map((k) => ({ ...k, parent: worst, candidate: worst })),
-  };
-  const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
-  const estimatedBytes = bytes(report);
-  if (estimatedBytes <= MAX_REQUEST) return;
-  const fixedBytes = bytes({ ...report, expectedCases: [], results: [] });
-  // Reserve the largest pair in both arrays so the suggested size fits even after regrouping.
-  const largestPairBytes = Math.max(
-    ...report.results.map((row, i) => bytes(descriptor.expectedCases[i]) + bytes(row) + 2),
-  );
-  const maxPairsPerPartition = Math.floor((MAX_REQUEST - fixedBytes + 2) / largestPairBytes);
-  const error = new EvaluationError('definition.report_budget_exceeded', { phase: 'preflight' });
-  error.diagnostic.reportBudget = {
-    estimatedBytes,
-    limitBytes: MAX_REQUEST,
-    expectedPairs: report.results.length,
-    maxPairsPerPartition,
-  };
-  error.message = `definition.report_budget_exceeded: estimated ${estimatedBytes} bytes for ${report.results.length} pairs, limit ${MAX_REQUEST}. Partition the cases into groups of at most ${maxPairsPerPartition} pairs using this configuration.`;
-  throw error;
 }

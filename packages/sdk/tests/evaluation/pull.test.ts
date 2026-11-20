@@ -68,7 +68,7 @@ async function fixture() {
   };
 }
 
-test('pull saves the published payload as a new private file for compare --payload', async () => {
+test('pull saves the published payload as a new private file for local use', async () => {
   const f = await fixture();
   try {
     const out = path.join(f.directory, 'candidate.json');

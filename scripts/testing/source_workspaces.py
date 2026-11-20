@@ -20,14 +20,12 @@ def run(args):
         deep='skills/review/references/one/two/three/four/five/six/seven/ambiguous-outcome-operation-identity-checks.md'
         files=FILES+[dict(path=deep,kind='skill',text='# Deep reference\n\nKeep the original operation identity.\n')]
         w.publish_initial('',files=files)
-        payload=dict(schemaVersion=1,files=[dict(f,text=f['text']+'\nSaved refinement.\n') for f in files])
-        w.draft=w.call('POST',w.channel+'/drafts',dict(baseVersionId=w.original['version']['id'],baseRevision=w.original['revision'],payload=payload))
         b=w.browser();p=b.page;p.set_viewport_size(dict(width=1440,height=1000))
-        routes=dict(content=b.bundle_path('content',path=deep),draft=b.bundle_path('changes',draft=w.draft['id'],path=deep))
+        routes=dict(content=b.bundle_path('content',path=deep))
         for name,path in routes.items():
             visit(p,b,path)
-            frame=p.get_by_test_id('file-browser' if name=='content' else 'draft-file-browser')
-            outer=frame.locator('..') if name=='content' else p.locator('.draft-workbench')
+            frame=p.get_by_test_id('file-browser')
+            outer=frame.locator('..')
             outer.evaluate('e=>e.style.width="430px"')
             capture_layout(p,out,name+'-constrained-before')
             state=frame.evaluate('e=>({width:e.clientWidth,columns:getComputedStyle(e).gridTemplateColumns,toggleVisible:!!e.querySelector(".file-navigator-toggle").getClientRects().length,bodyHidden:e.querySelector(".file-navigator-body").hidden})')

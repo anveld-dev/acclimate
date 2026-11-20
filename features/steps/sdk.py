@@ -20,13 +20,6 @@ def selected(context):
     assert w.delivery['version'] == w.original['version']
 
 
-@when('I published the saved draft manually')
-def publish_manual(context):
-    w=context.world
-    current=w.call('GET',w.channel)
-    w.published=w.call('POST',w.draft_path+'/publish',dict(expectedGeneration=w.draft['generation'],expectedRevision=current['revision'],unevaluatedReason='Operator reviewed this edit manually.'))
-
-
 @when('a fresh job requests the original version by ID')
 def pin(context):
     w = context.world
@@ -36,7 +29,7 @@ def pin(context):
 @then('the latest channel still contains the newer release')
 def current(context):
     w = context.world
-    assert w.call('GET', w.channel)['version'] == w.draft['snapshotVersion']
+    assert w.call('GET', w.channel)['version'] == w.uploaded_version
 
 
 @when('the service becomes unavailable')
@@ -218,31 +211,3 @@ def dropped(context):
     w = context.world
     assert w.reporting['pendingAfter'] == 0 and w.reporting['sentAfter'] == []
     assert w.call('GET', w.integration_path + '/receipts')['items'] == []
-
-
-@when('the SDK retries a grader that changes its input before failing')
-def grader_mutation(context):
-    w = context.world
-    w.delivery = w.sdk('compareMutation',parentVersionId=w.original['version']['id'],candidateVersionId=w.draft['snapshotVersion']['id'],mutation='grader')
-
-
-@then('execution happened once per version and both retries saw the original output')
-def independent(context):
-    result = context.world.delivery
-    assert result['executions'] == 2
-    assert result['observed'] == [['first','second']] * 4
-    assert result['report']['results'][0]['parent']['reward'] == 2
-    assert result['report']['results'][0]['candidate']['reward'] == 2
-
-
-@when('the caller changes version and runtime labels during comparison')
-def input_mutation(context):
-    w = context.world
-    w.delivery = w.sdk('compareMutation',parentVersionId=w.original['version']['id'],candidateVersionId=w.draft['snapshotVersion']['id'],mutation='identities')
-
-
-@then('the SDK report still names the versions and settings it executed')
-def fixed_inputs(context):
-    result = context.world.delivery
-    for key,value in result['original'].items():
-        assert result['report'][key] == value, key

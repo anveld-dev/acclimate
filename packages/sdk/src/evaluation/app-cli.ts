@@ -33,55 +33,20 @@ const adapterExports = [
   'compatibilityTarget',
   'grader',
   'runtime',
-  'toReviewArtifact',
   'execution',
 ];
 
-const help = `Compare your agent using its installed application.mjs or application.mts.
-Export cases, execute and grade from that module in your current directory, or export a
-default object built with defineApplication({ cases, execute, grade }).
-Select a different entry with --app PATH, for example: acclimate-eval describe --app dist/application.mjs.
-
-Try it locally first. These need no service, config or handoff:
-
-  acclimate-eval try [--live] [--case ID] [--payload FILE|DIR]
-  acclimate-eval compare --local --parent FILE|DIR --candidate FILE|DIR [--live] [--policy POLICY]
-
-Then compare against the service to gate a release:
-
-  acclimate-eval compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]
-  acclimate-eval compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) [--live] [--policy POLICY] [--json]
-
-Run controls for compare and run: --deadline 30m, --case-timeout 2m, --max-cost-usd 5,
---cases ID,ID or --shard 1/4 (partial, never full coverage), --progress or --quiet.
-Use plan to size the evaluation for your policy before running it, and pull to save a
-published bundle as a payload file to edit.
-
-Commands: try, compare, describe, coverage, doctor, plan, request, run, check, status, interrupt,
-export, verify-export, pull.
-status, verify-export, interrupt and pull run without loading application code.
-Run acclimate-eval COMMAND --help for one command's flags.
-
-Global flags: --json (machine-readable errors on stderr), --verbose (stack traces; or set
-ACCLIMATE_DEBUG=1), --version, --help.
-Exit codes: 0 ok, 1 fix command/config/application, 2 quality gate failed, 3 indeterminate,
-4 run or service failed, 5 recovery required.`;
-
+const help = `Load cases, execute and grade from application.mjs or application.mts.
+Use named exports or a default object built with defineApplication.
+Use --app PATH to select a different module.
+Commands: try, describe, coverage, doctor, pull.
+Run acclimate-eval COMMAND --help for flags.`;
 const commandHelp: Record<string, string> = {
-  compare: help,
-  describe: 'describe [--app PATH]  Print the public descriptor for these callbacks and cases.',
   try: TRY_USAGE,
-  coverage: 'coverage [--app PATH]  Inspect bound local sources, imported packages and declared revisions.',
-  doctor: 'doctor --config CONFIG (--bundle ID | --handoff FILE | --name RUN_NAME) [--policy POLICY] [--payload FILE]\nWith --payload, check it against the native harness rules of compatibilityTarget.',
-  request: 'request --config CONFIG --bundle ID --channel CHANNEL --payload FILE --intent FILE --out HANDOFF [--policy POLICY]',
-  run: 'run --config CONFIG (--handoff FILE | --name RUN_NAME) [--live]',
-  status: 'status (--config CONFIG | --read-config READER) --handoff FILE\nstatus --config CONFIG --name RUN_NAME\nRuns without loading application code.',
-  check: 'check (--config CONFIG | --read-config READER) --handoff FILE --policy POLICY\ncheck --config CONFIG --name RUN_NAME --policy POLICY',
-  export: 'export (--config CONFIG | --read-config READER) --handoff FILE --out DIRECTORY [--selection FILE]\nexport --config CONFIG --name RUN_NAME --out DIRECTORY [--selection FILE]',
-  interrupt: 'interrupt --config CONFIG (--handoff FILE | --name RUN_NAME) --reason REASON\nRuns without loading application code.',
-  'verify-export': 'verify-export --manifest FILE [--read-config READER --handoff FILE]\nRuns without loading application code.',
-  pull: pullHelp + '\nRuns without loading application code.',
-  plan: 'plan --policy POLICY [--aa A_A_COMPARISON.json] [--effects 0,0.05] [--simulations N] [--seed N]\nEstimate the minimum detectable effect and simulate pass rates before running anything.',
+  describe: 'describe [--app PATH]  Print the installed application descriptor.',
+  coverage: 'coverage [--app PATH]  Print files bound to the application revision.',
+  doctor: 'doctor --config CONFIG --bundle ID [--payload FILE]',
+  pull: pullHelp,
 };
 
 async function readCases(filename: string): Promise<EvaluationCase[]> {
@@ -327,12 +292,6 @@ export async function loadApplication(directory = process.cwd(), appPath?: strin
   } catch (error) {
     wrapDefinitionError(error);
   }
-  const mapper = adapter.toReviewArtifact;
-  if (mapper !== undefined && typeof mapper !== 'function') {
-    throw new SetupError('toReviewArtifact must be a function when supplied.', {
-      field: 'toReviewArtifact',
-    });
-  }
   const coverage = {
     adapter: relative(await realpath(directory), filename),
     execution,
@@ -343,7 +302,7 @@ export async function loadApplication(directory = process.cwd(), appPath?: strin
     limits:
       'Local imports reached while loading the adapter are bound. List package builds, deferred imports and runtime-read assets in revisionFiles or runtime.artifacts.',
   };
-  return { app, review: mapper && { toReviewArtifact: mapper }, coverage, warnings };
+  return { app, coverage, warnings };
 }
 
 function coverageText(coverage: Awaited<ReturnType<typeof loadApplication>>['coverage']) {
@@ -374,7 +333,7 @@ export async function applicationMain(argv = process.argv.slice(2), directory = 
     // An empty $CMD in CI must fail, not pass.
     process.stderr.write(help + '\n\n');
     return reportEvaluatorError(
-      new EvaluationError('usage.missing_command', { hint: 'Choose a command, for example describe or compare.' }),
+      new EvaluationError('usage.missing_command', { hint: 'Choose a command, for example describe or try.' }),
       argv,
     );
   }
@@ -406,5 +365,5 @@ export async function applicationMain(argv = process.argv.slice(2), directory = 
   } catch (error) {
     return reportEvaluatorError(error, argv, command);
   }
-  return evaluationMain(installed.app, argv, { review: installed.review });
+  return evaluationMain(installed.app, argv);
 }

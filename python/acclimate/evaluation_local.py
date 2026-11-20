@@ -1,7 +1,3 @@
-"""Local comparisons and smoke tests: no service, no config, no handoff.
-
-Local results are advisory. They are never release evidence or a release receipt.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,16 +19,12 @@ from ._evaluation_shared import (
     CallbackCancelled, EvaluationError, EvaluationUsageError, PrivateJsonError, TaskExecutionError, _text,
     atomic_private_write, clone_json, ensure_private_directory, json_bytes, parse_json,
 )
-from ._evaluation_trials import TrialHooks, reported_usage, run_trials
+from ._evaluation_trials import reported_usage
 from .delivery import DeliveryError, validate_payload
 
 MAX_PAYLOAD_FILE = 2 * 1024 * 1024
 MAX_FILES = 128
 MAX_TEXT = 256 * 1024
-
-LOCAL_NOTICE = ("Local comparison: not a release receipt. The service did not verify these versions, this evidence "
-                "or this policy result. Run compare against the service to gate a release.")
-
 
 class LocalRunError(EvaluationUsageError):
     """A local input problem: an unreadable payload, a nonempty --out folder or a missing --live.
@@ -177,20 +169,6 @@ def local_version(payload: dict, parent: dict | None = None) -> dict:
             "payload": clone_json(payload), "resolvedAt": int(time.time() * 1000), "stale": False}
 
 
-def create_local_run_directory(out: str | None = None, base: str | os.PathLike | None = None) -> Path:
-    base_path = Path.cwd() if base is None else Path(base)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    target = (base_path / out) if out else base_path / ".acclimate" / "local" / f"{stamp}-{uuid.uuid4().hex[:8]}"
-    target = Path(os.path.abspath(target)).resolve()
-    if target.is_dir() and any(target.iterdir()):
-        raise LocalRunError(f"{target} is not empty. Choose a new --out folder.", "--out")
-    try:
-        return ensure_private_directory(target)
-    except EvaluationError:
-        raise LocalRunError(f"Cannot create a private folder at {target}. It must be owned by you with mode 0700; "
-                            "choose another --out folder.", "--out") from None
-
-
 def _describe_error(error: BaseException) -> str:
     try:
         frames = [frame for frame in traceback.extract_tb(error.__traceback__) if "acclimate" not in Path(frame.filename).parts]
@@ -207,147 +185,6 @@ def _assert_live(app, allow_live: bool):
         raise LocalRunError("This evaluator calls live models or services. Add --live to confirm the run may spend money."
                             if live else "This evaluator is model-free. Omit --live.", "--live")
 
-
-def run_local_comparison(*, app, parent: dict, candidate: dict, directory: str | os.PathLike,
-                         allow_live: bool = False, controls: RunControls | None = None,
-                         cancel_event: threading.Event | None = None) -> dict:
-    """Run the service comparison's trial schedule on two local payloads.
-
-    Nothing contacts the service and the result is never release evidence.
-    `directory` must be a private, empty folder for job directories and artifacts.
-    """
-    from .evaluation import CancellationContext, EvaluationApp
-    if not isinstance(app, EvaluationApp):
-        raise EvaluationError("config.schema")
-    _assert_live(app, allow_live)
-    validate_payload(parent)
-    validate_payload(candidate)
-    parent_version = local_version(parent)
-    candidate_version = local_version(candidate, parent_version)
-    root = ensure_private_directory(Path(directory))
-    request_id, attempt_id = str(uuid.uuid4()), str(uuid.uuid4())
-    lock = threading.Lock()
-    diagnostics: list[dict] = []
-    callbacks = {"started": 0}
-
-    def job_directory(case_id, repetition, side, version):
-        identity = {"requestId": request_id, "attemptId": attempt_id, "caseId": case_id, "repetition": repetition,
-                    "side": side, "versionId": version["id"], "digest": version["digest"]}
-        job_id = hashlib.sha256(json_bytes(identity)).hexdigest()
-        with lock:
-            job_dir = ensure_private_directory(ensure_private_directory(root / "jobs") / job_id)
-        atomic_private_write(job_dir / "binding.json", json_bytes(identity))
-        return job_id, job_dir
-
-    def write_artifact(identity, value):
-        body = json_bytes({"schemaVersion": 1, "identity": {"requestId": request_id, "attemptId": attempt_id, **identity}, "value": value})
-        digest = hashlib.sha256(body).hexdigest()
-        with lock:
-            # Identical artifacts share one content-addressed file.
-            atomic_private_write(ensure_private_directory(root / "artifacts") / f"{digest}.json", body + b"\n")
-        return {"sha256": digest, "bytes": len(body)}
-
-    def record_diagnostic(job_dir, phase, error):
-        binding = json.loads((Path(job_dir) / "binding.json").read_text("utf-8"))
-        if isinstance(error, PrivateJsonError):
-            path = Path(job_dir) / "output-validation.json"
-            atomic_private_write(path, json_bytes({"field": error.field, "reason": error.reason}))
-            detail, phase = f"{error.field}: {error.reason}", "output"
-        else:
-            detail = _describe_error(error)
-            path = Path(job_dir) / "callback-error.json"
-            atomic_private_write(path, json_bytes({"phase": phase, "detail": detail}) + b"\n")
-        with lock:
-            diagnostics.append({"caseId": binding["caseId"], "repetition": binding["repetition"], "side": binding["side"],
-                                "phase": phase, "detail": detail})
-        return str(path)
-
-    def started():
-        with lock:
-            callbacks["started"] += 1
-
-    cancellation = CancellationContext(cancel_event or threading.Event())
-    results, summary = run_trials(
-        app=app, request_id=request_id, attempt_id=attempt_id,
-        bundles={"parent": parent_version, "candidate": candidate_version}, cancellation=cancellation,
-        controls=app._controls if controls is None else controls, on_callback_started=started,
-        hooks=TrialHooks(checkpoint=lambda: None, assert_owned=lambda: None, job_directory=job_directory,
-                         write_artifact=write_artifact, record_diagnostic=record_diagnostic))
-    descriptor = app.descriptor
-    comparison = {
-        "parentVersionId": parent_version["version"]["id"], "candidateVersionId": candidate_version["version"]["id"],
-        "parentDigest": parent_version["version"]["digest"], "candidateDigest": candidate_version["version"]["digest"],
-        "datasetRevision": descriptor["datasetRevision"], "graderRevision": descriptor["graderRevision"],
-        "runtime": dict(descriptor["runtime"]), "evaluation": {"requestId": request_id, "attemptId": attempt_id},
-        "expectedCases": [dict(key) for key in descriptor["expectedCases"]], "results": results,
-        "id": str(uuid.uuid4()),
-        "complete": all(outcome["gradingStatus"] == "scored" and outcome["executionStatus"] != "infrastructure_failed"
-                        for pair in results for outcome in (pair["parent"], pair["candidate"])),
-        "submitter": "local", "createdAt": _now(),
-    }
-    diagnostics.sort(key=lambda item: (item["caseId"], item["repetition"]))
-    return {
-        "schemaVersion": 1, "authoritative": False, "descriptor": descriptor,
-        "versions": {"parent": parent_version["version"], "candidate": candidate_version["version"]},
-        "comparison": comparison,
-        "binding": {"parentVersionId": comparison["parentVersionId"], "candidateVersionId": comparison["candidateVersionId"],
-                    "parentDigest": comparison["parentDigest"], "candidateDigest": comparison["candidateDigest"],
-                    "requestId": request_id, "attemptId": attempt_id, "comparisonId": comparison["id"], "submitter": "local"},
-        "summary": summary, "callbacksStarted": callbacks["started"], "diagnostics": diagnostics,
-        "warnings": run_warnings(summary, {"parent": comparison["parentDigest"], "candidate": comparison["candidateDigest"]}),
-    }
-
-
-def score_local_comparison(result: dict, policy_text: str | None = None) -> dict:
-    """Score a local comparison and, when supplied, apply a policy as advice only."""
-    from .evaluation_analysis import analyze_comparison, policy_analysis_metric
-    from .evaluation_policy import check_comparison, parse_evaluation_policy
-    policy = None if policy_text is None else parse_evaluation_policy(policy_text, result["descriptor"])
-    evidence = dict(comparison=result["comparison"], expected_descriptor=result["descriptor"], expected_binding=result["binding"])
-    metrics = [policy_analysis_metric(policy["policy"]["metric"])] if policy else None
-    metric = analyze_comparison(**evidence, metrics=metrics)["metrics"][0]
-    scores = {key: metric[key] for key in ("counts", "summary", "cases")}
-    if "evidenceGaps" in metric:
-        scores["evidenceGaps"] = metric["evidenceGaps"]
-    if policy is None:
-        return {"scores": scores, "policy": None}
-    verdict = check_comparison(**evidence, policy=policy["policy"], policy_digest=policy["sha256"])
-    return {"scores": scores, "policy": {**verdict, "advisory": True}}
-
-
-def local_report(result: dict, scored: dict, sources: dict, directory: str | os.PathLike) -> dict:
-    """The report written beside local artifacts. It is never accepted as release evidence."""
-    candidate_payload = str(Path(directory) / "candidate.payload.json")
-    return {
-        "schemaVersion": 1, "kind": "acclimate.local-comparison", "authoritative": False, "releaseReceipt": False,
-        "notice": LOCAL_NOTICE, "createdAt": result["comparison"]["createdAt"], "descriptor": result["descriptor"],
-        "parent": {**result["versions"]["parent"], "source": sources["parent"].source, "form": sources["parent"].form},
-        "candidate": {**result["versions"]["candidate"], "source": sources["candidate"].source, "form": sources["candidate"].form},
-        "run": result["summary"], "callbacksStarted": result["callbacksStarted"], "scores": scored["scores"],
-        "policy": scored["policy"], "warnings": result["warnings"], "diagnostics": result["diagnostics"],
-        "comparison": result["comparison"],
-        "replay": {
-            "description": ("Local evidence cannot be uploaded: the service only accepts results produced under an attempt it "
-                            "issued for versions it stores. Replay the same candidate against the service instead. The service "
-                            "compares it with the current parent on its channel; check that the digest of that parent matches "
-                            "parent.digest to reproduce this comparison."),
-            "candidatePayload": candidate_payload,
-            "command": f"compare --config CONFIG --bundle BUNDLE_ID --channel CHANNEL --payload {candidate_payload} --name RUN_NAME",
-            "parentDigest": result["versions"]["parent"]["digest"],
-        },
-    }
-
-
-def write_local_report(directory: str | os.PathLike, report: dict, sources: dict) -> str:
-    root = Path(directory)
-    atomic_private_write(root / "parent.payload.json", (json.dumps(sources["parent"].payload, ensure_ascii=False, indent=2) + "\n").encode())
-    atomic_private_write(root / "candidate.payload.json", (json.dumps(sources["candidate"].payload, ensure_ascii=False, indent=2) + "\n").encode())
-    target = root / "local-report.json"
-    atomic_private_write(target, (json.dumps(report, ensure_ascii=False, indent=2) + "\n").encode())
-    return str(target)
-
-
-# --------------------------------------------------------------------- try ---
 
 PLACEHOLDER_PAYLOAD = {"schemaVersion": 1, "files": [
     {"path": "AGENTS.md", "kind": "instruction", "text": "# Placeholder instructions for acclimate-eval try\n"}]}
@@ -401,8 +238,7 @@ def inspect_grade(value: Any) -> list[dict]:
         issues.append({"severity": "error", "field": "reward", "message": "Return a finite number. The runner records a grading failure otherwise."})
     elif reward < 0 or reward > 1:
         issues.append({"severity": "warning", "field": "reward",
-                       "message": f"{reward} is outside 0–1. Comparisons accept any finite reward, but thresholds and "
-                                  "connected-learning policies expect 0–1."})
+                       "message": f"{reward} is outside 0–1. Use a score in 0–1 for a normalized scale."})
     if value.explanation is not None:
         _inspect_json(value.explanation, "explanation", issues)
     return issues
@@ -503,21 +339,7 @@ def try_evaluation(*, app, directory: str | os.PathLike, payload: LocalPayload |
             "cases": rows}
 
 
-def read_local_text(target: str | os.PathLike, limit: int = 2 * 1024 * 1024) -> str:
-    path = Path(target)
-    try:
-        info = path.stat()
-    except OSError:
-        raise LocalRunError(f"Cannot read {target}.") from None
-    if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
-        raise LocalRunError(f"{target} must be a file of at most {limit} bytes.")
-    try:
-        return _decode(path.read_bytes())
-    except (OSError, UnicodeDecodeError):
-        raise LocalRunError(f"Cannot read {target} as UTF-8 text.") from None
-
-
-__all__ = ["LOCAL_NOTICE", "LocalPayload", "LocalRunError", "PLACEHOLDER_PAYLOAD", "create_local_run_directory",
+__all__ = ["LocalPayload", "LocalRunError", "PLACEHOLDER_PAYLOAD",
            "inspect_execution", "inspect_grade", "load_local_payload", "local_file_kind", "local_payload_digest",
-           "local_report", "local_version", "read_local_text", "run_local_comparison", "score_local_comparison",
-           "try_evaluation", "write_local_report"]
+           "local_version",
+           "try_evaluation"]

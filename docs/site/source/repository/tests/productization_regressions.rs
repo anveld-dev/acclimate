@@ -55,7 +55,6 @@ async fn fixture(max_connections: u32) -> (AppState, String, Vec<(Uuid, String)>
             project_id: project.clone(),
             rights: vec!["read".into(), "write".into(), "promote".into()],
         }]),
-        provider: None,
     };
     (state, project, people)
 }
@@ -80,12 +79,26 @@ fn request(method: &str, path: &str, session: Option<&str>, body: &str) -> Reque
 async fn browser_reads_work_with_one_pool_connection_and_machine_prefix_still_works() {
     let (state, project, people) = fixture(1).await;
     let app = router(state.clone());
+    let setup = app
+        .clone()
+        .oneshot(request(
+            "POST",
+            &format!("/v1/workspaces/{project}/bundle-setups"),
+            None,
+            r#"{
+                "name":"Regression fixture","origin":"created","channel":"stable","reason":"Initial release",
+                "payload":{"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":"Fixture"}]}
+            }"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(setup.status(), StatusCode::CREATED);
+    let setup: serde_json::Value =
+        serde_json::from_slice(&to_bytes(setup.into_body(), 4096).await.unwrap()).unwrap();
+    let bundle = setup["bundle"]["id"].as_str().unwrap();
     for path in [
         format!("/v1/workspaces/{project}/bundles"),
-        format!(
-            "/v1/workspaces/{project}/bundles/{}/comparisons",
-            Uuid::new_v4()
-        ),
+        format!("/v1/workspaces/{project}/bundles/{bundle}/channels/stable/releases"),
     ] {
         let response = tokio::time::timeout(
             Duration::from_secs(3),

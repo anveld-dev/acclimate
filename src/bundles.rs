@@ -58,7 +58,10 @@ pub fn validate_payload(p: &BundlePayload) -> Result<(), String> {
     Ok(())
 }
 
-use crate::{ApiResult, AppState, Bundle, CreateVersionRequest, VersionMetadata, db, path};
+use crate::{
+    ApiResult, AppState, Bundle, CreateVersionRequest, PromoteRequest, VersionMetadata, db, err,
+    path,
+};
 use axum::{
     Json,
     body::Bytes,
@@ -68,7 +71,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 pub(crate) async fn create_bundle(
     State(s): State<AppState>,
@@ -209,4 +212,124 @@ pub(crate) async fn get_payload(
         HeaderValue::from_static("application/json"),
     );
     Ok(resp)
+}
+
+fn invalid() -> crate::ApiErr {
+    err(
+        StatusCode::BAD_REQUEST,
+        "invalid_content",
+        "Invalid content request",
+    )
+}
+async fn snapshot(
+    tx: &mut Transaction<'_, Postgres>,
+    p: &str,
+    b: Uuid,
+    parent: Option<Uuid>,
+    bytes: Vec<u8>,
+    actor: &str,
+) -> ApiResult<VersionMetadata> {
+    let r=sqlx::query("INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,bundle_id,parent_version_id,digest,created_at").bind(Uuid::new_v4()).bind(p).bind(b).bind(parent).bind(crate::digest(&bytes)).bind(bytes).bind(actor).fetch_one(&mut **tx).await.map_err(db)?;
+    Ok(crate::store::meta(&r))
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Setup {
+    name: String,
+    #[serde(default = "crate::compatibility::default_target")]
+    compatibility_target: String,
+    origin: String,
+    source_label: Option<String>,
+    channel: String,
+    payload: BundlePayload,
+    reason: String,
+}
+fn source_label(s: Option<String>) -> ApiResult<Option<String>> {
+    s.map(|s| {
+        let s = s.trim();
+        if s.is_empty()
+            || s.len() > 480
+            || s.chars().count() > 120
+            || s.chars().any(char::is_control)
+            || s.starts_with('/')
+            || s.starts_with('\\')
+            || s.contains(':')
+            || s.as_bytes().get(1) == Some(&b':')
+        {
+            return Err(invalid());
+        }
+        Ok(s.to_string())
+    })
+    .transpose()
+}
+pub(crate) async fn create_setup(
+    State(s): State<AppState>,
+    Path(p): Path<String>,
+    h: HeaderMap,
+    body: Bytes,
+) -> ApiResult<Response> {
+    let a = crate::auth::actor(&h, &s, &p, "write")?;
+    crate::auth::actor(&h, &s, &p, "promote")?;
+    let req: Setup = serde_json::from_slice(&body).map_err(|_| invalid())?;
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/bundle-setups");
+    let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
+        crate::commands::MutationStart::Execute(command) => command,
+        crate::commands::MutationStart::Replay(response) => return Ok(response),
+    };
+    if !crate::compatibility::valid_target(&req.compatibility_target)
+        || req.name.trim().is_empty()
+        || req.name.len() > 240
+        || !matches!(req.origin.as_str(), "created" | "example" | "imported")
+        || !crate::channels::valid_channel(&req.channel)
+    {
+        return Err(invalid());
+    }
+    let source = source_label(req.source_label)?;
+    validate_payload(&req.payload)
+        .map_err(|e| err(StatusCode::BAD_REQUEST, "invalid_content", e))?;
+    let bytes = crate::encode_payload(&req.payload)?;
+    sqlx::query("INSERT INTO projects(id,name) VALUES($1,$1) ON CONFLICT(id) DO NOTHING")
+        .bind(&p)
+        .execute(&mut *cmd.tx)
+        .await
+        .map_err(db)?;
+    let b = Uuid::new_v4();
+    let row=sqlx::query("INSERT INTO bundles(id,project_id,name,origin,source_label,compatibility_target) VALUES($1,$2,$3,$4,$5,$6) RETURNING created_at").bind(b).bind(&p).bind(req.name.trim()).bind(&req.origin).bind(&source).bind(&req.compatibility_target).fetch_one(&mut *cmd.tx).await.map_err(db)?;
+    let v = snapshot(&mut cmd.tx, &p, b, None, bytes, &a.principal).await?;
+    let promotion = crate::channels::promote_in_tx(
+        &mut cmd.tx,
+        &p,
+        b,
+        &req.channel,
+        &a.principal,
+        PromoteRequest {
+            version_id: v.id.clone(),
+            expected_revision: "0".into(),
+            unevaluated_reason: req.reason,
+        },
+    )
+    .await?;
+    let out = serde_json::json!({"bundle":{"id":b.to_string(),"workspaceId":p,"name":req.name.trim(),"origin":req.origin,"sourceLabel":source,"compatibilityTarget":req.compatibility_target,"createdAt":row.get::<DateTime<Utc>,_>("created_at").to_rfc3339()},"version":v,"resolution":{"channel":req.channel,"revision":"1","version":v},"promotion":promotion});
+    crate::commands::finish_mutation(cmd, StatusCode::CREATED, out).await
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn labels_reject_paths_urls_controls_and_excess_bytes() {
+        for s in [
+            "/private/data",
+            "C:\\data",
+            "https://host/path",
+            "bad\nlabel",
+        ] {
+            assert!(source_label(Some(s.into())).is_err());
+        }
+        assert!(source_label(Some("a".repeat(121))).is_err());
+        assert_eq!(
+            source_label(Some("  Selected files  ".into())).unwrap(),
+            Some("Selected files".into())
+        );
+    }
 }

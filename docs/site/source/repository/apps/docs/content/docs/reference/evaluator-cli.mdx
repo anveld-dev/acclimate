@@ -1,0 +1,18 @@
+---
+title: Evaluator CLI
+description: Check an application adapter locally and download released payloads.
+---
+
+Use `acclimate-eval` for TypeScript, or `acclimate` (also `python -m acclimate`) for Python. Run from the directory with `application.mjs`, `application.mts` or `application.py`. Use `--app` to choose an explicit module. The [TypeScript starter](https://github.com/anveld-dev/acclimate/tree/main/examples/evaluation-starter) and [Python starter](https://github.com/anveld-dev/acclimate/tree/main/examples/python-evaluation-starter) show the adapter contract.
+
+| Command | Purpose |
+| --- | --- |
+| `try --payload PATH` | Run one local case with the supplied bundle JSON or directory. Add `--case ID` to choose the case, `--case-timeout DURATION` for its time limit and `--live` if it makes live calls. |
+| `describe` | Print the public descriptor for the installed adapter. |
+| `coverage` | Inspect files and inputs that contribute to the descriptor. This output may contain private paths. |
+| `doctor --config FILE --bundle ID` | Check adapter setup and access to the target bundle. Optionally provide `--payload PATH` to check compatibility. |
+| `pull --config FILE --bundle ID --channel stable --out FILE` | Save the verified payload currently released on `stable`. This command can run without an adapter. |
+
+For `try`, files under `skills/` become skills, files under `memory/` become memory files, and other text files become instructions. The application supplies private cases, an execution callback and a grading callback. A model-free adapter can run `try` without `--live`. The check runs locally and leaves channel state untouched.
+
+The private configuration for `doctor` and `pull` supplies the HTTPS service URL, workspace and token. See the [evaluator operations runbook](https://github.com/anveld-dev/acclimate/blob/main/docs/evaluator-operations.md) for configuration and [error codes](/docs/reference/error-codes) for diagnostic output.

@@ -246,7 +246,6 @@ export function Shell({ children }: { children: ReactNode }) {
   useBackgroundRefresh(() => router.invalidate(), {
     enabled:
       Boolean(nav?.workspaceId) &&
-      view !== 'changes' &&
       view !== 'members' &&
       !loading &&
       !hasPendingChanges,

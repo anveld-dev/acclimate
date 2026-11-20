@@ -16,24 +16,15 @@ import { Button } from '@/components/ui/button';
 import styles from '../styles.css?url';
 import railStyles from '../components/shell-rail.css?url';
 import bundleHeaderStyles from '../components/bundle-header.css?url';
-import evaluationStyles from '../components/evaluation-workspace.css?url';
-import evaluationCaseStyles from '../components/evaluation-case-results.css?url';
-import evaluationCaseMapStyles from '../components/evaluation-case-map.css?url';
-import suggestionStyles from '../components/suggestion-workspace.css?url';
 import syntaxStyles from '../components/syntax.css?url';
 import fileWorkspaceStyles from '../components/file-workspace.css?url';
 import sourceEditorStyles from '../components/source-editor.css?url';
-import sourceReviewStyles from '../components/source-review.css?url';
 import sdkSetupStyles from '../components/sdk-setup.css?url';
 import pageHeaderStyles from '../components/page-header.css?url';
 import workspacePageStyles from '../components/workspace-pages.css?url';
 import workspaceMemberStyles from '../components/workspace-members.css?url';
 import bundleLibraryStyles from '../components/bundle-library.css?url';
 import changesReleasesStyles from '../components/changes-releases.css?url';
-import evaluationCaseWorkbenchStyles from '../components/evaluation-case-workbench.css?url';
-import changesCaseTriageStyles from '../components/changes-case-triage.css?url';
-import changesOverviewStyles from '../components/changes-overview.css?url';
-import evaluationHistoryStyles from '../components/evaluation-history-view.css?url';
 import versionInspectorStyles from '../components/version-inspector.css?url';
 
 export const Route = createRootRoute({
@@ -63,20 +54,11 @@ export const Route = createRootRoute({
       { rel: 'stylesheet', href: styles },
       { rel: 'stylesheet', href: railStyles },
       { rel: 'stylesheet', href: bundleHeaderStyles },
-      { rel: 'stylesheet', href: evaluationStyles },
-      { rel: 'stylesheet', href: evaluationCaseStyles },
-      { rel: 'stylesheet', href: evaluationCaseMapStyles },
-      { rel: 'stylesheet', href: suggestionStyles },
       { rel: 'stylesheet', href: syntaxStyles },
       { rel: 'stylesheet', href: fileWorkspaceStyles },
       { rel: 'stylesheet', href: sourceEditorStyles },
-      { rel: 'stylesheet', href: sourceReviewStyles },
       { rel: 'stylesheet', href: sdkSetupStyles },
       { rel: 'stylesheet', href: changesReleasesStyles },
-      { rel: 'stylesheet', href: changesOverviewStyles },
-      { rel: 'stylesheet', href: changesCaseTriageStyles },
-      { rel: 'stylesheet', href: evaluationCaseWorkbenchStyles },
-      { rel: 'stylesheet', href: evaluationHistoryStyles },
       { rel: 'stylesheet', href: versionInspectorStyles },
       { rel: 'stylesheet', href: pageHeaderStyles },
       { rel: 'stylesheet', href: workspacePageStyles },

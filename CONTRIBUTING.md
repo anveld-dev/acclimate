@@ -20,4 +20,4 @@ By submitting a contribution, you agree to license it under the [Apache License 
 ## Project records
 
 - [Qualification records](docs/implementation/full-roadmap.md)
-- [Connected-learning audit experiment](docs/research/real-app-learning-experiment/5-admission-rerun.md)
+- [Historical connected-learning audit experiment](docs/research/real-app-learning-experiment/5-admission-rerun.md)

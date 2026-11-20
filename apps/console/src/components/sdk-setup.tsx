@@ -22,7 +22,10 @@ import { NativeSelect } from './ui/native-select';
 import releaseMetadata from '../../../../scripts/packaging/release-metadata.json';
 
 type Ready = Extract<ConsoleState, { status: 'ready' }>;
-type SetupScope = Pick<Ready, 'workspaceId' | 'bundleId' | 'bundleName' | 'channel' | 'publicApiUrl'>;
+type SetupScope = Pick<
+  Ready,
+  'workspaceId' | 'bundleId' | 'bundleName' | 'channel' | 'publicApiUrl'
+>;
 type Language = 'typescript' | 'python';
 
 /** A visible step marker; the accessible heading still reads "1. Install the SDK". */
@@ -216,11 +219,9 @@ export function SdkSetup({
     <div className="sdk-agent-instructions">
       <p>
         Connect your existing agent loop in{' '}
-        <code>{isTypeScript ? 'application.mjs' : 'application.py'}</code>, the one module both
-        delivery and evaluation load. Export{' '}
-        <code>{isTypeScript ? 'runAgent' : 'run_agent'}</code> with the arguments below, plus the{' '}
-        <code>cases</code>, <code>execute</code> and <code>grade</code> the evaluator needs; the
-        application module recipe shows <code>execute</code> calling the same function.
+        <code>{isTypeScript ? 'application.mjs' : 'application.py'}</code>. Export{' '}
+        <code>{isTypeScript ? 'runAgent' : 'run_agent'}</code> with the arguments shown in the
+        recipe.
       </p>
       <ol>
         <li>
@@ -239,9 +240,9 @@ export function SdkSetup({
       </ol>
       <p className="sdk-agent-note">
         It retains the result in <code>ACCLIMATE_JOB_DIR/acclimate-agent-result.json</code> with its
-        version and digest; use a new empty job directory for another run. Return stopped only
-        after actual termination; a rejected call retains the private job directory for inspection
-        instead of cleaning possibly active inputs.
+        version and digest; use a new empty job directory for another run. Return stopped only after
+        actual termination; a rejected call retains the private job directory for inspection instead
+        of cleaning possibly active inputs.
       </p>
     </div>
   );
@@ -451,43 +452,6 @@ export function SdkSetup({
                     <strong>Delivery:</strong> a workspace admin issues content-read access in
                     Connections; optional observations use a separate reporting credential.
                   </p>
-                  <p>
-                    <strong>Evaluation:</strong> ask the service operator for a dedicated workspace
-                    read/write principal. Delivery credentials cannot read unpublished candidates or
-                    execute evaluation requests. The operator currently validates static grants and
-                    restarts the service.
-                  </p>
-                  <p>
-                    <strong>Release:</strong> requires separate release authority and a deliberate
-                    decision. Evaluation completion or a policy pass does not release a version.
-                  </p>
-                  <p>
-                    Evaluator execution needs a private configuration file, a stable principal, and
-                    durable owner-only local journals. TypeScript durable execution also needs
-                    python3 with fcntl; Python needs 3.11+. Run the installed starter’s doctor
-                    command before a first comparison.
-                  </p>
-                  <h4>Public evaluator access request for your operator</h4>
-                  <SyntaxCode
-                    language="json"
-                    code={JSON.stringify(
-                      {
-                        serviceUrl: state.publicApiUrl,
-                        workspaceId: state.workspaceId,
-                        bundleId: state.bundleId,
-                        rights: ['read', 'write'],
-                        purpose:
-                          'Evaluate unpublished candidates; proposal and release permissions are separate',
-                      },
-                      null,
-                      2,
-                    )}
-                  />
-                  <p>
-                    This is a public request template, not a credential. Receive the private
-                    evaluator configuration through your team’s secret channel; never paste it into
-                    the console.
-                  </p>
                   <ConsoleLink
                     href={workspaceHref(state.workspaceId, 'delivery')}
                     className="underline"
@@ -583,7 +547,7 @@ export function SdkSetup({
             {/* On a connection page the surrounding step panel already names this step. */}
             <h3 id="sdk-agent-heading" className={step ? 'sr-only' : undefined}>
               {!step && <StepNumber value={4} />}
-              Connect your agent, then compare a change
+              Connect your agent
             </h3>
             {runtime === 'custom' ? (
               <>
@@ -660,29 +624,6 @@ export function SdkSetup({
                 </p>
               </>
             )}
-            <p>
-              In your agent’s application directory, export your cases, agent callback and
-              independent grader from{' '}
-              <code>{isTypeScript ? 'application.mjs or application.mts' : 'application.py'}</code>.
-              For a separate private case file, set <code>ACCLIMATE_EVALUATOR_CASES</code>. Run the
-              command below. Use the resulting public configuration to request a comparison of the
-              saved versions.
-            </p>
-            <SyntaxCode
-              code={
-                isTypeScript
-                  ? 'npx --no-install acclimate-eval describe'
-                  : 'python -m acclimate describe'
-              }
-              language="bash"
-              aria-label="Describe evaluation configuration command"
-            />
-            <ConsoleLink
-              href={bundleHref(selection, 'changes')}
-              className="underline underline-offset-4"
-            >
-              Compare a change using this app
-            </ConsoleLink>
           </section>
         )}
       </div>

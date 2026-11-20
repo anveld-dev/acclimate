@@ -56,7 +56,7 @@ test('equal basenames in distinct branches retain distinct selection ancestry', 
   assert.deepEqual(memoryAncestors.map((id) => byId.get(id)?.path), ['memory']);
 });
 
-test('file/folder collisions and duplicate draft paths never merge distinct editable entries', () => {
+test('file/folder collisions and duplicate paths never merge distinct entries', () => {
   const input = [
     item('skills', 'skills'),
     item('folder:["skills"]', 'skills/checks.md'),
@@ -81,7 +81,7 @@ test('file/folder collisions and duplicate draft paths never merge distinct edit
   );
 });
 
-test('invalid and unnamed browser draft paths remain exact root leaves that can be repaired', () => {
+test('invalid and unnamed paths remain exact root leaves', () => {
   const paths = ['', '/absolute.md', 'skills//empty.md', 'skills/../escape.md',
     'skills/./dot.md', 'skills/', 'back\\slash.md', 'control\u0000.md'];
   const input = paths.map((path, index) => item(`invalid-${index}`, path));

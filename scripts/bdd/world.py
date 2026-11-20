@@ -2,7 +2,6 @@
 import json
 import secrets
 import uuid
-from pathlib import Path
 from scripts.productization.qualify import Harness, ROOT, payload
 
 
@@ -26,24 +25,13 @@ class World:
         self.actor="operator"
         self.sessions={}
         self.h.project = 'bdd-' + uuid.uuid4().hex
-        self.h.env['ACCLIMATE_AUTH'] = json.dumps([
-            dict(token=token, principalId=principal,
-                 workspaceId='outside-' + self.h.project if principal == 'outsider' else self.h.project,
-                 rights=['read'] if principal in ('viewer', 'outsider') else ['read', 'write'] if principal in ('evaluator','other') else ['read', 'write', 'propose', 'promote'])
-            for principal, token in self.h.tokens.items()
-        ])
-        if 'provider_fixture' in scenario.effective_tags:
-            from scripts.bdd.provider import ProviderFixture
-            self.provider = ProviderFixture()
-            self.h.env.update(ACCLIMATE_MODEL_ENDPOINT=self.provider.url,ACCLIMATE_MODEL_TOKEN='fixture-only',ACCLIMATE_MODEL='gpt-6-luna')
-        if 'learning' in scenario.effective_tags:
-            self.h.env['ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS'] = '1'
+        self.h.configure_grants(outsider_prefix='outside-')
         self.h.restart()
         self.root = '/v1/workspaces/' + self.h.project
         if 'hosted' in scenario.effective_tags: self.hosted()
 
     def close_scenario(self):
-        for name in ['browser_fixture','provider','mailpit']:
+        for name in ['browser_fixture','mailpit']:
             resource=getattr(self,name,None)
             if resource:
                 resource.close()
@@ -63,34 +51,19 @@ class World:
         self.channel = self.bundle + '/channels/stable'
         self.original = self.setup['resolution']
 
-    def save_new(self, text):
-        self.last_key = uuid.uuid4().hex
-        self.last_path = self.channel + '/drafts'
-        self.last_body = dict(baseVersionId=self.original['version']['id'], baseRevision=self.original['revision'], payload=payload(text))
-        self.draft = self.call('POST', self.last_path, self.last_body, key=self.last_key)
-        self.draft_path = self.channel + '/drafts/' + self.draft['id']
-        self.saved = dict(self.draft)
-
-    def draft_text(self, draft=None):
-        version = (draft or self.draft)['snapshotVersion']['id']
-        return self.call('GET', self.bundle + '/versions/' + version + '/payload')['files'][0]['text']
+    def upload_version(self, text):
+        self.uploaded_version = self.call('POST', self.bundle + '/versions', dict(
+            parentVersionId=self.original['version']['id'], payload=payload(text)))
+        return self.uploaded_version
 
     def call(self, method, path, body=None, **options):
         from scripts.bdd.client import request
         return request(self, method, path, body, **options)
 
-    def save_again(self, text):
-        self.previous = dict(self.draft)
-        self.last_key = uuid.uuid4().hex
-        self.last_path = self.draft_path + '/save'
-        self.last_body = dict(expectedGeneration=self.draft['generation'], payload=payload(text))
-        self.draft = self.call('POST', self.last_path, self.last_body, key=self.last_key)
-        self.saved = dict(self.draft)
-
-    def manual_release(self, version=None, reason='Explicit manual test release.'):
+    def manual_release(self, version=None, reason='Explicit test release.'):
         current = self.call('GET', self.channel)
         return self.call('POST', self.channel + '/releases', dict(
-            versionId=(version or self.draft['snapshotVersion'])['id'],
+            versionId=(version or self.uploaded_version)['id'],
             expectedRevision=current['revision'], unevaluatedReason=reason))
 
     def invalid_payload(self, invalid):
@@ -108,48 +81,6 @@ class World:
         else:
             raise AssertionError('Unknown invalid fixture: ' + invalid)
         return value
-
-    def request_evaluation(self):
-        self.settings = dict(
-            parentVersionId=self.original['version']['id'], parentDigest=self.original['version']['digest'],
-            candidateVersionId=self.draft['snapshotVersion']['id'], candidateDigest=self.draft['snapshotVersion']['digest'],
-            datasetRevision='bdd-reviews-v1', runtime={'executor': 'fixture', 'model': 'none'},
-            graderRevision='contains-retries-v1', expectedCases=[dict(caseId='retry-review', repetition=n) for n in range(2)])
-        self.evaluation = self.call('POST', self.bundle + '/evaluation-requests', dict(**self.settings, requireBoundEvidence=True))
-        self.evaluation_path = self.bundle + '/evaluation-requests/' + self.evaluation['id']
-        self.attempt = 'fixture-attempt'
-
-    def start_attempt(self):
-        self.started = self.call('POST', self.evaluation_path + '/start', dict(attemptId=self.attempt), actor='evaluator')
-
-    def comparison(self, outcome='complete', changed=None, expected=None, results=None):
-        import copy
-        report = copy.deepcopy(self.settings)
-        report['evaluation'] = dict(requestId=self.evaluation['id'], attemptId=self.attempt)
-        if changed == 'dataset': report['datasetRevision'] = 'different-dataset'
-        elif changed == 'runtime': report['runtime']['executor'] = 'different-executor'
-        elif changed == 'grader': report['graderRevision'] = 'different-grader'
-        if results is None:
-            good = dict(executionStatus='completed', gradingStatus='scored', reward=1, usage={'costUsd': 0})
-            if outcome == 'without usage': good.pop('usage')
-            results = [] if outcome == 'missing grades' else [
-                dict(**case, parent=copy.deepcopy(good), candidate=copy.deepcopy(good))
-                for case in report['expectedCases']
-            ]
-        report['results'] = results
-        if changed == 'case inventory':
-            # The original result rows are still valid for this larger declaration.
-            report['expectedCases'].append(dict(caseId='unrequested-case', repetition=0))
-        elif changed == 'result case':
-            report['results'][0]['caseId'] = 'unrequested-case'
-        self.report = self.call('POST', self.bundle + '/comparisons', report, actor='evaluator', expected=expected)
-
-    def finish(self, actor='evaluator', expected=None):
-        return self.call('POST', self.evaluation_path + '/finish', dict(attemptId=self.attempt, comparisonId=self.report['id']), actor=actor, expected=expected)
-
-    def publish_evidence(self, expected=None):
-        current = self.call('GET', self.channel)
-        return self.call('POST', self.draft_path + '/publish', dict(expectedGeneration=self.draft['generation'], expectedRevision=current['revision'], comparisonId=self.report['id']), expected=expected)
 
     def sdk(self, action, actor="operator", **options):
         import subprocess

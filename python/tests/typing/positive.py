@@ -25,42 +25,11 @@ from acclimate import (
     CreateReleaseRequest,
     Release,
     ReleasePage,
-    ProposalRequest,
-    Proposal,
-    CaseKey,
-    Usage,
-    Outcome,
-    CasePair,
-    EvaluationBinding,
-    ComparisonRequest,
-    Comparison,
     VerifiedVersion,
     VerifiedVersionConnection,
-    EvaluationDescriptor,
-    EvaluationHandoff,
-    EvaluationRequest,
-    Evaluation,
-    EvaluationPage,
-    StartEvaluationRequest,
-    FinishEvaluationRequest,
-    AbandonEvaluationRequest,
-    InterruptEvaluationRequest,
-    EvaluationCapabilities,
-    EvaluationProgressRequest,
-    EvaluationProgressObservation,
-    EvaluationProgressView,
-    EvaluationProgressReporter,
     ConnectionLatestObservation,
     ConnectionObservation,
     ConnectionObservationPage,
-    Draft,
-    CreateDraftRequest,
-    SaveDraftRequest,
-    DiscardDraftRequest,
-    PublishDraftRequest,
-    DraftSnapshot,
-    DraftPage,
-    DraftSnapshotPage,
     OperationCommitted,
     OperationNotObserved,
     OperationClosed,
@@ -71,51 +40,13 @@ from acclimate import (
     BundleSetup,
     BundleSetupRequest,
     Connection,
-    LearningEnrollmentStatus,
-    LearningOutcomeReceipt,
-    LearningOutcomeRequest,
 )
 from acclimate.evaluation import (
-    Case, EvaluationApp, EvaluationRunResult, ExecuteInput, ExecutionResult, GradeInput, GradeResult,
-    define_evaluation, preflight_evaluation, run_evaluation,
+    Case, EvaluationApp, ExecuteInput, ExecutionResult, GradeInput, GradeResult,
+    define_evaluation, preflight_evaluation,
 )
-from acclimate.evaluation_analysis import (
-    AnalysisComparisonBinding, AnalysisMetric, ComponentObservation,
-    ComparisonAnalysis, PairedUncertainty, analyze_comparison,
-)
-
-
-def analysis(comparison: Comparison, descriptor: EvaluationDescriptor,
-             metrics: list[AnalysisMetric], observations: list[ComponentObservation],
-             uncertainty: PairedUncertainty) -> ComparisonAnalysis:
-    binding: AnalysisComparisonBinding = {
-        "parentVersionId": "parent", "candidateVersionId": "candidate",
-        "parentDigest": "sha256:parent", "candidateDigest": "sha256:candidate",
-        "requestId": "request", "attemptId": "attempt", "comparisonId": "comparison",
-    }
-    result = analyze_comparison(
-        comparison=comparison, expected_descriptor=descriptor, expected_binding=binding,
-        metrics=metrics, observations=observations, uncertainty=uncertainty,
-    )
-    assert_type(result, ComparisonAnalysis)
-    assert_type(result["expectedBinding"]["comparisonId"], str)
-    return result
-
-
-def lifecycle(client: AcclimateClient, evaluation: Evaluation) -> None:
-    start: StartEvaluationRequest = {"attemptId": "attempt"}
-    finish: FinishEvaluationRequest = {"attemptId": "attempt", "comparisonId": "comparison"}
-    interrupt: InterruptEvaluationRequest = {"reason": "operator requested"}
-    evaluation["status"] = "completed"
-    assert_type(client.start_evaluation("p", "b", "r", start, "key"), Evaluation)
-    assert_type(client.finish_evaluation("p", "b", "r", finish, "key"), Evaluation)
-    assert_type(client.interrupt_evaluation("p", "b", "r", interrupt, "key"), Evaluation)
-    abandon: AbandonEvaluationRequest = {"reason": "CI job cancelled"}
-    evaluation["status"] = "abandoned"
-    assert_type(client.abandon_evaluation("p", "b", "r", abandon, "key"), Evaluation)
-    assert_type(client.get_evaluation("p", "b", "r"), Evaluation)
-    assert_type(client.list_evaluations("p", "b"), EvaluationPage)
-    assert_type(client.get_evaluation_capabilities("p"), EvaluationCapabilities)
+def release(client: AcclimateClient, request: CreateReleaseRequest) -> None:
+    assert_type(client.create_release("p", "b", "stable", request, "key"), Release)
 
 
 def delivery(client: AcclimateClient, api_error: ApiError) -> None:
@@ -143,15 +74,13 @@ def delivery(client: AcclimateClient, api_error: ApiError) -> None:
     assert_type(api_error.request_id, str)
 
 
-def listings(client: AcclimateClient, setup: BundleSetupRequest, outcome: LearningOutcomeRequest) -> None:
+def listings(client: AcclimateClient, setup: BundleSetupRequest) -> None:
     workspaces = client.list_workspaces(limit=10)
     assert_type(workspaces, Page[Workspace])
     assert_type(workspaces["nextCursor"], str | None)
     assert_type(client.list_channels("p", "b")["items"], list[Channel])
     assert_type(client.list_connections("p")["items"], list[Connection])
     assert_type(client.create_bundle_setup("p", setup, "key"), BundleSetup)
-    assert_type(client.get_learning_enrollment("p", "c"), LearningEnrollmentStatus)
-    assert_type(client.report_learning_outcome("p", "c", outcome), LearningOutcomeReceipt)
 
 
 def execute(run: ExecuteInput[dict[str, str]]) -> ExecutionResult[dict[str, str]]:
@@ -174,10 +103,8 @@ app = define_evaluation(
 assert_type(app, EvaluationApp[dict[str, str], dict[str, str], dict[str, str]])
 
 
-def typed_results(handoff: EvaluationHandoff) -> None:
-    result = run_evaluation(app=app, config_path="/private/evaluator.json", handoff=handoff)
-    assert_type(result, EvaluationRunResult)
-    preflight = preflight_evaluation(app=app, config_path="/private/evaluator.json", handoff=handoff)
+def typed_results(bundle_id: str) -> None:
+    preflight = preflight_evaluation(app=app, config_path="/private/evaluator.json", target={"bundleId": bundle_id})
     assert_type(preflight["status"], Literal["ready", "blocked"])
     assert_type(app.execution, Literal["model-free", "live"])
 

@@ -1,37 +1,16 @@
 ---
 title: How Acclimate works
-description: Follow one change to your agent's instructions from an edit to a graded comparison, a release, and delivery to new jobs.
+description: How jobs receive immutable versions and how the planned loop will improve them.
 ---
 
-Acclimate treats your agent's instructions, skills, and approved memory like code. You save each change as a new version, run the old and new versions on the same saved tasks, compare the grades, and release the change only when the evidence supports it. You can roll back by releasing an earlier version. Terms in bold are defined in the [glossary](/docs/concepts/glossary).
+## Versioned delivery
 
-## Save content as versions
+A workspace owns bundles and connections. Import instructions, skills and memory into a bundle. Each version is immutable and carries the digest of its exact bytes. A release points a channel such as `stable` at a version. A connection tells the SDK which bundle and channel the application uses.
 
-A **bundle** holds the files one agent uses: instructions, skills, and approved memory. Each **version** is an immutable snapshot of those files, identified by the SHA-256 digest of its exact bytes. A **channel** such as `stable` points at the version new jobs should use.
+On each job start, the SDK resolves the channel, fetches and verifies the payload, and prepares job-local files. An active job keeps its pinned version through subsequent releases. Optional delivery receipts let a workspace see what version an application reported using. [Deliver content to jobs](/docs/guides/deliver-content)
 
-## Compare a change
+## Planned self-improvement loop
 
-Saving an edit creates a **candidate** version that records its **parent**, the version it started from. An **evaluator** in your environment runs your agent on both versions, using the same saved **cases** and the same grader, and reports the scores. The evaluator is the SDK's CLI plus an application module you write: it exports your cases, a function that calls your agent, and a function that grades the output. Acclimate never runs your agent or sees your model credentials.
+The loop ships in a later phase. For each enrolled bundle, the loop will score the incumbent on the evolve split. The optimizer proposes five candidates based on scores, traces and errors, previous rounds and improvement memory. It screens the candidates before execution and evaluates the survivors on the evolve split. The selector keeps the incumbent or adopts a survivor, releasing it to the learning channel and recording its diagnosis and results in improvement memory.
 
-The **comparison** records which versions ran and the paired scores. You can apply a **policy**, your written release thresholds, to get a pass, fail, or indeterminate verdict.
-
-## Review and release
-
-Your team reviews the file changes, the paired scores, and any missing evidence in the console. A **release** points the channel at the candidate. To roll back, release an earlier version. Every release is recorded with who made it and why.
-
-## Deliver content to jobs
-
-When your application starts a job, the SDK resolves the channel, downloads the version, verifies its digest, and prepares the files for your agent. Save the version ID with the job's result. A release changes what new jobs receive. Jobs already running keep the content they started with.
-
-A **connection** ties an application to its workspace, bundle, and channel. If you enable [connected learning](/docs/guides/connected-learning), your application can report **outcomes** and approved corrections, and the service can propose changes and schedule comparisons for your evaluator.
-
-## Responsibilities
-
-| Component | Responsibility |
-| --- | --- |
-| Acclimate service | Stores workspaces, versions, comparisons, and releases, and enforces who can read or change them. |
-| Acclimate SDK | Resolves, verifies, and caches versions, prepares files for a job, and runs comparisons as the evaluator CLI. |
-| Native plugin | Maps bundle files to the files or options a particular agent SDK expects. |
-| Your application | Runs the agent, owns model and tool access, private task data, and grading. |
-
-[Learn the vocabulary](/docs/concepts/glossary), [try it on your laptop](/docs/get-started/quickstart), or [prepare content for a job](/docs/guides/deliver-content).
+The evaluator keeps a fixed held-out split and scores the retained version each round for monitoring. The optimizer receives evolve feedback. An application outcome with an expected answer becomes an evolve case. Your application runs the agent and grades its work.

@@ -1,6 +1,6 @@
 //! Actual process tests use only the explicitly supplied, disposable test cluster.
 mod common;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use std::{
     net::TcpListener,
     process::{Child, Command, ExitStatus, Stdio},
@@ -22,8 +22,9 @@ fn address() -> String {
         .unwrap()
         .to_string()
 }
-fn service(url: &str, address: &str) -> Service {
-    Service(Command::new(env!("CARGO_BIN_EXE_acclimate-service"))
+fn service_with_mail(url: &str, address: &str, mail: bool) -> Service {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_acclimate-service"));
+    command
         .env_clear().env("DATABASE_URL", url)
         .env("ACCLIMATE_AUTH", r#"[{"token":"machine-fixture","principalId":"original-machine","workspaceId":"runtime-fixture","rights":["read","write"]}]"#)
         .env("ACCLIMATE_OIDC_ISSUER", "https://fixture.example")
@@ -31,7 +32,18 @@ fn service(url: &str, address: &str) -> Service {
         .env("ACCLIMATE_CONSOLE_TOKEN", "fixture-console")
         .env("ACCLIMATE_OPERATORS", r#"[{"issuer":"https://fixture.example","subject":"operator"}]"#)
         .env("ACCLIMATE_BIND", address)
-        .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap())
+        .stdout(Stdio::null()).stderr(Stdio::null());
+    if mail {
+        command
+            .env("ACCLIMATE_SMTP_HOST", "localhost")
+            .env("ACCLIMATE_SMTP_TLS", "none")
+            .env("ACCLIMATE_SMTP_FROM", "fixture@example.test")
+            .env("ACCLIMATE_CONSOLE_ORIGIN", "https://fixture.example");
+    }
+    Service(command.spawn().unwrap())
+}
+fn service(url: &str, address: &str) -> Service {
+    service_with_mail(url, address, false)
 }
 async fn exit(service: &mut Service) -> ExitStatus {
     tokio::time::timeout(Duration::from_secs(40), async {
@@ -170,12 +182,9 @@ async fn real_process_ownership_readiness_recovery_and_shutdown() {
     no_lock(&db).await;
     assert_eq!(status(&first_address, "/health").await, None);
 
-    // Seed both sides of the crash-recovery attempt limit. Exact payload bytes
-    // and original principal attribution must survive subsequent startup.
+    // Exact payload bytes and author attribution survive a service restart.
     let bundle = Uuid::new_v4();
     let version = Uuid::new_v4();
-    let retry = Uuid::new_v4();
-    let exhausted = Uuid::new_v4();
     let payload = b"{\"schemaVersion\":1,\"files\":[{\"path\":\"AGENTS.md\",\"kind\":\"instruction\",\"text\":\"exact bytes\\n\"}]}\n";
     sqlx::query("INSERT INTO bundles(id,project_id,name) VALUES($1,'runtime-fixture','Recovery')")
         .bind(bundle)
@@ -184,43 +193,9 @@ async fn real_process_ownership_readiness_recovery_and_shutdown() {
         .unwrap();
     sqlx::query("INSERT INTO versions(id,project_id,bundle_id,digest,payload,created_by) VALUES($1,'runtime-fixture',$2,'fixture-digest',$3,'original-machine')")
         .bind(version).bind(bundle).bind(payload.as_slice()).execute(&db).await.unwrap();
-    for (id, attempts) in [(retry, 2), (exhausted, 3)] {
-        sqlx::query("INSERT INTO proposals(id,project_id,bundle_id,parent_version_id,request,status,attempts,requested_by) VALUES($1,'runtime-fixture',$2,$3,'{}','running',$4,'original-machine')")
-            .bind(id).bind(bundle).bind(version).bind(attempts).execute(&db).await.unwrap();
-    }
     let restart_address = address();
     let mut restart = service(app_url.as_str(), &restart_address);
     ready(&mut restart, &restart_address).await;
-    tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            let row =
-                sqlx::query("SELECT status,attempts,error,requested_by FROM proposals WHERE id=$1")
-                    .bind(retry)
-                    .fetch_one(&db)
-                    .await
-                    .unwrap();
-            if row.get::<String, _>("status") == "failed" {
-                assert_eq!(row.get::<i32, _>("attempts"), 3);
-                assert_eq!(row.get::<String, _>("error"), "proposal provider disabled");
-                assert_eq!(row.get::<String, _>("requested_by"), "original-machine");
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-    })
-    .await
-    .unwrap();
-    let row = sqlx::query("SELECT status,attempts,error FROM proposals WHERE id=$1")
-        .bind(exhausted)
-        .fetch_one(&db)
-        .await
-        .unwrap();
-    assert_eq!(row.get::<String, _>("status"), "failed");
-    assert_eq!(row.get::<i32, _>("attempts"), 3);
-    assert_eq!(
-        row.get::<String, _>("error"),
-        "attempt limit reached during recovery"
-    );
     assert_eq!(
         sqlx::query_scalar::<_, Vec<u8>>("SELECT payload FROM versions WHERE id=$1")
             .bind(version)
@@ -318,17 +293,17 @@ async fn blocked_worker_is_cancelled_before_queue_ownership_is_released() {
     url.set_path(&format!("/{name}"));
     let db = PgPool::connect(url.as_str()).await.unwrap();
     let bind = address();
-    let mut child = service(url.as_str(), &bind);
+    let mut child = service_with_mail(url.as_str(), &bind, true);
     ready(&mut child, &bind).await;
     let owner = lock_pid(&db).await;
     let mut blocker = db.begin().await.unwrap();
-    sqlx::query("LOCK TABLE proposals IN ACCESS EXCLUSIVE MODE")
+    sqlx::query("LOCK TABLE workspace_invitations IN ACCESS EXCLUSIVE MODE")
         .execute(&mut *blocker)
         .await
         .unwrap();
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            let blocked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'UPDATE proposals%')")
+            let blocked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'UPDATE workspace_invitations%')")
                 .fetch_one(&db).await.unwrap();
             if blocked { break; }
             tokio::time::sleep(Duration::from_millis(25)).await;

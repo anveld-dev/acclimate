@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 import { setResponseHeader } from '@tanstack/react-start/server';
-import type { ConnectionCommand, LearningRequest } from './integration-core';
+import type { ConnectionCommand } from './integration-core';
 export const readIntegrations = createServerFn({ method: 'GET' }).handler(async () => {
   setResponseHeader('Cache-Control', 'private, no-store');
   const { requestEnvironment } = await import('./selection');
@@ -32,31 +32,4 @@ export const runConnectionCommand = createServerFn({ method: 'POST' })
     const { requestEnvironment } = await import('./selection');
     const { connectionCommand } = await import('./integration-core');
     return connectionCommand(await requestEnvironment(), data);
-  });
-
-export const readConnectionLearning = createServerFn({ method: 'GET' })
-  .validator((input: Pick<LearningRequest, 'workspaceId' | 'connectionId'>) => input)
-  .handler(async ({ data }) => {
-    setResponseHeader('Cache-Control', 'private, no-store');
-    const { requestEnvironment } = await import('./selection');
-    const { connectionLearning } = await import('./integration-core');
-    return connectionLearning(await requestEnvironment(), { ...data, action: 'read' });
-  });
-
-export const runConnectionLearning = createServerFn({ method: 'POST' })
-  .validator((input: Exclude<LearningRequest, { action: 'read' }>) => input)
-  .handler(async ({ data }) => {
-    setResponseHeader('Cache-Control', 'private, no-store');
-    const { requestEnvironment } = await import('./selection');
-    const { connectionLearning } = await import('./integration-core');
-    return connectionLearning(await requestEnvironment(), data);
-  });
-
-export const readLearningOutcome = createServerFn({ method: 'GET' })
-  .validator((input: { workspaceId: string; connectionId: string; outcomeId: string }) => input)
-  .handler(async ({ data }) => {
-    setResponseHeader('Cache-Control', 'private, no-store');
-    const { requestEnvironment } = await import('./selection');
-    const { lookupLearningOutcome } = await import('./integration-core');
-    return lookupLearningOutcome(await requestEnvironment(), data);
   });

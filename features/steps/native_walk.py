@@ -4,10 +4,8 @@ import shutil
 import subprocess
 from behave import given, when, then
 from playwright.sync_api import expect
-from scripts.bdd.editor import expect_editor_value
 from scripts.productization.qualify import ROOT
-from features.steps.console import save_browser, saved_draft, external_app, review_publish, restore, install_browser_evaluator
-from features.steps.remediation_recovery import lose_response, records
+from features.steps.console import restore
 from scripts.bdd.interactions import open_details
 
 
@@ -79,71 +77,25 @@ def installed_initial(context):
     assert w.native_old_prepared['appStarted'] and w.native_old_prepared['pending'] == 0
 
 
-@when('I save an incomplete native manifest, reload it, then repair it and recover a lost save response')
-def incomplete_repair(context):
+@when('I upload an incomplete native version, repair it and release the compatible version')
+def upload_repair_and_release(context):
     w = context.world
-    b = w.browser_fixture
-    p = b.page
-    b.visit(b.bundle_path('changes', draft='new', path='skills/retry-review/SKILL.md'))
-    p.get_by_role('textbox', name='Content', exact=True).fill('# Incomplete manifest retained as a draft.\n')
-    save_browser(context)
-    incomplete = saved_draft(w)
-    assert incomplete['generation'] == 1
-    p.reload()
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), '# Incomplete manifest retained as a draft.\n')
-    expect(p.get_by_text('Native compatibility needs repair before publication.', exact=False)).to_be_visible()
-    p.get_by_role('textbox', name='Content', exact=True).fill(REPAIRED_SKILL)
-    p.get_by_role('treeitem', name='Open AGENTS.md', exact=True).click()
-    p.get_by_role('textbox', name='Content', exact=True).fill('Review code. Reuse the same idempotency key after a lost response.')
-    p.get_by_role('treeitem', name='Open payment-policy.json', exact=True).click()
-    p.get_by_role('textbox', name='Content', exact=True).fill(json.dumps(dict(maxAttempts=2, idempotency='request')))
-    lose_response(p, lambda: p.get_by_role('button', name='Save draft', exact=True).click())
-    committed = saved_draft(w)
-    assert committed['id'] == incomplete['id'] and committed['generation'] == 2
-    p.get_by_role('button', name='Check result', exact=True).click()
-    expect(p.get_by_role('button', name='Check result', exact=True)).to_have_count(0)
-    assert records(p) == [] and saved_draft(w) == committed
-    p.reload()
-    expect(p.get_by_text('Native compatibility needs repair before publication.', exact=False)).to_have_count(0)
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), json.dumps(dict(maxAttempts=2, idempotency='request')))
-    w.browser_saved = committed
-    w.native_candidate_payload = w.call('GET', w.bundle+'/versions/'+committed['snapshotVersion']['id']+'/payload')
-
-
-@when('I request strict evaluation, run the copied private helper, inspect every bound case and deliberately release')
-def strict_helper_release(context):
-    w = context.world
-    p = w.browser_fixture.page
-    p.get_by_role('link', name='Continue to evaluation', exact=True).click()
-    open_details(p, 'Set up evaluation request')
-    expect(p.get_by_role('button', name='Create evaluation request', exact=True)).to_be_disabled()
-    install_browser_evaluator(w, p)
-    p.get_by_role('button', name='Create evaluation request', exact=True).click()
-    expect(p.get_by_role('status').filter(has_text='Evaluation request created. Run it in your app, then return here for the results.')).to_be_visible()
-    w.browser_request = w.call('GET', w.bundle+'/evaluation-requests')['items'][0]
-    assert w.browser_request['requireBoundEvidence'] is True
-    assert w.call('GET', w.channel)['revision'] == '1'
-    external_app(context)
-    request = w.call('GET', w.bundle+'/evaluation-requests/'+w.browser_request['id'])
-    assert request['status'] == 'completed' and request['evaluatorPrincipal'] == 'evaluator'
-    report = w.call('GET', w.bundle+'/comparisons/'+request['comparisonId'])
-    assert report['complete'] and len(report['results']) == len(report['expectedCases']) == 2
-    assert report['evaluation'] == dict(requestId=request['id'], attemptId=request['attemptId'])
-    assert all(pair[side]['executionStatus'] == 'completed' and pair[side]['gradingStatus'] == 'scored'
-               for pair in report['results'] for side in ['parent','candidate'])
-    assert all(pair['candidate']['reward'] == 1 for pair in report['results'])
-    assert any(pair['parent']['reward'] == 0 for pair in report['results'])
-    assert w.call('GET', w.channel)['revision'] == '1', 'App evaluation must not promote automatically'
-    review_publish(context, expected_verdict='pass')
-    p.get_by_role('tab',name='Details',exact=True).click()
-    open_details(p,'Evidence details')
-    expect(p.locator('.comparison-evidence-binding').get_by_text(request['id'],exact=True)).to_be_visible()
-    expect(p.locator('.comparison-evidence-provenance')).to_contain_text('Attempt '+request['attemptId'])
-    frozen=json.loads(p.get_by_role('region',name='Comparison lookup',exact=True).locator('pre').inner_text())
-    assert frozen['evaluation']==dict(requestId=request['id'],attemptId=request['attemptId'])
-    current = w.call('GET', w.channel)
-    assert current['revision'] == '2' and current['version'] == w.browser_saved['snapshotVersion']
-    w.native_released = current
+    incomplete = json.loads(json.dumps(w.native_initial_payload))
+    incomplete['files'][1]['text'] = '# Missing native metadata'
+    versions = w.bundle + '/versions'
+    uploaded = w.call('POST', versions, dict(
+        parentVersionId=w.original['version']['id'], payload=incomplete))
+    assert w.call('GET', f"{versions}/{uploaded['id']}/payload") == incomplete
+    w.call('POST', w.channel + '/releases', dict(
+        versionId=uploaded['id'], expectedRevision='1', unevaluatedReason='Fixture'), expected=400)
+    w.native_candidate_payload = json.loads(json.dumps(w.native_initial_payload))
+    w.native_candidate_payload['files'][1]['text'] = REPAIRED_SKILL
+    repaired = w.call('POST', versions, dict(
+        parentVersionId=uploaded['id'], payload=w.native_candidate_payload))
+    release = w.manual_release(repaired, reason='Repaired native metadata')
+    assert release['revision'] == '2'
+    w.native_released = w.call('GET', w.channel)
+    assert w.native_released['version'] == repaired
 
 
 @then('the installed app prepares the released native bytes, observes its actual start and records only optional delivery evidence')

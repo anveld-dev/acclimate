@@ -117,11 +117,7 @@ def verify(w,b,p,routes,out,checks):
     checks.append('No reports retains explicit unknown status and setup link')
     for width in (1440, 320):
         p.set_viewport_size(dict(width=width,height=900))
-        visit(p,b,b.bundle_path('changes'))
-        board=p.get_by_role('region',name='Change pipeline',exact=True)
-        for column in ('Drafting','Evaluating','Ready to review','Released'):
-            expect(board.get_by_role('region',name=column,exact=True)).to_be_visible()
-        assert board.locator('.changes-pipeline').evaluate("e=>getComputedStyle(e).gridTemplateColumns.split(' ').length")==(4 if width==1440 else 1)
+        visit(p, b, b.bundle_path('content'))
         assert p.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
         quick=p.get_by_role('button',name='Use in an app',exact=True)
         quick.click()

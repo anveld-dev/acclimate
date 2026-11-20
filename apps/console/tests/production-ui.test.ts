@@ -135,5 +135,6 @@ test('app setup publishes the configured public API URL and scopes administratio
   const admin = markup(createElement(SdkSetup, { state, role: 'admin' }));
   assert.match(admin, /href="\/w\/workspace\/connections\?bundleId=bundle&amp;channel=stable"/);
   assert.match(admin, /href="\/w\/workspace\/delivery"/);
-  assert.match(admin, /href="\/w\/workspace\/bundles\/bundle\/changes\?channel=stable"/);
+  assert.match(admin, /Connect your agent/);
+  assert.doesNotMatch(admin, /Compare a change|\/bundle\/changes/);
 });

@@ -2,8 +2,8 @@ import path from 'node:path';
 import { lstat, realpath } from 'node:fs/promises';
 import { assertUnaliasedPath, readPrivateJson, readPrivateText } from './private-state.js';
 import { EvaluationError, type PathIssue } from './errors.js';
-import type { EvaluatorConfig, ReaderConfig } from './types.js';
-export type { EvaluatorConfig, ReaderConfig } from './types.js';
+import type { EvaluatorConfig } from './types.js';
+export type { EvaluatorConfig } from './types.js';
 export class EvaluatorConfigError extends EvaluationError {
   constructor(
     code:
@@ -104,7 +104,7 @@ async function readTokenFile(filename: string): Promise<string> {
   if (!bounded(token, 4096)) throw new EvaluatorConfigError();
   return token;
 }
-async function config(filename: string, reader: boolean): Promise<EvaluatorConfig | ReaderConfig> {
+export async function readEvaluatorConfig(filename: string): Promise<EvaluatorConfig> {
   await assertPrivateFile(filename);
   let value: Record<string, unknown>;
   try {
@@ -116,21 +116,17 @@ async function config(filename: string, reader: boolean): Promise<EvaluatorConfi
       );
     throw new EvaluatorConfigError('config.missing');
   }
-  const fields = reader
-    ? ['schemaVersion', 'serviceUrl', 'workspaceId', 'readToken']
-    : ['schemaVersion', 'serviceUrl', 'workspaceId', 'evaluatorPrincipalId', 'journalRoot'];
-  if (!reader && Object.hasOwn(value, 'captureCallbackErrors')) {
+  const fields = ['schemaVersion', 'serviceUrl', 'workspaceId', 'evaluatorPrincipalId', 'journalRoot'];
+  if (Object.hasOwn(value, 'captureCallbackErrors')) {
     if (typeof value.captureCallbackErrors !== 'boolean') throw new EvaluatorConfigError();
     fields.push('captureCallbackErrors');
   }
   // The token is inline, in a private file, or in ACCLIMATE_EVALUATOR_TOKEN.
   // Naming both an inline token and a token file is ambiguous and rejected.
-  if (!reader) {
-    if (Object.hasOwn(value, 'evaluatorToken') && Object.hasOwn(value, 'evaluatorTokenFile'))
-      throw new EvaluatorConfigError();
-    for (const field of ['evaluatorToken', 'evaluatorTokenFile'])
-      if (Object.hasOwn(value, field)) fields.push(field);
-  }
+  if (Object.hasOwn(value, 'evaluatorToken') && Object.hasOwn(value, 'evaluatorTokenFile'))
+    throw new EvaluatorConfigError();
+  for (const field of ['evaluatorToken', 'evaluatorTokenFile'])
+    if (Object.hasOwn(value, field)) fields.push(field);
   if (
     value.schemaVersion !== 1 ||
     Object.keys(value).length !== fields.length ||
@@ -139,30 +135,20 @@ async function config(filename: string, reader: boolean): Promise<EvaluatorConfi
   )
     throw new EvaluatorConfigError();
   assertServiceUrl(value.serviceUrl);
-  if (reader) {
-    if (!bounded(value.readToken, 4096)) throw new EvaluatorConfigError();
-  } else {
-    if (
-      !bounded(value.evaluatorPrincipalId, 1024) ||
-      !bounded(value.journalRoot, 4096) ||
-      !path.isAbsolute(value.journalRoot)
-    )
+  if (
+    !bounded(value.evaluatorPrincipalId, 1024) ||
+    !bounded(value.journalRoot, 4096) ||
+    !path.isAbsolute(value.journalRoot)
+  )
+    throw new EvaluatorConfigError();
+  if (Object.hasOwn(value, 'evaluatorTokenFile')) {
+    if (!bounded(value.evaluatorTokenFile, 4096) || !path.isAbsolute(value.evaluatorTokenFile))
       throw new EvaluatorConfigError();
-    if (Object.hasOwn(value, 'evaluatorTokenFile')) {
-      if (!bounded(value.evaluatorTokenFile, 4096) || !path.isAbsolute(value.evaluatorTokenFile))
-        throw new EvaluatorConfigError();
-      const { evaluatorTokenFile, ...rest } = value;
-      value = { ...rest, evaluatorToken: await readTokenFile(evaluatorTokenFile) };
-    } else if (!Object.hasOwn(value, 'evaluatorToken')) {
-      value = { ...value, evaluatorToken: process.env[EVALUATOR_TOKEN_ENV] };
-    }
-    if (!bounded(value.evaluatorToken, 4096)) throw new EvaluatorConfigError();
+    const { evaluatorTokenFile, ...rest } = value;
+    value = { ...rest, evaluatorToken: await readTokenFile(evaluatorTokenFile) };
+  } else if (!Object.hasOwn(value, 'evaluatorToken')) {
+    value = { ...value, evaluatorToken: process.env[EVALUATOR_TOKEN_ENV] };
   }
-  return value as unknown as EvaluatorConfig | ReaderConfig;
-}
-export async function readEvaluatorConfig(filename: string): Promise<EvaluatorConfig> {
-  return (await config(filename, false)) as EvaluatorConfig;
-}
-export async function readReaderConfig(filename: string): Promise<ReaderConfig> {
-  return (await config(filename, true)) as ReaderConfig;
+  if (!bounded(value.evaluatorToken, 4096)) throw new EvaluatorConfigError();
+  return value as unknown as EvaluatorConfig;
 }

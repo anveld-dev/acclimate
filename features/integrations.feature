@@ -18,10 +18,10 @@ Feature: Optional application delivery reports
     Then it receives "Review code." with the released digest
 
   @INTEGRATION-03
-  Scenario: A content-read credential cannot fetch unpublished drafts
+  Scenario: A content-read credential cannot fetch unreleased versions
     Given I issued a content-read credential
-    And I have saved a draft containing "Unpublished work."
-    When the integration requests that draft's bytes
+    And I have uploaded a version containing "Unpublished work."
+    When the integration requests the unreleased version's bytes
     Then access is denied
 
   @INTEGRATION-04

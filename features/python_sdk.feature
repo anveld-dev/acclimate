@@ -20,9 +20,9 @@ Feature: Python application integration
     Then Python receives "Review code." from a stale cached mapping
 
   @PYTHON-03
-  Scenario: Author, evaluate and publish one snapshot through the Python client
-    When a Python application saves two generations, records comparison evidence and publishes
-    Then Python and the service agree on the released snapshot and its two saved generations
+  Scenario: Upload and release an immutable version through the Python client
+    When a Python application uploads and releases a version
+    Then Python and the service agree on the released version
 
   @PYTHON-04
   Scenario: Python reporting records only the stages the application observed

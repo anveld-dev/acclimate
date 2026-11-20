@@ -279,20 +279,6 @@ class AcclimateClient:
         """Create a bundle, its first version and its first release on ``channel`` in one write."""
         return self._request("POST", self._workspace(workspace_id) + "/bundle-setups", request, key)
 
-    def list_proposals(
-        self, workspace_id: str, bundle_id: str, *, cursor: str | None = None, limit: int = 50
-    ) -> Page[Proposal]:
-        return self._request(
-            "GET", self._base(workspace_id, bundle_id) + "/proposals" + self._listing(cursor, limit)
-        )
-
-    def list_comparisons(
-        self, workspace_id: str, bundle_id: str, *, cursor: str | None = None, limit: int = 50
-    ) -> Page[Comparison]:
-        return self._request(
-            "GET", self._base(workspace_id, bundle_id) + "/comparisons" + self._listing(cursor, limit)
-        )
-
     def create_bundle(
         self, workspace_id: str, request: CreateBundleRequest, key: str
     ) -> Bundle:
@@ -366,52 +352,6 @@ class AcclimateClient:
             key,
         )
 
-    def create_proposal(
-        self, workspace_id: str, bundle_id: str, request: ProposalRequest, key: str
-    ) -> Proposal:
-        return self._request(
-            "POST", self._base(workspace_id, bundle_id) + "/proposals", request, key
-        )
-
-    def get_proposal(
-        self, workspace_id: str, bundle_id: str, proposal_id: str
-    ) -> Proposal:
-        return self._request(
-            "GET",
-            self._base(workspace_id, bundle_id) + "/proposals/" + self._part(proposal_id),
-        )
-
-    def create_comparison(
-        self, workspace_id: str, bundle_id: str, request: ComparisonRequest, key: str
-    ) -> Comparison:
-        return self._request(
-            "POST", self._base(workspace_id, bundle_id) + "/comparisons", request, key
-        )
-
-    def get_comparison(
-        self, workspace_id: str, bundle_id: str, comparison_id: str
-    ) -> Comparison:
-        return self._request(
-            "GET",
-            self._base(workspace_id, bundle_id)
-            + "/comparisons/"
-            + self._part(comparison_id),
-        )
-
-    def _comparison_policy_path(self, workspace_id: str, bundle_id: str, comparison_id: str) -> str:
-        return self._base(workspace_id, bundle_id) + "/comparisons/" + self._part(comparison_id) + "/policy-receipts"
-
-    def list_comparison_policy_receipts(self, workspace_id: str, bundle_id: str, comparison_id: str) -> ComparisonPolicyReceipts:
-        return self._request("GET", self._comparison_policy_path(workspace_id, bundle_id, comparison_id))
-
-    def list_candidate_policy_receipts(self, workspace_id: str, bundle_id: str, version_id: str) -> ComparisonPolicyReceipts:
-        return self._request("GET", self._base(workspace_id, bundle_id) + "/versions/" + self._part(version_id) + "/policy-receipts")
-
-    def report_comparison_policy_receipt(self, workspace_id: str, bundle_id: str, comparison_id: str,
-                                         report: ComparisonPolicyReport) -> ComparisonPolicyReceipt:
-        key = "policy:" + comparison_id + ":" + report["policy"]["sha256"]
-        return self._request("POST", self._comparison_policy_path(workspace_id, bundle_id, comparison_id), report, key)
-
     def create_connection(self, workspace_id: str, request: CreateConnectionRequest, key: str) -> Connection:
         return self._request("POST", "/v1/workspaces/" + self._part(workspace_id) + "/connections", request, key)
 
@@ -454,74 +394,6 @@ class AcclimateClient:
             query["cursor"] = cursor
         return "?" + urllib.parse.urlencode(query)
 
-    def _draft(self, workspace_id, bundle_id, channel, draft_id=None):
-        path = self._base(workspace_id, bundle_id) + "/channels/" + self._part(channel) + "/drafts"
-        return path if draft_id is None else path + "/" + self._part(draft_id)
-
-    def create_draft(self, workspace_id: str, bundle_id: str, channel: str, request: CreateDraftRequest, key: str) -> Draft:
-        return self._request("POST", self._draft(workspace_id, bundle_id, channel), request, key)
-
-    def list_drafts(
-        self, workspace_id: str, bundle_id: str, channel: str, *,
-        cursor: str | None = None, limit: int = 50,
-        status: Literal["open", "discarded", "published", "all"] | None = None,
-    ) -> DraftPage:
-        query = self._listing(cursor, limit)
-        if status is not None:
-            query += "&" + urllib.parse.urlencode({"status": status})
-        return self._request("GET", self._draft(workspace_id, bundle_id, channel) + query)
-
-    def get_draft(self, workspace_id: str, bundle_id: str, channel: str, draft_id: str) -> Draft:
-        return self._request("GET", self._draft(workspace_id, bundle_id, channel, draft_id))
-
-    def get_draft_history(self, workspace_id: str, bundle_id: str, channel: str, draft_id: str, *, cursor: str | None = None, limit: int = 50) -> DraftSnapshotPage:
-        return self._request("GET", self._draft(workspace_id, bundle_id, channel, draft_id) + "/history" + self._listing(cursor, limit))
-
-    def save_draft(self, workspace_id: str, bundle_id: str, channel: str, draft_id: str, request: SaveDraftRequest, key: str) -> Draft:
-        return self._request("POST", self._draft(workspace_id, bundle_id, channel, draft_id) + "/save", request, key)
-
-    def discard_draft(self, workspace_id: str, bundle_id: str, channel: str, draft_id: str, request: DiscardDraftRequest, key: str) -> Draft:
-        return self._request("POST", self._draft(workspace_id, bundle_id, channel, draft_id) + "/discard", request, key)
-
-    def publish_draft(self, workspace_id: str, bundle_id: str, channel: str, draft_id: str, request: PublishDraftRequest, key: str) -> Draft:
-        return self._request("POST", self._draft(workspace_id, bundle_id, channel, draft_id) + "/publish", request, key)
-
-    def create_evaluation(self, workspace_id: str, bundle_id: str, request: EvaluationRequest, key: str) -> Evaluation:
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests", request, key)
-
-    def get_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str) -> Evaluation:
-        return self._request("GET", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id))
-
-    def list_evaluations(self, workspace_id: str, bundle_id: str, *, cursor: str | None = None, limit: int = 50) -> EvaluationPage:
-        return self._request("GET", self._base(workspace_id, bundle_id) + "/evaluation-requests" + self._listing(cursor, limit))
-
-    def start_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str, request: StartEvaluationRequest, key: str) -> Evaluation:
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/start", request, key)
-
-    def finish_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str, request: FinishEvaluationRequest, key: str) -> Evaluation:
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/finish", request, key)
-
-    def abandon_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str, request: AbandonEvaluationRequest, key: str) -> Evaluation:
-        """Abandon an attempt whose outcome is unknown, such as a cancelled CI job.
-
-        Its evidence never counts and a new request for the same candidate may then
-        start. This does not prove the original worker stopped.
-        """
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/abandon", request, key)
-
-    def interrupt_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str, request: InterruptEvaluationRequest, key: str) -> Evaluation:
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/interrupt", request, key)
-
-    def get_evaluation_capabilities(self, workspace_id: str) -> EvaluationCapabilities:
-        return self._request("GET", "/v1/workspaces/" + self._part(workspace_id) + "/evaluation-capabilities")
-
-    def get_evaluation_progress(self, workspace_id: str, bundle_id: str, evaluation_id: str) -> EvaluationProgressView:
-        return self._request("GET", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/progress")
-
-    def report_evaluation_progress(self, workspace_id: str, bundle_id: str, evaluation_id: str, report: EvaluationProgressRequest) -> EvaluationProgressView:
-        # Attempt + sequence provide server idempotency; no retained key rows.
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/progress", report, "progress:" + str(report["sequence"]))
-
     def list_connection_observations(self, workspace_id: str, *, cursor: str | None = None, limit: int = 50) -> ConnectionObservationPage:
         return self._request("GET", "/v1/workspaces/" + self._part(workspace_id) + "/connection-observations" + self._listing(cursor, limit))
 
@@ -531,113 +403,6 @@ class AcclimateClient:
 
     def close_operation(self, workspace_id: str, operation_id: str, *, operation_path: str) -> Operation:
         return self._request("POST", "/v1/workspaces/" + self._part(workspace_id) + "/operations/" + self._part(operation_id) + "/close", {"operationPath": operation_path}, operation_id)
-
-    def _learning(self, workspace_id: str, connection_id: str) -> str:
-        return self._connection(workspace_id, connection_id) + "/learning"
-
-    def enroll_learning(
-        self, workspace_id: str, connection_id: str, request: LearningEnrollmentRequest, key: str
-    ) -> LearningEnrollment:
-        return self._request("PUT", self._learning(workspace_id, connection_id), request, key)
-
-    def get_learning_enrollment(self, workspace_id: str, connection_id: str) -> LearningEnrollmentStatus:
-        return self._request("GET", self._learning(workspace_id, connection_id))
-
-    def stop_learning(self, workspace_id: str, connection_id: str, key: str) -> LearningEnrollment:
-        return self._request("POST", self._learning(workspace_id, connection_id) + "/stop", None, key)
-
-    def get_learning_outcome(self, workspace_id: str, connection_id: str, outcome_id: str) -> LearningOutcomeStatus:
-        return self._request(
-            "GET", self._learning(workspace_id, connection_id) + "/outcomes/" + self._part(outcome_id)
-        )
-
-    def report_learning_incident_replay(
-        self, workspace_id: str, connection_id: str, replay: LearningIncidentReplay
-    ) -> LearningAccepted:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/incident-replays", replay, replay["roundId"]
-        )
-
-    def report_learning_outcome(
-        self, workspace_id: str, connection_id: str, outcome: LearningOutcomeRequest, key: str | None = None
-    ) -> LearningOutcomeReceipt:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/outcomes", outcome,
-            outcome["outcomeId"] if key is None else key,
-        )
-
-    def report_learning_correction(
-        self, workspace_id: str, connection_id: str, correction: LearningCorrectionRequest
-    ) -> LearningCorrectionReceipt:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/corrections", correction,
-            correction["correctionId"],
-        )
-
-    def report_learning_recheck(
-        self, workspace_id: str, connection_id: str, recheck: LearningRecheckRequest
-    ) -> LearningRecheckReceipt:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/rechecks", recheck,
-            recheck["correctionId"] + ":" + recheck["revision"],
-        )
-
-    def get_learning_work(self, workspace_id: str, connection_id: str) -> LearningWork:
-        return self._request("GET", self._learning(workspace_id, connection_id) + "/work")
-
-    def get_learning_field_requalification(
-        self, workspace_id: str, connection_id: str, version_id: str
-    ) -> LearningFieldRequalification:
-        return self._request(
-            "GET",
-            self._learning(workspace_id, connection_id) + "/field-requalifications/" + self._part(version_id),
-        )
-
-    def report_learning_field_replay(
-        self, workspace_id: str, connection_id: str, replay: LearningFieldReplay
-    ) -> LearningAccepted:
-        key = ":".join((replay["outcomeId"], replay["versionId"], replay["baselineRevision"]))
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/field-requalifications", replay, key
-        )
-
-    def report_learning_field_audit(
-        self, workspace_id: str, connection_id: str, audit: LearningFieldAuditRequest, key: str | None = None
-    ) -> LearningFieldAuditReceipt:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/field-audits", audit,
-            audit["outcomeId"] if key is None else key,
-        )
-
-    def review_learning_round(
-        self, workspace_id: str, connection_id: str, round_id: str, approve: bool, key: str, *,
-        policy_override: PolicyOverride | None = None,
-    ) -> LearningReviewReceipt:
-        body: dict[str, Any] = {"approve": approve}
-        if policy_override is not None:
-            body["policyOverride"] = policy_override
-        return self._request(
-            "POST",
-            self._learning(workspace_id, connection_id) + "/rounds/" + self._part(round_id) + "/review",
-            body, key,
-        )
-
-    def renew_learning(
-        self, workspace_id: str, connection_id: str, renewal: LearningRenewalRequest, key: str | None = None
-    ) -> LearningRenewalReceipt:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/renew", renewal,
-            renewal["renewalId"] if key is None else key,
-        )
-
-    def restore_learning(
-        self, workspace_id: str, connection_id: str, restore: LearningRestoreRequest, key: str | None = None
-    ) -> Release:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/restore", restore,
-            restore["restoreId"] if key is None else key,
-        )
-
 
 # Delivery uses this client for service reads. Load its public return type once the client exists.
 from .delivery import PreparedDelivery

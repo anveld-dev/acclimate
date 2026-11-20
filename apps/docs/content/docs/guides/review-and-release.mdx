@@ -1,37 +1,24 @@
 ---
-title: Review, release, and roll back
-description: Review paired evidence, promote the exact candidate, and restore a retained version when needed.
+title: Release and roll back
+description: Point a channel at an immutable version and record the reason.
 ---
 
-Review the candidate's files and recorded comparison, then decide whether future jobs should receive that version.
+## Release a version
 
-## Review in the console
+Creating a bundle in the console imports its content and creates its first release. Use the SDK or [HTTP API](/docs/reference/http-api) to upload a new version to an existing bundle. A release requires the target version ID, the channel's expected revision, and a reason in `unevaluatedReason`. Use a credential with the `promote` right to release.
 
-Open a saved change in **Changes** and choose **Review release**. Check the files changed and the exact candidate and parent versions. Inspect case counts, paired grades, failed or missing results, and known usage. A complete comparison can record a losing candidate. Your quality policy and review determine whether to release it.
-
-Evidence-based release requires a complete comparison for the candidate and its parent. The channel must still point to that parent. If the current channel moved after evaluation, review it again against the current baseline before trying an evidence-based release.
-
-Inspect any recorded policy verdicts. A failed or indeterminate verdict can block publication. An authorized reviewer can acknowledge every current blocking receipt and give a reason for overriding it. If you publish without evaluation, give the required reason.
-
-## Review and promote from the terminal
-
-Use the [operator CLI](/docs/reference/operator-cli) with a scoped credential. Review the comparison and take the current channel revision from the result. Run the promotion separately once you approve it.
-
-```sh
-npm run operator -- review --workspace WORKSPACE --bundle BUNDLE --channel live --comparison COMPARISON
-npm run operator -- promote --workspace WORKSPACE --bundle BUNDLE --channel live \
-  --version CANDIDATE --comparison COMPARISON --expected-revision REVISION
+```ts
+const release = await client.createRelease(workspaceId, bundleId, 'stable', {
+  versionId,
+  expectedRevision: currentRevision,
+  unevaluatedReason: 'Ship updated instructions',
+}, operationId);
 ```
 
-If the revision conflicts, read the channel again and review the current target before making another decision.
+Use a fresh idempotency key for each operation. If the channel moved, re-read its revision before deciding whether to release.
 
-## Restore a version
+## Roll back a channel
 
-Open **Releases** in the console, select a retained version, and enter the reason for restoring it. The terminal equivalent is:
+Open the bundle's **Releases** tab, select the earlier release and inspect its content. Choose **Restore**, enter a reason and confirm. This creates a new release with a higher revision pointing to the existing immutable version. New jobs resolve to it; already prepared jobs keep their pinned versions.
 
-```sh
-npm run operator -- rollback --workspace WORKSPACE --bundle BUNDLE --channel live \
-  --version PREVIOUS --reason 'Regression observed' --expected-revision REVISION
-```
-
-A restore creates a new release and advances the revision. New jobs that resolve the channel can pick up the restored version. Jobs already prepared keep their pins. To restore a managed connection, use [the connection's delivery target](/docs/guides/connected-learning#monitor-a-release).
+If the console loses the response, check the pending operation in **Releases**. Retry the exact saved request or close the operation before submitting a new one.

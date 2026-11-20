@@ -1,6 +1,6 @@
 import { accessDenied, accessTransport } from './access-core';
 import type { Environment } from './selection';
-import { MACHINE_TOKEN_RIGHTS, type MachineTokenRight } from '../lib/evaluator-config';
+import { MACHINE_TOKEN_RIGHTS, type MachineTokenRight } from '../lib/machine-token-rights';
 
 export type MachineToken = {
   id: string;
@@ -45,7 +45,6 @@ export type MachineTokenResult =
       /** Returned once, only by issue and rotate. */
       secret?: string;
       token?: MachineToken;
-      publicApiUrl?: string;
     }
   | { ok: false; message: string; denied?: boolean };
 
@@ -83,7 +82,6 @@ export async function machineTokenCommand(
         ok: true,
         items: tokens.items,
         events: events.items,
-        publicApiUrl: env.CONSOLE_PUBLIC_API_URL,
       };
     }
     if (input.kind === 'revoke') {
@@ -113,7 +111,7 @@ export async function machineTokenCommand(
       ok: false,
       ...(denied ? { denied: true } : {}),
       message: denied
-        ? 'Only workspace administrators can manage evaluator tokens.'
+        ? 'Only workspace administrators can manage machine tokens.'
         : 'Could not confirm the token change. Refresh the token list before trying again.',
     };
   }

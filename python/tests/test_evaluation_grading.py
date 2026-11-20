@@ -4,7 +4,7 @@ import unittest
 
 from acclimate.evaluation_grading import grade_agreement, pass_at_k, repeat_grade
 
-VECTORS = json.loads((Path(__file__).resolve().parents[2] / "contracts/fixtures/evaluation-analysis/grading.json").read_text())
+VECTORS = json.loads((Path(__file__).resolve().parents[2] / "packages/sdk/tests/evaluation/fixtures/grading.json").read_text())
 
 
 class GradingTests(unittest.TestCase):

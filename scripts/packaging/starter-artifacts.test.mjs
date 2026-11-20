@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { archiveStarters } from './starter-artifacts.mjs';
-import { actionPinMismatches, assertActionPins } from './release-metadata.mjs';
 const inventories = JSON.parse(await readFile(new URL('./starter-files.json', import.meta.url), 'utf8'));
 
 async function fixture() {
@@ -18,11 +17,11 @@ async function fixture() {
     }
   }
   await writeFile(join(root, 'examples/evaluation-starter/package.json'), JSON.stringify({ private: true, version: '0.0.0', dependencies: { '@acclimate/sdk': '0.0.0' } }));
-  const metadata = { version: '1.2.3', starters: ['evaluation', 'ci', 'native-repository', 'python-evaluation'].map(name => ({ name, file: `acclimate-${name}-starter-1.2.3.tgz` })) };
+  const metadata = { version: '1.2.3', starters: ['evaluation', 'native-repository', 'python-evaluation'].map(name => ({ name, file: `acclimate-${name}-starter-1.2.3.tgz` })) };
   return { root, metadata, output: join(root, 'release') };
 }
 
-test('release archives contain installed-app source and independent CI runner, excluding caches', async () => {
+test('release archives contain installed-app source and native harnesses, excluding caches', async () => {
   const { root, metadata, output } = await fixture();
   try {
     await mkdir(join(root, 'examples/evaluation-starter/node_modules'), { recursive: true });
@@ -30,26 +29,18 @@ test('release archives contain installed-app source and independent CI runner, e
     await mkdir(join(root, 'examples/native-repository/test/fixture'), { recursive: true });
     await writeFile(join(root, 'examples/native-repository/test/fixture/input.txt'), 'test repository');
     await writeFile(join(root, 'examples/native-repository/QUALIFICATION.md'), 'internal evidence');
-    await mkdir(join(root, 'examples/ci/test'), { recursive: true });
-    await writeFile(join(root, 'examples/ci/test/fake-evaluator.mjs'), 'offline test double');
     const artifacts = await archiveStarters(root, output, metadata);
-    assert.equal(artifacts.length, 4);
+    assert.equal(artifacts.length, 3);
     const archive = join(output, metadata.starters[0].file);
     const listing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' });
     assert.ok(listing.includes('evaluation-starter/acclimate-eval.mjs'));
-    const ci = execFileSync('tar', ['-tzf', join(output, metadata.starters[1].file)], { encoding: 'utf8' });
-    assert.ok(ci.includes('ci-starter/ci.py'));
-    assert.ok(ci.includes('ci-starter/action.yml'));
-    assert.ok(ci.includes('ci-starter/workflows/release.yml'));
-    assert.ok(!ci.includes('evaluation/'));
-    assert.ok(!ci.includes('/test/'));
-    const native = execFileSync('tar', ['-tzf', join(output, metadata.starters[2].file)], { encoding: 'utf8' });
+    const native = execFileSync('tar', ['-tzf', join(output, metadata.starters[1].file)], { encoding: 'utf8' });
     assert.ok(!native.includes('/test/'));
     assert.ok(!native.includes('QUALIFICATION.md'));
     // The offline replay harness and its fixture repository ship for consumers.
     for (const file of ['smoke.mjs', 'native.replay.json', 'fixture/replay.json', 'fixture/tests/retry.test.mjs', 'harness-template.mjs'])
       assert.ok(native.includes(`native-repository-starter/${file}`), file);
-    const python = execFileSync('tar', ['-tzf', join(output, metadata.starters[3].file)], { encoding: 'utf8' });
+    const python = execFileSync('tar', ['-tzf', join(output, metadata.starters[2].file)], { encoding: 'utf8' });
     assert.ok(python.includes('python-evaluation-starter/acclimate_eval.py'));
     assert.ok(python.includes('python-evaluation-starter/application.example.py'));
     assert.ok(!/package\.json|\.m[jt]s\b/.test(python), 'the Python starter carries no Node files');
@@ -108,19 +99,3 @@ test('an artifact filename cannot escape the release directory', async () => {
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('every CI action tag in examples and docs names the root package version', async () => {
-  await assertActionPins(new URL('../..', import.meta.url).pathname);
-  const root = await mkdtemp(join(tmpdir(), 'acclimate-action-pins-'));
-  try {
-    const pin = (tag) => `      - uses: anveld-dev/acclimate/examples/ci@${tag}\n`;
-    await mkdir(join(root, 'examples/ci/workflows'), { recursive: true });
-    await mkdir(join(root, 'apps/docs/content/docs/guides'), { recursive: true });
-    await mkdir(join(root, 'docs/research'), { recursive: true });
-    await writeFile(join(root, 'examples/ci/workflows/pr-check.yml'), pin('v1.2.3') + pin('v1.2.2'));
-    await writeFile(join(root, 'apps/docs/content/docs/guides/ci.mdx'), pin('0123456789abcdef0123456789abcdef01234567 # v1.2.2'));
-    await writeFile(join(root, 'docs/research/old.md'), pin('v0.0.1'));
-    assert.deepEqual(await actionPinMismatches(root, '1.2.3'), ['examples/ci/workflows/pr-check.yml:2: v1.2.2']);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});

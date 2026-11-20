@@ -66,6 +66,9 @@ fn grants_check_rejects_malformed_unknown_duplicate_and_invalid_input_without_ec
         format!(r#"[["{CANARY}","worker","project",["read"]]]"#),
         format!("[{grant},{grant}]"),
         format!(
+            r#"[{{"token":"{CANARY}","principalId":"worker","workspaceId":"project","rights":["read","propose"]}}]"#
+        ),
+        format!(
             r#"[{{"token":"{CANARY}","principalId":"worker","workspaceId":"project","rights":["{CANARY}"]}}]"#
         ),
         format!(

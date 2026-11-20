@@ -5,7 +5,7 @@ import { chmod, lstat, mkdir, mkdtemp, open, realpath, rm, symlink, writeFile } 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { privateDirectory, privateDirectoryWithSync, readPrivateJson } from '../../src/evaluation/private-state.js';
-import { readEvaluatorConfig, readReaderConfig } from '../../src/evaluation/config.js';
+import { readEvaluatorConfig } from '../../src/evaluation/config.js';
 import { EvaluationError } from '../../src/evaluation/errors.js';
 
 async function root() {
@@ -44,13 +44,12 @@ test('private JSON rejects duplicate decoded object keys at any depth without ec
   }
 });
 
-test('missing evaluator and reader config files have the fixed missing category', async () => {
+test('a missing evaluator config file has the fixed missing category', async () => {
   const directory = await root();
   const filename = path.join(directory, 'private-missing-canary.json');
   try {
-    for (const read of [readEvaluatorConfig, readReaderConfig])
-      await assert.rejects(
-        read(filename),
+    await assert.rejects(
+        readEvaluatorConfig(filename),
         (error) => error instanceof EvaluationError && error.code === 'config.missing' &&
           !JSON.stringify(error).includes('private-missing-canary'),
       );

@@ -39,10 +39,10 @@ def content(context, text):
     assert w.observed_resolution['version']['digest'] == w.original['version']['digest']
 
 
-@when("the integration requests that draft's bytes")
+@when("the integration requests the unreleased version's bytes")
 def unpublished(context):
     w = context.world
-    w.call('GET', w.bundle + '/versions/' + w.draft['snapshotVersion']['id'] + '/payload', actor='content-reader', expected=403)
+    w.call('GET', w.bundle + '/versions/' + w.uploaded_version['id'] + '/payload', actor='content-reader', expected=403)
 
 
 @when('that credential requests {resource}')

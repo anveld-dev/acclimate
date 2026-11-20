@@ -3,11 +3,11 @@
 // 1. Copy this file (for example to my-agent-harness.mjs) and fill in run().
 // 2. Select it in native.json:
 //      "harness": { "name": "my-agent", "module": "./my-agent-harness.mjs" }
-//    or compare it with a built-in harness:
+//    or test it alongside a built-in harness:
 //      "harnesses": ["codex", { "name": "my-agent", "module": "./my-agent-harness.mjs" }]
 // 3. Run `node smoke.mjs`-style checks with a fake first, then `acclimate-eval describe`.
 //
-// The evaluator fingerprints this module, so any edit requires a new evaluation request.
+// The evaluator includes this module in the application fingerprint.
 import { prepareNativeFiles } from '@acclimate/sdk/native-files';
 import { defineHarness } from './harnesses.mjs';
 

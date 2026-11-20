@@ -76,8 +76,6 @@ try:
       INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES ('ops','00000000-0000-0000-0000-000000000001','stable',1,'00000000-0000-0000-0000-000000000002');
       INSERT INTO promotions(id,project_id,bundle_id,channel,revision,version_id,unevaluated_reason,reviewer) VALUES
        ('00000000-0000-0000-0000-000000000003','ops','00000000-0000-0000-0000-000000000001','stable',1,'00000000-0000-0000-0000-000000000002','fixture','reviewer');
-      INSERT INTO comparisons(id,project_id,bundle_id,body,complete,submitter) VALUES
-       ('00000000-0000-0000-0000-000000000004','ops','00000000-0000-0000-0000-000000000001','{"evidence":"saved"}',true,'reviewer');
     """,
         source,
     )

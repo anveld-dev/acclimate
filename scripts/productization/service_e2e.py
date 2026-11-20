@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
 """Run the SDK/service contract on an owned private PostgreSQL cluster."""
 import argparse
+from pathlib import Path
+import shutil
 import subprocess
 from qualify import Harness, ROOT
-from full_roadmap import pg_bin
+
+
+def pg_bin(explicit):
+    candidates = [Path(explicit)] if explicit else []
+    config = shutil.which('pg_config')
+    if config:
+        candidates.append(Path(subprocess.check_output([config, '--bindir'], text=True).strip()))
+    candidates += list(Path('/opt/homebrew/opt').glob('postgresql*/bin'))
+    candidates += list(Path('/usr/lib/postgresql').glob('*/bin'))
+    for candidate in candidates:
+        if all((candidate / name).is_file() for name in ('postgres', 'initdb', 'pg_ctl', 'psql')):
+            return str(candidate)
+    raise SystemExit('PostgreSQL binaries required; pass --pg-bin /path/to/bin')
 
 
 def main():

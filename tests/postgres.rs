@@ -1,5 +1,5 @@
 mod common;
-use acclimate_service::{AppState, Grant, proposal_worker, router};
+use acclimate_service::{AppState, Grant, router};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -23,12 +23,7 @@ async fn postgres_bundle_scope_and_immutable_payload() {
             token: "reader".into(),
             principal_id: "p1".into(),
             project_id: "project-a".into(),
-            rights: vec![
-                "read".into(),
-                "write".into(),
-                "propose".into(),
-                "promote".into(),
-            ],
+            rights: vec!["read".into(), "write".into(), "promote".into()],
         },
         Grant {
             token: "other".into(),
@@ -42,12 +37,10 @@ async fn postgres_bundle_scope_and_immutable_payload() {
         runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
         db: db.clone(),
         grants: Arc::new(grants),
-        provider: None,
     };
     let app = router(state.clone());
     let bundle_key = format!("bundle-key-{}", uuid::Uuid::new_v4());
     let version_key = format!("version-key-{}", uuid::Uuid::new_v4());
-    let proposal_key = format!("proposal-key-{}", uuid::Uuid::new_v4());
     let bundle_resp = app
         .clone()
         .oneshot(
@@ -133,79 +126,6 @@ async fn postgres_bundle_scope_and_immutable_payload() {
             .count(),
         1
     );
-    let proposal_body = json!({"parentVersionId":ver["id"],"allowedPaths":["x.md"],"hypothesis":"small edit","evidence":[]});
-    let proposal_resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/v1/workspaces/project-a/bundles/{bid}/proposals"))
-                .header("authorization", "Bearer reader")
-                .header("idempotency-key", proposal_key)
-                .body(Body::from(proposal_body.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(proposal_resp.status(), StatusCode::ACCEPTED);
-    let proposal: serde_json::Value = serde_json::from_slice(
-        &axum::body::to_bytes(proposal_resp.into_body(), 10000)
-            .await
-            .unwrap(),
-    )
-    .unwrap();
-    let proposal_get = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri(format!(
-                    "/v1/workspaces/project-a/bundles/{bid}/proposals/{}",
-                    proposal["id"].as_str().unwrap()
-                ))
-                .header("authorization", "Bearer reader")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(proposal_get.status(), StatusCode::OK);
-    let queued: serde_json::Value = serde_json::from_slice(
-        &axum::body::to_bytes(proposal_get.into_body(), 10000)
-            .await
-            .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(queued["candidate"], serde_json::Value::Null);
-    assert_eq!(queued["status"], "queued");
-    state.runtime.ownership_acquired();
-    let worker = tokio::spawn(proposal_worker(state));
-    let mut final_status = String::new();
-    for _ in 0..20 {
-        let got = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .uri(format!(
-                        "/v1/workspaces/project-a/bundles/{bid}/proposals/{}",
-                        proposal["id"].as_str().unwrap()
-                    ))
-                    .header("authorization", "Bearer reader")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let value: serde_json::Value =
-            serde_json::from_slice(&axum::body::to_bytes(got.into_body(), 10000).await.unwrap())
-                .unwrap();
-        final_status = value["status"].as_str().unwrap_or_default().to_owned();
-        if final_status == "failed" {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
-    worker.abort();
-    assert_eq!(final_status, "failed");
     let payload_uri = format!("{uri}/{}/payload", ver["id"].as_str().unwrap());
     let response = app
         .clone()

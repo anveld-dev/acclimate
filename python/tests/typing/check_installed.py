@@ -32,7 +32,7 @@ from pathlib import Path
 import sys
 from typing import get_type_hints
 import acclimate
-from acclimate import AcclimateClient, Evaluation, StartEvaluationRequest, FinishEvaluationRequest
+from acclimate import AcclimateClient, CreateReleaseRequest, Release
 from acclimate import types
 from acclimate.evaluation import ExecuteInput, GradeInput
 root = Path(acclimate.__file__).resolve().parent
@@ -47,9 +47,9 @@ for helper in ("Literal", "NotRequired", "TypedDict"):
     assert not hasattr(acclimate, helper), helper
 for name in ("FileKind", "CompatibilityTarget", "Operation"):
     assert getattr(acclimate, name) is getattr(types, name), name
-for method, request in (("start_evaluation", StartEvaluationRequest), ("finish_evaluation", FinishEvaluationRequest)):
-    hints = get_type_hints(getattr(AcclimateClient, method))
-    assert hints["request"] is request and hints["return"] is Evaluation, method
+hints = get_type_hints(AcclimateClient.create_release)
+assert hints["request"] is CreateReleaseRequest and hints["return"] is Release
+assert CreateReleaseRequest.__required_keys__ == {"versionId", "expectedRevision", "unevaluatedReason"}
 assert get_type_hints(ExecuteInput)["version"] is acclimate.VerifiedVersion
 assert {"output", "expected"} <= get_type_hints(GradeInput).keys()
 print(json.dumps({"sdkPath": str(root), "pep561Marker": True, "runtimeDependencies": []}))

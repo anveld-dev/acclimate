@@ -38,22 +38,11 @@ def author():
     resolution,_,_=client.resolve_channel(p,b,'stable')
     parent=resolution['version']
     content=dict(schemaVersion=1,files=[dict(path='AGENTS.md',kind='instruction',text='Python review retries.')])
-    draft=client.create_draft(p,b,'stable',dict(baseVersionId=parent['id'],baseRevision=resolution['revision'],payload=content),key())
-    content['files'][0]['text']='Python duplicate retry review.'
-    draft=client.save_draft(p,b,'stable',draft['id'],dict(expectedGeneration=1,payload=content),key())
-    saved=client.get_draft(p,b,'stable',draft['id'])
-    history=client.get_draft_history(p,b,'stable',draft['id'])
-    identity=dict(parentVersionId=parent['id'],parentDigest=parent['digest'],candidateVersionId=saved['snapshotVersion']['id'],candidateDigest=saved['snapshotVersion']['digest'],datasetRevision='python-fixture-v1',runtime={'model':'none'},graderRevision='python-fixture-grade',expectedCases=[dict(caseId='review',repetition=0)])
-    evaluation=client.create_evaluation(p,b,identity,key())
-    attempt_id='python-fixture'
-    client.start_evaluation(p,b,evaluation['id'],dict(attemptId=attempt_id),key())
-    outcome=dict(executionStatus='completed',gradingStatus='scored',reward=1,usage={'costUsd':0})
-    report=client.create_comparison(p,b,dict(identity,evaluation=dict(requestId=evaluation['id'],attemptId=attempt_id),
-        results=[dict(caseId='review',repetition=0,parent=outcome,candidate=outcome)]),key())
-    client.finish_evaluation(p,b,evaluation['id'],dict(attemptId=attempt_id,comparisonId=report['id']),key())
-    published=client.publish_draft(p,b,'stable',draft['id'],dict(expectedGeneration=2,expectedRevision=resolution['revision'],comparisonId=report['id']),key())
+    version=client.create_version(p,b,dict(parentVersionId=parent['id'],payload=content),key())
+    published=client.create_release(p,b,'stable',dict(
+        versionId=version['id'],expectedRevision=resolution['revision'],unevaluatedReason='Python fixture release'),key())
     current,_,_=client.resolve_channel(p,b,'stable')
-    return dict(draft=saved,history=history,published=published,current=current)
+    return dict(version=version,published=published,current=current)
 
 try:
     result=author() if c['action']=='pythonAuthor' else delivery()

@@ -90,10 +90,7 @@ export function PendingChangesProvider({ children }: { children: ReactNode }) {
         >
           <AlertDialogHeader>
             <AlertDialogTitle>Leave current edits?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Unsaved text will be lost. Saved drafts stay in the database, but this console does
-              not reopen them automatically.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Unsaved bundle setup text will be lost.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>

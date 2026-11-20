@@ -1,10 +1,7 @@
 """Real isolated console/browser fixture; all assertions live in readable step files."""
-import os
-import re
 import subprocess
 import time
 import ssl
-from pathlib import Path
 from urllib.request import urlopen
 from urllib.parse import quote, urlencode
 from playwright.sync_api import sync_playwright, expect
@@ -64,7 +61,7 @@ class BrowserFixture:
                 # Dev ESM loads barrel exports eagerly; production tree shaking
                 # can hide Node-only SDK exports accidentally imported by UI.
                 self.page.evaluate('''async () => {
-                    for (const name of ['bundle-library', 'import-content', 'draft-workspace', 'improvement-workspace'])
+                    for (const name of ['bundle-library', 'import-content', 'bundle-content', 'bundle-releases'])
                         await import('/src/components/' + name + '.tsx');
                 }''')
                 assert not self.errors, 'Development browser errors: ' + '\n'.join(self.errors)
@@ -99,19 +96,13 @@ class BrowserFixture:
     def bundle_path(self, view='content', bundle_id=None, channel='stable', **search):
         project=quote(self.world.h.project,safe='')
         bundle=quote(bundle_id or self.world.setup['bundle']['id'],safe='')
-        path='/w/'+project+'/bundles/'+bundle
-        if view=='changes':
-            path+='/changes'
-            search=dict(channel=channel,**search)
-        else:
-            path+='/channels/'+quote(channel,safe='')+'/'+view
+        path='/w/'+project+'/bundles/'+bundle+'/channels/'+quote(channel,safe='')+'/'+view
         return path+('?' + urlencode({k:v for k,v in search.items() if v is not None}) if search else '')
 
     def canonical(self, path):
         if path in ('/setup','/'): return self.workspace_path()
         if path=='/access': return self.workspace_path('members')
         if path=='/integrations': return self.workspace_path('connections')
-        if path=='/improvement': return self.bundle_path('changes')
         if path in ('/content','/releases','/connect'): return self.bundle_path(path[1:])
         return path
 

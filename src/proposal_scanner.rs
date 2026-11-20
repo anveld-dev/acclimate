@@ -39,7 +39,7 @@ fn high_entropy(token: &str) -> bool {
     entropy >= 3.8
 }
 
-pub(crate) fn scan<'a>(texts: impl IntoIterator<Item = &'a str>) -> Result<bool, &'static str> {
+pub fn scan<'a>(texts: impl IntoIterator<Item = &'a str>) -> Result<bool, &'static str> {
     let blocked = BLOCKED.as_ref().map_err(|_| "Invalid scanner patterns")?;
     let context = CONTEXT.as_ref().map_err(|_| "Invalid scanner context")?;
     Ok(texts.into_iter().any(|text| {

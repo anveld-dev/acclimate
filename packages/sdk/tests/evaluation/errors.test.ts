@@ -13,8 +13,6 @@ import {
   EvaluatorConfigError,
   ExecutionUncertainError,
   OutputValidationError,
-  PolicyError,
-  AnalysisError,
   TransportError,
   defineEvaluation,
   exitCodeFor,
@@ -142,7 +140,7 @@ test('the client wraps network failures in TransportError and keeps the cause', 
       throw cause;
     },
   });
-  await assert.rejects(client.getEvaluationCapabilities('p'), (error: unknown) => {
+  await assert.rejects(client.listBundles('p'), (error: unknown) => {
     assert.ok(error instanceof TransportError);
     assert.equal(error.code, 'transport.unreachable');
     assert.equal(error.serviceUrl, 'http://127.0.0.1:9');
@@ -165,18 +163,12 @@ test('every thrown SDK error class shares the AcclimateError base and a string c
     new EvaluationUsageError('usage.unknown_flag'),
     new EvaluatorConfigError('config.missing'),
     new EvaluationBusyError(),
-    new PolicyError('policy.invalid', [], { field: 'metric.directon', reason: 'Unknown field.' }),
-    new AnalysisError('analysis.invalid_config'),
     new TaskExecutionError(),
   ];
   for (const error of instances) {
     assert.ok(error instanceof AcclimateError, error.name);
     assert.equal(typeof error.code, 'string');
   }
-  const policy = instances.find((error) => error instanceof PolicyError) as PolicyError;
-  assert.ok(policy instanceof EvaluationError);
-  assert.equal(policy.diagnostic.field, 'metric.directon');
-  assert.match(policy.message, /metric\.directon/);
   assert.ok(!((new CallbackCancelled() as unknown) instanceof AcclimateError));
 });
 

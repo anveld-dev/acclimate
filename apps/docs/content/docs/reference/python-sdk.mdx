@@ -1,40 +1,9 @@
 ---
 title: Python SDK
-description: Evaluate a Python agent, deliver pinned versions to jobs, and call every service route from Python.
+description: Deliver pinned versions to Python jobs and work with the workspace API.
 ---
 
 The `acclimate-sdk` package needs Python 3.11 or later on Linux or macOS and has no third-party dependencies. [Install it](/docs/get-started/install) with `pip install acclimate-sdk`, then import it as `acclimate`.
-
-## Evaluate a change
-
-Put an `application.py` next to your agent. It exports the saved cases, a callback that runs the agent with one version's files, and an independent grader.
-
-```py
-# application.py
-from acclimate.evaluation import ExecutionResult, GradeResult
-from support_agent import run_agent, score_result, saved_cases
-
-cases = saved_cases  # [{"caseId": ..., "input": ..., "expected": ...}]
-
-def execute(run):
-    result = run_agent(files=run.version["payload"]["files"], task=run.input)
-    return ExecutionResult(output=result.answer, usage={"inputTokens": result.tokens_in})
-
-def grade(run):
-    reward, why = score_result(run.output, run.expected)
-    return GradeResult(reward=reward, explanation=why)
-```
-
-```sh
-acclimate try --live --payload candidate
-acclimate compare --local --parent parent --candidate candidate --live
-acclimate describe
-acclimate compare --config "$EVALUATOR_CONFIG" --handoff "$HANDOFF" --live
-```
-
-`try` and `compare --local` need no service, config or handoff. Their results are advisory and never release evidence.
-
-The [Python support agent example](https://github.com/anveld-dev/acclimate/tree/main/examples/python-support-agent) is a complete, network-free version of this flow, and the [Python evaluation starter](https://github.com/anveld-dev/acclimate/tree/main/examples/python-evaluation-starter) is a blank template. The [evaluator CLI reference](/docs/reference/evaluator-cli) lists every command.
 
 ## Naming
 
@@ -81,27 +50,23 @@ A denial, a missing resource or an integrity failure never falls back. `resolve_
 
 Every mutation takes an explicit idempotency key of 1–128 printable ASCII characters. Retry a lost write with the same key and the same request. Listing methods take `cursor=` and `limit=` keyword arguments and return `{"items": [...], "nextCursor": ...}`; pass `nextCursor` back as `cursor` to read the next page.
 
-The Python client has every method of the TypeScript client. The method names are the snake_case form of the TypeScript names.
+The Python client uses snake_case equivalents of the shared TypeScript client methods.
 
 | Area | Methods |
 | --- | --- |
 | Workspaces and bundles | `list_workspaces`, `list_bundles`, `create_bundle`, `create_bundle_setup` |
 | Versions | `create_version`, `get_version`, `get_payload` |
 | Channels and releases | `list_channels`, `resolve_channel`, `list_releases`, `create_release` |
-| Drafts | `create_draft`, `list_drafts`, `get_draft`, `get_draft_history`, `save_draft`, `discard_draft`, `publish_draft` |
-| Proposals and comparisons | `create_proposal`, `get_proposal`, `list_proposals`, `create_comparison`, `get_comparison`, `list_comparisons` |
-| Policy receipts | `report_comparison_policy_receipt`, `list_comparison_policy_receipts`, `list_candidate_policy_receipts` |
-| Evaluation requests | `create_evaluation`, `get_evaluation`, `list_evaluations`, `start_evaluation`, `finish_evaluation`, `interrupt_evaluation`, `abandon_evaluation`, `get_evaluation_capabilities`, `get_evaluation_progress`, `report_evaluation_progress` |
 | Connections and receipts | `create_connection`, `list_connections`, `create_connection_credential`, `revoke_connection`, `revoke_connection_credential`, `report_delivery_receipt`, `list_delivery_receipts`, `list_connection_observations` |
-| Connected learning | `enroll_learning`, `get_learning_enrollment`, `stop_learning`, `renew_learning`, `restore_learning`, `report_learning_outcome`, `get_learning_outcome`, `report_learning_correction`, `report_learning_recheck`, `get_learning_work`, `report_learning_incident_replay`, `get_learning_field_requalification`, `report_learning_field_replay`, `report_learning_field_audit`, `review_learning_round` |
 | Retained operations | `get_operation`, `close_operation` |
 | Other | `health`, `prepare` |
+
+For the local evaluator and payload tools in the Python SDK, see the [evaluator CLI reference](/docs/reference/evaluator-cli).
 
 Differences from the TypeScript client:
 
 - `resolve_channel` returns a `(resolution, etag, not_modified)` tuple.
 - The TypeScript client's `sessionToken` and `fetch` options have no Python equivalent. The session token is only for the console's own server.
-- The learning report methods take the key from the report, as the TypeScript defaults do. `report_learning_outcome`, `report_learning_field_audit`, `renew_learning` and `restore_learning` also accept an explicit key.
 
 ## Errors
 
@@ -116,66 +81,6 @@ Differences from the TypeScript client:
 | `acclimate.evaluation.DefinitionError` | `define_evaluation` rejects an argument. `field` names it, such as `cases[1].case_id`. Code `definition.invalid`. |
 | `acclimate.evaluation.OutputValidationError` | A callback returned a value that is not plain JSON, or unknown `usage` keys. Code `output.invalid`. |
 | `acclimate.evaluation.EvaluationUsageError` | The evaluator command line is invalid. Code `usage.*`. |
-
-## Evaluation API
-
-The CLI loads `application.py` and calls `define_evaluation` for you. Use the functions below to embed the evaluator in your own process.
-
-### Application module
-
-| Export | Required | Meaning |
-| --- | --- | --- |
-| `cases` | Yes | Saved cases as `Case` objects or `{"caseId", "input", "expected", "repetitions"?}` dictionaries. `ACCLIMATE_EVALUATOR_CASES` can name a private JSON file instead. |
-| `execute(run)` | Yes | Runs the agent. Receives an `ExecuteInput`, returns an `ExecutionResult`. May be a coroutine. |
-| `grade(run)` | Yes | Scores one output. Receives a `GradeInput`, returns a `GradeResult`. May be a coroutine. |
-| `revision_files` | No | Paths, relative to the module, of files the agent reads at runtime. Their contents become part of the build identity. |
-| `runtime` | No | `{"settings": {...}, "artifacts": {...}}` naming model deployments, tool configuration and build digests. |
-| `grader` | No | `{"artifactDigest": ...}` for a separately versioned grader. |
-| `config_id` | No | A name for this configuration in the descriptor. Defaults to `application`. |
-| `execution` | No | `"live"` (default) needs `--live`. `"model-free"` is for deterministic adapters. |
-| `concurrency` | No | Pairs in flight at once, 1–64. Defaults to 1. Part of the descriptor. |
-| `grade_retries` | No | Extra grade attempts after a grader raises or times out, 0–5. Defaults to 0. Part of the descriptor. |
-| `to_review_artifact(item)` | No | Selects which output or explanation fields a review export may include. |
-
-The CLI fingerprints `application.py`, the local modules it imports and the files in `revision_files`. Only the hashes and case IDs appear in the public descriptor.
-
-### Callback inputs and results
-
-| Class | Fields |
-| --- | --- |
-| `Case(case_id, input, expected, repetitions=1)` | One saved case. |
-| `ExecuteInput` | `version` (the verified version under test), `input`, `case_id`, `repetition`, `cancellation`, `context`. The `instructions`, `instruction_files`, `skill_files` and `memory_files` properties read its content. |
-| `ExecutionContext` | `request_id`, `attempt_id`, `side` (`parent` or `candidate`), `job_id`, `private_job_directory`. |
-| `CancellationContext` | `is_cancelled()` and `raise_if_cancelled()`. Check it while waiting on external work. |
-| `ExecutionResult(output, execution_status="completed", error=None, output_ref=None, usage=None)` | Gradeable JSON output. Set `execution_status="task_failed"` for a failed task that still produced output. `usage` takes measured `inputTokens`, `outputTokens` and `costUsd` (or `input_tokens`, `output_tokens` and `cost_usd`). Any other key marks the output invalid. |
-| `GradeInput` | `output`, `expected`, `case_id`, `repetition`, `cancellation`. |
-| `GradeResult(reward, error=None, explanation=None)` | A reward from 0 to 1 and an optional JSON explanation. |
-
-Raise `ExecutionUncertainError` from `execute` when external work might still be running, such as after a timeout that didn't stop the provider job. The evaluator records that arm as `execution_uncertain`, writes `uncertain.json` in its private job directory, never retries it, and continues with the other pairs. Raised from `grade`, it stops the run. Raise `TaskExecutionError` for a task failure with no gradeable output.
-
-### Functions
-
-| Function | Use |
-| --- | --- |
-| `define_evaluation(*, config_id, config_revision, dataset_revision, grader_revision, runtime, execution, cases, execute, grade, collection=None, concurrency=1, grade_retries=0)` | Build an `EvaluationApp`. `execution` is `"live"` or `"model-free"`. Callbacks may be ordinary functions or coroutine functions; coroutines run to completion on one private event loop per evaluation. |
-| `preflight_evaluation(*, app, config_path, target=None, handoff=None)` | Check the private configuration, journal and service access without running callbacks. |
-| `run_evaluation(*, app, config_path, handoff, allow_live=False, cancel_event=None, controls=None)` | Run or recover one evaluation request. `allow_live=True` must match a live app. Setting `cancel_event` asks callbacks to stop. `controls` is a `RunControls` with `deadline_ms`, `case_timeout_ms`, `max_cost_usd`, `selection` and `progress`; the result then includes `runSummary`. The result's `firstCallbackFailure` names the first failed callback and its private diagnostic file. |
-| `run_evaluation_async(*, config_path, handoff, app=None, directory=None, allow_live=False, controls=None)` | Await `run_evaluation` from an asyncio application. Cancelling the await asks the run to stop and waits for its worker. |
-| `bind_run_controls(app, controls)` | Return an app with run controls bound, without changing its descriptor. |
-
-The client, delivery helpers and `run_evaluation` are synchronous. In an asyncio application, await `run_evaluation_async`, which runs the whole evaluation in a worker thread, signals cancellation and waits for the worker to finish. The starter's `async_eval.py` shows the call.
-
-### Related modules
-
-| Module | Exports |
-| --- | --- |
-| `acclimate.evaluation_policy` | `check_comparison`, `parse_evaluation_policy`, `validate_evaluation_policy` |
-| `acclimate.evaluation_artifacts` | `export_review_evidence`, `verify_review_export`, `parse_artifact_selection` |
-| `acclimate.evaluation_analysis` | `analyze_comparison` |
-| `acclimate.evaluation_manifest` | `create_evaluation_manifest`, `restore_evaluation_manifest` |
-| `acclimate.evaluation_local` | `run_local_comparison`, `score_local_comparison`, `try_evaluation`, `load_local_payload`, `local_payload_digest`, `local_version`, `LocalRunError`: compare payloads or check callback shapes without a service. Results are advisory. |
-| `acclimate.evaluation_async` | `run_evaluation_async`, `run_in_thread_until_quiescent` |
-| `acclimate.evaluation_cli` | `evaluation_main`, the CLI entry point |
 
 ## Reporters
 

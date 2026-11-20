@@ -1,18 +1,8 @@
 import './source-editor.css';
-import { StatusBadge } from './status-badge';
 import './published-source.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
-import {
-  Braces,
-  Code2,
-  Download,
-  Ellipsis,
-  Pencil,
-  Search,
-  ShieldCheck,
-  WrapText,
-} from 'lucide-react';
+import { Braces, Code2, Download, Ellipsis, Search, ShieldCheck, WrapText } from 'lucide-react';
 import { Button } from './ui/button';
 import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupButton } from './ui/input-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
@@ -40,7 +30,11 @@ export function BundleContent({
   const router = useRouter();
   const [query, setQuery] = useState(typeof search.q === 'string' ? search.q : '');
   useEffect(() => setQuery(typeof search.q === 'string' ? search.q : ''), [search.q]);
-  const scope = { workspaceId: state.workspaceId, bundleId: state.bundleId, channel: state.channel };
+  const scope = {
+    workspaceId: state.workspaceId,
+    bundleId: state.bundleId,
+    channel: state.channel,
+  };
   const [view, setView] = useState('source');
   const requestedSourceFocus = useRef<string | null>(null);
   const [wrap, setWrap] = useState(true);
@@ -63,9 +57,10 @@ export function BundleContent({
   const filtered = Boolean(search.q);
   const requestedPath = typeof search.path === 'string' ? search.path : undefined;
   const selected = requestedPath ? files.find((file) => file.path === requestedPath) : files[0];
+  const selectedText = selected?.text;
   const lineCount = useMemo(
-    () => (selected ? sourceLines(selected.text).length : 0),
-    [selected?.text],
+    () => (selectedText === undefined ? 0 : sourceLines(selectedText).length),
+    [selectedText],
   );
   const version = state.resolution.version;
   const selectedBytes = inventory.find((item) => item.file.path === selected?.path)?.bytes ?? 0;
@@ -184,9 +179,7 @@ export function BundleContent({
             <p className="p-4 text-sm text-muted-foreground">
               {filtered
                 ? 'No matching entries. Clear filters to see all content.'
-                : state.canEdit
-                  ? 'No published entries. Create a draft to add content.'
-                  : 'No published entries. Ask a workspace editor to add content.'}
+                : 'No published entries in this release.'}
             </p>
           )}
         </FileNavigator>
@@ -213,7 +206,6 @@ export function BundleContent({
                           {state.resolution.revision}
                         </a>
                         <KindBadge kind={selected.kind} />
-                        {!state.canEdit && <StatusBadge>Read only</StatusBadge>}
                       </div>
                     </div>
                     {selected.path !== fileTitle(selected) && (
@@ -227,18 +219,6 @@ export function BundleContent({
                   </div>
                 </div>
                 <div className="content-entry-actions flex flex-wrap items-center gap-2">
-                  {state.canEdit && (
-                    <Button asChild>
-                      <ConsoleLink
-                        href={bundleHref(scope, 'changes', { draft: 'new', path: selected.path })}
-                        aria-label="Edit entry"
-                        title="Edit entry"
-                      >
-                        <Pencil aria-hidden="true" className="compact-source-action-icon" />
-                        <span className="source-action-label">Edit entry</span>
-                      </ConsoleLink>
-                    </Button>
-                  )}
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
@@ -401,7 +381,11 @@ export function BundleContent({
                                     requestedSourceFocus.current = file.path;
                                     if (file.path !== selected.path)
                                       await router.navigate({
-                                        href: link({ path: file.path, q: undefined, kind: undefined }),
+                                        href: link({
+                                          path: file.path,
+                                          q: undefined,
+                                          kind: undefined,
+                                        }),
                                       });
                                     setView('source');
                                   }}
@@ -440,9 +424,7 @@ export function BundleContent({
                   ? `“${requestedPath}” ${filtered ? 'isn’t in these search results' : 'isn’t available in this channel'}. Choose an entry from the list.`
                   : filtered
                     ? 'No entries match these filters.'
-                    : state.canEdit
-                      ? 'Add your first entry in a draft, then save and review its release.'
-                      : 'Published content will appear here after an editor releases it.'}
+                    : 'This release has no published entries.'}
               </p>
               {filtered && <p className="break-all text-sm">Search for “{String(search.q)}”</p>}
               {(filtered || requestedPath) && (
@@ -458,13 +440,6 @@ export function BundleContent({
                     </Button>
                   )}
                 </div>
-              )}
-              {!requestedPath && !filtered && state.canEdit && (
-                <Button asChild>
-                  <ConsoleLink href={bundleHref(scope, 'changes', { draft: 'new' })}>
-                    New draft
-                  </ConsoleLink>
-                </Button>
               )}
             </div>
           )}

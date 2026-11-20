@@ -2,15 +2,15 @@
 Feature: Use the console with personal workspace rights
 
   @UI-ACCESS-01
-  Scenario Outline: Content editing follows current workspace membership
+  Scenario Outline: A workspace member can read published content and delivery
     Given an administrator created a workspace with published content
     And the administrator grants the member the <role> role
     When the member opens that content in the console
-    Then browser content editing is <editing>
+    Then browser content is read-only and delivery is visible
     Examples:
-      | role   | editing     |
-      | viewer | unavailable |
-      | editor | available   |
+      | role   |
+      | viewer |
+      | editor |
 
   @UI-ACCESS-02
   Scenario: Confirm a verified person before granting and removing membership

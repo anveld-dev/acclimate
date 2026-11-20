@@ -29,3 +29,10 @@ test('the TypeScript SDK reference names every public entry point, runtime expor
     if (!documented.has(command)) missing.push(`bin: ${command}`);
   assert.deepEqual(missing, [], 'Document these in reference/typescript-sdk.mdx');
 });
+
+test('the evaluator CLI reference lists the remaining commands', async () => {
+  const { EVALUATOR_COMMANDS } = await import('../packages/sdk/src/evaluation/cli.js');
+  const reference = await readFile(new URL('apps/docs/content/docs/reference/evaluator-cli.mdx', root), 'utf8');
+  const documented = [...reference.matchAll(/^\| `([\w-]+)(?: [^`]+)?` \|/gm)].map((match) => match[1]);
+  assert.deepEqual(documented.sort(), [...EVALUATOR_COMMANDS].sort());
+});

@@ -103,13 +103,10 @@ export function DeliveryApp({
         </div>
         <div className="delivery-app-links">
           <a
-            href={
-              bundleHref(scope, 'changes', { history: 1, tab: 'evaluations' }) +
-              '#evaluation-history'
-            }
-            aria-label={'View bundle evaluations for ' + app.displayName}
+            href={bundleHref(scope, 'releases')}
+            aria-label={`View releases for ${app.displayName}`}
           >
-            Bundle evaluations <ArrowUpRight />
+            Bundle releases <ArrowUpRight />
           </a>
           {canManage && (
             <a
@@ -122,7 +119,7 @@ export function DeliveryApp({
         </div>
       </header>
       {report && current && (
-        <div className="delivery-comparison-status">
+        <div className="delivery-current-status">
           <StatusBadge tone={same ? 'success' : 'warning'}>
             {same && <Check aria-hidden="true" />}
             {same ? 'Versions match' : 'Versions differ'}

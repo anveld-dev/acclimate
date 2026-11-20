@@ -1,37 +1,15 @@
 ---
 title: Acclimate
-description: Ship changes to your agent's prompts and skills like code. Versioned, A/B-graded on your own tasks, gated, and roll-backable.
+description: Self-improvement with versioned delivery for agent instructions, skills and memory.
 ---
 
-**Ship changes to your agent's prompts, skills, and memory like code: versioned, A/B-graded on your own tasks, gated before release, and roll-backable.**
+**Acclimate improves your agent's harness on its own and delivers each version to your jobs.** It runs the self-improvement loop from [arXiv 2611.18856](https://arxiv.org/abs/2611.18856). Each round it scores the released version on your evolve cases, writes five candidate changes from the scores, traces and errors, screens them, evaluates the survivors and releases the one the selector adopts. An improvement memory records what each change was meant to fix and what it fixed, so later rounds, and later models, build on it.
 
-You save each change as a new version. Your agent runs the current version and the new one on the same saved tasks, your grader scores both, and the change ships only when the evidence clears your bar. If something goes wrong later, you release the earlier version again.
+Your application still runs the agent and grades its work. Acclimate versions the instructions, skills and memory files it uses, delivers the released version to the next job, and lets you point a channel back at an earlier version.
 
-## How it differs from eval tools
+Versioned delivery is available now. The self-improvement loop ships in a later phase.
 
-Tools such as promptfoo, Braintrust, LangSmith, and Inspect run evaluations and track scores. Acclimate covers what happens around the evaluation. It stores your agent's content as immutable versions, pairs each change with the version it replaces, gates the release on those paired results, and delivers the released version to your application's next job. Your application still runs the agent and grades its work, so you can keep using an eval tool inside your grader.
-
-Acclimate is open source under Apache-2.0 and self-hosted. Your agents, prompts, tasks, and model credentials stay in your environment.
-
-## Start here
-
-1. **[Try it on your laptop](/docs/get-started/quickstart).** Compare two versions of an agent's instructions locally with no server, then start the local stack and run a live comparison.
-2. **[Join a team's workspace](/docs/get-started/join-a-team).** Connect your agent to a workspace someone else runs.
-3. **[Learn the vocabulary](/docs/concepts/glossary).** Every term the console and CLI use, defined once.
-
-## From edit to delivery
-
-1. **Version.** Save the proposed files as a candidate version. It records the version it changes, its parent.
-2. **Compare.** Your evaluator runs the parent and candidate on the same saved tasks with the same grader.
-3. **Review.** Inspect the file changes, the paired scores, any missing evidence, and your policy's verdict.
-4. **Release.** Point a channel such as `stable` at the reviewed version, or roll back by releasing an earlier one.
-5. **Deliver.** Your application gets the released version for each new job. Jobs already running keep the content they started with.
-
-<Cards>
-  <Card title="Get started" href="/docs/get-started/quickstart" description="Try a comparison on your laptop in about 15 minutes." />
-  <Card title="Concepts" href="/docs/concepts/how-it-works" description="See how your application and the service work together." />
-  <Card title="Guides" href="/docs/guides/evaluate-a-change" description="Evaluate changes, run PR checks, and release content." />
-  <Card title="Integrations" href="/docs/integrations/codex" description="Prepare files for Codex, Claude Agent SDK, Pi, or Cursor." />
-  <Card title="Reference" href="/docs/reference/typescript-sdk" description="Look up SDK entry points, CLI commands, and the wire contract." />
-  <Card title="Operate" href="/docs/operate/deploy" description="Deploy the service and provision evaluators." />
-</Cards>
+- [Try Acclimate on your laptop](/docs/get-started/quickstart)
+- [Deliver content to jobs](/docs/guides/deliver-content)
+- [Release and roll back](/docs/guides/review-and-release)
+- [Self-host Acclimate](/docs/operate/self-host)

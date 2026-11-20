@@ -25,14 +25,8 @@ async fn fixture() -> (AppState, String) {
                 token: "recovery-test".into(),
                 principal_id: "recovery-principal".into(),
                 project_id: p.clone(),
-                rights: vec![
-                    "read".into(),
-                    "write".into(),
-                    "promote".into(),
-                    "propose".into(),
-                ],
+                rights: vec!["read".into(), "write".into(), "promote".into()],
             }]),
-            provider: None,
         },
         p,
     )
@@ -203,7 +197,7 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
     .await;
     assert_eq!(closed.1["status"], "committed");
     assert_eq!(closed.1["result"], original.1);
-    // A closed added route cannot block setup/draft's distinct global namespace.
+    // A closed added route cannot block setup's distinct global namespace.
     let other_key = Uuid::new_v4().to_string();
     let other_close = format!("/v1/workspaces/{p}/operations/{other_key}/close");
     assert_eq!(
@@ -344,7 +338,7 @@ async fn receipt_lookup_close_and_replay_require_current_effective_action_rights
     )
     .await;
     assert_eq!(recovered.1["status"], "committed");
-    // A stored draft receipt is still denied after the browser's current membership changes.
+    // A stored setup receipt is still denied after the browser's current membership changes.
     use sha2::{Digest, Sha256};
     let user = Uuid::new_v4();
     let session = Uuid::new_v4();
@@ -409,8 +403,7 @@ async fn receipt_lookup_close_and_replay_require_current_effective_action_rights
 
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn legacy_key_only_close_uses_the_committed_draft_action_and_drafts_channel_is_route_scoped()
-{
+async fn version_close_requires_write_and_release_close_is_route_scoped() {
     let (state, p) = fixture().await;
     let app = router(state.clone());
     let setup_path = format!("/v1/workspaces/{p}/bundle-setups");
@@ -427,22 +420,19 @@ async fn legacy_key_only_close_uses_the_committed_draft_action_and_drafts_channe
     assert_eq!(status, 201);
     let bundle = seed["bundle"]["id"].as_str().unwrap();
     let version = seed["version"]["id"].as_str().unwrap();
-    let draft_path = format!("/v1/workspaces/{p}/bundles/{bundle}/channels/stable/drafts");
-    let created = call(
+    let version_path = format!("/v1/workspaces/{p}/bundles/{bundle}/versions");
+    let published_key = Uuid::new_v4().to_string();
+    let published = call(
         &app,
         "POST",
-        &draft_path,
-        "draft",
-        &json!({"baseVersionId":version,"baseRevision":"1","payload":setup_body()["payload"]}),
-        false,
+        &version_path,
+        &published_key,
+        &json!({"parentVersionId":version,"payload":setup_body()["payload"]}),
+        true,
         None,
     )
     .await;
-    assert_eq!(created.0, 201, "{}", created.1);
-    let published_key = Uuid::new_v4().to_string();
-    let publish_path = format!("{draft_path}/{}/publish", created.1["id"].as_str().unwrap());
-    let published=call(&app,"POST",&publish_path,&published_key,&json!({"expectedGeneration":1,"expectedRevision":"1","unevaluatedReason":"Reviewed publication"}),false,None).await;
-    assert_eq!(published.0, 200, "{}", published.1);
+    assert_eq!(published.0, 201, "{}", published.1);
     let mut promote_only = state.clone();
     let mut grants = (*state.grants).clone();
     grants[0].rights = vec!["promote".into()];
@@ -454,13 +444,12 @@ async fn legacy_key_only_close_uses_the_committed_draft_action_and_drafts_channe
         "POST",
         &close,
         &published_key,
-        &json!({}),
+        &json!({"operationPath":version_path}),
         false,
         None,
     )
     .await;
-    assert_eq!(result.0, 200, "{}", result.1);
-    assert_eq!(result.1["result"], published.1);
+    assert_eq!(result.0, 403, "{}", result.1);
     let key = Uuid::new_v4().to_string();
     let channel_drafts = format!("/v1/workspaces/{p}/bundles/{bundle}/channels/drafts/releases");
     assert_eq!(

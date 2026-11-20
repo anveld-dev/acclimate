@@ -1,9 +1,9 @@
 ---
 title: Configuration and environment variables
-description: Find the values your application, evaluator, service, and console read.
+description: Find the values your application, service, and console read.
 ---
 
-Configure each process with its own credentials and addresses. Use the [self-hosting guide](/docs/operate/self-host) for the private runtime files and [evaluator access](/docs/operate/evaluator-access) for the worker config format.
+Configure each process with its own credentials and addresses. Use the [self-hosting guide](/docs/operate/self-host) for the private runtime files and [machine-token access](/docs/operate/evaluator-access) for workspace credentials.
 
 ## Application and CLI recipes
 
@@ -17,12 +17,9 @@ These variables are used by the repository's app setup recipes and command-line 
 | `ACCLIMATE_WORKSPACE`, `ACCLIMATE_BUNDLE`, `ACCLIMATE_CHANNEL` | Workspace ID, bundle ID, and channel used by the delivery examples. |
 | `ACCLIMATE_CACHE`, `ACCLIMATE_JOB_DIR` | Cache and staging directory overrides in the console recipes. |
 | `ACCLIMATE_CONNECTION`, `ACCLIMATE_RECEIPT_TOKEN` | Connection ID and separate optional delivery reporting credential. |
-| `ACCLIMATE_EVALUATOR_TOKEN` | Evaluator token used when the private evaluator config names neither `evaluatorToken` nor `evaluatorTokenFile`. Use it to pass a CI secret. |
 | `ACCLIMATE_EVALUATOR_CASES` | Absolute path to a private JSON array that overrides the installed adapter's cases. Use mode 0600. |
 | `AGENT_TASK` | Task input for the console's connected agent recipe. |
-| `ACCLIMATE_CI_PYTHON` | Override the Python interpreter used by the CI wrapper. |
 
-`EVALUATOR_CONFIG` in command examples is a shell variable for the path passed to `--config`. The evaluator reads its journal settings from that explicit private file. The token comes from the file's `evaluatorToken`, from the private file named by `evaluatorTokenFile`, or from `ACCLIMATE_EVALUATOR_TOKEN`.
 
 ## Rust service
 
@@ -34,44 +31,12 @@ These variables are used by the repository's app setup recipes and command-line 
 | `ACCLIMATE_LOGIN_TOKEN` | Required login authority token. Match `CONSOLE_LOGIN_TOKEN`. |
 | `ACCLIMATE_CONSOLE_TOKEN` | Required console transport token. Match `CONSOLE_SERVICE_TOKEN`. Use a different token from the login authority and every machine grant. The login authority and machine tokens must also be distinct. |
 | `ACCLIMATE_OPERATORS` | Required nonempty JSON array of objects with `issuer` and `subject`. Each pair must be unique, use the exact configured issuer and have a nonempty subject of at most 512 bytes. |
-| `ACCLIMATE_AUTH` | Required JSON array of static machine grants with `token`, `principalId`, `workspaceId` and `rights`. Use `[]` when every machine token is issued from the console. Rights are `read`, `evaluate`, `write`, `propose` and `promote`. `evaluate` includes `read`, and `write` includes `evaluate`. A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. Changing this value requires a restart; console-issued [evaluator tokens](/docs/operate/evaluator-access) do not. |
-| `ACCLIMATE_EVALUATION_ABANDON_SECONDS` | Whole seconds without a start, progress report or bound report after which the service abandons a running evaluation attempt. Defaults to 7,200. Values below 60 or invalid values use the default. Connected-learning evaluations use their own deadlines. |
+| `ACCLIMATE_AUTH` | Required JSON array of static machine grants with `token`, `principalId`, `workspaceId` and `rights`. Use `[]` when every machine token is issued from the console. Rights are `read`, `evaluate`, `write` and `promote`. `evaluate` includes `read`, and `write` includes `evaluate`. A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. Changing this value requires a restart; console-issued [machine tokens](/docs/operate/evaluator-access) do not. |
 | `ACCLIMATE_SERVICE_BINARY` | Absolute path to the executable used by the native `npm start` wrapper. Defaults to `target/release/acclimate-service` under the checkout. |
 
 Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from both the Rust and console environments. Startup rejects any defined value.
 
-### Proposer and critic
-
-The proposer is disabled when `ACCLIMATE_MODEL_ENDPOINT` is absent. The endpoint must accept bearer authentication and the chat-completions fields `model`, `messages`, `response_format: {"type":"json_object"}` and `max_completion_tokens: 8192`. The service expects a complete JSON response with `choices[0].finish_reason` equal to `stop` and JSON text in `choices[0].message.content`. Calls have a 60-second deadline and a 256 KiB response envelope limit.
-
-| Variable | Purpose |
-| --- | --- |
-| `ACCLIMATE_MODEL_ENDPOINT` | Full OpenAI-compatible chat-completions URL. |
-| `ACCLIMATE_MODEL_TOKEN` | Required when the proposer endpoint is set. Sent as the bearer token. |
-| `ACCLIMATE_MODEL` | Required when the proposer endpoint is set. The service trims the supplied name and requires 1–256 UTF-8 bytes with no control characters in the input. Use `gpt-6.2-sol` for the documented example or use a model name accepted by your configured endpoint. |
-| `ACCLIMATE_CRITIC_ENDPOINT` | Optional chat-completions URL for the critic. Defaults to the proposer URL. |
-| `ACCLIMATE_CRITIC_MODEL` | Optional critic model name. Defaults to the trimmed proposer name. |
-| `ACCLIMATE_CRITIC_TOKEN` | Optional critic bearer token. Defaults to the proposer token only when the endpoint strings match. A separate endpoint requires its own explicit token. |
-| `ACCLIMATE_PROPOSAL_GROWTH_FLOOR_BYTES` | Unsigned integer. Defaults to 2,048. Maximum permitted increase in encoded bundle bytes is the greater of this floor and 10% of the parent size, rounded down. |
-
-### Connected learning
-
-Give these limits as whole numbers. Missing or invalid values use the indicated default, subject to the effective minima below.
-
-| Variable | Default | Range and purpose |
-| --- | --- | --- |
-| `ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS` | 3 | 1–1,000 accepted development steps before a cumulative comparison. |
-| `ACCLIMATE_LEARNING_MAX_CHAIN_AGE_SECONDS` | 86,400 | 1–4,294,967,295 seconds before an accumulated chain is due for a cumulative comparison. |
-| `ACCLIMATE_LEARNING_CALIBRATION_REPETITIONS` | 2 | 2–5 effective repetitions per case during calibration, within report size and the 1,000-pair wire limit. A value of 1 uses 2. |
-| `ACCLIMATE_LEARNING_MAX_REPETITIONS` | 3 | 1–5 repetitions per case in planned comparisons. Explicit collection schedules keep their registered inventory. |
-| `ACCLIMATE_LEARNING_PAIR_BUDGET` | 1,000 | 1–1,000 pairs per planned evaluation, raised to fit the largest registered inventory if needed. Each pair runs two trials before any retries. Report size can further limit planned repetitions. |
-| `ACCLIMATE_LEARNING_PARENT_MAX_AGE_SECONDS` | 86,400 | 0–4,294,967,295 seconds. Maximum age for reusing a complete matching development parent comparison. Set to 0 to disable reuse. |
-| `ACCLIMATE_LEARNING_PARENT_MAX_REUSES` | 3 | 0–4,294,967,295 reuses of a matching development parent comparison. Set to 0 to disable reuse. |
-| `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS` | 604,800 | 1–4,294,967,295 seconds to wait for an evaluator to start a queued request. |
-| `ACCLIMATE_LEARNING_EVALUATION_SECONDS` | 86,400 | 1–4,294,967,295 seconds from evaluation start to completion. |
-| `ACCLIMATE_LEARNING_REVIEW_SECONDS` | 1,209,600 | 1–4,294,967,295 seconds to review a round. |
-| `ACCLIMATE_LEARNING_CALIBRATION_ATTEMPTS` | 3 | Use 1–2,147,483,647 for the number of failed calibration attempts before admission stops. |
-| `ACCLIMATE_LEARNING_FAILURE_WINDOW_SECONDS` | 3,600 | 1–4,294,967,295 seconds from the first consecutive processing error before a subsequent error closes the round. A successful tick clears this window. |
+The service accepts `ACCLIMATE_MODEL`, `ACCLIMATE_MODEL_ENDPOINT`, `ACCLIMATE_MODEL_TOKEN`, `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS` and `ACCLIMATE_LEARNING_EVALUATION_SECONDS` for future learning phases. This release has no readers for these settings.
 
 ### Invitation email
 

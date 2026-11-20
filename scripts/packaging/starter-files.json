@@ -1,33 +1,15 @@
 {
   "evaluation": [
-    "ANALYSIS.md",
     "README.md",
     "acclimate-eval.d.mts",
     "acclimate-eval.mjs",
     "acclimate_eval.py",
-    "analyze.mjs",
-    "analyze.py",
-    "async_eval.py",
-    "package.json",
-    "quality-policy.example.json",
-    "test/test_async_lifetime.py"
+    "package.json"
   ],
   "python-evaluation": [
     "README.md",
     "acclimate_eval.py",
-    "analyze.py",
-    "application.example.py",
-    "async_eval.py",
-    "quality-policy.example.json",
-    "test/test_async_lifetime.py"
-  ],
-  "ci": [
-    "README.md",
-    "action.yml",
-    "ci.py",
-    "ci.sh",
-    "workflows/pr-check.yml",
-    "workflows/release.yml"
+    "application.example.py"
   ],
   "native-repository": [
     "README.md",

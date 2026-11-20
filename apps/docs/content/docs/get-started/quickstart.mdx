@@ -1,195 +1,26 @@
 ---
 title: Try Acclimate on your laptop
-description: Compare two versions of your agent's instructions with no server, then run a graded comparison against a local Acclimate stack.
+description: Start the local stack and deliver a verified version to your application.
 ---
 
-In about 15 minutes you will grade a change to an agent's instructions against the version it replaces, first on your laptop with no server, then through a local Acclimate stack that records the result and shows it in the console. You run everything yourself. To connect to a workspace someone else runs, see [join a team](/docs/get-started/join-a-team).
+## Start the stack
 
-**You need:** Node.js 22.22 or later, or Python 3.11 or later for the Python SDK. The local stack also needs Docker with Compose v2.24 or later and an Acclimate checkout. Terms such as *parent*, *candidate*, and *evaluator* are defined in the [glossary](/docs/concepts/glossary).
-
-## Try it locally (no server)
-
-Score a change on your own machine before you set up the service. A local run needs no workspace, evaluator config, handoff, or published bundle. It uses the same pairing, arm order, and grading as a service comparison, but the result is advisory and never release evidence.
-
-### Connect your agent
-
-[Install the SDK](/docs/get-started/install) in your agent's project. In your agent's project, create `application.mjs` (or `application.mts`) for Node.js, or `application.py` for Python. Export three things:
-
-- `cases`: saved tasks, each with a unique `caseId`, an `input`, and an `expected` answer.
-- `execute`: calls your agent with the version it is given and the case input, and returns the output.
-- `grade`: scores an output against the expected answer and returns a numeric `reward`.
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-
-```ts title="application.mjs"
-import { runAgent, scoreResult, savedCases } from './dist/support-agent.mjs';
-
-export const cases = savedCases;
-export const revisionFiles = ['package-lock.json'];
-
-export async function execute({ version, input, signal, context }) {
-  const result = await runAgent({ version, task: input, signal, job: context });
-  return { output: result.answer, usage: result.measuredUsage };
-}
-
-export async function grade({ output, expected }) {
-  return scoreResult(output, expected);
-}
-```
-
-</Tab>
-<Tab value="Python">
-
-```py title="application.py"
-from acclimate.evaluation import ExecutionResult, GradeResult
-from support_agent import run_agent, score_result, saved_cases
-
-cases = saved_cases
-revision_files = ["support_agent.py", "requirements.lock"]
-
-async def execute(run):
-    result = await run_agent(version=run.version, task=run.input, cancellation=run.cancellation)
-    return ExecutionResult(output=result.answer, usage=result.measured_usage)
-
-def grade(run):
-    verdict = score_result(run.output, run.expected)
-    return GradeResult(reward=verdict.reward, explanation=verdict.explanation)
-```
-
-</Tab>
-</Tabs>
-
-Replace the imports with your own agent, cases, and grader. List the files your agent reads at run time in `revisionFiles` (Python `revision_files`). If the agent's tools have side effects, give each run a fresh, isolated job.
-
-`execute` must pass `version` to your agent. If it ignores the version, both arms behave the same, and the comparison warns that every output was identical.
-
-### Compare two versions
-
-A **payload** is the set of files a version of your agent reads. Put the current instructions in one folder and the changed instructions in another. Files under `skills/` become skill files, files under `memory/` become memory files, and every other file becomes an instruction. Hidden files are skipped. A payload JSON file such as `{"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":"..."}]}` also works.
-
-```text
-parent/AGENTS.md
-candidate/AGENTS.md
-candidate/skills/refunds/SKILL.md
-```
-
-Check the adapter on one case, then compare the two folders. Nothing is sent to a server.
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
+From a source checkout, run:
 
 ```sh
-./node_modules/.bin/acclimate-eval try --live --payload candidate
-./node_modules/.bin/acclimate-eval compare --local --parent parent --candidate candidate --live
+npm run local:up -- --build
+npm run local:trust
 ```
 
-</Tab>
-<Tab value="Python">
+Open the printed console URL and sign in with the generated login. The `local-demo` workspace includes an example bundle released to `stable`. [Local stack prerequisites and TLS setup](/docs/get-started/run-locally)
 
-```sh
-python -m acclimate try --live --payload candidate
-python -m acclimate compare --local --parent parent --candidate candidate --live
-```
+## Connect your application
 
-</Tab>
-</Tabs>
+1. [Install the SDK](/docs/get-started/install) in the environment that runs your agent.
+2. In the workspace, open **Connections** and create a connection for the example bundle and `stable`. Issue a content-read credential.
+3. Follow the connection's **Setup** recipe. Set the public API URL, private credential and stable cache scope in your application's environment. Run the delivery check to see the resolved version and verified files.
+4. Prepare the version before each job. Keep the version ID and digest with the result, and clean up the prepared files once the job stops. [Deliver content to jobs](/docs/guides/deliver-content)
 
-`try` runs `execute` and `grade` once and prints the output. It also checks every returned shape, including JSON-safe output, a finite reward, `usage` keys, and the `executionStatus` value. Problems that `try` reports would otherwise become missing scores in a paid run. Add `--case ID` to choose cases.
+## Publish your own bundle
 
-`compare --local` prints the same per-case table as a service comparison. It writes `local-report.json`, the output artifacts, and both payloads to a private folder under `.acclimate/local/`, or to the folder you pass with `--out`. Add `.acclimate/` to `.gitignore`. Add `--policy quality-policy.json` for an advisory verdict, and `--max-cost-usd 2` or `--deadline 15m` to bound spend. `--live` is required only when the evaluator calls models or paid services. Installed `application` adapters default to live; export `execution = "model-free"` for a deterministic adapter. The [evaluator CLI reference](/docs/reference/evaluator-cli#local-runs) covers every local option and exit code.
-
-A local report can't be uploaded as release evidence. The service accepts results only for versions it stores and an attempt it issued. To gate a release, replay the same candidate against the service with the `compare` command printed at the end of the local run. That command passes `candidate.payload.json` from the report folder.
-
-## Start the local stack
-
-The stack runs the Acclimate service, console, database, and sign-in on your laptop, so comparisons are recorded and reviewable. From an Acclimate checkout:
-
-```sh
-npm run local:up
-source .local/stack/env.sh
-```
-
-The first start downloads the released images, or builds them from source if none are published for your checkout. It prints the console URL, a login, and the client settings that `env.sh` exports. It also signs you in to a ready-made `local-demo` workspace and publishes an example bundle on the `stable` channel. See [run Acclimate locally](/docs/get-started/run-locally) for ports, certificates, and reset.
-
-## Run your first live comparison
-
-Use the adapter from [Connect your agent](#connect-your-agent).
-
-<Steps>
-<Step>
-
-### Save the published version and edit it
-
-`pull` saves the version the `stable` channel serves, the **parent**, as a payload file. Edit `candidate.json` to make your change.
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-
-```sh
-./node_modules/.bin/acclimate-eval pull --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --out candidate.json
-```
-
-</Tab>
-<Tab value="Python">
-
-```sh
-python -m acclimate pull --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --out candidate.json
-```
-
-</Tab>
-</Tabs>
-
-The file is a payload JSON file like the ones `compare --local` reads. Each file needs a `path`, a `kind` of `instruction`, `skill`, or `memory`, and its `text`.
-
-</Step>
-<Step>
-
-### Compare the candidate with its parent
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-
-```sh
-./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" \
-  --bundle "$BUNDLE_ID" --channel stable --payload candidate.json \
-  --name first-change --live
-```
-
-</Tab>
-<Tab value="Python">
-
-```sh
-python -m acclimate compare --config "$EVALUATOR_CONFIG" \
-  --bundle "$BUNDLE_ID" --channel stable --payload candidate.json \
-  --name first-change --live
-```
-
-</Tab>
-</Tabs>
-
-`--live` allows the evaluator to call your agent, which uses your application's own model credentials. `--name` names this comparison. Run the same command again to resume it after an interruption. In a terminal, the result looks like this:
-
-```text
-Request 5f0c…e21a · completed
-Equal-case means    parent 0.5    candidate 0.83
-Pair coverage       3/3
-Policy              not supplied
-Per-case means
-  "refund-request"    parent 0    candidate 1
-  …
-Execution callbacks started this time: 6.
-Run handle: --name first-change
-```
-
-Each pair is one case run on both versions. With `--json`, or when output is piped, the CLI writes the same result as one JSON object with `scores`, `runName`, and the version IDs. Open **Changes** in the console to find `first-change` under **Ready to review**.
-
-</Step>
-</Steps>
-
-## Next steps
-
-- If a run failed because of your evaluator, fix it and run a fresh attempt on the same change with `--retry-after first-change --name first-change-2`. The console groups both attempts.
-- [Add a quality policy](/docs/guides/evaluate-a-change) to gate the release on your thresholds.
-- [Run the comparison on pull requests](/docs/guides/ci-pr-check).
-- [Join a team's workspace](/docs/get-started/join-a-team) when you move off your laptop.
+Open **Bundles** and create a bundle from files or text. A bundle can include instruction files, skills under `skills/` and memory under `memory/`. Pick a compatibility target and channel. Creating the bundle publishes its first version and release.

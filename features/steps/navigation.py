@@ -3,11 +3,9 @@ import json
 import uuid
 from behave import given, when, then
 from playwright.sync_api import expect
-from scripts.bdd.editor import expect_editor_value
-from scripts.bdd.interactions import close_draft_details
 from scripts.productization.qualify import payload
 from scripts.bdd.layout import tab_to, inspect_layout, assert_navigation_metrics
-from scripts.bdd.interactions import open_entry_actions, close_entry_actions, open_details, submit_and_wait, choose_workspace, assert_workspace_selected, workspace_menu
+from scripts.bdd.interactions import choose_workspace, assert_workspace_selected, workspace_menu
 
 
 def browser(context):
@@ -31,9 +29,9 @@ def workspace_links(context):
         expect(nav.get_by_role('link',name=name,exact=True)).to_have_count(1)
 
 
-@then('the bundle tabs contain Content, Changes, Releases and Evaluations')
+@then('the bundle tabs contain Content and Releases')
 def bundle_tabs(context):
-    assert tabs(context).get_by_role('link').all_text_contents()==['Content','Changes','Releases','Evaluations']
+    assert tabs(context).get_by_role('link').all_text_contents()==['Content','Releases']
     expect(tabs(context).get_by_role('link',name='Content',exact=True)).to_have_attribute('aria-current','page')
 
 
@@ -116,7 +114,6 @@ def workspace_scope_and_account(context):
     expect(workspace).to_be_focused()
     leave_tooltips(p)
     p.mouse.move(ar['x']+ar['width']/2,ar['y']+ar['height']/2,steps=8)
-    tooltip=p.get_by_role('tooltip',name='Account',exact=True).and_(p.locator('[data-state$="-open"]'))
     tooltip_visible(p,'Account')
     p.keyboard.press('Escape')
     leave_tooltips(p)
@@ -155,28 +152,6 @@ def separate_header_rows(context):
     assert p.url==before,'Opening or cancelling Channel must not navigate'
 
 
-@when('I open the published memory and choose Edit entry')
-def memory_edit(context):
-    b=browser(context)
-    b.select_bundle()
-    b.page.get_by_role('treeitem',name='Open memory/team.md',exact=True).click()
-    expect(b.page.get_by_test_id('entry-content')).to_have_text('Reusable project notes.',timeout=30000)
-    b.page.get_by_role('link',name='Edit entry',exact=True).click()
-
-
-@then('the new draft selects that memory path and text in one editor')
-def same_entry(context):
-    p=browser(context).page
-    expect(p).to_have_url(re.compile(r'/changes\?.*draft=new.*path=memory%2Fteam.md'))
-    open_entry_actions(p)
-    expect(p.get_by_label('Entry path (rename)',exact=True)).to_have_value('memory/team.md')
-    close_entry_actions(p)
-    field=p.get_by_role('textbox', name='Content', exact=True)
-    expect(field).to_have_count(1)
-    expect_editor_value(field, 'Reusable project notes.')
-    expect(p.get_by_test_id('file-browser')).to_have_count(0)
-
-
 @given('another bundle is published on the same channel and revision')
 def second_bundle(context):
     w=context.world
@@ -192,30 +167,6 @@ def select_other_tab(w):
     expect(other.get_by_test_id('entry-content')).to_contain_text('Other bundle instructions.')
     other.wait_for_load_state('networkidle')
     return other
-
-
-@when('another tab opens the other bundle and I open the saved draft bookmark')
-def bookmark(context):
-    w=context.world
-    b=browser(context)
-    b.select_bundle()
-    select_other_tab(w)
-    w.draft_bookmark=b.base+b.bundle_path('changes',draft=w.draft['id'])
-    b.page.goto(w.draft_bookmark)
-
-
-@then('the bookmark still names the original bundle and saved text')
-def bookmark_stable(context):
-    w=context.world
-    p=browser(context).page
-    expect(p).to_have_url(w.draft_bookmark)
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Review retries.')
-    open_details(p,'Draft details')
-    details=p.get_by_role('dialog',name='Draft details',exact=True)
-    expect(details).to_contain_text(w.draft['id'])
-    expect(details).to_contain_text(w.draft['snapshotVersion']['id'])
-    close_draft_details(p)
-    expect(p.get_by_role('heading',name='BDD bundle',exact=True)).to_be_visible()
 
 
 @when('I inspect release history after another tab selects the other bundle')
@@ -241,8 +192,8 @@ def histories_isolated(context):
         expect(b.page).to_have_url(b.base+b.bundle_path('releases',bundle_id=bundle_id))
         row=b.page.get_by_role('article',name=re.compile(r'^Revision 1( · Current)?$'))
         expect(b.page.get_by_role('article')).to_have_count(1)
-        row.get_by_role('button',name=re.compile(r'^Compare Revision 1\b',re.I)).click()
-        b.page.get_by_role('region',name='Comparison for revision 1',exact=True).get_by_role('button',name='Inspect content for revision 1',exact=True).click()
+        row.get_by_role('button').click()
+        b.page.get_by_role('region',name='Selected release',exact=True).get_by_role('button',name='Inspect content for revision 1',exact=True).click()
         expect(b.page.get_by_label('Content of AGENTS.md',exact=True)).to_contain_text(text)
         b.page.get_by_role('dialog').get_by_role('button',name='Close',exact=True).click()
 
@@ -290,7 +241,6 @@ def no_substitution(context):
     p=browser(context).page
     expect(p).to_have_url(w.denied_url)
     expect(p.get_by_test_id('entry-content')).to_have_count(0)
-    expect(p.get_by_role('button',name='Save draft',exact=True)).to_have_count(0)
     expect(p.get_by_text('Access denied.',exact=False).first).to_be_visible()
 
 
@@ -390,7 +340,7 @@ def previous_once(context):
     assert b.page.evaluate('(key)=>sessionStorage.getItem(key)',w.pending_slot) is None
 
 
-@when('I search for memory, edit that entry and go Back')
+@when('I search for memory, visit Releases and go Back')
 def search_back(context):
     w=context.world
     b=browser(context)
@@ -403,8 +353,7 @@ def search_back(context):
     p.get_by_role('treeitem',name='Open memory/team.md',exact=True).click()
     expect(p.get_by_test_id('entry-content')).to_have_text('Reusable project notes.',timeout=30000)
     w.memory_bookmark=p.url
-    p.get_by_role('link',name='Edit entry',exact=True).click()
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Reusable project notes.')
+    tabs(context).get_by_role('link', name='Releases', exact=True).click()
     p.go_back()
 
 
@@ -425,13 +374,14 @@ def another_workspace(context):
     w.extra_workspace=w.call('POST','/v1/workspaces',dict(id='second-'+uuid.uuid4().hex,name='Second workspace'),actor='admin')
 
 
-@when('I edit content and try to switch workspace')
+@when('I enter initial instructions for a new bundle and try to switch workspace')
 def edit_then_switch(context):
     w=context.world
     b=browser(context)
-    b.select_bundle()
-    b.page.get_by_role('link',name='Edit entry',exact=True).click()
-    b.page.get_by_role('textbox', name='Content', exact=True).fill('Unsaved workspace notes.')
+    b.visit('/setup')
+    b.page.get_by_role('button', name='New bundle', exact=True).click()
+    b.page.get_by_label('Bundle name', exact=True).fill('Unsaved bundle')
+    b.page.get_by_label('Instructions', exact=True).fill('Unsaved workspace notes.')
     choose_workspace(b.page,w.extra_workspace['id'])
     expect(b.page.get_by_role('heading',name='Leave current edits?',exact=True)).to_be_visible()
 
@@ -445,9 +395,8 @@ def cancel_workspace(context):
 def workspace_kept(context):
     w=context.world
     p=browser(context).page
-    expect(p).to_have_url(re.compile('/w/'+re.escape(w.h.project)+'/bundles/'))
     assert_workspace_selected(p,w.h.project)
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Unsaved workspace notes.')
+    expect(p.get_by_label('Instructions', exact=True)).to_have_value('Unsaved workspace notes.')
 
 
 @when('I confirm leaving edits to switch workspace')
@@ -465,7 +414,7 @@ def switched_without_save(context):
     expect(b.page).to_have_url(b.base+b.workspace_path(workspace_id=w.extra_workspace['id']))
     expect(b.page.get_by_role('navigation',name='Main navigation',exact=True).filter(visible=True).get_by_role('link',name='Bundles',exact=True)).to_have_attribute('href',b.workspace_path(workspace_id=w.extra_workspace['id']))
     expect(b.page.get_by_role('textbox', name='Content', exact=True)).to_have_count(0)
-    assert w.call('GET',w.channel+'/drafts')['items']==[]
+    assert len(w.call('GET', w.root+'/bundles')['items']) == 1
     assert w.call('GET',w.channel)['version']==w.original['version']
 
 

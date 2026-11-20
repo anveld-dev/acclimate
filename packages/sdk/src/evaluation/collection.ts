@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
-import type { CaseKey } from '../types.js';
 import { EvaluationError } from './errors.js';
 import type { EvaluationCollection } from './types.js';
+
+export interface CaseKey {
+  caseId: string;
+  repetition: number;
+}
 
 export type CollectionSide = 'parent' | 'candidate';
 export interface CollectionPair extends CaseKey {

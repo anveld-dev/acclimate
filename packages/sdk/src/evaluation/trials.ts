@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { TaskExecutionError } from '../compare.js';
-import type { CasePair, Outcome, VerifiedVersion } from '../types.js';
+import type { VerifiedVersion } from '../types.js';
+import type { CasePair, Outcome } from './types.js';
 import type { CapturedDefinition } from './definition.js';
 import {
   assertEvaluationOutput,

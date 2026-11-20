@@ -1,17 +1,34 @@
 use acclimate_service::{
-    AccessConfig, AppState, Grant, OpenAiModel, ProposalModel, RuntimeStatus, backfill_projects,
-    connected_learning_worker, invitation_worker, proposal_worker, recover_invitation_mail, router,
-    runtime::SHUTDOWN_GRACE, validate_grants,
+    AccessConfig, AppState, Grant, RuntimeStatus, backfill_projects, invitation_worker,
+    recover_invitation_mail, router, runtime::SHUTDOWN_GRACE, validate_grants,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use std::{env, io::Read, net::SocketAddr, process::ExitCode, sync::Arc, time::Duration};
+
+const REMOVED_SETTINGS: &[&str] = &[
+    "ACCLIMATE_CRITIC_MODEL",
+    "ACCLIMATE_CRITIC_ENDPOINT",
+    "ACCLIMATE_CRITIC_TOKEN",
+    "ACCLIMATE_LEARNING_REVIEW_SECONDS",
+    "ACCLIMATE_LEARNING_PARENT_MAX_REUSES",
+    "ACCLIMATE_LEARNING_PARENT_MAX_AGE_SECONDS",
+    "ACCLIMATE_LEARNING_PAIR_BUDGET",
+    "ACCLIMATE_LEARNING_MAX_REPETITIONS",
+    "ACCLIMATE_LEARNING_CALIBRATION_REPETITIONS",
+    "ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS",
+    "ACCLIMATE_LEARNING_MAX_CHAIN_AGE_SECONDS",
+    "ACCLIMATE_LEARNING_CALIBRATION_ATTEMPTS",
+    "ACCLIMATE_LEARNING_FAILURE_WINDOW_SECONDS",
+    "ACCLIMATE_PROPOSAL_GROWTH_FLOOR_BYTES",
+    "ACCLIMATE_EVALUATION_ABANDON_SECONDS",
+];
 
 const QUEUE_LOCK: i64 = 729183421001;
 #[derive(Debug)]
 struct QueueOwnershipLost(&'static str);
 impl std::fmt::Display for QueueOwnershipLost {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "proposal queue ownership lost: {}", self.0)
+        write!(f, "invitation queue ownership lost: {}", self.0)
     }
 }
 impl std::error::Error for QueueOwnershipLost {}
@@ -99,6 +116,11 @@ fn required(name: &str) -> Result<String, std::io::Error> {
 async fn run() -> RunResult {
     // Parse all application configuration before connecting or binding. In
     // particular, libpq's implicit local/user database defaults are unsupported.
+    for name in REMOVED_SETTINGS {
+        if env::var_os(name).is_some() {
+            return Err(std::io::Error::other(format!("{name} has been removed")).into());
+        }
+    }
     let url = required("DATABASE_URL")?;
     if !url.starts_with("postgres://") && !url.starts_with("postgresql://") {
         return Err(
@@ -139,9 +161,6 @@ async fn run() -> RunResult {
         .unwrap_or_else(|_| "127.0.0.1:3000".into())
         .parse()
         .map_err(|_| std::io::Error::other("ACCLIMATE_BIND must be a socket address"))?;
-    let model = OpenAiModel::from_env()
-        .map_err(std::io::Error::other)?
-        .map(|model| Arc::new(model) as Arc<dyn ProposalModel>);
     let db = PgPoolOptions::new()
         .max_connections(10)
         .acquire_timeout(Duration::from_secs(5))
@@ -156,7 +175,7 @@ async fn run() -> RunResult {
             .await?;
     if !leader {
         return Err(std::io::Error::other(
-            "another Acclimate service process owns the proposal queue",
+            "another Acclimate service process owns the invitation queue",
         )
         .into());
     }
@@ -169,35 +188,23 @@ async fn run() -> RunResult {
         grants: Arc::new(grants),
         access,
         runtime: runtime.clone(),
-        provider: model,
     };
     backfill_projects(&state).await?;
-    sqlx::query("UPDATE proposals SET status='queued' WHERE status='running' AND attempts<3")
-        .execute(&db)
-        .await?;
-    sqlx::query("UPDATE proposals SET status='failed',error='attempt limit reached during recovery' WHERE status='running' AND attempts>=3")
-        .execute(&db).await?;
     recover_invitation_mail(&state).await?;
     let app = router(state.clone());
-    let mut mail_worker = tokio::spawn(invitation_worker(state.clone()));
-    let mut learning_worker = tokio::spawn(connected_learning_worker(state.clone()));
-    let mut worker = tokio::spawn(proposal_worker(state));
+    let mut mail_worker = tokio::spawn(invitation_worker(state));
     // No socket is opened until the worker has actually entered its task.
     tokio::select! {
         _ = runtime.wait_for_worker() => {},
-        result = &mut worker => return Err(std::io::Error::other(format!("proposal worker exited during startup: {result:?}")).into()),
+        result = &mut mail_worker => return Err(std::io::Error::other(format!("invitation worker exited during startup: {result:?}")).into()),
     }
     runtime.mark_initialized();
     let listener = match tokio::net::TcpListener::bind(bind).await {
         Ok(listener) => listener,
         Err(error) => {
             runtime.begin_draining();
-            worker.abort();
             mail_worker.abort();
-            learning_worker.abort();
-            let _ = worker.await;
             let _ = mail_worker.await;
-            let _ = learning_worker.await;
             return Err(error.into());
         }
     };
@@ -210,10 +217,8 @@ async fn run() -> RunResult {
             .await
     });
     let mut server_finished = false;
-    let mut worker_finished = false;
     let mut ownership_lost = false;
     let mut mail_finished = false;
-    let mut learning_finished = false;
     // This is the only shutdown coordinator, including signals and fatal exits.
     let result: RunResult = tokio::select! {
         _ = shutdown_signal() => Ok(()),
@@ -221,17 +226,9 @@ async fn run() -> RunResult {
             server_finished = true;
             match result { Ok(result) => result.map_err(Into::into), Err(error) => Err(error.into()) }
         },
-        result = &mut worker => {
-            worker_finished = true;
-            Err(std::io::Error::other(format!("proposal worker exited unexpectedly: {result:?}")).into())
-        },
         result = &mut mail_worker => {
             mail_finished = true;
             Err(std::io::Error::other(format!("invitation mail worker exited unexpectedly: {result:?}")).into())
-        },
-        result = &mut learning_worker => {
-            learning_finished = true;
-            Err(std::io::Error::other(format!("connected learning worker exited unexpectedly: {result:?}")).into())
         },
         reason = monitor_lock(&db, &mut leader_guard, &runtime, leader_pid) => {
             ownership_lost = true;
@@ -241,21 +238,14 @@ async fn run() -> RunResult {
     runtime.begin_draining();
     if ownership_lost {
         runtime.ownership_lost();
-        // Once ownership is gone, an in-flight provider result must not commit.
-        worker.abort();
         mail_worker.abort();
-        learning_worker.abort();
     }
     let _ = stop_http.send(());
     let drained = tokio::time::timeout(SHUTDOWN_GRACE, async {
         runtime.settle_claims().await;
-        if !worker_finished {
-            let _ = (&mut worker).await;
-            worker_finished = true;
-        }
-        if !learning_finished {
-            let _ = (&mut learning_worker).await;
-            learning_finished = true;
+        if !mail_finished {
+            let _ = (&mut mail_worker).await;
+            mail_finished = true;
         }
         if !server_finished {
             let _ = (&mut server).await;
@@ -264,14 +254,6 @@ async fn run() -> RunResult {
     })
     .await
     .is_ok();
-    if !worker_finished {
-        worker.abort();
-        let _ = worker.await;
-    }
-    if !learning_finished {
-        learning_worker.abort();
-        let _ = learning_worker.await;
-    }
     if !mail_finished {
         mail_worker.abort();
         let _ = mail_worker.await;

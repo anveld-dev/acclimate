@@ -7,14 +7,6 @@
     "source": "docs/design/bundles-and-cache.md",
     "file": "cache-update.html"
   },
-  "improvement-loop": {
-    "source": "docs/design/improvement.md",
-    "file": "improvement-loop.html"
-  },
-  "service-roadmap": {
-    "source": "docs/design/roadmap.md",
-    "file": "service-roadmap.html"
-  },
   "agentrun-architecture": {
     "source": "docs/research/agentrun.md",
     "file": "agentrun-architecture.html"

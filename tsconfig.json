@@ -19,24 +19,9 @@
       "@acclimate/pi-plugin": ["./packages/pi-plugin/src/index.ts"],
       "@acclimate/pi-plugin/native": ["./packages/pi-plugin/src/native.ts"],
       "@acclimate/sdk/evaluation": ["./packages/sdk/src/evaluation/index.ts"],
-      "@acclimate/sdk/evaluation/*": ["./packages/sdk/src/evaluation/*.ts"],
-      "@acclimate/sdk/learning": ["./packages/sdk/src/learning/index.ts"],
-      "@acclimate/codex-plugin": ["./packages/codex-plugin/src/index.ts"],
-      "@acclimate/claude-plugin": ["./packages/claude-plugin/src/index.ts"],
-      "@acclimate/claude-plugin/native": ["./packages/claude-plugin/src/native.ts"],
-      "@acclimate/pi-plugin": ["./packages/pi-plugin/src/index.ts"],
-      "@acclimate/pi-plugin/native": ["./packages/pi-plugin/src/native.ts"],
-      "@acclimate/cursor-plugin": ["./packages/cursor-plugin/src/index.ts"],
-      "@acclimate/cursor-plugin/native": ["./packages/cursor-plugin/src/native.ts"]
+      "@acclimate/sdk/evaluation/*": ["./packages/sdk/src/evaluation/*.ts"]
     },
     "types": ["node"]
   },
-  "include": [
-    "packages/**/*.ts",
-    "examples/**/*.ts",
-    "scripts/*.ts",
-    "tools/**/*.ts",
-    "scripts/full-roadmap/**/*.ts",
-    "scripts/evaluator-tests/**/*.ts"
-  ]
+  "include": ["packages/**/*.ts", "examples/**/*.ts", "scripts/*.ts"]
 }

@@ -86,7 +86,6 @@ async fn fixture() -> (sqlx::PgPool, axum::Router, String) {
             project_id: project.clone(),
             rights: vec!["read".into(), "write".into(), "promote".into()],
         }]),
-        provider: None,
     });
     (db, app, project)
 }

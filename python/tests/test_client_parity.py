@@ -98,12 +98,6 @@ class ParityTest(unittest.TestCase):
             (lambda: c.list_workspaces(limit=5), "/v1/workspaces?limit=5"),
             (lambda: c.list_bundles("w", cursor="x y"), "/v1/workspaces/w/bundles?limit=50&cursor=x+y"),
             (lambda: c.list_channels("w", "b"), "/v1/workspaces/w/bundles/b/channels?limit=50"),
-            (lambda: c.list_proposals("w", "b"), "/v1/workspaces/w/bundles/b/proposals?limit=50"),
-            (lambda: c.list_comparisons("w", "b"), "/v1/workspaces/w/bundles/b/comparisons?limit=50"),
-            (
-                lambda: c.list_drafts("w", "b", "stable", status="all"),
-                "/v1/workspaces/w/bundles/b/channels/stable/drafts?limit=50&status=all",
-            ),
         ]
         for call, path in cases:
             with self.subTest(path=path):
@@ -124,72 +118,6 @@ class ParityTest(unittest.TestCase):
             (call["method"], call["path"], call["key"], call["body"]),
             ("POST", "/v1/workspaces/w/bundle-setups", "setup-1", request),
         )
-
-    def test_learning_methods_match_the_typescript_routes_and_keys(self):
-        c = self.client
-        base = "/v1/workspaces/w/connections/c/learning"
-        outcome = {"outcomeId": "o1", "versionId": "v", "digest": "d", "status": "completed"}
-        audit = {
-            "outcomeId": "o2", "startedReceiptId": "r", "versionId": "v", "digest": "d",
-            "revision": "3", "parentVersionId": "p", "parentDigest": "pd", "verdict": "pass",
-        }
-        replay = {
-            "versionId": "v", "digest": "d", "baselineRevision": "7", "outcomeId": "o3", "verdict": "pass",
-        }
-        cases = [
-            (lambda: c.enroll_learning("w", "c", {"installationId": "i"}, "k1"), "PUT", "", "k1"),  # type: ignore[typeddict-item]
-            (lambda: c.get_learning_enrollment("w", "c"), "GET", "", None),
-            (lambda: c.stop_learning("w", "c", "k2"), "POST", "/stop", "k2"),
-            (lambda: c.get_learning_outcome("w", "c", "o/1"), "GET", "/outcomes/o%2F1", None),
-            (
-                lambda: c.report_learning_incident_replay(
-                    "w", "c", {"roundId": "r1", "outcomeId": "o", "versionId": "v", "digest": "d",
-                               "baselineRevision": "1", "verdict": "pass"}),
-                "POST", "/incident-replays", "r1",
-            ),
-            (lambda: c.report_learning_outcome("w", "c", outcome), "POST", "/outcomes", "o1"),
-            (lambda: c.report_learning_outcome("w", "c", outcome, "custom"), "POST", "/outcomes", "custom"),
-            (
-                lambda: c.report_learning_correction("w", "c", {"correctionId": "c1", "outcomeId": "o"}),
-                "POST", "/corrections", "c1",
-            ),
-            (
-                lambda: c.report_learning_recheck(
-                    "w", "c", {"correctionId": "c1", "versionId": "v", "digest": "d", "revision": "4",
-                               "verdict": "resolved"}),
-                "POST", "/rechecks", "c1:4",
-            ),
-            (lambda: c.get_learning_work("w", "c"), "GET", "/work", None),
-            (
-                lambda: c.get_learning_field_requalification("w", "c", "v1"),
-                "GET", "/field-requalifications/v1", None,
-            ),
-            (lambda: c.report_learning_field_replay("w", "c", replay), "POST", "/field-requalifications", "o3:v:7"),
-            (lambda: c.report_learning_field_audit("w", "c", audit), "POST", "/field-audits", "o2"),
-            (lambda: c.review_learning_round("w", "c", "r1", True, "k3"), "POST", "/rounds/r1/review", "k3"),
-            (
-                lambda: c.renew_learning("w", "c", {"renewalId": "n1", "expectedRevision": 1,
-                                                    "proposalAdmissions": 1, "audits": []}),
-                "POST", "/renew", "n1",
-            ),
-            (
-                lambda: c.restore_learning("w", "c", {"restoreId": "s1", "expectedRevision": "2", "reason": "x",
-                                                      "target": {"kind": "source", "revision": "1",
-                                                                 "versionId": "v"}}),
-                "POST", "/restore", "s1",
-            ),
-        ]
-        for call, method, suffix, key in cases:
-            with self.subTest(suffix=suffix, method=method):
-                call()
-                got = self.last()
-                self.assertEqual((got["method"], got["path"], got["key"]), (method, base + suffix, key))
-        self.client.review_learning_round(
-            "w", "c", "r1", False, "k4", policy_override={"reason": "ok", "receipts": []}
-        )
-        self.assertEqual(self.last()["body"], {"approve": False, "policyOverride": {"reason": "ok", "receipts": []}})
-        self.client.review_learning_round("w", "c", "r1", True, "k5")
-        self.assertEqual(self.last()["body"], {"approve": True})
 
     def test_connection_id_marks_delivery_reads_only(self):
         connection = "0D6B1E8C-0000-4000-8000-000000000001"
@@ -238,6 +166,14 @@ class ReferenceDocsTest(unittest.TestCase):
 
 
 class NamespaceTest(unittest.TestCase):
+    def test_removed_workflow_exports_are_absent(self):
+        for name in ("Proposal", "Comparison", "Draft", "EvaluationHandoff", "LearningWork",
+                     "EvaluationProgressReporter"):
+            self.assertFalse(hasattr(acclimate, name), name)
+        for name in ("create_proposal", "create_draft", "create_comparison", "start_evaluation",
+                     "get_learning_work", "report_comparison_policy_receipt"):
+            self.assertFalse(hasattr(AcclimateClient, name), name)
+
     def test_root_exports_only_public_sdk_names(self):
         for helper in ("Literal", "TypedDict", "NotRequired", "Any", "Generic", "TypeVar"):
             self.assertNotIn(helper, dir(acclimate))
@@ -261,17 +197,15 @@ class NamespaceTest(unittest.TestCase):
 
 
 class OpenApiContractTest(unittest.TestCase):
-    def test_handoff_and_descriptor_schemas_match_both_sdks(self):
+    def test_release_request_schema_matches_both_sdks(self):
         schemas = json.loads((ROOT / "contracts" / "openapi.json").read_text())["components"]["schemas"]
+        schema = schemas["PromoteRequest"]
+        fields = {"versionId", "expectedRevision", "unevaluatedReason"}
+        self.assertEqual(set(schema["properties"]), fields)
+        self.assertEqual(set(types.CreateReleaseRequest.__required_keys__), fields)
         ts_types = (ROOT / "packages" / "sdk" / "src" / "types.ts").read_text()
-        for name, python_type in (("EvaluationHandoff", types.EvaluationHandoff),
-                                  ("EvaluationDescriptor", types.EvaluationDescriptor)):
-            with self.subTest(name=name):
-                schema = schemas[name]
-                self.assertEqual(set(schema["properties"]), set(python_type.__annotations__))
-                self.assertEqual(set(schema["required"]), set(python_type.__required_keys__))
-                body = re.search(r"export interface " + name + r" \{(.*?)\n\}", ts_types, re.S).group(1)
-                self.assertEqual(set(schema["properties"]), set(re.findall(r"^\s+(\w+)\??:", body, re.M)))
+        body = re.search(r"export interface CreateReleaseRequest \{(.*?)\n\}", ts_types, re.S).group(1)
+        self.assertEqual(set(re.findall(r"^\s+(\w+):", body, re.M)), fields)
 
 
 class PythonVersionGuardTest(unittest.TestCase):

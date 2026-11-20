@@ -18,19 +18,11 @@ export const readConsole = createServerFn({ method: 'GET' })
     return state;
   });
 
-export const changeContent = createServerFn({ method: 'POST' })
-  .validator((input: { scope: BundleScope } & Record<string, unknown>) => input)
-  .handler(async ({ data }) => {
-    setResponseHeader('Cache-Control', 'private, no-store');
-    const { editChannel } = await import('./edit-channel');
-    return editChannel(bundleEnvironment(await requestEnvironment(), data.scope), data);
-  });
-
 export const readStoredVersion = createServerFn({ method: 'GET' })
   .validator((input: { versionId: string; scope: BundleScope }) => input)
   .handler(async ({ data }) => {
     setResponseHeader('Cache-Control', 'private, no-store');
-    const { readVersion } = await import('./version-workflows');
+    const { readVersion } = await import('./release-history');
     return readVersion(bundleEnvironment(await requestEnvironment(), data.scope), data);
   });
 
@@ -38,27 +30,8 @@ export const readReleaseHistory = createServerFn({ method: 'GET' })
   .validator((input: { beforeRevision: string; scope: BundleScope }) => input)
   .handler(async ({ data }) => {
     setResponseHeader('Cache-Control', 'private, no-store');
-    const { readHistory } = await import('./version-workflows');
+    const { readHistory } = await import('./release-history');
     return readHistory(bundleEnvironment(await requestEnvironment(), data.scope), data);
-  });
-
-export const rollbackStoredVersion = createServerFn({ method: 'POST' })
-  .validator(
-    (input: {
-      versionId: string;
-      expectedRevision: string;
-      reason: string;
-      key: string;
-      scope: BundleScope;
-    }) => input,
-  )
-  .handler(async ({ data }) => {
-    setResponseHeader('Cache-Control', 'private, no-store');
-    const { editChannel } = await import('./edit-channel');
-    return editChannel(bundleEnvironment(await requestEnvironment(), data.scope), {
-      ...data,
-      action: 'rollback',
-    });
   });
 
 // Internal audited release transport: the route is always derived from current explicit scope.

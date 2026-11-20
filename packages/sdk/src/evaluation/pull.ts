@@ -3,7 +3,7 @@ import { open } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveAndCache } from '../cache.js';
 import { ApiError } from '../client.js';
-import { createEvaluationTransport } from '../internal/evaluation-transport.js';
+import { createEvaluatorClient } from '../internal/evaluation-transport.js';
 import { readEvaluatorConfig } from './config.js';
 import { EvaluationError, EvaluationUsageError } from './errors.js';
 
@@ -11,8 +11,7 @@ export const pullHelp =
   'pull --config CONFIG --bundle ID [--channel CHANNEL] --out FILE  Save the published bundle as a payload to edit.';
 
 /**
- * Save a channel's published payload as the JSON file `compare --payload` reads.
- * The file is new and private to this user. Edit it, then compare it with its parent.
+ * Save a channel's published payload to a new private JSON file.
  */
 export async function pullPayload(options: {
   configPath: string;
@@ -21,7 +20,7 @@ export async function pullPayload(options: {
   out: string;
 }) {
   const config = await readEvaluatorConfig(options.configPath);
-  const { client } = createEvaluationTransport(config);
+  const client = createEvaluatorClient(config);
   let resolved;
   try {
     resolved = await resolveAndCache(
@@ -88,8 +87,7 @@ export async function pullCommand(flags: Record<string, string | boolean>) {
   });
   if (process.stderr.isTTY)
     process.stderr.write(
-      `Saved ${channel} (version ${result.versionId}, ${result.files} ${result.files === 1 ? 'file' : 'files'}) to ${result.out}.\n` +
-        `Edit it, then run: acclimate-eval compare --config CONFIG --bundle ${result.bundleId} --channel ${channel} --payload ${result.out} --name NAME\n`,
+      `Saved ${channel} (version ${result.versionId}, ${result.files} ${result.files === 1 ? 'file' : 'files'}) to ${result.out}.\n`,
     );
   return { status: 0, result };
 }

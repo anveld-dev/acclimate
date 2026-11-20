@@ -3,9 +3,8 @@ import json
 from urllib.parse import parse_qs, urlparse
 from behave import given, when, then
 from playwright.sync_api import expect
-from scripts.bdd.editor import expect_editor_value
-from features.steps.console import page, ensure_editor, save_browser, saved_draft
-from scripts.bdd.interactions import open_entry_actions, close_entry_actions, open_details, submit_and_wait
+from features.steps.console import page
+from scripts.bdd.interactions import open_details
 from scripts.bdd.layout import tab_to, assert_focus_visible
 
 
@@ -95,89 +94,6 @@ def reconcile_initial(context):
     expect(p.get_by_role('button',name='Check result',exact=True)).to_have_count(0)
 
 
-@when('I save a draft and leave later unsaved text to review its manual release')
-def manual_review(context):
-    w=context.world
-    p=page(context)
-    ensure_editor(context)
-    p.get_by_role('textbox', name='Content', exact=True).fill('Saved manual release snapshot.')
-    save_browser(context)
-    w.manual_saved=saved_draft(w)
-    p.get_by_role('textbox', name='Content', exact=True).fill('Later unsaved text must never publish.')
-    p.get_by_role('link',name='Evaluate saved generation 1',exact=True).click()
-    expect(p.get_by_role('heading',name='Leave current edits?',exact=True)).to_be_visible()
-    p.get_by_role('button',name='Leave editor',exact=True).click()
-    expect(p.get_by_label('Saved change review',exact=True)).to_contain_text('Generation 1 saved')
-    expect(p.locator('.bundle-scope-header').get_by_role('combobox',name='Channel',exact=True)).to_contain_text('stable')
-    p.get_by_role('tab',name='Details',exact=True).click()
-    details=p.get_by_role('region',name='Saved change details',exact=True)
-    open_details(details,'Saved snapshot details')
-    expect(details).to_contain_text('Channel stable · current revision 1')
-    open_details(p.get_by_role('complementary',name='Release decision',exact=True),'Publish without evaluation')
-
-
-@then('manual publication requires its own reason and confirms the saved generation')
-def manual_confirmation(context):
-    w=context.world
-    p=page(context)
-    expect(p.get_by_role('button',name='Review manual release',exact=True)).to_be_disabled()
-    p.get_by_label('Manual release reason',exact=True).fill('Operator reviewed the saved diff without evaluation.')
-    p.get_by_role('button',name='Review manual release',exact=True).click()
-    dialog=p.get_by_role('dialog',name='Publish to stable?',exact=True)
-    expect(dialog).to_contain_text('generation 1')
-    expect(dialog).to_contain_text(w.manual_saved['snapshotVersion']['id'])
-    expect(dialog).to_contain_text('Operator reviewed the saved diff without evaluation.')
-    assert w.call('GET',w.channel)['revision']=='1'
-    assert w.call('GET',w.bundle+'/evaluation-requests')['items']==[]
-
-
-@when('I confirm the manual release')
-def manual_publish(context):
-    p=page(context)
-    submit_and_wait(p,p.get_by_role('dialog').get_by_role('button',name='Publish without evaluation',exact=True))
-    expect(page(context).get_by_role('status').filter(has_text='Release recorded.')).to_be_visible()
-
-
-@then('only the saved snapshot is released with its manual reason and no evaluation')
-def manual_truth(context):
-    w=context.world
-    current=w.call('GET',w.channel)
-    assert current['revision']=='2' and current['version']==w.manual_saved['snapshotVersion']
-    release=w.call('GET',w.channel+'/releases')['items'][0]
-    assert release['unevaluatedReason']=='Operator reviewed the saved diff without evaluation.'
-    assert release.get('comparisonId') is None
-    assert w.call('GET',w.bundle+'/evaluation-requests')['items']==[]
-    assert w.draft_text(w.manual_saved)=='Saved manual release snapshot.'
-
-
-@when('I record an interruption while keeping a separate manual release reason')
-def interrupt_separately(context):
-    w=context.world
-    p=page(context)
-    open_details(p,'Publish without evaluation')
-    p.get_by_label('Manual release reason',exact=True).fill('Independent manual review rationale.')
-    open_details(p,'Record an interruption')
-    action=p.get_by_role('button',name='Mark interrupted',exact=True)
-    expect(action).to_be_disabled()
-    p.get_by_label('Interruption reason for '+w.browser_request['id'],exact=True).fill('External fixture runner was abandoned.')
-    action.click()
-    expect(p.get_by_role('status').filter(has_text='Interruption recorded. Your app may still be running.')).to_be_visible()
-
-
-@then('the request records only its interruption reason and the manual reason remains independent')
-def independent_reasons(context):
-    w=context.world
-    p=page(context)
-    request=w.call('GET',w.bundle+'/evaluation-requests/'+w.browser_request['id'])
-    assert request['status']=='interrupted'
-    assert request['error']=='External fixture runner was abandoned.'
-    expect(p.get_by_label('Manual release reason',exact=True)).to_have_value('Independent manual review rationale.')
-    p.get_by_label('Manual release reason',exact=True).fill('')
-    expect(p.get_by_role('button',name='Review manual release',exact=True)).to_be_disabled()
-    assert w.call('GET',w.channel)['revision']=='1'
-    assert w.call('GET',w.bundle+'/comparisons')['items']==[]
-
-
 @given('a connection for its bundle and channel')
 def setup_connection(context):
     context.world.create_integration()
@@ -219,66 +135,26 @@ def setup_scope(context):
     expect(p).to_have_url(w.browser_fixture.base+w.browser_fixture.bundle_path('connect'))
     expect(p.get_by_role('navigation',name='Bundle navigation',exact=True).locator('[aria-current=page]')).to_have_count(0)
     expect(p.get_by_role('link',name='Back to content',exact=True)).to_be_visible()
-    assert w.call('GET',w.bundle+'/evaluation-requests')['items']==[]
     assert w.call('GET',w.channel)['revision']=='1'
 
 
-@when('I search and rename an entry using only the keyboard')
-def keyboard_edit(context):
-    p=page(context)
-    search=p.get_by_label('Published content',exact=True)
-    tab_to(p,search)
-    p.keyboard.insert_text('memory')
+@when('I search and select an entry using only the keyboard')
+def keyboard_select(context):
+    p = page(context)
+    search = p.get_by_label('Published content', exact=True)
+    tab_to(p, search)
+    p.keyboard.type('memory')
+    tab_to(p, p.get_by_role('button', name='Search published paths or content', exact=True))
     p.keyboard.press('Enter')
-    expect(p.get_by_role('treeitem',name='Open AGENTS.md',exact=True)).to_have_count(0,timeout=30000)
-    entry=p.get_by_role('treeitem',name='Open memory/team.md',exact=True)
-    tab_to(p,entry)
+    entry = p.get_by_role('treeitem', name='Open memory/team.md', exact=True)
+    tab_to(p, entry)
     p.keyboard.press('Enter')
-    # Edit the entry actually rendered after the keyboard navigation settles.
-    expect(p.get_by_test_id('entry-content')).to_have_text('Reusable project notes.',timeout=30000)
-    edit=p.get_by_role('link',name='Edit entry',exact=True)
-    tab_to(p,edit)
-    p.keyboard.press('Enter')
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Reusable project notes.', timeout=30000)
-    settings=p.get_by_role('button',name='Entry actions',exact=True)
-    tab_to(p,settings)
-    p.keyboard.press('Enter')
-    path=p.get_by_label('Entry path (rename)',exact=True)
-    tab_to(p,path)
-    p.keyboard.press('ControlOrMeta+A')
-    p.keyboard.insert_text('memory/keyboard.md')
-    p.keyboard.press('Tab')
-    expect(path).to_have_value('memory/keyboard.md')
-    p.keyboard.press('Escape')
-    expect(p.get_by_role('dialog',name='Entry actions',exact=True)).to_have_count(0)
-    expect(settings).to_be_focused()
 
 
-@when('I dismiss the unsaved-work dialog and return to the invoking link')
-def keyboard_dialog(context):
-    p=page(context)
-    release=p.get_by_role('navigation',name='Bundle navigation',exact=True).get_by_role('link',name='Releases',exact=True)
-    tab_to(p,release)
-    p.keyboard.press('Enter')
-    expect(p.get_by_role('heading',name='Leave current edits?',exact=True)).to_be_visible()
-    dialog=p.get_by_role('alertdialog',name='Leave current edits?',exact=True)
-    cancel=dialog.get_by_role('button',name='Keep editing',exact=True)
-    expect(cancel).to_be_focused()
-    assert_focus_visible(cancel)
-    p.keyboard.press('Escape')
-    expect(p.get_by_role('heading',name='Leave current edits?',exact=True)).to_have_count(0)
-    expect(release).to_be_focused()
+@then('the published entry is readable and tabs remain keyboard reachable')
+def keyboard_result(context):
+    p = page(context)
+    expect(p.get_by_test_id('entry-content')).to_contain_text('Reusable project notes.')
+    release = p.get_by_role('navigation', name='Bundle navigation').get_by_role('link', name='Releases')
+    tab_to(p, release)
     assert_focus_visible(release)
-
-
-@then('the renamed browser text is preserved and tabs remain keyboard reachable')
-def keyboard_preserved(context):
-    w=context.world
-    p=page(context)
-    open_entry_actions(p)
-    expect(p.get_by_label('Entry path (rename)',exact=True)).to_have_value('memory/keyboard.md')
-    close_entry_actions(p)
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Reusable project notes.')
-    tab_to(p,p.get_by_role('button',name='Use in an app',exact=True))
-    assert w.call('GET',w.channel+'/drafts')['items']==[]
-    assert w.call('GET',w.channel)['revision']=='1'

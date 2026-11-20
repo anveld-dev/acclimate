@@ -25,7 +25,3 @@ def grade(run):
                        explanation={"singleCharge": single_charge, "succeeded": succeeded})
 
 grader = {"sourceUtf8": inspect.getsource(grade)}
-
-def to_review_artifact(item):
-    fields = ("charges", "succeeded") if item["identity"]["role"] == "output" else ("singleCharge", "succeeded")
-    return {"mediaType": "application/json", "value": {key: item["value"][key] for key in fields}}

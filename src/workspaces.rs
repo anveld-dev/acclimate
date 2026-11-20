@@ -197,11 +197,9 @@ async fn channels(
     let mut tx = s.db.begin().await.map_err(db)?;
     auth::authorize_transaction(&mut tx, &a, &project, "read").await?;
     let (cursor, limit) = p.bounds()?;
-    // Match the reserved canonical UUID names recognized by connected_learning::internal_channel.
     let rows = sqlx::query(
         "SELECT name, revision, version_id FROM channels
          WHERE project_id=$1 AND bundle_id=$2 AND name>$3
-           AND name !~ '^learn-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
          ORDER BY name LIMIT $4",
     )
     .bind(project)

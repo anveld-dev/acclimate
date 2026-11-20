@@ -2,9 +2,9 @@
 
 **[Open the HTML docs](site/index.html).** The pages include navigation, local search, light/dark themes, and diagrams. Open the file directly; browsing needs no server, installation, or network.
 
-The main site covers current [design](design/README.md) and [research](research/README.md) pages. Historical snapshots are linked from the research archive and excluded from main search. The Markdown files remain the editable source; generated HTML lives in `docs/site/`.
+The main site covers current [design](design/README.md) and historical [research](research/README.md) pages. Historical snapshots are linked from the research archive and excluded from main search. The Markdown files remain the editable source; generated HTML lives in `docs/site/`.
 
-The [architecture folder](architecture/README.md) breaks the design into planned code modules and parallel agent assignments.
+The [architecture folder](architecture/README.md) describes the delivery architecture and links to the planned self-improvement loop.
 
 ## Editing
 

@@ -9,7 +9,6 @@ import {
   bundleViewLabels,
   channelSwitchSearch,
   workspaceHref,
-  releaseRevision,
   type BundleView,
 } from '../navigation';
 import { readWorkspaceBundles } from '../server/setup-actions';
@@ -18,14 +17,13 @@ import { readConnections } from '../server/integration-actions';
 import { readWorkspaceAccess } from '../server/access-actions';
 import { BundleLibrary } from '../components/bundle-library';
 import { BundleContent } from '../components/bundle-content';
-import { BundleChanges } from '../components/bundle-changes';
 import { SdkSetup, UseInAnApp } from '../components/sdk-setup';
 import { BundleReleases } from '../components/bundle-releases';
 import { WorkspaceConnections } from '../components/workspace-connections';
 import { WorkspaceDelivery } from '../components/workspace-delivery';
 import { readDeliveryObservations } from '../server/delivery-observations-actions';
 import { WorkspaceMembers } from '../components/workspace-members';
-import { WorkspaceEvaluatorTokens } from '../components/workspace-evaluator-tokens';
+import { WorkspaceMachineTokens } from '../components/workspace-machine-tokens';
 import { ConsoleLink, consoleDestination } from '../components/console-link';
 import { ConnectionNotice, PageTitle } from '../components/shared';
 import { useNavigation } from '../components/use-navigation';
@@ -48,17 +46,6 @@ export const Route = createFileRoute('/w/$')({
             'kind',
             'query',
             'q',
-            'draft',
-            'proposal',
-            'candidate',
-            'generation',
-            'comparison',
-            'pair',
-            'fromRevision',
-            'request',
-            'history',
-            'tab',
-            'reviewTab',
             'connectionTab',
             'connection',
             'access',
@@ -68,9 +55,7 @@ export const Route = createFileRoute('/w/$')({
       ),
     ) as Record<string, string | number>,
   loaderDeps: ({ search }) => ({
-    search: Object.fromEntries(
-      Object.entries(search).filter(([key]) => key !== 'reviewTab' && key !== 'connectionTab'),
-    ),
+    search: Object.fromEntries(Object.entries(search).filter(([key]) => key !== 'connectionTab')),
   }),
   loader: async ({ params, deps }) => {
     const location = parseConsoleLocation('/w/' + params._splat);
@@ -203,7 +188,7 @@ function ScopedPage() {
           workspaceId={data.location.workspaceId}
           initial={data.result}
         />
-        <WorkspaceEvaluatorTokens
+        <WorkspaceMachineTokens
           key={`tokens-${workspaceKey}`}
           workspaceId={data.location.workspaceId}
         />
@@ -251,7 +236,6 @@ function ScopedPage() {
     );
   const description = {
     content: 'The instructions, skills and memory your app receives.',
-    changes: 'Edit, evaluate and review updates before publishing.',
     releases: 'See what shipped or restore an earlier release.',
     connect: 'Use this bundle in your agent app.',
   }[view];
@@ -264,13 +248,10 @@ function ScopedPage() {
         view={view}
         search={search}
         description={description}
-        currentRevision={state.resolution.revision}
         apiUrl={state.publicApiUrl}
       />
       {view === 'content' ? (
         <BundleContent key={identity} state={state} search={search} />
-      ) : view === 'changes' ? (
-        <BundleChanges key={identity} state={state} search={search} />
       ) : view === 'releases' ? (
         <BundleReleases key={identity + ':' + state.resolution.revision} state={state} />
       ) : (
@@ -286,7 +267,6 @@ function BundleScopeHeader({
   search,
   description,
   unavailableChannel = false,
-  currentRevision,
   apiUrl,
 }: {
   name: string;
@@ -295,42 +275,11 @@ function BundleScopeHeader({
   search: Record<string, unknown>;
   description: string;
   unavailableChannel?: boolean;
-  currentRevision?: string;
   apiUrl?: string;
 }) {
-  const navigate = useNavigate();
-  const historyHref = bundleHref(scope, 'changes', { history: 1 }) + '#evaluation-history';
-  // Evaluation history lives under Changes but is its own destination in the bundle tabs.
-  const historyView =
-    view === 'changes' && String(search.history) === '1' && !search.draft && !search.proposal;
-  const isChangeDetail =
-    !unavailableChannel &&
-    view === 'changes' &&
-    Boolean(
-      search.draft || search.proposal || search.candidate || search.comparison || search.request,
-    );
-  const fromRevision =
-    isChangeDetail && search.candidate && currentRevision
-      ? releaseRevision(search.fromRevision)
-      : undefined;
-  const returnRevision =
-    fromRevision && currentRevision && BigInt(fromRevision) <= BigInt(currentRevision)
-      ? fromRevision
-      : undefined;
-  const parentLabel = returnRevision
-    ? `Back to revision ${returnRevision}`
-    : isChangeDetail
-      ? 'Back to changes'
-      : view === 'connect'
-        ? 'Back to content'
-        : 'Back to bundles';
-  const parentHref = returnRevision
-    ? `${bundleHref(scope, 'releases')}#revision-${returnRevision}`
-    : isChangeDetail
-      ? bundleHref(scope, 'changes')
-      : view === 'connect'
-        ? bundleHref(scope, 'content')
-        : workspaceHref(scope.workspaceId);
+  const parentLabel = view === 'connect' ? 'Back to content' : 'Back to bundles';
+  const parentHref =
+    view === 'connect' ? bundleHref(scope, 'content') : workspaceHref(scope.workspaceId);
   return (
     <PageHeader
       title={name}
@@ -345,13 +294,7 @@ function BundleScopeHeader({
               <ArrowLeft aria-hidden="true" className="size-4" />
               <span className="bundle-scope-return-label">{parentLabel}</span>
               <span className="bundle-scope-return-short" aria-hidden="true">
-                {returnRevision
-                  ? `Revision ${returnRevision}`
-                  : isChangeDetail
-                    ? 'Changes'
-                    : view === 'connect'
-                      ? 'Content'
-                      : 'Bundles'}
+                {view === 'connect' ? 'Content' : 'Bundles'}
               </span>
             </ConsoleLink>
           </Button>
@@ -373,37 +316,11 @@ function BundleScopeHeader({
                 key={tab}
                 href={bundleHref(scope, tab)}
                 exactActive
-                aria-current={view === tab && !historyView ? 'page' : undefined}
+                aria-current={view === tab ? 'page' : undefined}
               >
                 {bundleViewLabels[tab]}
               </ConsoleLink>
             ))}
-            <ConsoleLink
-              href={historyHref}
-              exactActive
-              aria-current={historyView ? 'page' : undefined}
-              onClick={async (event) => {
-                const link = event.currentTarget;
-                if (
-                  event.button !== 0 ||
-                  event.metaKey ||
-                  event.ctrlKey ||
-                  event.shiftKey ||
-                  event.altKey ||
-                  link.pathname !== window.location.pathname
-                )
-                  return;
-                event.preventDefault();
-                const destination = link.href;
-                await navigate(consoleDestination(historyHref));
-                requestAnimationFrame(() => {
-                  if (window.location.href === destination)
-                    document.getElementById('evaluation-history')?.focus({ preventScroll: true });
-                });
-              }}
-            >
-              Evaluations
-            </ConsoleLink>
           </nav>
         )
       }
@@ -416,7 +333,7 @@ function ChannelPicker({
   search,
 }: {
   scope: { workspaceId: string; bundleId: string; channel: string };
-  view: 'content' | 'changes' | 'releases' | 'connect';
+  view: BundleView;
   search: Record<string, unknown>;
 }) {
   const nav = useNavigation();

@@ -8,7 +8,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { EVALUATION_ERROR_CODES, EXIT_CODES } from '../packages/sdk/src/evaluation/errors.js';
-import { policyCheckCodes } from '../packages/sdk/src/evaluation/policy.js';
 
 export const ERROR_CODES_PAGE = fileURLToPath(
   new URL('../apps/docs/content/docs/reference/error-codes.mdx', import.meta.url),
@@ -17,15 +16,10 @@ const BEGIN = '{/* BEGIN GENERATED: npx tsx scripts/error-codes.ts --write */}';
 const END = '{/* END GENERATED */}';
 
 const exitMeaning: Record<number, string> = {
-  [EXIT_CODES.ok]: 'The command succeeded. For a policy check, the candidate passed.',
-  [EXIT_CODES.usage]: 'Fix the command line, config, application module or definition, then rerun.',
-  [EXIT_CODES.gateFailed]: 'The quality gate failed: the policy verdict is `fail`.',
-  [EXIT_CODES.indeterminate]:
-    'The evidence cannot support a verdict yet: the policy is indeterminate, the run has not finished, or exported evidence is missing.',
-  [EXIT_CODES.infrastructure]:
-    'The run or the service failed: the request finished as `failed`, the service was unreachable or returned a server error, or a policy receipt was not confirmed.',
-  [EXIT_CODES.recovery]:
-    'Recovery is required before retrying: execution may have started, a submission is unconfirmed, the journal needs attention, or the request was interrupted or conflicts with a newer parent.',
+  [EXIT_CODES.ok]: 'The command succeeded.',
+  [EXIT_CODES.usage]: 'Fix the command line, configuration or application.',
+  [EXIT_CODES.infrastructure]: 'The service or local runtime failed.',
+  [EXIT_CODES.recovery]: 'Check local ownership or callback state before retrying.',
 };
 
 export function renderErrorCodeTables(): string {
@@ -35,10 +29,6 @@ export function renderErrorCodeTables(): string {
   const codes = Object.entries(EVALUATION_ERROR_CODES).map(
     ([code, info]) =>
       `| \`${code}\` | ${info.exitCode} | \`${info.nextAction}\` | ${info.message.replace(/\|/g, '\\|')} |`,
-  );
-  const checks = Object.entries(policyCheckCodes).map(
-    ([code, info]) =>
-      `| \`${code}\` | ${info.result === 'decision' ? 'pass or fail' : 'unknown'} | ${info.meaning.replace(/\|/g, '\\|')} |`,
   );
   return [
     BEGIN,
@@ -56,14 +46,6 @@ export function renderErrorCodeTables(): string {
     '| Code | Exit | Next action | Meaning |',
     '| --- | --- | --- | --- |',
     ...codes,
-    '',
-    '### Policy check codes',
-    '',
-    'A verdict lists the checks it ran in `checks`. A `pass or fail` check decides the verdict; an `unknown` check marks missing evidence and makes the verdict indeterminate unless another check failed.',
-    '',
-    '| Check | Result | Meaning |',
-    '| --- | --- | --- |',
-    ...checks,
     '',
     END,
   ].join('\n');

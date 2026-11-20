@@ -18,7 +18,6 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { NativeSelect } from './ui/native-select';
 import { ConnectionReports } from './connection-reports';
-import { ConnectionLearning, useConnectionLearning } from './connection-learning';
 import {
   Dialog,
   DialogContent,
@@ -170,14 +169,6 @@ function ConnectionWorkspace({
   const [defaultTab] = useState(() =>
     state.selected?.receipts.items.length ? 'delivery' : 'setup',
   );
-  const learning = useConnectionLearning(state.workspaceId, selected?.id);
-  const learningStatus = learning.result?.ok ? learning.result.status : null;
-  const learningActive = learningStatus?.enabled && !learningStatus.stoppedAt;
-  const compared = Boolean(
-    learningStatus?.rounds.some(
-      (round) => round.developmentComparisonId || round.auditComparisonId,
-    ),
-  );
   const readCredential = selected?.credentials?.find(
     (item) => item.kind === 'content-read' && !item.revokedAt,
   );
@@ -288,12 +279,10 @@ function ConnectionWorkspace({
     ['setup', 'Setup'],
     ['delivery', 'Delivery reports'],
     ['credentials', 'Credentials'],
-    ['learning', 'Learning'],
     ['settings', 'Settings'],
   ];
   const hash = useRouterState({ select: (router) => router.location.hash });
   const legacyTab = {
-    'continuous-learning': 'learning',
     'delivery-reports': 'delivery',
     'app-credentials': 'credentials',
   }[hash];
@@ -316,9 +305,8 @@ function ConnectionWorkspace({
     { id: 'binding', title: 'Bundle & channel', done: true },
     { id: 'credential', title: 'Read credential', done: Boolean(readCredential) },
     { id: 'delivery', title: 'First delivery', done: Boolean(latestReport) },
-    { id: 'agent', title: 'Compare a change', done: compared, optional: true },
   ];
-  const currentStep = setupSteps.find((step) => !step.done)?.id ?? 'agent';
+  const currentStep = setupSteps.find((step) => !step.done)?.id ?? 'delivery';
   const shownStep = setupStep ?? currentStep;
 
   async function command(input: IntegrationCommand, target = binding) {
@@ -883,15 +871,6 @@ function ConnectionWorkspace({
                   </span>
                 </dd>
               </div>
-              <div>
-                <dt>Learning</dt>
-                <dd>
-                  <ConsoleLink href={tabHref('learning')} className="connection-strip-link">
-                    {learning.result?.ok ? (learningActive ? 'On' : 'Off') : 'Status unavailable'}
-                    <ArrowUpRight className="size-3" aria-hidden="true" />
-                  </ConsoleLink>
-                </dd>
-              </div>
             </dl>
             <Tabs
               value={tab}
@@ -948,7 +927,6 @@ function ConnectionWorkspace({
                               {step.title}
                               <small>
                                 {step.done ? 'Done' : step.id === currentStep ? 'Current' : 'To do'}
-                                {step.optional ? ' · Optional' : ''}
                               </small>
                             </span>
                           </button>
@@ -984,21 +962,17 @@ function ConnectionWorkspace({
                         {credentialRecovery}
                       </div>
                     )}
-                    {(shownStep === 'delivery' || shownStep === 'agent') && (
+                    {shownStep === 'delivery' && (
                       <section className="workspace-panel connection-step-panel connection-recipe-panel">
                         <div className="connection-step-header">
                           <div className="min-w-0">
                             <h3>
-                              {shownStep === 'agent'
-                                ? 'Connect your agent, then compare a change'
-                                : latestReport
-                                  ? 'Delivery reported'
-                                  : 'Waiting for the first delivery'}
+                              {latestReport
+                                ? 'Delivery reported'
+                                : 'Waiting for the first delivery'}
                             </h3>
                             <p>
-                              {shownStep === 'agent' ? (
-                                'Optional. Run your existing agent loop against saved versions of this bundle to compare a change before release.'
-                              ) : latestReport ? (
+                              {latestReport ? (
                                 <>
                                   Latest report received{' '}
                                   <ReceiptTime value={latestReport.receivedAt} />
@@ -1132,20 +1106,6 @@ function ConnectionWorkspace({
                         cursor: receiptPage.nextCursor,
                       });
                   }}
-                />
-              </TabsContent>
-              <TabsContent value="learning" className="min-w-0">
-                <ConnectionLearning
-                  key={`${selected.id}:${selected.enabled}`}
-                  learning={learning}
-                  target={{ workspaceId: state.workspaceId, connectionId: selected.id }}
-                  bundleId={selected.bundleId}
-                  channel={selected.channel}
-                  connectionName={selected.displayName}
-                  currentVersionId={state.selected!.currentVersionId}
-                  currentRevision={state.selected!.currentRevision}
-                  canManage={state.canManage}
-                  enabled={selected.enabled}
                 />
               </TabsContent>
               <TabsContent value="settings" className="connection-settings">

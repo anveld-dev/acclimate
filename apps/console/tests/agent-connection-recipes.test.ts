@@ -140,43 +140,32 @@ for (const language of ['typescript', 'python'] as const) {
   });
 }
 
-test('the application module recipe exports one contract for delivery and evaluation', async () => {
+test('the application module recipe exports the delivery callback in each language', async () => {
   const root = await mkdtemp(join(tmpdir(), 'acclimate-console-module-'));
   try {
     const recipes = applicationModuleRecipes();
-    for (const name of ['runAgent', 'cases', 'execute', 'grade'])
-      assert.match(recipes.typescript, new RegExp(`export (?:async function|const) ${name}\\b`));
-    for (const name of ['run_agent', 'cases', 'execute', 'grade'])
-      assert.match(recipes.python, new RegExp(`^(?:def ${name}\\(|${name} = )`, 'm'));
-    assert.match(recipes.typescript, /await runAgent\(/);
-    assert.match(recipes.python, /run = run_agent\(/);
-    const sdk = join(root, 'node_modules', '@acclimate', 'sdk');
-    await mkdir(sdk, { recursive: true });
-    await writeFile(join(sdk, 'package.json'), JSON.stringify({ type: 'module', exports: { '.': './index.mjs', './evaluation': './evaluation.mjs' } }));
-    await writeFile(join(sdk, 'index.mjs'), `export async function prepareFiles() { return { files: [], cleanup: async () => {} }; }`);
-    await writeFile(join(sdk, 'evaluation.mjs'), `export class ExecutionUncertainError extends Error {}`);
-    await writeFile(join(root, 'application.mjs'), recipes.typescript.replace(
-      "throw new Error('Connect runAgent to your agent loop');",
-      "return { stopped: true, result: { answer: 'a phrase a good answer contains: ' + task } };",
-    ));
-    const check = spawnSync(process.execPath, ['--input-type=module', '-e', `
-      const app = await import(${JSON.stringify(join(root, 'application.mjs'))});
-      const version = { payload: { files: [{ kind: 'instruction', text: 'Be brief.' }] } };
-      const [item] = app.cases;
-      const run = await app.execute({ version, instructions: 'Be brief.', input: item.input, signal: new AbortController().signal });
-      console.log(JSON.stringify(await app.grade({ output: run.output, expected: item.expected })));`], { encoding: 'utf8' });
-    assert.equal(check.status, 0, check.stderr);
-    assert.deepEqual(JSON.parse(check.stdout), { reward: 1 });
+    assert.match(recipes.typescript, /export async function runAgent\(/);
+    assert.match(recipes.python, /^def run_agent\(/m);
+    await writeFile(join(root, 'application.mjs'), recipes.typescript);
     await writeFile(join(root, 'application.py'), recipes.python);
-    const compiled = spawnSync('python3', ['-m', 'py_compile', join(root, 'application.py')], { encoding: 'utf8' });
-    assert.equal(compiled.status, 0, compiled.stderr);
+    const js = spawnSync(process.execPath, ['--check', join(root, 'application.mjs')], {
+      encoding: 'utf8',
+    });
+    assert.equal(js.status, 0, js.stderr);
+    const python = spawnSync('python3', ['-m', 'py_compile', join(root, 'application.py')], {
+      encoding: 'utf8',
+    });
+    assert.equal(python.status, 0, python.stderr);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test('native delivery recipe keeps receipts through the plugin and makes the cache optional', () => {
-  const recipe = nativeDeliveryRecipe({ workspaceId: 'p', bundleId: 'b', channel: 'stable' }, 'claude');
+  const recipe = nativeDeliveryRecipe(
+    { workspaceId: 'p', bundleId: 'b', channel: 'stable' },
+    'claude',
+  );
   assert.match(recipe, /const delivery = await client\.prepare\(/);
   assert.match(recipe, /await prepare\(delivery\)/);
   assert.match(recipe, /~\/\.cache\/acclimate\/typescript/);

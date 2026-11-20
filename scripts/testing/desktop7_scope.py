@@ -66,7 +66,7 @@ def capture_scope(w, b, evidence, page, route, name, width, height, *, coarse=Fa
     expect(page.get_by_role('heading', name=identity, exact=True)).to_be_visible()
     expect(page.get_by_label('Channel', exact=True)).to_have_value(channel)
     checked=navigation(page)
-    # Native input and the full four-view navigation remain keyboard reachable.
+    # Native input and the bundle navigation remain keyboard reachable.
     picker=page.get_by_label('Channel', exact=True)
     tab_to(page, picker)
     expect(picker).to_be_focused()
@@ -80,7 +80,7 @@ def capture_scope(w, b, evidence, page, route, name, width, height, *, coarse=Fa
     assert scope['title']['text']==identity,scope['title']
     assert scope['channel']['tag']=='SELECT' and scope['channel']['value']==channel,scope['channel']
     assert scope['channel']['selectedText']==channel,scope['channel']
-    assert [row['name'] for row in checked if row['navigation']=='Bundle navigation']==['Content','Changes','Releases','Evaluations'],checked
+    assert [row['name'] for row in checked if row['navigation']=='Bundle navigation']==['Content','Releases'],checked
     text=scope['title']['textBounds'];heading=scope['title']['bounds']
     assert text['left']>=heading['left']-1 and text['right']<=heading['right']+1 and text['bottom']<=heading['bottom']+1,scope['title']
     assert scope['primary']['bottom']<=scope['secondary']['top']+1 or abs(scope['primary']['top']-scope['secondary']['top'])<=1,scope
@@ -131,15 +131,11 @@ def main():
         long_bundle=w.root+'/bundles/'+setup['bundle']['id']
         long_channel=long_bundle+'/channels/'+LONG_CHANNEL
         initial=w.call('GET',long_channel)
-        requests_before=w.call('GET',long_bundle+'/evaluation-requests')['items']
         b=w.browser();page=b.page
-        routes={view:b.bundle_path(view,bundle_id=setup['bundle']['id'],channel=LONG_CHANNEL,**(dict(path=LONG_PATH) if view=='content' else {})) for view in ('content','changes','releases','connect')}
+        routes={view:b.bundle_path(view,bundle_id=setup['bundle']['id'],channel=LONG_CHANNEL,**(dict(path=LONG_PATH) if view=='content' else {})) for view in ('content','releases','connect')}
         visit(page,b,routes['content'])
-        activate(page,page.get_by_role('link',name='Edit entry',exact=True))
-        expect(page.get_by_label('Content',exact=True)).to_have_value(LONG_TEXT)
-        parsed=urlsplit(page.url);routes['draft']=parsed.path+('?' + parsed.query if parsed.query else '')
         # Report the decisive 1024px result before the wider route matrix.
-        for view in (() if args.ordinary_only else ('draft','content','changes','releases','connect')):
+        for view in (() if args.ordinary_only else ('content','releases','connect')):
             name='long-1024-'+view
             evidence.run(name,page,lambda view=view,name=name:capture_scope(w,b,evidence,page,routes[view],name,1024,900))
         for width,height in (() if args.ordinary_only else ((1440,900),(1920,1080))):
@@ -157,12 +153,10 @@ def main():
             context.close()
         # Ordinary scope retains the already-approved editor allocation.
         visit(page,b,b.bundle_path('content',path='AGENTS.md'))
-        activate(page,page.get_by_role('link',name='Edit entry',exact=True))
         parsed=urlsplit(page.url);ordinary=parsed.path+('?' + parsed.query if parsed.query else '')
-        evidence.run('ordinary-1440-draft',page,lambda:capture_scope(w,b,evidence,page,ordinary,'ordinary-1440-draft',1440,900,ordinary=True))
+        evidence.run('ordinary-1440-content',page,lambda:capture_scope(w,b,evidence,page,ordinary,'ordinary-1440-content',1440,900,ordinary=True))
         assert w.call('GET',long_channel)==initial,'Long release changed during layout review'
         assert w.call('GET',w.channel)['version']==w.original['version'],'Stable World release changed'
-        assert w.call('GET',long_bundle+'/evaluation-requests')['items']==requests_before,'Layout review created model work'
         assert not b.errors,b.errors
         release_unchanged=True
     except Exception as error:
@@ -172,7 +166,7 @@ def main():
         if after!=before:evidence.failures.append(dict(check='frozen-build',error='Production .output changed'))
         w.close()
         baseline={}
-        for view,key in (('draft','editor'),('content','publishedContent')):
+        for view,key in (('content','publishedContent'),):
             value=json.loads((ROOT/'artifacts/layout6-edges-final-3'/f'long-1024-{view}.json').read_text())
             baseline[view]=dict(sourceTop=value[key]['top'],artifact=f'artifacts/layout6-edges-final-3/long-1024-{view}.json')
         summary=dict(passed=not evidence.failures and not evidence.geometry,checks=evidence.checks,failures=evidence.failures,geometryViolations=evidence.geometry,
@@ -181,7 +175,7 @@ def main():
           paidModelCalls=0,externalWrites=0,domMutation=False,focusInjection=False,
           fixture='Private PostgreSQL + real service + existing console build + OIDC/TLS',
           acceptance=dict(long1024TitleMaxLines=3,long1024SourceMaxTop=386,ordinary1440SourceMaxTop=200,ordinary1440SourceMinWidth=1180,ordinary1440SourceMinHeight=640),
-          limits=['Source fixtures only; no provider/model execution.','Fine pointer desktop 1024/1440/1920 and actual touch/coarse 1024 context.','Path DOM text and slash-boundary WBR verified; copy/rename behavior covered by separate core suite.'])
+          limits=['Source fixtures only; no provider/model execution.','Fine pointer desktop 1024/1440/1920 and actual touch/coarse 1024 context.','Path DOM text and slash-boundary WBR verified; copy behavior covered by separate core suite.'])
         (output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
         print(json.dumps(summary,indent=2),flush=True)
     return 0 if summary['passed'] else 1

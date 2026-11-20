@@ -1,16 +1,16 @@
 ---
 title: Run Acclimate locally
-description: Start the service, console, and sign-in on your laptop, with a ready workspace and example bundle for your first comparison.
+description: Start the service, console, and sign-in on your laptop, with a ready workspace and example bundle for your first delivery.
 ---
 
-The local stack runs the Acclimate service and console, PostgreSQL 16, Keycloak sign-in, a Mailpit inbox, and a Caddy HTTPS proxy on one laptop. It is for evaluation and development. The console uses the same HTTPS sign-in as a production deployment.
+The local stack runs the Acclimate service and console, PostgreSQL 16, Keycloak sign-in, a Mailpit inbox, and a Caddy HTTPS proxy on one laptop. Use it for local integration and development. The console uses the same HTTPS sign-in as a production deployment.
 
 ## Prerequisites
 
 - macOS or Linux.
 - Docker with Docker Compose v2.24 or later, running.
 - An Acclimate checkout, with Node.js and npm, and Python 3.9 or later to run the stack scripts.
-- For the SDK you compare with: Node.js 22.22 or later, or Python 3.11 or later. See [install the SDKs](/docs/get-started/install).
+- For the SDK: Node.js 22.22 or later, or Python 3.11 or later. See [install the SDKs](/docs/get-started/install).
 
 ## Start the stack
 
@@ -32,8 +32,8 @@ When the stack is ready, `local:up`:
 
 - Picks free loopback ports for this checkout and prints the console, API, and Mailpit URLs.
 - Creates a verified Keycloak login and prints its initial password once. The password is also stored in the `operator` field of `.local/stack/credentials.json`.
-- Makes that login the administrator of the `local-demo` workspace. It uses the service's audited adoption route with the reason "local stack bootstrap". The machine credential in `evaluator.json` is bound to `local-demo`.
-- Publishes an example bundle named **Example agent** on the `stable` channel, so your first comparison has a version to compare against.
+- Makes that login the administrator of the `local-demo` workspace. It uses the service's audited adoption route with the reason "local stack bootstrap".
+- Publishes an example bundle named **Example agent** on the `stable` channel.
 - Writes client settings to `.local/stack/env.sh` and prints them.
 
 ```text
@@ -41,7 +41,6 @@ Console       https://localhost:24830
 Login         operator@acclimate.invalid
 API           https://127.0.0.1:24831
 Mailpit       http://localhost:24833
-Evaluator     /path/to/acclimate/.local/stack/evaluator.json
 Local CA      /path/to/acclimate/.local/stack/root.crt
 Workspace     local-demo, adopted for operator@acclimate.invalid ("local stack bootstrap")
 Example       bundle 0b6e…41f2 on channel stable
@@ -49,7 +48,6 @@ Initial login password (printed once)  …
 
 Client settings for this shell, also saved in /path/to/acclimate/.local/stack/env.sh:
 
-export EVALUATOR_CONFIG='/path/to/acclimate/.local/stack/evaluator.json'
 export NODE_EXTRA_CA_CERTS='/path/to/acclimate/.local/stack/root.crt'
 export SSL_CERT_FILE='/path/to/acclimate/.local/stack/ca-bundle.pem'
 export ACCLIMATE_API='https://127.0.0.1:24831'
@@ -84,66 +82,7 @@ Prefer to do it by hand? Import `.local/stack/root.crt` as a trusted certificate
 
 Open the printed console URL and sign in with the printed login. The `local-demo` workspace is already yours. Self-registration is on in the local realm so you can test invitations through Mailpit. A new account has no workspace access until an administrator invites it.
 
-## Run a first comparison
-
-[Install the SDK](/docs/get-started/install) in your agent's project and add an application module as the [quickstart](/docs/get-started/quickstart#connect-your-agent) describes. Then save the published example as your starting point:
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-
-```sh
-source /path/to/acclimate/.local/stack/env.sh
-./node_modules/.bin/acclimate-eval pull --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --out candidate.json
-```
-
-</Tab>
-<Tab value="Python">
-
-```sh
-source /path/to/acclimate/.local/stack/env.sh
-acclimate pull --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --out candidate.json
-```
-
-</Tab>
-</Tabs>
-
-`candidate.json` is a **payload**, the JSON form of the bundle's files:
-
-```json title="candidate.json"
-{
-  "schemaVersion": 1,
-  "files": [
-    { "path": "instructions.md", "kind": "instruction", "text": "You are a support agent…" }
-  ]
-}
-```
-
-Edit the `text`, or add files with a `kind` of `instruction`, `skill`, or `memory`. Then compare your edit with the published version:
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-
-```sh
-./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" \
-  --bundle "$BUNDLE_ID" --channel stable \
-  --payload candidate.json --name first-change --live
-```
-
-</Tab>
-<Tab value="Python">
-
-```sh
-acclimate compare --config "$EVALUATOR_CONFIG" \
-  --bundle "$BUNDLE_ID" --channel stable \
-  --payload candidate.json --name first-change --live
-```
-
-</Tab>
-</Tabs>
-
-In a terminal the CLI prints the parent and candidate means, pair coverage, and per-case scores. With `--json`, or when output is piped, it writes one JSON object instead. The change appears in the console under **Changes → Ready to review**, labeled `first-change`. The stack has no model provider of its own. Your agent makes any model calls with its own credentials. The Python `acclimate` command and `python -m acclimate` run the same CLI.
-
-The local evaluator credential can compare changes but cannot release them. Release a reviewed change from the console.
+Open the example bundle on `stable` and follow [the delivery quickstart](/docs/get-started/quickstart#connect-your-application).
 
 ## Stop or reset
 

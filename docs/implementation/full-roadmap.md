@@ -37,7 +37,7 @@ The remaining qualification boundaries are explicit:
 
 ## Where to go next
 
-Use the [development guide](../development.md) to start locally, [operator commands](../../tools/operator/README.md) to review and release, [full qualification](../../scripts/full-roadmap/README.md) to repeat the flow, and [deployment/restore guide](../../deploy/README.md) to prepare a host.
+Use the [development guide](../development.md) to start locally, [operator commands](https://github.com/anveld-dev/acclimate/blob/4096ff1b60098554b0cb932866a338cadf29601c/tools/operator/README.md) to review and release, [full qualification](https://github.com/anveld-dev/acclimate/blob/4096ff1b60098554b0cb932866a338cadf29601c/scripts/full-roadmap/README.md) to repeat the flow, and [deployment/restore guide](../../deploy/README.md) to prepare a host.
 
 ## How the work split
 

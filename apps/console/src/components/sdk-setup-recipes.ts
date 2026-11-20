@@ -123,81 +123,20 @@ print(json.dumps(dict(versionId=version['id'], digest=version['digest'],
   return { typescript, python };
 }
 
-/**
- * The one application module both paths load: delivery calls runAgent, and the
- * evaluator calls execute, which stages the version and calls the same runAgent.
- */
 export function applicationModuleRecipes() {
-  const typescript = `import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { prepareFiles } from '@acclimate/sdk';
-import { ExecutionUncertainError } from '@acclimate/sdk/evaluation';
-
-/** Delivery and evaluation both call this. Return stopped: true only after your agent ends. */
-export async function runAgent({ instruction, skillFiles, approvedMemory, task, signal }) {
-  // Start your existing agent loop with the instruction, skill files and task here.
+  return {
+    typescript: `export async function runAgent({ instruction, skillFiles, approvedMemory, task, signal }) {
+  // Run your agent and return { result, stopped: true } after it stops.
   throw new Error('Connect runAgent to your agent loop');
 }
-
-// Private saved tasks; ACCLIMATE_EVALUATOR_CASES can point to a JSON file instead.
-export const cases = [
-  { caseId: 'first-task', input: { task: 'A task your agent handles' },
-    expected: { includes: 'a phrase a good answer contains' } },
-];
-
-export async function execute({ version, instructions: instruction, input, signal }) {
-  const directory = await mkdtemp(join(tmpdir(), 'acclimate-eval-'));
-  const staged = await prepareFiles(version, directory);
-  const run = await runAgent({ instruction, approvedMemory: [], task: input.task, signal,
-    skillFiles: staged.files.filter((file) => file.kind === 'skill') });
-  // Keep the inputs when the agent's end is unknown.
-  if (run.stopped !== true) throw new ExecutionUncertainError();
-  await staged.cleanup();
-  await rm(directory, { recursive: true, force: true });
-  return { output: run.result };
-}
-
-export async function grade({ output, expected }) {
-  return { reward: Number(JSON.stringify(output).includes(expected.includes)) };
-}
-`;
-  const python = `import json, shutil, tempfile
-from acclimate import prepare_files
-from acclimate.evaluation import ExecutionResult, ExecutionUncertainError, GradeResult
-
-
-def run_agent(*, instruction, skill_files, approved_memory, task):
-    """Delivery and evaluation both call this. Return stopped=True only after your agent ends."""
+`,
+    python: `def run_agent(*, instruction, skill_files, approved_memory, task):
+    # Run your agent and return {"result": result, "stopped": True} after it stops.
     raise NotImplementedError('Connect run_agent to your agent loop')
-
-
-# Private saved tasks; ACCLIMATE_EVALUATOR_CASES can point to a JSON file instead.
-cases = [
-    dict(caseId='first-task', input=dict(task='A task your agent handles'),
-         expected=dict(includes='a phrase a good answer contains')),
-]
-
-
-def execute(request):
-    directory = tempfile.mkdtemp(prefix='acclimate-eval-')
-    staged = prepare_files(request.version, directory)
-    run = run_agent(instruction=request.instructions, approved_memory=[], task=request.input['task'],
-                    skill_files=[f for f in staged.files if f['kind'] == 'skill'])
-    if run.get('stopped') is not True:
-        raise ExecutionUncertainError()  # keep the inputs for inspection
-    staged.cleanup()
-    shutil.rmtree(directory, ignore_errors=True)
-    return ExecutionResult(output=run['result'])
-
-
-def grade(request):
-    return GradeResult(reward=float(request.expected['includes'] in json.dumps(request.output)))
-`;
-  return { typescript, python };
+`,
+  };
 }
 
-/** Install this callback beside the code that observes the application's actual start. */
 export function deliveryRecipes(selection: {
   workspaceId: string;
   bundleId: string;

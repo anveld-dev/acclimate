@@ -1,20 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { AcclimateClient, ApiError } from '../../src/client.js';
 import {
   assertGuidedTarget,
-  evaluationDescriptorDifferences,
   validateEvaluationDescriptor,
-  validateEvaluationHandoff,
   validateEvaluationServiceUrl,
 } from '../../src/validation.js';
-import {
-  createEvaluationTransport,
-  evaluationFingerprint,
-  evaluationOperationPath,
-} from '../../src/internal/evaluation-transport.js';
-
 const bundleId = '11111111-1111-4111-8111-111111111111';
 const requestId = '22222222-2222-4222-8222-222222222222';
 const descriptor = () => ({
@@ -26,68 +17,14 @@ const descriptor = () => ({
     { caseId: 'second', repetition: 0 },
   ],
 });
-const handoff = () => ({
-  schemaVersion: 1,
-  serviceUrl: 'https://api.example',
-  workspaceId: 'project',
-  bundleId,
-  requestId,
-  descriptor: descriptor(),
-});
-
-test('public descriptor validation isolates caller mutation and detects inventory drift', () => {
+test('installed descriptor validation captures the case inventory and runtime', () => {
   const original = descriptor();
-  const frozen = validateEvaluationDescriptor(original);
+  const validated = validateEvaluationDescriptor(original);
   original.runtime.model = 'changed';
   original.expectedCases[0].caseId = 'changed';
-  assert.equal(frozen.runtime.model, 'none');
-  assert.equal(frozen.expectedCases[0].caseId, 'first');
-  const reordered = {
-    ...descriptor(),
-    runtime: { model: 'none', configRevision: '1', configId: 'fixture' },
-    expectedCases: [...descriptor().expectedCases].reverse(),
-  };
-  assert.deepEqual(evaluationDescriptorDifferences(frozen, reordered), []);
-  assert.deepEqual(
-    evaluationDescriptorDifferences(frozen, {
-      ...reordered,
-      runtime: { ...reordered.runtime, model: 'other' },
-    }),
-    ['runtime'],
-  );
-  assert.throws(() =>
-    validateEvaluationDescriptor({
-      ...descriptor(),
-      expectedCases: [frozen.expectedCases[0], frozen.expectedCases[0]],
-    }),
-  );
+  assert.equal(validated.runtime.model, 'none');
+  assert.equal(validated.expectedCases[0].caseId, 'first');
 });
-
-test('public handoff rejects private fields and malformed targets without echoing values', () => {
-  assert.deepEqual(validateEvaluationHandoff(handoff()), handoff());
-  const canary = 'private-token-canary-do-not-print';
-  for (const invalid of [
-    { ...handoff(), evaluatorToken: canary },
-    { ...handoff(), workspaceId: '../other' },
-    { ...handoff(), descriptor: { ...descriptor(), privatePath: canary } },
-    { ...handoff(), serviceUrl: `https://${canary}@api.example` },
-  ])
-    assert.throws(
-      () => validateEvaluationHandoff(invalid),
-      (error) => error instanceof Error && !error.message.includes(canary),
-    );
-  const accessor = Object.defineProperty({}, 'schemaVersion', {
-    get() {
-      throw new Error(canary);
-    },
-    enumerable: true,
-  });
-  assert.throws(
-    () => validateEvaluationHandoff(accessor),
-    (error) => error instanceof Error && !error.message.includes(canary),
-  );
-});
-
 
 test('public inventory rejects accessors and custom arrays without invoking app code', () => {
   let invoked = 0;
@@ -115,7 +52,7 @@ test('public inventory rejects accessors and custom arrays without invoking app 
 });
 
 test('guided grammar never advertises legacy long, Unicode, encoded or non-string targets', () => {
-  assert.doesNotThrow(() => assertGuidedTarget({ workspaceId: 'p-1.valid', bundleId, requestId }));
+  assert.doesNotThrow(() => assertGuidedTarget({ workspaceId: 'p-1.valid', bundleId }));
   for (const workspaceId of ['', '.', '..', 'p'.repeat(129), 'café', 'a%2Fb', 'a/b', undefined, 123])
     assert.throws(() => assertGuidedTarget({ workspaceId: workspaceId as string }));
   assert.throws(() =>
@@ -130,44 +67,6 @@ test('guided grammar never advertises legacy long, Unicode, encoded or non-strin
     'https://api.example?token=x',
   ])
     assert.throws(() => validateEvaluationServiceUrl(value));
-});
-
-test('retained transport retries exact Unicode request bytes and the same authorization/key', async () => {
-  const body = '{\n "attemptId": "é", "value": 0.10\n}';
-  const sent: Array<{ path: string; body: unknown; headers: Headers }> = [];
-  const transport = createEvaluationTransport({
-    serviceUrl: 'https://api.example',
-    workspaceId: 'project',
-    evaluatorPrincipalId: 'evaluator',
-    evaluatorToken: 'fixture-token',
-    fetch: async (input, init) => {
-      sent.push({ path: String(input), body: init?.body, headers: new Headers(init?.headers) });
-      if (sent.length === 1) throw new TypeError('lost response');
-      return Response.json({ status: 'running' });
-    },
-  });
-  const scope = { workspaceId: 'project', bundleId, requestId };
-  assert.deepEqual(await transport.mutate('start', scope, body, 'same-key'), { status: 'running' });
-  assert.equal(sent.length, 2);
-  for (const call of sent) {
-    assert.equal(call.body, body);
-    assert.equal(call.headers.get('authorization'), 'Bearer fixture-token');
-    assert.equal(call.headers.get('idempotency-key'), 'same-key');
-    assert.equal(call.headers.get('x-acclimate-durable-operation'), 'true');
-  }
-  const path = evaluationOperationPath('start', scope);
-  assert.equal(
-    evaluationFingerprint('start', scope, body),
-    'sha256:' +
-      createHash('sha256')
-        .update('POST\0' + path + '\0' + body)
-        .digest('hex'),
-  );
-  assert.throws(() => transport.mutate('start', { ...scope, workspaceId: 'other' }, body, 'key'));
-  assert.throws(() => evaluationOperationPath('start', { workspaceId: 'project', bundleId }));
-  assert.throws(() =>
-    evaluationOperationPath('createDraft', { workspaceId: 'project', bundleId, channel: '../other' }),
-  );
 });
 
 test('JSON budget cancels a growing response before draining it, including HTTP errors', async () => {
@@ -192,7 +91,7 @@ test('JSON budget cancels a growing response before draining it, including HTTP 
       fetch: async () => new Response(stream, { status }),
     });
     await assert.rejects(
-      client.getEvaluationCapabilities('project'),
+      client.listBundles('project'),
       (error) => error instanceof ApiError && error.code === 'response_too_large',
     );
     assert.equal(cancelled, true);
@@ -200,7 +99,7 @@ test('JSON budget cancels a growing response before draining it, including HTTP 
   }
 });
 
-test('default response budget accepts comparison and operation wrappers larger than a report request', async () => {
+test('default response budget accepts operation wrappers larger than a payload', async () => {
   const reportSized = { content: 'x'.repeat(2 * 1024 * 1024 - 100) };
   const wrapped = {
     status: 'committed',

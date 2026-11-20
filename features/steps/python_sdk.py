@@ -36,18 +36,17 @@ def cached(context,text):
     assert result['instruction']==text and result['stale'] is True
 
 
-@when('a Python application saves two generations, records comparison evidence and publishes')
+@when('a Python application uploads and releases a version')
 def author(context):
     context.world.python_result=context.world.sdk('pythonAuthor')
 
 
-@then('Python and the service agree on the released snapshot and its two saved generations')
+@then('Python and the service agree on the released version')
 def released(context):
     w=context.world
     result=w.python_result
-    assert result['published']['status']=='published'
-    assert result['current']['version']==result['draft']['snapshotVersion']
-    assert [entry['generation'] for entry in result['history']['items']]==[2,1]
+    assert result['published']['unevaluatedReason'] == 'Python fixture release'
+    assert result['current']['version'] == result['version']
     assert w.call('GET',w.channel)['version']==result['current']['version']
 
 

@@ -12,35 +12,10 @@ import threading
 
 from ._application_imports import SetupError, load_adapter
 
-HELP = """Compare your agent using its installed application.py.
-Export cases, execute and grade from that module. Run in the module's directory or add --app PACKAGE.MODULE or --app FILE.py.
-Optional exports: revision_files, config_id, grader, runtime, to_review_artifact, concurrency, grade_retries and
-execution ("live" by default, or "model-free" for deterministic adapters that need no --live).
-
-Try it locally first. These need no service, config or handoff:
-
-  python -m acclimate try [--live] [--case ID] [--payload FILE|DIR]
-  python -m acclimate compare --local --parent FILE|DIR --candidate FILE|DIR [--live] [--policy POLICY]
-
-Then compare against the service to gate a release:
-
-  python -m acclimate compare --config CONFIG --handoff HANDOFF [--live] [--policy POLICY] [--json]
-  python -m acclimate compare --config CONFIG --bundle ID --channel CHANNEL --payload FILE (--name RUN_NAME | --retry-after PRIOR_NAME [--name RUN_NAME]) [--live] [--policy POLICY] [--json]
-
-Run controls for compare and run: --deadline 30m, --case-timeout 2m, --max-cost-usd 5,
---cases ID,ID or --shard 1/4 (partial, never full coverage), --progress or --quiet.
-Use plan to size the evaluation for your policy before running it, and pull to save a
-published bundle as a payload file to edit.
-
-Commands: try, compare, describe, coverage, doctor, plan, request, run, check, status, interrupt,
-export, verify-export, pull.
-status, verify-export, interrupt and pull run without loading application code.
-Run python -m acclimate COMMAND --help for one command's flags.
-
-Global flags: --json (machine-readable errors on stderr), --verbose (tracebacks; or set
-ACCLIMATE_DEBUG=1), --version, --help.
-Exit codes: 0 ok, 1 fix command/config/application, 2 quality gate failed, 3 indeterminate,
-4 run or service failed, 5 recovery required."""
+HELP = """Load cases, execute and grade from application.py.
+Use --app PACKAGE.MODULE or --app FILE.py to select a different module.
+Commands: try, describe, coverage, doctor, pull.
+Run python -m acclimate COMMAND --help for flags."""
 
 
 def read_cases(filename):
@@ -218,9 +193,6 @@ def _configure(adapter, filename, source, imported, imported_files, external, co
     if {"installedAdapter", "revisionFiles", "importedSources"}.intersection(artifacts):
         raise SetupError("The SDK supplies installedAdapter, importedSources and revisionFiles artifact identities.",
                          field="runtime.artifacts")
-    mapper = getattr(adapter, "to_review_artifact", None)
-    if mapper is not None and not callable(mapper):
-        raise SetupError("to_review_artifact must be a function when supplied.", field="to_review_artifact")
     digest = "sha256:" + hashlib.sha256(source).hexdigest()
     artifacts = {**artifacts, "installedAdapter": digest}
     grader_digest = digest
@@ -249,9 +221,6 @@ def _configure(adapter, filename, source, imported, imported_files, external, co
             app = define_evaluation(**manifest.definition, execute=adapt_callback(execute, runner),
                                     grade=adapt_callback(grade, runner))
         except EvaluationError as error:
-            if error.code == "definition.report_budget_exceeded":
-                raise SetupError("The case inventory exceeds the report size limit. Split it into smaller evaluations.",
-                                 code="definition.invalid", field="cases") from error
             field = getattr(error, "field", None)
             if field:
                 raise SetupError(f"The application's evaluation definition is invalid. {field}: {error.reason}",
@@ -262,29 +231,16 @@ def _configure(adapter, filename, source, imported, imported_files, external, co
                              "config_id is a short string, grader is {'sourceUtf8': ...} or {'artifactDigest': 'sha256:...'} "
                              "and runtime settings are JSON.", code="definition.invalid",
                              field="cases, config_id, grader or runtime") from error
-        review = {"to_review_artifact": adapt_callback(mapper, runner)} if mapper else None
-        yield app, review
+        yield app
 
 
 _COMMAND_USAGE = {
-    "compare": HELP,
-    "describe": "describe [--app MODULE|FILE.py]  Print the public descriptor for these callbacks and cases.",
-    "try": ("try [--case ID[,ID...]] [--payload PAYLOAD] [--live] [--case-timeout DURATION] [--json]\n"
-            "Runs execute and grade once for each case (default: the first case) and checks every returned shape."),
-    "coverage": "coverage [--app MODULE|FILE.py]  Inspect the local sources, declared files and build artifacts bound by the adapter.",
-    "status": "status (--config CONFIG | --read-config READER) --handoff FILE\nstatus --config CONFIG --name RUN_NAME\nRuns without loading application code.",
-    "verify-export": "verify-export --manifest FILE [--read-config READER --handoff FILE]\nRuns without loading application code.",
-    "doctor": "doctor --config CONFIG (--bundle ID | --handoff FILE | --name RUN_NAME) [--policy POLICY]",
-    "check": "check (--config CONFIG | --read-config READER) --handoff FILE --policy POLICY\ncheck --config CONFIG --name RUN_NAME --policy POLICY",
-    "export": "export (--config CONFIG | --read-config READER) --handoff FILE --out DIRECTORY [--selection FILE]\nexport --config CONFIG --name RUN_NAME --out DIRECTORY [--selection FILE]",
-    "request": "request --config CONFIG --bundle ID --channel CHANNEL --payload FILE --intent FILE --out HANDOFF [--policy POLICY]",
-    "run": "run --config CONFIG (--handoff FILE | --name RUN_NAME) [--live]",
-    "interrupt": "interrupt --config CONFIG (--handoff FILE | --name RUN_NAME) --reason REASON\nRuns without loading application code.",
-    "pull": "pull --config CONFIG --bundle ID [--channel CHANNEL] --out FILE  Save the published bundle as a payload to edit.\nRuns without loading application code.",
-    "plan": ("plan --policy POLICY [--aa A_A_COMPARISON.json] [--effects 0,0.05] [--simulations N] [--seed N]\n"
-             "Estimate the minimum detectable effect and simulate pass rates before running anything."),
+    "describe": "describe [--app MODULE|FILE.py]",
+    "try": "try [--case ID[,ID...]] [--payload PAYLOAD] [--live] [--case-timeout DURATION] [--json]",
+    "coverage": "coverage [--app MODULE|FILE.py]",
+    "doctor": "doctor --config CONFIG --bundle ID",
+    "pull": "pull --config CONFIG --bundle ID [--channel CHANNEL] --out FILE",
 }
-
 
 def _coverage_text(coverage):
     def items(values):
@@ -319,7 +275,7 @@ def main(argv=None, directory=None):
         # An empty $CMD in CI must fail, not pass.
         print(HELP + "\n", file=sys.stderr)
         return report_evaluator_error(EvaluationError("usage.missing_command",
-            hint="Choose a command, for example describe or compare."), args)
+            hint="Choose a command, for example describe or try."), args)
     command = "invalid"
     try:
         selection = None
@@ -334,11 +290,11 @@ def main(argv=None, directory=None):
         if command in ADAPTER_FREE_COMMANDS:
             return evaluation_main(None, args)
         coverage = {} if command == "coverage" else None
-        with installed_application(directory, selection=selection, coverage=coverage) as (app, review):
+        with installed_application(directory, selection=selection, coverage=coverage) as app:
             if coverage is not None:
                 terminal = sys.stdout.isatty() and "--json" not in args
                 print(_coverage_text(coverage) if terminal else json.dumps(coverage))
                 return EXIT_CODES["ok"]
-            return evaluation_main(app, args, review=review)
+            return evaluation_main(app, args)
     except Exception as error:
         return report_evaluator_error(error, args, command)

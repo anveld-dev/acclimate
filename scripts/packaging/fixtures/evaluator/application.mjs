@@ -19,8 +19,3 @@ export async function grade({ output, expected }) {
   return { reward: Number(singleCharge && succeeded), explanation: { singleCharge, succeeded } };
 }
 export const grader = { sourceUtf8: grade.toString() };
-export async function toReviewArtifact({ identity, value }) {
-  return { mediaType: 'application/json', value: identity.role === 'output'
-    ? { charges: value.charges, succeeded: value.succeeded }
-    : { singleCharge: value.singleCharge, succeeded: value.succeeded } };
-}

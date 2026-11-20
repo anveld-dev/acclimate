@@ -6,7 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.1.0] - Unreleased
 
-The first release, open source under Apache-2.0. The service and console images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives are all versioned `0.1.0`; the plugins peer-depend on `@acclimate/sdk` `^0.1.0`. The example CI workflows pin the GitHub Action at `v0.1.0`, and `npm run pack:verify` fails if any example or doc pins another tag.
+The first release, open source under Apache-2.0. The service and console images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives are all versioned `0.1.0`; the plugins peer-depend on `@acclimate/sdk` `^0.1.0`.
+
+### Removed
+
+- Removed HTTP routes for bundle drafts and their history, save, discard and publish operations, for proposals, comparisons and policy receipts, and for evaluation requests, their start, finish, interrupt, abandon and progress operations, and workspace evaluation capabilities.
+- Removed the connection learning route and its stop, restore, renew, corrections, rechecks, outcome submission and lookup, work, incident replay, field audit, field requalification and round review subroutes.
+- Removed the `propose` machine right and the release fields `comparisonId` and `policyOverride`. Bundle setup remains at `POST /v1/workspaces/{workspaceId}/bundle-setups`. Releases now require a reason in `unevaluatedReason`.
+- Removed the GitHub Action and CI wrapper, the `acclimate-operator` and `acclimate-learning` commands, and the `acclimate-eval` and Python `acclimate` commands `compare`, `request`, `run`, `check`, `status`, `interrupt`, `export`, `verify-export` and `plan`, including `--policy`, `--handoff`, `--aa`, `--effects`, `--simulations` and `--seed`.
+- Removed SDK exports for manual comparisons, policy, planning, analysis, evidence export, evaluation requests and progress, drafts, and the old learning driver. Removed TypeScript subpaths `@acclimate/sdk/evaluation/policy`, `@acclimate/sdk/evaluation/artifacts`, `@acclimate/sdk/evaluation/analysis`, `@acclimate/sdk/evaluation/progress` and `@acclimate/sdk/learning`.
+- Removed startup settings `ACCLIMATE_CRITIC_MODEL`, `ACCLIMATE_CRITIC_ENDPOINT`, `ACCLIMATE_CRITIC_TOKEN`, `ACCLIMATE_LEARNING_REVIEW_SECONDS`, `ACCLIMATE_LEARNING_PARENT_MAX_REUSES`, `ACCLIMATE_LEARNING_PARENT_MAX_AGE_SECONDS`, `ACCLIMATE_LEARNING_PAIR_BUDGET`, `ACCLIMATE_LEARNING_MAX_REPETITIONS`, `ACCLIMATE_LEARNING_CALIBRATION_REPETITIONS`, `ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS`, `ACCLIMATE_LEARNING_MAX_CHAIN_AGE_SECONDS`, `ACCLIMATE_LEARNING_CALIBRATION_ATTEMPTS`, `ACCLIMATE_LEARNING_FAILURE_WINDOW_SECONDS`, `ACCLIMATE_PROPOSAL_GROWTH_FLOOR_BYTES`, `ACCLIMATE_EVALUATION_ABANDON_SECONDS`.
+- Removed Changes, draft, comparison and evaluation screens, along with connection learning, outcome lookup, review and field controls. The new self-improvement loop ships in a later phase.
 
 ### Added
 

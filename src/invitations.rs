@@ -295,14 +295,21 @@ pub async fn recover_invitation_mail(s: &AppState) -> Result<(), sqlx::Error> {
 }
 /// At-least-once SMTP: a crash after acceptance can duplicate the same harmless link.
 pub async fn invitation_worker(s: AppState) -> Result<(), sqlx::Error> {
-    let Some(mail) = s.access.mail.clone() else {
-        return std::future::pending().await;
+    let _worker = s.runtime.worker_started();
+    let Some(mail) = &s.access.mail else {
+        s.runtime.wait_for_drain().await;
+        return Ok(());
     };
     loop {
         if s.runtime.is_draining() {
             return Ok(());
         }
+        let Some(permit) = s.runtime.claim_permit().await else {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            continue;
+        };
         let row=sqlx::query("UPDATE workspace_invitations SET delivery_status='sending',attempts=attempts+1 WHERE id=(SELECT id FROM workspace_invitations WHERE status='pending' AND expires_at>now() AND delivery_status='queued' AND next_attempt_at<=now() ORDER BY next_attempt_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *").fetch_optional(&s.db).await?;
+        drop(permit);
         if let Some(row) = row {
             let id = row.get::<Uuid, _>("id");
             let workspace: String = sqlx::query_scalar("SELECT name FROM projects WHERE id=$1")

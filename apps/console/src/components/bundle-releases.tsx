@@ -1,10 +1,7 @@
 import { ReceiptTime } from './receipt-time';
 import { StatusBadge } from './status-badge';
-import { ReleaseComparison } from './release-comparison';
-import './release-comparison.css';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { useRouter, useRouterState } from '@tanstack/react-router';
-import { RelatedPendingNotice, useRelatedPending } from './related-pending';
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { CircleCheck, GitCommitHorizontal } from 'lucide-react';
@@ -24,11 +21,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { VersionInspector } from './version-inspector';
-import { ConsoleLink, consoleDestination } from './console-link';
+import { consoleDestination } from './console-link';
 import { CopyButton } from './copy-button';
 import { bundleHref, releaseRevision } from '../navigation';
 import {
-  freezePending,
+  freezePendingExact,
   loadPending,
   resolvePending,
   forgetPending,
@@ -47,7 +44,11 @@ import type { ConsoleState } from '../server/channel';
 export function BundleReleases({ state }: { state: Extract<ConsoleState, { status: 'ready' }> }) {
   const router = useRouter();
   const restoreReturnRef = useRef<HTMLElement | null>(null);
-  const scope = { workspaceId: state.workspaceId, bundleId: state.bundleId, channel: state.channel };
+  const scope = {
+    workspaceId: state.workspaceId,
+    bundleId: state.bundleId,
+    channel: state.channel,
+  };
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
   const [page, setPage] = useState(state.history);
@@ -136,7 +137,6 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
     channel: state.channel,
   };
   const [operation, setOperation] = useState<PendingOperation | null>(null);
-  const related = useRelatedPending(recoveryScope, operation);
   useEffect(() => {
     try {
       setOperation(loadPending(sessionStorage, recoveryScope));
@@ -209,7 +209,6 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
     }
   }
   async function restore() {
-    if (related.blocked) return;
     if (!state.canEdit || submitting || (!operation && (!target || staleReview || !reason.trim())))
       return;
     setSubmitting(true);
@@ -217,7 +216,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
     setStatus('');
     try {
       let frozen = operation ? loadPending(sessionStorage, recoveryScope) : null;
-      const replayingUncertain = Boolean(operation) || related.blocked;
+      const replayingUncertain = Boolean(operation);
       if (operation && !frozen?.body) {
         setOperation(frozen || { ...operation, body: undefined });
         setError('Submitted text was forgotten or expired. Reconcile or close this operation.');
@@ -228,12 +227,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
           { versionId: target!.versionId, expectedRevision: target!.reviewedRevision, reason },
           scope,
         );
-        frozen = freezePending(
-          sessionStorage,
-          recoveryScope,
-          wire.operationPath,
-          JSON.parse(wire.body),
-        );
+        frozen = freezePendingExact(sessionStorage, recoveryScope, wire.operationPath, wire.body);
         setOperation(frozen);
       }
       if (!frozen.body) {
@@ -383,7 +377,6 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
 
   return (
     <div className="bundle-releases release-page-layout space-y-4">
-      <RelatedPendingNotice recovery={related} scope={scope} canEdit={state.canEdit} />
       {!target && recovery}
       {status && (
         <p role="status" className="text-sm">
@@ -455,9 +448,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
                       ) : (
                         <GitCommitHorizontal aria-hidden="true" />
                       )}
-                      <strong>
-                        <span className="sr-only">Compare </span>Revision {item.revision}
-                      </strong>
+                      <strong>Revision {item.revision}</strong>
                       {item.revision === state.resolution.revision && (
                         <StatusBadge tone="success">Current</StatusBadge>
                       )}
@@ -472,107 +463,58 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
               </div>
             </div>
             {selected ? (
-              <ReleaseComparison
-                key={selected.id}
-                scope={scope}
-                release={selected}
-                current={selected.revision === state.resolution.revision}
-                actions={
-                  <>
-                    {selected.version.parentVersionId && (
-                      <ConsoleLink
-                        className="release-comparison-link"
-                        href={bundleHref(scope, 'changes', {
-                          history: 1,
-                          fromRevision: selected.revision,
-                          candidate: selected.version.id,
-                          tab: 'files',
-                        })}
-                        aria-label={`Compare with creation base for revision ${selected.revision}`}
-                      >
-                        Compare with creation base
-                      </ConsoleLink>
-                    )}
-                    <div className="release-actions">
-                      <div className="release-inspection-actions">
-                        <VersionInspector
-                          scope={scope}
-                          versionId={selected.version.id}
-                          label="Inspect content"
-                          contextLabel={`revision ${selected.revision}`}
-                        />
-                        <ChangeRecordDetails
-                          title="Release details"
-                          triggerLabel={`Release details for revision ${selected.revision}`}
-                          description="The saved content, release decision and recorded evidence."
-                          copyLabel="Copy release details"
-                          value={JSON.stringify(selected, null, 2)}
-                          fields={[
-                            ['Revision', selected.revision],
-                            ['Published', <ReceiptTime value={selected.createdAt} />],
-                            ['Reviewer', selected.reviewer],
-                            [
-                              'Reason',
-                              selected.policyOverride?.reason ||
-                                selected.unevaluatedReason ||
-                                (selected.comparisonId
-                                  ? 'Recorded evaluation evidence.'
-                                  : 'No release reason recorded.'),
-                            ],
-                            ...(selected.policyOverride?.receipts.map(
-                              (receipt): [string, string] => [
-                                'Overridden policy',
-                                receipt.policyDigest + ' · comparison ' + receipt.comparisonId,
-                              ],
-                            ) ?? []),
-                            ['Release ID', selected.id],
-                            ['Version', selected.version.id],
-                            ['Digest', selected.version.digest],
-                            ['Previous version', selected.previousVersionId || 'None'],
-                            ...(selected.comparisonId
-                              ? [['Comparison', selected.comparisonId] as [string, string]]
-                              : []),
-                          ]}
-                        />
-                      </div>
-                      {selected.comparisonId && (
-                        <Button asChild variant="outline">
-                          <ConsoleLink
-                            aria-label={`Inspect evidence for revision ${selected.revision}`}
-                            href={bundleHref(scope, 'changes', {
-                              candidate: selected.version.id,
-                              comparison: selected.comparisonId,
-                              fromRevision: selected.revision,
-                            })}
-                          >
-                            Inspect evidence
-                          </ConsoleLink>
-                        </Button>
-                      )}
-                      {state.canEdit && selected.version.id !== state.resolution.version.id && (
-                        <Button
-                          variant="outline"
-                          aria-label={`Restore revision ${selected.revision}`}
-                          disabled={!hydrated || Boolean(operation) || related.blocked}
-                          onClick={(event) => {
-                            restoreReturnRef.current = event.currentTarget;
-                            setError('');
-                            setStatus('');
-                            setReason('');
-                            setTarget({
-                              sourceRevision: selected.revision,
-                              versionId: selected.version.id,
-                              reviewedRevision: state.resolution.revision,
-                            });
-                          }}
-                        >
-                          Restore
-                        </Button>
-                      )}
-                    </div>
-                  </>
-                }
-              />
+              <section className="min-w-0 space-y-3 p-4" aria-label="Selected release">
+                <h3 className="font-semibold">Revision {selected.revision}</h3>
+                <p className="text-sm">
+                  {selected.unevaluatedReason || 'No release reason recorded.'}
+                </p>
+                <div className="release-actions">
+                  <div className="release-inspection-actions">
+                    <VersionInspector
+                      scope={scope}
+                      versionId={selected.version.id}
+                      label="Inspect content"
+                      contextLabel={`revision ${selected.revision}`}
+                    />
+                    <ChangeRecordDetails
+                      title="Release details"
+                      triggerLabel={`Release details for revision ${selected.revision}`}
+                      description="Version identity and channel release metadata."
+                      copyLabel="Copy release details"
+                      value={JSON.stringify(selected, null, 2)}
+                      fields={[
+                        ['Revision', selected.revision],
+                        ['Published', <ReceiptTime value={selected.createdAt} />],
+                        ['Released by', selected.reviewer],
+                        ['Release ID', selected.id],
+                        ['Version', selected.version.id],
+                        ['Digest', selected.version.digest],
+                        ['Previous version', selected.previousVersionId || 'None'],
+                      ]}
+                    />
+                  </div>
+                  {state.canEdit && selected.version.id !== state.resolution.version.id && (
+                    <Button
+                      variant="outline"
+                      aria-label={`Restore revision ${selected.revision}`}
+                      disabled={!hydrated || Boolean(operation)}
+                      onClick={(event) => {
+                        restoreReturnRef.current = event.currentTarget;
+                        setError('');
+                        setStatus('');
+                        setReason('');
+                        setTarget({
+                          sourceRevision: selected.revision,
+                          versionId: selected.version.id,
+                          reviewedRevision: state.resolution.revision,
+                        });
+                      }}
+                    >
+                      Restore
+                    </Button>
+                  )}
+                </div>
+              </section>
             ) : !matches.length ? (
               <p className="p-4 text-sm text-muted-foreground">
                 No loaded releases match your search.
@@ -632,9 +574,9 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
           <DialogHeader>
             <DialogTitle>Restore revision {target?.sourceRevision}?</DialogTitle>
             <DialogDescription>
-              Replace the current {state.channel} release (revision {target?.reviewedRevision})
-              with this content version. This creates a new manual revision and retains the existing
-              history, without inheriting evaluation support.
+              Replace the current {state.channel} release (revision {target?.reviewedRevision}) with
+              this content version. This creates a new manual revision and retains the existing
+              history.
             </DialogDescription>
           </DialogHeader>
           <dl className="release-restore-summary">
@@ -670,7 +612,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
               Reason for restoring
             </Label>
             <Textarea
-              disabled={submitting || Boolean(staleReview) || Boolean(operation) || related.blocked}
+              disabled={submitting || Boolean(staleReview) || Boolean(operation)}
               id="restore-reason"
               value={reason}
               maxLength={1000}
@@ -694,13 +636,7 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
               </Button>
             ) : (
               <Button
-                disabled={
-                  !state.canEdit ||
-                  !reason.trim() ||
-                  submitting ||
-                  Boolean(operation) ||
-                  related.blocked
-                }
+                disabled={!state.canEdit || !reason.trim() || submitting || Boolean(operation)}
                 onClick={() => void restore()}
               >
                 {submitting ? 'Restoring…' : 'Restore version'}

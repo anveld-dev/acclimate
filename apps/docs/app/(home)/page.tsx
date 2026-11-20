@@ -1,21 +1,13 @@
 import Link from 'next/link';
 
-const loop = [
+const delivery = [
   {
     step: 'Version',
     body: 'Save instructions, skills and approved memory as an immutable bundle version.',
   },
   {
-    step: 'Compare',
-    body: 'Your application runs the parent and candidate on the same saved cases and grades both.',
-  },
-  {
-    step: 'Review',
-    body: 'Your team inspects the scores and evidence before anything ships.',
-  },
-  {
     step: 'Release',
-    body: 'Point a channel such as stable at the reviewed version, or restore an earlier one.',
+    body: 'Point a channel such as stable at an immutable version, or restore an earlier one.',
   },
   {
     step: 'Deliver',
@@ -27,12 +19,12 @@ const entries = [
   {
     title: 'Quickstart',
     href: '/docs/get-started/quickstart',
-    body: 'Grade a change on your laptop with no server, then run it through a local stack.',
+    body: 'Start a local stack and deliver a verified version to your application.',
   },
   {
     title: 'Guides',
-    href: '/docs/guides/evaluate-a-change',
-    body: 'Evaluate a change, gate PRs in CI, deliver content to jobs and release safely.',
+    href: '/docs/guides/deliver-content',
+    body: 'Release versions to channels and prepare them for jobs.',
   },
   {
     title: 'Integrations',
@@ -52,12 +44,12 @@ export default function HomePage() {
       <section className="flex flex-col gap-6">
         <p className="text-sm font-medium text-fd-muted-foreground">Acclimate documentation</p>
         <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance md:text-5xl">
-          Ship changes to your agent&apos;s prompts and skills like code.
+          Improve your agent’s harness and deliver each version to your jobs.
         </h1>
         <p className="max-w-2xl text-lg text-fd-muted-foreground text-pretty">
-          Every change is a version. Your agent runs the old and new versions on the same saved
-          tasks, your grader scores both, and the change ships only when the evidence clears your
-          bar. Roll back by releasing an earlier version.
+          Acclimate versions and delivers your agent’s instructions, skills and memory. The
+          self-improvement loop ships in a later phase. It will propose five changes per round,
+          evaluate those that pass screening and remember what adopted changes fixed.
         </p>
         <div className="flex flex-wrap gap-3">
           <Link
@@ -75,24 +67,21 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section aria-labelledby="loop-heading" className="flex flex-col gap-6">
-        <h2 id="loop-heading" className="text-xl font-semibold tracking-tight">
-          How it works
+      <section aria-labelledby="delivery-heading" className="flex flex-col gap-6">
+        <h2 id="delivery-heading" className="text-xl font-semibold tracking-tight">
+          Versioned delivery
         </h2>
-        <ol className="grid gap-px overflow-hidden rounded-xl border bg-fd-border sm:grid-cols-2 lg:grid-cols-5">
-          {loop.map((item, index) => (
+        <ol className="grid gap-px overflow-hidden rounded-xl border bg-fd-border sm:grid-cols-2 lg:grid-cols-3">
+          {delivery.map((item) => (
             <li key={item.step} className="flex flex-col gap-2 bg-fd-card p-5">
-              <span className="font-mono text-xs text-fd-muted-foreground">
-                {String(index + 1).padStart(2, '0')}
-              </span>
               <span className="font-medium">{item.step}</span>
               <span className="text-sm text-fd-muted-foreground">{item.body}</span>
             </li>
           ))}
         </ol>
         <p className="max-w-2xl text-sm text-fd-muted-foreground">
-          Your application runs the agent. The service stores versions, comparisons and releases;
-          it never receives your model provider credentials.
+          Your application runs the agent and keeps its model provider credentials. Acclimate stores
+          bundles, versions and releases.
         </p>
       </section>
 

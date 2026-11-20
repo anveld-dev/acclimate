@@ -31,9 +31,6 @@ from .receipts import (
     DeliveryReporter as DeliveryReporter,
     BoundDeliveryReporter as BoundDeliveryReporter,
 )
-from .evaluation_progress import (
-    EvaluationProgressReporter as EvaluationProgressReporter,
-)
 
 # Wire types. ``acclimate.types.__all__`` lists them, so typing helpers such as
 # Literal and TypedDict stay out of the package namespace.
@@ -54,6 +51,5 @@ __all__ = [
     "validate_payload",
     "DeliveryReporter",
     "BoundDeliveryReporter",
-    "EvaluationProgressReporter",
 ]
 __all__ += _types.__all__

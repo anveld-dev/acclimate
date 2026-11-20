@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
 import { validateEvaluationDescriptor } from '../evaluation-validation.js';
-import type { EvaluationDescriptor } from '../types.js';
+import type { EvaluationDescriptor } from './types.js';
 import { DefinitionError, EvaluationError } from './errors.js';
 import { declaredScheduling } from './definition.js';
 import type { EvaluationCase, EvaluationDefinition, Json } from './types.js';

@@ -12,7 +12,7 @@ export const BUILT_IN_HARNESSES = Object.freeze(['codex', 'claude', 'pi', 'curso
 
 /**
  * Explicit sandbox and tool defaults for each built-in adapter. They are part of
- * the runtime identity, so changing them requires a new evaluation request.
+ * the runtime identity.
  */
 export const HARNESS_POLICIES = Object.freeze({
   codex: Object.freeze({
@@ -65,7 +65,7 @@ async function prepareReplay(version) {
   return { ...staged, versionId: version.version.id, digest: version.version.digest };
 }
 
-/** Application-owned allowlist: no handoff value resolves executable code. */
+/** Registry of harnesses available to the application. */
 export async function installedHarness(name) {
   const run = (exportName) => ({ module: HERE, exportName });
   switch (name) {

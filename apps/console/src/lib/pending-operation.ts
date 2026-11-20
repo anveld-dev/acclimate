@@ -1,6 +1,6 @@
 import { validateOperationTarget } from './operation-target';
 // Only submitted text lives here. Unresolved metadata outlives explicit text forgetting.
-const owners = ['draft', 'releases', 'improvement', 'library'] as const;
+const owners = ['releases', 'library'] as const;
 export type PendingScope = {
   owner: (typeof owners)[number];
   actorScope: string;
@@ -16,7 +16,6 @@ export type PendingOperation = {
   key: string;
   createdAt: number;
   body?: string;
-  disclosure?: { consent: true; wholeParentBundle: true; authorizedEvidence: string[] };
 };
 export type PendingStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
 const PREFIX = 'acclimate:operation:v1:';
@@ -36,17 +35,6 @@ function slot(scope: PendingScope) {
   );
 }
 
-export function findRelatedPending(
-  storage: PendingStorage,
-  scope: PendingScope,
-): PendingOperation | null {
-  for (const owner of owners) {
-    if (owner === scope.owner) continue;
-    const record = loadPending(storage, { ...scope, owner });
-    if (record) return record;
-  }
-  return null;
-}
 export function loadPending(storage: PendingStorage, scope: PendingScope): PendingOperation | null {
   const raw = storage.getItem(slot(scope));
   if (!raw) return null;
@@ -60,6 +48,7 @@ export function loadPending(storage: PendingStorage, scope: PendingScope): Pendi
     !Number.isFinite(record.createdAt)
   )
     throw Error('Invalid recovery record.');
+  validateOperationTarget(scope.workspaceId, record.action, scope);
   if (record.body && Date.now() - record.createdAt > MAX_AGE) return forgetPending(storage, scope);
   return record;
 }
@@ -69,9 +58,8 @@ export function freezePending(
   action: string,
   body: unknown,
   key: string = crypto.randomUUID(),
-  disclosure?: PendingOperation['disclosure'],
 ): PendingOperation {
-  return freezePendingExact(storage, scope, action, JSON.stringify(body), key, disclosure);
+  return freezePendingExact(storage, scope, action, JSON.stringify(body), key);
 }
 
 // Accept already serialized requests so recovery replays retain their exact bytes.
@@ -81,7 +69,6 @@ export function freezePendingExact(
   action: string,
   exact: string | undefined,
   key: string = crypto.randomUUID(),
-  disclosure?: PendingOperation['disclosure'],
 ): PendingOperation {
   try {
     validateOperationTarget(scope.workspaceId, action, scope);
@@ -91,7 +78,7 @@ export function freezePendingExact(
   if (!exact || new TextEncoder().encode(exact).length > MAX_BYTES)
     throw Error('Submitted request exceeds recovery storage limit.');
   JSON.parse(exact);
-  const existing = loadPending(storage, scope) || findRelatedPending(storage, scope);
+  const existing = loadPending(storage, scope);
   if (existing) {
     if (existing.key === key && existing.action === action && existing.body === exact)
       return existing;
@@ -104,13 +91,9 @@ export function freezePendingExact(
     key,
     createdAt: Date.now(),
     body: exact,
-    ...(disclosure ? { disclosure } : {}),
   };
   // Metadata first: if writing text fails, no request may be sent, and uncertainty remains explicit.
-  storage.setItem(
-    slot(scope),
-    JSON.stringify({ ...record, body: undefined, disclosure: undefined }),
-  );
+  storage.setItem(slot(scope), JSON.stringify({ ...record, body: undefined }));
   storage.setItem(slot(scope), JSON.stringify(record));
   if (storage.getItem(slot(scope)) !== JSON.stringify(record))
     throw Error('Recovery storage could not be verified.');
@@ -122,7 +105,7 @@ export function forgetPending(
 ): PendingOperation | null {
   const raw = storage.getItem(slot(scope));
   if (!raw) return null;
-  const record = { ...JSON.parse(raw), body: undefined, disclosure: undefined } as PendingOperation;
+  const record = { ...JSON.parse(raw), body: undefined } as PendingOperation;
   storage.setItem(slot(scope), JSON.stringify(record));
   return record;
 }
@@ -143,7 +126,6 @@ export function clearPendingOperations(storage: PendingStorage = sessionStorage,
     try {
       const record = JSON.parse(storage.getItem(key)!);
       delete record.body;
-      delete record.disclosure;
       storage.setItem(key, JSON.stringify(record));
     } catch {
       storage.removeItem(key);

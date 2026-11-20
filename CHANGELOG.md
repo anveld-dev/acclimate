@@ -6,9 +6,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-These changes ship in 0.2.0. It changes CLI exit codes, a Python SDK option and an attribute, and the OpenAPI file name, so read **Breaking** before you upgrade. The example CI workflows pin the GitHub Action at `v0.2.0`, the first release that contains it.
+These changes ship in 0.2.0. It renames public fields, routes, options, environment variables and files, removes the names deprecated in 0.1.0, and changes CLI exit codes, a Python SDK option and an attribute, and the OpenAPI file name, so read **Breaking** before you upgrade. An 0.1 SDK or evaluator cannot talk to an 0.2 service. The example CI workflows pin the GitHub Action at `v0.2.0`, the first release that contains it.
 
 ### Breaking
+
+- **Workspace, connection and version naming.** Public JSON, both SDKs, the CLI, environment variables, config files and the docs now use one name per concept. Rust and PostgreSQL keep their internal `project_id` and `integration_id` names. See [Upgrading from 0.1](apps/docs/content/docs/reference/versioning.mdx#upgrading-from-01).
+
+  | 0.1 | 0.2 |
+  | --- | --- |
+  | `projectId` in request and response bodies, `Bundle`, `Connection`, delivery receipts, learning enrollments, capability snapshots, policy receipts, exported review artifacts and `VerifiedVersion.connection` | `workspaceId` |
+  | `integrationId` in the same places | `connectionId` |
+  | TypeScript `projectId` parameters and `prepare({ projectId })` | `workspaceId` |
+  | Python `project_id` arguments | `workspace_id` |
+  | TypeScript client option `integrationId`, `client.integrationId` | `connectionId` |
+  | Python `AcclimateClient(integration_id=...)`, `client.integration_id`, `integration_id` arguments | `connection_id` |
+  | `X-Acclimate-Integration-Id` delivery header | `X-Acclimate-Connection-Id` |
+  | `acclimate-operator --project`, `acclimate-learning --integration` | `--workspace`, `--connection` |
+  | `ACCLIMATE_PROJECT` | `ACCLIMATE_WORKSPACE` |
+  | `ACCLIMATE_INTEGRATION` | `ACCLIMATE_CONNECTION` |
+  | `ACCLIMATE_AUTH` grant `{token, principalId, projectId, rights}` | `{token, principalId, workspaceId, rights}` |
+  | Evaluator and reader config `projectId` | `workspaceId` |
+  | `/v1/projects/{projectId}/...` routes, with `integrations`, `integration-observations` and `promotions` subpaths | Removed. Use `/v1/workspaces/{workspaceId}/...` with `connections`, `connection-observations` and `releases`. `operationPath` must use the `/v1/workspaces` spelling, and `Operation.path` always does. |
+  | Handoff file `evaluation-request.json` | `handoff.json` |
+  | Handoff `projectId` and `configuration` | `workspaceId` and `descriptor` |
+  | `execute({ bundle })` (Python `run.bundle`) | `execute({ version })` (Python `run.version`) |
+  | `PreparedDelivery.bundle`, and `PreparedDelivery.version` as version metadata | `PreparedDelivery.version` is the verified version; its metadata is `prepared.version.version` (Python `prepared.version["version"]`) |
+  | `DeliveryObservation.bundle`, `DeliveredVersion.bundle` | `.version` |
+  | Plugin and `prepareNativeFiles` `bundle` parameter; `prepareNativeFiles(bundle, mapping, prefix, target)` | `prepare(version, options)`; `prepareNativeFiles(version, { mapping, prefix, target })` |
+  | `PreparedCodexBundle`, `PreparedClaudeBundle`, `PreparedPiBundle`, `PreparedCursorBundle` | `PreparedCodexVersion`, `PreparedClaudeVersion`, `PreparedPiVersion`, `PreparedCursorVersion` |
+  | `listProjects`, `listPromotions`, `promote`, `createIntegration`, `listIntegrations`, `createIntegrationCredential`, `revokeIntegration`, `revokeIntegrationCredential`, `listIntegrationObservations` and the Python aliases | `listWorkspaces`, `listReleases`, `createRelease` and the matching `Connection` methods |
+  | `Project`, `Promotion`, `PromotionPage`, `PromoteRequest`, `VerifiedBundle`, `Integration*` types and the Python aliases | `Workspace`, `Release`, `ReleasePage`, `CreateReleaseRequest`, `VerifiedVersion`, `Connection*` |
+
+  Old names fail loudly instead of being ignored. An evaluator config, reader config, handoff or `ACCLIMATE_AUTH` grant with `projectId`, a handoff with `configuration`, a TypeScript `integrationId` client option or `projectId` selection, the old CLI flags, and `ACCLIMATE_PROJECT` or `ACCLIMATE_INTEGRATION` set without the new variable are rejected with an error that names the rename, such as `projectId was renamed to workspaceId in 0.2.0`. Handoffs, configs and journals keep `schemaVersion: 1`. Journals written by 0.1 are still read, so an evaluation in flight during the upgrade can be recovered with the 0.2 evaluator of the same language.
 
 - **Evaluator exit codes.** `acclimate-eval` and the Python `acclimate` command exit 0 ok, 1 fix the command, config or application, 2 quality gate failed, 3 indeterminate, 4 run or service failed, and 5 recovery required. A failed run used to exit 2, and journal problems, a base conflict or an interrupted request used to exit 3. Running with no arguments now exits 1. The CI wrapper uses the same table: `execution_failed` exits 4, `execution_unresolved` and `prior_execution_unresolved` exit 5, and 3 means indeterminate or partial evidence (`quality_indeterminate`, new `execution_partial`).
 - **Statistical quality gate by default.** Policies of every schema version, including existing v1 files, run a one-sided 95% paired Student t test on the equal-case mean difference. Fewer than 10 cases, too few repetitions or zero variance without a floor make the verdict indeterminate (exit 3) instead of passing. Declare `"inference": {"method": "none"}` to keep point-estimate comparisons. The ids `connected-development` and `connected-audit` are reserved for connected learning.
@@ -41,6 +70,8 @@ These changes ship in 0.2.0. It changes CLI exit codes, a Python SDK option and 
 
 ### Changed
 
+- Every artifact is versioned `0.2.0`. The plugin packages peer-depend on `@acclimate/sdk` `^0.2.0`, because `^0.1.0` excludes `0.2.0`.
+- The glossary uses one term per concept: the **handoff** is the `handoff.json` file the console downloads and `request` writes, and the **evaluation request** is the service record it names.
 - Examples import only published package entries. The checkout evaluator harness moved to `scripts/evaluator-tests/` as `runCheckoutEvaluation`.
 - The console scorecard shows the reward change in a neutral tone, counts cases rather than repetitions, shows per-case wins and losses, per-arm missing evidence, and the policy's lower bound or states that there is none.
 - A task that fails with a timeout or crash keeps its partial diff.

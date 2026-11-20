@@ -34,6 +34,16 @@ class DeliveryReporter:
     def bind(self, bundle_id, version, source):
         if source not in ("network", "cache", "offline"):
             raise UsageError("invalid receipt source")
+        metadata = version.get("version") if isinstance(version, dict) else None
+        if not isinstance(metadata, dict):
+            raise UsageError("version must be a verified version")
+        # A receipt must describe delivery in this reporter's scope, as in TypeScript.
+        connection = version.get("connection")
+        if ("bundleId" in metadata and metadata["bundleId"] != bundle_id) or (
+                connection is not None and (
+                    connection.get("workspaceId") != self.workspace_id
+                    or str(connection.get("connectionId", "")).lower() != str(self.connection_id).lower())):
+            raise UsageError("Delivery scope must match reporter scope")
         return BoundDeliveryReporter(self, bundle_id, version, source)
 
     def _expire(self):

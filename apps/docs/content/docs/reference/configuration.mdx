@@ -14,14 +14,15 @@ These variables are used by the repository's app setup recipes and command-line 
 | `ACCLIMATE_URL` | Public HTTPS API base URL. |
 | `ACCLIMATE_TOKEN` | Scoped machine token for the operation. Use a delivery read token in the application. |
 | `ACCLIMATE_SCOPE` | Stable app or authenticated principal identity for cache scoping. Keep it distinct from the token. |
-| `ACCLIMATE_PROJECT`, `ACCLIMATE_BUNDLE`, `ACCLIMATE_CHANNEL` | Workspace ID, bundle ID, and channel used by the delivery examples. |
+| `ACCLIMATE_WORKSPACE`, `ACCLIMATE_BUNDLE`, `ACCLIMATE_CHANNEL` | Workspace ID, bundle ID, and channel used by the delivery examples. |
 | `ACCLIMATE_CACHE`, `ACCLIMATE_JOB_DIR` | Cache and staging directory overrides in the console recipes. |
-| `ACCLIMATE_INTEGRATION`, `ACCLIMATE_RECEIPT_TOKEN` | Connection ID and separate optional delivery reporting credential. |
+| `ACCLIMATE_CONNECTION`, `ACCLIMATE_RECEIPT_TOKEN` | Connection ID and separate optional delivery reporting credential. |
+| `ACCLIMATE_EVALUATOR_TOKEN` | Evaluator token used when the private evaluator config names neither `evaluatorToken` nor `evaluatorTokenFile`. Use it to pass a CI secret. |
 | `ACCLIMATE_EVALUATOR_CASES` | Absolute path to a private JSON array that overrides the installed adapter's cases. Use mode 0600. |
 | `AGENT_TASK` | Task input for the console's connected agent recipe. |
 | `ACCLIMATE_CI_PYTHON` | Override the Python interpreter used by the CI wrapper. |
 
-`EVALUATOR_CONFIG` in command examples is a shell variable for the path passed to `--config`. The evaluator reads its credential and journal settings from that explicit private file.
+`EVALUATOR_CONFIG` in command examples is a shell variable for the path passed to `--config`. The evaluator reads its journal settings from that explicit private file. The token comes from the file's `evaluatorToken`, from the private file named by `evaluatorTokenFile`, or from `ACCLIMATE_EVALUATOR_TOKEN`.
 
 ## Rust service
 
@@ -33,7 +34,8 @@ These variables are used by the repository's app setup recipes and command-line 
 | `ACCLIMATE_LOGIN_TOKEN` | Required login authority token. Match `CONSOLE_LOGIN_TOKEN`. |
 | `ACCLIMATE_CONSOLE_TOKEN` | Required console transport token. Match `CONSOLE_SERVICE_TOKEN`. Use a different token from the login authority and every machine grant. The login authority and machine tokens must also be distinct. |
 | `ACCLIMATE_OPERATORS` | Required nonempty JSON array of objects with `issuer` and `subject`. Each pair must be unique, use the exact configured issuer and have a nonempty subject of at most 512 bytes. |
-| `ACCLIMATE_AUTH` | Required JSON array of machine grants with `token`, `principalId`, `projectId` and `rights`. Use `[]` for browser-only operation. Rights are `read`, `write`, `propose` and `promote`. A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. |
+| `ACCLIMATE_AUTH` | Required JSON array of static machine grants with `token`, `principalId`, `workspaceId` and `rights`. Use `[]` when every machine token is issued from the console. Rights are `read`, `evaluate`, `write`, `propose` and `promote`. `evaluate` includes `read`, and `write` includes `evaluate`. A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. Changing this value requires a restart; console-issued [evaluator tokens](/docs/operate/evaluator-access) do not. |
+| `ACCLIMATE_EVALUATION_ABANDON_SECONDS` | Whole seconds without a start, progress report or bound report after which the service abandons a running evaluation attempt. Defaults to 7,200. Values below 60 or invalid values use the default. Connected-learning evaluations use their own deadlines. |
 | `ACCLIMATE_SERVICE_BINARY` | Absolute path to the executable used by the native `npm start` wrapper. Defaults to `target/release/acclimate-service` under the checkout. |
 
 Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from both the Rust and console environments. Startup rejects any defined value.
@@ -96,7 +98,7 @@ Set `ACCLIMATE_SMTP_HOST` to enable application invitation email. Configure Keyc
 | `CONSOLE_OIDC_ISSUER` | Required exact HTTPS realm issuer. Match `ACCLIMATE_OIDC_ISSUER` verbatim. |
 | `CONSOLE_OIDC_CLIENT_ID`, `CONSOLE_OIDC_CLIENT_SECRET` | Required confidential client ID and credential. The bundled realm uses `acclimate-console`. Register the exact `CONSOLE_ORIGIN` plus `/auth/callback`. |
 | `CONSOLE_ALLOW_EDITS` | Set to the literal `true` to enable authoring and connection mutations for authorized users. Defaults to disabled. |
-| `CONSOLE_PROJECT`, `CONSOLE_BUNDLE`, `CONSOLE_CHANNEL` | Optional fallback workspace, bundle and channel for server operations without a saved selection. Many operations use `stable` when a channel is absent. Prefer selecting the scope in the console. |
+| `CONSOLE_WORKSPACE`, `CONSOLE_BUNDLE`, `CONSOLE_CHANNEL` | Optional fallback workspace, bundle and channel for server operations without a saved selection. Many operations use `stable` when a channel is absent. Prefer selecting the scope in the console. |
 | `HOST`, `PORT` | Listener settings. The native console and dev wrappers default to `127.0.0.1` and `3100` and accept port numbers 1–65,535. Compose binds `0.0.0.0:3100` on the private network. |
 | `NODE_ENV` | The console image runs with `production`. |
 

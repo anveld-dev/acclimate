@@ -17,7 +17,7 @@ In the original audit, **P1** meant a core path could break or lock out an opera
 
 Evidence:
 
-- **Compatibility:** [import validation](../../../apps/console/src/server/setup.ts), [proposal validation](../../../src/improvement.rs), [draft validation](../../../apps/console/src/server/drafts.ts), [native instruction and skill rules](../../../packages/sdk/src/internal/native-files.ts). Key locations: setup:144, improvement:350, drafts:55, native-files:35 and :61. Reviewers reproduced malformed-skill acceptance followed by native rejection without model calls.
+- **Compatibility:** [import validation](../../../apps/console/src/server/setup.ts), [proposal validation](../../../src/improvement.rs), [draft validation](../../../apps/console/src/server/drafts.ts), [native instruction and skill rules](../../../packages/sdk/src/native-files.ts). Key locations: setup:144, improvement:350, drafts:55, native-files:35 and :61. Reviewers reproduced malformed-skill acceptance followed by native rejection without model calls.
 - **Offline timeout:** [cache.ts:269 and :312](../../../packages/sdk/src/cache.ts), [client.ts:173](../../../packages/sdk/src/client.ts). Reproduced with a primed temporary cache and a disposable stalled HTTP server for both channel and exact-version selection.
 - **Last admin:** [workspaces.rs:399](../../../src/workspaces.rs), [Members actions](../../../apps/console/src/components/workspace-members.tsx). Source-traced; no real memberships were changed.
 - **Draft recovery:** [draft-workspace.tsx:170, :223 and :522](../../../apps/console/src/components/draft-workspace.tsx), [operation lookup](../../../src/commands.rs). Source-traced; committed-result recovery already works.

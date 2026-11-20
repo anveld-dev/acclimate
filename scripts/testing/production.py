@@ -14,7 +14,7 @@ def service_env(*, database_url, bind, tokens, login_token, console_token,
            if not k.startswith(('ACCLIMATE_', 'CONSOLE_')) and k not in
            ('DATABASE_URL', 'EVALUATION_TEST_DATABASE_URL', 'ACCLIMATE_TEST_DATABASE_URL')}
     grants = [dict(token=token, principalId=principal,
-                   projectId='other-' + project if principal == 'outsider' else project,
+                   workspaceId='other-' + project if principal == 'outsider' else project,
                    rights=['read'] if principal in ('viewer', 'outsider') else
                    ['read', 'write'] if principal in ('evaluator', 'other') else
                    ['read', 'write', 'propose', 'promote'])

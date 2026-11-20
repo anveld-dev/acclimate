@@ -45,6 +45,20 @@ pub fn validate_comparison(q: &ComparisonRequest) -> Result<bool, String> {
             {
                 return Err("Invalid usage cost".into());
             }
+            if let Some(components) = &o.components
+                && (o.grading_status != "scored"
+                    || components.len() > 32
+                    || components.iter().any(|(name, value)| {
+                        !value.is_finite()
+                            || name.is_empty()
+                            || name.len() > 64
+                            || !name.bytes().all(|b| {
+                                b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b':')
+                            })
+                    }))
+            {
+                return Err("Invalid grade components".into());
+            }
         }
     }
     use crate::connected_learning::statistics::{MAX_MISSING_PERCENT, scored_reward};
@@ -108,7 +122,7 @@ pub async fn create_comparison(
     h: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Response> {
-    let a = crate::auth::actor(&h, &s, &p, "write")?;
+    let a = crate::auth::actor(&h, &s, &p, "evaluate")?;
     let q: ComparisonRequest = serde_json::from_slice(&body).map_err(|_| {
         err(
             StatusCode::BAD_REQUEST,
@@ -116,7 +130,8 @@ pub async fn create_comparison(
             "Malformed request",
         )
     })?;
-    let route = format!("/v1/projects/{p}/bundles/{b}/comparisons");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/bundles/{b}/comparisons");
     let mut command = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),
@@ -247,7 +262,8 @@ pub async fn create_proposal(
             "Malformed request",
         )
     })?;
-    let route = format!("/v1/projects/{p}/bundles/{b}/proposals");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/bundles/{b}/proposals");
     let mut command = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),

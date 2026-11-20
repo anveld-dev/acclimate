@@ -1,60 +1,170 @@
 ---
 title: Provision evaluator access
-description: Give a private worker the workspace access and persistent state it needs to run and recover comparisons.
+description: Issue an evaluator token from the console, configure the worker or CI job, rotate without restarts, and recover a cancelled run.
 ---
 
-Provision a dedicated machine principal for an evaluator that runs inside your application's environment. The service records requests and evidence. The evaluator runs with the application's private case data, provider credentials, and tool policy.
+An evaluator runs inside your application's environment with its private cases, provider credentials, and tool policy. The service records requests and evidence. The evaluator authenticates with a machine token that a workspace administrator issues from the console or the API. Issuing, rotating and revoking tokens never restarts the service.
 
-## Grant access
+## Issue an evaluator token
 
-Choose a stable principal and exact workspace. Add a strong token to the private `ACCLIMATE_AUTH` array using these field names.
+1. Sign in to the console as a workspace administrator and open **Settings → Members → Evaluator tokens**.
+2. Select **Issue token**. Enter a name, such as `ci-evaluator`, and keep the **Evaluate** right selected. Choose an expiry of 1 to 365 days. The default is 90 days.
+3. Copy the secret. The console shows it once. The service stores only its SHA-256 digest.
+4. Enter the evaluator machine's journal directory and select **Download evaluator.json**. The file contains the public API URL, workspace, the token's principal (`machine:ci-evaluator`), and optionally the token.
+
+Install the file on the evaluator machine with owner-only permissions:
+
+```sh
+mkdir -p ~/.acclimate && chmod 700 ~/.acclimate
+mv ~/Downloads/evaluator.json ~/.acclimate/evaluator.json
+chmod 600 ~/.acclimate/evaluator.json
+```
+
+Then check it from the application directory:
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+acclimate-eval doctor --config ~/.acclimate/evaluator.json --bundle "$BUNDLE_ID"
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+acclimate doctor --config ~/.acclimate/evaluator.json --bundle "$BUNDLE_ID"
+```
+
+</Tab>
+</Tabs>
+
+`doctor` confirms the principal, the token's rights and the service's support for retained evaluator operations. See the [CLI reference](/docs/reference/evaluator-cli).
+
+The token list shows each token's principal, rights, status, expiry and last use. The **Token audit trail** records every issue, rotation and revocation with its administrator and reason. Tokens never show their secret again.
+
+### Use the API
+
+A workspace administrator can make the same changes over the API with a browser session. Machine tokens cannot manage tokens.
+
+| Operation | Request |
+| --- | --- |
+| Issue | `POST /v1/workspaces/{workspace}/machine-tokens` with `{"name":"ci-evaluator","rights":["evaluate"],"expiresInDays":90,"reason":"..."}` |
+| List | `GET /v1/workspaces/{workspace}/machine-tokens` |
+| Rotate | `POST /v1/workspaces/{workspace}/machine-tokens/{id}/rotate` with optional `overlapSeconds` (0–604,800) and `expiresInDays` |
+| Revoke | `POST /v1/workspaces/{workspace}/machine-tokens/{id}/revoke` with `{"reason":"..."}` |
+| Audit trail | `GET /v1/workspaces/{workspace}/machine-token-events` |
+
+Issue and rotate return the secret once in `secret`. A workspace can hold at most 100 active tokens. If a response is lost, revoke the unconfirmed token and issue another.
+
+## Choose the least privilege
+
+Use the `evaluate` right for evaluators and CI. It allows these operations:
+
+- Read the workspace, including unpublished versions, comparisons and evaluation requests.
+- Read the evaluation capability snapshot.
+- Stage a candidate as a draft, create evaluation requests, and start, finish, interrupt or abandon attempts.
+- Report progress, comparisons and policy receipts.
+
+`evaluate` cannot publish or discard drafts, author versions directly, promote releases or change channels. Keep release authority with people or a separate principal.
+
+| Right | Grants |
+| --- | --- |
+| `read` | Read workspace content and evidence. |
+| `evaluate` | `read` plus the evaluator operations above. |
+| `write` | Content writes. It also implies `evaluate`, so existing evaluator grants continue to work. |
+| `propose` | Request service-generated proposals. |
+| `promote` | Publish drafts and record releases. |
+
+The capability snapshot at `GET /v1/workspaces/{workspace}/evaluation-capabilities` reports `rights`, `credential` and the `abandonment` policy alongside `writeEvaluation`.
+
+## Configure the worker or CI job
+
+The evaluator config is a private JSON file with mode 0600 in an owner-only directory (0700). Use canonical absolute paths on persistent local POSIX storage.
+
+```json title="evaluator.json"
+{
+  "schemaVersion": 1,
+  "serviceUrl": "https://api.example.com",
+  "workspaceId": "YOUR_WORKSPACE_ID",
+  "evaluatorPrincipalId": "machine:ci-evaluator",
+  "evaluatorToken": "acm_...",
+  "journalRoot": "/absolute/private/evaluation-journals"
+}
+```
+
+The token can come from one of three places. Name at most one in the file.
+
+| Source | Use |
+| --- | --- |
+| `evaluatorToken` | The token inline in the private config. |
+| `evaluatorTokenFile` | An absolute path to a file containing only the token, with an optional trailing newline. The SDK applies the config file's checks: mode 0600, an owner-only parent, owned by the current user, and no symlinks. |
+| `ACCLIMATE_EVALUATOR_TOKEN` | When the file names neither field, the SDK reads the token from this environment variable. Use it for CI secrets. |
+
+In CI, write the token-free config at job start and pass the token from your secret store:
+
+```sh
+umask 077
+mkdir -p "$RUNNER_TEMP/acclimate"
+cat > "$RUNNER_TEMP/acclimate/evaluator.json" <<EOF
+{"schemaVersion":1,"serviceUrl":"$ACCLIMATE_URL","workspaceId":"$ACCLIMATE_WORKSPACE",
+ "evaluatorPrincipalId":"machine:ci-evaluator","journalRoot":"$RUNNER_TEMP/acclimate/journal"}
+EOF
+ACCLIMATE_EVALUATOR_TOKEN="$CI_EVALUATOR_TOKEN" \
+  acclimate-eval compare --config "$RUNNER_TEMP/acclimate/evaluator.json" ...
+# Python: ACCLIMATE_EVALUATOR_TOKEN="$CI_EVALUATOR_TOKEN" acclimate compare --config ...
+```
+
+Pass the path as `--config`. Relative paths resolve against the current directory. A remote service URL requires HTTPS. The worker records a failed callback's redacted message and stack trace in its private job directory. Add `"captureCallbackErrors": false` to opt out. When recovering an attempt, use the exact URL, workspace, principal, canonical journal root, and originating SDK language and release. On a durable worker, keep the journal on one authoritative physical volume across restarts.
+
+For a separate reader, provide a private config with `schemaVersion`, `serviceUrl`, `workspaceId`, and `readToken`. A read-only policy check sends no verdict.
+
+## Rotate a token without restarting
+
+Rotation issues a successor with the same principal and rights. Evaluations started under the old token stay owned by that principal, so the successor can finish them.
+
+1. Select **Rotate** in the console, or call the rotate endpoint. The console keeps the old token valid for one hour. Over the API, set `overlapSeconds`; `0` revokes the old token immediately.
+2. Copy the new secret and replace only the token in the worker's config, token file or CI secret. Keep the service URL, workspace, principal and journal root.
+3. Run `doctor`. Old clients keep working until the overlap ends.
+
+Revocation takes effect on the token's next request. Revoking a token does not stop model or tool work that is already running. Check the original application worker for that.
+
+## Recover a cancelled run
+
+An evaluator journal normally prevents repeating an attempt whose outcome is unknown. On an ephemeral CI runner, a cancelled job takes its journal with it. The service can mark such an attempt `abandoned`. That status is terminal.
+
+- **After inactivity.** The service abandons a running attempt that has had no start, progress report or bound report for `ACCLIMATE_EVALUATION_ABANDON_SECONDS`. The default is 7,200 seconds. It records `abandonedBy` as `service:evaluation-expiry`.
+- **Explicitly.** A principal with `evaluate`, or a workspace editor, can call `POST /v1/workspaces/{workspace}/bundles/{bundle}/evaluation-requests/{id}/abandon` with a required `reason`. The SDK clients expose this as `abandonEvaluation` and `abandon_evaluation`. In the console, use **Abandon attempt** under the request's interruption controls. The service records the reason, the principal and the time. The CI wrapper's `--abandon-uncertain` (the action's `abandon-uncertain` input) calls this route for an attempt whose journal shows execution may have started.
+
+After abandonment:
+
+- The old attempt's later start, progress, comparison and finish calls are refused.
+- A comparison it already submitted can never support a release. Promotion returns `evidence_abandoned`.
+- A new request for the same candidate content may start. Run `compare --name` with a fresh run name, or `compare --retry-after PRIOR_NAME` when the earlier journal survives.
+
+Abandonment does not claim that the original worker stopped or that its model calls ran exactly once. A stale heartbeat is not proof of termination. Abandonment only fences the attempt in the service, so its evidence cannot count. The replacement attempt can repeat paid model or tool calls. Record the reason, and check any external side effects before you start new work. Connected-learning evaluations keep their own deadlines and cannot be abandoned this way.
+
+## Bootstrap with a static grant
+
+The service still accepts static machine grants in the private `ACCLIMATE_AUTH` array. Use them to bootstrap automation before anyone can sign in, or for principals that are fixed in your deployment. Changing a static grant requires a coordinated restart.
 
 ```json
 [
   {
     "token": "REPLACE_PRIVATELY",
     "principalId": "support-evaluator",
-    "projectId": "YOUR_WORKSPACE_ID",
-    "rights": ["read", "write"]
+    "workspaceId": "YOUR_WORKSPACE_ID",
+    "rights": ["evaluate"]
   }
 ]
 ```
 
-The evaluator needs both `read` and `write` to fetch unpublished versions and submit evidence. The current workspace `write` grant also covers other workspace writes. Keep release authority and delivery credentials separate.
-
-Validate the explicit private grant file, then drain and restart the service with the updated runtime environment.
+Validate the private grant file, then drain and restart the service with the updated runtime environment:
 
 ```sh
 target/release/acclimate-service --check-grants < /absolute/private/machine-grants.json
 ```
 
-## Configure the worker
+Static principal IDs cannot contain colons. That keeps them distinct from console-issued `machine:` principals. Connected-learning enrollment still names static grant principals.
 
-Provide this file privately to the worker with mode 0600. Keep its parent directory and the journal, cache, and workspace roots owner-only with mode 0700. Use canonical absolute paths on persistent local POSIX storage.
-
-```json title="evaluator.json"
-{
-  "schemaVersion": 1,
-  "serviceUrl": "https://api.example.com",
-  "projectId": "YOUR_WORKSPACE_ID",
-  "evaluatorPrincipalId": "support-evaluator",
-  "evaluatorToken": "REPLACE_PRIVATELY",
-  "journalRoot": "/absolute/private/evaluation-journals"
-}
-```
-
-Pass the path as `--config`. A remote service URL requires HTTPS. Use the exact URL, workspace, principal, canonical journal root, and originating SDK language and release when recovering an attempt. Keep the journal on one authoritative physical volume across worker restarts.
-
-Run preflight in the installed evaluator environment:
-
-```sh
-acclimate-eval doctor --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID"
-```
-
-Preflight checks current machine authority and service support. For a separate reader, provide a private config with `schemaVersion`, `serviceUrl`, `projectId`, and `readToken`. A read-only policy check sends no verdict. See the [CLI reference](/docs/reference/evaluator-cli).
-
-## Rotate a token
-
-Add a replacement token for the same principal and workspace, retaining the old grant during the transition. Restart the service with the overlapping grants. Replace only the token in the evaluator config, run `doctor`, and let old clients finish. After those workers are quiescent, remove the old token and restart the service.
-
-Revocation controls service access. Check the original application worker to establish whether model or tool work stopped. For recovery steps, see [recover an evaluation](/docs/operate/upgrades-and-recovery#recover-an-evaluation).
+For recovery steps that keep the original journal, see [recover an evaluation](/docs/operate/upgrades-and-recovery#recover-an-evaluation).

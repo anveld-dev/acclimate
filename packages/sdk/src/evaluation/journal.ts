@@ -12,7 +12,7 @@ import {
 import { EvaluationError } from './errors.js';
 export interface JournalScope {
   serviceUrl: string;
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   requestId: string;
   evaluatorPrincipalId: string;
@@ -76,18 +76,23 @@ export interface AttemptJournal {
 }
 export const sha256 = (value: string | Uint8Array) =>
   'sha256:' + createHash('sha256').update(value).digest('hex');
-export function serializeScope(scope: JournalScope): string {
+/**
+ * The storage key for a journal directory: `sha256(journalDirectoryKey(scope))`. The Python
+ * evaluator computes the same bytes. It is a storage key, not a wire format.
+ */
+export function journalDirectoryKey(scope: JournalScope): string {
   return JSON.stringify({
     serviceUrl: scope.serviceUrl,
-    projectId: scope.projectId,
+    workspaceId: scope.workspaceId,
     bundleId: scope.bundleId,
     requestId: scope.requestId,
     evaluatorPrincipalId: scope.evaluatorPrincipalId,
   });
 }
 export function journalDirectory(root: string, scope: JournalScope): string {
-  return path.join(root, createHash('sha256').update(serializeScope(scope)).digest('hex'));
+  return path.join(root, createHash('sha256').update(journalDirectoryKey(scope)).digest('hex'));
 }
+
 const LOCK = `import fcntl,os,stat,sys
 p=sys.argv[1]
 fd=os.open(p,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
@@ -167,7 +172,7 @@ export async function openJournal(root: string, scope: JournalScope) {
     throw new EvaluationError('config.permissions');
   const directory = journalDirectory(root, scope),
     journalRoot = path.resolve(root),
-    identity = serializeScope(scope);
+    identity = journalDirectoryKey(scope);
   await privateDirectory(directory);
   const lock = await acquireFileLock(path.join(directory, 'ownership.lock'));
   try {
@@ -184,7 +189,7 @@ export async function openJournal(root: string, scope: JournalScope) {
       typeof value !== 'object' ||
       !value.scope ||
       value.schemaVersion !== 1 ||
-      serializeScope(value.scope) !== identity ||
+      journalDirectoryKey(value.scope) !== identity ||
       !value.attemptId ||
       !value.keys?.start ||
       !value.keys.submit ||

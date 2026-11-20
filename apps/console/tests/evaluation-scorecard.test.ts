@@ -68,3 +68,89 @@ test('researcher unequal repetitions render equal-case values with per-pair cove
     /Observed per-pair mean|<strong>0\.55<\/strong>|<strong>0\.6<\/strong>/,
   );
 });
+
+test('the outcome strip counts cases, keeps the delta neutral and names the missing statistics', async () => {
+  const { EvaluationOutcomeStrip } = await import('../src/components/evaluation-scorecard');
+  const { receiptInferenceText } = await import('../src/components/evaluation-policy-receipts');
+  const outcome = (reward: number | null): Outcome => ({
+    executionStatus: 'completed',
+    gradingStatus: reward === null ? 'missing' : 'scored',
+    reward,
+    usage: null,
+    outputRef: null,
+    error: null,
+  });
+  // Case "many" has four repetitions that all improve; "one" has a single loss. Per pair the bar
+  // would read 4 higher vs 1 lower; per case it is 1 higher, 1 lower and 1 not comparable.
+  const rows: Comparison['results'] = [
+    ...[0, 1, 2, 3].map((repetition) => ({
+      caseId: 'many',
+      repetition,
+      parent: outcome(0),
+      candidate: outcome(1),
+    })),
+    { caseId: 'one', repetition: 0, parent: outcome(1), candidate: outcome(0) },
+    { caseId: 'gap', repetition: 0, parent: outcome(1), candidate: outcome(null) },
+  ];
+  const comparison: Comparison = {
+    id: 'comparison',
+    complete: false,
+    parentVersionId: 'parent',
+    candidateVersionId: 'candidate',
+    parentDigest: 'parent-digest',
+    candidateDigest: 'candidate-digest',
+    datasetRevision: 'dataset',
+    graderRevision: 'grader',
+    runtime: {},
+    submitter: '',
+    createdAt: '',
+    expectedCases: rows.map(({ caseId, repetition }) => ({ caseId, repetition })),
+    results: rows,
+  };
+  const html = renderToStaticMarkup(createElement(EvaluationOutcomeStrip, { comparison }));
+  assert.match(html, /1 case higher reward/);
+  assert.match(html, /1 case lower reward/);
+  assert.match(html, /1 case not comparable/);
+  assert.match(html, /Cases · 2 of 3 fully scored/);
+  assert.match(html, /No confidence interval · observed means for these cases/);
+  assert.match(html, /parent 0 · candidate 1 · missing on one arm only/);
+  const bound = renderToStaticMarkup(
+    createElement(EvaluationOutcomeStrip, {
+      comparison,
+      inference: {
+        method: 'paired-t',
+        confidence: 0.95,
+        n: 12,
+        lowerBound: -0.0123,
+        threshold: -0.05,
+        status: 'estimated',
+      },
+    }),
+  );
+  assert.match(bound, /Policy lower bound -0.012 vs threshold -0.05 · 95% one-sided · 12 cases/);
+  const receipt = {
+    inference: {
+      method: 'paired-t',
+      confidence: 0.9,
+      lowerBound: 0.1,
+      threshold: 0,
+      n: 30,
+      sd: 0.4,
+      sdFloor: 0.1,
+    },
+  } as any;
+  assert.equal(
+    receiptInferenceText(receipt),
+    'paired-t 90% · lower bound 0.1 vs threshold 0 · 30 cases · sd 0.4 (floor 0.1)',
+  );
+  assert.equal(receiptInferenceText({} as any), 'No statistics recorded with this receipt');
+});
+
+test('the headline delta has no success or danger tone without a known metric direction', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const css = await readFile(
+    new URL('../src/components/evaluation-workspace.css', import.meta.url),
+    'utf8',
+  );
+  assert.doesNotMatch(css, /outcome-delta\[data-direction/);
+});

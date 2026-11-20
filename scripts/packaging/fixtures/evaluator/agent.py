@@ -1,11 +1,11 @@
 """Private payment worker for installed-consumer qualification."""
 
 
-def run_existing_agent(*, bundle, task, cancellation=None):
+def run_existing_agent(*, version, task, cancellation=None):
     if cancellation is not None:
         cancellation.raise_if_cancelled()
     instruction = "\n".join(
-        file["text"] for file in bundle["payload"]["files"] if file["kind"] == "instruction"
+        file["text"] for file in version["payload"]["files"] if file["kind"] == "instruction"
     )
     reuse_key = "Reuse the same idempotency key" in instruction
     charged, events = set(), []

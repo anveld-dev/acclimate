@@ -370,7 +370,7 @@ def prepare(w):
     w.history_setup=w.call('POST',w.root+'/bundle-setups',dict(name='Restore history fixture',origin='created',channel='stable',payload=dict(schemaVersion=1,files=FILES),reason='Disposable history fixture.'))
     bundle=w.root+'/bundles/'+w.history_setup['bundle']['id'];channel=bundle+'/channels/stable';base=w.history_setup['resolution']
     d=w.call('POST',channel+'/drafts',dict(baseVersionId=base['version']['id'],baseRevision=base['revision'],payload=candidate))
-    w.call('POST',channel+'/promotions',dict(versionId=d['snapshotVersion']['id'],expectedRevision=base['revision'],unevaluatedReason='Disposable second release for Restore dialog.'))
+    w.call('POST',channel+'/releases',dict(versionId=d['snapshotVersion']['id'],expectedRevision=base['revision'],unevaluatedReason='Disposable second release for Restore dialog.'))
 
 
 def main():

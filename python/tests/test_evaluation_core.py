@@ -19,8 +19,8 @@ from acclimate.evaluation import (
     Case, ExecutionResult, GradeResult, CallbackCancelled, EvaluationError,
     ExecutionUncertainError, define_evaluation, preflight_evaluation, run_evaluation,
 )
-from acclimate._evaluation_shared import json_bytes, mutate, read_evaluator_config, ensure_private_directory
-from acclimate._evaluation_journal import Journal, serialize_scope
+from acclimate._evaluation_shared import json_bytes, mutate, read_evaluator_config, ensure_private_directory, validate_handoff
+from acclimate._evaluation_journal import Journal, journal_directory_key, serialize_scope
 from acclimate.client import AcclimateClient, ApiError, TransportError
 
 
@@ -58,7 +58,7 @@ class FakeService:
         self.interrupt_after_start=False
 
     def get_evaluation_capabilities(self,_):
-        return {"schemaVersion":1,"projectId":"project","principalId":"evaluator","checkedAt":"2026-11-16T00:00:00Z",
+        return {"schemaVersion":1,"workspaceId":"project","principalId":"evaluator","checkedAt":"2026-11-16T00:00:00Z",
             "readUnpublished":True,"writeEvaluation":self.write_access,"retainedEvaluationOperations":True}
 
     def get_evaluation(self,*_):
@@ -91,6 +91,8 @@ class FakeService:
             result=copy.deepcopy(self.request)
             if self.interrupt_after_start:
                 self.request.update(status="interrupted",error="operator interruption")
+            if getattr(self,"abandon_after_start",False):
+                self.request.update(status="abandoned",error="CI job cancelled",abandonedBy="machine:ci")
         elif operation=="comparisons":
             complete=all(outcome["gradingStatus"]=="scored" and outcome["executionStatus"]!="infrastructure_failed"
                 for row in value["results"] for outcome in (row["parent"],row["candidate"]))
@@ -114,7 +116,7 @@ class EvaluationCoreTests(unittest.TestCase):
         self.root=Path(self.temp.name).resolve()
         self.config=self.root/"config.json"
         self.journal_root=self.root/"journals"
-        self.config.write_bytes(json_bytes({"schemaVersion":1,"serviceUrl":"https://fixture.example","projectId":"project",
+        self.config.write_bytes(json_bytes({"schemaVersion":1,"serviceUrl":"https://fixture.example","workspaceId":"project",
             "evaluatorPrincipalId":"evaluator","evaluatorToken":"private-canary-token","journalRoot":str(self.journal_root)}))
         self.config.chmod(0o600)
 
@@ -127,8 +129,8 @@ class EvaluationCoreTests(unittest.TestCase):
             execute=execute or (lambda run:ExecutionResult({"ok":True})),grade=grade or (lambda run:GradeResult(float(run.output["ok"]))))
 
     def handoff(self,app):
-        return {"schemaVersion":1,"serviceUrl":"https://fixture.example","projectId":"project","bundleId":BUNDLE,
-            "requestId":REQUEST,"configuration":app.descriptor}
+        return {"schemaVersion":1,"serviceUrl":"https://fixture.example","workspaceId":"project","bundleId":BUNDLE,
+            "requestId":REQUEST,"descriptor":app.descriptor}
 
     def run_app(self,app,service,**kwargs):
         with patch("acclimate.evaluation.make_client",return_value=service):
@@ -137,12 +139,12 @@ class EvaluationCoreTests(unittest.TestCase):
     def test_actual_pair_trace_and_all_mutable_input_isolation(self):
         events=[]
         def execute(run):
-            text=run.bundle["payload"]["files"][0]["text"]
+            text=run.version["payload"]["files"][0]["text"]
             events.append(("execute",run.repetition,text,run.input["task"]))
             self.assertTrue(Path(run.context.private_job_directory,"binding.json").exists())
             self.assertFalse(hasattr(run,"expected"))
-            run.bundle["payload"]["files"].clear()
-            run.bundle["version"]["id"]="mutated"
+            run.version["payload"]["files"].clear()
+            run.version["version"]["id"]="mutated"
             run.input["task"]="mutated"
             return ExecutionResult({"ok":True})
         def grade(run):
@@ -185,27 +187,38 @@ class EvaluationCoreTests(unittest.TestCase):
         self.assertEqual(len(list(self.journal_root.rglob("output-validation.json"))), 2)
         self.assertNotIn("seenAt", json.dumps(service.comparison))
 
-    def test_callback_exception_diagnostics_are_private_opt_in(self):
+    def test_callback_exception_diagnostics_are_private_by_default_with_opt_out(self):
         def broken(run):
-            raise RuntimeError("sensitive provider message")
+            raise RuntimeError("provider message Authorization: Bearer sk-live-0123456789abcdef")
         for phase in ("execute", "grade"):
-            for opted_in in (False, True):
-                self.config.write_bytes(json_bytes({**json.loads(self.config.read_bytes()),
-                    "captureCallbackErrors": opted_in, "journalRoot": str(self.root / (phase + str(opted_in)))}))
+            for setting in (False, None, True):
+                root = self.root / (phase + str(setting))
+                config = {**json.loads(self.config.read_bytes()), "journalRoot": str(root)}
+                config.pop("captureCallbackErrors", None)
+                if setting is not None:
+                    config["captureCallbackErrors"] = setting
+                self.config.write_bytes(json_bytes(config))
                 app = self.app(**{phase: broken})
                 service = FakeService(app)
-                self.run_app(app, service)
-                reports = list((self.root / (phase + str(opted_in))).rglob("callback-error.json"))
-                self.assertEqual(len(reports), 2 if opted_in else 0)
+                result = self.run_app(app, service)
+                reports = list(root.rglob("callback-error.json"))
+                self.assertEqual(len(reports), 0 if setting is False else 2)
                 self.assertEqual(service.comparison["results"][0]["parent"]["error"], "execution_failed" if phase == "execute" else "grading_failed")
+                failure = result["firstCallbackFailure"]
+                self.assertEqual((failure["caseId"], failure["repetition"], failure["stage"]), ("one", 0, phase))
+                self.assertEqual("diagnosticFile" in failure, setting is not False)
                 for report in reports:
                     details = json.loads(report.read_bytes())
                     self.assertEqual(details["phase"], phase)
                     self.assertEqual(details["exceptionType"], "RuntimeError")
                     self.assertEqual(details["frames"][-1]["function"], "broken")
-                    self.assertNotIn("sensitive provider message", report.read_text())
+                    self.assertIn("provider message", details["message"])
+                    self.assertIn("in broken", details["stack"])
+                    self.assertNotIn("sk-live-0123456789abcdef", report.read_text())
                     self.assertEqual(report.stat().st_mode & 0o777, 0o600)
                 self.assertNotIn("RuntimeError", json.dumps(service.comparison))
+                self.assertNotIn("provider message", json.dumps(service.comparison))
+                self.assertNotIn("provider message", json.dumps(result))
 
     def test_collection_schedule_matches_typescript_and_actual_callbacks(self):
         seen = []
@@ -231,7 +244,8 @@ class EvaluationCoreTests(unittest.TestCase):
         for key in ("protocol", "seed", "schedule"):
             with self.assertRaises(EvaluationError) as caught:
                 define_evaluation(**{**config, "runtime": {"acclimate.collection." + key: "spoofed"}})
-            self.assertEqual(caught.exception.code, "config.schema")
+            self.assertEqual(caught.exception.code, "definition.invalid")
+            self.assertEqual(caught.exception.field, "runtime.acclimate.collection." + key)
 
     def test_oversized_report_exposes_a_usable_partition_limit(self):
         make_cases = lambda n: [Case("case" + str(i), {}, True, 10) for i in range(n)]
@@ -251,7 +265,7 @@ class EvaluationCoreTests(unittest.TestCase):
                     import shutil
                     shutil.rmtree(p)
                 calls=[]
-                app=self.app(lambda run:(calls.append(run.bundle["version"]["id"]) or ExecutionResult({"ok":True})))
+                app=self.app(lambda run:(calls.append(run.version["version"]["id"]) or ExecutionResult({"ok":True})))
                 service=FakeService(app)
                 service.lose_once=operation
                 with self.assertRaises(EvaluationError) as caught:
@@ -268,7 +282,7 @@ class EvaluationCoreTests(unittest.TestCase):
     def test_committed_oversized_http_submit_response_recovers_without_callbacks(self):
         events=[]
         def execute(run):
-            events.append(("execute",run.bundle["version"]["id"]))
+            events.append(("execute",run.version["version"]["id"]))
             return ExecutionResult({"ok":True})
         def grade(run):
             events.append(("grade",run.case_id))
@@ -354,7 +368,7 @@ class EvaluationCoreTests(unittest.TestCase):
         class Crash(BaseException):
             pass
         calls=[]
-        app=self.app(lambda run:(calls.append(run.bundle["version"]["id"]) or ExecutionResult({"ok":True})))
+        app=self.app(lambda run:(calls.append(run.version["version"]["id"]) or ExecutionResult({"ok":True})))
         service=FakeService(app)
         original=Journal.save_artifact_index
         def crash_before_index_seal(journal,index):
@@ -385,7 +399,7 @@ class EvaluationCoreTests(unittest.TestCase):
         app=self.app(grade=lambda run:GradeResult(1,explanation={"private":"explanation"}))
         service=FakeService(app)
         self.run_app(app,service)
-        scope={"serviceUrl":"https://fixture.example","projectId":"project","bundleId":BUNDLE,
+        scope={"serviceUrl":"https://fixture.example","workspaceId":"project","bundleId":BUNDLE,
             "requestId":REQUEST,"evaluatorPrincipalId":"evaluator"}
         with Journal(self.journal_root,scope) as journal:
             index=journal.read_artifact_index()
@@ -443,41 +457,74 @@ class EvaluationCoreTests(unittest.TestCase):
                 self.assertEqual(len(calls),callbacks)
                 self.assertEqual(service.request["status"],"requested" if operation=="start" else "running")
 
-    def test_uncertain_execute_and_grade_stop_all_callbacks_and_refuse_retry(self):
-        for uncertainty in ("execute","grade"):
-            with self.subTest(uncertainty=uncertainty):
-                if self.journal_root.exists():
-                    import shutil
-                    shutil.rmtree(self.journal_root)
-                calls=[]
-                def execute(run):
-                    calls.append("execute")
-                    if uncertainty=="execute":
-                        raise ExecutionUncertainError()
-                    return ExecutionResult({"ok":True})
-                def grade(run):
-                    calls.append("grade")
-                    raise ExecutionUncertainError()
-                app=self.app(execute,grade)
-                service=FakeService(app)
-                for _ in range(2):
-                    with self.assertRaises(ExecutionUncertainError):
-                        self.run_app(app,service)
-                self.assertEqual(calls,["execute"] if uncertainty=="execute" else ["execute","grade"])
-                self.assertIsNone(service.comparison)
+    def test_uncertain_grade_stops_all_callbacks_and_refuses_retry(self):
+        calls=[]
+        def execute(run):
+            calls.append("execute")
+            return ExecutionResult({"ok":True})
+        def grade(run):
+            calls.append("grade")
+            raise ExecutionUncertainError()
+        app=self.app(execute,grade)
+        service=FakeService(app)
+        for _ in range(2):
+            with self.assertRaises(ExecutionUncertainError):
+                self.run_app(app,service)
+        self.assertEqual(calls,["execute","grade"])
+        self.assertIsNone(service.comparison)
 
-    def test_async_callback_and_future_outputs_are_not_ordinary_failure(self):
+    def test_uncertain_execute_fails_only_that_arm_is_never_retried_and_leaves_a_marker(self):
+        calls=[]
+        def execute(run):
+            calls.append((run.case_id,run.context.side))
+            if len(calls)==1:
+                raise ExecutionUncertainError()
+            return ExecutionResult({"ok":True})
+        app=self.app(execute,cases=[Case("one",{"task":"do"},True),Case("two",{"task":"do"},True)])
+        service=FakeService(app)
+        result=self.run_app(app,service)
+        # Every other arm still ran; the uncertain arm ran once.
+        self.assertEqual(len(calls),4)
+        self.assertEqual(len(set(calls)),4)
+        arms=[arm for pair in service.comparison["results"] for arm in (pair["parent"],pair["candidate"])]
+        uncertain=[arm for arm in arms if arm["error"]=="execution_uncertain"]
+        self.assertEqual(len(uncertain),1)
+        self.assertEqual(uncertain[0]["executionStatus"],"infrastructure_failed")
+        self.assertEqual(sum(1 for arm in arms if arm["reward"]==1.0),3)
+        markers=list(self.journal_root.glob("*/jobs/*/uncertain.json"))
+        self.assertEqual(len(markers),1)
+        marker=json.loads(markers[0].read_bytes())
+        self.assertEqual((marker["caseId"],marker["side"]),calls[0])
+        self.assertEqual(result["firstCallbackFailure"]["reason"],"execution_uncertain")
+        # A rerun reuses the submitted evidence and never repeats the uncertain arm.
+        self.run_app(app,service)
+        self.assertEqual(len(calls),4)
+
+    def test_coroutine_callbacks_run_to_completion_and_future_outputs_are_uncertain(self):
+        import asyncio
+        loops = set()
         async def async_execute(run):
-            return ExecutionResult(True)
-        with self.assertRaises(EvaluationError) as caught:
-            self.app(async_execute)
-        self.assertEqual(caught.exception.code, "config.async_callback")
-        self.assertEqual(caught.exception.next_action, "use_async_callback_adapter")
-        class AsyncCallable:
-            async def __call__(self,run):
-                return ExecutionResult(True)
-        with self.assertRaises(EvaluationError):
-            self.app(AsyncCallable())
+            await asyncio.sleep(0)
+            loops.add(id(asyncio.get_running_loop()))
+            return ExecutionResult({"ok": True})
+        class AsyncGrader:
+            async def __call__(self, run):
+                loops.add(id(asyncio.get_running_loop()))
+                return GradeResult(1.0)
+        app = self.app(async_execute, AsyncGrader())
+        service = FakeService(app)
+        result = self.run_app(app, service)
+        self.assertEqual(result["evaluation"]["status"], "completed")
+        self.assertEqual(service.comparison["results"][0]["candidate"]["reward"], 1.0)
+        # One loop serves every callback so loop-bound clients keep working.
+        self.assertEqual(len(loops), 1)
+        # A cancelled coroutine cannot attest that its external work stopped.
+        async def cancelled(run):
+            raise asyncio.CancelledError()
+        with self.assertRaises(ExecutionUncertainError):
+            self.app(cancelled)._execute(None)
+        self.config.write_bytes(json_bytes({**json.loads(self.config.read_bytes()),
+                                            "journalRoot": str(self.root / "future-journal")}))
         app=self.app(lambda run:ExecutionResult({"active":Future()}))
         service=FakeService(app)
         with self.assertRaises(ExecutionUncertainError):
@@ -618,6 +665,17 @@ class EvaluationCoreTests(unittest.TestCase):
         result=self.run_app(app,service)
         self.assertEqual(result["executionState"],"interrupted")
         self.assertEqual(calls,[])
+
+    def test_attempt_abandoned_by_the_service_settles_without_executing(self):
+        calls=[]
+        app=self.app(lambda run:(calls.append(1) or ExecutionResult({"ok":True})))
+        service=FakeService(app)
+        service.abandon_after_start=True
+        result=self.run_app(app,service)
+        self.assertEqual(result["executionState"],"interrupted")
+        self.assertEqual(result["evaluation"]["status"],"abandoned")
+        self.assertEqual(calls,[])
+        self.assertIsNone(service.comparison)
 
     def test_doctor_is_nonexecuting_and_denied_authority_is_not_ready(self):
         calls=[]
@@ -768,7 +826,7 @@ class EvaluationCoreTests(unittest.TestCase):
         try:
             self.assertTrue(entered.wait(5))
             cancelled.set()
-            scope={"serviceUrl":"https://fixture.example","projectId":"project","bundleId":BUNDLE,
+            scope={"serviceUrl":"https://fixture.example","workspaceId":"project","bundleId":BUNDLE,
                 "requestId":REQUEST,"evaluatorPrincipalId":"evaluator"}
             with self.assertRaises(EvaluationError) as caught:
                 with Journal(self.journal_root,scope):
@@ -804,14 +862,14 @@ class EvaluationCoreTests(unittest.TestCase):
         client.max_json_response_bytes=4*1024*1024
         client._opener=Opener(b"{}")
         data=b'{"attemptId":"66666666-6666-4666-8666-666666666666"}'
-        mutate(client,"start",{"projectId":"project","bundleId":BUNDLE,"requestId":REQUEST},data,"retry-key")
+        mutate(client,"start",{"workspaceId":"project","bundleId":BUNDLE,"requestId":REQUEST},data,"retry-key")
         sent=client._opener.requests[0]
         self.assertEqual(sent.data,data)
         self.assertEqual(sent.get_header("Idempotency-key"),"retry-key")
         self.assertEqual(sent.get_header("X-acclimate-durable-operation"),"true")
 
     def test_real_process_lock_and_foreign_journal(self):
-        scope={"serviceUrl":"https://fixture.example","projectId":"project","bundleId":BUNDLE,
+        scope={"serviceUrl":"https://fixture.example","workspaceId":"project","bundleId":BUNDLE,
             "requestId":REQUEST,"evaluatorPrincipalId":"evaluator"}
         with Journal(self.root/"locks",scope) as journal:
             program="import fcntl,os,sys; f=os.open(sys.argv[1],os.O_RDWR);\ntry: fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)\nexcept BlockingIOError: sys.exit(7)"
@@ -825,12 +883,23 @@ class EvaluationCoreTests(unittest.TestCase):
                 pass
         self.assertEqual(caught.exception.code,"journal.foreign")
 
-    def test_scope_serialization_is_exact_legacy_order_with_unicode(self):
+    def test_scope_serialization_is_exact_canonical_order_with_unicode(self):
         scope={"requestId":REQUEST,"bundleId":BUNDLE,"serviceUrl":"https://fixture.example",
-            "projectId":"caf\u00e9","evaluatorPrincipalId":"line\\quote\""}
-        expected=(f'{{"serviceUrl":"https://fixture.example","projectId":"caf\u00e9","bundleId":"{BUNDLE}",'
+            "workspaceId":"caf\u00e9","evaluatorPrincipalId":"line\\quote\""}
+        expected=(f'{{"serviceUrl":"https://fixture.example","workspaceId":"caf\u00e9","bundleId":"{BUNDLE}",'
             f'"requestId":"{REQUEST}","evaluatorPrincipalId":"line\\\\quote\\\""}}').encode()
         self.assertEqual(serialize_scope(scope),expected)
+
+    def test_journal_directory_key_hashes_the_canonical_scope_like_typescript(self):
+        scope={"requestId":REQUEST,"bundleId":BUNDLE,"serviceUrl":"https://fixture.example",
+            "workspaceId":"caf\u00e9","evaluatorPrincipalId":"evaluator"}
+        canonical=(f'{{"serviceUrl":"https://fixture.example","workspaceId":"caf\u00e9","bundleId":"{BUNDLE}",'
+            f'"requestId":"{REQUEST}","evaluatorPrincipalId":"evaluator"}}').encode()
+        self.assertEqual(journal_directory_key(scope),hashlib.sha256(canonical).hexdigest())
+        # The TypeScript evaluator pins the same digest for this scope.
+        self.assertEqual(journal_directory_key(scope),"0f5583cf11d8613c3b08cc4b3219f22d3ce14927f5610e0289a8bce87a909d71")
+        with Journal(self.journal_root,scope) as journal:
+            self.assertEqual(journal.directory.name,hashlib.sha256(canonical).hexdigest())
 
     def test_private_directory_flushes_new_ancestor_entries_before_returning(self):
         existing=self.root/"existing"
@@ -864,7 +933,7 @@ class EvaluationCoreTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node") and Path("node_modules/tsx").exists(),"Node/tsx external-consumer prerequisite unavailable")
     def test_typescript_and_python_use_same_kernel_lock_and_refuse_foreign_state(self):
-        scope={"serviceUrl":"https://fixture.example","projectId":"project","bundleId":BUNDLE,
+        scope={"serviceUrl":"https://fixture.example","workspaceId":"project","bundleId":BUNDLE,
             "requestId":REQUEST,"evaluatorPrincipalId":"evaluator"}
         script="""import {openJournal} from './packages/sdk/src/evaluation/journal.ts';
 try { const journal=await openJournal(process.argv[1],JSON.parse(process.argv[2]));await journal.close();process.exitCode=9; }

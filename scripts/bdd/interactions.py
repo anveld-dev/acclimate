@@ -111,23 +111,23 @@ def workspace_menu(page):
     return menu
 
 
-def choose_workspace(page,project_id):
+def choose_workspace(page,workspace_id):
     """Use either the labelled narrow selector or desktop workspace menu."""
     selector=page.get_by_role('combobox',name='Workspace',exact=True).filter(visible=True)
     if selector.count():
-        selector.select_option(project_id)
+        selector.select_option(workspace_id)
     else:
-        choice=workspace_menu(page).locator('[role=menuitemradio][data-workspace-id="'+project_id+'"]')
+        choice=workspace_menu(page).locator('[role=menuitemradio][data-workspace-id="'+workspace_id+'"]')
         expect(choice).to_have_count(1)
         choice.click()
 
 
-def assert_workspace_selected(page,project_id):
+def assert_workspace_selected(page,workspace_id):
     selector=page.get_by_role('combobox',name='Workspace',exact=True).filter(visible=True)
     if selector.count():
-        expect(selector).to_have_value(project_id)
+        expect(selector).to_have_value(workspace_id)
     else:
-        choice=workspace_menu(page).locator('[role=menuitemradio][data-workspace-id="'+project_id+'"]')
+        choice=workspace_menu(page).locator('[role=menuitemradio][data-workspace-id="'+workspace_id+'"]')
         expect(choice).to_have_attribute('aria-checked','true')
         page.keyboard.press('Escape')
         expect(page.get_by_role('menu')).to_have_count(0)

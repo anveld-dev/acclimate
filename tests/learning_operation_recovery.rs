@@ -27,7 +27,7 @@ async fn fixture() -> (AppState, String, Value) {
         provider: None,
     };
     let app = router(state.clone());
-    let setup = call(&app, "POST", &format!("/v1/projects/{project}/bundle-setups"), "seed", &json!({
+    let setup = call(&app, "POST", &format!("/v1/workspaces/{project}/bundle-setups"), "seed", &json!({
         "name":"learning recovery fixture", "origin":"created", "channel":"stable",
         "payload":{"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":"Baseline."}]},
         "reason":"Explicit disposable model-free setup"
@@ -72,7 +72,7 @@ async fn call(
 }
 fn lookup(project: &str, key: &str, path: &str) -> String {
     format!(
-        "/v1/projects/{project}/operations/{key}?operationPath={}",
+        "/v1/workspaces/{project}/operations/{key}?operationPath={}",
         path.replace('/', "%2F")
     )
 }
@@ -89,7 +89,7 @@ async fn retained_version_recovery_survives_transient_expiry_and_requires_curren
     // The learner need not have promotion authority to publish or recover a candidate.
     let writer = router(with_rights(&state, &["write"]));
     let versions = format!(
-        "/v1/projects/{project}/bundles/{}/versions",
+        "/v1/workspaces/{project}/bundles/{}/versions",
         seed["bundle"]["id"].as_str().unwrap()
     );
     let key = Uuid::new_v4().to_string();
@@ -166,7 +166,7 @@ async fn legacy_version_receipt_can_be_observed_then_adopted_without_reexecuting
     let (state, project, seed) = fixture().await;
     let app = router(with_rights(&state, &["write"]));
     let versions = format!(
-        "/v1/projects/{project}/bundles/{}/versions",
+        "/v1/workspaces/{project}/bundles/{}/versions",
         seed["bundle"]["id"].as_str().unwrap()
     );
     let key = Uuid::new_v4().to_string();
@@ -209,7 +209,7 @@ async fn closing_an_unobserved_version_prevents_late_marked_and_unmarked_publica
     let (state, project, seed) = fixture().await;
     let app = router(with_rights(&state, &["write"]));
     let versions = format!(
-        "/v1/projects/{project}/bundles/{}/versions",
+        "/v1/workspaces/{project}/bundles/{}/versions",
         seed["bundle"]["id"].as_str().unwrap()
     );
     for marked in [false, true] {
@@ -217,7 +217,7 @@ async fn closing_an_unobserved_version_prevents_late_marked_and_unmarked_publica
         let closed = call(
             &app,
             "POST",
-            &format!("/v1/projects/{project}/operations/{key}/close"),
+            &format!("/v1/workspaces/{project}/operations/{key}/close"),
             &key,
             &json!({"operationPath":versions}),
             false,

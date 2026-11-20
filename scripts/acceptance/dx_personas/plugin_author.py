@@ -80,7 +80,7 @@ import { installedHarness } from './harnesses.mjs';
 const config=JSON.parse(await readFile(process.argv[2],'utf8'));
 const root=config.stateRoot;
 const client=new AcclimateClient({baseUrl:config.baseUrl, token:config.readToken, scope:config.scope});
-const bundle=await resolveAndCache(client,{projectId:config.projectId,bundleId:config.bundleId,versionId:config.versionId},{cacheDir:path.join(root,'cache'),offline:false});
+const bundle=await resolveAndCache(client,{workspaceId:config.workspaceId,bundleId:config.bundleId,versionId:config.versionId},{cacheDir:path.join(root,'cache'),offline:false});
 assert.equal(bundle.version.digest,config.digest);
 assert.equal(bundle.stale,false);
 const sourceRoot=path.resolve('fixture');
@@ -112,7 +112,7 @@ try {
   for(const harness of ['codex','claude','pi','cursor']) {
     const context=await jobContext(harness,'success');
     let evidence;
-    const result=await runRepositoryJob({bundle,context,source,harness,prepare:(await installedHarness(harness)).prepare,workspaceParent:path.join(root,'workspaces'),artifactRoot:path.join(root,'artifacts'),caseId:'request-scoped-retry',repetition:0,selectedMemoryPaths:['memory/selected.md'],resultFiles:['src/retry.js'],runHarness:async({context:effective,acknowledge})=>{
+    const result=await runRepositoryJob({version:bundle,context,source,harness,prepare:(await installedHarness(harness)).prepare,workspaceParent:path.join(root,'workspaces'),artifactRoot:path.join(root,'artifacts'),caseId:'request-scoped-retry',repetition:0,selectedMemoryPaths:['memory/selected.md'],resultFiles:['src/retry.js'],runHarness:async({context:effective,acknowledge})=>{
       const run=childRun(effective,false);
       await acknowledge({kind:'owned-deterministic-node-child',value:String(run.child.pid)});
       evidence=await run.message; assert.equal(evidence.ok,true,evidence.message);
@@ -129,7 +129,7 @@ try {
   }
   const context=await jobContext('codex','uncertain');
   let held;
-  await assert.rejects(runRepositoryJob({bundle,context,source,harness:'codex',prepare:(await installedHarness('codex')).prepare,workspaceParent:path.join(root,'workspaces'),artifactRoot:path.join(root,'artifacts'),caseId:'request-scoped-retry',repetition:0,selectedMemoryPaths:['memory/selected.md'],resultFiles:['src/retry.js'],runHarness:async({context:effective,acknowledge})=>{
+  await assert.rejects(runRepositoryJob({version:bundle,context,source,harness:'codex',prepare:(await installedHarness('codex')).prepare,workspaceParent:path.join(root,'workspaces'),artifactRoot:path.join(root,'artifacts'),caseId:'request-scoped-retry',repetition:0,selectedMemoryPaths:['memory/selected.md'],resultFiles:['src/retry.js'],runHarness:async({context:effective,acknowledge})=>{
     held=childRun(effective,true);await acknowledge({kind:'owned-deterministic-node-child',value:String(held.child.pid)});
     const message=await held.message;assert.equal(message.ok,true,message.message);
     return {stopped:false,output:message};
@@ -163,7 +163,7 @@ import { codexRuntimeInputs } from './harnesses.mjs';
 import { freezeSourceInventory, runRepositoryJob, inspectNativeJob, sha256 } from './repository-job.mjs';
 const config=JSON.parse(await readFile(process.argv[2],'utf8'));
 const root=config.stateRoot;
-const bundle=await resolveAndCache(new AcclimateClient({baseUrl:config.baseUrl,token:config.readToken,scope:config.scope}),{projectId:config.projectId,bundleId:config.bundleId,versionId:config.versionId},{cacheDir:path.join(root,'live-cache'),offline:false});
+const bundle=await resolveAndCache(new AcclimateClient({baseUrl:config.baseUrl,token:config.readToken,scope:config.scope}),{workspaceId:config.workspaceId,bundleId:config.bundleId,versionId:config.versionId},{cacheDir:path.join(root,'live-cache'),offline:false});
 assert.equal(bundle.version.digest,config.digest);
 const sourceRoot=path.resolve('fixture');
 const source=await freezeSourceInventory({sourceRoot,paths:['package.json','src/retry.js','tests/retry.test.mjs'],revision:'plugin-persona-retry-fixture-v1'});
@@ -178,7 +178,7 @@ const originalSource=await readFile(path.join(sourceRoot,'src/retry.js'));
 const originalTests=await readFile(path.join(sourceRoot,'tests/retry.test.mjs'));
 let result;
 try {
-  result=await runRepositoryJob({bundle,context,source,harness:'codex',prepare,workspaceParent:path.join(root,'workspaces'),artifactRoot:path.join(root,'artifacts'),caseId:'request-scoped-retry',repetition:0,selectedMemoryPaths:['memory/selected.md'],resultFiles:['src/retry.js'],contextPolicyRevision:'plugin-persona-v1:selected-only:no-network:workspace-write',runHarness:async({context:effective,acknowledge})=>{
+  result=await runRepositoryJob({version:bundle,context,source,harness:'codex',prepare,workspaceParent:path.join(root,'workspaces'),artifactRoot:path.join(root,'artifacts'),caseId:'request-scoped-retry',repetition:0,selectedMemoryPaths:['memory/selected.md'],resultFiles:['src/retry.js'],contextPolicyRevision:'plugin-persona-v1:selected-only:no-network:workspace-write',runHarness:async({context:effective,acknowledge})=>{
     baselineExit=spawnSync(process.execPath,['--test','tests/retry.test.mjs'],{cwd:effective.cwd,encoding:'utf8'}).status;
     assert.equal(baselineExit,1);
     const instruction=await readFile(effective.instructionPath,'utf8');
@@ -351,10 +351,10 @@ def main():
             'source-unchanged-deterministic-no-provider-calls',
             *(['authorized-one-fresh-codex-0.169.0-gpt-6-luna-turn-bounded-110s'] if args.live_codex else [])]))
         setup = fixture.bootstrap(payload, name='Plugin author native source task')
-        root = '/v1/projects/' + fixture.project
-        integration = fixture.h.call('POST', root + '/integrations', dict(
+        root = '/v1/workspaces/' + fixture.project
+        integration = fixture.h.call('POST', root + '/connections', dict(
             bundleId=setup['bundle']['id'], channel='stable', displayName='Disposable plugin author reader'))
-        credential = fixture.h.call('POST', root + '/integrations/' + integration['id'] + '/credentials', dict(kind='content-read'))
+        credential = fixture.h.call('POST', root + '/connections/' + integration['id'] + '/credentials', dict(kind='content-read'))
         starter_proof = verify_starter_helpers(fixture)
         app = fixture.install_js(starter='native-repository', plugin='codex')
         test_repository = checkout / 'examples/native-repository/test/fixture'
@@ -377,7 +377,7 @@ def main():
         for directory in (state, state / 'workspaces', state / 'jobs', state / 'artifacts'):
             directory.mkdir(mode=0o700)
         config = fixture.write_json('private/native-config.json', dict(
-            baseUrl=fixture.base_url, projectId=fixture.project, scope='plugin-author-content-reader',
+            baseUrl=fixture.base_url, workspaceId=fixture.project, scope='plugin-author-content-reader',
             readToken=credential['secret'], bundleId=setup['bundle']['id'], versionId=setup['version']['id'],
             digest=setup['version']['digest'], stateRoot=str(state)))
         (app / 'persona-child.mjs').write_text(CHILD)

@@ -30,7 +30,7 @@ const scope = {
   owner: 'draft' as const,
   actorScope: 'actor',
   serviceIdentity: 'actor',
-  projectId: 'p',
+  workspaceId: 'p',
   bundleId: '11111111-1111-4111-8111-111111111111',
   channel: 'stable',
 };

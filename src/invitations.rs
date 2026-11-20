@@ -1,5 +1,4 @@
 //! Email addresses select invitation recipients; issuer + subject still identify accounts.
-use crate::WorkspaceRoutes;
 use crate::{
     ApiResult, AppState, auth, db, err,
     workspaces::{audit, identity},
@@ -17,13 +16,16 @@ use uuid::Uuid;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route("/v1/projects/{project}/invitations", get(list).post(create))
-        .workspace_route(
-            "/v1/projects/{project}/invitations/{invite}",
+        .route(
+            "/v1/workspaces/{project}/invitations",
+            get(list).post(create),
+        )
+        .route(
+            "/v1/workspaces/{project}/invitations/{invite}",
             axum::routing::delete(revoke),
         )
-        .workspace_route(
-            "/v1/projects/{project}/invitations/{invite}/resend",
+        .route(
+            "/v1/workspaces/{project}/invitations/{invite}/resend",
             post(resend),
         )
         .route("/v1/invitations/{invite}", get(preview))
@@ -229,8 +231,8 @@ async fn preview(
     let email = recipient(&mut tx, identity(&h)?.0, s.access.oidc_issuer()).await?;
     let row=sqlx::query("SELECT i.*,p.name AS project_name FROM workspace_invitations i JOIN projects p ON p.id=i.project_id WHERE i.id=$1 AND i.email=$2").bind(crate::path(&invite)?).bind(email).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(missing)?;
     let mut value = item(&row);
-    value["projectId"] = json!(row.get::<String, _>("project_id"));
-    value["projectName"] = json!(row.get::<String, _>("project_name"));
+    value["workspaceId"] = json!(row.get::<String, _>("project_id"));
+    value["workspaceName"] = json!(row.get::<String, _>("project_name"));
     Ok(Json(value))
 }
 async fn accept(
@@ -264,7 +266,7 @@ async fn accept(
     .map_err(db)?;
     let status = row.get::<String, _>("status");
     if status == "accepted" && row.get::<Option<Uuid>, _>("accepted_by") == Some(user) {
-        return Ok(Json(json!({"projectId":project})));
+        return Ok(Json(json!({"workspaceId":project})));
     }
     if status != "pending" || !row.get::<bool, _>("unexpired") {
         return Err(err(
@@ -283,7 +285,7 @@ async fn accept(
         .map_err(db)?;
     audit(&mut tx, &project, user, "console", "invitation:accept").await?;
     tx.commit().await.map_err(db)?;
-    Ok(Json(json!({"projectId":project})))
+    Ok(Json(json!({"workspaceId":project})))
 }
 
 /// Startup runs while the service owns its existing singleton queue lock.

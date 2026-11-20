@@ -25,6 +25,7 @@ import { WorkspaceConnections } from '../components/workspace-connections';
 import { WorkspaceDelivery } from '../components/workspace-delivery';
 import { readDeliveryObservations } from '../server/delivery-observations-actions';
 import { WorkspaceMembers } from '../components/workspace-members';
+import { WorkspaceEvaluatorTokens } from '../components/workspace-evaluator-tokens';
 import { ConsoleLink, consoleDestination } from '../components/console-link';
 import { ConnectionNotice, PageTitle } from '../components/shared';
 import { useNavigation } from '../components/use-navigation';
@@ -59,7 +60,7 @@ export const Route = createFileRoute('/w/$')({
             'tab',
             'reviewTab',
             'connectionTab',
-            'integration',
+            'connection',
             'access',
             'bundleId',
           ].includes(key) &&
@@ -78,7 +79,7 @@ export const Route = createFileRoute('/w/$')({
       return {
         kind: 'library' as const,
         location,
-        result: await readWorkspaceBundles({ data: { projectId: location.projectId } }),
+        result: await readWorkspaceBundles({ data: { workspaceId: location.workspaceId } }),
       };
     if (location.view === 'connections')
       return {
@@ -86,9 +87,9 @@ export const Route = createFileRoute('/w/$')({
         location,
         result: await readConnections({
           data: {
-            projectId: location.projectId,
-            integrationId:
-              typeof deps.search.integration === 'string' ? deps.search.integration : undefined,
+            workspaceId: location.workspaceId,
+            connectionId:
+              typeof deps.search.connection === 'string' ? deps.search.connection : undefined,
           },
         }),
       };
@@ -98,9 +99,9 @@ export const Route = createFileRoute('/w/$')({
         location,
         result: await readDeliveryObservations({
           data: {
-            projectId: location.projectId,
-            integrationId:
-              typeof deps.search.integration === 'string' ? deps.search.integration : undefined,
+            workspaceId: location.workspaceId,
+            connectionId:
+              typeof deps.search.connection === 'string' ? deps.search.connection : undefined,
           },
         }),
       };
@@ -108,10 +109,10 @@ export const Route = createFileRoute('/w/$')({
       return {
         kind: 'members' as const,
         location,
-        result: await readWorkspaceAccess({ data: { projectId: location.projectId } }),
+        result: await readWorkspaceAccess({ data: { workspaceId: location.workspaceId } }),
       };
     const scope = {
-      projectId: location.projectId,
+      workspaceId: location.workspaceId,
       bundleId: location.bundleId!,
       channel: location.channel || String(deps.search.channel || 'stable'),
     };
@@ -128,7 +129,7 @@ function ScopedPage() {
   const data = Route.useLoaderData();
   const search = Route.useSearch();
   const navigation = useNavigation();
-  const workspaceKey = `${navigation?.actorScope}:${navigation?.role}:${data.kind === 'missing' ? '' : data.location.projectId}`;
+  const workspaceKey = `${navigation?.actorScope}:${navigation?.role}:${data.kind === 'missing' ? '' : data.location.workspaceId}`;
   if (data.kind === 'missing')
     return (
       <section className="missing-page space-y-4">
@@ -143,7 +144,7 @@ function ScopedPage() {
     );
   if (
     (data.kind === 'members' || data.kind === 'connections') &&
-    navigation?.projectId === data.location.projectId &&
+    navigation?.workspaceId === data.location.workspaceId &&
     (navigation.role === 'viewer' || navigation.role === 'editor')
   ) {
     const members = data.kind === 'members';
@@ -159,7 +160,7 @@ function ScopedPage() {
         />
         <Button asChild variant="outline">
           <ConsoleLink
-            href={workspaceHref(data.location.projectId, members ? 'bundles' : 'delivery')}
+            href={workspaceHref(data.location.workspaceId, members ? 'bundles' : 'delivery')}
           >
             {members ? 'Browse bundles' : 'View delivery'}
           </ConsoleLink>
@@ -169,13 +170,17 @@ function ScopedPage() {
   }
   if (data.kind === 'library')
     return (
-      <BundleLibrary key={workspaceKey} projectId={data.location.projectId} state={data.result} />
+      <BundleLibrary
+        key={workspaceKey}
+        workspaceId={data.location.workspaceId}
+        state={data.result}
+      />
     );
   if (data.kind === 'connections')
     return (
       <WorkspaceConnections
         key={workspaceKey}
-        projectId={data.location.projectId}
+        workspaceId={data.location.workspaceId}
         search={search}
         initial={data.result}
       />
@@ -184,19 +189,25 @@ function ScopedPage() {
     return (
       <WorkspaceDelivery
         key={workspaceKey}
-        initialAppId={typeof search.integration === 'string' ? search.integration : undefined}
+        initialAppId={typeof search.connection === 'string' ? search.connection : undefined}
         canManage={navigation?.role === 'admin'}
-        projectId={data.location.projectId}
+        workspaceId={data.location.workspaceId}
         initial={data.result}
       />
     );
   if (data.kind === 'members')
     return (
-      <WorkspaceMembers
-        key={workspaceKey}
-        projectId={data.location.projectId}
-        initial={data.result}
-      />
+      <div className="space-y-6">
+        <WorkspaceMembers
+          key={workspaceKey}
+          workspaceId={data.location.workspaceId}
+          initial={data.result}
+        />
+        <WorkspaceEvaluatorTokens
+          key={`tokens-${workspaceKey}`}
+          workspaceId={data.location.workspaceId}
+        />
+      </div>
     );
   const { state, scope, location } = data;
   const view = location.view as BundleView;
@@ -215,7 +226,7 @@ function ScopedPage() {
           }
         />
         <ConnectionNotice state={state} />
-        {navigation?.projectId === scope.projectId &&
+        {navigation?.workspaceId === scope.workspaceId &&
           navigation.bundleId === scope.bundleId &&
           navigation.channels.length > 0 && (
             <section className="workspace-panel space-y-3 p-5">
@@ -244,7 +255,7 @@ function ScopedPage() {
     releases: 'See what shipped or restore an earlier release.',
     connect: 'Use this bundle in your agent app.',
   }[view];
-  const identity = `${state.actorScope}:${scope.projectId}:${scope.bundleId}:${scope.channel}`;
+  const identity = `${state.actorScope}:${scope.workspaceId}:${scope.bundleId}:${scope.channel}`;
   return (
     <div className="bundle-page bundle-workspace">
       <BundleScopeHeader
@@ -279,7 +290,7 @@ function BundleScopeHeader({
   apiUrl,
 }: {
   name: string;
-  scope: { projectId: string; bundleId: string; channel: string };
+  scope: { workspaceId: string; bundleId: string; channel: string };
   view: BundleView;
   search: Record<string, unknown>;
   description: string;
@@ -319,7 +330,7 @@ function BundleScopeHeader({
       ? bundleHref(scope, 'changes')
       : view === 'connect'
         ? bundleHref(scope, 'content')
-        : workspaceHref(scope.projectId);
+        : workspaceHref(scope.workspaceId);
   return (
     <PageHeader
       title={name}
@@ -404,7 +415,7 @@ function ChannelPicker({
   view,
   search,
 }: {
-  scope: { projectId: string; bundleId: string; channel: string };
+  scope: { workspaceId: string; bundleId: string; channel: string };
   view: 'content' | 'changes' | 'releases' | 'connect';
   search: Record<string, unknown>;
 }) {

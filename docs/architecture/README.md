@@ -66,8 +66,8 @@ Keep content delivery as one Rust server deployable. A folder is a module owners
 | Bundles | Publish/read a version and its payload | Authorization, validation, immutable bytes/digest, mutation deduplication, and persistence. |
 | Channels | Resolve/promote a named channel | Conditional reads, revision checks, evidence binding, and promotion history in one transaction. |
 | Improvement | Request/read a proposal; record/read a comparison | Allowed edits, bounded model attempts, candidate publication, report identity and completeness. |
-| SDK delivery | Resolve and cache a verified bundle | HTTP behavior, digest checks, private atomic cache writes, freshness/offline policy. |
-| Native plugin | Prepare native options/files from a verified bundle | Native resource mapping and job-local cleanup. The app runs the native SDK. |
+| SDK delivery | Resolve and cache a verified version | HTTP behavior, digest checks, private atomic cache writes, freshness/offline policy. |
+| Native plugin | Prepare native options/files from a verified version | Native resource mapping and job-local cleanup. The app runs the native SDK. |
 
 Do not expose a series of caller-managed “check, then write” functions. A mutation command owns its authorization and transaction ordering. Use ordinary functions and concrete PostgreSQL access first; introduce a trait only for an implementation that actually varies, such as the proposal model client.
 

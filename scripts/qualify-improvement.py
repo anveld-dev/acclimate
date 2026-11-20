@@ -50,7 +50,7 @@ env.update(
             {
                 "token": token,
                 "principalId": principal,
-                "projectId": project,
+                "workspaceId": project,
                 "rights": ["read", "write", "propose", "promote"],
             }
         ]
@@ -95,7 +95,7 @@ try:
         {"parentVersionId": None, "payload": payload},
         uuid.uuid4().hex,
     )
-    client.promote(
+    client.create_release(
         project,
         bundle["id"],
         "stable",
@@ -125,7 +125,7 @@ try:
         ACCLIMATE_URL=base,
         ACCLIMATE_TOKEN=token,
         ACCLIMATE_SCOPE=principal,
-        ACCLIMATE_PROJECT=project,
+        ACCLIMATE_WORKSPACE=project,
         ACCLIMATE_BUNDLE=bundle["id"],
         ACCLIMATE_CHANNEL="stable",
         ACCLIMATE_SKILL_PATH=skill_path,

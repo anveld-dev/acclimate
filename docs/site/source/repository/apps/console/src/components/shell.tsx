@@ -42,7 +42,7 @@ function Navigation({
   expanded?: boolean;
 }) {
   const nav = useNavigation();
-  if (!nav?.projectId) return null;
+  if (!nav?.workspaceId) return null;
   const links = [
     { view: 'bundles' as const, label: 'Bundles', icon: Files },
     { view: 'delivery' as const, label: 'Delivery', icon: Radio },
@@ -63,8 +63,8 @@ function Navigation({
           nav.location?.view === view || (view === 'bundles' && Boolean(nav.bundleId));
         const link = (
           <ConsoleLink
-            href={workspaceHref(nav.projectId!, view)}
-            onClick={() => onNavigate?.(workspaceHref(nav.projectId!, view))}
+            href={workspaceHref(nav.workspaceId!, view)}
+            onClick={() => onNavigate?.(workspaceHref(nav.workspaceId!, view))}
             className={`navigation-link${layout === 'rail' ? ' workspace-rail-control' : ''}${current ? ' is-current' : ''}`}
             aria-label={label}
             aria-current={current ? 'page' : undefined}
@@ -245,7 +245,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const view = nav?.location?.view;
   useBackgroundRefresh(() => router.invalidate(), {
     enabled:
-      Boolean(nav?.projectId) &&
+      Boolean(nav?.workspaceId) &&
       view !== 'changes' &&
       view !== 'members' &&
       !loading &&
@@ -263,18 +263,18 @@ export function Shell({ children }: { children: ReactNode }) {
           ? 'Members'
           : 'Bundles';
   useEffect(() => {
-    const page = nav?.projectId
+    const page = nav?.workspaceId
       ? [detailLabel, viewLabel, nav.bundleName].filter(Boolean).join(' · ')
       : mainRef.current?.querySelector('h1')?.textContent || 'Welcome';
     let title = page;
-    for (const label of [nav?.projectName, 'Acclimate']) {
+    for (const label of [nav?.workspaceName, 'Acclimate']) {
       if (!label) continue;
       const suffix = title.toLowerCase();
       const identity = label.toLowerCase();
       if (suffix !== identity && !suffix.endsWith(' · ' + identity)) title += ' · ' + label;
     }
     document.title = title;
-  }, [nav?.projectId, nav?.projectName, nav?.bundleName, detailLabel, viewLabel, pathname]);
+  }, [nav?.workspaceId, nav?.workspaceName, nav?.bundleName, detailLabel, viewLabel, pathname]);
   const projects = nav?.access.ok ? nav.access.projects : [];
   const canCreate = nav?.access.ok && nav.access.canCreateWorkspace;
   function workspaceRole(role: string) {
@@ -307,15 +307,15 @@ export function Shell({ children }: { children: ReactNode }) {
             aria-label="Workspace"
             className="w-full"
             disabled={!hydrated}
-            value={nav?.projectId || ''}
+            value={nav?.workspaceId || ''}
             onChange={(event) => {
               const id = event.currentTarget.value;
-              event.currentTarget.value = nav?.projectId ?? '';
-              if (id && id !== nav?.projectId)
+              event.currentTarget.value = nav?.workspaceId ?? '';
+              if (id && id !== nav?.workspaceId)
                 void router.navigate(consoleDestination(workspaceHref(id)));
             }}
           >
-            {!nav?.projectId && <option value="">Choose workspace</option>}
+            {!nav?.workspaceId && <option value="">Choose workspace</option>}
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name} · {workspaceRole(project.role)}
@@ -392,13 +392,13 @@ export function Shell({ children }: { children: ReactNode }) {
                         size="icon"
                         className="workspace-rail-control workspace-rail-workspaces"
                         disabled={!hydrated}
-                        title={nav?.projectName}
-                        aria-label={nav?.projectName ? `Workspaces ${nav.projectName}` : 'Workspaces'}
+                        title={nav?.workspaceName}
+                        aria-label={nav?.workspaceName ? `Workspaces ${nav.workspaceName}` : 'Workspaces'}
                       >
                         <Building2 aria-hidden="true" className="size-[18px]" />
                         <span className="sr-only workspace-rail-label">
                           <small>Workspaces</small>{' '}
-                          <strong>{nav?.projectName ?? 'Choose workspace'}</strong>
+                          <strong>{nav?.workspaceName ?? 'Choose workspace'}</strong>
                         </span>
                         <ChevronsUpDown className="workspace-scope-indicator" aria-hidden="true" />
                       </Button>
@@ -411,7 +411,7 @@ export function Shell({ children }: { children: ReactNode }) {
                     className="workspace-rail-tooltip"
                   >
                     <span className="font-medium">Workspaces</span>
-                    <span className="opacity-75">{nav?.projectName ?? 'Choose a workspace'}</span>
+                    <span className="opacity-75">{nav?.workspaceName ?? 'Choose a workspace'}</span>
                   </TooltipContent>
                 </Tooltip>
                 <DropdownMenuContent
@@ -433,11 +433,11 @@ export function Shell({ children }: { children: ReactNode }) {
                 >
                   <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
                   <DropdownMenuRadioGroup
-                    value={nav?.projectId ?? ''}
+                    value={nav?.workspaceId ?? ''}
                     aria-label="Workspaces"
                     className="workspace-rail-workspace-list"
                     onValueChange={(id) => {
-                      if (id && id !== nav?.projectId)
+                      if (id && id !== nav?.workspaceId)
                         void router.navigate(consoleDestination(workspaceHref(id)));
                     }}
                   >

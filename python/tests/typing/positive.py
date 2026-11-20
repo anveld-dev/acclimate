@@ -1,5 +1,5 @@
 """Consumer of every root domain export and public evaluator annotations."""
-from typing import assert_type
+from typing import Literal, assert_type
 
 from acclimate import (
     AcclimateClient,
@@ -22,9 +22,9 @@ from acclimate import (
     VersionMetadata,
     ChannelResolution,
     CreateVersionRequest,
-    PromoteRequest,
-    Promotion,
-    PromotionPage,
+    CreateReleaseRequest,
+    Release,
+    ReleasePage,
     ProposalRequest,
     Proposal,
     CaseKey,
@@ -34,7 +34,8 @@ from acclimate import (
     EvaluationBinding,
     ComparisonRequest,
     Comparison,
-    VerifiedBundle,
+    VerifiedVersion,
+    VerifiedVersionConnection,
     EvaluationDescriptor,
     EvaluationHandoff,
     EvaluationRequest,
@@ -42,15 +43,16 @@ from acclimate import (
     EvaluationPage,
     StartEvaluationRequest,
     FinishEvaluationRequest,
+    AbandonEvaluationRequest,
     InterruptEvaluationRequest,
     EvaluationCapabilities,
     EvaluationProgressRequest,
     EvaluationProgressObservation,
     EvaluationProgressView,
     EvaluationProgressReporter,
-    IntegrationLatestObservation,
-    IntegrationObservation,
-    IntegrationObservationPage,
+    ConnectionLatestObservation,
+    ConnectionObservation,
+    ConnectionObservationPage,
     Draft,
     CreateDraftRequest,
     SaveDraftRequest,
@@ -63,10 +65,19 @@ from acclimate import (
     OperationNotObserved,
     OperationClosed,
     Operation,
+    Page,
+    Workspace,
+    Channel,
+    BundleSetup,
+    BundleSetupRequest,
+    Connection,
+    LearningEnrollmentStatus,
+    LearningOutcomeReceipt,
+    LearningOutcomeRequest,
 )
 from acclimate.evaluation import (
-    Case, EvaluationApp, ExecuteInput, ExecutionResult, GradeInput, GradeResult,
-    define_evaluation,
+    Case, EvaluationApp, EvaluationRunResult, ExecuteInput, ExecutionResult, GradeInput, GradeResult,
+    define_evaluation, preflight_evaluation, run_evaluation,
 )
 from acclimate.evaluation_analysis import (
     AnalysisComparisonBinding, AnalysisMetric, ComponentObservation,
@@ -99,6 +110,9 @@ def lifecycle(client: AcclimateClient, evaluation: Evaluation) -> None:
     assert_type(client.start_evaluation("p", "b", "r", start, "key"), Evaluation)
     assert_type(client.finish_evaluation("p", "b", "r", finish, "key"), Evaluation)
     assert_type(client.interrupt_evaluation("p", "b", "r", interrupt, "key"), Evaluation)
+    abandon: AbandonEvaluationRequest = {"reason": "CI job cancelled"}
+    evaluation["status"] = "abandoned"
+    assert_type(client.abandon_evaluation("p", "b", "r", abandon, "key"), Evaluation)
     assert_type(client.get_evaluation("p", "b", "r"), Evaluation)
     assert_type(client.list_evaluations("p", "b"), EvaluationPage)
     assert_type(client.get_evaluation_capabilities("p"), EvaluationCapabilities)
@@ -107,18 +121,41 @@ def lifecycle(client: AcclimateClient, evaluation: Evaluation) -> None:
 def delivery(client: AcclimateClient, api_error: ApiError) -> None:
     with client.prepare("p", "b", channel="stable") as job:
         assert_type(job, PreparedDelivery)
-        assert_type(job.version, VersionMetadata)
+        assert_type(job.version, VerifiedVersion)
+        assert_type(job.version["version"], VersionMetadata)
         assert_type(job.instructions, str)
     assert_type(api_error.status, int)
-    bundle = resolve_and_cache(client, "project", "bundle", channel="stable", cache_dir="/private/cache")
-    assert_type(bundle, VerifiedBundle)
-    assert_type(bundle["payload"], BundlePayload)
-    assert_type(prepare_files(bundle, "/private/workspace"), PreparedFiles)
-    validate_payload(bundle["payload"])
+    version = resolve_and_cache(client, "workspace", "bundle", channel="stable", cache_dir="/private/cache")
+    assert_type(version, VerifiedVersion)
+    assert_type(version["payload"], BundlePayload)
+    assert_type(prepare_files(version, "/private/workspace"), PreparedFiles)
+    validate_payload(version["payload"])
+    stale = resolve_and_cache(client, "workspace", "bundle", channel="stable", cache_dir="/private/cache",
+                              offline={"max_age_ms": 300_000})
+    assert_type(stale["stale"], bool)
+    connection = version.get("connection")
+    if connection is not None:
+        assert_type(connection, VerifiedVersionConnection)
+        assert_type(connection["workspaceId"], str)
+        assert_type(connection["connectionId"], str)
+    pinned = client.prepare("p", "b", version_id="v", offline={"pinned_version_id": "v"})
+    pinned.cleanup()
+    assert_type(api_error.request_id, str)
+
+
+def listings(client: AcclimateClient, setup: BundleSetupRequest, outcome: LearningOutcomeRequest) -> None:
+    workspaces = client.list_workspaces(limit=10)
+    assert_type(workspaces, Page[Workspace])
+    assert_type(workspaces["nextCursor"], str | None)
+    assert_type(client.list_channels("p", "b")["items"], list[Channel])
+    assert_type(client.list_connections("p")["items"], list[Connection])
+    assert_type(client.create_bundle_setup("p", setup, "key"), BundleSetup)
+    assert_type(client.get_learning_enrollment("p", "c"), LearningEnrollmentStatus)
+    assert_type(client.report_learning_outcome("p", "c", outcome), LearningOutcomeReceipt)
 
 
 def execute(run: ExecuteInput[dict[str, str]]) -> ExecutionResult[dict[str, str]]:
-    assert_type(run.bundle, VerifiedBundle)
+    assert_type(run.version, VerifiedVersion)
     return ExecutionResult({"queue": run.input["category"]})
 
 
@@ -135,3 +172,17 @@ app = define_evaluation(
     execute=execute, grade=grade,
 )
 assert_type(app, EvaluationApp[dict[str, str], dict[str, str], dict[str, str]])
+
+
+def typed_results(handoff: EvaluationHandoff) -> None:
+    result = run_evaluation(app=app, config_path="/private/evaluator.json", handoff=handoff)
+    assert_type(result, EvaluationRunResult)
+    preflight = preflight_evaluation(app=app, config_path="/private/evaluator.json", handoff=handoff)
+    assert_type(preflight["status"], Literal["ready", "blocked"])
+    assert_type(app.execution, Literal["model-free", "live"])
+
+
+def helpers(run: ExecuteInput[dict[str, str]]) -> ExecutionResult[dict[str, str]]:
+    assert_type(run.instructions, str)
+    assert_type(run.skill_files, tuple[BundleFile, ...])
+    return ExecutionResult({"queue": run.instructions}, usage={"inputTokens": 3, "costUsd": 0.01})

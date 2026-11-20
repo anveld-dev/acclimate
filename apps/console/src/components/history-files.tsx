@@ -83,7 +83,14 @@ export function useHistoryVersion(scope: ChangesHistoryScope, id?: string): Hist
       active = false;
       clearTimeout(timer);
     };
-  }, [id, scope.projectId, scope.bundleId, scope.channel, scope.actorScope, scope.serviceIdentity]);
+  }, [
+    id,
+    scope.workspaceId,
+    scope.bundleId,
+    scope.channel,
+    scope.actorScope,
+    scope.serviceIdentity,
+  ]);
   return result.id === (id || '') ? result : { status: id ? 'loading' : 'none', id: id || '' };
 }
 

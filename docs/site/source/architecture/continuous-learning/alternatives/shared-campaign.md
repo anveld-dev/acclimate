@@ -120,7 +120,7 @@ interface CampaignWorker {
 
 `Decision.kind` and command must agree; search decisions cannot masquerade as release decisions. The implementation uses separate validated DTOs rather than relying on callers to obey the illustrative union. `resolveUnknown` requires an installed reconciliation policy or human authority and records its evidence; it is not a worker escape hatch for claiming an unobserved success.
 
-Proposed routes under `/v1/projects/{project}`:
+Proposed routes under `/v1/workspaces/{workspace}`:
 
 - `POST /learning/campaigns`: create one campaign.
 - `GET /learning/campaigns` and `GET /learning/campaigns/{id}`: authorized projection/discovery.

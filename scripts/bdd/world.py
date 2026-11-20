@@ -28,7 +28,7 @@ class World:
         self.h.project = 'bdd-' + uuid.uuid4().hex
         self.h.env['ACCLIMATE_AUTH'] = json.dumps([
             dict(token=token, principalId=principal,
-                 projectId='outside-' + self.h.project if principal == 'outsider' else self.h.project,
+                 workspaceId='outside-' + self.h.project if principal == 'outsider' else self.h.project,
                  rights=['read'] if principal in ('viewer', 'outsider') else ['read', 'write'] if principal in ('evaluator','other') else ['read', 'write', 'propose', 'promote'])
             for principal, token in self.h.tokens.items()
         ])
@@ -158,7 +158,7 @@ class World:
             self.sdk_directory.mkdir(mode=0o700)
         target=self.sdk_directory
         config = dict(action=action, baseUrl=self.h.base, token=self.h.tokens[actor], scope='bdd-'+actor,
-                      projectId=self.h.project, bundleId=getattr(self, 'setup', {}).get('bundle', {}).get('id'), directory=str(target), **options)
+                      workspaceId=self.h.project, bundleId=getattr(self, 'setup', {}).get('bundle', {}).get('id'), directory=str(target), **options)
         path = target / 'config.json'
         path.write_text(json.dumps(config))
         path.chmod(0o600)
@@ -188,7 +188,7 @@ class World:
 
     def delivery_event(self):
         from datetime import datetime, timezone
-        return dict(eventId=str(uuid.uuid4()), integrationId=self.integration['id'], projectId=self.h.project,
+        return dict(eventId=str(uuid.uuid4()), connectionId=self.integration['id'], workspaceId=self.h.project,
                     bundleId=self.setup['bundle']['id'], versionId=self.original['version']['id'], digest=self.original['version']['digest'],
                     stage='verified', source='cache', occurredAt=datetime.now(timezone.utc).isoformat())
 
@@ -238,7 +238,7 @@ class World:
             self.sign_in('_browser-operator', 'operator')
             projects = self.personal_projects('_browser-operator')
             if not any(project['id'] == self.h.project for project in projects):
-                self.call('POST', '/v1/auth/workspace-adoptions', dict(projectId=self.h.project,
+                self.call('POST', '/v1/auth/workspace-adoptions', dict(workspaceId=self.h.project,
                     reason='Explicit adoption of disposable acceptance-test workspace.'), actor='_browser-operator')
         return subject
 

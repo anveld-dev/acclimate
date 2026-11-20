@@ -1145,13 +1145,13 @@
   background: var(--muted);
   color: var(--muted-foreground);
 }
-.evaluation-outcome-strip .outcome-delta[data-direction='up'] {
-  background: var(--tone-success-bg);
-  color: var(--tone-success-fg);
-}
-.evaluation-outcome-strip .outcome-delta[data-direction='down'] {
-  background: var(--tone-danger-bg);
-  color: var(--tone-danger-fg);
+/* The delta stays neutral: without the metric direction, higher is not known to be better. */
+.evaluation-outcome-strip .outcome-missing {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--tone-warning-fg);
+  font-size: var(--type-13);
+  font-variant-numeric: tabular-nums;
 }
 .evaluation-outcome-strip .outcome-note {
   display: block;

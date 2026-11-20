@@ -66,6 +66,7 @@ Keep the evaluator journal and private artifacts in separate protected backups. 
 | Start response lost before callbacks | Retry with the original journal, request, and evaluator config. The runner recovers the retained start and checks current request state. |
 | Exact report saved and submission or finish response lost | Retry with the original config and journal. The runner resends saved bytes with the original key. |
 | Execution started with no complete sealed report | Inspect the original app and external tasks. Confirm their state before explicitly interrupting and deciding whether to start a new request. |
+| A comparison finished with an `execution_uncertain` gap | One arm's `execute` could not confirm its work stopped; the rest of the comparison ran. Its job directory holds `uncertain.json`. Confirm the external task stopped, then clean its quarantined files (the native starter provides `node native.mjs jobs cleanup JOB_ID --confirm-stopped`). |
 | Original journal absent, relocated, or from another runtime | Restore supported ownership and the original canonical root, or inspect the external effects and record interruption. |
 
 Use [evaluator status and interrupt](/docs/reference/evaluator-cli) to inspect and record the lifecycle. A stale heartbeat, an interrupted request, or a credential revocation cannot establish that an external job terminated.

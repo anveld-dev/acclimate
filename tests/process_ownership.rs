@@ -25,7 +25,7 @@ fn address() -> String {
 fn service(url: &str, address: &str) -> Service {
     Service(Command::new(env!("CARGO_BIN_EXE_acclimate-service"))
         .env_clear().env("DATABASE_URL", url)
-        .env("ACCLIMATE_AUTH", r#"[{"token":"machine-fixture","principalId":"original-machine","projectId":"runtime-fixture","rights":["read","write"]}]"#)
+        .env("ACCLIMATE_AUTH", r#"[{"token":"machine-fixture","principalId":"original-machine","workspaceId":"runtime-fixture","rights":["read","write"]}]"#)
         .env("ACCLIMATE_OIDC_ISSUER", "https://fixture.example")
         .env("ACCLIMATE_LOGIN_TOKEN", "fixture-login")
         .env("ACCLIMATE_CONSOLE_TOKEN", "fixture-console")

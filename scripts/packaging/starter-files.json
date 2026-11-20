@@ -12,17 +12,40 @@
     "quality-policy.example.json",
     "test/test_async_lifetime.py"
   ],
+  "python-evaluation": [
+    "README.md",
+    "acclimate_eval.py",
+    "analyze.py",
+    "application.example.py",
+    "async_eval.py",
+    "quality-policy.example.json",
+    "test/test_async_lifetime.py"
+  ],
   "ci": [
     "README.md",
+    "action.yml",
     "ci.py",
-    "ci.sh"
+    "ci.sh",
+    "workflows/pr-check.yml",
+    "workflows/release.yml"
   ],
   "native-repository": [
     "README.md",
     "application.mjs",
+    "container-grader.mjs",
+    "fixture/package.json",
+    "fixture/replay.json",
+    "fixture/src/retry.js",
+    "fixture/tests/retry.test.mjs",
+    "harness-child.mjs",
+    "harness-process.mjs",
+    "harness-template.mjs",
     "harnesses.mjs",
+    "native.mjs",
+    "native.replay.json",
     "package.json",
     "repository-job.mjs",
+    "smoke.mjs",
     "verify-install.mjs"
   ]
 }

@@ -43,7 +43,7 @@ def original_field_jobs(context):
 
 
 def replay(w, outcome_id):
-    result = w.sdk('replayFieldJob', actor='evaluator', integrationId=w.integration['id'],
+    result = w.sdk('replayFieldJob', actor='evaluator', connectionId=w.integration['id'],
                    versionId=w.alias['id'], digest=w.alias['digest'], baselineRevision=w.restored_delivery['revision'],
                    outcomeId=outcome_id, fieldJob=w.private_field_jobs[outcome_id], defaultChecks=['.ts'])
     assert result == dict(accepted=True, verdict='pass'), result

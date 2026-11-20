@@ -3,7 +3,7 @@ import type { EvaluationProgressRequest } from '../types.js';
 import { assertGuidedTarget } from '../evaluation-validation.js';
 
 export interface EvaluationProgressScope {
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   requestId: string;
   attemptId: string;
@@ -60,7 +60,7 @@ export function createEvaluationProgressReporter(
         }
         if (new TextEncoder().encode(JSON.stringify(report)).length > 2048) return false;
         await client.reportEvaluationProgress(
-          bound.projectId,
+          bound.workspaceId,
           bound.bundleId,
           bound.requestId,
           report,

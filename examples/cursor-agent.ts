@@ -1,85 +1,85 @@
-/** App-owned local Cursor session. This performs a paid provider call when run. */
+/**
+ * App-owned local Cursor session. This performs a paid provider call when run:
+ *   tsx examples/cursor-agent.ts --live "Explain the project guidance"
+ * client.prepare() -> prepare(delivery) -> Agent.create(local sandbox) -> reportStarted()
+ * at RUNNING -> retain the result -> cleanup.
+ */
+import { open } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Agent } from '@cursor/sdk';
-import { resolve, join } from 'node:path';
-import { homedir } from 'node:os';
-import { AcclimateClient, resolveAndCache } from '../packages/sdk/src/index.js';
-import { prepare } from '../packages/cursor-plugin/src/index.js';
-import { cursorLocalOptions } from '../packages/cursor-plugin/src/native.js';
-import {
-  optionalReceipts,
-  observeOptional,
-  observeStartOnce,
-  settleOptional,
-} from './optional-receipts.js';
+import { AcclimateClient } from '@acclimate/sdk';
+import { prepare } from '@acclimate/cursor-plugin';
+import { cursorLocalOptions } from '@acclimate/cursor-plugin/native';
+import { optionalReceipts, settleOptional } from './optional-receipts.js';
 
-if (!process.argv.includes('--live'))
-  throw new Error(
-    'Pass --live to request a paid Cursor session; Luna availability is not assumed.',
-  );
+if (!process.argv.includes('--live')) throw new Error('Pass --live to request a paid Cursor session.');
 const token = process.env.ACCLIMATE_TOKEN;
 const bundleId = process.env.ACCLIMATE_BUNDLE;
 const apiKey = process.env.CURSOR_API_KEY;
 const model = process.env.CURSOR_MODEL;
-if (!token || !bundleId || !apiKey || !model)
-  throw new Error('Set ACCLIMATE_TOKEN, ACCLIMATE_BUNDLE, CURSOR_API_KEY and CURSOR_MODEL.');
-if (!['gpt-6-luna', 'gpt-5.6-luna'].includes(model))
-  throw new Error('This qualification permits only Luna models; Cursor support is not assumed.');
-const projectId = process.env.ACCLIMATE_PROJECT ?? 'demo';
-const reporter = optionalReceipts(process.env, projectId);
+const jobDirectory = process.env.ACCLIMATE_JOB_DIR;
+if (!token || !bundleId || !apiKey || !model || !jobDirectory)
+  throw new Error('Set ACCLIMATE_TOKEN, ACCLIMATE_BUNDLE, CURSOR_API_KEY, CURSOR_MODEL and ACCLIMATE_JOB_DIR.');
+const workspaceId = process.env.ACCLIMATE_WORKSPACE ?? 'demo';
+const reporter = optionalReceipts(process.env, workspaceId);
 const client = new AcclimateClient({
   baseUrl: process.env.ACCLIMATE_URL ?? 'http://127.0.0.1:3000',
   token,
   scope: process.env.ACCLIMATE_SCOPE ?? 'demo-app',
 });
-const bundle = await resolveAndCache(
-  client,
-  {
-    projectId,
-    bundleId,
-    channel: process.env.ACCLIMATE_CHANNEL ?? 'stable',
-  },
-  {
-    reporter,
-    cacheDir: resolve(process.env.ACCLIMATE_CACHE ?? join(homedir(), '.cache', 'acclimate')),
-  },
-);
+// cacheDir defaults to defaultCacheDir(): ~/.cache/acclimate/typescript.
+const delivery = await client.prepare({
+  workspaceId,
+  bundleId,
+  channel: process.env.ACCLIMATE_CHANNEL ?? 'stable',
+  cacheDir: process.env.ACCLIMATE_CACHE,
+  reporter,
+});
 const selected = process.env.ACCLIMATE_APPROVED_MEMORY_PATH;
-const prepared = await prepare(bundle, { approvedMemoryPaths: selected ? [selected] : [] });
-observeOptional(() => reporter?.reportPrepared(bundle));
+const prepared = await prepare(delivery, { approvedMemoryPaths: selected ? [selected] : [] });
+let finished = false;
 try {
-  // The app chooses its model, tool policy and approved memory. Workspace settings can run hooks;
-  // this fresh private workspace contains only the staged bundle resources.
+  // The app chooses its model, tool policy and approved memory. Workspace settings can run
+  // hooks; this fresh private workspace contains only the staged bundle resources.
   const agent = await Agent.create({
     apiKey,
     model: { id: model },
-    ...cursorLocalOptions(prepared),
     local: { ...cursorLocalOptions(prepared).local, sandboxOptions: { enabled: true } },
   });
   try {
     const prompt =
-      process.argv
-        .slice(2)
-        .filter((argument) => argument !== '--live')
-        .join(' ') || 'Explain the available project guidance.';
+      process.argv.slice(2).filter((argument) => argument !== '--live').join(' ') ||
+      'Explain the available project guidance.';
     const memory = selected && prepared.memoryFiles.find((file) => file.path === selected);
-    if (selected && !memory)
-      throw new Error('The requested approved memory path is not in the bundle.');
-    const run = await agent.send(
-      memory ? `${prompt}\nApproved memory file: ${memory.absolutePath}` : prompt,
-    );
-    const observeStart = observeStartOnce(
-      (event) => event.type === 'status' && event.status === 'RUNNING',
-      () => reporter?.reportStarted(bundle),
-    );
+    if (selected && !memory) throw new Error('The requested approved memory path is not in the bundle.');
+    const run = await agent.send(memory ? `${prompt}\nApproved memory file: ${memory.absolutePath}` : prompt);
+    let started = false;
     for await (const event of run.stream()) {
-      observeStart(event);
-      console.log(event);
+      if (!started && event.type === 'status' && event.status === 'RUNNING') {
+        started = true;
+        prepared.reportStarted();
+      }
     }
-    console.log({ versionId: prepared.versionId, digest: prepared.digest, mode: 'fresh-local' });
+    const result = await run.wait();
+    finished = true;
+    // Retain the result outside the prepared workspace; never overwrite an earlier run.
+    const retained = await open(join(jobDirectory, 'acclimate-agent-result.json'), 'wx', 0o600);
+    try {
+      await retained.writeFile(JSON.stringify({
+        versionId: prepared.versionId, digest: prepared.digest, status: result.status,
+        result: result.result ?? null, error: result.error?.message ?? null, usage: result.usage ?? null,
+      }) + '\n');
+      await retained.sync();
+    } finally {
+      await retained.close();
+    }
+    console.log({ versionId: prepared.versionId, digest: prepared.digest, status: result.status });
   } finally {
     await agent[Symbol.asyncDispose]();
   }
 } finally {
-  await prepared.cleanup();
+  // Cleanup removes the workspace and the delivery directory; keep them if the run's end is unknown.
+  if (finished) await prepared.cleanup();
+  else console.error(`Cursor run end is unknown; inputs kept at ${prepared.cwd}`);
   await settleOptional(reporter);
 }

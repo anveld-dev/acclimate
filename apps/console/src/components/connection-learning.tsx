@@ -32,21 +32,21 @@ import {
   SkillPermissionFields,
 } from './connection-learning-controls';
 
-type Target = Pick<LearningRequest, 'projectId' | 'integrationId'>;
+type Target = Pick<LearningRequest, 'workspaceId' | 'connectionId'>;
 type Mutation = Exclude<LearningRequest, { action: 'read' }>;
-export function useConnectionLearning(projectId: string, integrationId: string | undefined) {
+export function useConnectionLearning(workspaceId: string, connectionId: string | undefined) {
   const [result, setResult] = useState<LearningResult>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const refreshEpoch = useRef(0);
   const [refreshError, setRefreshError] = useState('');
   useEffect(() => {
-    if (busy || !integrationId) return;
+    if (busy || !connectionId) return;
     const epoch = ++refreshEpoch.current;
     let timer: ReturnType<typeof setTimeout>;
-    async function refresh(integrationId: string) {
+    async function refresh(connectionId: string) {
       try {
-        const next = await readConnectionLearning({ data: { projectId, integrationId } });
+        const next = await readConnectionLearning({ data: { workspaceId, connectionId } });
         if (epoch !== refreshEpoch.current) return;
         setResult(next);
         setRefreshError('');
@@ -54,14 +54,14 @@ export function useConnectionLearning(projectId: string, integrationId: string |
         if (epoch !== refreshEpoch.current) return;
         setRefreshError('Learning status could not be refreshed. Retrying automatically.');
       }
-      timer = setTimeout(() => void refresh(integrationId), 15000);
+      timer = setTimeout(() => void refresh(connectionId), 15000);
     }
-    void refresh(integrationId);
+    void refresh(connectionId);
     return () => {
       refreshEpoch.current++;
       clearTimeout(timer);
     };
-  }, [projectId, integrationId, busy]);
+  }, [workspaceId, connectionId, busy]);
 
   async function request(action: () => Promise<LearningResult>) {
     refreshEpoch.current++;
@@ -106,7 +106,7 @@ export function ConnectionLearning({
   canManage: boolean;
   enabled: boolean;
 }) {
-  const { projectId, integrationId } = target;
+  const { workspaceId, connectionId } = target;
   const { result, busy, error, refreshError, request } = learning;
   const [confirmStop, setConfirmStop] = useState(false);
   const [decision, setDecision] = useState<{
@@ -414,7 +414,7 @@ export function ConnectionLearning({
               onSubmit={(settings) => mutate({ ...target, action: 'restore', ...settings })}
             />
           )}
-          <OutcomeLookup key={integrationId} target={target} />
+          <OutcomeLookup key={connectionId} target={target} />
           <div className="space-y-2">
             <h4 className="text-sm font-semibold">Proposal history</h4>
             {status.rounds.length ? (
@@ -424,7 +424,7 @@ export function ConnectionLearning({
                     <LearningRound
                       latest={index === 0}
                       round={round}
-                      scope={{ projectId, bundleId, channel }}
+                      scope={{ workspaceId, bundleId, channel }}
                       busy={busy}
                       onDecision={
                         editable && active && round.state === 'awaiting_review'
@@ -532,7 +532,7 @@ export function ConnectionLearning({
                   <li key={policy.comparisonId + policy.policyDigest}>
                     <ConsoleLink
                       className="underline"
-                      href={bundleHref({ projectId, bundleId, channel }, 'changes', {
+                      href={bundleHref({ workspaceId, bundleId, channel }, 'changes', {
                         history: 1,
                         candidate: decision.candidateVersionId ?? undefined,
                         request: policy.requestId,
@@ -851,7 +851,7 @@ function LearningRound({
 }: {
   round: LearningRound;
   latest: boolean;
-  scope: { projectId: string; bundleId: string; channel: string };
+  scope: { workspaceId: string; bundleId: string; channel: string };
   busy: boolean;
   onDecision?(approve: boolean, trigger: HTMLButtonElement): void;
 }) {

@@ -32,7 +32,7 @@ class BrowserFixture:
                    CONSOLE_ORIGIN=self.origin, CONSOLE_PUBLIC_API_URL=self.origin,
                    CONSOLE_OIDC_ISSUER=self.identity.issuer, CONSOLE_OIDC_CLIENT_ID=self.identity.client_id,
                    CONSOLE_OIDC_CLIENT_SECRET=self.identity.client_secret,
-                   NODE_EXTRA_CA_CERTS=str(self.ca_path),CONSOLE_PROJECT=world.h.project,CONSOLE_ALLOW_EDITS='true')
+                   NODE_EXTRA_CA_CERTS=str(self.ca_path),CONSOLE_WORKSPACE=world.h.project,CONSOLE_ALLOW_EDITS='true')
         self.env = env
         dev = getattr(world, 'dev_console', False)
         command = (['node', str(ROOT/'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1',
@@ -92,8 +92,8 @@ class BrowserFixture:
         self.page.set_default_timeout(10000)
         self.page.on('pageerror',lambda error:self.errors.append(str(error)))
 
-    def workspace_path(self, view='bundles', project_id=None):
-        project=quote(project_id or self.world.h.project,safe='')
+    def workspace_path(self, view='bundles', workspace_id=None):
+        project=quote(workspace_id or self.world.h.project,safe='')
         return '/w/'+project+('/settings/members' if view=='members' else '/'+view)
 
     def bundle_path(self, view='content', bundle_id=None, channel='stable', **search):

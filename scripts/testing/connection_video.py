@@ -72,11 +72,11 @@ def main():
         comparison=world.call('POST',world.bundle+'/comparisons',dict(settings,evaluation=dict(requestId=request['id'],attemptId=attempt),results=[dict(case,parent=scored(a),candidate=scored(c)) for case,a,c in zip(settings['expectedCases'],[0,1,1],[1,0,1])]),actor='evaluator')
         world.call('POST',request_path+'/finish',dict(attemptId=attempt,comparisonId=comparison['id']),actor='evaluator')
         world.call('POST',world.bundle+'/evaluation-requests',dict(settings,datasetRevision='video-receipts-v2',requireBoundEvidence=True))
-        world.call('POST', world.root + '/integrations', dict(displayName='Support production', bundleId=world.setup['bundle']['id'], channel='stable'))
+        world.call('POST', world.root + '/connections', dict(displayName='Support production', bundleId=world.setup['bundle']['id'], channel='stable'))
         world.sensitive_fixture=True
         browser = world.browser()
         routes = dict(bundles=browser.workspace_path(), members=browser.workspace_path('members'), connections=browser.workspace_path('connections'), changes=browser.bundle_path('changes'))
-        routes['detail'] = routes['connections'] + '?integration=' + world.integration['id']
+        routes['detail'] = routes['connections'] + '?connection=' + world.integration['id']
         run('open', browser.base + '/auth/login')
         run('find', 'label', 'Fixture subject', 'fill', 'operator')
         click('Sign in to fixture')

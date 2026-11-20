@@ -50,10 +50,11 @@ const fail = (
   });
 const identity = (config: EvaluatorConfig) => ({
   serviceUrl: config.serviceUrl,
-  projectId: config.projectId,
+  workspaceId: config.workspaceId,
   evaluatorPrincipalId: config.evaluatorPrincipalId,
   journalRoot: config.journalRoot,
 });
+
 function commandFailure(error: unknown): EvaluationError {
   if (error instanceof EvaluationError) return error;
   if (error instanceof ApiError) {
@@ -227,8 +228,8 @@ async function writeHandoff(filename: string, handoff: EvaluationHandoff) {
     throw error;
   });
   if (existing) {
-    if ((await readCommandText(filename)) !== content) throw fail();
-    return;
+    if ((await readCommandText(filename)) === content) return;
+    throw fail();
   }
   const parent = path.dirname(filename),
     info = await lstat(parent);
@@ -273,12 +274,12 @@ async function writeHandoff(filename: string, handoff: EvaluationHandoff) {
 async function recover<T>(
   transport: ReturnType<typeof createEvaluationTransport>,
   op: 'createDraft' | 'createRequest',
-  scope: { projectId: string; bundleId: string; channel?: string },
+  scope: { workspaceId: string; bundleId: string; channel?: string },
   body: string,
   key: string,
 ): Promise<T | null> {
   const route = evaluationOperationPath(op, scope);
-  const receipt = (await transport.client.getOperation(scope.projectId, key, route)) as unknown as {
+  const receipt = (await transport.client.getOperation(scope.workspaceId, key, route)) as unknown as {
     status: string;
     requestFingerprint?: string;
     result?: T;
@@ -288,6 +289,41 @@ async function recover<T>(
   if (receipt.requestFingerprint !== evaluationFingerprint(op, scope, body) || !receipt.result)
     throw fail();
   return receipt.result;
+}
+
+/** The channel's current release, or a diagnostic that names the missing baseline. */
+async function publishedBase(
+  transport: ReturnType<typeof createEvaluationTransport>,
+  workspaceId: string,
+  bundleId: string,
+  channel: string,
+) {
+  const empty = () =>
+    new EvaluationError('request.channel_empty', { phase: 'claim', nextAction: 'ask_operator' });
+  const current = await transport.client
+    .resolveChannel(workspaceId, bundleId, channel)
+    .catch((error: unknown) => {
+      // Preflight already found the bundle, so a missing resolution is an unpublished channel.
+      if (error instanceof ApiError && error.status === 404 && error.code === 'not_found') throw empty();
+      throw error;
+    });
+  if (!current.resolution) throw empty();
+  return current.resolution;
+}
+
+/**
+ * A predecessor is settled when the service records a bound comparison, or records that it
+ * ended without one: `interrupted` (by an operator or a CI wrapper) or `abandoned` (explicitly
+ * or by server-side expiry). Neither ending's evidence counts, so it needs no comparison.
+ */
+export function assertSettledPredecessor(request: Evaluation) {
+  if (request.status === 'interrupted' || request.status === 'abandoned') return;
+  if (['completed', 'failed'].includes(request.status) && request.attemptId && request.comparisonId)
+    return;
+  throw new EvaluationError('evidence.not_terminal', {
+    phase: 'inspect',
+    nextAction: 'inspect_external_app',
+  });
 }
 
 function assertRequest(request: Evaluation, intent: RequestIntent) {
@@ -303,6 +339,51 @@ function assertRequest(request: Evaluation, intent: RequestIntent) {
     throw fail();
 }
 
+/** A settled run has at most one retry, whatever name the retry was given. */
+async function claimSuccessor(handoffFile: string, output: string) {
+  const marker = path.join(path.dirname(handoffFile), 'successor.json');
+  try {
+    const handle = await open(
+      marker,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await handle.writeFile(json({ schemaVersion: 1, output }) + '\n');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    if ((await readPrivateJson(marker)).output !== output) throw fail();
+  }
+}
+
+/**
+ * Optional request fields: console display labels and the pinned policy digest. Older services
+ * reject unknown request fields, so each is sent only when the service advertises it.
+ */
+async function optionalRequestFields(
+  transport: ReturnType<typeof createEvaluationTransport>,
+  workspaceId: string,
+  runName: string | undefined,
+  retryOf: string | undefined,
+  policyDigest: string | undefined,
+): Promise<{ runName?: string; retryOf?: string; policyDigest?: string }> {
+  if (!runName && !retryOf && !policyDigest) return {};
+  const capabilities = await transport.client
+    .getEvaluationCapabilities(workspaceId)
+    .catch(() => undefined);
+  return {
+    ...(capabilities?.runLabels === true && {
+      ...(runName && { runName }),
+      ...(retryOf && { retryOf }),
+    }),
+    ...(capabilities?.policyPins === true && policyDigest && { policyDigest }),
+  };
+}
+
 export async function createRequestFromIntent(options: {
   app: EvaluationApp<any, any, any>;
   config: EvaluatorConfig;
@@ -312,6 +393,13 @@ export async function createRequestFromIntent(options: {
   intentPath: string;
   outputFile: string;
   predecessor?: { handoffFile: string; request: Evaluation };
+  /** The run's journal name, shown in the console when the service supports it. */
+  runName?: string;
+  /**
+   * sha256 digest of the `--policy` chosen before the run. The request pins it, so a receipt
+   * for another policy is flagged. Recorded in the intent journal with the request body.
+   */
+  policyDigest?: string;
 }): Promise<{
   schemaVersion: 1;
   requestId: string;
@@ -343,7 +431,7 @@ export async function createRequestFromIntent(options: {
   await privateDirectory(path.dirname(filename));
   const lock = await acquireFileLock(filename + '.lock');
   const transport = createEvaluationTransport(config);
-  const scope = { projectId: config.projectId, bundleId, channel };
+  const scope = { workspaceId: config.workspaceId, bundleId, channel };
   const save = async (value: RequestIntent) => {
     lock.assertOwned();
     const content = json(value) + '\n';
@@ -378,12 +466,11 @@ export async function createRequestFromIntent(options: {
     )
       throw fail();
     if (!state) {
-      const current = await transport.client.resolveChannel(config.projectId, bundleId, channel);
-      if (!current.resolution) throw fail('request.base_conflict');
-      const base = current.resolution;
+      const base = await publishedBase(transport, config.workspaceId, bundleId, channel);
       if (prior && (base.version.id !== prior.base.versionId || base.version.digest !== prior.base.digest ||
           base.revision !== prior.base.revision))
         throw fail('request.base_conflict');
+      if (prior) await claimSuccessor(prior.output, output);
       state = {
         schemaVersion: 1,
         kind: 'acclimate-request-intent',
@@ -421,6 +508,11 @@ export async function createRequestFromIntent(options: {
         })
     )
       throw fail();
+    // A run pinned to one policy is a different intent under another policy.
+    const pinnedDigest = fixed.requestBody
+      ? (JSON.parse(fixed.requestBody) as { policyDigest?: string }).policyDigest
+      : undefined;
+    if (pinnedDigest && options.policyDigest && pinnedDigest !== options.policyDigest) throw fail();
     // A committed request is recovered before checking a newer channel baseline.
     if (!fixed.request && fixed.requestBody) {
       fixed.request =
@@ -446,7 +538,7 @@ export async function createRequestFromIntent(options: {
           fixed.keys.draft,
         )) ?? undefined;
       if (!fixed.draft) {
-        const current = await transport.client.resolveChannel(config.projectId, bundleId, channel);
+        const current = await transport.client.resolveChannel(config.workspaceId, bundleId, channel);
         if (
           current.resolution?.version.id !== fixed.base.versionId ||
           current.resolution.revision !== fixed.base.revision
@@ -474,7 +566,7 @@ export async function createRequestFromIntent(options: {
     )
       throw fail();
     if (!fixed.request) {
-      const current = await transport.client.resolveChannel(config.projectId, bundleId, channel);
+      const current = await transport.client.resolveChannel(config.workspaceId, bundleId, channel);
       if (
         current.resolution?.version.id !== fixed.base.versionId ||
         current.resolution.revision !== fixed.base.revision
@@ -482,7 +574,7 @@ export async function createRequestFromIntent(options: {
         throw fail('request.base_conflict');
       const candidate = await resolveAndCache(
         transport.client,
-        { projectId: config.projectId, bundleId, versionId: draft.snapshotVersion.id },
+        { workspaceId: config.workspaceId, bundleId, versionId: draft.snapshotVersion.id },
         { cacheDir: path.join(config.journalRoot, 'command-cache') },
       );
       if (
@@ -491,6 +583,26 @@ export async function createRequestFromIntent(options: {
         stable(candidate.payload) !== stable(payload)
       )
         throw fail();
+      // Labels and the policy pin chosen for a saved body stay fixed across recovery. A
+      // different policy than the one pinned is a changed intent.
+      const saved = fixed.requestBody
+        ? (JSON.parse(fixed.requestBody) as { runName?: string; retryOf?: string; policyDigest?: string })
+        : undefined;
+      if (saved?.policyDigest && options.policyDigest && saved.policyDigest !== options.policyDigest)
+        throw fail();
+      const labels = saved
+        ? {
+            ...(saved.runName !== undefined && { runName: saved.runName }),
+            ...(saved.retryOf !== undefined && { retryOf: saved.retryOf }),
+            ...(saved.policyDigest !== undefined && { policyDigest: saved.policyDigest }),
+          }
+        : await optionalRequestFields(
+            transport,
+            config.workspaceId,
+            options.runName,
+            fixed.retryAfterRequestId,
+            options.policyDigest,
+          );
       const requestBody = json({
         parentVersionId: fixed.base.versionId,
         parentDigest: fixed.base.digest,
@@ -498,6 +610,7 @@ export async function createRequestFromIntent(options: {
         candidateDigest: draft.snapshotVersion.digest,
         ...fixed.descriptor,
         requireBoundEvidence: true,
+        ...labels,
       });
       if (fixed.requestBody && fixed.requestBody !== requestBody) throw fail();
       fixed.requestBody = requestBody;
@@ -516,10 +629,10 @@ export async function createRequestFromIntent(options: {
     const handoff = validateEvaluationHandoff({
       schemaVersion: 1,
       serviceUrl: config.serviceUrl,
-      projectId: config.projectId,
+      workspaceId: config.workspaceId,
       bundleId,
       requestId: fixed.request.id,
-      configuration: fixed.descriptor,
+      descriptor: fixed.descriptor,
     });
     await writeHandoff(output, handoff);
     return {
@@ -542,7 +655,7 @@ export async function createRequestFromIntent(options: {
 function assertInterruptRequest(request: Evaluation, handoff: EvaluationHandoff) {
   if (request.id !== handoff.requestId || request.requireBoundEvidence !== true)
     throw new EvaluationError('evidence.identity_mismatch', { phase: 'inspect' });
-  if (evaluationDescriptorDifferences(request, handoff.configuration).length)
+  if (evaluationDescriptorDifferences(request, handoff.descriptor).length)
     throw new EvaluationError('descriptor.mismatch', { phase: 'inspect' });
 }
 
@@ -585,7 +698,7 @@ export async function interruptFromIntent(
       throw fail();
     const transport = createEvaluationTransport(config);
     const before = await transport.client.getEvaluation(
-      config.projectId,
+      config.workspaceId,
       handoff.bundleId,
       handoff.requestId,
     );
@@ -593,12 +706,12 @@ export async function interruptFromIntent(
     lock.assertOwned();
     const result = await transport.mutate<Evaluation>(
       'interrupt',
-      { projectId: config.projectId, bundleId: handoff.bundleId, requestId: handoff.requestId },
+      { workspaceId: config.workspaceId, bundleId: handoff.bundleId, requestId: handoff.requestId },
       state.body,
       state.key,
     );
     const current = await transport.client.getEvaluation(
-      config.projectId,
+      config.workspaceId,
       handoff.bundleId,
       handoff.requestId,
     );

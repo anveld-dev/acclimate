@@ -151,4 +151,4 @@ Experiences, lessons, proposals, comparisons, and release decisions answer diffe
 [ac-twenty]: ../../../examples/self-improvement/twenty/run.ts#L219
 [ac-feedback]: ../../../examples/self-improvement/twenty/feedback.ts#L13
 [ac-receipts]: ../../../packages/sdk/src/types.ts#L300
-[ac-native]: ../../../packages/sdk/src/internal/native-files.ts#L26
+[ac-native]: ../../../packages/sdk/src/native-files.ts#L26

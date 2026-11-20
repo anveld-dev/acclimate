@@ -12,7 +12,7 @@ import { AcclimateClient, ApiError, resolveAndCache } from '../../packages/sdk/s
 import { prepare } from '../../packages/codex-plugin/src/index.js';
 import { improve, type Model } from '../../examples/service-proposer/workflow.js';
 import { fixtureEdits } from './fixture.js';
-import type { BundlePayload, Promotion, PromotionPage } from '../../packages/sdk/src/types.js';
+import type { BundlePayload, Release, ReleasePage } from '../../packages/sdk/src/types.js';
 
 const live = process.argv.includes('--live');
 const database = process.env.EVALUATION_TEST_DATABASE_URL;
@@ -28,7 +28,7 @@ const auth = JSON.stringify([
   {
     token,
     principalId: principal,
-    projectId: project,
+    workspaceId: project,
     rights: ['read', 'write', 'propose', 'promote'],
   },
 ]);
@@ -211,7 +211,7 @@ try {
     { parentVersionId: null, payload },
     randomUUID(),
   );
-  const seed = await client.promote(
+  const seed = await client.createRelease(
     project,
     bundle.id,
     'fixture',
@@ -220,7 +220,7 @@ try {
   );
   const old = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, channel: 'fixture' },
+    { workspaceId: project, bundleId: bundle.id, channel: 'fixture' },
     { cacheDir: path.join(dir, 'old-cache') },
   );
   const oldWorkspace = await prepare(old);
@@ -230,7 +230,7 @@ try {
       [
         'tools/operator/cli.ts',
         command,
-        '--project',
+        '--workspace',
         project,
         '--bundle',
         bundle.id,
@@ -302,7 +302,7 @@ try {
     const { summary, summaryPath } = await improve(
       client,
       {
-        project,
+        workspace: project,
         bundle: bundle.id,
         channel: 'fixture',
         skillPath: 'skills/retry-review/SKILL.md',
@@ -352,10 +352,10 @@ try {
         summary.comparisonId,
         '--expected-revision',
         seed.revision,
-      )) as Promotion;
+      )) as Release;
       const next = await resolveAndCache(
         client,
-        { projectId: project, bundleId: bundle.id, channel: 'fixture' },
+        { workspaceId: project, bundleId: bundle.id, channel: 'fixture' },
         { cacheDir: path.join(dir, 'old-cache') },
       );
       const nextWorkspace = await prepare(next);
@@ -375,7 +375,7 @@ try {
       }
       await assert.rejects(
         () =>
-          client.promote(
+          client.createRelease(
             project,
             bundle.id,
             'fixture',
@@ -397,10 +397,10 @@ try {
         'Fixture rollback',
         '--expected-revision',
         promoted.revision,
-      )) as Promotion;
+      )) as Release;
       const restored = await resolveAndCache(
         client,
-        { projectId: project, bundleId: bundle.id, channel: 'fixture' },
+        { workspaceId: project, bundleId: bundle.id, channel: 'fixture' },
         { cacheDir: path.join(dir, 'old-cache') },
       );
       const restoredWorkspace = await prepare(restored);
@@ -413,7 +413,7 @@ try {
       } finally {
         await restoredWorkspace.cleanup();
       }
-      const history = (await operator('history', '--limit', '2')) as PromotionPage;
+      const history = (await operator('history', '--limit', '2')) as ReleasePage;
       assert.equal(history.items[0]!.revision, rolledBack.revision);
       assert.equal(history.items[1]!.comparisonId, summary.comparisonId);
       assert.ok(history.nextBeforeRevision);
@@ -421,7 +421,7 @@ try {
         'history',
         '--before',
         history.nextBeforeRevision!,
-      )) as PromotionPage;
+      )) as ReleasePage;
       assert.equal(older.items.length, 1);
       assert.equal(older.items[0]!.revision, seed.revision);
       const result = {

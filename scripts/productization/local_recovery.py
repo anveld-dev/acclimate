@@ -44,9 +44,9 @@ def qualify(h, setup=None, world=None):
     process, suspended = None, None
     assert world is not None, "Recovery requires the shared production browser fixture world"
     try:
-        setup = setup or h.call('POST', '/v1/projects/' + h.project + '/bundle-setups', dict(name='Recovery fixture', origin='created', channel='stable', payload=payload('Survives backend reconnect.'), reason='Explicit recovery fixture.'))
+        setup = setup or h.call('POST', '/v1/workspaces/' + h.project + '/bundle-setups', dict(name='Recovery fixture', origin='created', channel='stable', payload=payload('Survives backend reconnect.'), reason='Explicit recovery fixture.'))
         bundle = setup['bundle']['id']
-        channel_path = '/v1/projects/' + h.project + '/bundles/' + bundle + '/channels/stable'
+        channel_path = '/v1/workspaces/' + h.project + '/bundles/' + bundle + '/channels/stable'
         original = h.call('GET', channel_path)
         # Establish the issuer before the supervisor snapshots the service env.
         world.hosted()

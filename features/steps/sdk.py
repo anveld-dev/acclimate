@@ -172,7 +172,7 @@ def memory_count(context, count):
 def recover_reporting(context, when):
     w = context.world
     assert when in ('within', 'after')
-    w.reporting = w.sdk('recoverReporting', integrationId=w.integration['id'], readerToken=w.read_credential['secret'],
+    w.reporting = w.sdk('recoverReporting', connectionId=w.integration['id'], readerToken=w.read_credential['secret'],
                         receiptToken=w.write_credential['secret'], expired=when == 'after')
 
 
@@ -201,7 +201,7 @@ def recovered_preparation(context):
 @when('the application reports resolution, verification, preparation and its own start')
 def explicit_reports(context):
     w = context.world
-    w.delivery = w.sdk('delivery',actor='content-reader',reporting=True,receiptToken=w.write_credential['secret'],integrationId=w.integration['id'],started=True)
+    w.delivery = w.sdk('delivery',actor='content-reader',reporting=True,receiptToken=w.write_credential['secret'],connectionId=w.integration['id'],started=True)
 
 
 @then('exactly those observed stages are recorded for the selected version')

@@ -106,7 +106,8 @@ pub(crate) async fn create_bundle(
             "Invalid name",
         ));
     }
-    let route = format!("/v1/projects/{project}/bundles");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{project}/bundles");
     let mut command =
         match crate::commands::begin_mutation(&s, &a, &project, &route, &h, &body).await? {
             crate::commands::MutationStart::Execute(command) => command,
@@ -162,7 +163,8 @@ pub(crate) async fn create_version(
     validate_payload(&req.payload)
         .map_err(|e| crate::err(StatusCode::BAD_REQUEST, "invalid_content", e))?;
     let payload = crate::encode_payload(&req.payload)?;
-    let route = format!("/v1/projects/{project}/bundles/{bundle}/versions");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{project}/bundles/{bundle}/versions");
     let mut command =
         match crate::commands::begin_mutation(&s, &a, &project, &route, &h, &body).await? {
             crate::commands::MutationStart::Execute(command) => command,

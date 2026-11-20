@@ -73,7 +73,7 @@ async fn workspace_membership_and_session_revocation() {
         .clone()
         .oneshot(request(
             "GET",
-            format!("/v1/projects/{project}/bundles"),
+            format!("/v1/workspaces/{project}/bundles"),
             &secret,
             "",
         ))
@@ -84,7 +84,7 @@ async fn workspace_membership_and_session_revocation() {
         .clone()
         .oneshot(request(
             "GET",
-            format!("/v1/projects/{other}/bundles"),
+            format!("/v1/workspaces/{other}/bundles"),
             &secret,
             "",
         ))
@@ -95,7 +95,7 @@ async fn workspace_membership_and_session_revocation() {
         .clone()
         .oneshot(request(
             "POST",
-            format!("/v1/projects/{project}/bundles"),
+            format!("/v1/workspaces/{project}/bundles"),
             &secret,
             r#"{"name":"blocked"}"#,
         ))
@@ -106,7 +106,7 @@ async fn workspace_membership_and_session_revocation() {
         .clone()
         .oneshot(request(
             "GET",
-            format!("/v1/projects/{project}/bundles"),
+            format!("/v1/workspaces/{project}/bundles"),
             "forged",
             "",
         ))
@@ -122,7 +122,7 @@ async fn workspace_membership_and_session_revocation() {
         .clone()
         .oneshot(request(
             "GET",
-            format!("/v1/projects/{project}/bundles"),
+            format!("/v1/workspaces/{project}/bundles"),
             &secret,
             "",
         ))
@@ -144,7 +144,7 @@ async fn workspace_membership_and_session_revocation() {
         .clone()
         .oneshot(request(
             "GET",
-            format!("/v1/projects/{project}/bundles"),
+            format!("/v1/workspaces/{project}/bundles"),
             &secret,
             "",
         ))
@@ -159,7 +159,7 @@ async fn workspace_membership_and_session_revocation() {
     let revoked = app
         .oneshot(request(
             "GET",
-            format!("/v1/projects/{project}/bundles"),
+            format!("/v1/workspaces/{project}/bundles"),
             &secret,
             "",
         ))

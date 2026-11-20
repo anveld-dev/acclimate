@@ -50,8 +50,8 @@ def qualify(pg_bin):
                 sessions[actor]=call('POST','/v1/auth/sessions', dict(issuer=h.issuer,subject='operator' if actor=='admin' else actor,email=email,emailVerified=verified),actor='login')
             login('admin','owner@example.test')
             project='mail-invitations'
-            call('POST','/v1/projects',dict(id=project,name='Email test'))
-            base=f'/v1/projects/{project}/invitations'
+            call('POST','/v1/workspaces',dict(id=project,name='Email test'))
+            base=f'/v1/workspaces/{project}/invitations'
             def invite(email, role='editor'):
                 return call('POST',base,dict(email=email,role=role))
             first=invite(' Alice@Example.test ')
@@ -85,7 +85,7 @@ def qualify(pg_bin):
             login('alice','alice@example.test')
             assert call('GET',path,actor='alice')['status']=='pending'
             assert h.sql(f"SELECT count(*) FROM project_memberships WHERE project_id='{project}'")=='1'
-            assert call('POST',path+'/accept',actor='alice')['projectId']==project
+            assert call('POST',path+'/accept',actor='alice')['workspaceId']==project
             call('POST',path+'/accept',actor='alice')
             assert h.sql(f"SELECT role FROM project_memberships WHERE project_id='{project}' AND user_id='{sessions['alice']['userId']}'")=='editor'
             call('GET',base,actor='alice',status=403)

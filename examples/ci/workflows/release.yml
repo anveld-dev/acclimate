@@ -1,0 +1,83 @@
+# Copy to .github/workflows/agent-release.yml.
+# After a merge to main, evaluate main's bundle (reusing the pull request's result when the bundle,
+# channel release and evaluator are unchanged), then release it with a separate releasing credential
+# held by a protected environment.
+name: Agent release
+on:
+  push:
+    branches: [main]
+    paths:
+      - agent/**
+permissions:
+  contents: read
+concurrency:
+  # Never cancel a release in progress; queue the next one.
+  group: agent-release
+  cancel-in-progress: false
+jobs:
+  gate:
+    runs-on: [self-hosted, acclimate-evaluator]
+    timeout-minutes: 60
+    outputs:
+      result: ${{ steps.gate.outputs.result }}
+      candidate-version-id: ${{ steps.gate.outputs.candidate-version-id }}
+      comparison-id: ${{ steps.gate.outputs.comparison-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: gate
+        uses: anveld-dev/acclimate/examples/ci@v0.1.0
+        with:
+          app: /opt/acclimate/evaluator
+          policy: /opt/acclimate/evaluator/quality-policy.json
+          bundle: ${{ vars.ACCLIMATE_BUNDLE_ID }}
+          channel: stable
+          bundle-dir: agent
+          memory: none
+          config-json: ${{ vars.ACCLIMATE_EVALUATOR_CONFIG }}
+          token: ${{ secrets.ACCLIMATE_EVALUATE_TOKEN }}
+          live: true
+  release:
+    needs: gate
+    if: needs.gate.outputs.result == 'pass'
+    # This job only calls the service API. Protect the environment with required reviewers and keep
+    # the releasing token there, never in repository secrets that pull requests can reach.
+    environment: acclimate-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the operator CLI from an SDK release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACCLIMATE_VERSION: 0.1.0 # the first SDK release with acclimate-operator
+        run: |
+          release="$RUNNER_TEMP/acclimate-release"
+          gh release download "v$ACCLIMATE_VERSION" --repo anveld-dev/acclimate --dir "$release" \
+            --pattern "acclimate-sdk-$ACCLIMATE_VERSION.tgz" --pattern SHA256SUMS
+          (cd "$release" && grep " acclimate-sdk-$ACCLIMATE_VERSION.tgz\$" SHA256SUMS | sha256sum --check)
+          mkdir -p "$RUNNER_TEMP/operator"
+          echo '{"private":true}' > "$RUNNER_TEMP/operator/package.json"
+          npm install --prefix "$RUNNER_TEMP/operator" --ignore-scripts --no-audit --no-fund \
+            "$release/acclimate-sdk-$ACCLIMATE_VERSION.tgz"
+      - name: Release the evaluated candidate
+        env:
+          ACCLIMATE_URL: ${{ vars.ACCLIMATE_URL }}
+          ACCLIMATE_TOKEN: ${{ secrets.ACCLIMATE_RELEASE_TOKEN }}
+          ACCLIMATE_SCOPE: ${{ vars.ACCLIMATE_RELEASE_PRINCIPAL }}
+          WORKSPACE: ${{ vars.ACCLIMATE_WORKSPACE_ID }}
+          BUNDLE: ${{ vars.ACCLIMATE_BUNDLE_ID }}
+          CANDIDATE: ${{ needs.gate.outputs.candidate-version-id }}
+          COMPARISON: ${{ needs.gate.outputs.comparison-id }}
+        run: |
+          operator="$RUNNER_TEMP/operator/node_modules/.bin/acclimate-operator"
+          # Read the channel's current revision from a fresh, read-only review of the comparison.
+          revision="$("$operator" review --json --workspace "$WORKSPACE" --bundle "$BUNDLE" --channel stable \
+            --comparison "$COMPARISON" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).current.revision))')"
+          # The service checks permissions, evidence eligibility and the expected revision.
+          "$operator" promote --json --workspace "$WORKSPACE" --bundle "$BUNDLE" --channel stable \
+            --version "$CANDIDATE" --comparison "$COMPARISON" --expected-revision "$revision" \
+            --key "release-$GITHUB_SHA"

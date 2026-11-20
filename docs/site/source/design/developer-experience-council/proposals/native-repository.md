@@ -12,7 +12,7 @@ The seam remains the native plugin's prepared bundle. The recipe's local source-
 
 ## Current-source anchors
 
-- `packages/sdk/src/internal/native-files.ts:52`: native preparation creates its own temporary root; `:99` recursively removes it on cleanup.
+- `packages/sdk/src/native-files.ts:52`: native preparation creates its own temporary root; `:99` recursively removes it on cleanup.
 - `packages/codex-plugin/src/index.ts:15`, `packages/claude-plugin/src/index.ts:18`, `packages/pi-plugin/src/index.ts:22`: preparation accepts a verified bundle and returns native resource locations and lifetime.
 - `packages/cursor-plugin/src/index.ts:18`: Cursor additionally accepts explicit approved memory selection, defaulting to none.
 - `packages/sdk/src/prepare.ts:51`: generic preparation accepts an app-owned destination but does not map native paths; only collision error is supported.

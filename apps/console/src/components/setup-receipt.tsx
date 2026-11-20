@@ -7,11 +7,11 @@ import { ConsoleLink } from './console-link';
 import { ReceiptTime } from './receipt-time';
 
 export function SetupReceipt({
-  projectId,
+  workspaceId,
   bundleId,
   channel,
 }: {
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   channel: string;
 }) {
@@ -19,7 +19,7 @@ export function SetupReceipt({
   useEffect(() => {
     let active = true;
     setResult(undefined);
-    readSetupReport({ data: { projectId, bundleId, channel } })
+    readSetupReport({ data: { workspaceId, bundleId, channel } })
       .then((next) => {
         if (active) setResult(next);
       })
@@ -29,7 +29,7 @@ export function SetupReceipt({
     return () => {
       active = false;
     };
-  }, [projectId, bundleId, channel]);
+  }, [workspaceId, bundleId, channel]);
   return (
     <section className="setup-receipt rounded-md border p-4" aria-label="Latest delivery receipt">
       <h3 className="flex items-center gap-2 text-sm font-semibold">
@@ -48,8 +48,8 @@ export function SetupReceipt({
           <ConsoleLink
             className="inline-flex items-center gap-1 underline"
             href={
-              workspaceHref(projectId, 'delivery') +
-              '?integration=' +
+              workspaceHref(workspaceId, 'delivery') +
+              '?connection=' +
               encodeURIComponent(result.appId)
             }
           >

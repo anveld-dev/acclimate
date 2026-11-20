@@ -1,6 +1,6 @@
 # Acclimate console
 
-TanStack Start UI for the Rust content service. Content, drafts, evaluations, releases and integration records come from PostgreSQL. Applications keep their own agent execution and grading.
+TanStack Start UI for the Rust content service. Content, drafts, evaluations, releases and connection records come from PostgreSQL. Applications keep their own agent execution and grading.
 
 ## Start
 
@@ -23,7 +23,7 @@ npm run start:console
 4. **Review release:** from a saved change, paste the installed evaluator’s public configuration, create a request, run the matching application, inspect its bound exact-version evidence, then deliberately publish that snapshot. Review the Cases, Files changed, Evaluation runs and Details tabs. The decision panel shows release readiness, score coverage and policy verdicts. Publish without evaluation requires a reason. Complete evidence can include a losing candidate; request state, report completeness and the release decision stay separate.
 5. **Releases:** inspect/download historical versions or restore one with a reason. Releases affect future resolutions; existing prepared jobs stay pinned.
 6. **Use in an app:** open the bundle header popover for SDK commands, environment variables and IDs. Every authorized reader can open the Full setup guide from this popover. Applications own their agent loop and credentials; a connection record is optional.
-7. **Connections:** workspace administrators manage existing bundle/channel-bound integration records, one-time credentials and optional app-reported receipts. The Setup tab walks through the bundle and channel, read credentials, first delivery and an optional comparison. Delivery reports, Credentials, Learning and Settings each have their own tab. Missing receipts mean unknown delivery. Members shows existing access and current roles in workspace settings, and the last admin cannot remove or demote themselves. Lost credential issuance responses can be reconciled without replaying a secret; replacement follows confirmed revocation. Personal identity and sign-out live in Account.
+7. **Connections:** workspace administrators manage existing bundle/channel-bound connection records, one-time credentials and optional app-reported receipts. The Setup tab walks through the bundle and channel, read credentials, first delivery and an optional comparison. Delivery reports, Credentials, Learning and Settings each have their own tab. Missing receipts mean unknown delivery. Members shows existing access and current roles in workspace settings, and the last admin cannot remove or demote themselves. Lost credential issuance responses can be reconciled without replaying a secret; replacement follows confirmed revocation. Personal identity and sign-out live in Account.
 
 Audited writes keep their exact submitted snapshot in this tab's session storage before sending. If a response is lost, check the recorded outcome, retry that snapshot, or close the operation before reviewing a new one. Later edits stay separate. Forgetting text or seeing `not_observed` does not prove that the write failed. Logout/account changes purge submitted text; unresolved metadata remains available for reconciliation.
 
@@ -35,7 +35,7 @@ The SDK’s evaluation CLI loads your installed cases, agent and grader from the
 application module. Set `ACCLIMATE_EVALUATOR_CASES` if you keep the cases in a private JSON file. For the native Codex reviewer, run
 `npm run --silent evaluate:app -- describe` in its checkout.
 
-Create the request, download `evaluation-request.json`, and give it to the evaluator owner.
+Create the evaluation request, download its handoff, `handoff.json`, and give it to the evaluator owner.
 Select Node.js or Python for the matching `compare` command. It reports scores and accepts an optional policy file. A recognized native Codex request
 shows its checkout command. The evaluator runs the frozen parent and candidate. The request
 shows its reported activity, coverage, and paired grades. Use the policy-check command
@@ -63,7 +63,7 @@ The console requires:
 
 Remove `ACCLIMATE_MODE` and `CONSOLE_MODE`; they are rejected. Internal URLs and authority credentials never belong in SDK recipes. Forwarding headers do not establish identity or override the canonical public origin.
 
-Operators may create a workspace or explicitly adopt an existing project with no memberships. Adoption requires review of the exact project, verified identity and reason; history never regrants a removed role. Workspace admins manage verified members. There is no first-visitor admin. Account holds your verified user ID and sign-out. Sign-out must confirm revocation before clearing its cookie; transport errors do not count as success.
+Operators may create a workspace or explicitly adopt an existing workspace with no memberships. Adoption requires review of the exact workspace, verified identity and reason; history never regrants a removed role. Workspace admins manage verified members. There is no first-visitor admin. Account holds your verified user ID and sign-out. Sign-out must confirm revocation before clearing its cookie; transport errors do not count as success.
 
 OIDC uses the installed `openid-client` authorization-code flow with PKCE, state and nonce. Login transactions are bounded, process-local and expire after five minutes: run one console instance. Sessions retain the eight-hour policy; no refresh-token store is added. Migration 0013 requires fresh login while preserving stored users, memberships, content and machine credentials.
 

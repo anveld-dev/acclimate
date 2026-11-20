@@ -8,14 +8,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Codex } from '@openai/codex-sdk';
-import { AcclimateClient, resolveAndCache } from '../../packages/sdk/src/index.js';
-import { defineEvaluation } from '../../packages/sdk/src/evaluation/index.js';
+import { AcclimateClient, resolveAndCache } from '@acclimate/sdk';
+import { defineEvaluation } from '@acclimate/sdk/evaluation';
 import {
   connectedEvaluationDescriptor,
   createLearningOutcomeReporter,
   serveConnectedLearning,
-} from '../../packages/sdk/src/learning/index.js';
-import type { LearningEnrollmentStatus, VerifiedBundle } from '../../packages/sdk/src/types.js';
+} from '@acclimate/sdk/learning';
+import type { LearningEnrollmentStatus, VerifiedVersion } from '@acclimate/sdk';
 
 const home = path.resolve('examples/real-app-learning');
 const scratch = await realpath('.real-app-scratch');
@@ -28,7 +28,7 @@ assert(
   'Use the private PostgreSQL cluster created by scripts/productization/connected_learning.py',
 );
 const project = `connected-${randomUUID()}`;
-const projectPath = `/v1/projects/${project}`;
+const workspacePath = `/v1/workspaces/${project}`;
 const roles = ['operator', 'evaluator', 'other'] as const;
 type Role = (typeof roles)[number];
 const tokens = Object.fromEntries(
@@ -143,12 +143,12 @@ const schema = {
   properties: { argv: { type: 'array', items: { type: 'string' } } },
 };
 async function answer(
-  bundle: VerifiedBundle,
+  version: VerifiedVersion,
   input: string,
   label: string,
   caseSignal?: AbortSignal,
 ) {
-  const guidance = bundle.payload.files
+  const guidance = version.payload.files
     .map(({ path: name, text }) => name + '\n' + text)
     .join('\n');
   const result = await turn(
@@ -184,8 +184,8 @@ function cohort(split: 'development' | 'audit') {
     runtime: { app: 'llm-0.38', model: modelId, effort: 'low' },
     execution: 'live',
     cases: fixtures[split],
-    async execute({ bundle, input, caseId, signal: caseSignal }) {
-      return { output: await answer(bundle, input, split + ':' + caseId, caseSignal) };
+    async execute({ version, input, caseId, signal: caseSignal }) {
+      return { output: await answer(version, input, split + ':' + caseId, caseSignal) };
     },
     async grade({ output, expected }) {
       return { reward: score(output, expected) };
@@ -292,7 +292,7 @@ try {
     role: Role | 'admin' = 'admin',
     expected?: number,
   ): Promise<T> {
-    const response = await fetch(`${serviceUrl}${projectPath}${route}`, {
+    const response = await fetch(`${serviceUrl}${workspacePath}${route}`, {
       method,
       signal: AbortSignal.timeout(15_000),
       headers: {
@@ -311,23 +311,23 @@ try {
     return value as T;
   }
 
-  const client = (role: Role, integrationId?: string) =>
+  const client = (role: Role, connectionId?: string) =>
     new AcclimateClient({
       baseUrl: serviceUrl,
       token: tokens[role],
-      scope: `${project}:${role}:${integrationId ?? 'global'}`,
-      integrationId,
+      scope: `${project}:${role}:${connectionId ?? 'global'}`,
+      connectionId,
       retries: 0,
       timeoutMs: 3_000,
     });
-  const learning = (connection: string) => `/integrations/${connection}/learning`;
+  const learning = (connection: string) => `/connections/${connection}/learning`;
   const configPath = path.join(dir, 'evaluator.json');
   await writeFile(
     configPath,
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl,
-      projectId: project,
+      workspaceId: project,
       evaluatorPrincipalId: 'evaluator',
       evaluatorToken: tokens.evaluator,
       journalRoot: path.join(dir, 'journal'),
@@ -352,7 +352,7 @@ try {
       'x-acclimate-session': browserSession,
     },
     body: JSON.stringify({
-      projectId: project,
+      workspaceId: project,
       reason: 'Own the disposable qualification workspace.',
     }),
   });
@@ -368,7 +368,7 @@ try {
     },
     randomUUID(),
   );
-  await operator.promote(
+  await operator.createRelease(
     project,
     bundle.id,
     'stable',
@@ -382,7 +382,7 @@ try {
 
   const makeConnection = async (displayName: string) =>
     (
-      await api<{ id: string }>('POST', '/integrations', {
+      await api<{ id: string }>('POST', '/connections', {
         displayName,
         bundleId: bundle.id,
         channel: 'stable',
@@ -424,7 +424,7 @@ try {
     outcomePrincipal: 'other',
   });
   driver = serveConnectedLearning({
-    integrationId: connection,
+    connectionId: connection,
     installationId,
     configPath,
     apps: { development, audit: [audit] },
@@ -481,13 +481,13 @@ try {
     assert.equal(calibration.status, 'completed');
     const reporter = createLearningOutcomeReporter({
       client: client('other', connection),
-      projectId: project,
-      integrationId: connection,
+      workspaceId: project,
+      connectionId: connection,
     });
     const installed = await resolveAndCache(
       client('operator', connection),
       {
-        projectId: project,
+        workspaceId: project,
         bundleId: bundle.id,
         channel: 'stable',
       },

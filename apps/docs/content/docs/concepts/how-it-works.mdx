@@ -1,29 +1,37 @@
 ---
 title: How Acclimate works
-description: Follow one bundle version from your workspace to an agent job, comparison, and release.
+description: Follow one change to your agent's instructions from an edit to a graded comparison, a release, and delivery to new jobs.
 ---
 
-Follow one bundle version through delivery and evaluation so you can decide where to connect Acclimate to your application.
+Acclimate treats your agent's instructions, skills, and approved memory like code. You save each change as a new version, run the old and new versions on the same saved tasks, compare the grades, and release the change only when the evidence supports it. You can roll back by releasing an earlier version. Terms in bold are defined in the [glossary](/docs/concepts/glossary).
 
-## Prepare content for a job
+## Save content as versions
 
-Store the instructions, skills, and approved memory for a job in a **bundle**. Each **version** is an immutable snapshot. Its SHA-256 digest identifies the exact JSON payload bytes stored by the service. A **channel** such as `stable` selects the version for new jobs.
+A **bundle** holds the files one agent uses: instructions, skills, and approved memory. Each **version** is an immutable snapshot of those files, identified by the SHA-256 digest of its exact bytes. A **channel** such as `stable` points at the version new jobs should use.
 
-At job start, your app resolves the channel, gets the version and digest, and prepares the verified files. The SDK can reuse verified cached bytes for that version and stages files for the job. Save the version ID and digest with the result. A release updates what a fresh resolution returns. Jobs with already prepared files keep the content they started with.
+## Compare a change
 
-## Compare and release a change
+Saving an edit creates a **candidate** version that records its **parent**, the version it started from. An **evaluator** in your environment runs your agent on both versions, using the same saved **cases** and the same grader, and reports the scores. The evaluator is the SDK's CLI plus an application module you write: it exports your cases, a function that calls your agent, and a function that grades the output. Acclimate never runs your agent or sees your model credentials.
 
-Save an edit as a candidate version with a parent. Your evaluator calls the agent on both versions using the same cases and grading rules. Acclimate records which versions were compared and the paired results your application reported. Your team can check the candidate against its quality policy and review the changes before releasing it. A release or restore advances the channel revision.
+The **comparison** records which versions ran and the paired scores. You can apply a **policy**, your written release thresholds, to get a pass, fail, or indeterminate verdict.
 
-A **connection** ties an application to its workspace, bundle, and channel. If you enable [connected learning](/docs/guides/connected-learning), your application can report outcomes and approved corrections. The service can use them to propose changes and schedule comparisons for the application's evaluator.
+## Review and release
+
+Your team reviews the file changes, the paired scores, and any missing evidence in the console. A **release** points the channel at the candidate. To roll back, release an earlier version. Every release is recorded with who made it and why.
+
+## Deliver content to jobs
+
+When your application starts a job, the SDK resolves the channel, downloads the version, verifies its digest, and prepares the files for your agent. Save the version ID with the job's result. A release changes what new jobs receive. Jobs already running keep the content they started with.
+
+A **connection** ties an application to its workspace, bundle, and channel. If you enable [connected learning](/docs/guides/connected-learning), your application can report **outcomes** and approved corrections, and the service can propose changes and schedule comparisons for your evaluator.
 
 ## Responsibilities
 
 | Component | Responsibility |
 | --- | --- |
-| Acclimate service | Stores workspace content and access rules, serves versions, and records proposals, comparisons, and releases. |
-| Acclimate SDK | Resolves versions, verifies and caches payloads, prepares local files, and provides evaluation helpers. |
-| Native plugin | Maps verified bundle content to files or options for a particular agent SDK. |
-| Your application | Owns agent execution, model and tool access, session lifecycle, private task data, and grading. |
+| Acclimate service | Stores workspaces, versions, comparisons, and releases, and enforces who can read or change them. |
+| Acclimate SDK | Resolves, verifies, and caches versions, prepares files for a job, and runs comparisons as the evaluator CLI. |
+| Native plugin | Maps bundle files to the files or options a particular agent SDK expects. |
+| Your application | Runs the agent, owns model and tool access, private task data, and grading. |
 
-[Learn the workspace vocabulary](/docs/concepts/glossary) or [prepare content for a job](/docs/guides/deliver-content).
+[Learn the vocabulary](/docs/concepts/glossary), [try it on your laptop](/docs/get-started/quickstart), or [prepare content for a job](/docs/guides/deliver-content).

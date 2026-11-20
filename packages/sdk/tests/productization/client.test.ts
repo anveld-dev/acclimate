@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AcclimateClient } from '../../src/index.js';
+import { AcclimateClient, AcclimateUsageError } from '../../src/index.js';
 
 test('product commands retry identical bytes and keys with explicit server session', async () => {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -89,4 +89,31 @@ test('draft status all preserves access to closed records', async () => {
     (await client.listDrafts('p', 'b', 'main', { limit: 20, status: 'all' })).items[0].status,
     'published',
   );
+});
+
+test('abandonEvaluation posts a reason with the caller idempotency key', async () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const client = new AcclimateClient({
+    baseUrl: 'https://example.test',
+    token: 'acm_evaluator',
+    scope: 'p',
+    fetch: async (url, init) => {
+      calls.push({ url: String(url), init: init! });
+      return Response.json({ id: 'e', status: 'abandoned', abandonedBy: 'machine:ci' });
+    },
+  });
+  const result = await client.abandonEvaluation(
+    'p',
+    'b',
+    'e',
+    { reason: 'CI job cancelled' },
+    'abandon-key',
+  );
+  assert.equal(result.status, 'abandoned');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://example.test/v1/workspaces/p/bundles/b/evaluation-requests/e/abandon');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.equal(calls[0].init.body, JSON.stringify({ reason: 'CI job cancelled' }));
+  assert.equal(new Headers(calls[0].init.headers).get('idempotency-key'), 'abandon-key');
+  await assert.rejects(client.abandonEvaluation('p', 'b', 'e', { reason: 'x' }, ''), /idempotency key/);
 });

@@ -15,7 +15,7 @@ runtime = {
 def execute(run):
     with Path(__file__).with_name("executions.log").open("a") as count:
         count.write("executed\n")
-    output = run_existing_agent(bundle=run.bundle, task=run.input, cancellation=run.cancellation)
+    output = run_existing_agent(version=run.version, task=run.input, cancellation=run.cancellation)
     return ExecutionResult(output=output, usage={"costUsd": 0})
 
 def grade(run):

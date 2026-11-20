@@ -5,6 +5,7 @@ use axum::{
     http::Request,
 };
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -77,7 +78,7 @@ fn setup_body() -> Value {
 }
 fn lookup(p: &str, key: &str, path: &str) -> String {
     let query = format!("operationPath={}", path.replace('/', "%2F"));
-    format!("/v1/projects/{p}/operations/{key}?{query}")
+    format!("/v1/workspaces/{p}/operations/{key}?{query}")
 }
 
 #[tokio::test]
@@ -87,8 +88,8 @@ async fn close_serializes_with_marked_and_unmarked_setup_and_never_reverses_a_co
     let app = router(state.clone());
     for marked in [false, true, false, true, false, true] {
         let key = Uuid::new_v4().to_string();
-        let setup = format!("/v1/projects/{p}/bundle-setups");
-        let close = format!("/v1/projects/{p}/operations/{key}/close");
+        let setup = format!("/v1/workspaces/{p}/bundle-setups");
+        let close = format!("/v1/workspaces/{p}/operations/{key}/close");
         let body = setup_body();
         let empty = json!({});
         let (write, fence) = tokio::join!(
@@ -134,12 +135,12 @@ async fn close_serializes_with_marked_and_unmarked_setup_and_never_reverses_a_co
 async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_namespaces_separate() {
     let (state, p) = fixture().await;
     let app = router(state.clone());
-    let setup = format!("/v1/projects/{p}/bundle-setups");
+    let setup = format!("/v1/workspaces/{p}/bundle-setups");
     let (status, seed) = call(&app, "POST", &setup, "seed", &setup_body(), false, None).await;
     assert_eq!(status, 201, "{seed}");
     let bundle = seed["bundle"]["id"].as_str().unwrap();
     let version = seed["version"]["id"].as_str().unwrap();
-    let promotions = format!("/v1/projects/{p}/bundles/{bundle}/channels/stable/promotions");
+    let promotions = format!("/v1/workspaces/{p}/bundles/{bundle}/channels/stable/releases");
     let key = Uuid::new_v4().to_string();
     let body = json!({"versionId":version,"expectedRevision":"1","unevaluatedReason":"Reviewed original intent"});
     let original = call(&app, "POST", &promotions, &key, &body, false, None).await;
@@ -166,11 +167,16 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
     .await;
     assert_eq!(recovered.0, 200);
     assert_eq!(recovered.1["result"], original.1);
-    assert!(
-        recovered.1["requestFingerprint"]
-            .as_str()
-            .unwrap()
-            .starts_with("sha256:")
+    // The stored key and fingerprint are the exact canonical route the client called.
+    assert_eq!(recovered.1["path"], promotions);
+    let mut fingerprint = Sha256::new();
+    fingerprint.update(b"POST\0");
+    fingerprint.update(promotions.as_bytes());
+    fingerprint.update([0]);
+    fingerprint.update(body.to_string().as_bytes());
+    assert_eq!(
+        recovered.1["requestFingerprint"],
+        format!("sha256:{}", hex::encode(fingerprint.finalize()))
     );
     let changed = call(
         &app,
@@ -184,7 +190,7 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
     .await;
     assert_eq!(changed.0, 409);
     assert_eq!(changed.1["error"]["code"], "idempotency_conflict");
-    let close = format!("/v1/projects/{p}/operations/{key}/close");
+    let close = format!("/v1/workspaces/{p}/operations/{key}/close");
     let closed = call(
         &app,
         "POST",
@@ -199,7 +205,7 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
     assert_eq!(closed.1["result"], original.1);
     // A closed added route cannot block setup/draft's distinct global namespace.
     let other_key = Uuid::new_v4().to_string();
-    let other_close = format!("/v1/projects/{p}/operations/{other_key}/close");
+    let other_close = format!("/v1/workspaces/{p}/operations/{other_key}/close");
     assert_eq!(
         call(
             &app,
@@ -241,7 +247,7 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
     )
     .await;
     assert_eq!(legacy_commit.0, 201, "{}", legacy_commit.1);
-    let legacy_close = format!("/v1/projects/{p}/operations/{legacy_key}/close");
+    let legacy_close = format!("/v1/workspaces/{p}/operations/{legacy_key}/close");
     let committed_close = call(
         &app,
         "POST",
@@ -287,7 +293,7 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
 async fn receipt_lookup_close_and_replay_require_current_effective_action_rights() {
     let (state, p) = fixture().await;
     let app = router(state.clone());
-    let path = format!("/v1/projects/{p}/bundle-setups");
+    let path = format!("/v1/workspaces/{p}/bundle-setups");
     let key = Uuid::new_v4().to_string();
     let original = call(&app, "POST", &path, &key, &setup_body(), true, None).await;
     assert_eq!(original.0, 201, "{}", original.1);
@@ -300,7 +306,7 @@ async fn receipt_lookup_close_and_replay_require_current_effective_action_rights
         let got = call(
             &limited,
             "GET",
-            &format!("/v1/projects/{p}/operations/{key}"),
+            &format!("/v1/workspaces/{p}/operations/{key}"),
             "unused",
             &json!({}),
             false,
@@ -311,7 +317,7 @@ async fn receipt_lookup_close_and_replay_require_current_effective_action_rights
         let close = call(
             &limited,
             "POST",
-            &format!("/v1/projects/{p}/operations/{key}/close"),
+            &format!("/v1/workspaces/{p}/operations/{key}/close"),
             &key,
             &json!({}),
             false,
@@ -330,7 +336,7 @@ async fn receipt_lookup_close_and_replay_require_current_effective_action_rights
     let recovered = call(
         &app,
         "POST",
-        &format!("/v1/projects/{p}/operations/{key}/close"),
+        &format!("/v1/workspaces/{p}/operations/{key}/close"),
         &key,
         &json!({}),
         false,
@@ -377,7 +383,7 @@ async fn receipt_lookup_close_and_replay_require_current_effective_action_rights
     let denied = call(
         &app,
         "GET",
-        &format!("/v1/projects/{p}/operations/{browser_key}"),
+        &format!("/v1/workspaces/{p}/operations/{browser_key}"),
         "unused",
         &json!({}),
         false,
@@ -407,7 +413,7 @@ async fn legacy_key_only_close_uses_the_committed_draft_action_and_drafts_channe
 {
     let (state, p) = fixture().await;
     let app = router(state.clone());
-    let setup_path = format!("/v1/projects/{p}/bundle-setups");
+    let setup_path = format!("/v1/workspaces/{p}/bundle-setups");
     let (status, seed) = call(
         &app,
         "POST",
@@ -421,7 +427,7 @@ async fn legacy_key_only_close_uses_the_committed_draft_action_and_drafts_channe
     assert_eq!(status, 201);
     let bundle = seed["bundle"]["id"].as_str().unwrap();
     let version = seed["version"]["id"].as_str().unwrap();
-    let draft_path = format!("/v1/projects/{p}/bundles/{bundle}/channels/stable/drafts");
+    let draft_path = format!("/v1/workspaces/{p}/bundles/{bundle}/channels/stable/drafts");
     let created = call(
         &app,
         "POST",
@@ -442,7 +448,7 @@ async fn legacy_key_only_close_uses_the_committed_draft_action_and_drafts_channe
     grants[0].rights = vec!["promote".into()];
     promote_only.grants = Arc::new(grants);
     let limited = router(promote_only);
-    let close = format!("/v1/projects/{p}/operations/{published_key}/close");
+    let close = format!("/v1/workspaces/{p}/operations/{published_key}/close");
     let result = call(
         &limited,
         "POST",
@@ -456,12 +462,12 @@ async fn legacy_key_only_close_uses_the_committed_draft_action_and_drafts_channe
     assert_eq!(result.0, 200, "{}", result.1);
     assert_eq!(result.1["result"], published.1);
     let key = Uuid::new_v4().to_string();
-    let channel_drafts = format!("/v1/projects/{p}/bundles/{bundle}/channels/drafts/promotions");
+    let channel_drafts = format!("/v1/workspaces/{p}/bundles/{bundle}/channels/drafts/releases");
     assert_eq!(
         call(
             &app,
             "POST",
-            &format!("/v1/projects/{p}/operations/{key}/close"),
+            &format!("/v1/workspaces/{p}/operations/{key}/close"),
             &key,
             &json!({"operationPath":channel_drafts}),
             false,

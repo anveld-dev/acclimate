@@ -15,7 +15,7 @@ const env = {
   CONSOLE_SERVICE_TOKEN: 'server-secret',
   CONSOLE_ALLOW_EDITS: 'true',
 };
-const selection = { projectId: 'one', bundleId: 'bundle-one', channel: 'stable' };
+const selection = { workspaceId: 'one', bundleId: 'bundle-one', channel: 'stable' };
 test('opaque selection survives decoding, rejects tampering and does not carry credentials', () => {
   const sealed = sealSelection(env, selection);
   assert.deepEqual(openSelection(env, sealed), selection);
@@ -67,7 +67,7 @@ test('creating supplied instructions uses one atomic command and trusted session
   await createSetup(
     { ...env, CONSOLE_SESSION_TOKEN: 'session' },
     {
-      projectId: 'one',
+      workspaceId: 'one',
       name: 'Team instructions',
       channel: 'stable',
       origin: 'created',
@@ -118,7 +118,7 @@ for (const fixture of [
     const methods: string[] = [];
     await createSetup(
       env,
-      { projectId: 'one', name: 'Reviewed bundle', channel: 'stable', key, ...fixture },
+      { workspaceId: 'one', name: 'Reviewed bundle', channel: 'stable', key, ...fixture },
       async (url, init) => {
         methods.push(init?.method ?? 'GET');
         if (init?.method === 'GET')
@@ -140,7 +140,7 @@ test('created and imported setups without content retain definitive empty-payloa
       createSetup(
         env,
         {
-          projectId: 'one',
+          workspaceId: 'one',
           name: 'Reviewed bundle',
           channel: 'stable',
           origin,
@@ -167,7 +167,7 @@ test('the console rejects requests to create sample content before transport', a
     createSetup(
       env,
       {
-        projectId: 'one',
+        workspaceId: 'one',
         name: 'Sample',
         channel: 'stable',
         origin: 'example' as 'created',
@@ -190,7 +190,7 @@ test('invalid imported payload is a definitive validation failure before transpo
     createSetup(
       env,
       {
-        projectId: 'one',
+        workspaceId: 'one',
         name: 'Reviewed bundle',
         channel: 'stable',
         origin: 'imported',
@@ -238,7 +238,7 @@ test('invalid setup is a definitive rejection while lost responses stay uncertai
       schemaVersion: 1 as const,
       files: [{ path: 'AGENTS.md', kind: 'instruction' as const, text: 'Review code.' }],
     },
-    projectId: 'one',
+    workspaceId: 'one',
     name: 'Valid',
     channel: 'stable',
     origin: 'created' as const,

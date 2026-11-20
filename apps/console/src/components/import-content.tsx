@@ -164,7 +164,7 @@ export function ImportContent({
     return () => {
       readSequence.current++;
     };
-  }, [payload, commandScope?.projectId, commandScope?.bundleId, commandScope?.channel]);
+  }, [payload, commandScope?.workspaceId, commandScope?.bundleId, commandScope?.channel]);
   useEffect(() => () => onReadingChange?.(false), [onReadingChange]);
   async function read(entries: ImportEntry[], recoveryTrigger?: HTMLElement) {
     const originDialog = recoveryTrigger?.closest('[role="dialog"]');

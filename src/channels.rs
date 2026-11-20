@@ -193,7 +193,8 @@ pub(crate) async fn promote(
             "Malformed request",
         )
     })?;
-    let route = format!("/v1/projects/{p}/bundles/{b}/channels/{c}/promotions");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/bundles/{b}/channels/{c}/releases");
     let mut command = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),
@@ -270,6 +271,25 @@ pub(crate) async fn promote_in_tx(
         .map_err(db)?
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "not_found", "Comparison not found"))?;
         let cmp: ComparisonRequest = serde_json::from_value(cr.get("body")).map_err(db)?;
+        if let Some(binding) = &cmp.evaluation {
+            // Lock against a concurrent abandonment of the bound attempt.
+            let status: Option<String> = sqlx::query_scalar(
+                "SELECT status FROM evaluation_requests WHERE project_id=$1 AND bundle_id=$2 AND id=$3 FOR SHARE",
+            )
+            .bind(p)
+            .bind(bid)
+            .bind(path(&binding.request_id)?)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(db)?;
+            if status.as_deref() == Some("abandoned") {
+                return Err(err(
+                    StatusCode::CONFLICT,
+                    "evidence_abandoned",
+                    "Evidence bound to an abandoned evaluation attempt never counts",
+                ));
+            }
+        }
         let parent = path(&cmp.parent_version_id)?;
         let direct_parent = vr.get::<Option<Uuid>, _>("parent_version_id") == Some(parent);
         if !cr.get::<bool, _>("complete")

@@ -37,7 +37,7 @@ test('the learning worker diagnoses local module startup failures before reading
           join(directory, 'absent.json'),
           '--installation',
           'install',
-          '--integration',
+          '--connection',
           'a7100000-0000-0000-0000-000000000001',
         ],
         { encoding: 'utf8', timeout: 15_000 },

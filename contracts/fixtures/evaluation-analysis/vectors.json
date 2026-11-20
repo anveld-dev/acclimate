@@ -43,38 +43,39 @@
               "code": "analysis.descriptive",
               "counts": {
                 "distinctCases": 2,
-                "expectedPairs": 5,
-                "comparablePairs": 5,
+                "expectedPairs": 6,
+                "comparablePairs": 6,
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 5.0,
+                "parentMean": 5,
                 "candidateMean": 4.5,
                 "orientedMeanImprovement": -0.5
               },
               "cases": [
                 {
                   "caseId": "critical",
-                  "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 5.0,
-                  "orientedMeanImprovement": -3.0
+                  "pairs": 3,
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 2.0,
-                  "candidateMean": 4.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "estimated",
                 "code": "uncertainty.approximate_fixed_case_interval",
                 "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                  "lower": -1.1123724356957947,
+                  "upper": 0.3164965809277258
+                },
+                "estimand": "fixed-cases"
               }
             },
             {
@@ -89,44 +90,413 @@
               "code": "analysis.descriptive",
               "counts": {
                 "distinctCases": 2,
-                "expectedPairs": 5,
-                "comparablePairs": 5,
+                "expectedPairs": 6,
+                "comparablePairs": 6,
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 95.0,
+                "parentMean": 95,
                 "candidateMean": 95.5,
                 "orientedMeanImprovement": -0.5
               },
               "cases": [
                 {
                   "caseId": "critical",
-                  "pairs": 2,
-                  "parentMean": 92.0,
-                  "candidateMean": 95.0,
-                  "orientedMeanImprovement": -3.0
+                  "pairs": 3,
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 98.0,
-                  "candidateMean": 96.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 98,
+                  "candidateMean": 96,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "estimated",
                 "code": "uncertainty.approximate_fixed_case_interval",
                 "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                  "lower": -1.1123724356957947,
+                  "upper": 0.3164965809277258
+                },
+                "estimand": "fixed-cases"
               }
             }
           ]
         }
       },
-      "patches": []
+      "patches": [
+        {
+          "path": [
+            "comparison",
+            "results"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 3,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 5,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 4,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 4,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 6,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 5,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "comparison",
+            "expectedCases"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2
+            }
+          ]
+        },
+        {
+          "path": [
+            "expectedDescriptor",
+            "expectedCases"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2
+            }
+          ]
+        },
+        {
+          "path": [
+            "observations"
+          ],
+          "value": [
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 0,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 0,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 97
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 1,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 1,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 95
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 2,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 2,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 96
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 0,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 0,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 96
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 1,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 1,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 94
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 2,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 2,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 95
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "default-descriptive-scalar",
@@ -166,7 +536,7 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 5.0,
+                "parentMean": 5,
                 "candidateMean": 4.5,
                 "orientedMeanImprovement": -0.5
               },
@@ -174,22 +544,23 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 5.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 2.0,
-                  "candidateMean": 4.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "not_requested",
                 "code": "uncertainty.not_requested",
-                "interval": null
+                "interval": null,
+                "estimand": null
               }
             }
           ]
@@ -197,15 +568,21 @@
       },
       "patches": [
         {
-          "path": ["metrics"],
+          "path": [
+            "metrics"
+          ],
           "remove": true
         },
         {
-          "path": ["observations"],
+          "path": [
+            "observations"
+          ],
           "remove": true
         },
         {
-          "path": ["uncertainty"],
+          "path": [
+            "uncertainty"
+          ],
           "remove": true
         }
       ]
@@ -251,38 +628,39 @@
               "code": "analysis.descriptive",
               "counts": {
                 "distinctCases": 2,
-                "expectedPairs": 5,
-                "comparablePairs": 5,
+                "expectedPairs": 6,
+                "comparablePairs": 6,
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 5.0,
+                "parentMean": 5,
                 "candidateMean": 4.5,
                 "orientedMeanImprovement": -0.5
               },
               "cases": [
                 {
                   "caseId": "critical",
-                  "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 5.0,
-                  "orientedMeanImprovement": -3.0
+                  "pairs": 3,
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 2.0,
-                  "candidateMean": 4.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "estimated",
                 "code": "uncertainty.approximate_fixed_case_interval",
                 "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                  "lower": -1.1123724356957947,
+                  "upper": 0.11237243569579447
+                },
+                "estimand": "fixed-cases"
               }
             },
             {
@@ -297,38 +675,39 @@
               "code": "analysis.descriptive",
               "counts": {
                 "distinctCases": 2,
-                "expectedPairs": 5,
-                "comparablePairs": 5,
+                "expectedPairs": 6,
+                "comparablePairs": 6,
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 95.0,
+                "parentMean": 95,
                 "candidateMean": 95.5,
                 "orientedMeanImprovement": -0.5
               },
               "cases": [
                 {
                   "caseId": "critical",
-                  "pairs": 2,
-                  "parentMean": 92.0,
-                  "candidateMean": 95.0,
-                  "orientedMeanImprovement": -3.0
+                  "pairs": 3,
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 98.0,
-                  "candidateMean": 96.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 98,
+                  "candidateMean": 96,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "estimated",
                 "code": "uncertainty.approximate_fixed_case_interval",
                 "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                  "lower": -1.1123724356957947,
+                  "upper": 0.11237243569579447
+                },
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -336,7 +715,377 @@
       },
       "patches": [
         {
-          "path": ["uncertainty", "seed"],
+          "path": [
+            "comparison",
+            "results"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 3,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 5,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 4,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 4,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 6,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 5,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "comparison",
+            "expectedCases"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2
+            }
+          ]
+        },
+        {
+          "path": [
+            "expectedDescriptor",
+            "expectedCases"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2
+            }
+          ]
+        },
+        {
+          "path": [
+            "observations"
+          ],
+          "value": [
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 0,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 0,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 97
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 1,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 1,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 95
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 2,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 2,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 96
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 0,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 0,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 96
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 1,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 1,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 94
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 2,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 2,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 95
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "uncertainty",
+            "seed"
+          ],
           "value": 0
         }
       ]
@@ -382,38 +1131,39 @@
               "code": "analysis.descriptive",
               "counts": {
                 "distinctCases": 2,
-                "expectedPairs": 5,
-                "comparablePairs": 5,
+                "expectedPairs": 6,
+                "comparablePairs": 6,
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 5.0,
+                "parentMean": 5,
                 "candidateMean": 4.5,
                 "orientedMeanImprovement": -0.5
               },
               "cases": [
                 {
                   "caseId": "critical",
-                  "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 5.0,
-                  "orientedMeanImprovement": -3.0
+                  "pairs": 3,
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 2.0,
-                  "candidateMean": 4.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "estimated",
                 "code": "uncertainty.approximate_fixed_case_interval",
                 "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                  "lower": -1.1123724356957947,
+                  "upper": 0.11237243569579447
+                },
+                "estimand": "fixed-cases"
               }
             },
             {
@@ -428,38 +1178,39 @@
               "code": "analysis.descriptive",
               "counts": {
                 "distinctCases": 2,
-                "expectedPairs": 5,
-                "comparablePairs": 5,
+                "expectedPairs": 6,
+                "comparablePairs": 6,
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 95.0,
+                "parentMean": 95,
                 "candidateMean": 95.5,
                 "orientedMeanImprovement": -0.5
               },
               "cases": [
                 {
                   "caseId": "critical",
-                  "pairs": 2,
-                  "parentMean": 92.0,
-                  "candidateMean": 95.0,
-                  "orientedMeanImprovement": -3.0
+                  "pairs": 3,
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 98.0,
-                  "candidateMean": 96.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 98,
+                  "candidateMean": 96,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "estimated",
                 "code": "uncertainty.approximate_fixed_case_interval",
                 "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                  "lower": -1.1123724356957947,
+                  "upper": 0.11237243569579447
+                },
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -467,7 +1218,377 @@
       },
       "patches": [
         {
-          "path": ["uncertainty", "seed"],
+          "path": [
+            "comparison",
+            "results"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 3,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 5,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 4,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 4,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 6,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 5,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "comparison",
+            "expectedCases"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2
+            }
+          ]
+        },
+        {
+          "path": [
+            "expectedDescriptor",
+            "expectedCases"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2
+            }
+          ]
+        },
+        {
+          "path": [
+            "observations"
+          ],
+          "value": [
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 0,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 0,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 97
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 1,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 1,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 95
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 2,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 2,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 96
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 0,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 0,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 96
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 1,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 1,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 94
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 2,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 2,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 95
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "uncertainty",
+            "seed"
+          ],
           "value": 4294967295
         }
       ]
@@ -518,7 +1639,7 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 5.0,
+                "parentMean": 5,
                 "candidateMean": 4.5,
                 "orientedMeanImprovement": -0.5
               },
@@ -526,28 +1647,38 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 5.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 2.0,
-                  "candidateMean": 4.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
-                "status": "estimated",
-                "code": "uncertainty.approximate_fixed_case_interval",
-                "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                "status": "insufficient_data",
+                "code": "uncertainty.insufficient_repetitions",
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             },
             {
+              "evidenceGaps": {
+                "total": 1,
+                "rows": [
+                  {
+                    "caseId": "routine",
+                    "repetition": 0,
+                    "side": "parent",
+                    "stage": "metric",
+                    "reason": "missing_component"
+                  }
+                ]
+              },
               "metric": {
                 "id": "latency",
                 "name": "Latency",
@@ -568,27 +1699,16 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 92.0,
-                  "candidateMean": 95.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
                 }
               ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
-                "interval": null
-              },
-              "evidenceGaps": {
-                "total": 1,
-                "rows": [
-                  {
-                    "caseId": "routine",
-                    "repetition": 0,
-                    "side": "parent",
-                    "stage": "metric",
-                    "reason": "missing_component"
-                  }
-                ]
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -596,7 +1716,12 @@
       },
       "patches": [
         {
-          "path": ["observations", 0, "values", "latency"],
+          "path": [
+            "observations",
+            0,
+            "values",
+            "latency"
+          ],
           "value": null
         }
       ]
@@ -608,7 +1733,11 @@
       },
       "patches": [
         {
-          "path": ["observations", 0, "graderRevision"],
+          "path": [
+            "observations",
+            0,
+            "graderRevision"
+          ],
           "value": "stale"
         }
       ]
@@ -620,7 +1749,11 @@
       },
       "patches": [
         {
-          "path": ["observations", 0, "attemptId"],
+          "path": [
+            "observations",
+            0,
+            "attemptId"
+          ],
           "value": "other"
         }
       ]
@@ -632,7 +1765,11 @@
       },
       "patches": [
         {
-          "path": ["observations", 0, "comparisonId"],
+          "path": [
+            "observations",
+            0,
+            "comparisonId"
+          ],
           "value": "other"
         }
       ]
@@ -644,7 +1781,11 @@
       },
       "patches": [
         {
-          "path": ["observations", 0, "requestId"],
+          "path": [
+            "observations",
+            0,
+            "requestId"
+          ],
           "value": "other"
         }
       ]
@@ -656,7 +1797,11 @@
       },
       "patches": [
         {
-          "path": ["observations", 0, "versionId"],
+          "path": [
+            "observations",
+            0,
+            "versionId"
+          ],
           "value": "other"
         }
       ]
@@ -668,7 +1813,11 @@
       },
       "patches": [
         {
-          "path": ["observations", 0, "bundleDigest"],
+          "path": [
+            "observations",
+            0,
+            "bundleDigest"
+          ],
           "value": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         }
       ]
@@ -680,19 +1829,36 @@
       },
       "patches": [
         {
-          "path": ["observations", 1, "side"],
+          "path": [
+            "observations",
+            1,
+            "side"
+          ],
           "value": "parent"
         },
         {
-          "path": ["observations", 1, "versionId"],
+          "path": [
+            "observations",
+            1,
+            "versionId"
+          ],
           "value": "11111111-1111-4111-8111-111111111111"
         },
         {
-          "path": ["observations", 1, "bundleDigest"],
+          "path": [
+            "observations",
+            1,
+            "bundleDigest"
+          ],
           "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         },
         {
-          "path": ["observations", 1, "values", "latency"],
+          "path": [
+            "observations",
+            1,
+            "values",
+            "latency"
+          ],
           "value": 98
         }
       ]
@@ -727,6 +1893,18 @@
           },
           "metrics": [
             {
+              "evidenceGaps": {
+                "total": 1,
+                "rows": [
+                  {
+                    "caseId": "routine",
+                    "repetition": 0,
+                    "side": "candidate",
+                    "stage": "grade",
+                    "reason": "grading_failed"
+                  }
+                ]
+              },
               "metric": {
                 "id": "reward",
                 "name": "Correctness",
@@ -747,16 +1925,19 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 5.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
                 }
               ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
-                "interval": null
-              },
+                "interval": null,
+                "estimand": "fixed-cases"
+              }
+            },
+            {
               "evidenceGaps": {
                 "total": 1,
                 "rows": [
@@ -768,9 +1949,7 @@
                     "reason": "grading_failed"
                   }
                 ]
-              }
-            },
-            {
+              },
               "metric": {
                 "id": "latency",
                 "name": "Latency",
@@ -791,27 +1970,16 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 92.0,
-                  "candidateMean": 95.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
                 }
               ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
-                "interval": null
-              },
-              "evidenceGaps": {
-                "total": 1,
-                "rows": [
-                  {
-                    "caseId": "routine",
-                    "repetition": 0,
-                    "side": "candidate",
-                    "stage": "grade",
-                    "reason": "grading_failed"
-                  }
-                ]
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -819,15 +1987,30 @@
       },
       "patches": [
         {
-          "path": ["comparison", "complete"],
+          "path": [
+            "comparison",
+            "complete"
+          ],
           "value": false
         },
         {
-          "path": ["comparison", "results", 0, "candidate", "gradingStatus"],
+          "path": [
+            "comparison",
+            "results",
+            0,
+            "candidate",
+            "gradingStatus"
+          ],
           "value": "failed"
         },
         {
-          "path": ["comparison", "results", 0, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            0,
+            "candidate",
+            "reward"
+          ],
           "value": null
         }
       ]
@@ -878,23 +2061,24 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 2.0,
-                "candidateMean": 3.0,
-                "orientedMeanImprovement": 1.0
+                "parentMean": 2,
+                "candidateMean": 3,
+                "orientedMeanImprovement": 1
               },
               "cases": [
                 {
                   "caseId": "routine",
                   "pairs": 1,
-                  "parentMean": 2.0,
-                  "candidateMean": 3.0,
-                  "orientedMeanImprovement": 1.0
+                  "parentMean": 2,
+                  "candidateMean": 3,
+                  "orientedMeanImprovement": 1
                 }
               ],
               "uncertainty": {
                 "status": "insufficient_data",
                 "code": "uncertainty.insufficient_repetitions",
-                "interval": null
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             },
             {
@@ -914,23 +2098,24 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 98.0,
-                "candidateMean": 97.0,
-                "orientedMeanImprovement": 1.0
+                "parentMean": 98,
+                "candidateMean": 97,
+                "orientedMeanImprovement": 1
               },
               "cases": [
                 {
                   "caseId": "routine",
                   "pairs": 1,
-                  "parentMean": 98.0,
-                  "candidateMean": 97.0,
-                  "orientedMeanImprovement": 1.0
+                  "parentMean": 98,
+                  "candidateMean": 97,
+                  "orientedMeanImprovement": 1
                 }
               ],
               "uncertainty": {
                 "status": "insufficient_data",
                 "code": "uncertainty.insufficient_repetitions",
-                "interval": null
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -938,7 +2123,10 @@
       },
       "patches": [
         {
-          "path": ["comparison", "expectedCases"],
+          "path": [
+            "comparison",
+            "expectedCases"
+          ],
           "value": [
             {
               "caseId": "routine",
@@ -947,7 +2135,10 @@
           ]
         },
         {
-          "path": ["comparison", "results"],
+          "path": [
+            "comparison",
+            "results"
+          ],
           "value": [
             {
               "caseId": "routine",
@@ -972,7 +2163,10 @@
           ]
         },
         {
-          "path": ["expectedDescriptor", "expectedCases"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases"
+          ],
           "value": [
             {
               "caseId": "routine",
@@ -981,7 +2175,9 @@
           ]
         },
         {
-          "path": ["observations"],
+          "path": [
+            "observations"
+          ],
           "value": [
             {
               "requestId": "33333333-3333-4333-8333-333333333333",
@@ -1061,30 +2257,31 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 5.0,
-                "candidateMean": 6.0,
-                "orientedMeanImprovement": 1.0
+                "parentMean": 5,
+                "candidateMean": 6,
+                "orientedMeanImprovement": 1
               },
               "cases": [
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 9.0,
-                  "orientedMeanImprovement": 1.0
+                  "parentMean": 8,
+                  "candidateMean": 9,
+                  "orientedMeanImprovement": 1
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 2.0,
-                  "candidateMean": 3.0,
-                  "orientedMeanImprovement": 1.0
+                  "parentMean": 2,
+                  "candidateMean": 3,
+                  "orientedMeanImprovement": 1
                 }
               ],
               "uncertainty": {
                 "status": "insufficient_data",
-                "code": "uncertainty.no_observed_paired_variation",
-                "interval": null
+                "code": "uncertainty.insufficient_repetitions",
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             },
             {
@@ -1104,30 +2301,31 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 10.0,
-                "candidateMean": 9.0,
-                "orientedMeanImprovement": 1.0
+                "parentMean": 10,
+                "candidateMean": 9,
+                "orientedMeanImprovement": 1
               },
               "cases": [
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 10.0,
-                  "candidateMean": 9.0,
-                  "orientedMeanImprovement": 1.0
+                  "parentMean": 10,
+                  "candidateMean": 9,
+                  "orientedMeanImprovement": 1
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 10.0,
-                  "candidateMean": 9.0,
-                  "orientedMeanImprovement": 1.0
+                  "parentMean": 10,
+                  "candidateMean": 9,
+                  "orientedMeanImprovement": 1
                 }
               ],
               "uncertainty": {
                 "status": "insufficient_data",
-                "code": "uncertainty.no_observed_paired_variation",
-                "interval": null
+                "code": "uncertainty.insufficient_repetitions",
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -1135,59 +2333,133 @@
       },
       "patches": [
         {
-          "path": ["comparison", "results", 1, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            1,
+            "candidate",
+            "reward"
+          ],
           "value": 3
         },
         {
-          "path": ["comparison", "results", 2, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            2,
+            "candidate",
+            "reward"
+          ],
           "value": 3
         },
         {
-          "path": ["comparison", "results", 3, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            3,
+            "candidate",
+            "reward"
+          ],
           "value": 9
         },
         {
-          "path": ["comparison", "results", 4, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            4,
+            "candidate",
+            "reward"
+          ],
           "value": 9
         },
         {
-          "path": ["observations", 0, "values", "latency"],
+          "path": [
+            "observations",
+            0,
+            "values",
+            "latency"
+          ],
           "value": 10
         },
         {
-          "path": ["observations", 1, "values", "latency"],
+          "path": [
+            "observations",
+            1,
+            "values",
+            "latency"
+          ],
           "value": 9
         },
         {
-          "path": ["observations", 2, "values", "latency"],
+          "path": [
+            "observations",
+            2,
+            "values",
+            "latency"
+          ],
           "value": 10
         },
         {
-          "path": ["observations", 3, "values", "latency"],
+          "path": [
+            "observations",
+            3,
+            "values",
+            "latency"
+          ],
           "value": 9
         },
         {
-          "path": ["observations", 4, "values", "latency"],
+          "path": [
+            "observations",
+            4,
+            "values",
+            "latency"
+          ],
           "value": 10
         },
         {
-          "path": ["observations", 5, "values", "latency"],
+          "path": [
+            "observations",
+            5,
+            "values",
+            "latency"
+          ],
           "value": 9
         },
         {
-          "path": ["observations", 6, "values", "latency"],
+          "path": [
+            "observations",
+            6,
+            "values",
+            "latency"
+          ],
           "value": 10
         },
         {
-          "path": ["observations", 7, "values", "latency"],
+          "path": [
+            "observations",
+            7,
+            "values",
+            "latency"
+          ],
           "value": 9
         },
         {
-          "path": ["observations", 8, "values", "latency"],
+          "path": [
+            "observations",
+            8,
+            "values",
+            "latency"
+          ],
           "value": 10
         },
         {
-          "path": ["observations", 9, "values", "latency"],
+          "path": [
+            "observations",
+            9,
+            "values",
+            "latency"
+          ],
           "value": 9
         }
       ]
@@ -1242,7 +2514,8 @@
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "analysis.nonfinite",
-                "interval": null
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             },
             {
@@ -1262,7 +2535,7 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 95.0,
+                "parentMean": 95,
                 "candidateMean": 95.5,
                 "orientedMeanImprovement": -0.5
               },
@@ -1270,25 +2543,23 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 92.0,
-                  "candidateMean": 95.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 98.0,
-                  "candidateMean": 96.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 98,
+                  "candidateMean": 96,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
-                "status": "estimated",
-                "code": "uncertainty.approximate_fixed_case_interval",
-                "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                "status": "insufficient_data",
+                "code": "uncertainty.insufficient_repetitions",
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -1296,43 +2567,103 @@
       },
       "patches": [
         {
-          "path": ["comparison", "results", 0, "parent", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            0,
+            "parent",
+            "reward"
+          ],
           "value": 1e308
         },
         {
-          "path": ["comparison", "results", 0, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            0,
+            "candidate",
+            "reward"
+          ],
           "value": 1e308
         },
         {
-          "path": ["comparison", "results", 1, "parent", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            1,
+            "parent",
+            "reward"
+          ],
           "value": 1e308
         },
         {
-          "path": ["comparison", "results", 1, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            1,
+            "candidate",
+            "reward"
+          ],
           "value": 1e308
         },
         {
-          "path": ["comparison", "results", 2, "parent", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            2,
+            "parent",
+            "reward"
+          ],
           "value": 1e308
         },
         {
-          "path": ["comparison", "results", 2, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            2,
+            "candidate",
+            "reward"
+          ],
           "value": 1e308
         },
         {
-          "path": ["comparison", "results", 3, "parent", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            3,
+            "parent",
+            "reward"
+          ],
           "value": 1e308
         },
         {
-          "path": ["comparison", "results", 3, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            3,
+            "candidate",
+            "reward"
+          ],
           "value": 1e308
         },
         {
-          "path": ["comparison", "results", 4, "parent", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            4,
+            "parent",
+            "reward"
+          ],
           "value": 1e308
         },
         {
-          "path": ["comparison", "results", 4, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            4,
+            "candidate",
+            "reward"
+          ],
           "value": 1e308
         }
       ]
@@ -1383,7 +2714,7 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 5.0,
+                "parentMean": 5,
                 "candidateMean": 4.5,
                 "orientedMeanImprovement": -0.5
               },
@@ -1391,25 +2722,23 @@
                 {
                   "caseId": "",
                   "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 5.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "😀",
                   "pairs": 3,
-                  "parentMean": 2.0,
-                  "candidateMean": 4.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
-                "status": "estimated",
-                "code": "uncertainty.approximate_fixed_case_interval",
-                "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                "status": "insufficient_data",
+                "code": "uncertainty.insufficient_repetitions",
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             },
             {
@@ -1429,7 +2758,7 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 95.0,
+                "parentMean": 95,
                 "candidateMean": 95.5,
                 "orientedMeanImprovement": -0.5
               },
@@ -1437,25 +2766,23 @@
                 {
                   "caseId": "",
                   "pairs": 2,
-                  "parentMean": 92.0,
-                  "candidateMean": 95.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "😀",
                   "pairs": 3,
-                  "parentMean": 98.0,
-                  "candidateMean": 96.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 98,
+                  "candidateMean": 96,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
-                "status": "estimated",
-                "code": "uncertainty.approximate_fixed_case_interval",
-                "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                "status": "insufficient_data",
+                "code": "uncertainty.insufficient_repetitions",
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -1463,103 +2790,218 @@
       },
       "patches": [
         {
-          "path": ["comparison", "expectedCases", 0, "caseId"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            0,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["comparison", "expectedCases", 1, "caseId"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            1,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["comparison", "expectedCases", 2, "caseId"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            2,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["comparison", "expectedCases", 3, "caseId"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            3,
+            "caseId"
+          ],
           "value": ""
         },
         {
-          "path": ["comparison", "expectedCases", 4, "caseId"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            4,
+            "caseId"
+          ],
           "value": ""
         },
         {
-          "path": ["comparison", "results", 0, "caseId"],
+          "path": [
+            "comparison",
+            "results",
+            0,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["comparison", "results", 1, "caseId"],
+          "path": [
+            "comparison",
+            "results",
+            1,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["comparison", "results", 2, "caseId"],
+          "path": [
+            "comparison",
+            "results",
+            2,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["comparison", "results", 3, "caseId"],
+          "path": [
+            "comparison",
+            "results",
+            3,
+            "caseId"
+          ],
           "value": ""
         },
         {
-          "path": ["comparison", "results", 4, "caseId"],
+          "path": [
+            "comparison",
+            "results",
+            4,
+            "caseId"
+          ],
           "value": ""
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 0, "caseId"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            0,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 1, "caseId"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            1,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 2, "caseId"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            2,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 3, "caseId"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            3,
+            "caseId"
+          ],
           "value": ""
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 4, "caseId"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            4,
+            "caseId"
+          ],
           "value": ""
         },
         {
-          "path": ["observations", 0, "caseId"],
+          "path": [
+            "observations",
+            0,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["observations", 1, "caseId"],
+          "path": [
+            "observations",
+            1,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["observations", 2, "caseId"],
+          "path": [
+            "observations",
+            2,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["observations", 3, "caseId"],
+          "path": [
+            "observations",
+            3,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["observations", 4, "caseId"],
+          "path": [
+            "observations",
+            4,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["observations", 5, "caseId"],
+          "path": [
+            "observations",
+            5,
+            "caseId"
+          ],
           "value": "😀"
         },
         {
-          "path": ["observations", 6, "caseId"],
+          "path": [
+            "observations",
+            6,
+            "caseId"
+          ],
           "value": ""
         },
         {
-          "path": ["observations", 7, "caseId"],
+          "path": [
+            "observations",
+            7,
+            "caseId"
+          ],
           "value": ""
         },
         {
-          "path": ["observations", 8, "caseId"],
+          "path": [
+            "observations",
+            8,
+            "caseId"
+          ],
           "value": ""
         },
         {
-          "path": ["observations", 9, "caseId"],
+          "path": [
+            "observations",
+            9,
+            "caseId"
+          ],
           "value": ""
         }
       ]
@@ -1605,38 +3047,39 @@
               "code": "analysis.descriptive",
               "counts": {
                 "distinctCases": 2,
-                "expectedPairs": 5,
-                "comparablePairs": 5,
+                "expectedPairs": 6,
+                "comparablePairs": 6,
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 5.0,
+                "parentMean": 5,
                 "candidateMean": 4.5,
                 "orientedMeanImprovement": -0.5
               },
               "cases": [
                 {
                   "caseId": "critical",
-                  "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 5.0,
-                  "orientedMeanImprovement": -3.0
+                  "pairs": 3,
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 2.0,
-                  "candidateMean": 4.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "estimated",
                 "code": "uncertainty.approximate_fixed_case_interval",
                 "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                  "lower": -1.1123724356957947,
+                  "upper": 0.3164965809277258
+                },
+                "estimand": "fixed-cases"
               }
             },
             {
@@ -1651,38 +3094,39 @@
               "code": "analysis.descriptive",
               "counts": {
                 "distinctCases": 2,
-                "expectedPairs": 5,
-                "comparablePairs": 5,
+                "expectedPairs": 6,
+                "comparablePairs": 6,
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 95.0,
+                "parentMean": 95,
                 "candidateMean": 95.5,
                 "orientedMeanImprovement": -0.5
               },
               "cases": [
                 {
                   "caseId": "critical",
-                  "pairs": 2,
-                  "parentMean": 92.0,
-                  "candidateMean": 95.0,
-                  "orientedMeanImprovement": -3.0
+                  "pairs": 3,
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 98.0,
-                  "candidateMean": 96.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 98,
+                  "candidateMean": 96,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "estimated",
                 "code": "uncertainty.approximate_fixed_case_interval",
                 "interval": {
-                  "lower": -1.1666666666666665,
-                  "upper": 0.16666666666666674
-                }
+                  "lower": -1.1123724356957947,
+                  "upper": 0.3164965809277258
+                },
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -1690,355 +3134,1124 @@
       },
       "patches": [
         {
-          "path": ["comparison", "expectedCases", 0, "caseId"],
+          "path": [
+            "comparison",
+            "results"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 3,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 5,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 4,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 4,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 6,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 5,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "comparison",
+            "expectedCases"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2
+            }
+          ]
+        },
+        {
+          "path": [
+            "expectedDescriptor",
+            "expectedCases"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2
+            }
+          ]
+        },
+        {
+          "path": [
+            "observations"
+          ],
+          "value": [
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 0,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 0,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 97
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 1,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 1,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 95
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 2,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 2,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 96
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 0,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 0,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 96
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 1,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 1,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 94
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 2,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 2,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 95
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "comparison",
+            "expectedCases",
+            0,
+            "caseId"
+          ],
           "value": "critical"
         },
         {
-          "path": ["comparison", "expectedCases", 0, "repetition"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            0,
+            "repetition"
+          ],
           "value": 1
         },
         {
-          "path": ["comparison", "expectedCases", 1, "caseId"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            1,
+            "caseId"
+          ],
           "value": "critical"
         },
         {
-          "path": ["comparison", "expectedCases", 1, "repetition"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            1,
+            "repetition"
+          ],
           "value": 0
         },
         {
-          "path": ["comparison", "expectedCases", 3, "caseId"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            3,
+            "caseId"
+          ],
           "value": "routine"
         },
         {
-          "path": ["comparison", "expectedCases", 3, "repetition"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            3,
+            "repetition"
+          ],
           "value": 1
         },
         {
-          "path": ["comparison", "expectedCases", 4, "caseId"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            4,
+            "caseId"
+          ],
           "value": "routine"
         },
         {
-          "path": ["comparison", "expectedCases", 4, "repetition"],
+          "path": [
+            "comparison",
+            "expectedCases",
+            4,
+            "repetition"
+          ],
           "value": 0
         },
         {
-          "path": ["comparison", "results", 0, "caseId"],
+          "path": [
+            "comparison",
+            "results",
+            0,
+            "caseId"
+          ],
           "value": "critical"
         },
         {
-          "path": ["comparison", "results", 0, "repetition"],
+          "path": [
+            "comparison",
+            "results",
+            0,
+            "repetition"
+          ],
           "value": 1
         },
         {
-          "path": ["comparison", "results", 0, "parent", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            0,
+            "parent",
+            "reward"
+          ],
           "value": 8
         },
         {
-          "path": ["comparison", "results", 0, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            0,
+            "candidate",
+            "reward"
+          ],
           "value": 6
         },
         {
-          "path": ["comparison", "results", 1, "caseId"],
+          "path": [
+            "comparison",
+            "results",
+            1,
+            "caseId"
+          ],
           "value": "critical"
         },
         {
-          "path": ["comparison", "results", 1, "repetition"],
+          "path": [
+            "comparison",
+            "results",
+            1,
+            "repetition"
+          ],
           "value": 0
         },
         {
-          "path": ["comparison", "results", 1, "parent", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            1,
+            "parent",
+            "reward"
+          ],
           "value": 8
         },
         {
-          "path": ["comparison", "results", 1, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            1,
+            "candidate",
+            "reward"
+          ],
           "value": 4
         },
         {
-          "path": ["comparison", "results", 3, "caseId"],
+          "path": [
+            "comparison",
+            "results",
+            3,
+            "caseId"
+          ],
           "value": "routine"
         },
         {
-          "path": ["comparison", "results", 3, "repetition"],
+          "path": [
+            "comparison",
+            "results",
+            3,
+            "repetition"
+          ],
           "value": 1
         },
         {
-          "path": ["comparison", "results", 3, "parent", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            3,
+            "parent",
+            "reward"
+          ],
           "value": 2
         },
         {
-          "path": ["comparison", "results", 3, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            3,
+            "candidate",
+            "reward"
+          ],
           "value": 5
         },
         {
-          "path": ["comparison", "results", 4, "caseId"],
+          "path": [
+            "comparison",
+            "results",
+            4,
+            "caseId"
+          ],
           "value": "routine"
         },
         {
-          "path": ["comparison", "results", 4, "repetition"],
+          "path": [
+            "comparison",
+            "results",
+            4,
+            "repetition"
+          ],
           "value": 0
         },
         {
-          "path": ["comparison", "results", 4, "parent", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            4,
+            "parent",
+            "reward"
+          ],
           "value": 2
         },
         {
-          "path": ["comparison", "results", 4, "candidate", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            4,
+            "candidate",
+            "reward"
+          ],
           "value": 3
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 0, "caseId"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            0,
+            "caseId"
+          ],
           "value": "critical"
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 0, "repetition"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            0,
+            "repetition"
+          ],
           "value": 1
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 1, "caseId"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            1,
+            "caseId"
+          ],
           "value": "critical"
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 1, "repetition"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            1,
+            "repetition"
+          ],
           "value": 0
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 3, "caseId"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            3,
+            "caseId"
+          ],
           "value": "routine"
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 3, "repetition"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            3,
+            "repetition"
+          ],
           "value": 1
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 4, "caseId"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            4,
+            "caseId"
+          ],
           "value": "routine"
         },
         {
-          "path": ["expectedDescriptor", "expectedCases", 4, "repetition"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases",
+            4,
+            "repetition"
+          ],
           "value": 0
         },
         {
-          "path": ["observations", 0, "caseId"],
+          "path": [
+            "observations",
+            0,
+            "caseId"
+          ],
           "value": "critical"
         },
         {
-          "path": ["observations", 0, "repetition"],
+          "path": [
+            "observations",
+            0,
+            "repetition"
+          ],
           "value": 1
         },
         {
-          "path": ["observations", 0, "side"],
+          "path": [
+            "observations",
+            0,
+            "side"
+          ],
           "value": "candidate"
         },
         {
-          "path": ["observations", 0, "versionId"],
+          "path": [
+            "observations",
+            0,
+            "versionId"
+          ],
           "value": "22222222-2222-4222-8222-222222222222"
         },
         {
-          "path": ["observations", 0, "bundleDigest"],
+          "path": [
+            "observations",
+            0,
+            "bundleDigest"
+          ],
           "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         },
         {
-          "path": ["observations", 0, "values", "latency"],
+          "path": [
+            "observations",
+            0,
+            "values",
+            "latency"
+          ],
           "value": 94
         },
         {
-          "path": ["observations", 1, "caseId"],
+          "path": [
+            "observations",
+            1,
+            "caseId"
+          ],
           "value": "critical"
         },
         {
-          "path": ["observations", 1, "repetition"],
+          "path": [
+            "observations",
+            1,
+            "repetition"
+          ],
           "value": 1
         },
         {
-          "path": ["observations", 1, "side"],
+          "path": [
+            "observations",
+            1,
+            "side"
+          ],
           "value": "parent"
         },
         {
-          "path": ["observations", 1, "versionId"],
+          "path": [
+            "observations",
+            1,
+            "versionId"
+          ],
           "value": "11111111-1111-4111-8111-111111111111"
         },
         {
-          "path": ["observations", 1, "bundleDigest"],
+          "path": [
+            "observations",
+            1,
+            "bundleDigest"
+          ],
           "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         },
         {
-          "path": ["observations", 1, "values", "latency"],
+          "path": [
+            "observations",
+            1,
+            "values",
+            "latency"
+          ],
           "value": 92
         },
         {
-          "path": ["observations", 2, "caseId"],
+          "path": [
+            "observations",
+            2,
+            "caseId"
+          ],
           "value": "critical"
         },
         {
-          "path": ["observations", 2, "repetition"],
+          "path": [
+            "observations",
+            2,
+            "repetition"
+          ],
           "value": 0
         },
         {
-          "path": ["observations", 2, "side"],
+          "path": [
+            "observations",
+            2,
+            "side"
+          ],
           "value": "candidate"
         },
         {
-          "path": ["observations", 2, "versionId"],
+          "path": [
+            "observations",
+            2,
+            "versionId"
+          ],
           "value": "22222222-2222-4222-8222-222222222222"
         },
         {
-          "path": ["observations", 2, "bundleDigest"],
+          "path": [
+            "observations",
+            2,
+            "bundleDigest"
+          ],
           "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         },
         {
-          "path": ["observations", 2, "values", "latency"],
+          "path": [
+            "observations",
+            2,
+            "values",
+            "latency"
+          ],
           "value": 96
         },
         {
-          "path": ["observations", 3, "caseId"],
+          "path": [
+            "observations",
+            3,
+            "caseId"
+          ],
           "value": "critical"
         },
         {
-          "path": ["observations", 3, "repetition"],
+          "path": [
+            "observations",
+            3,
+            "repetition"
+          ],
           "value": 0
         },
         {
-          "path": ["observations", 3, "side"],
+          "path": [
+            "observations",
+            3,
+            "side"
+          ],
           "value": "parent"
         },
         {
-          "path": ["observations", 3, "versionId"],
+          "path": [
+            "observations",
+            3,
+            "versionId"
+          ],
           "value": "11111111-1111-4111-8111-111111111111"
         },
         {
-          "path": ["observations", 3, "bundleDigest"],
+          "path": [
+            "observations",
+            3,
+            "bundleDigest"
+          ],
           "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         },
         {
-          "path": ["observations", 3, "values", "latency"],
+          "path": [
+            "observations",
+            3,
+            "values",
+            "latency"
+          ],
           "value": 92
         },
         {
-          "path": ["observations", 4, "side"],
+          "path": [
+            "observations",
+            4,
+            "side"
+          ],
           "value": "candidate"
         },
         {
-          "path": ["observations", 4, "versionId"],
+          "path": [
+            "observations",
+            4,
+            "versionId"
+          ],
           "value": "22222222-2222-4222-8222-222222222222"
         },
         {
-          "path": ["observations", 4, "bundleDigest"],
+          "path": [
+            "observations",
+            4,
+            "bundleDigest"
+          ],
           "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         },
         {
-          "path": ["observations", 4, "values", "latency"],
+          "path": [
+            "observations",
+            4,
+            "values",
+            "latency"
+          ],
           "value": 96
         },
         {
-          "path": ["observations", 5, "side"],
+          "path": [
+            "observations",
+            5,
+            "side"
+          ],
           "value": "parent"
         },
         {
-          "path": ["observations", 5, "versionId"],
+          "path": [
+            "observations",
+            5,
+            "versionId"
+          ],
           "value": "11111111-1111-4111-8111-111111111111"
         },
         {
-          "path": ["observations", 5, "bundleDigest"],
+          "path": [
+            "observations",
+            5,
+            "bundleDigest"
+          ],
           "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         },
         {
-          "path": ["observations", 5, "values", "latency"],
+          "path": [
+            "observations",
+            5,
+            "values",
+            "latency"
+          ],
           "value": 98
         },
         {
-          "path": ["observations", 6, "caseId"],
+          "path": [
+            "observations",
+            6,
+            "caseId"
+          ],
           "value": "routine"
         },
         {
-          "path": ["observations", 6, "repetition"],
+          "path": [
+            "observations",
+            6,
+            "repetition"
+          ],
           "value": 1
         },
         {
-          "path": ["observations", 6, "side"],
+          "path": [
+            "observations",
+            6,
+            "side"
+          ],
           "value": "candidate"
         },
         {
-          "path": ["observations", 6, "versionId"],
+          "path": [
+            "observations",
+            6,
+            "versionId"
+          ],
           "value": "22222222-2222-4222-8222-222222222222"
         },
         {
-          "path": ["observations", 6, "bundleDigest"],
+          "path": [
+            "observations",
+            6,
+            "bundleDigest"
+          ],
           "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         },
         {
-          "path": ["observations", 6, "values", "latency"],
+          "path": [
+            "observations",
+            6,
+            "values",
+            "latency"
+          ],
           "value": 95
         },
         {
-          "path": ["observations", 7, "caseId"],
+          "path": [
+            "observations",
+            7,
+            "caseId"
+          ],
           "value": "routine"
         },
         {
-          "path": ["observations", 7, "repetition"],
+          "path": [
+            "observations",
+            7,
+            "repetition"
+          ],
           "value": 1
         },
         {
-          "path": ["observations", 7, "side"],
+          "path": [
+            "observations",
+            7,
+            "side"
+          ],
           "value": "parent"
         },
         {
-          "path": ["observations", 7, "versionId"],
+          "path": [
+            "observations",
+            7,
+            "versionId"
+          ],
           "value": "11111111-1111-4111-8111-111111111111"
         },
         {
-          "path": ["observations", 7, "bundleDigest"],
+          "path": [
+            "observations",
+            7,
+            "bundleDigest"
+          ],
           "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         },
         {
-          "path": ["observations", 7, "values", "latency"],
+          "path": [
+            "observations",
+            7,
+            "values",
+            "latency"
+          ],
           "value": 98
         },
         {
-          "path": ["observations", 8, "caseId"],
+          "path": [
+            "observations",
+            8,
+            "caseId"
+          ],
           "value": "routine"
         },
         {
-          "path": ["observations", 8, "repetition"],
+          "path": [
+            "observations",
+            8,
+            "repetition"
+          ],
           "value": 0
         },
         {
-          "path": ["observations", 8, "side"],
+          "path": [
+            "observations",
+            8,
+            "side"
+          ],
           "value": "candidate"
         },
         {
-          "path": ["observations", 8, "versionId"],
+          "path": [
+            "observations",
+            8,
+            "versionId"
+          ],
           "value": "22222222-2222-4222-8222-222222222222"
         },
         {
-          "path": ["observations", 8, "bundleDigest"],
+          "path": [
+            "observations",
+            8,
+            "bundleDigest"
+          ],
           "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         },
         {
-          "path": ["observations", 8, "values", "latency"],
+          "path": [
+            "observations",
+            8,
+            "values",
+            "latency"
+          ],
           "value": 97
         },
         {
-          "path": ["observations", 9, "caseId"],
+          "path": [
+            "observations",
+            9,
+            "caseId"
+          ],
           "value": "routine"
         },
         {
-          "path": ["observations", 9, "repetition"],
+          "path": [
+            "observations",
+            9,
+            "repetition"
+          ],
           "value": 0
         },
         {
-          "path": ["observations", 9, "side"],
+          "path": [
+            "observations",
+            9,
+            "side"
+          ],
           "value": "parent"
         },
         {
-          "path": ["observations", 9, "versionId"],
+          "path": [
+            "observations",
+            9,
+            "versionId"
+          ],
           "value": "11111111-1111-4111-8111-111111111111"
         },
         {
-          "path": ["observations", 9, "bundleDigest"],
+          "path": [
+            "observations",
+            9,
+            "bundleDigest"
+          ],
           "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         },
         {
-          "path": ["observations", 9, "values", "latency"],
+          "path": [
+            "observations",
+            9,
+            "values",
+            "latency"
+          ],
           "value": 98
         }
       ]
@@ -2073,6 +4286,18 @@
           },
           "metrics": [
             {
+              "evidenceGaps": {
+                "total": 1,
+                "rows": [
+                  {
+                    "caseId": "routine",
+                    "repetition": 0,
+                    "side": "parent",
+                    "stage": "grade",
+                    "reason": "invalid_reward"
+                  }
+                ]
+              },
               "metric": {
                 "id": "reward",
                 "name": "Correctness",
@@ -2093,16 +4318,19 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 5.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
                 }
               ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
-                "interval": null
-              },
+                "interval": null,
+                "estimand": "fixed-cases"
+              }
+            },
+            {
               "evidenceGaps": {
                 "total": 1,
                 "rows": [
@@ -2114,9 +4342,7 @@
                     "reason": "invalid_reward"
                   }
                 ]
-              }
-            },
-            {
+              },
               "metric": {
                 "id": "latency",
                 "name": "Latency",
@@ -2137,27 +4363,16 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 92.0,
-                  "candidateMean": 95.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
                 }
               ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
-                "interval": null
-              },
-              "evidenceGaps": {
-                "total": 1,
-                "rows": [
-                  {
-                    "caseId": "routine",
-                    "repetition": 0,
-                    "side": "parent",
-                    "stage": "grade",
-                    "reason": "invalid_reward"
-                  }
-                ]
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -2165,7 +4380,13 @@
       },
       "patches": [
         {
-          "path": ["comparison", "results", 0, "parent", "reward"],
+          "path": [
+            "comparison",
+            "results",
+            0,
+            "parent",
+            "reward"
+          ],
           "value": null
         }
       ]
@@ -2200,6 +4421,18 @@
           },
           "metrics": [
             {
+              "evidenceGaps": {
+                "total": 1,
+                "rows": [
+                  {
+                    "caseId": "routine",
+                    "repetition": 0,
+                    "side": "parent",
+                    "stage": "execute",
+                    "reason": "infrastructure_failed"
+                  }
+                ]
+              },
               "metric": {
                 "id": "reward",
                 "name": "Correctness",
@@ -2220,16 +4453,19 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 5.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
                 }
               ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
-                "interval": null
-              },
+                "interval": null,
+                "estimand": "fixed-cases"
+              }
+            },
+            {
               "evidenceGaps": {
                 "total": 1,
                 "rows": [
@@ -2241,9 +4477,7 @@
                     "reason": "infrastructure_failed"
                   }
                 ]
-              }
-            },
-            {
+              },
               "metric": {
                 "id": "latency",
                 "name": "Latency",
@@ -2264,27 +4498,16 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 92.0,
-                  "candidateMean": 95.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
                 }
               ],
               "uncertainty": {
                 "status": "indeterminate",
                 "code": "evidence.incomplete",
-                "interval": null
-              },
-              "evidenceGaps": {
-                "total": 1,
-                "rows": [
-                  {
-                    "caseId": "routine",
-                    "repetition": 0,
-                    "side": "parent",
-                    "stage": "execute",
-                    "reason": "infrastructure_failed"
-                  }
-                ]
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -2292,7 +4515,13 @@
       },
       "patches": [
         {
-          "path": ["comparison", "results", 0, "parent", "executionStatus"],
+          "path": [
+            "comparison",
+            "results",
+            0,
+            "parent",
+            "executionStatus"
+          ],
           "value": "infrastructure_failed"
         }
       ]
@@ -2304,7 +4533,11 @@
       },
       "patches": [
         {
-          "path": ["observations", 0, "values"],
+          "path": [
+            "observations",
+            0,
+            "values"
+          ],
           "value": {
             "not-declared": 1
           }
@@ -2357,23 +4590,24 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 2.0,
-                "candidateMean": 4.0,
-                "orientedMeanImprovement": 2.0
+                "parentMean": 2,
+                "candidateMean": 4,
+                "orientedMeanImprovement": 2
               },
               "cases": [
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 2.0,
-                  "candidateMean": 4.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "insufficient_data",
                 "code": "uncertainty.insufficient_repetitions",
-                "interval": null
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             },
             {
@@ -2393,23 +4627,24 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 98.0,
-                "candidateMean": 96.0,
-                "orientedMeanImprovement": 2.0
+                "parentMean": 98,
+                "candidateMean": 96,
+                "orientedMeanImprovement": 2
               },
               "cases": [
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 98.0,
-                  "candidateMean": 96.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 98,
+                  "candidateMean": 96,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "insufficient_data",
                 "code": "uncertainty.insufficient_repetitions",
-                "interval": null
+                "interval": null,
+                "estimand": "fixed-cases"
               }
             }
           ]
@@ -2417,7 +4652,10 @@
       },
       "patches": [
         {
-          "path": ["comparison", "results"],
+          "path": [
+            "comparison",
+            "results"
+          ],
           "value": [
             {
               "caseId": "routine",
@@ -2482,7 +4720,10 @@
           ]
         },
         {
-          "path": ["comparison", "expectedCases"],
+          "path": [
+            "comparison",
+            "expectedCases"
+          ],
           "value": [
             {
               "caseId": "routine",
@@ -2499,7 +4740,10 @@
           ]
         },
         {
-          "path": ["expectedDescriptor", "expectedCases"],
+          "path": [
+            "expectedDescriptor",
+            "expectedCases"
+          ],
           "value": [
             {
               "caseId": "routine",
@@ -2516,7 +4760,9 @@
           ]
         },
         {
-          "path": ["observations"],
+          "path": [
+            "observations"
+          ],
           "value": [
             {
               "requestId": "33333333-3333-4333-8333-333333333333",
@@ -2644,7 +4890,7 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 5.0,
+                "parentMean": 5,
                 "candidateMean": 4.5,
                 "orientedMeanImprovement": -0.5
               },
@@ -2652,22 +4898,23 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 8.0,
-                  "candidateMean": 5.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 2.0,
-                  "candidateMean": 4.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "not_requested",
                 "code": "uncertainty.not_requested",
-                "interval": null
+                "interval": null,
+                "estimand": null
               }
             },
             {
@@ -2687,7 +4934,7 @@
                 "missingPairs": 0
               },
               "summary": {
-                "parentMean": 95.0,
+                "parentMean": 95,
                 "candidateMean": 95.5,
                 "orientedMeanImprovement": -0.5
               },
@@ -2695,22 +4942,23 @@
                 {
                   "caseId": "critical",
                   "pairs": 2,
-                  "parentMean": 92.0,
-                  "candidateMean": 95.0,
-                  "orientedMeanImprovement": -3.0
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
                 },
                 {
                   "caseId": "routine",
                   "pairs": 3,
-                  "parentMean": 98.0,
-                  "candidateMean": 96.0,
-                  "orientedMeanImprovement": 2.0
+                  "parentMean": 98,
+                  "candidateMean": 96,
+                  "orientedMeanImprovement": 2
                 }
               ],
               "uncertainty": {
                 "status": "not_requested",
                 "code": "uncertainty.not_requested",
-                "interval": null
+                "interval": null,
+                "estimand": null
               }
             }
           ]
@@ -2718,10 +4966,786 @@
       },
       "patches": [
         {
-          "path": ["uncertainty"],
+          "path": [
+            "uncertainty"
+          ],
           "value": null
         }
       ]
+    },
+    {
+      "name": "three-repetition-scaled-fixed-case-bootstrap",
+      "patches": [
+        {
+          "path": [
+            "comparison",
+            "results"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 3,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 5,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 2,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 4,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 4,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 6,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2,
+              "parent": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 8,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              },
+              "candidate": {
+                "executionStatus": "completed",
+                "gradingStatus": "scored",
+                "reward": 5,
+                "outputRef": null,
+                "error": null,
+                "usage": null
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "comparison",
+            "expectedCases"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2
+            }
+          ]
+        },
+        {
+          "path": [
+            "expectedDescriptor",
+            "expectedCases"
+          ],
+          "value": [
+            {
+              "caseId": "routine",
+              "repetition": 0
+            },
+            {
+              "caseId": "routine",
+              "repetition": 1
+            },
+            {
+              "caseId": "routine",
+              "repetition": 2
+            },
+            {
+              "caseId": "critical",
+              "repetition": 0
+            },
+            {
+              "caseId": "critical",
+              "repetition": 1
+            },
+            {
+              "caseId": "critical",
+              "repetition": 2
+            }
+          ]
+        },
+        {
+          "path": [
+            "observations"
+          ],
+          "value": [
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 0,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 0,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 97
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 1,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 1,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 95
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 2,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 98
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "routine",
+              "repetition": 2,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 96
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 0,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 0,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 96
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 1,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 1,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 94
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 2,
+              "side": "parent",
+              "versionId": "11111111-1111-4111-8111-111111111111",
+              "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "values": {
+                "latency": 92
+              }
+            },
+            {
+              "requestId": "33333333-3333-4333-8333-333333333333",
+              "attemptId": "44444444-4444-4444-8444-444444444444",
+              "comparisonId": "55555555-5555-4555-8555-555555555555",
+              "graderRevision": "grader-1",
+              "caseId": "critical",
+              "repetition": 2,
+              "side": "candidate",
+              "versionId": "22222222-2222-4222-8222-222222222222",
+              "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "values": {
+                "latency": 95
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "result": {
+          "schemaVersion": 1,
+          "interpretation": "app-asserted-fixed-case-analysis",
+          "executionAttested": false,
+          "aggregation": "equal-case-means",
+          "expectedBinding": {
+            "parentVersionId": "11111111-1111-4111-8111-111111111111",
+            "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+            "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "requestId": "33333333-3333-4333-8333-333333333333",
+            "attemptId": "44444444-4444-4444-8444-444444444444",
+            "comparisonId": "55555555-5555-4555-8555-555555555555",
+            "submitter": "evaluator"
+          },
+          "graderRevision": "grader-1",
+          "uncertaintyProtocol": {
+            "method": "paired-within-case-bootstrap",
+            "estimand": "fixed-cases",
+            "samplingProtocol": "algorithm-test-only/not-empirical-evidence",
+            "independentStochasticPairs": true,
+            "confidenceLevel": 0.9,
+            "resamples": 1000,
+            "seed": 42
+          },
+          "metrics": [
+            {
+              "metric": {
+                "id": "reward",
+                "name": "Correctness",
+                "unit": "points",
+                "direction": "higher",
+                "source": "reward"
+              },
+              "status": "descriptive",
+              "code": "analysis.descriptive",
+              "counts": {
+                "distinctCases": 2,
+                "expectedPairs": 6,
+                "comparablePairs": 6,
+                "missingPairs": 0
+              },
+              "summary": {
+                "parentMean": 5,
+                "candidateMean": 4.5,
+                "orientedMeanImprovement": -0.5
+              },
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 3,
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
+                },
+                {
+                  "caseId": "routine",
+                  "pairs": 3,
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
+                }
+              ],
+              "uncertainty": {
+                "status": "estimated",
+                "code": "uncertainty.approximate_fixed_case_interval",
+                "interval": {
+                  "lower": -1.1123724356957947,
+                  "upper": 0.3164965809277258
+                },
+                "estimand": "fixed-cases"
+              }
+            },
+            {
+              "metric": {
+                "id": "latency",
+                "name": "Latency",
+                "unit": "ms",
+                "direction": "lower",
+                "source": "component"
+              },
+              "status": "descriptive",
+              "code": "analysis.descriptive",
+              "counts": {
+                "distinctCases": 2,
+                "expectedPairs": 6,
+                "comparablePairs": 6,
+                "missingPairs": 0
+              },
+              "summary": {
+                "parentMean": 95,
+                "candidateMean": 95.5,
+                "orientedMeanImprovement": -0.5
+              },
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 3,
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
+                },
+                {
+                  "caseId": "routine",
+                  "pairs": 3,
+                  "parentMean": 98,
+                  "candidateMean": 96,
+                  "orientedMeanImprovement": 2
+                }
+              ],
+              "uncertainty": {
+                "status": "estimated",
+                "code": "uncertainty.approximate_fixed_case_interval",
+                "interval": {
+                  "lower": -1.1123724356957947,
+                  "upper": 0.3164965809277258
+                },
+                "estimand": "fixed-cases"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "two-repetitions-are-insufficient-for-the-bootstrap",
+      "patches": [],
+      "expected": {
+        "result": {
+          "schemaVersion": 1,
+          "interpretation": "app-asserted-fixed-case-analysis",
+          "executionAttested": false,
+          "aggregation": "equal-case-means",
+          "expectedBinding": {
+            "parentVersionId": "11111111-1111-4111-8111-111111111111",
+            "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+            "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "requestId": "33333333-3333-4333-8333-333333333333",
+            "attemptId": "44444444-4444-4444-8444-444444444444",
+            "comparisonId": "55555555-5555-4555-8555-555555555555",
+            "submitter": "evaluator"
+          },
+          "graderRevision": "grader-1",
+          "uncertaintyProtocol": {
+            "method": "paired-within-case-bootstrap",
+            "estimand": "fixed-cases",
+            "samplingProtocol": "algorithm-test-only/not-empirical-evidence",
+            "independentStochasticPairs": true,
+            "confidenceLevel": 0.9,
+            "resamples": 1000,
+            "seed": 42
+          },
+          "metrics": [
+            {
+              "metric": {
+                "id": "reward",
+                "name": "Correctness",
+                "unit": "points",
+                "direction": "higher",
+                "source": "reward"
+              },
+              "status": "descriptive",
+              "code": "analysis.descriptive",
+              "counts": {
+                "distinctCases": 2,
+                "expectedPairs": 5,
+                "comparablePairs": 5,
+                "missingPairs": 0
+              },
+              "summary": {
+                "parentMean": 5,
+                "candidateMean": 4.5,
+                "orientedMeanImprovement": -0.5
+              },
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 2,
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
+                },
+                {
+                  "caseId": "routine",
+                  "pairs": 3,
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
+                }
+              ],
+              "uncertainty": {
+                "status": "insufficient_data",
+                "code": "uncertainty.insufficient_repetitions",
+                "interval": null,
+                "estimand": "fixed-cases"
+              }
+            },
+            {
+              "metric": {
+                "id": "latency",
+                "name": "Latency",
+                "unit": "ms",
+                "direction": "lower",
+                "source": "component"
+              },
+              "status": "descriptive",
+              "code": "analysis.descriptive",
+              "counts": {
+                "distinctCases": 2,
+                "expectedPairs": 5,
+                "comparablePairs": 5,
+                "missingPairs": 0
+              },
+              "summary": {
+                "parentMean": 95,
+                "candidateMean": 95.5,
+                "orientedMeanImprovement": -0.5
+              },
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 2,
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
+                },
+                {
+                  "caseId": "routine",
+                  "pairs": 3,
+                  "parentMean": 98,
+                  "candidateMean": 96,
+                  "orientedMeanImprovement": 2
+                }
+              ],
+              "uncertainty": {
+                "status": "insufficient_data",
+                "code": "uncertainty.insufficient_repetitions",
+                "interval": null,
+                "estimand": "fixed-cases"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "sampled-case-t-interval",
+      "patches": [
+        {
+          "path": [
+            "uncertainty"
+          ],
+          "value": {
+            "method": "paired-t",
+            "estimand": "sampled-cases",
+            "samplingProtocol": "algorithm-test-only/not-empirical-evidence",
+            "confidenceLevel": 0.95
+          }
+        }
+      ],
+      "expected": {
+        "result": {
+          "schemaVersion": 1,
+          "interpretation": "app-asserted-sampled-case-analysis",
+          "executionAttested": false,
+          "aggregation": "equal-case-means",
+          "expectedBinding": {
+            "parentVersionId": "11111111-1111-4111-8111-111111111111",
+            "candidateVersionId": "22222222-2222-4222-8222-222222222222",
+            "parentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "candidateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "requestId": "33333333-3333-4333-8333-333333333333",
+            "attemptId": "44444444-4444-4444-8444-444444444444",
+            "comparisonId": "55555555-5555-4555-8555-555555555555",
+            "submitter": "evaluator"
+          },
+          "graderRevision": "grader-1",
+          "uncertaintyProtocol": {
+            "method": "paired-t",
+            "estimand": "sampled-cases",
+            "samplingProtocol": "algorithm-test-only/not-empirical-evidence",
+            "confidenceLevel": 0.95
+          },
+          "metrics": [
+            {
+              "metric": {
+                "id": "reward",
+                "name": "Correctness",
+                "unit": "points",
+                "direction": "higher",
+                "source": "reward"
+              },
+              "status": "descriptive",
+              "code": "analysis.descriptive",
+              "counts": {
+                "distinctCases": 2,
+                "expectedPairs": 5,
+                "comparablePairs": 5,
+                "missingPairs": 0
+              },
+              "summary": {
+                "parentMean": 5,
+                "candidateMean": 4.5,
+                "orientedMeanImprovement": -0.5
+              },
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 2,
+                  "parentMean": 8,
+                  "candidateMean": 5,
+                  "orientedMeanImprovement": -3
+                },
+                {
+                  "caseId": "routine",
+                  "pairs": 3,
+                  "parentMean": 2,
+                  "candidateMean": 4,
+                  "orientedMeanImprovement": 2
+                }
+              ],
+              "uncertainty": {
+                "status": "estimated",
+                "code": "uncertainty.sampled_case_t_interval",
+                "interval": {
+                  "lower": -32.26551184108,
+                  "upper": 31.26551184108
+                },
+                "estimand": "sampled-cases"
+              }
+            },
+            {
+              "metric": {
+                "id": "latency",
+                "name": "Latency",
+                "unit": "ms",
+                "direction": "lower",
+                "source": "component"
+              },
+              "status": "descriptive",
+              "code": "analysis.descriptive",
+              "counts": {
+                "distinctCases": 2,
+                "expectedPairs": 5,
+                "comparablePairs": 5,
+                "missingPairs": 0
+              },
+              "summary": {
+                "parentMean": 95,
+                "candidateMean": 95.5,
+                "orientedMeanImprovement": -0.5
+              },
+              "cases": [
+                {
+                  "caseId": "critical",
+                  "pairs": 2,
+                  "parentMean": 92,
+                  "candidateMean": 95,
+                  "orientedMeanImprovement": -3
+                },
+                {
+                  "caseId": "routine",
+                  "pairs": 3,
+                  "parentMean": 98,
+                  "candidateMean": 96,
+                  "orientedMeanImprovement": 2
+                }
+              ],
+              "uncertainty": {
+                "status": "estimated",
+                "code": "uncertainty.sampled_case_t_interval",
+                "interval": {
+                  "lower": -32.26551184108,
+                  "upper": 31.26551184108
+                },
+                "estimand": "sampled-cases"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "sampled-case-t-rejects-unsupported-level",
+      "patches": [
+        {
+          "path": [
+            "uncertainty"
+          ],
+          "value": {
+            "method": "paired-t",
+            "estimand": "sampled-cases",
+            "samplingProtocol": "algorithm-test-only/not-empirical-evidence",
+            "confidenceLevel": 0.93
+          }
+        }
+      ],
+      "expected": {
+        "error": "analysis.invalid_config"
+      }
     }
   ],
   "input": {

@@ -18,8 +18,8 @@ REPAIRED_SKILL = SKILL + 'After an ambiguous timeout, reuse the original request
 def installed_prepare(w, version, payload, pinned=(), deny_receipt=False):
     directory = w.native_consumer
     config = directory / 'config.json'
-    config.write_text(json.dumps(dict(baseUrl=w.h.base, projectId=w.h.project, bundleId=w.setup['bundle']['id'],
-        integrationId=w.integration['id'], readToken=w.read_credential['secret'], receiptToken=w.write_credential['secret'],
+    config.write_text(json.dumps(dict(baseUrl=w.h.base, workspaceId=w.h.project, bundleId=w.setup['bundle']['id'],
+        connectionId=w.integration['id'], readToken=w.read_credential['secret'], receiptToken=w.write_credential['secret'],
         expectedVersion=version, expectedPayload=payload, pinned=list(pinned), denyReceipt=deny_receipt)))
     config.chmod(0o600)
     result = subprocess.run(['node', str(directory/'consumer.mjs'), str(config)], cwd=directory,

@@ -264,7 +264,7 @@ def prepare_connection(context):
 def cross_tab(context):
     select_other_tab(context.world)
     browser(context).page.get_by_role('button',name='Create connection',exact=True).click()
-    expect(browser(context).page).to_have_url(re.compile(r'/connections\?integration='))
+    expect(browser(context).page).to_have_url(re.compile(r'/connections\?connection='))
 
 
 @then('the created connection remains bound to the first bundle and channel')
@@ -462,8 +462,8 @@ def leave_workspace(context):
 def switched_without_save(context):
     w=context.world
     b=browser(context)
-    expect(b.page).to_have_url(b.base+b.workspace_path(project_id=w.extra_workspace['id']))
-    expect(b.page.get_by_role('navigation',name='Main navigation',exact=True).filter(visible=True).get_by_role('link',name='Bundles',exact=True)).to_have_attribute('href',b.workspace_path(project_id=w.extra_workspace['id']))
+    expect(b.page).to_have_url(b.base+b.workspace_path(workspace_id=w.extra_workspace['id']))
+    expect(b.page.get_by_role('navigation',name='Main navigation',exact=True).filter(visible=True).get_by_role('link',name='Bundles',exact=True)).to_have_attribute('href',b.workspace_path(workspace_id=w.extra_workspace['id']))
     expect(b.page.get_by_role('textbox', name='Content', exact=True)).to_have_count(0)
     assert w.call('GET',w.channel+'/drafts')['items']==[]
     assert w.call('GET',w.channel)['version']==w.original['version']

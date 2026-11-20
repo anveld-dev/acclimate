@@ -393,6 +393,7 @@ export function EvaluationHistoryView({
     'completed',
     'failed',
     'interrupted',
+    'abandoned',
   ];
   const visibleIds = useRef(new Set<string>());
   visibleIds.current = new Set(rows.map((row) => row.id));

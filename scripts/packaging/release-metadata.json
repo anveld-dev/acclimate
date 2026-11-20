@@ -45,6 +45,10 @@
       "file": "acclimate-evaluation-starter-0.1.0.tgz"
     },
     {
+      "name": "python-evaluation",
+      "file": "acclimate-python-evaluation-starter-0.1.0.tgz"
+    },
+    {
       "name": "ci",
       "file": "acclimate-ci-starter-0.1.0.tgz"
     },

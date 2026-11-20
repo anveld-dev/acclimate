@@ -1,11 +1,11 @@
 /** Optional observation has its own credential, deadline and failure boundary. */
-import { AcclimateClient, createReceiptReporter } from '../packages/sdk/src/index.js';
+import { AcclimateClient, createReceiptReporter } from '@acclimate/sdk';
 
-export function optionalReceipts(env: NodeJS.ProcessEnv, projectId: string) {
-  if (!env.ACCLIMATE_RECEIPT_TOKEN && !env.ACCLIMATE_INTEGRATION) return undefined;
+export function optionalReceipts(env: NodeJS.ProcessEnv, workspaceId: string) {
+  if (!env.ACCLIMATE_RECEIPT_TOKEN && !env.ACCLIMATE_CONNECTION) return undefined;
   try {
-    if (!env.ACCLIMATE_RECEIPT_TOKEN || !env.ACCLIMATE_INTEGRATION)
-      throw new Error('Both receipt token and integration ID are required');
+    if (!env.ACCLIMATE_RECEIPT_TOKEN || !env.ACCLIMATE_CONNECTION)
+      throw new Error('Both receipt token and connection ID are required');
     return createReceiptReporter({
       client: new AcclimateClient({
         baseUrl: env.ACCLIMATE_URL ?? 'http://127.0.0.1:3000',
@@ -14,8 +14,8 @@ export function optionalReceipts(env: NodeJS.ProcessEnv, projectId: string) {
         timeoutMs: 1000,
         retries: 0,
       }),
-      projectId,
-      integrationId: env.ACCLIMATE_INTEGRATION,
+      workspaceId,
+      connectionId: env.ACCLIMATE_CONNECTION,
     });
   } catch {
     console.error('Optional delivery reporting is unavailable.');

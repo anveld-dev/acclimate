@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "notice": "Repeated-grading and pass@k vectors shared by the TypeScript and Python SDK grading helpers.",
+  "passAtK": [
+    {
+      "n": 10,
+      "successes": 3,
+      "k": 1,
+      "value": 0.30000000000000004
+    },
+    {
+      "n": 10,
+      "successes": 3,
+      "k": 5,
+      "value": 0.9166666666666666
+    },
+    {
+      "n": 20,
+      "successes": 1,
+      "k": 10,
+      "value": 0.5
+    },
+    {
+      "n": 4,
+      "successes": 2,
+      "k": 2,
+      "value": 0.8333333333333333
+    }
+  ],
+  "repeatGrade": [
+    {
+      "combine": "majority",
+      "calls": [
+        {
+          "reward": 1
+        },
+        {
+          "reward": 0
+        },
+        {
+          "reward": 1
+        }
+      ],
+      "expected": {
+        "reward": 1,
+        "agreement": {
+          "repetitions": 3,
+          "agreement": 0.6666666666666666,
+          "sd": 0.5773502691896258,
+          "range": [
+            0,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "combine": "mean",
+      "calls": [
+        {
+          "reward": 0.5,
+          "components": {
+            "correct": 1,
+            "style": 0
+          }
+        },
+        {
+          "reward": 1,
+          "components": {
+            "correct": 1,
+            "style": 1
+          }
+        }
+      ],
+      "components": {
+        "correct": 1,
+        "style": 0.5
+      },
+      "expected": {
+        "reward": 0.75,
+        "agreement": {
+          "repetitions": 2,
+          "agreement": 0,
+          "sd": 0.3535533905932738,
+          "range": [
+            0.5,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "combine": "median",
+      "calls": [
+        {
+          "reward": 0.2
+        },
+        {
+          "reward": 0.9
+        },
+        {
+          "reward": 0.4
+        },
+        {
+          "reward": 0.4
+        }
+      ],
+      "expected": {
+        "reward": 0.4,
+        "agreement": {
+          "repetitions": 4,
+          "agreement": 0.5,
+          "sd": 0.29860788111948194,
+          "range": [
+            0.2,
+            0.9
+          ]
+        }
+      }
+    }
+  ]
+}

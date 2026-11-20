@@ -15,13 +15,14 @@ import {
   deliveryRecipes,
   nativeDeliveryRecipe,
   agentConnectionRecipes,
+  applicationModuleRecipes,
 } from './sdk-setup-recipes';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { NativeSelect } from './ui/native-select';
 import releaseMetadata from '../../../../scripts/packaging/release-metadata.json';
 
 type Ready = Extract<ConsoleState, { status: 'ready' }>;
-type SetupScope = Pick<Ready, 'projectId' | 'bundleId' | 'bundleName' | 'channel' | 'publicApiUrl'>;
+type SetupScope = Pick<Ready, 'workspaceId' | 'bundleId' | 'bundleName' | 'channel' | 'publicApiUrl'>;
 type Language = 'typescript' | 'python';
 
 /** A visible step marker; the accessible heading still reads "1. Install the SDK". */
@@ -103,7 +104,7 @@ export function UseInAnApp({ state }: { state: SetupScope }) {
   const [language, setLanguage] = useState<Language>('typescript');
   const [open, setOpen] = useState(false);
   const install = sdkInstallCommand(language);
-  const ids = `Project: ${state.projectId}\nBundle: ${state.bundleId}\nChannel: ${state.channel}`;
+  const ids = `Workspace: ${state.workspaceId}\nBundle: ${state.bundleId}\nChannel: ${state.channel}`;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -125,7 +126,7 @@ export function UseInAnApp({ state }: { state: SetupScope }) {
         <div className="flex flex-wrap gap-2 border-t pt-3">
           <Button asChild>
             <ConsoleLink
-              href={connectionHref(state.projectId, state)}
+              href={connectionHref(state.workspaceId, state)}
               onClick={() => setOpen(false)}
             >
               Connect an app
@@ -165,7 +166,7 @@ export function SdkSetup({
     return () => window.removeEventListener('hashchange', openLinkedSection);
   }, []);
   const selection = {
-    projectId: state.projectId,
+    workspaceId: state.workspaceId,
     bundleId: state.bundleId,
     channel: state.channel,
   };
@@ -182,6 +183,7 @@ export function SdkSetup({
       : nativeDeliveryRecipe(selection, runtime);
   const reportingRecipe = deliveryRecipes(selection)[language];
   const agentRecipe = agentConnectionRecipes(selection)[language];
+  const moduleRecipe = applicationModuleRecipes()[language];
   const isTypeScript = language === 'typescript';
   const languageLabel = isTypeScript ? 'TypeScript' : 'Python';
   const filename =
@@ -206,7 +208,7 @@ export function SdkSetup({
     ? `npm run build:packages\nnpm pack --workspace @acclimate/sdk${plugin ? ' --workspace ' + plugin.package : ''}`
     : 'python3 -m pip wheel --no-deps --wheel-dir artifacts ./python';
   const canManage = role === 'admin';
-  const credentialsHref = connectionHref(state.projectId, {
+  const credentialsHref = connectionHref(state.workspaceId, {
     bundleId: state.bundleId,
     channel: state.channel,
   });
@@ -214,9 +216,11 @@ export function SdkSetup({
     <div className="sdk-agent-instructions">
       <p>
         Connect your existing agent loop in{' '}
-        <code>{isTypeScript ? 'application.mjs' : 'application.py'}</code>. Export{' '}
-        <code>{isTypeScript ? 'runExistingAgent' : 'run_existing_agent'}</code> with the arguments
-        below.
+        <code>{isTypeScript ? 'application.mjs' : 'application.py'}</code>, the one module both
+        delivery and evaluation load. Export{' '}
+        <code>{isTypeScript ? 'runAgent' : 'run_agent'}</code> with the arguments below, plus the{' '}
+        <code>cases</code>, <code>execute</code> and <code>grade</code> the evaluator needs; the
+        application module recipe shows <code>execute</code> calling the same function.
       </p>
       <ol>
         <li>
@@ -384,8 +388,8 @@ export function SdkSetup({
                   <EnvironmentSnippet apiUrl={state.publicApiUrl} />
                   {runtime !== 'custom' && (
                     <p>
-                      <code>ACCLIMATE_CACHE</code> is the absolute private cache directory for the
-                      native plugin check.
+                      Optional <code>ACCLIMATE_CACHE</code> selects the private cache directory. It
+                      defaults to <code>~/.cache/acclimate/typescript</code>.
                     </p>
                   )}
                 </>
@@ -417,7 +421,10 @@ export function SdkSetup({
                     {runtime !== 'custom' && (
                       <div>
                         <dt>ACCLIMATE_CACHE</dt>
-                        <dd>Absolute private cache directory for the native plugin check.</dd>
+                        <dd>
+                          Optional private cache directory. Defaults to{' '}
+                          <code>~/.cache/acclimate/typescript</code>.
+                        </dd>
                       </div>
                     )}
                   </dl>
@@ -464,7 +471,7 @@ export function SdkSetup({
                     code={JSON.stringify(
                       {
                         serviceUrl: state.publicApiUrl,
-                        projectId: state.projectId,
+                        workspaceId: state.workspaceId,
                         bundleId: state.bundleId,
                         rights: ['read', 'write'],
                         purpose:
@@ -480,7 +487,7 @@ export function SdkSetup({
                     the console.
                   </p>
                   <ConsoleLink
-                    href={workspaceHref(state.projectId, 'delivery')}
+                    href={workspaceHref(state.workspaceId, 'delivery')}
                     className="underline"
                   >
                     View reported delivery observations
@@ -611,6 +618,21 @@ export function SdkSetup({
                     className="sdk-recipe-code select-text"
                   />
                 </div>
+                <div className="sdk-recipe-file">
+                  <div className="sdk-recipe-toolbar">
+                    <code>{isTypeScript ? 'application.mjs' : 'application.py'}</code>
+                    <div className="flex flex-wrap gap-2">
+                      <CopyButton value={moduleRecipe} label="Copy application module recipe" />
+                    </div>
+                  </div>
+                  <SyntaxCode
+                    code={moduleRecipe}
+                    language={isTypeScript ? 'javascript' : 'python'}
+                    wrap={false}
+                    aria-label={`${languageLabel} application module recipe`}
+                    className="sdk-recipe-code select-text"
+                  />
+                </div>
               </>
             ) : (
               <>
@@ -623,14 +645,15 @@ export function SdkSetup({
                         .file
                     }
                   </code>{' '}
-                  from your release. Use its <code>runRepositoryJob</code> function inside your
-                  application to stage the repository and approved context. Install the compatible
-                  peer{' '}
+                  from your release. Its <code>application.mjs</code> already runs {runtimeLabel}{' '}
+                  through a built-in adapter with explicit sandbox defaults: set{' '}
+                  <code>&quot;harness&quot;: &quot;{runtime}&quot;</code> and your model in{' '}
+                  <code>native.json</code>, then install the tested peer{' '}
                   <code>
                     {nativePeer[runtime]}@{releaseMetadata.nativePeers[nativePeer[runtime]]}
                   </code>
-                  . In <code>runHarness</code>, start your installed agent in the provided working
-                  directory, await its actual termination, and retain its output before cleanup.
+                  . You do not write an adapter. Run <code>node smoke.mjs</code> first for an
+                  offline check with the replay harness.
                 </p>
               </>
             )}
@@ -671,8 +694,8 @@ export function SdkSetup({
             <DisclosureTrigger>Optional delivery reports</DisclosureTrigger>
             <DisclosureContent className="sdk-detail-content">
               <p>
-                Set <code>ACCLIMATE_INTEGRATION</code> to your connection ID to scope the TypeScript
-                client’s delivery to that connection. To report observations, set{' '}
+                Set <code>ACCLIMATE_CONNECTION</code> to your connection ID to scope the client’s
+                delivery to that connection. To report observations, set{' '}
                 <code>ACCLIMATE_RECEIPT_TOKEN</code> to a separate reporting credential.
               </p>
               <p>
@@ -696,9 +719,7 @@ export function SdkSetup({
               <p>
                 Connect reporting to your application’s actual start event. Call{' '}
                 <code>
-                  {isTypeScript
-                    ? 'reporter.reportStarted(bundle)'
-                    : "bundle['reporter'].report_started()"}
+                  {isTypeScript ? 'prepared.reportStarted()' : 'prepared.report_started()'}
                 </code>{' '}
                 after you observe the job start. Keep missing observations as unknown.
               </p>
@@ -729,8 +750,8 @@ export function SdkSetup({
                 <div>
                   <dt>Workspace</dt>
                   <dd>
-                    <code>{state.projectId}</code>
-                    <CopyButton value={state.projectId} label="Copy workspace ID" iconOnly />
+                    <code>{state.workspaceId}</code>
+                    <CopyButton value={state.workspaceId} label="Copy workspace ID" iconOnly />
                   </dd>
                 </div>
                 <div>

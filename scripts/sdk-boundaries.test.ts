@@ -94,7 +94,7 @@ async function harness() {
 test('offline fallback uses same scoped mapping, permits unavailable only and never denial or missing', async () => {
   const h = await harness();
   try {
-    const selection = { projectId: 'p', bundleId: 'b1', channel: 'stable' };
+    const selection = { workspaceId: 'p', bundleId: 'b1', channel: 'stable' };
     const first = await resolveAndCache(h.client, selection, h.policy);
     h.mode(503);
     const cached = await resolveAndCache(h.client, selection, {
@@ -121,7 +121,7 @@ test('concurrent readers publish one usable private cache and complete payloads'
   try {
     const all = await Promise.all(
       Array.from({ length: 8 }, () =>
-        resolveAndCache(h.client, { projectId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
+        resolveAndCache(h.client, { workspaceId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
       ),
     );
     assert.ok(
@@ -144,7 +144,7 @@ test('pinned selection rejects a different version returned by the service', asy
   try {
     h.wrong();
     await assert.rejects(
-      resolveAndCache(h.client, { projectId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
+      resolveAndCache(h.client, { workspaceId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
       /version|metadata/i,
     );
   } finally {
@@ -159,7 +159,7 @@ test('a cache directory symlink cannot redirect private writes', async () => {
     await mkdir(outside, { mode: 0o700 });
     await symlink(outside, h.policy.cacheDir);
     await assert.rejects(
-      resolveAndCache(h.client, { projectId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
+      resolveAndCache(h.client, { workspaceId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
       /symlink|unsafe/i,
     );
     assert.deepEqual(await readdir(outside), []);
@@ -175,7 +175,7 @@ test('offline cache age must be finite and bounded before fetching', async () =>
       await assert.rejects(
         resolveAndCache(
           h.client,
-          { projectId: 'p', bundleId: 'b1', channel: 'stable' },
+          { workspaceId: 'p', bundleId: 'b1', channel: 'stable' },
           { ...h.policy, offline: { maxAgeMs } },
         ),
         /offline.maxAgeMs/,
@@ -196,7 +196,7 @@ test('existing public cache and preparation directories are rejected without chm
     await assert.rejects(
       resolveAndCache(
         h.client,
-        { projectId: 'p', bundleId: 'b1', versionId: 'v1' },
+        { workspaceId: 'p', bundleId: 'b1', versionId: 'v1' },
         { cacheDir: shared },
       ),
       /private/,
@@ -213,4 +213,55 @@ test('existing public cache and preparation directories are rejected without chm
   } finally {
     await h.close();
   }
+});
+
+/** Every module specifier in a source file: static imports, re-exports and dynamic import(). */
+function moduleSpecifiers(source: string): string[] {
+  const found = [];
+  for (const match of source.matchAll(
+    /(?:\bfrom\s*|\bimport\s*\(\s*|^\s*import\s+)['"]([^'"]+)['"]/gm,
+  ))
+    found.push(match[1]);
+  return found;
+}
+
+async function sourceFiles(directory: string): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+    const filename = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await sourceFiles(filename)));
+    else if (/\.(?:[cm]?[jt]s|tsx)$/.test(entry.name) && !entry.name.endsWith('.d.ts'))
+      files.push(filename);
+  }
+  return files;
+}
+
+test('examples import only published @acclimate package entry points', async () => {
+  const root = new URL('..', import.meta.url).pathname;
+  const exportsByPackage = new Map<string, Set<string>>();
+  for (const name of await readdir(join(root, 'packages'))) {
+    const manifest = await readFile(join(root, 'packages', name, 'package.json'), 'utf8').catch(
+      () => null,
+    );
+    if (!manifest) continue;
+    const parsed = JSON.parse(manifest) as { name: string; exports?: Record<string, unknown> };
+    exportsByPackage.set(parsed.name, new Set(Object.keys(parsed.exports ?? { '.': null })));
+  }
+  const violations: string[] = [];
+  for (const filename of await sourceFiles(join(root, 'examples'))) {
+    const relative = filename.slice(root.length);
+    for (const specifier of moduleSpecifiers(await readFile(filename, 'utf8'))) {
+      if (/(?:^|\/)packages\/[^/]+\/(?:src|dist)(?:\/|$)/.test(specifier)) {
+        violations.push(`${relative}: ${specifier} reaches into a package's source`);
+        continue;
+      }
+      const scoped = /^(@acclimate\/[^/]+)(\/.*)?$/.exec(specifier);
+      if (!scoped) continue;
+      const exported = exportsByPackage.get(scoped[1]);
+      if (exported && !exported.has('.' + (scoped[2] ?? '')))
+        violations.push(`${relative}: ${specifier} is not an exported entry point of ${scoped[1]}`);
+    }
+  }
+  assert.deepEqual(violations, []);
 });

@@ -1,5 +1,4 @@
 pub(crate) mod parent_cache;
-use crate::WorkspaceRoutes;
 use crate::{ApiErr, ApiResult, AppState, BundlePayload, CaseKey, PromoteRequest, db, err};
 use axum::{
     Json, Router,
@@ -22,7 +21,7 @@ mod restore;
 pub(crate) mod selection;
 pub(crate) mod statistics;
 
-pub(crate) const CONNECTION_HEADER: &str = "x-acclimate-integration-id";
+pub(crate) const CONNECTION_HEADER: &str = "x-acclimate-connection-id";
 
 pub(crate) fn internal_channel(channel: &str) -> bool {
     channel
@@ -32,44 +31,44 @@ pub(crate) fn internal_channel(channel: &str) -> bool {
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/corrections",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/corrections",
             post(corrections::submit),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/rechecks",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/rechecks",
             post(corrections::recheck),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning",
             get(inspect).put(enroll),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/stop",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/stop",
             post(stop),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/restore",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/restore",
             post(restore::restore),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/renew",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/renew",
             post(epochs::renew),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/outcomes",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/outcomes",
             post(submit_outcome),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/outcomes/{outcome}",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/outcomes/{outcome}",
             get(incident::inspect),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/incident-replays",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/incident-replays",
             post(incident::submit),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/work",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/work",
             get(work),
         )
 }
@@ -346,8 +345,8 @@ fn enrollment_view(row: &PgRow, enabled: bool, include_audits: bool) -> ApiResul
             .expect("Enrollment serializes as an object")
             .remove("audits");
     }
-    value["projectId"] = json!(row.get::<String, _>("project_id"));
-    value["integrationId"] = json!(row.get::<Uuid, _>("integration_id"));
+    value["workspaceId"] = json!(row.get::<String, _>("project_id"));
+    value["connectionId"] = json!(row.get::<Uuid, _>("integration_id"));
     value["bundleId"] = json!(row.get::<Uuid, _>("bundle_id"));
     value["channel"] = json!(row.get::<String, _>("source_channel"));
     value["authorizedBy"] = json!(row.get::<String, _>("authorized_by"));

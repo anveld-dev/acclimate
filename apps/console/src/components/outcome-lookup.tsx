@@ -33,7 +33,7 @@ const correctionLabels: Record<string, string> = {
 export function OutcomeLookup({
   target,
 }: {
-  target: { projectId: string; integrationId: string };
+  target: { workspaceId: string; connectionId: string };
 }) {
   const field = useId();
   const [busy, setBusy] = useState(false);
@@ -72,7 +72,9 @@ export function OutcomeLookup({
         <div aria-live="polite">
           {busy && <p>Looking up outcome…</p>}
           {result && !result.ok && <p>{result.message}</p>}
-          {result?.ok && <OutcomeDetails outcome={result.outcome} projectId={target.projectId} />}
+          {result?.ok && (
+            <OutcomeDetails outcome={result.outcome} workspaceId={target.workspaceId} />
+          )}
         </div>
       </DisclosureContent>
     </Disclosure>
@@ -131,14 +133,14 @@ function EvidenceLinks({
 
 function OutcomeDetails({
   outcome,
-  projectId,
+  workspaceId,
 }: {
   outcome: LearningOutcomeStatus;
-  projectId: string;
+  workspaceId: string;
 }) {
   const scope =
     outcome.bundleId && outcome.channel
-      ? { projectId, bundleId: outcome.bundleId, channel: outcome.channel }
+      ? { workspaceId, bundleId: outcome.bundleId, channel: outcome.channel }
       : null;
   return (
     <div className="space-y-2 break-all">

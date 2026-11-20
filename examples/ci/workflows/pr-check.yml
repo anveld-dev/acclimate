@@ -1,0 +1,46 @@
+# Copy to .github/workflows/agent-quality.yml.
+# Needs a self-hosted runner labelled acclimate-evaluator that has the trusted evaluator installed
+# and a persistent private home directory for the journal and request state.
+name: Agent quality
+on:
+  pull_request:
+    # Drop paths if you make this a required check: a skipped workflow leaves a required check pending.
+    paths:
+      - agent/**
+      - .github/workflows/agent-quality.yml
+permissions:
+  contents: read
+  pull-requests: write # only for the optional comment
+concurrency:
+  # A new push cancels the running check. The wrapper stops the evaluator and the next run starts fresh.
+  group: agent-quality-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  gate:
+    # Forked pull requests get no secrets and must never run on a self-hosted runner.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, acclimate-evaluator]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          # The test merge commit and its base, for the changed-file list.
+          fetch-depth: 2
+      - id: gate
+        uses: anveld-dev/acclimate/examples/ci@v0.1.0
+        with:
+          app: /opt/acclimate/evaluator
+          policy: /opt/acclimate/evaluator/quality-policy.json
+          bundle: ${{ vars.ACCLIMATE_BUNDLE_ID }}
+          channel: stable
+          bundle-dir: agent
+          memory: none
+          # {"serviceUrl":"https://acclimate.example.com/","workspaceId":"...","evaluatorPrincipalId":"..."}
+          config-json: ${{ vars.ACCLIMATE_EVALUATOR_CONFIG }}
+          # A workspace evaluator token with only the evaluate right. It cannot release.
+          token: ${{ secrets.ACCLIMATE_EVALUATE_TOKEN }}
+          base-commit: ${{ github.event.pull_request.base.sha }}
+          live: true
+          max-cost-usd: '5'
+          comment: true

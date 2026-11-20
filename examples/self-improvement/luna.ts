@@ -1,8 +1,8 @@
 import { Codex } from '@openai/codex-sdk';
 import { mkdir, writeFile, readFile, lstat } from 'node:fs/promises';
 import path from 'node:path';
-import { prepare } from '../../packages/codex-plugin/src/index.js';
-import type { VerifiedVersion } from '../../packages/sdk/src/types.js';
+import { prepare } from '@acclimate/codex-plugin';
+import type { VerifiedVersion } from '@acclimate/sdk';
 import { outputSchema } from './domain.js';
 
 export const model = 'gpt-6-luna';
@@ -33,7 +33,7 @@ export class Luna {
     return { ...turn, elapsedMs: Date.now() - started, threadId: thread.id };
   }
   async job(
-    bundle: VerifiedVersion,
+    version: VerifiedVersion,
     batch: { id: string; incidents: readonly unknown[] },
     label: string,
     options?: {
@@ -43,7 +43,7 @@ export class Luna {
       files?: { path: string; text: string }[];
     },
   ) {
-    const workspace = await prepare(bundle);
+    const workspace = await prepare(version);
     try {
       for (const file of options?.files ?? []) {
         const parts = file.path.split('/');
@@ -78,7 +78,7 @@ export class Luna {
       const pinnedFiles = [
         { path: 'task.json', text: taskText },
         ...(options?.files ?? []),
-        ...bundle.payload.files.map((f) => ({
+        ...version.payload.files.map((f) => ({
           path:
             f.kind === 'instruction'
               ? 'AGENTS.md'
@@ -106,8 +106,8 @@ export class Luna {
       }
       const result = {
         label,
-        versionId: bundle.version.id,
-        digest: bundle.version.digest,
+        versionId: version.version.id,
+        digest: version.version.digest,
         pinnedFilesUnchanged: true,
         batchId: batch.id,
         output,

@@ -175,7 +175,7 @@ export function WorkspaceDetails({ state }: { state: ReadyConsole }) {
         </DialogHeader>
         <dl className="details-grid">
           <dt>Workspace</dt>
-          <dd>{state.projectId}</dd>
+          <dd>{state.workspaceId}</dd>
           <dt>Bundle</dt>
           <dd>
             <code>{state.bundleId}</code>
@@ -227,7 +227,7 @@ export function ContextStrip({ state }: { state: ReadyConsole }) {
         <div className="context-metadata">
           <span className="inline-flex items-center gap-2">
             <span className="connection-dot" aria-hidden="true" />
-            Connected to <strong>{state.projectId}</strong>
+            Connected to <strong>{state.workspaceId}</strong>
           </span>
           <span className="text-muted-foreground">
             Channel <strong className="text-foreground">{state.channel}</strong>

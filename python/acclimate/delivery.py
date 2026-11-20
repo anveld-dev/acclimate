@@ -11,16 +11,25 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from .client import AcclimateClient, ApiError, TransportError
-from .types import BundlePayload, VerifiedVersion
+from .errors import AcclimateError, UsageError
+from .types import BundlePayload, OfflinePolicy, VerifiedVersion
 from .receipts import BoundDeliveryReporter
 
 
-class DeliveryError(Exception):
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
+DeliveryErrorCode = Literal["cache_miss", "collision", "digest_mismatch", "invalid_cache", "invalid_payload",
+                           "invalid_response", "stale_resolution", "unsafe_cache", "unsafe_destination",
+                           "unsafe_path", "unsupported_platform", "unsupported_schema"]
+
+
+class DeliveryError(AcclimateError):
+    """Delivered content could not be resolved, verified, cached or written safely."""
+
+    code: DeliveryErrorCode
+
+    def __init__(self, code: DeliveryErrorCode, message: str):
+        super().__init__(code, message)
 
 
 def validate_payload(value: Any) -> None:
@@ -182,28 +191,52 @@ def _fallback(exc: Exception) -> bool:
     )
 
 
+def _offline_policy(offline: Any) -> tuple[float | None, str | None]:
+    if offline is None:
+        return None, None
+    if not isinstance(offline, dict) or len(offline) != 1:
+        raise UsageError(
+            'offline must be {"max_age_ms": milliseconds} or {"pinned_version_id": version_id}', "offline"
+        )
+    if "max_age_ms" in offline:
+        age = offline["max_age_ms"]
+        if isinstance(age, bool) or not isinstance(age, (int, float)) or not 0 <= age <= 30 * 86400 * 1000:
+            raise UsageError("offline max_age_ms must be between 0 and 30 days", "offline.max_age_ms")
+        return float(age), None
+    if "pinned_version_id" in offline:
+        pinned = offline["pinned_version_id"]
+        if not isinstance(pinned, str) or not pinned:
+            raise UsageError("offline pinned_version_id must be a version ID", "offline.pinned_version_id")
+        return None, pinned
+    raise UsageError(
+        'offline must be {"max_age_ms": milliseconds} or {"pinned_version_id": version_id}', "offline"
+    )
+
+
 def resolve_and_cache(
     client: AcclimateClient,
-    project_id: str,
+    workspace_id: str,
     bundle_id: str,
     *,
     cache_dir: str,
     channel: str | None = None,
     version_id: str | None = None,
-    offline_max_age: float | None = None,
-    offline_pinned_version: str | None = None,
+    offline: OfflinePolicy | None = None,
     max_cache_bytes: int = 20 * 1024 * 1024,
     reporter=None,
 ) -> VerifiedVersion:
-    """Resolve online by default. Offline age is seconds; a pin permits that exact version."""
+    """Resolve online by default.
+
+    ``offline`` permits cached fallback only on a transport failure or HTTP 503.
+    Pass ``{"max_age_ms": n}`` to accept a cached channel resolution up to ``n``
+    milliseconds old, or ``{"pinned_version_id": id}`` to accept that exact
+    cached version. This matches the TypeScript ``offline`` option.
+    """
     if (channel is None) == (version_id is None):
-        raise ValueError("Select exactly one channel or version_id")
-    if offline_max_age is not None and (not 0 <= offline_max_age <= 30 * 86400):
-        raise ValueError("offline_max_age must be between 0 and 30 days")
-    if offline_max_age is not None and offline_pinned_version is not None:
-        raise ValueError("Choose one offline policy")
+        raise UsageError("Select exactly one channel or version_id", "selection")
+    offline_max_age_ms, offline_pinned_version = _offline_policy(offline)
     if not 1 <= max_cache_bytes <= 1024 * 1024 * 1024:
-        raise ValueError("invalid max_cache_bytes")
+        raise UsageError("invalid max_cache_bytes", "max_cache_bytes")
     fd = _private_dir(cache_dir)
     now = time.time()
     stale = False
@@ -211,11 +244,11 @@ def resolve_and_cache(
     resolution = None
     try:
         if channel is not None:
-            key = _key(client, project_id, bundle_id, "channel", channel)
+            key = _key(client, workspace_id, bundle_id, "channel", channel)
             old = _read(fd, key)
             try:
                 response, etag, not_modified = client.resolve_channel(
-                    project_id,
+                    workspace_id,
                     bundle_id,
                     channel,
                     etag=old.get("etag") if isinstance(old, dict) else None,
@@ -258,7 +291,7 @@ def resolve_and_cache(
                     raise DeliveryError("invalid_cache", "Malformed cached resolution")
                 age = max(0, now - old["resolvedAt"])
                 if not (
-                    (offline_max_age is not None and age <= offline_max_age)
+                    (offline_max_age_ms is not None and age * 1000 <= offline_max_age_ms)
                     or (
                         offline_pinned_version is not None
                         and resolution["version"]["id"] == offline_pinned_version
@@ -270,9 +303,9 @@ def resolve_and_cache(
             version = resolution["version"]
         else:
             assert version_id is not None
-            index_key = _key(client, project_id, bundle_id, "version", version_id)
+            index_key = _key(client, workspace_id, bundle_id, "version", version_id)
             try:
-                version = client.get_version(project_id, bundle_id, version_id)
+                version = client.get_version(workspace_id, bundle_id, version_id)
             except (TransportError, ApiError) as e:
                 if not _fallback(e) or offline_pinned_version != version_id:
                     raise
@@ -288,7 +321,7 @@ def resolve_and_cache(
                 resolved_at = old["cachedAt"]
             _version(version, bundle_id, version_id)
         payload_key = _key(
-            client, project_id, bundle_id, version["id"], version["digest"]
+            client, workspace_id, bundle_id, version["id"], version["digest"]
         )
         cached = _read(fd, payload_key)
         data = None
@@ -304,7 +337,7 @@ def resolve_and_cache(
                 raise DeliveryError("digest_mismatch", "Cached payload digest mismatch")
         downloaded = data is None
         if data is None:
-            data = client.get_payload(project_id, bundle_id, version["id"])
+            data = client.get_payload(workspace_id, bundle_id, version["id"])
             if len(data) > 1048576:
                 raise DeliveryError("invalid_payload", "Payload exceeds size limit")
             if "sha256:" + hashlib.sha256(data).hexdigest() != version["digest"]:
@@ -325,7 +358,7 @@ def resolve_and_cache(
         if not stale:
             _write(
                 fd,
-                _key(client, project_id, bundle_id, "version", version["id"]),
+                _key(client, workspace_id, bundle_id, "version", version["id"]),
                 {"version": version, "cachedAt": now},
             )
         # Evict oldest regular entries without following symlinks; preserve the payload just used.
@@ -353,6 +386,9 @@ def resolve_and_cache(
         }
         if resolution is not None:
             result["resolution"] = resolution
+        connection_id = getattr(client, "connection_id", None)
+        if connection_id is not None:
+            result["connection"] = {"workspaceId": workspace_id, "connectionId": connection_id}
         if reporter is not None:
             try:
                 source = "network" if downloaded else "offline" if stale else "cache"
@@ -408,12 +444,12 @@ class PreparedFiles:
 class PreparedDelivery(AbstractContextManager["PreparedDelivery"]):
     """Pinned instructions, staged skills and the complete file inventory for one job."""
 
-    def __init__(self, bundle: VerifiedVersion, staged: PreparedFiles, directory: str, owned: bool):
-        self.bundle = bundle
-        self.version = bundle["version"]
+    def __init__(self, version: VerifiedVersion, staged: PreparedFiles, directory: str, owned: bool):
+        # The verified version this job runs. Its metadata is ``version["version"]``.
+        self.version = version
         self.files = staged.files
         self.directory = directory
-        self.instructions = "\n\n".join(f["text"] for f in bundle["payload"]["files"] if f["kind"] == "instruction")
+        self.instructions = "\n\n".join(f["text"] for f in version["payload"]["files"] if f["kind"] == "instruction")
         self.skill_files = [f for f in self.files if f["kind"] == "skill"]
         self._staged = staged
         self._owned = owned
@@ -427,7 +463,7 @@ class PreparedDelivery(AbstractContextManager["PreparedDelivery"]):
         with self._start_lock:
             if not self._started:
                 self._started = True
-                binding = self.bundle.get("reporter")
+                binding = self.version.get("reporter")
                 if binding is not None:
                     try:
                         if isinstance(binding, BoundDeliveryReporter):
@@ -463,13 +499,13 @@ def _remove_job_directory(directory: str) -> None:
             raise
 
 
-def prepare_files(bundle: VerifiedVersion, destination: str) -> PreparedFiles:
-    validate_payload(bundle["payload"])
+def prepare_files(version: VerifiedVersion, destination: str) -> PreparedFiles:
+    validate_payload(version["payload"])
     root = os.path.abspath(destination)
     root_fd = _private_dir(root)
     result = PreparedFiles(root_fd, [], [])
     try:
-        for item in bundle["payload"]["files"]:
+        for item in version["payload"]["files"]:
             parts = item["path"].split("/")
             current = os.dup(root_fd)
             try:
@@ -521,7 +557,7 @@ def prepare_files(bundle: VerifiedVersion, destination: str) -> PreparedFiles:
                 )
             finally:
                 os.close(current)
-        reporter = bundle.get("reporter")
+        reporter = version.get("reporter")
         if reporter is not None:
             try:
                 reporter.report_prepared()

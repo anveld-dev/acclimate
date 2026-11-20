@@ -75,7 +75,7 @@ test('console SDK transport has no machine fallback and always carries current s
     headers = new Headers(init?.headers);
     return Response.json({ items: [], nextCursor: null });
   });
-  await client.listProjects();
+  await client.listWorkspaces();
   assert.equal(headers?.get('authorization'), `Bearer ${env.CONSOLE_SERVICE_TOKEN}`);
   assert.equal(headers?.get('x-acclimate-session'), env.CONSOLE_SESSION_TOKEN);
 });
@@ -107,7 +107,7 @@ test('adoption rechecks reviewed operator and sends only exact ID and reason to 
   const writes: unknown[] = [];
   const command = {
     kind: 'adoptWorkspace' as const,
-    projectId: 'old-project',
+    workspaceId: 'old-project',
     reason: ' Reviewed legacy ownership ',
     confirmedIdentity: identity,
   };
@@ -116,7 +116,7 @@ test('adoption rechecks reviewed operator and sends only exact ID and reason to 
     assert.equal(String(url), `${env.CONSOLE_SERVICE_URL}/v1/auth/workspace-adoptions`);
     writes.push(JSON.parse(String(init?.body)));
     return Response.json({
-      projectId: 'old-project',
+      workspaceId: 'old-project',
       userId,
       reason: 'Reviewed legacy ownership',
       createdAt: '2026-11-14T00:00:00Z',
@@ -126,7 +126,7 @@ test('adoption rechecks reviewed operator and sends only exact ID and reason to 
     });
   };
   const result = await accessCommand(env, command, fetcher);
-  assert.deepEqual(writes, [{ projectId: 'old-project', reason: 'Reviewed legacy ownership' }]);
+  assert.deepEqual(writes, [{ workspaceId: 'old-project', reason: 'Reviewed legacy ownership' }]);
   assert.equal(result.ok && result.adoption?.currentRole, null);
   assert.equal(JSON.stringify(result).includes('DO-NOT-EXPOSE'), false);
   const changed = await accessCommand(

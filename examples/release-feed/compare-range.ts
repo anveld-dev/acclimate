@@ -9,8 +9,8 @@ import {
   resolveAndCache,
   type EvaluationProgressRequest,
   type VerifiedVersion,
-} from '../../packages/sdk/src/index.js';
-import { prepare } from '../../packages/codex-plugin/src/index.js';
+} from '@acclimate/sdk';
+import { prepare } from '@acclimate/codex-plugin';
 import { callLiveModel } from './live-model.js';
 
 process.umask(0o077);
@@ -29,15 +29,15 @@ async function readJson(file: string, privateFile = false) {
 const operator = await readJson(operatorFile, true);
 const credentials = await readJson(connectionFile, true);
 const previous = await readJson(previousSummary);
-if (operator.projectId !== previous.project) throw new Error('Workspace mismatch.');
-const project = operator.projectId;
+if (operator.workspaceId !== previous.workspace) throw new Error('Workspace mismatch.');
+const workspace = operator.workspaceId;
 const bundle = previous.bundle;
-const integration = previous.integration;
+const connection = previous.connection;
 const api = new AcclimateClient({ ...operator, scope: 'release-feed-evaluator' });
 const consumer = new AcclimateClient({
   baseUrl: operator.baseUrl,
   token: credentials['content-read'],
-  integrationId: integration,
+  connectionId: connection,
   scope: 'release-feed-consumer',
 });
 const reporter = createReceiptReporter({
@@ -46,8 +46,8 @@ const reporter = createReceiptReporter({
     token: credentials['receipt-write'],
     scope: 'release-feed-receipts',
   }),
-  projectId: project,
-  integrationId: integration,
+  workspaceId: workspace,
+  connectionId: connection,
 });
 function git(...args: string[]) {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -81,11 +81,11 @@ const cacheDir = path.join(dir, 'cache');
 const resolveStable = () =>
   resolveAndCache(
     consumer,
-    { projectId: project, bundleId: bundle, channel: 'stable' },
+    { workspaceId: workspace, bundleId: bundle, channel: 'stable' },
     { cacheDir, reporter },
   );
 const parent = await resolveStable();
-if (parent.version.id !== previous.freshVersion || parent.connection?.integrationId !== integration)
+if (parent.version.id !== previous.freshVersion || parent.connection?.connectionId !== connection)
   throw new Error('Live connection has moved since the supplied summary.');
 const maxCalls = 12;
 type Row = ReturnType<typeof snapshot>;
@@ -161,7 +161,7 @@ const authored = await callLiveModel({
   ].join('\n'),
 });
 const candidate = await api.createVersion(
-  project,
+  workspace,
   bundle,
   {
     parentVersionId: parent.version.id,
@@ -189,7 +189,7 @@ const descriptor = {
   runtime: { harness: 'Codex CLI', model: 'gpt-6-luna' },
 };
 const ev = await api.createEvaluation(
-  project,
+  workspace,
   bundle,
   {
     ...descriptor,
@@ -203,7 +203,7 @@ const ev = await api.createEvaluation(
 );
 const watchPath =
   '/w/' +
-  encodeURIComponent(project) +
+  encodeURIComponent(workspace) +
   '/bundles/' +
   bundle +
   '/changes?' +
@@ -216,19 +216,19 @@ const watchPath =
   });
 console.log('Watch', watchPath);
 await save('location', {
-  project,
+  workspace,
   bundle,
-  integration,
+  connection,
   candidate: candidate.id,
   evaluation: ev.id,
   watchPath,
 });
 const attemptId = randomUUID();
-await api.startEvaluation(project, bundle, ev.id, { attemptId }, randomUUID());
+await api.startEvaluation(workspace, bundle, ev.id, { attemptId }, randomUUID());
 let sequence = 0,
   completed = 0;
 async function progress(phase: EvaluationProgressRequest['phase'], caseId?: string) {
-  const result = await api.reportEvaluationProgress(project, bundle, ev.id, {
+  const result = await api.reportEvaluationProgress(workspace, bundle, ev.id, {
     attemptId,
     sequence: ++sequence,
     phase,
@@ -252,7 +252,7 @@ try {
       await progress('executing', caseId);
       const verified = await resolveAndCache(
         api,
-        { projectId: project, bundleId: bundle, versionId: version.version.id },
+        { workspaceId: workspace, bundleId: bundle, versionId: version.version.id },
         { cacheDir },
       );
       const role = version.version.id === parent.version.id ? 'parent' : 'candidate';
@@ -273,9 +273,9 @@ try {
   });
   await save('comparison', report);
   await progress('submitting');
-  const comparison = await api.createComparison(project, bundle, report, randomUUID());
+  const comparison = await api.createComparison(workspace, bundle, report, randomUUID());
   await api.finishEvaluation(
-    project,
+    workspace,
     bundle,
     ev.id,
     { attemptId, comparisonId: comparison.id },
@@ -289,7 +289,7 @@ try {
     report.results.some((pair) => pair.parent.reward === 0);
   if (eligible)
     await api.createRelease(
-      project,
+      workspace,
       bundle,
       'stable',
       {
@@ -302,9 +302,9 @@ try {
   const fresh = await resolveStable();
   const checked = await run(fresh, rows[3], 'change-range', 'fresh-consumer', true);
   const summary = {
-    project,
+    workspace,
     bundle,
-    integration,
+    connection,
     evaluation: ev.id,
     comparison: comparison.id,
     watchPath,
@@ -326,7 +326,7 @@ try {
   if (!finished)
     await api
       .interruptEvaluation(
-        project,
+        workspace,
         bundle,
         ev.id,
         { reason: 'Release feed evaluator stopped; inspect the private run directory.' },

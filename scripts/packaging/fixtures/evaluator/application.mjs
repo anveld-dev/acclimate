@@ -8,9 +8,9 @@ export const runtime = {
   settings: { app: 'payment-retry-qualification' },
   artifacts: { app: 'sha256:' + createHash('sha256').update(agentBytes).digest('hex') },
 };
-export async function execute({ bundle, input, signal }) {
+export async function execute({ version, input, signal }) {
   await appendFile(new URL('./executions.log', import.meta.url), 'executed\n', { mode: 0o600 });
-  const output = await runExistingAgent({ bundle, task: input, signal });
+  const output = await runExistingAgent({ version, task: input, signal });
   return { output, usage: { costUsd: 0 } };
 }
 export async function grade({ output, expected }) {

@@ -52,12 +52,12 @@ class ArtifactTests(unittest.TestCase):
         self.config_path = self.configs / "evaluator.json"
         self.read_config_path = self.configs / "reader.json"
         self.service = "http://127.0.0.1:43123"
-        self.config = dict(schemaVersion=1, serviceUrl=self.service, projectId="project", evaluatorPrincipalId="evaluator",
+        self.config = dict(schemaVersion=1, serviceUrl=self.service, workspaceId="project", evaluatorPrincipalId="evaluator",
                            evaluatorToken="config-token-canary", journalRoot=str(self.journals))
         self._write_private(self.config_path, json_bytes(self.config))
-        self._write_private(self.read_config_path, json_bytes(dict(schemaVersion=1, serviceUrl=self.service, projectId="project", readToken="reader-token-canary")))
-        self.handoff = dict(schemaVersion=1, serviceUrl=self.service, projectId="project", bundleId=IDS["bundle"], requestId=IDS["request"], configuration=copy.deepcopy(DESCRIPTOR))
-        self.scope = {key: self.config[key] for key in ("serviceUrl", "projectId")}
+        self._write_private(self.read_config_path, json_bytes(dict(schemaVersion=1, serviceUrl=self.service, workspaceId="project", readToken="reader-token-canary")))
+        self.handoff = dict(schemaVersion=1, serviceUrl=self.service, workspaceId="project", bundleId=IDS["bundle"], requestId=IDS["request"], descriptor=copy.deepcopy(DESCRIPTOR))
+        self.scope = {key: self.config[key] for key in ("serviceUrl", "workspaceId")}
         self.scope.update(bundleId=IDS["bundle"], requestId=IDS["request"], evaluatorPrincipalId="evaluator")
         self.mock = patch("acclimate.evaluation_artifacts.make_client", return_value=FakeClient())
         self.mock.start()
@@ -104,7 +104,7 @@ class ArtifactTests(unittest.TestCase):
         online = verify_review_export(manifest_path=result["manifestPath"], online={"readConfigPath": self.read_config_path, "expectedHandoff": self.handoff})
         self.assertEqual(online["provenance"], "online_scalar_binding")
         self.assertFalse(online["executionAttested"])
-        wrong = {**self.handoff, "projectId": "wrong"}
+        wrong = {**self.handoff, "workspaceId": "wrong"}
         self.assert_code("evidence.identity_mismatch", lambda: verify_review_export(manifest_path=result["manifestPath"], online={"readConfigPath": self.read_config_path, "expectedHandoff": wrong}))
 
     def test_content_mapper_is_role_only_and_mixed_statuses_verify(self):

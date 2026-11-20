@@ -1,4 +1,5 @@
 import type { Operation, PolicyOverride } from './types.js';
+import { AcclimateError, AcclimateUsageError, TransportError } from './errors.js';
 import type { PrepareDeliveryOptions, PreparedDelivery } from './prepare.js';
 import { registerEvaluationMutation } from './internal/http-bridge.js';
 import type {
@@ -41,6 +42,7 @@ import type {
   EvaluationRequest,
   StartEvaluationRequest,
   FinishEvaluationRequest,
+  AbandonEvaluationRequest,
   InterruptEvaluationRequest,
 } from './types.js';
 import type {
@@ -71,22 +73,66 @@ import type {
   VersionMetadata,
 } from './types.js';
 
-export class ApiError extends Error {
+/** Error codes the Acclimate service returns, plus codes the client assigns to HTTP failures. */
+export type ApiErrorCode =
+  | 'already_adopted'
+  | 'already_member'
+  | 'base_conflict'
+  | 'credential_already_issued'
+  | 'denied'
+  | 'draft_closed'
+  | 'email_not_verified'
+  | 'email_unavailable'
+  | 'evaluation_conflict'
+  | 'evaluation_progress_conflict'
+  | 'generation_conflict'
+  | 'guided_target_unsupported'
+  | 'http_error'
+  | 'idempotency_conflict'
+  | 'invalid_compatibility'
+  | 'invalid_console_transport'
+  | 'invalid_content'
+  | 'invalid_cursor'
+  | 'invalid_session'
+  | 'invitation_closed'
+  | 'invitation_exists'
+  | 'invitation_limit'
+  | 'last_admin'
+  | 'learning_conflict'
+  | 'learning_processing_error'
+  | 'machine_principal_required'
+  | 'not_found'
+  | 'operation_closed'
+  | 'parent_conflict'
+  | 'payload_too_large'
+  | 'policy_binding_mismatch'
+  | 'policy_override_required'
+  | 'policy_receipt_conflict'
+  | 'resend_unavailable'
+  | 'response_too_large'
+  | 'review_already_decided'
+  | 'revision_conflict'
+  | 'unauthenticated'
+  | 'unavailable'
+  | 'workspace_owned'
+  // A newer service can return codes this SDK version does not list yet.
+  | (string & {});
+
+/** The service answered with a non-success HTTP status. */
+export class ApiError extends AcclimateError<ApiErrorCode> {
   readonly status: number;
-  readonly code: string;
   readonly requestId: string;
   readonly details?: Record<string, unknown>;
   constructor(
     status: number,
-    code: string,
+    code: ApiErrorCode,
     message: string,
     requestId: string,
     details?: Record<string, unknown>,
   ) {
-    super(message);
+    super(code, message);
     this.name = 'ApiError';
     this.status = status;
-    this.code = code;
     this.requestId = requestId;
     this.details = details;
   }
@@ -98,8 +144,8 @@ export interface ClientOptions {
   /** Trusted console-server session only; never populate from browser state automatically. */
   sessionToken?: string;
   scope: string;
-  /** Stable service integration ID of the application installation consuming content. */
-  integrationId?: string;
+  /** ID of the connection (application installation) that consumes content. A UUID. */
+  connectionId?: string;
   fetch?: typeof fetch;
   retries?: number;
   timeoutMs?: number;
@@ -119,7 +165,7 @@ export interface ChannelResult {
 export class AcclimateClient {
   readonly baseUrl: string;
   readonly scope: string;
-  readonly integrationId?: string;
+  readonly connectionId?: string;
   private readonly token: string;
   private readonly sessionToken?: string;
   private readonly fetcher: typeof fetch;
@@ -133,9 +179,15 @@ export class AcclimateClient {
     return prepareDelivery(this, options);
   }
   constructor(options: ClientOptions) {
-    if (!options.baseUrl || !options.token || !options.scope)
-      throw new TypeError('baseUrl, token, and scope are required');
-    const url = new URL(options.baseUrl);
+    for (const field of ['baseUrl', 'token', 'scope'] as const)
+      if (!options?.[field])
+        throw new AcclimateUsageError(`${field} is required. Pass baseUrl, token and scope.`, field);
+    let url: URL;
+    try {
+      url = new URL(options.baseUrl);
+    } catch {
+      throw new AcclimateUsageError('baseUrl must be an absolute HTTP(S) URL.', 'baseUrl');
+    }
     if (
       !['http:', 'https:'].includes(url.protocol) ||
       url.username ||
@@ -143,17 +195,18 @@ export class AcclimateClient {
       url.search ||
       url.hash
     )
-      throw new TypeError(
+      throw new AcclimateUsageError(
         'baseUrl must be an HTTP(S) service URL without credentials, query, or fragment',
+        'baseUrl',
       );
     this.baseUrl = url.toString().replace(/\/$/, '');
     this.scope = options.scope;
     if (
-      options.integrationId !== undefined &&
-      !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(options.integrationId)
+      options.connectionId !== undefined &&
+      !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(options.connectionId)
     )
-      throw new TypeError('integrationId must be a UUID');
-    this.integrationId = options.integrationId?.toLowerCase();
+      throw new AcclimateUsageError('connectionId must be a UUID', 'connectionId');
+    this.connectionId = options.connectionId?.toLowerCase();
     this.token = options.token;
     this.sessionToken = options.sessionToken;
     this.fetcher = options.fetch ?? fetch;
@@ -162,35 +215,38 @@ export class AcclimateClient {
     this.maxPayloadBytes = options.maxPayloadBytes ?? 1024 * 1024;
     this.maxJsonResponseBytes = options.maxJsonResponseBytes ?? 4 * 1024 * 1024;
     if (!Number.isInteger(this.retries) || this.retries < 0 || this.retries > 3)
-      throw new RangeError('retries must be an integer between 0 and 3');
+      throw new AcclimateUsageError('retries must be an integer between 0 and 3', 'retries');
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs < 1 || this.timeoutMs > 120_000)
-      throw new RangeError('timeoutMs must be between 1 and 120000');
+      throw new AcclimateUsageError('timeoutMs must be between 1 and 120000', 'timeoutMs');
     if (
       !Number.isFinite(this.maxPayloadBytes) ||
       this.maxPayloadBytes < 1 ||
       this.maxPayloadBytes > 2 * 1024 * 1024
     )
-      throw new RangeError('maxPayloadBytes must be between 1 and 2097152');
+      throw new AcclimateUsageError('maxPayloadBytes must be between 1 and 2097152', 'maxPayloadBytes');
     if (
       !Number.isSafeInteger(this.maxJsonResponseBytes) ||
       this.maxJsonResponseBytes < 1 ||
       this.maxJsonResponseBytes > 8 * 1024 * 1024
     )
-      throw new RangeError('maxJsonResponseBytes must be an integer between 1 and 8388608');
+      throw new AcclimateUsageError('maxJsonResponseBytes must be an integer between 1 and 8388608', 'maxJsonResponseBytes');
     registerEvaluationMutation(this, (route, body, key) =>
       this.request('POST', route, body, key, { 'X-Acclimate-Durable-Operation': 'true' }),
     );
   }
   private part(value: string): string {
     if (!value || value === '.' || value === '..')
-      throw new TypeError('path identifiers must be nonempty and not dot segments');
+      throw new AcclimateUsageError(
+        'path identifiers (workspace, bundle and version IDs) must be nonempty and not dot segments',
+        'pathIdentifier',
+      );
     return encodeURIComponent(value);
   }
-  private path(projectId: string, suffix: string): string {
-    return `/v1/workspaces/${this.part(projectId)}${suffix}`;
+  private path(workspaceId: string, suffix: string): string {
+    return `/v1/workspaces/${this.part(workspaceId)}${suffix}`;
   }
   private deliveryHeaders(): Record<string, string> {
-    return this.integrationId ? { 'X-Acclimate-Integration-Id': this.integrationId } : {};
+    return this.connectionId ? { 'X-Acclimate-Connection-Id': this.connectionId } : {};
   }
   private async readBytes(response: Response, limit: number, payload = false): Promise<Uint8Array> {
     const fail = () =>
@@ -202,8 +258,11 @@ export class AcclimateClient {
           : 'JSON response exceeds configured limit',
         '',
       );
+    const transport = (error: unknown): never => {
+      throw error instanceof AcclimateError ? error : new TransportError(this.baseUrl, error);
+    };
     if (!response.body) {
-      const bytes = new Uint8Array(await response.arrayBuffer());
+      const bytes = new Uint8Array(await response.arrayBuffer().catch(transport));
       if (bytes.byteLength > limit) throw fail();
       return bytes;
     }
@@ -212,7 +271,7 @@ export class AcclimateClient {
     let size = 0;
     try {
       for (;;) {
-        const item = await reader.read();
+        const item = await reader.read().catch(transport);
         if (item.done) break;
         size += item.value.byteLength;
         if (size > limit) {
@@ -232,12 +291,21 @@ export class AcclimateClient {
     }
     return bytes;
   }
+  /** Only network and timeout failures become TransportError; argument and parsing bugs stay distinct. */
+  private async send(url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await this.fetcher(url, init);
+    } catch (error) {
+      if (error instanceof AcclimateError) throw error;
+      throw new TransportError(this.baseUrl, error);
+    }
+  }
   private async readJson<T>(response: Response): Promise<T> {
     const bytes = await this.readBytes(response, this.maxJsonResponseBytes);
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as T;
   }
   async health(): Promise<string> {
-    const response = await this.fetcher(this.baseUrl + '/health', {
+    const response = await this.send(this.baseUrl + '/health', {
       method: 'GET',
       signal: AbortSignal.timeout(this.timeoutMs),
       redirect: 'manual',
@@ -270,13 +338,14 @@ export class AcclimateClient {
   ): Promise<T> {
     const mutation = method !== 'GET' && method !== 'HEAD';
     if (mutation && (!idempotencyKey || !/^[\x20-\x7e]{1,128}$/.test(idempotencyKey)))
-      throw new TypeError(
+      throw new AcclimateUsageError(
         'mutations require a printable ASCII idempotency key (1..128 characters)',
+        'idempotencyKey',
       );
     let last: unknown;
     for (let attempt = 0; attempt <= (mutation ? this.retries : 0); attempt++) {
       try {
-        const response = await this.fetcher(this.baseUrl + path, {
+        const response = await this.send(this.baseUrl + path, {
           method,
           headers: {
             Authorization: `Bearer ${this.token}`,
@@ -322,39 +391,39 @@ export class AcclimateClient {
     throw last;
   }
   createBundle(
-    projectId: string,
+    workspaceId: string,
     request: { name: string; compatibilityTarget?: import('./types.js').CompatibilityTarget },
     key: string,
   ): Promise<Bundle> {
-    return this.request('POST', this.path(projectId, '/bundles'), JSON.stringify(request), key);
+    return this.request('POST', this.path(workspaceId, '/bundles'), JSON.stringify(request), key);
   }
   createVersion(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     request: CreateVersionRequest,
     key: string,
   ): Promise<VersionMetadata> {
     return this.request(
       'POST',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/versions`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/versions`),
       JSON.stringify(request),
       key,
     );
   }
-  getVersion(projectId: string, bundleId: string, versionId: string): Promise<VersionMetadata> {
+  getVersion(workspaceId: string, bundleId: string, versionId: string): Promise<VersionMetadata> {
     return this.request(
       'GET',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/versions/${this.part(versionId)}`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/versions/${this.part(versionId)}`),
       undefined,
       undefined,
       this.deliveryHeaders(),
     );
   }
-  getPayload(projectId: string, bundleId: string, versionId: string): Promise<Uint8Array> {
+  getPayload(workspaceId: string, bundleId: string, versionId: string): Promise<Uint8Array> {
     return this.request(
       'GET',
       this.path(
-        projectId,
+        workspaceId,
         `/bundles/${this.part(bundleId)}/versions/${this.part(versionId)}/payload`,
       ),
       undefined,
@@ -364,14 +433,14 @@ export class AcclimateClient {
     );
   }
   async resolveChannel(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     channel: string,
     options: ChannelOptions = {},
   ): Promise<ChannelResult> {
     const result = await this.request<ChannelResult>(
       'GET',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}`),
       undefined,
       undefined,
       { ...this.deliveryHeaders(), ...(options.etag ? { 'If-None-Match': options.etag } : {}) },
@@ -380,86 +449,86 @@ export class AcclimateClient {
     );
     return result.notModified ? { resolution: null, etag: result.etag, notModified: true } : result;
   }
-  private learningPath(projectId: string, integrationId: string): string {
-    return this.path(projectId, `/connections/${this.part(integrationId)}/learning`);
+  private learningPath(workspaceId: string, connectionId: string): string {
+    return this.path(workspaceId, `/connections/${this.part(connectionId)}/learning`);
   }
   enrollLearning(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     body: LearningEnrollmentRequest,
     key: string,
   ): Promise<LearningEnrollment> {
     return this.request(
       'PUT',
-      this.learningPath(projectId, integrationId),
+      this.learningPath(workspaceId, connectionId),
       JSON.stringify(body),
       key,
     );
   }
   getLearningEnrollment(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
   ): Promise<LearningEnrollmentStatus> {
-    return this.request('GET', this.learningPath(projectId, integrationId));
+    return this.request('GET', this.learningPath(workspaceId, connectionId));
   }
-  stopLearning(projectId: string, integrationId: string, key: string): Promise<LearningEnrollment> {
+  stopLearning(workspaceId: string, connectionId: string, key: string): Promise<LearningEnrollment> {
     return this.request(
       'POST',
-      this.learningPath(projectId, integrationId) + '/stop',
+      this.learningPath(workspaceId, connectionId) + '/stop',
       undefined,
       key,
     );
   }
   getLearningOutcome(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     outcomeId: string,
   ): Promise<LearningOutcomeStatus> {
     return this.request(
       'GET',
-      this.learningPath(projectId, integrationId) + '/outcomes/' + this.part(outcomeId),
+      this.learningPath(workspaceId, connectionId) + '/outcomes/' + this.part(outcomeId),
     );
   }
   reportLearningIncidentReplay(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     body: LearningIncidentReplay,
   ): Promise<{ accepted: true }> {
     return this.request(
       'POST',
-      this.learningPath(projectId, integrationId) + '/incident-replays',
+      this.learningPath(workspaceId, connectionId) + '/incident-replays',
       JSON.stringify(body),
       body.roundId,
     );
   }
   reportLearningOutcome(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     body: LearningOutcomeRequest,
     key = body.outcomeId,
   ): Promise<LearningOutcomeReceipt> {
     return this.request(
       'POST',
-      this.learningPath(projectId, integrationId) + '/outcomes',
+      this.learningPath(workspaceId, connectionId) + '/outcomes',
       JSON.stringify(body),
       key,
     );
   }
   reportLearningCorrection(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     body: LearningCorrectionRequest,
   ): Promise<{ correctionId: string; outcomeId: string; accepted: true }> {
     return this.request(
       'POST',
-      this.learningPath(projectId, integrationId) + '/corrections',
+      this.learningPath(workspaceId, connectionId) + '/corrections',
       JSON.stringify(body),
       body.correctionId,
     );
   }
   reportLearningRecheck(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     body: LearningRecheckRequest,
   ): Promise<{
     correctionId: string;
@@ -469,54 +538,54 @@ export class AcclimateClient {
   }> {
     return this.request(
       'POST',
-      this.learningPath(projectId, integrationId) + '/rechecks',
+      this.learningPath(workspaceId, connectionId) + '/rechecks',
       JSON.stringify(body),
       body.correctionId + ':' + body.revision,
     );
   }
-  getLearningWork(projectId: string, integrationId: string): Promise<LearningWork> {
-    return this.request('GET', this.learningPath(projectId, integrationId) + '/work');
+  getLearningWork(workspaceId: string, connectionId: string): Promise<LearningWork> {
+    return this.request('GET', this.learningPath(workspaceId, connectionId) + '/work');
   }
   getLearningFieldRequalification(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     versionId: string,
   ): Promise<LearningFieldRequalification> {
     return this.request(
       'GET',
-      this.learningPath(projectId, integrationId) +
+      this.learningPath(workspaceId, connectionId) +
         '/field-requalifications/' +
         encodeURIComponent(versionId),
     );
   }
   reportLearningFieldReplay(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     body: LearningFieldReplay,
   ): Promise<{ accepted: true }> {
     return this.request(
       'POST',
-      this.learningPath(projectId, integrationId) + '/field-requalifications',
+      this.learningPath(workspaceId, connectionId) + '/field-requalifications',
       JSON.stringify(body),
       [body.outcomeId, body.versionId, body.baselineRevision].join(':'),
     );
   }
   reportLearningFieldAudit(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     body: LearningFieldAuditRequest,
     key = body.outcomeId,
   ): Promise<LearningFieldAuditReceipt> {
     return this.request(
       'POST',
-      this.learningPath(projectId, integrationId) + '/field-audits',
+      this.learningPath(workspaceId, connectionId) + '/field-audits',
       JSON.stringify(body),
       key,
     );
   }
   reviewLearningRound(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     roundId: string,
     approve: boolean,
     key: string,
@@ -524,39 +593,39 @@ export class AcclimateClient {
   ): Promise<LearningReviewReceipt> {
     return this.request(
       'POST',
-      this.learningPath(projectId, integrationId) + `/rounds/${this.part(roundId)}/review`,
+      this.learningPath(workspaceId, connectionId) + `/rounds/${this.part(roundId)}/review`,
       JSON.stringify({ approve, policyOverride }),
       key,
     );
   }
   renewLearning(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     body: LearningRenewalRequest,
     key = body.renewalId,
   ): Promise<LearningRenewalReceipt> {
     return this.request(
       'POST',
-      this.learningPath(projectId, integrationId) + '/renew',
+      this.learningPath(workspaceId, connectionId) + '/renew',
       JSON.stringify(body),
       key,
     );
   }
   restoreLearning(
-    projectId: string,
-    integrationId: string,
+    workspaceId: string,
+    connectionId: string,
     body: LearningRestoreRequest,
     key = body.restoreId,
   ): Promise<Release> {
     return this.request(
       'POST',
-      this.learningPath(projectId, integrationId) + '/restore',
+      this.learningPath(workspaceId, connectionId) + '/restore',
       JSON.stringify(body),
       key,
     );
   }
   listReleases(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     channel: string,
     options: { limit?: number; beforeRevision?: string } = {},
@@ -568,13 +637,13 @@ export class AcclimateClient {
     return this.request(
       'GET',
       this.path(
-        projectId,
+        workspaceId,
         `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}/releases${suffix}`,
       ),
     );
   }
   createRelease(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     channel: string,
     request: CreateReleaseRequest,
@@ -583,7 +652,7 @@ export class AcclimateClient {
     return this.request(
       'POST',
       this.path(
-        projectId,
+        workspaceId,
         `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}/releases`,
       ),
       JSON.stringify(request),
@@ -591,78 +660,78 @@ export class AcclimateClient {
     );
   }
   createProposal(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     request: ProposalRequest,
     key: string,
   ): Promise<Proposal> {
     return this.request(
       'POST',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/proposals`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/proposals`),
       JSON.stringify(request),
       key,
     );
   }
-  getProposal(projectId: string, bundleId: string, id: string): Promise<Proposal> {
+  getProposal(workspaceId: string, bundleId: string, id: string): Promise<Proposal> {
     return this.request(
       'GET',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/proposals/${this.part(id)}`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/proposals/${this.part(id)}`),
     );
   }
   createComparison(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     request: ComparisonRequest,
     key: string,
   ): Promise<Comparison> {
     return this.request(
       'POST',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/comparisons`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/comparisons`),
       JSON.stringify(request),
       key,
     );
   }
-  getComparison(projectId: string, bundleId: string, id: string): Promise<Comparison> {
+  getComparison(workspaceId: string, bundleId: string, id: string): Promise<Comparison> {
     return this.request(
       'GET',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/comparisons/${this.part(id)}`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/comparisons/${this.part(id)}`),
     );
   }
-  private comparisonPolicyPath(projectId: string, bundleId: string, comparisonId: string) {
+  private comparisonPolicyPath(workspaceId: string, bundleId: string, comparisonId: string) {
     return this.path(
-      projectId,
+      workspaceId,
       `/bundles/${this.part(bundleId)}/comparisons/${this.part(comparisonId)}/policy-receipts`,
     );
   }
   listComparisonPolicyReceipts(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     comparisonId: string,
   ): Promise<{ items: ComparisonPolicyReceipt[] }> {
-    return this.request('GET', this.comparisonPolicyPath(projectId, bundleId, comparisonId));
+    return this.request('GET', this.comparisonPolicyPath(workspaceId, bundleId, comparisonId));
   }
   listCandidatePolicyReceipts(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     versionId: string,
   ): Promise<{ items: ComparisonPolicyReceipt[] }> {
     return this.request(
       'GET',
       this.path(
-        projectId,
+        workspaceId,
         `/bundles/${this.part(bundleId)}/versions/${this.part(versionId)}/policy-receipts`,
       ),
     );
   }
   reportComparisonPolicyReceipt(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     comparisonId: string,
     report: ComparisonPolicyReport,
   ): Promise<ComparisonPolicyReceipt> {
     return this.request(
       'POST',
-      this.comparisonPolicyPath(projectId, bundleId, comparisonId),
+      this.comparisonPolicyPath(workspaceId, bundleId, comparisonId),
       JSON.stringify(report),
       `policy:${comparisonId}:${report.policy.sha256}`,
     );
@@ -673,42 +742,42 @@ export class AcclimateClient {
     if (options.cursor !== undefined) query.set('cursor', options.cursor);
     return query.size ? `?${query}` : '';
   }
-  private draftPath(projectId: string, bundleId: string, channel: string, id?: string): string {
+  private draftPath(workspaceId: string, bundleId: string, channel: string, id?: string): string {
     return this.path(
-      projectId,
+      workspaceId,
       `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}/drafts${id === undefined ? '' : `/${this.part(id)}`}`,
     );
   }
   listWorkspaces(options: ListOptions = {}): Promise<Page<Workspace>> {
     return this.request('GET', `/v1/workspaces${this.listing(options)}`);
   }
-  listBundles(projectId: string, options: ListOptions = {}): Promise<Page<Bundle>> {
-    return this.request('GET', this.path(projectId, `/bundles${this.listing(options)}`));
+  listBundles(workspaceId: string, options: ListOptions = {}): Promise<Page<Bundle>> {
+    return this.request('GET', this.path(workspaceId, `/bundles${this.listing(options)}`));
   }
   listChannels(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     options: ListOptions = {},
   ): Promise<Page<Channel>> {
     return this.request(
       'GET',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/channels${this.listing(options)}`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/channels${this.listing(options)}`),
     );
   }
   createBundleSetup(
-    projectId: string,
+    workspaceId: string,
     request: BundleSetupRequest,
     key: string,
   ): Promise<BundleSetup> {
     return this.request(
       'POST',
-      this.path(projectId, '/bundle-setups'),
+      this.path(workspaceId, '/bundle-setups'),
       JSON.stringify(request),
       key,
     );
   }
   createDraft(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     channel: string,
     request: CreateDraftRequest,
@@ -716,31 +785,31 @@ export class AcclimateClient {
   ): Promise<Draft> {
     return this.request(
       'POST',
-      this.draftPath(projectId, bundleId, channel),
+      this.draftPath(workspaceId, bundleId, channel),
       JSON.stringify(request),
       key,
     );
   }
   listDrafts(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     channel: string,
     options: ListOptions & { status?: Draft['status'] | 'all' } = {},
   ): Promise<Page<Draft>> {
     return this.request(
       'GET',
-      this.draftPath(projectId, bundleId, channel) +
+      this.draftPath(workspaceId, bundleId, channel) +
         this.listing(options) +
         (options.status
           ? `${this.listing(options) ? '&' : '?'}status=${encodeURIComponent(options.status)}`
           : ''),
     );
   }
-  getDraft(projectId: string, bundleId: string, channel: string, id: string): Promise<Draft> {
-    return this.request('GET', this.draftPath(projectId, bundleId, channel, id));
+  getDraft(workspaceId: string, bundleId: string, channel: string, id: string): Promise<Draft> {
+    return this.request('GET', this.draftPath(workspaceId, bundleId, channel, id));
   }
   getDraftHistory(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     channel: string,
     id: string,
@@ -748,11 +817,11 @@ export class AcclimateClient {
   ): Promise<Page<DraftSnapshot>> {
     return this.request(
       'GET',
-      this.draftPath(projectId, bundleId, channel, id) + '/history' + this.listing(options),
+      this.draftPath(workspaceId, bundleId, channel, id) + '/history' + this.listing(options),
     );
   }
   saveDraft(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     channel: string,
     id: string,
@@ -761,13 +830,13 @@ export class AcclimateClient {
   ): Promise<Draft> {
     return this.request(
       'POST',
-      this.draftPath(projectId, bundleId, channel, id) + '/save',
+      this.draftPath(workspaceId, bundleId, channel, id) + '/save',
       JSON.stringify(request),
       key,
     );
   }
   discardDraft(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     channel: string,
     id: string,
@@ -776,13 +845,13 @@ export class AcclimateClient {
   ): Promise<Draft> {
     return this.request(
       'POST',
-      this.draftPath(projectId, bundleId, channel, id) + '/discard',
+      this.draftPath(workspaceId, bundleId, channel, id) + '/discard',
       JSON.stringify(request),
       key,
     );
   }
   publishDraft(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     channel: string,
     id: string,
@@ -791,46 +860,46 @@ export class AcclimateClient {
   ): Promise<Draft> {
     return this.request(
       'POST',
-      this.draftPath(projectId, bundleId, channel, id) + '/publish',
+      this.draftPath(workspaceId, bundleId, channel, id) + '/publish',
       JSON.stringify(request),
       key,
     );
   }
   listProposals(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     options: ListOptions = {},
   ): Promise<Page<Proposal>> {
     return this.request(
       'GET',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/proposals${this.listing(options)}`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/proposals${this.listing(options)}`),
     );
   }
   listComparisons(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     options: ListOptions = {},
   ): Promise<Page<Comparison>> {
     return this.request(
       'GET',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/comparisons${this.listing(options)}`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/comparisons${this.listing(options)}`),
     );
   }
   createEvaluation(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     request: EvaluationRequest,
     key: string,
   ): Promise<Evaluation> {
     return this.request(
       'POST',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/evaluation-requests`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/evaluation-requests`),
       JSON.stringify(request),
       key,
     );
   }
   startEvaluation(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     id: string,
     request: StartEvaluationRequest,
@@ -839,7 +908,7 @@ export class AcclimateClient {
     return this.request(
       'POST',
       this.path(
-        projectId,
+        workspaceId,
         `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/start`,
       ),
       JSON.stringify(request),
@@ -847,20 +916,20 @@ export class AcclimateClient {
     );
   }
   getEvaluationProgress(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     id: string,
   ): Promise<EvaluationProgressView> {
     return this.request(
       'GET',
       this.path(
-        projectId,
+        workspaceId,
         `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/progress`,
       ),
     );
   }
   reportEvaluationProgress(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     id: string,
     report: EvaluationProgressRequest,
@@ -870,7 +939,7 @@ export class AcclimateClient {
     return this.request(
       'POST',
       this.path(
-        projectId,
+        workspaceId,
         `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/progress`,
       ),
       JSON.stringify(report),
@@ -878,7 +947,7 @@ export class AcclimateClient {
     );
   }
   finishEvaluation(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     id: string,
     request: FinishEvaluationRequest,
@@ -887,15 +956,35 @@ export class AcclimateClient {
     return this.request(
       'POST',
       this.path(
-        projectId,
+        workspaceId,
         `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/finish`,
       ),
       JSON.stringify(request),
       key,
     );
   }
+  /** Abandon an attempt whose outcome is unknown. Its evidence never counts, and a
+   * new request for the same candidate may then start. This is not proof that the
+   * original worker stopped. */
+  abandonEvaluation(
+    workspaceId: string,
+    bundleId: string,
+    id: string,
+    request: AbandonEvaluationRequest,
+    key: string,
+  ): Promise<Evaluation> {
+    return this.request(
+      'POST',
+      this.path(
+        workspaceId,
+        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/abandon`,
+      ),
+      JSON.stringify(request),
+      key,
+    );
+  }
   interruptEvaluation(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     id: string,
     request: InterruptEvaluationRequest,
@@ -904,7 +993,7 @@ export class AcclimateClient {
     return this.request(
       'POST',
       this.path(
-        projectId,
+        workspaceId,
         `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/interrupt`,
       ),
       JSON.stringify(request),
@@ -912,70 +1001,70 @@ export class AcclimateClient {
     );
   }
   listEvaluations(
-    projectId: string,
+    workspaceId: string,
     bundleId: string,
     options: ListOptions = {},
   ): Promise<Page<Evaluation>> {
     return this.request(
       'GET',
       this.path(
-        projectId,
+        workspaceId,
         `/bundles/${this.part(bundleId)}/evaluation-requests${this.listing(options)}`,
       ),
     );
   }
-  getEvaluation(projectId: string, bundleId: string, id: string): Promise<Evaluation> {
+  getEvaluation(workspaceId: string, bundleId: string, id: string): Promise<Evaluation> {
     return this.request(
       'GET',
-      this.path(projectId, `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}`),
+      this.path(workspaceId, `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}`),
     );
   }
-  getEvaluationCapabilities(projectId: string): Promise<EvaluationCapabilities> {
-    return this.request('GET', this.path(projectId, '/evaluation-capabilities'));
+  getEvaluationCapabilities(workspaceId: string): Promise<EvaluationCapabilities> {
+    return this.request('GET', this.path(workspaceId, '/evaluation-capabilities'));
   }
   listConnectionObservations(
-    projectId: string,
+    workspaceId: string,
     options: ListOptions = {},
   ): Promise<Page<ConnectionObservation>> {
     return this.request(
       'GET',
-      this.path(projectId, '/connection-observations' + this.listing(options)),
+      this.path(workspaceId, '/connection-observations' + this.listing(options)),
     );
   }
 
   createConnection(
-    projectId: string,
+    workspaceId: string,
     request: CreateConnectionRequest,
     key: string,
   ): Promise<Connection> {
-    return this.request('POST', this.path(projectId, '/connections'), JSON.stringify(request), key);
+    return this.request('POST', this.path(workspaceId, '/connections'), JSON.stringify(request), key);
   }
-  listConnections(projectId: string, options: ListOptions = {}): Promise<Page<Connection>> {
-    return this.request('GET', this.path(projectId, '/connections' + this.listing(options)));
+  listConnections(workspaceId: string, options: ListOptions = {}): Promise<Page<Connection>> {
+    return this.request('GET', this.path(workspaceId, '/connections' + this.listing(options)));
   }
   createConnectionCredential(
-    projectId: string,
+    workspaceId: string,
     id: string,
     request: { kind: ConnectionCredentialKind },
     key: string,
   ): Promise<ConnectionCredential> {
     return this.request(
       'POST',
-      this.path(projectId, `/connections/${this.part(id)}/credentials`),
+      this.path(workspaceId, `/connections/${this.part(id)}/credentials`),
       JSON.stringify(request),
       key,
     );
   }
-  revokeConnection(projectId: string, id: string, key: string): Promise<Connection> {
+  revokeConnection(workspaceId: string, id: string, key: string): Promise<Connection> {
     return this.request(
       'POST',
-      this.path(projectId, `/connections/${this.part(id)}/revoke`),
+      this.path(workspaceId, `/connections/${this.part(id)}/revoke`),
       '{}',
       key,
     );
   }
   revokeConnectionCredential(
-    projectId: string,
+    workspaceId: string,
     id: string,
     credentialId: string,
     key: string,
@@ -983,7 +1072,7 @@ export class AcclimateClient {
     return this.request(
       'POST',
       this.path(
-        projectId,
+        workspaceId,
         `/connections/${this.part(id)}/credentials/${this.part(credentialId)}/revoke`,
       ),
       '{}',
@@ -991,107 +1080,45 @@ export class AcclimateClient {
     );
   }
   reportDeliveryReceipt(
-    projectId: string,
+    workspaceId: string,
     id: string,
     request: DeliveryReceiptRequest,
     key: string,
   ): Promise<DeliveryReceipt> {
     return this.request(
       'POST',
-      this.path(projectId, `/connections/${this.part(id)}/receipts`),
+      this.path(workspaceId, `/connections/${this.part(id)}/receipts`),
       JSON.stringify(request),
       key,
     );
   }
   listDeliveryReceipts(
-    projectId: string,
+    workspaceId: string,
     id: string,
     options: ListOptions = {},
   ): Promise<Page<DeliveryReceipt>> {
     return this.request(
       'GET',
-      this.path(projectId, `/connections/${this.part(id)}/receipts${this.listing(options)}`),
+      this.path(workspaceId, `/connections/${this.part(id)}/receipts${this.listing(options)}`),
     );
   }
-  getOperation(projectId: string, operationId: string, operationPath?: string): Promise<Operation> {
+  getOperation(workspaceId: string, operationId: string, operationPath?: string): Promise<Operation> {
     const query = operationPath ? `?operationPath=${encodeURIComponent(operationPath)}` : '';
     return this.request(
       'GET',
-      this.path(projectId, `/operations/${this.part(operationId)}${query}`),
+      this.path(workspaceId, `/operations/${this.part(operationId)}${query}`),
     );
   }
   closeOperation(
-    projectId: string,
+    workspaceId: string,
     operationId: string,
     operationPath?: string,
   ): Promise<Operation> {
     return this.request(
       'POST',
-      this.path(projectId, `/operations/${this.part(operationId)}/close`),
+      this.path(workspaceId, `/operations/${this.part(operationId)}/close`),
       JSON.stringify({ operationPath }),
       operationId,
     );
-  }
-  /** @deprecated Use listWorkspaces. */
-  listProjects(
-    ...args: Parameters<AcclimateClient['listWorkspaces']>
-  ): ReturnType<AcclimateClient['listWorkspaces']> {
-    return this.listWorkspaces(...args);
-  }
-
-  /** @deprecated Use listReleases. */
-  listPromotions(
-    ...args: Parameters<AcclimateClient['listReleases']>
-  ): ReturnType<AcclimateClient['listReleases']> {
-    return this.listReleases(...args);
-  }
-
-  /** @deprecated Use createRelease. */
-  promote(
-    ...args: Parameters<AcclimateClient['createRelease']>
-  ): ReturnType<AcclimateClient['createRelease']> {
-    return this.createRelease(...args);
-  }
-
-  /** @deprecated Use listConnectionObservations. */
-  listIntegrationObservations(
-    ...args: Parameters<AcclimateClient['listConnectionObservations']>
-  ): ReturnType<AcclimateClient['listConnectionObservations']> {
-    return this.listConnectionObservations(...args);
-  }
-
-  /** @deprecated Use createConnection. */
-  createIntegration(
-    ...args: Parameters<AcclimateClient['createConnection']>
-  ): ReturnType<AcclimateClient['createConnection']> {
-    return this.createConnection(...args);
-  }
-
-  /** @deprecated Use listConnections. */
-  listIntegrations(
-    ...args: Parameters<AcclimateClient['listConnections']>
-  ): ReturnType<AcclimateClient['listConnections']> {
-    return this.listConnections(...args);
-  }
-
-  /** @deprecated Use createConnectionCredential. */
-  createIntegrationCredential(
-    ...args: Parameters<AcclimateClient['createConnectionCredential']>
-  ): ReturnType<AcclimateClient['createConnectionCredential']> {
-    return this.createConnectionCredential(...args);
-  }
-
-  /** @deprecated Use revokeConnection. */
-  revokeIntegration(
-    ...args: Parameters<AcclimateClient['revokeConnection']>
-  ): ReturnType<AcclimateClient['revokeConnection']> {
-    return this.revokeConnection(...args);
-  }
-
-  /** @deprecated Use revokeConnectionCredential. */
-  revokeIntegrationCredential(
-    ...args: Parameters<AcclimateClient['revokeConnectionCredential']>
-  ): ReturnType<AcclimateClient['revokeConnectionCredential']> {
-    return this.revokeConnectionCredential(...args);
   }
 }

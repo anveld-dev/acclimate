@@ -2,9 +2,9 @@ import { Codex } from '@openai/codex-sdk';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { AcclimateClient } from '../packages/sdk/src/index.js';
-import { prepare } from '../packages/codex-plugin/src/index.js';
-import type { VerifiedVersion } from '../packages/sdk/src/types.js';
+import { AcclimateClient } from '@acclimate/sdk';
+import { prepare } from '@acclimate/codex-plugin';
+import type { VerifiedVersion } from '@acclimate/sdk';
 import { improve, type Model } from './improvement/workflow.js';
 import { improve as improveService } from './service-proposer/workflow.js';
 
@@ -47,12 +47,12 @@ if (args[0] === 'run' || args[0] === 'run-service') {
   let turns = 0;
   const run = async (
     model: string,
-    bundle: VerifiedVersion,
+    version: VerifiedVersion,
     prompt: string,
     outputSchema: unknown,
   ) => {
     if (++turns > maxTurns) throw new Error('Paid turn limit exceeded');
-    const prepared = await prepare(bundle);
+    const prepared = await prepare(version);
     try {
       const thread = codex.startThread({
         model,
@@ -96,10 +96,10 @@ if (args[0] === 'run' || args[0] === 'run-service') {
         throw new Error('Draft response must contain only skillText');
       return (parsed as { skillText: string }).skillText;
     },
-    review: async (bundle, snapshot) => {
+    review: async (version, snapshot) => {
       const result = await run(
         reviewModel,
-        bundle,
+        version,
         `Use the prepared review skill to review this saved code snapshot. Return only JSON with exactly one boolean field unsafeRetry indicating whether retries can repeat a side effect without an idempotency key.\n\n${snapshot.diff}`,
         {
           type: 'object',
@@ -118,7 +118,7 @@ if (args[0] === 'run' || args[0] === 'run-service') {
   };
   const acclimate = client();
   const config = {
-    project: required('ACCLIMATE_PROJECT', 'ACCLIMATE_PROJECT_ID'),
+    workspace: required('ACCLIMATE_WORKSPACE', 'ACCLIMATE_WORKSPACE_ID'),
     bundle: required('ACCLIMATE_BUNDLE', 'ACCLIMATE_BUNDLE_ID'),
     channel: required('ACCLIMATE_CHANNEL'),
     skillPath: required('ACCLIMATE_SKILL_PATH'),
@@ -136,7 +136,7 @@ if (args[0] === 'run' || args[0] === 'run-service') {
   const summary = JSON.parse(await readFile(summaryFile, 'utf8'));
   const expectedRevision = flag('--expected-revision');
   const plan = {
-    project: summary.project,
+    workspace: summary.workspace,
     bundle: summary.bundle,
     channel: summary.channel,
     versionId: summary.candidate.id,
@@ -154,7 +154,7 @@ if (args[0] === 'run' || args[0] === 'run-service') {
   else {
     if (!expectedRevision) throw new Error('--expected-revision is required with --apply');
     const result = await client().createRelease(
-      plan.project,
+      plan.workspace,
       plan.bundle,
       plan.channel,
       { versionId: plan.versionId, comparisonId: plan.comparisonId, expectedRevision },

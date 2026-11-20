@@ -48,23 +48,23 @@ import type {
 } from '../server/integration-core';
 
 export function WorkspaceConnections(props: {
-  projectId: string;
+  workspaceId: string;
   search: Record<string, unknown>;
   initial?: ConnectionsResult;
 }) {
-  return <ConnectionPage key={props.projectId} {...props} />;
+  return <ConnectionPage key={props.workspaceId} {...props} />;
 }
 
 function ConnectionPage({
-  projectId,
+  workspaceId,
   search,
   initial,
 }: {
-  projectId: string;
+  workspaceId: string;
   search: Record<string, unknown>;
   initial?: ConnectionsResult;
 }) {
-  const selectedId = typeof search.integration === 'string' ? search.integration : undefined;
+  const selectedId = typeof search.connection === 'string' ? search.connection : undefined;
   const pendingFocus = useRef('');
   const [result, setResult] = useState<ConnectionsResult>(
     initial ?? { ok: false, message: 'Loading connections…' },
@@ -78,7 +78,7 @@ function ConnectionPage({
       setResult(initial);
       return;
     }
-    void readConnections({ data: { projectId, integrationId: selectedId } })
+    void readConnections({ data: { workspaceId, connectionId: selectedId } })
       .then((value) => {
         if (active) setResult(value);
       })
@@ -89,7 +89,7 @@ function ConnectionPage({
     return () => {
       active = false;
     };
-  }, [projectId, selectedId, initial]);
+  }, [workspaceId, selectedId, initial]);
   useEffect(() => {
     if (
       !result.ok ||
@@ -108,7 +108,7 @@ function ConnectionPage({
   }, [result, selectedId]);
   async function refresh() {
     try {
-      setResult(await readConnections({ data: { projectId, integrationId: selectedId } }));
+      setResult(await readConnections({ data: { workspaceId, connectionId: selectedId } }));
     } catch {
       setResult({ ok: false, message: 'Could not read connections. Current state is unknown.' });
     }
@@ -126,7 +126,7 @@ function ConnectionPage({
       )}
       {result.ok ? (
         <ConnectionWorkspace
-          key={`${result.state.actorScope}:${projectId}:${result.state.selected?.integration.id ?? 'index'}:${String(search.bundleId ?? '')}:${String(search.channel ?? '')}`}
+          key={`${result.state.actorScope}:${workspaceId}:${result.state.selected?.integration.id ?? 'index'}:${String(search.bundleId ?? '')}:${String(search.channel ?? '')}`}
           state={result.state}
           search={search}
           refresh={refresh}
@@ -139,7 +139,7 @@ function ConnectionPage({
           <p role="alert">{result.message}</p>
           {result.connectionMissing && (
             <Button asChild variant="outline" size="sm">
-              <ConsoleLink href={scopedConnectionHref(projectId, search)}>
+              <ConsoleLink href={scopedConnectionHref(workspaceId, search)}>
                 Back to connections
               </ConsoleLink>
             </Button>
@@ -170,7 +170,7 @@ function ConnectionWorkspace({
   const [defaultTab] = useState(() =>
     state.selected?.receipts.items.length ? 'delivery' : 'setup',
   );
-  const learning = useConnectionLearning(state.projectId, selected?.id);
+  const learning = useConnectionLearning(state.workspaceId, selected?.id);
   const learningStatus = learning.result?.ok ? learning.result.status : null;
   const learningActive = learningStatus?.enabled && !learningStatus.stoppedAt;
   const compared = Boolean(
@@ -204,7 +204,7 @@ function ConnectionWorkspace({
   const keys = useRef(new Map<string, string>());
   const recoveryStorageKey = credentialRecoveryKey(
     state.actorScope,
-    state.projectId,
+    state.workspaceId,
     selected?.id ?? '',
   );
   const [recovery, setRecovery] = useState<CredentialRecovery>();
@@ -271,15 +271,16 @@ function ConnectionWorkspace({
     );
   });
   const directorySearch = { ...search, q: query, access };
-  const connectionHref = (id: string) => scopedConnectionHref(state.projectId, directorySearch, id);
+  const connectionHref = (id: string) =>
+    scopedConnectionHref(state.workspaceId, directorySearch, id);
   const guideHref = selected
     ? bundleHref(
-        { projectId: state.projectId, bundleId: selected.bundleId, channel: selected.channel },
+        { workspaceId: state.workspaceId, bundleId: selected.bundleId, channel: selected.channel },
         'connect',
       )
     : undefined;
   const binding = selected
-    ? { projectId: state.projectId, bundleId: selected.bundleId, channel: selected.channel }
+    ? { workspaceId: state.workspaceId, bundleId: selected.bundleId, channel: selected.channel }
     : undefined;
   const connectionTabs = [
     ['setup', 'Setup'],
@@ -558,11 +559,11 @@ function ConnectionWorkspace({
           A connection groups an app’s credentials for one bundle and channel. Creating one does not
           connect a running app. SDK clients can fetch content without a connection.
         </p>
-        <p className="break-words">Workspace: {state.projectName}</p>
+        <p className="break-words">Workspace: {state.workspaceName}</p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span>Workspace ID:</span>
-          <code className="break-all">{state.projectId}</code>
-          <CopyButton value={state.projectId} label="Copy workspace ID" />
+          <code className="break-all">{state.workspaceId}</code>
+          <CopyButton value={state.workspaceId} label="Copy workspace ID" />
         </div>
       </DisclosureContent>
     </Disclosure>
@@ -578,7 +579,7 @@ function ConnectionWorkspace({
               <>
                 <WorkspaceMenuButton />
                 <ConsoleLink
-                  href={scopedConnectionHref(state.projectId, directorySearch)}
+                  href={scopedConnectionHref(state.workspaceId, directorySearch)}
                   className="workspace-back-link text-muted-foreground hover:text-foreground"
                   onClick={(event) => {
                     if (event.detail === 0) focusAfterNavigation('connection-entry-' + selected.id);
@@ -628,7 +629,7 @@ function ConnectionWorkspace({
               {query ? ' · ' + query : ''}
               {access !== 'all' ? ' · ' + access : ''}.{' '}
               <ConsoleLink
-                href={scopedConnectionHref(state.projectId, {}, selected?.id)}
+                href={scopedConnectionHref(state.workspaceId, {}, selected?.id)}
                 className="underline"
               >
                 Clear filters
@@ -714,7 +715,7 @@ function ConnectionWorkspace({
                 )}
                 {!state.bundles.length && (
                   <ConsoleLink
-                    href={workspaceHref(state.projectId, 'bundles')}
+                    href={workspaceHref(state.workspaceId, 'bundles')}
                     className="underline"
                   >
                     Go to bundles
@@ -1112,8 +1113,8 @@ function ConnectionWorkspace({
                     <Button asChild variant="outline" size="sm">
                       <ConsoleLink
                         href={
-                          workspaceHref(state.projectId, 'delivery') +
-                          '?integration=' +
+                          workspaceHref(state.workspaceId, 'delivery') +
+                          '?connection=' +
                           encodeURIComponent(selected.id)
                         }
                       >
@@ -1141,7 +1142,7 @@ function ConnectionWorkspace({
                 <ConnectionLearning
                   key={`${selected.id}:${selected.enabled}`}
                   learning={learning}
-                  target={{ projectId: state.projectId, integrationId: selected.id }}
+                  target={{ workspaceId: state.workspaceId, connectionId: selected.id }}
                   bundleId={selected.bundleId}
                   channel={selected.channel}
                   connectionName={selected.displayName}
@@ -1160,13 +1161,13 @@ function ConnectionWorkspace({
                     <dl className="connection-identities">
                       <div>
                         <dt>Workspace</dt>
-                        <dd>{state.projectName}</dd>
+                        <dd>{state.workspaceName}</dd>
                       </div>
                       <div>
                         <dt>Workspace ID</dt>
                         <dd>
-                          <code className="break-all">{state.projectId}</code>
-                          <CopyButton value={state.projectId} label="Copy workspace ID" />
+                          <code className="break-all">{state.workspaceId}</code>
+                          <CopyButton value={state.workspaceId} label="Copy workspace ID" />
                         </dd>
                       </div>
                       <div>
@@ -1292,7 +1293,7 @@ function ConnectionWorkspace({
               onClick={() =>
                 void command(
                   { action: 'create', displayName: name, key: crypto.randomUUID() },
-                  { projectId: state.projectId, bundleId, channel },
+                  { workspaceId: state.workspaceId, bundleId, channel },
                 )
               }
             >
@@ -1376,7 +1377,7 @@ function ConnectionWorkspace({
               </div>
               <div>
                 <dt className="text-muted-foreground">Workspace</dt>
-                <dd className="break-all">{state.projectId}</dd>
+                <dd className="break-all">{state.workspaceId}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Bundle / channel</dt>

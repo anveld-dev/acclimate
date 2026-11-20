@@ -25,7 +25,7 @@ import type {
   BundlePayload,
   LearningEnrollmentStatus,
   LearningOutcomeRequest,
-  VerifiedBundle,
+  VerifiedVersion,
   VersionMetadata,
 } from '../packages/sdk/src/types.js';
 
@@ -35,7 +35,7 @@ assert(
   'Use the private PostgreSQL cluster created by scripts/productization/connected_learning.py',
 );
 const project = `connected-${randomUUID()}`;
-const projectPath = `/v1/projects/${project}`;
+const projectPath = `/v1/workspaces/${project}`;
 const roles = ['operator', 'evaluator', 'other'] as const;
 type Role = (typeof roles)[number];
 const tokens = Object.fromEntries(
@@ -135,10 +135,10 @@ function cohort(dataset: string, tasks: Task[], reward?: (bundle: BundlePayload)
     runtime: { app: 'refund', provider: 'local-fixture' },
     execution: 'model-free',
     cases,
-    async execute({ bundle, input, caseId }) {
-      executions.push({ dataset, caseId, version: bundle.version.id });
+    async execute({ version, input, caseId }) {
+      executions.push({ dataset, caseId, version: version.version.id });
       return {
-        output: reward ? String(reward(bundle.payload)) : runRefundTask(bundle.payload, input),
+        output: reward ? String(reward(version.payload)) : runRefundTask(version.payload, input),
       };
     },
     async grade({ output, expected }) {
@@ -385,23 +385,23 @@ try {
     return value as T;
   }
 
-  const client = (role: Role, integrationId?: string) =>
+  const client = (role: Role, connectionId?: string) =>
     new AcclimateClient({
       baseUrl: serviceUrl,
       token: tokens[role],
-      scope: `${project}:${role}:${integrationId ?? 'global'}`,
-      integrationId,
+      scope: `${project}:${role}:${connectionId ?? 'global'}`,
+      connectionId,
       retries: 0,
       timeoutMs: 3_000,
     });
-  const learning = (connection: string) => `/integrations/${connection}/learning`;
+  const learning = (connection: string) => `/connections/${connection}/learning`;
   const configPath = path.join(dir, 'evaluator.json');
   await writeFile(
     configPath,
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl,
-      projectId: project,
+      workspaceId: project,
       evaluatorPrincipalId: 'evaluator',
       evaluatorToken: tokens.evaluator,
       journalRoot: path.join(dir, 'journal'),
@@ -410,7 +410,7 @@ try {
   );
 
   function enableDriver(
-    integrationId: string,
+    connectionId: string,
     installationId: string,
     apps: ReturnType<typeof evaluationApps>,
     hooks: Pick<
@@ -421,7 +421,7 @@ try {
     const installed = new AbortController();
     const signal = AbortSignal.any([controller.signal, installed.signal]);
     const actual = serveConnectedLearning({
-      integrationId,
+      connectionId,
       installationId,
       configPath,
       apps: {
@@ -547,7 +547,7 @@ try {
       'x-acclimate-session': browserSession,
     },
     body: JSON.stringify({
-      projectId: project,
+      workspaceId: project,
       reason: 'Own the disposable qualification workspace.',
     }),
   });
@@ -577,7 +577,7 @@ try {
     },
     randomUUID(),
   );
-  await operator.promote(
+  await operator.createRelease(
     project,
     bundle.id,
     'stable',
@@ -591,7 +591,7 @@ try {
 
   const makeConnection = async (displayName: string) =>
     (
-      await api<{ id: string }>('POST', '/integrations', {
+      await api<{ id: string }>('POST', '/connections', {
         displayName,
         bundleId: bundle.id,
         channel: 'stable',
@@ -617,7 +617,7 @@ try {
     resolveAndCache(
       client('operator', connection),
       {
-        projectId: project,
+        workspaceId: project,
         bundleId: bundle.id,
         channel: 'stable',
       },
@@ -787,7 +787,7 @@ try {
 
   const alpha = 'refund = Quote the refund window.';
   const beta = 'refund-status = Ask for the receipt number.';
-  function gradedOutcome(task: Task, installed: VerifiedBundle) {
+  function gradedOutcome(task: Task, installed: VerifiedVersion) {
     const observed = runRefundTask(installed.payload, task);
     assert.notEqual(observed, expectedResponse[task.kind]);
     return {
@@ -808,8 +808,8 @@ try {
   const first = terminalOutcome.outcomeId;
   const reporter = createLearningOutcomeReporter({
     client: client('other', automatic),
-    projectId: project,
-    integrationId: automatic,
+    workspaceId: project,
+    connectionId: automatic,
   });
   const siblingTaskBundle = await installedBundle(sibling);
   await assert.rejects(() => reporter(siblingTaskBundle, terminalOutcome), TypeError);
@@ -1148,7 +1148,7 @@ try {
   const pendingRevocation = exhaustedOutcome;
   const beforeRevoke = await observe(manual, pendingRevocation, 'awaiting_review');
   assert.equal(beforeRevoke.promotionId, null);
-  await api('POST', `/integrations/${manual}/revoke`, {});
+  await api('POST', `/connections/${manual}/revoke`, {});
   await api(
     'POST',
     `${learning(manual)}/rounds/${beforeRevoke.id}/review`,
@@ -1210,7 +1210,7 @@ try {
     ...rollbackEvaluation,
     audits: [],
   });
-  const credentialPath = `/integrations/${rollbackConnection}/credentials`;
+  const credentialPath = `/connections/${rollbackConnection}/credentials`;
   const receiptCredential = await api<{ secret: string }>('POST', credentialPath, {
     kind: 'receipt-write',
   });
@@ -1222,26 +1222,26 @@ try {
       baseUrl: serviceUrl,
       token,
       scope: `${project}:${rollbackConnection}:${scope}`,
-      integrationId: rollbackConnection,
+      connectionId: rollbackConnection,
       retries: 0,
     });
   const receiptReporter = createReceiptReporter({
     client: scopedClient(receiptCredential.secret, 'receipt'),
-    projectId: project,
-    integrationId: rollbackConnection,
+    workspaceId: project,
+    connectionId: rollbackConnection,
   });
   const servedClient = scopedClient(deliveryCredential.secret, 'delivery');
   const reportServedOutcome = createLearningOutcomeReporter({
     client: client('other', rollbackConnection),
-    projectId: project,
-    integrationId: rollbackConnection,
+    workspaceId: project,
+    connectionId: rollbackConnection,
   });
   const auditClient = client('evaluator', rollbackConnection);
   const auditPath = `${learning(rollbackConnection)}/field-audits`;
   const prepareServedAudit = createLearningFieldAuditor<{ task: Task; output: string }>({
     client: auditClient,
-    projectId: project,
-    integrationId: rollbackConnection,
+    workspaceId: project,
+    connectionId: rollbackConnection,
     cacheDir: path.join(dir, 'field-audit-cache'),
     samplePercent: 100,
     async evaluate({ job, predecessor }) {
@@ -1255,13 +1255,13 @@ try {
   });
   async function startServedTask(task: Task, externalFailure = false) {
     const job = await servedClient.prepare({
-      projectId: project,
+      workspaceId: project,
       bundleId: bundle.id,
       channel: 'stable',
       cacheDir: path.join(dir, 'rollback-delivery-cache'),
       reporter: receiptReporter,
     });
-    const installed = job.bundle;
+    const installed = job.version;
     const started = job.reportStarted();
     assert.strictEqual(job.reportStarted(), started);
     assert(started && started.revision);
@@ -1324,6 +1324,8 @@ try {
       minimumMeanImprovement: 1,
       maximumCaseRegression: 0,
       requiredCases: [],
+      // A small fixture inventory: compare point estimates so the receipt flow is deterministic.
+      inference: { method: 'none' },
     }),
     expectedDescriptor,
   );
@@ -1522,7 +1524,7 @@ try {
   );
   const rolledBack = await installedBundle(rollbackConnection);
   assert.equal(rolledBack.version.id, healthy.version.id);
-  const approvals = await operator.listPromotions(
+  const approvals = await operator.listReleases(
     project,
     bundle.id,
     'learn-' + rollbackConnection,
@@ -1544,7 +1546,7 @@ try {
   const explicitOldPin = await resolveAndCache(
     servedClient,
     {
-      projectId: project,
+      workspaceId: project,
       bundleId: bundle.id,
       versionId: bad.version.id,
     },
@@ -1728,8 +1730,8 @@ try {
   assert.equal((await api('GET', learning(structural))).remainingAudits, 2);
   const reportSkill = createLearningOutcomeReporter({
     client: client('other', structural),
-    projectId: project,
-    integrationId: structural,
+    workspaceId: project,
+    connectionId: structural,
   });
   async function skillFeedback(expected: string) {
     return (
@@ -1916,8 +1918,8 @@ try {
   const incidentJob = randomUUID();
   const incidentReporter = createLearningOutcomeReporter({
     client: client('other', incidentConnection),
-    projectId: project,
-    integrationId: incidentConnection,
+    workspaceId: project,
+    connectionId: incidentConnection,
   });
   const incidentBundle = await installedBundle(incidentConnection);
   await incidentReporter(incidentBundle, {
@@ -2262,7 +2264,7 @@ try {
     },
     randomUUID(),
   );
-  const sourcePromotion = await operator.promote(
+  const sourcePromotion = await operator.createRelease(
     project,
     bundle.id,
     'stable',

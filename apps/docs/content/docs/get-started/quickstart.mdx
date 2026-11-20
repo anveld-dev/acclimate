@@ -1,20 +1,23 @@
 ---
-title: Run your first comparison
-description: Connect an existing agent and grader, then compare a saved candidate with its parent.
+title: Try Acclimate on your laptop
+description: Compare two versions of your agent's instructions with no server, then run a graded comparison against a local Acclimate stack.
 ---
 
-Connect an agent you already run and grade one bundle change on a saved task. You will get paired results for the parent and candidate in your workspace.
+In about 15 minutes you will grade a change to an agent's instructions against the version it replaces, first on your laptop with no server, then through a local Acclimate stack that records the result and shows it in the console. You run everything yourself. To connect to a workspace someone else runs, see [join a team](/docs/get-started/join-a-team).
 
-Have a published bundle and channel available in your workspace. In the console, use **Workspace → Bundles → New bundle** if you need to publish your starting instructions. [Install an SDK](/docs/get-started/install), and ask your operator for a [private evaluator config](/docs/operate/evaluator-access) for that workspace. The examples use `EVALUATOR_CONFIG` as a shell variable pointing to that file.
+**You need:** Node.js 22.22 or later, or Python 3.11 or later for the Python SDK. The local stack also needs Docker with Compose v2.24 or later and an Acclimate checkout. Terms such as *parent*, *candidate*, and *evaluator* are defined in the [glossary](/docs/concepts/glossary).
 
-<Steps>
-<Step>
+## Try it locally (no server)
 
-## Connect the evaluator to your agent
+Score a change on your own machine before you set up the service. A local run needs no workspace, evaluator config, handoff, or published bundle. It uses the same pairing, arm order, and grading as a service comparison, but the result is advisory and never release evidence.
 
-Create `application.mjs` or `application.mts` for Node.js, or `application.py` for Python, in the evaluator's working directory. Export `cases`, `execute`, and `grade`. Each case has a unique public `caseId`, private `input` and private `expected` answer. Give each arm a fresh isolated job if the agent's tools have side effects.
+### Connect your agent
 
-Replace the application imports in these recipes with your own agent, cases, and grader.
+[Install the SDK](/docs/get-started/install) in your agent's project. In your agent's project, create `application.mjs` (or `application.mts`) for Node.js, or `application.py` for Python. Export three things:
+
+- `cases`: saved tasks, each with a unique `caseId`, an `input`, and an `expected` answer.
+- `execute`: calls your agent with the version it is given and the case input, and returns the output.
+- `grade`: scores an output against the expected answer and returns a numeric `reward`.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
@@ -25,8 +28,8 @@ import { runAgent, scoreResult, savedCases } from './dist/support-agent.mjs';
 export const cases = savedCases;
 export const revisionFiles = ['package-lock.json'];
 
-export async function execute({ bundle, input, signal, context }) {
-  const result = await runAgent({ bundle, task: input, signal, job: context });
+export async function execute({ version, input, signal, context }) {
+  const result = await runAgent({ version, task: input, signal, job: context });
   return { output: result.answer, usage: result.measuredUsage };
 }
 
@@ -46,7 +49,7 @@ cases = saved_cases
 revision_files = ["support_agent.py", "requirements.lock"]
 
 async def execute(run):
-    result = await run_agent(bundle=run.bundle, task=run.input, cancellation=run.cancellation)
+    result = await run_agent(version=run.version, task=run.input, cancellation=run.cancellation)
     return ExecutionResult(output=result.answer, usage=result.measured_usage)
 
 def grade(run):
@@ -57,59 +60,136 @@ def grade(run):
 </Tab>
 </Tabs>
 
-Set the revision file list to the paths your app actually uses. Return bounded JSON as the gradeable output and a finite numeric reward from the grader. Your application chooses how to pass the pinned bundle to the agent.
+Replace the imports with your own agent, cases, and grader. List the files your agent reads at run time in `revisionFiles` (Python `revision_files`). If the agent's tools have side effects, give each run a fresh, isolated job.
 
-</Step>
-<Step>
+`execute` must pass `version` to your agent. If it ignores the version, both arms behave the same, and the comparison warns that every output was identical.
 
-## Describe the installed evaluator and save a candidate
+### Compare two versions
 
-From the directory containing the adapter, inspect its coverage and print its public descriptor. Use the commands for your installed SDK.
+A **payload** is the set of files a version of your agent reads. Put the current instructions in one folder and the changed instructions in another. Files under `skills/` become skill files, files under `memory/` become memory files, and every other file becomes an instruction. Hidden files are skipped. A payload JSON file such as `{"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":"..."}]}` also works.
+
+```text
+parent/AGENTS.md
+candidate/AGENTS.md
+candidate/skills/refunds/SKILL.md
+```
+
+Check the adapter on one case, then compare the two folders. Nothing is sent to a server.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
 
 ```sh
-./node_modules/.bin/acclimate-eval coverage
-./node_modules/.bin/acclimate-eval describe
+./node_modules/.bin/acclimate-eval try --live --payload candidate
+./node_modules/.bin/acclimate-eval compare --local --parent parent --candidate candidate --live
 ```
 
 </Tab>
 <Tab value="Python">
 
 ```sh
-python -m acclimate coverage
-python -m acclimate describe
+python -m acclimate try --live --payload candidate
+python -m acclimate compare --local --parent parent --candidate candidate --live
 ```
 
 </Tab>
 </Tabs>
 
-The local coverage report can contain private paths. Paste the **describe** JSON into **Review release** for your saved candidate under **Changes** in the console. Create the evaluation request and download `evaluation-request.json` into the application's environment.
+`try` runs `execute` and `grade` once and prints the output. It also checks every returned shape, including JSON-safe output, a finite reward, `usage` keys, and the `executionStatus` value. Problems that `try` reports would otherwise become missing scores in a paid run. Add `--case ID` to choose cases.
 
-</Step>
+`compare --local` prints the same per-case table as a service comparison. It writes `local-report.json`, the output artifacts, and both payloads to a private folder under `.acclimate/local/`, or to the folder you pass with `--out`. Add `.acclimate/` to `.gitignore`. Add `--policy quality-policy.json` for an advisory verdict, and `--max-cost-usd 2` or `--deadline 15m` to bound spend. `--live` is required only when the evaluator calls models or paid services. Installed `application` adapters default to live; export `execution = "model-free"` for a deterministic adapter. The [evaluator CLI reference](/docs/reference/evaluator-cli#local-runs) covers every local option and exit code.
+
+A local report can't be uploaded as release evidence. The service accepts results only for versions it stores and an attempt it issued. To gate a release, replay the same candidate against the service with the `compare` command printed at the end of the local run. That command passes `candidate.payload.json` from the report folder.
+
+## Start the local stack
+
+The stack runs the Acclimate service, console, database, and sign-in on your laptop, so comparisons are recorded and reviewable. From an Acclimate checkout:
+
+```sh
+npm run local:up
+source .local/stack/env.sh
+```
+
+The first start downloads the released images, or builds them from source if none are published for your checkout. It prints the console URL, a login, and the client settings that `env.sh` exports. It also signs you in to a ready-made `local-demo` workspace and publishes an example bundle on the `stable` channel. See [run Acclimate locally](/docs/get-started/run-locally) for ports, certificates, and reset.
+
+## Run your first live comparison
+
+Use the adapter from [Connect your agent](#connect-your-agent).
+
+<Steps>
 <Step>
 
-## Run the comparison
+### Save the published version and edit it
+
+`pull` saves the version the `stable` channel serves, the **parent**, as a payload file. Edit `candidate.json` to make your change.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
 
 ```sh
-./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+./node_modules/.bin/acclimate-eval pull --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --out candidate.json
 ```
 
 </Tab>
 <Tab value="Python">
 
 ```sh
-python -m acclimate compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+python -m acclimate pull --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --out candidate.json
 ```
 
 </Tab>
 </Tabs>
 
-The live flag authorizes model-backed execution with your application's own credentials. Inspect the parent and candidate means, pair coverage, and individual case scores in the result and console. When you are ready to set thresholds, [add a quality policy](/docs/guides/evaluate-a-change).
+The file is a payload JSON file like the ones `compare --local` reads. Each file needs a `path`, a `kind` of `instruction`, `skill`, or `memory`, and its `text`.
+
+</Step>
+<Step>
+
+### Compare the candidate with its parent
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" \
+  --bundle "$BUNDLE_ID" --channel stable --payload candidate.json \
+  --name first-change --live
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+python -m acclimate compare --config "$EVALUATOR_CONFIG" \
+  --bundle "$BUNDLE_ID" --channel stable --payload candidate.json \
+  --name first-change --live
+```
+
+</Tab>
+</Tabs>
+
+`--live` allows the evaluator to call your agent, which uses your application's own model credentials. `--name` names this comparison. Run the same command again to resume it after an interruption. In a terminal, the result looks like this:
+
+```text
+Request 5f0c…e21a · completed
+Equal-case means    parent 0.5    candidate 0.83
+Pair coverage       3/3
+Policy              not supplied
+Per-case means
+  "refund-request"    parent 0    candidate 1
+  …
+Execution callbacks started this time: 6.
+Run handle: --name first-change
+```
+
+Each pair is one case run on both versions. With `--json`, or when output is piped, the CLI writes the same result as one JSON object with `scores`, `runName`, and the version IDs. Open **Changes** in the console to find `first-change` under **Ready to review**.
 
 </Step>
 </Steps>
+
+## Next steps
+
+- If a run failed because of your evaluator, fix it and run a fresh attempt on the same change with `--retry-after first-change --name first-change-2`. The console groups both attempts.
+- [Add a quality policy](/docs/guides/evaluate-a-change) to gate the release on your thresholds.
+- [Run the comparison on pull requests](/docs/guides/ci-pr-check).
+- [Join a team's workspace](/docs/get-started/join-a-team) when you move off your laptop.

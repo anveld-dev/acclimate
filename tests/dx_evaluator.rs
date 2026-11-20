@@ -123,7 +123,7 @@ fn identity(f: &Fixture) -> Value {
 
 async fn request(f: &Fixture, app: &axum::Router) -> (String, String) {
     let collection = format!(
-        "/v1/projects/{}/bundles/{}/evaluation-requests",
+        "/v1/workspaces/{}/bundles/{}/evaluation-requests",
         f.project, f.bundle
     );
     let (s, _, e) = call(
@@ -160,7 +160,7 @@ fn report(f: &Fixture, request_id: &str, attempt: &str) -> Value {
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn capabilities_are_machine_scoped_and_never_overstate_retention() {
     let mut f = fixture().await;
-    let endpoint = format!("/v1/projects/{}/evaluation-capabilities", f.project);
+    let endpoint = format!("/v1/workspaces/{}/evaluation-capabilities", f.project);
     let app = router(f.state.clone());
     for (token, expected_write) in [("writer", true), ("reader", false), ("rotated", true)] {
         let (s, h, value) = call(&app, "GET", &endpoint, token, &Value::Null, "read", false).await;
@@ -169,7 +169,13 @@ async fn capabilities_are_machine_scoped_and_never_overstate_retention() {
         assert_eq!(value["writeEvaluation"], expected_write);
         assert_eq!(value["retainedEvaluationOperations"], true);
         assert_eq!(value["readUnpublished"], true);
-        assert_eq!(value.as_object().unwrap().len(), 7);
+        // Additive: rights, credential kind, abandonment policy, run labels and policy pins.
+        assert_eq!(value.as_object().unwrap().len(), 12);
+        assert_eq!(value["policyPins"], true);
+        assert_eq!(value["rights"]["evaluate"], expected_write);
+        assert_eq!(value["rights"]["promote"], token == "writer");
+        assert_eq!(value["credential"], json!({"kind": "static"}));
+        assert_eq!(value["runLabels"], true);
         assert!(!value.to_string().contains("rotated"));
     }
     for (token, expected) in [
@@ -219,7 +225,7 @@ async fn capabilities_are_machine_scoped_and_never_overstate_retention() {
         .oneshot(
             Request::builder()
                 .uri(format!(
-                    "/v1/projects/{}/integration-observations",
+                    "/v1/workspaces/{}/connection-observations",
                     f.project
                 ))
                 .header("authorization", format!("Bearer {}", common::CONSOLE_TOKEN))
@@ -240,7 +246,7 @@ async fn capabilities_are_machine_scoped_and_never_overstate_retention() {
             Request::builder()
                 .method("POST")
                 .uri(format!(
-                    "/v1/projects/{}/integrations/{}/credentials",
+                    "/v1/workspaces/{}/connections/{}/credentials",
                     f.project,
                     Uuid::new_v4()
                 ))
@@ -288,7 +294,7 @@ async fn capabilities_are_machine_scoped_and_never_overstate_retention() {
         let (s, _, v) = call(
             &router(f.state.clone()),
             "GET",
-            &format!("/v1/projects/{uri_project}/evaluation-capabilities"),
+            &format!("/v1/workspaces/{uri_project}/evaluation-capabilities"),
             "unsupported",
             &Value::Null,
             "read",
@@ -301,7 +307,7 @@ async fn capabilities_are_machine_scoped_and_never_overstate_retention() {
             &router(f.state.clone()),
             "POST",
             &format!(
-                "/v1/projects/{uri_project}/bundles/{}/comparisons",
+                "/v1/workspaces/{uri_project}/bundles/{}/comparisons",
                 f.bundle
             ),
             "unsupported",
@@ -328,7 +334,7 @@ async fn capabilities_are_machine_scoped_and_never_overstate_retention() {
         call(
             &router(f.state.clone()),
             "GET",
-            "/v1/projects/missing-project/evaluation-capabilities",
+            "/v1/workspaces/missing-project/evaluation-capabilities",
             "absent",
             &Value::Null,
             "read",
@@ -362,7 +368,7 @@ async fn retained_evaluator_results_survive_expiry_and_require_current_authority
     .await;
     assert_eq!(first.0, StatusCode::OK, "{}", first.2);
     let comparison_path = format!(
-        "/v1/projects/{}/bundles/{}/comparisons",
+        "/v1/workspaces/{}/bundles/{}/comparisons",
         f.project, f.bundle
     );
     let submit_key = Uuid::new_v4().to_string();
@@ -413,7 +419,7 @@ async fn retained_evaluator_results_survive_expiry_and_require_current_authority
         "unmarked same-principal rotation must recover retained result"
     );
     let lookup = format!(
-        "/v1/projects/{}/operations/{submit_key}?operationPath={comparison_path}",
+        "/v1/workspaces/{}/operations/{submit_key}?operationPath={comparison_path}",
         f.project
     );
     let recovered = call(&app, "GET", &lookup, "rotated", &Value::Null, "read", false).await;
@@ -436,7 +442,7 @@ async fn retained_evaluator_results_survive_expiry_and_require_current_authority
         StatusCode::CONFLICT
     );
     let closed_key = Uuid::new_v4().to_string();
-    let close_path = format!("/v1/projects/{}/operations/{closed_key}/close", f.project);
+    let close_path = format!("/v1/workspaces/{}/operations/{closed_key}/close", f.project);
     let closed = call(
         &app,
         "POST",
@@ -606,7 +612,7 @@ async fn retained_start_is_historical_and_interruption_blocks_new_evidence() {
         "current request is authoritative"
     );
     let comparison_path = format!(
-        "/v1/projects/{}/bundles/{}/comparisons",
+        "/v1/workspaces/{}/bundles/{}/comparisons",
         f.project, f.bundle
     );
     assert_eq!(
@@ -667,7 +673,7 @@ async fn maximum_report_and_retained_response_wrappers_fit_the_response_budget()
     body["results"][0]["parent"]["outputRef"] = json!("x".repeat(padding));
     assert_eq!(body.to_string().len(), 2 * 1024 * 1024);
     let route = format!(
-        "/v1/projects/{}/bundles/{}/comparisons",
+        "/v1/workspaces/{}/bundles/{}/comparisons",
         f.project, f.bundle
     );
     let key = Uuid::new_v4().to_string();
@@ -691,7 +697,7 @@ async fn maximum_report_and_retained_response_wrappers_fit_the_response_budget()
         &app,
         "GET",
         &format!(
-            "/v1/projects/{}/operations/{key}?operationPath={route}",
+            "/v1/workspaces/{}/operations/{key}?operationPath={route}",
             f.project
         ),
         "writer",
@@ -740,7 +746,7 @@ async fn finish_interrupt_race_has_one_current_terminal_state() {
         )
         .await;
         let route = format!(
-            "/v1/projects/{}/bundles/{}/comparisons",
+            "/v1/workspaces/{}/bundles/{}/comparisons",
             f.project, f.bundle
         );
         let submitted = call(
@@ -831,7 +837,7 @@ async fn observations_expose_one_latest_retained_receipt_without_admin_metadata(
         let body = json!({"eventId":event,"stage":stage,"versionId":version,"digest":format!("sha256:{}",if version==f.parent{"a"}else{"b"}.repeat(64)),"occurredAt":occurred,"privateField":"CANARY"});
         sqlx::query("INSERT INTO integration_receipts(integration_id,event_id,project_id,bundle_id,version_id,body,fingerprint,received_at) VALUES($1,$2,$3,$4,$5,$6,'fixture',$7)").bind(integration).bind(event).bind(&f.project).bind(f.bundle).bind(version).bind(body).bind(received).execute(&f.state.db).await.unwrap();
     }
-    let endpoint = format!("/v1/projects/{}/integration-observations", f.project);
+    let endpoint = format!("/v1/workspaces/{}/connection-observations", f.project);
     let (s, _, v) = call(
         &app,
         "GET",
@@ -910,7 +916,7 @@ async fn observations_expose_one_latest_retained_receipt_without_admin_metadata(
         call(
             &app,
             "GET",
-            &format!("/v1/projects/{}/integrations", f.project),
+            &format!("/v1/workspaces/{}/connections", f.project),
             "reader",
             &Value::Null,
             "read",
@@ -929,7 +935,7 @@ async fn marked_evaluator_mutations_require_canonical_body_identities() {
     let f = fixture().await;
     let app = router(f.state.clone());
     let collection = format!(
-        "/v1/projects/{}/bundles/{}/evaluation-requests",
+        "/v1/workspaces/{}/bundles/{}/evaluation-requests",
         f.project, f.bundle
     );
     for field in ["parentVersionId", "candidateVersionId", "proposalId"] {
@@ -1001,7 +1007,7 @@ async fn marked_evaluator_mutations_require_canonical_body_identities() {
         assert_eq!(response.2["error"]["code"], "guided_target_unsupported");
     }
     let comparisons = format!(
-        "/v1/projects/{}/bundles/{}/comparisons",
+        "/v1/workspaces/{}/bundles/{}/comparisons",
         f.project, f.bundle
     );
     for field in ["requestId", "attemptId"] {

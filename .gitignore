@@ -40,3 +40,6 @@
 /apps/docs/out/
 /apps/docs/next-env.d.ts
 /apps/docs/*.tsbuildinfo
+
+# Local evaluator runs (acclimate-eval compare --local)
+.acclimate/

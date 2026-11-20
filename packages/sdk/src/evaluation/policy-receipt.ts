@@ -26,10 +26,11 @@ export async function recordPolicyReceipt(
     policy: { ...policy, sha256: policy.sha256 },
     verdict: verdict.verdict,
     checks: verdict.checks,
+    ...(verdict.inference && { inference: verdict.inference }),
   };
   try {
     const receipts = await client.listComparisonPolicyReceipts(
-      handoff.projectId,
+      handoff.workspaceId,
       handoff.bundleId,
       comparisonId,
     );
@@ -37,7 +38,7 @@ export async function recordPolicyReceipt(
     const receipt =
       existing ??
       (await client.reportComparisonPolicyReceipt(
-        handoff.projectId,
+        handoff.workspaceId,
         handoff.bundleId,
         comparisonId,
         report,

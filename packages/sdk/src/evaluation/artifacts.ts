@@ -13,7 +13,7 @@ import type {
 import { validateEvaluationHandoff } from '../validation.js';
 import { readEvaluatorConfig, readReaderConfig } from './config.js';
 import { EvaluationError, toSafeDiagnostic, type SafeCode } from './errors.js';
-import { openJournal, type JournalScope } from './journal.js';
+import { journalDirectory, openJournal, type JournalScope } from './journal.js';
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type ArtifactRole = 'output' | 'grader-explanation';
@@ -50,7 +50,7 @@ export type ReviewMapper = (
 export interface ReviewManifestV1 {
   schemaVersion: 1;
   kind: 'acclimate-review-export';
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   requestId: string;
   attemptId: string;
@@ -466,7 +466,7 @@ function projection(handoff: EvaluationHandoff, request: Evaluation, comparison:
   return {
     schemaVersion: 1,
     kind: 'acclimate-comparison-review',
-    projectId: handoff.projectId,
+    workspaceId: handoff.workspaceId,
     bundleId: handoff.bundleId,
     requestId: request.id,
     attemptId: request.attemptId!,
@@ -518,7 +518,7 @@ async function authority(
   const config = configPath
     ? await readEvaluatorConfig(configPath)
     : await readReaderConfig(readConfigPath!);
-  if (config.serviceUrl !== handoff.serviceUrl || config.projectId !== handoff.projectId)
+  if (config.serviceUrl !== handoff.serviceUrl || config.workspaceId !== handoff.workspaceId)
     fail('evidence.identity_mismatch');
   const token = 'evaluatorToken' in config ? config.evaluatorToken : config.readToken;
   const client = new AcclimateClient({
@@ -527,11 +527,11 @@ async function authority(
     scope: 'evaluatorPrincipalId' in config ? config.evaluatorPrincipalId : 'review-reader',
   });
   const request = await remoteRead(() =>
-    client.getEvaluation(handoff.projectId, handoff.bundleId, handoff.requestId),
+    client.getEvaluation(handoff.workspaceId, handoff.bundleId, handoff.requestId),
   );
   if (
     request.id !== handoff.requestId ||
-    !equal(descriptor(request), descriptor(handoff.configuration))
+    !equal(descriptor(request), descriptor(handoff.descriptor))
   )
     fail('evidence.identity_mismatch');
   if (
@@ -542,7 +542,7 @@ async function authority(
   )
     fail('artifact.missing');
   const comparison = await remoteRead(() =>
-    client.getComparison(handoff.projectId, handoff.bundleId, request.comparisonId!),
+    client.getComparison(handoff.workspaceId, handoff.bundleId, request.comparisonId!),
   );
   if (
     comparison.id !== request.comparisonId ||
@@ -584,10 +584,7 @@ interface IndexEntry {
   bytes: number;
 }
 async function existingJournal(root: string, scope: JournalScope) {
-  const directory = path.join(
-    root,
-    createHash('sha256').update(JSON.stringify(scope)).digest('hex'),
-  );
+  const directory = journalDirectory(root, scope);
   try {
     await noSymlinks(directory);
   } catch (e) {
@@ -719,7 +716,7 @@ export async function exportReviewEvidence(options: {
     if (selection.entries.length && 'journalRoot' in remote.config) {
       const scope: JournalScope = {
         serviceUrl: remote.config.serviceUrl,
-        projectId: remote.handoff.projectId,
+        workspaceId: remote.handoff.workspaceId,
         bundleId: remote.handoff.bundleId,
         requestId: remote.request.id,
         evaluatorPrincipalId: remote.config.evaluatorPrincipalId,
@@ -823,7 +820,7 @@ export async function exportReviewEvidence(options: {
     const manifest: ReviewManifestV1 = {
       schemaVersion: 1,
       kind: 'acclimate-review-export',
-      projectId: remote.handoff.projectId,
+      workspaceId: remote.handoff.workspaceId,
       bundleId: remote.handoff.bundleId,
       requestId: remote.request.id,
       attemptId: remote.request.attemptId!,
@@ -972,7 +969,7 @@ export async function verifyReviewExport(options: {
       !keys(m, [
         'schemaVersion',
         'kind',
-        'projectId',
+        'workspaceId',
         'bundleId',
         'requestId',
         'attemptId',
@@ -994,7 +991,7 @@ export async function verifyReviewExport(options: {
       !utf8(m.exporter.version, 128)
     )
       fail();
-    for (const k of ['projectId', 'bundleId', 'requestId', 'attemptId', 'comparisonId'])
+    for (const k of ['workspaceId', 'bundleId', 'requestId', 'attemptId', 'comparisonId'])
       if (!utf8(m[k], 1024)) fail();
     for (const side of SIDES) {
       const x = m[side];
@@ -1024,7 +1021,7 @@ export async function verifyReviewExport(options: {
       !keys(p, [
         'schemaVersion',
         'kind',
-        'projectId',
+        'workspaceId',
         'bundleId',
         'requestId',
         'attemptId',
@@ -1044,7 +1041,7 @@ export async function verifyReviewExport(options: {
     )
       fail();
     for (const k of [
-      'projectId',
+      'workspaceId',
       'bundleId',
       'requestId',
       'attemptId',
@@ -1067,7 +1064,7 @@ export async function verifyReviewExport(options: {
       complete: p.complete,
     } as Comparison;
     const rebuilt = projection(
-      { projectId: p.projectId, bundleId: p.bundleId } as EvaluationHandoff,
+      { workspaceId: p.workspaceId, bundleId: p.bundleId } as EvaluationHandoff,
       fakeRequest,
       fakeComparison,
     );

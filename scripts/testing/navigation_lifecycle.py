@@ -130,15 +130,15 @@ def run(args):
         visit(page, browser, browser.workspace_path())
         other = page.context.new_page()
         visit(other, browser, browser.workspace_path())
-        scope = {'owner': 'improvement', 'actorScope': 'synthetic-actor', 'projectId': world.h.project,
+        scope = {'owner': 'improvement', 'actorScope': 'synthetic-actor', 'workspaceId': world.h.project,
                  'serviceIdentity': 'synthetic-service'}
         record = {'version': 1, 'scope': scope,
-                  'action': '/v1/projects/' + world.h.project + '/proposals',
+                  'action': '/v1/workspaces/' + world.h.project + '/proposals',
                   'key': str(uuid.uuid4()), 'createdAt': 1,
                   'body': '{"synthetic":"private"}',
                   'disclosure': {'consent': True, 'wholeParentBundle': True,
                                  'authorizedEvidence': ['synthetic']}}
-        key = 'acclimate:operation:v1:' + json.dumps([scope['actorScope'],scope['serviceIdentity'],scope['projectId'],None,None,scope['owner']], separators=(',', ':'))
+        key = 'acclimate:operation:v1:' + json.dumps([scope['actorScope'],scope['serviceIdentity'],scope['workspaceId'],None,None,scope['owner']], separators=(',', ':'))
         for tab in (page, other):
             tab.evaluate('([k,v]) => sessionStorage.setItem(k, JSON.stringify(v))', [key, record])
         page.get_by_role('button', name='Account', exact=True).filter(visible=True).first.click()

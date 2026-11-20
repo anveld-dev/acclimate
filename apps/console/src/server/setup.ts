@@ -32,10 +32,10 @@ export async function listSetup(
   try {
     const client = setupClient(env, fetcher);
     const projects = await allPages((cursor) => client.listWorkspaces({ limit: 100, cursor }));
-    if (workspaceOnly && !projects.some((p) => p.id === env.CONSOLE_PROJECT))
+    if (workspaceOnly && !projects.some((p) => p.id === env.CONSOLE_WORKSPACE))
       throw new ApiError(403, 'denied', 'Workspace unavailable', '');
-    const selectedProject = projects.some((p) => p.id === env.CONSOLE_PROJECT)
-      ? env.CONSOLE_PROJECT
+    const selectedProject = projects.some((p) => p.id === env.CONSOLE_WORKSPACE)
+      ? env.CONSOLE_WORKSPACE
       : projects[0]?.id;
     const channels = (
       await Promise.all(
@@ -47,7 +47,7 @@ export async function listSetup(
             );
             return Promise.all(
               bundles.map(async (bundle) => ({
-                projectId: project.id,
+                workspaceId: project.id,
                 bundle,
                 channels: await allPages((cursor) =>
                   client.listChannels(project.id, bundle.id, { limit: 100, cursor }),
@@ -62,7 +62,7 @@ export async function listSetup(
       actorScope: actorScope(env),
       serviceIdentity: creationRecoveryServiceIdentity(env),
       projects,
-      projectId: selectedProject,
+      workspaceId: selectedProject,
       entries: channels,
       canEdit:
         env.CONSOLE_ALLOW_EDITS === 'true' &&
@@ -85,14 +85,14 @@ export async function authorizeSelection(
 ): Promise<Selection> {
   if (!validSelection(input)) throw new Error('Invalid selection.');
   const client = setupClient(env, fetcher);
-  const resolved = await client.resolveChannel(input.projectId, input.bundleId, input.channel);
+  const resolved = await client.resolveChannel(input.workspaceId, input.bundleId, input.channel);
   if (!resolved.resolution) throw new Error('Channel unavailable.');
   return input;
 }
 export async function createSetup(
   env: Environment,
   input: {
-    projectId: string;
+    workspaceId: string;
     compatibilityTarget?: CompatibilityTarget;
     name: string;
     channel: string;
@@ -124,11 +124,11 @@ export async function createSetup(
     );
   }
   return exactOperation<BundleSetup>(
-    scopedEnvironment(env, { projectId: input.projectId }),
+    scopedEnvironment(env, { workspaceId: input.workspaceId }),
     {
-      projectId: input.projectId,
+      workspaceId: input.workspaceId,
       key: input.key,
-      operationPath: `/v1/workspaces/${encodeURIComponent(input.projectId)}/bundle-setups`,
+      operationPath: `/v1/workspaces/${encodeURIComponent(input.workspaceId)}/bundle-setups`,
       body: JSON.stringify(body),
     },
     fetcher,

@@ -1,66 +1,149 @@
 ---
 title: Run Acclimate locally
-description: Start a laptop evaluation stack with PostgreSQL, Keycloak sign-in, and local HTTPS.
+description: Start the service, console, and sign-in on your laptop, with a ready workspace and example bundle for your first comparison.
 ---
 
-The local stack is for evaluation and development. It runs the Acclimate API and console, PostgreSQL 16, Keycloak, Mailpit, and Caddy on one laptop. The console uses the same HTTPS OIDC sign-in as a production deployment.
+The local stack runs the Acclimate service and console, PostgreSQL 16, Keycloak sign-in, a Mailpit inbox, and a Caddy HTTPS proxy on one laptop. It is for evaluation and development. The console uses the same HTTPS sign-in as a production deployment.
+
+## Prerequisites
+
+- macOS or Linux.
+- Docker with Docker Compose v2.24 or later, running.
+- An Acclimate checkout, with Node.js and npm, and Python 3.9 or later to run the stack scripts.
+- For the SDK you compare with: Node.js 22.22 or later, or Python 3.11 or later. See [install the SDKs](/docs/get-started/install).
 
 ## Start the stack
 
-From an Acclimate checkout on macOS or Linux, have Docker running with Docker Compose v2.24 or later, plus Node.js with npm and Python 3.9 or later. Run:
+From the checkout, run:
 
 ```sh
 npm run local:up
 ```
 
-The first run builds the images and provisions a verified Keycloak operator in the Acclimate realm. The command prints the login, URLs, and configuration paths. It prints the initial password on the first successful run. Starting again reuses the databases, operator, and generated credentials. Keep `.local/stack/` private. The initial password is stored in the `operator` field of `.local/stack/credentials.json`.
+The first start pulls the released service and console images for the checkout's version and builds the Keycloak theme image, which takes a few minutes depending on your connection. If no images are published for your checkout's version, `local:up` says so and builds everything from source, including the Rust service. That takes 10 to 20 minutes the first time. Later starts reuse the images and take a minute or two.
 
-| Endpoint | URL |
-| --- | --- |
-| Console | [https://localhost:3443](https://localhost:3443) |
-| API | [https://127.0.0.1:3444](https://127.0.0.1:3444) |
-| Keycloak issuer | `https://127.0.0.1:3445/realms/acclimate` |
-| Mailpit inbox | [http://localhost:8025](http://localhost:8025) |
+If you are changing the service or console code, build from your checkout instead. `local:up` remembers the choice, and `--release` switches back.
 
-These are the default ports. To use others, see [Stop or reset](#stop-or-reset).
+```sh
+npm run local:up -- --build
+```
 
-All published ports bind to loopback. Caddy serves HTTPS with its internal CA. The console and service share Caddy's network namespace, so the issuer URL resolves to the same TLS listener from Docker and from the browser. Invitations, email verification links, and password resets arrive in Mailpit.
+When the stack is ready, `local:up`:
+
+- Picks free loopback ports for this checkout and prints the console, API, and Mailpit URLs.
+- Creates a verified Keycloak login and prints its initial password once. The password is also stored in the `operator` field of `.local/stack/credentials.json`.
+- Makes that login the administrator of the `local-demo` workspace. It uses the service's audited adoption route with the reason "local stack bootstrap". The machine credential in `evaluator.json` is bound to `local-demo`.
+- Publishes an example bundle named **Example agent** on the `stable` channel, so your first comparison has a version to compare against.
+- Writes client settings to `.local/stack/env.sh` and prints them.
+
+```text
+Console       https://localhost:24830
+Login         operator@acclimate.invalid
+API           https://127.0.0.1:24831
+Mailpit       http://localhost:24833
+Evaluator     /path/to/acclimate/.local/stack/evaluator.json
+Local CA      /path/to/acclimate/.local/stack/root.crt
+Workspace     local-demo, adopted for operator@acclimate.invalid ("local stack bootstrap")
+Example       bundle 0b6e…41f2 on channel stable
+Initial login password (printed once)  …
+
+Client settings for this shell, also saved in /path/to/acclimate/.local/stack/env.sh:
+
+export EVALUATOR_CONFIG='/path/to/acclimate/.local/stack/evaluator.json'
+export NODE_EXTRA_CA_CERTS='/path/to/acclimate/.local/stack/root.crt'
+export SSL_CERT_FILE='/path/to/acclimate/.local/stack/ca-bundle.pem'
+export ACCLIMATE_API='https://127.0.0.1:24831'
+export BUNDLE_ID='0b6e…41f2'
+```
+
+Starting again reuses the ports, databases, login, and credentials. Keep `.local/stack/` private. All published ports bind to loopback, and invitations, email verification, and password resets arrive in Mailpit.
 
 ## Trust the local certificate
 
-Import `.local/stack/root.crt` as a trusted certificate authority in your browser or OS trust store. On macOS, import it into your login keychain in Keychain Access and set **Secure Sockets Layer (SSL)** to **Always Trust** for that certificate. On Linux, use your browser's certificate authority manager or your distribution's system trust store. Where your browser offers certificate exceptions, you can instead accept one for the console and one for the Keycloak sign-in URL.
+Caddy serves HTTPS with its own local certificate authority (CA), stored at `.local/stack/root.crt`.
 
-For SDKs and curl, you can trust the CA for just the process that needs it. Run these from the checkout:
+**For the CLI and SDKs**, load the settings in each shell you run them from:
 
 ```sh
-export NODE_EXTRA_CA_CERTS="$PWD/.local/stack/root.crt"  # Node.js SDK
-export SSL_CERT_FILE="$PWD/.local/stack/root.crt"       # Python SDK
-curl --cacert "$PWD/.local/stack/root.crt" https://127.0.0.1:3444/ready
+source /path/to/acclimate/.local/stack/env.sh
 ```
 
-Set the variables before launching the SDK. For a Python evaluator that also calls an external model provider, append the local root to a copy of your normal CA bundle and point `SSL_CERT_FILE` at that combined file.
+`NODE_EXTRA_CA_CERTS` adds the local CA for Node.js. `SSL_CERT_FILE` points Python at `ca-bundle.pem`, which holds your system's CAs plus the local one, so an evaluator can reach both the stack and an external model provider. For curl, use `curl --cacert .local/stack/root.crt "$ACCLIMATE_API/ready"`.
 
-## Open the demo workspace
+**For your browser**, run:
 
-Sign in to the console with the printed Keycloak login. Open **Adopt an existing workspace** below the workspace creation form. Enter `local-demo` and a reason, review the adoption, then confirm it. The service provisions this workspace for the local machine grant. Adoption gives your signed-in operator administrator membership and records your reason.
+```sh
+npm run local:trust
+```
 
-Self-registration is turned on in the local realm so you can test invitations through Mailpit. A registered account has no workspace access until an administrator invites it.
+It shows the CA's fingerprint and the exact commands it will run, and asks you to type `trust` first. On macOS it adds the CA to your login keychain, and macOS asks for your password. On Linux it adds the CA to the system store with `sudo`, and to Chrome and Firefox certificate databases when `certutil` is installed. Restart your browser afterwards. To undo it, run `npm run local:trust -- --remove`.
+
+Prefer to do it by hand? Import `.local/stack/root.crt` as a trusted certificate authority in your browser or OS trust store, or accept a certificate exception for the console URL and the Keycloak sign-in URL.
+
+## Open the console
+
+Open the printed console URL and sign in with the printed login. The `local-demo` workspace is already yours. Self-registration is on in the local realm so you can test invitations through Mailpit. A new account has no workspace access until an administrator invites it.
 
 ## Run a first comparison
 
-Open **Bundles → Create your first bundle** in `local-demo`, write your starting instructions, and select **Create and publish**. The local evaluator credential can compare changes but cannot publish a bundle, so the first release comes from the console.
+[Install the SDK](/docs/get-started/install) in your agent's project and add an application module as the [quickstart](/docs/get-started/quickstart#connect-your-agent) describes. Then save the published example as your starting point:
 
-[Install the SDK](/docs/get-started/install) in your app and add an `application.mjs` or `application.py` as the [quickstart](/docs/get-started/quickstart) describes. Save the full candidate payload as JSON, then compare it with the published bundle. Copy the bundle ID from its console URL.
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
 
 ```sh
-export NODE_EXTRA_CA_CERTS="$CHECKOUT/.local/stack/root.crt"
-./node_modules/.bin/acclimate-eval compare \
-  --config "$CHECKOUT/.local/stack/evaluator.json" \
+source /path/to/acclimate/.local/stack/env.sh
+./node_modules/.bin/acclimate-eval pull --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --out candidate.json
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+source /path/to/acclimate/.local/stack/env.sh
+acclimate pull --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --out candidate.json
+```
+
+</Tab>
+</Tabs>
+
+`candidate.json` is a **payload**, the JSON form of the bundle's files:
+
+```json title="candidate.json"
+{
+  "schemaVersion": 1,
+  "files": [
+    { "path": "instructions.md", "kind": "instruction", "text": "You are a support agent…" }
+  ]
+}
+```
+
+Edit the `text`, or add files with a `kind` of `instruction`, `skill`, or `memory`. Then compare your edit with the published version:
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" \
   --bundle "$BUNDLE_ID" --channel stable \
   --payload candidate.json --name first-change --live
 ```
 
-`CHECKOUT` is your Acclimate checkout. The result reports the parent and candidate means and how many pairs were graded. The candidate appears under **Changes → Ready to review** in the console. The stack starts without a model provider, so your app supplies any model calls with its own credentials.
+</Tab>
+<Tab value="Python">
+
+```sh
+acclimate compare --config "$EVALUATOR_CONFIG" \
+  --bundle "$BUNDLE_ID" --channel stable \
+  --payload candidate.json --name first-change --live
+```
+
+</Tab>
+</Tabs>
+
+In a terminal the CLI prints the parent and candidate means, pair coverage, and per-case scores. With `--json`, or when output is piped, it writes one JSON object instead. The change appears in the console under **Changes → Ready to review**, labeled `first-change`. The stack has no model provider of its own. Your agent makes any model calls with its own credentials. The Python `acclimate` command and `python -m acclimate` run the same CLI.
+
+The local evaluator credential can compare changes but cannot release them. Release a reviewed change from the console.
 
 ## Stop or reset
 
@@ -69,12 +152,14 @@ npm run local:down
 npm run local:reset
 ```
 
-`local:down` stops the stack and keeps its volumes and local configuration. `local:reset` asks you to type `reset` before deleting this checkout's stack volumes and `.local/stack/`, including its evaluator journal. It also deletes the local CA. Remove the old CA from your trust store if you imported it, and trust the new root after starting again.
+`local:down` stops the stack and keeps its volumes and configuration. `local:reset` asks you to type `reset`, then deletes this checkout's stack volumes and `.local/stack/`, including the evaluator journal and the local CA. If you ran `local:trust`, run `npm run local:trust -- --remove` first.
 
-Each checkout has its own Compose project and volumes. If another process already uses one of the ports, choose different ones on the first start. `ACCLIMATE_LOCAL_PORT` sets the console port, and the API and Keycloak use the next two ports. `ACCLIMATE_LOCAL_MAIL_PORT` sets the Mailpit inbox port.
+## Choose ports
+
+Each checkout gets its own Compose project and volumes, and its own default block of four ports between 10000 and 30000, so checkouts side by side do not collide. `local:up` checks the ports before starting Docker and moves to the next free block if one is busy. To choose ports yourself on the first start, set `ACCLIMATE_LOCAL_PORT` for the console. The API and Keycloak use the next two ports, and Mailpit uses the third unless you set `ACCLIMATE_LOCAL_MAIL_PORT`.
 
 ```sh
-ACCLIMATE_LOCAL_PORT=4443 ACCLIMATE_LOCAL_MAIL_PORT=18025 npm run local:up
+ACCLIMATE_LOCAL_PORT=6443 ACCLIMATE_LOCAL_MAIL_PORT=38025 npm run local:up
 ```
 
-The stack saves its ports in `.local/stack/ports.json` and reuses them on later runs. Keycloak records the console address when it first imports the realm, so run `npm run local:reset` before switching to different ports.
+If a port you chose is busy, `local:up` stops before starting anything and prints a free alternative to copy. The stack saves its ports in `.local/stack/ports.json` after the first successful start. Keycloak and the service record the console and sign-in addresses at that point, so run `npm run local:reset` before switching ports later.

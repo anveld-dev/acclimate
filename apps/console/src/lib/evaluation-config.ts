@@ -28,7 +28,7 @@ export function applicationEvaluatorCommand(
 ) {
   const entry = language === 'python' ? 'python -m acclimate' : 'npx --no-install acclimate-eval';
   if (command === 'describe') return entry + ' describe';
-  const args = '--config /absolute/private/evaluator.json --handoff evaluation-request.json';
+  const args = '--config /absolute/private/evaluator.json --handoff handoff.json';
   const extra =
     command === 'compare' && live
       ? ' --live'
@@ -50,12 +50,12 @@ export function checkoutCodexRunCommand(bundleId: string, requestId: string): st
 }
 
 export const checkoutCodexCheckCommand =
-  'npm run --silent evaluate:app -- check --config /absolute/private/evaluator.json --handoff evaluation-request.json --policy quality-policy.json';
+  'npm run --silent evaluate:app -- check --config /absolute/private/evaluator.json --handoff handoff.json --policy quality-policy.json';
 
 /** An app-owned public handoff: never credentials, a private path or an internal endpoint. */
 export function evaluationHandoff(
   serviceUrl: string,
-  projectId: string,
+  workspaceId: string,
   bundleId: string,
   requestId: string,
   descriptor: EvaluationDescriptor,
@@ -69,10 +69,10 @@ export function evaluationHandoff(
     {
       schemaVersion: 1,
       serviceUrl,
-      projectId,
+      workspaceId,
       bundleId,
       requestId,
-      configuration: structuredClone({
+      descriptor: structuredClone({
         datasetRevision: descriptor.datasetRevision,
         graderRevision: descriptor.graderRevision,
         runtime: descriptor.runtime,

@@ -11,12 +11,12 @@ import type { DeliveryObservationsResult } from '../server/delivery-observations
 import { DeliveryApp } from './delivery-app';
 
 export function WorkspaceDelivery({
-  projectId,
+  workspaceId,
   initial,
   initialAppId,
   canManage = false,
 }: {
-  projectId: string;
+  workspaceId: string;
   initialAppId?: string;
   canManage?: boolean;
   initial: DeliveryObservationsResult;
@@ -29,16 +29,16 @@ export function WorkspaceDelivery({
   useEffect(() => {
     setResult(initial);
     setError('');
-  }, [initial, projectId]);
+  }, [initial, workspaceId]);
   async function load(cursor?: string) {
     setBusy(true);
     setError('');
     try {
       const next = await readDeliveryObservations({
-        data: { projectId, cursor, integrationId: cursor ? undefined : initialAppId },
+        data: { workspaceId, cursor, connectionId: cursor ? undefined : initialAppId },
       });
       setResult((previous) => {
-        if (!cursor || !previous.ok || !next.ok || previous.projectId !== next.projectId)
+        if (!cursor || !previous.ok || !next.ok || previous.workspaceId !== next.workspaceId)
           return next;
         const items = new Map(previous.page.items.map((item) => [item.id, item]));
         for (const item of next.page.items) items.set(item.id, item);
@@ -61,7 +61,7 @@ export function WorkspaceDelivery({
         const bestTime = Date.parse(best?.latestObservation?.receivedAt ?? '');
         return !best || (Number.isFinite(time) && !(time <= bestTime)) ? app : best;
       }, undefined);
-  const home = workspaceHref(projectId, 'delivery');
+  const home = workspaceHref(workspaceId, 'delivery');
   return (
     <section className="workspace-delivery delivery-console space-y-4">
       <PageTitle
@@ -93,7 +93,7 @@ export function WorkspaceDelivery({
           }
           actions={
             <Button asChild variant={canManage ? 'default' : 'outline'}>
-              <a href={workspaceHref(projectId, canManage ? 'connections' : 'bundles')}>
+              <a href={workspaceHref(workspaceId, canManage ? 'connections' : 'bundles')}>
                 {canManage ? 'Set up a connection' : 'Browse bundles'}
                 <ArrowRight aria-hidden="true" />
               </a>
@@ -110,7 +110,7 @@ export function WorkspaceDelivery({
               <ul>
                 {apps.map((app) => {
                   const href =
-                    home + '?integration=' + encodeURIComponent(app.id) + '#delivery-app';
+                    home + '?connection=' + encodeURIComponent(app.id) + '#delivery-app';
                   return (
                     <li key={app.id}>
                       <a
@@ -162,10 +162,10 @@ export function WorkspaceDelivery({
                 <DeliveryApp
                   key={selected.id + ':' + refresh}
                   app={selected}
-                  projectId={projectId}
+                  workspaceId={workspaceId}
                   canManage={canManage}
                 />
-                <OutcomeLookup target={{ projectId, integrationId: selected.id }} />
+                <OutcomeLookup target={{ workspaceId, connectionId: selected.id }} />
               </div>
             ) : (
               <div className="p-4">

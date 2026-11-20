@@ -1,83 +1,105 @@
 # Acclimate Python SDK
 
-Python 3.11+ is required; private cache, materialization and durable evaluation helpers require POSIX. No Node or third-party runtime dependencies are needed.
+Evaluate changes to your agent's instructions, skills and memory against saved cases, and deliver the released version to each job. [Acclimate](https://github.com/anveld-dev/acclimate) is a self-hosted service; this package is its Python client and evaluator. It needs Python 3.11 or later on Linux or macOS and has no third-party dependencies.
 
-Obtain the versioned SDK release, starter archives, manifest and `SHA256SUMS` from your workspace operator, then verify the received files against those checksums. Distribution is operator-managed; this guide does not assume a public package registry. [Getting started](../docs/getting-started.md#1-obtain-a-release-and-choose-a-language) explains release acquisition and connecting an existing agent; [evaluator operations](../docs/evaluator-operations.md) covers evaluator access and private persistent storage. For release 0.1.0, install the exact obtained wheel into your application's environment:
-
-```sh
-python3.11 -m venv .venv
-.venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
-```
-
-Contributors can instead build from a source checkout. From the repository root, run:
+## Quickstart: evaluate a change
 
 ```sh
-python3.11 -m pip wheel --no-deps --wheel-dir /absolute/path/to/new-wheel-output ./python
+pip install acclimate-sdk
 ```
 
-Install that generated wheel with the same application-environment command above, replacing its path. Building requires the build tooling declared in `pyproject.toml` and may download it; installing an obtained wheel with `--no-index --no-deps` does not. See [source development](../docs/development.md#use-python) and the [release verification command](../docs/development.md#publish-and-consume-content) for packaging details.
+```python
+# application.py, next to your agent
+from acclimate.evaluation import ExecutionResult, GradeResult
+from support_agent import run_agent, score_result, saved_cases
 
-Prepare the published content for one real job:
+cases = saved_cases  # [{"caseId": ..., "input": ..., "expected": ...}]
+
+def execute(run):  # run.version holds the version under test
+    result = run_agent(files=run.version["payload"]["files"], task=run.input)
+    return ExecutionResult(output=result.answer)
+
+def grade(run):
+    return GradeResult(reward=score_result(run.output, run.expected))
+```
+
+Try the change on your laptop first. Put the current files in `parent/` and your edit in `candidate/`:
+
+```sh
+acclimate try --live --payload candidate
+acclimate compare --local --parent parent --candidate candidate --live
+```
+
+`try` runs one case and checks every value your callbacks return. `compare --local` grades both versions with the same pairing as a service run and writes an advisory report that is never release evidence. Neither needs a service, config or handoff. Then compare against the service to gate a release:
+
+```sh
+acclimate describe
+acclimate compare --config "$EVALUATOR_CONFIG" --handoff "$HANDOFF" --live
+```
+
+`describe` prints the public descriptor: revision hashes and case IDs, never inputs or expected answers. `compare` runs both versions through `execute` and `grade` and records the comparison for review. `python -m acclimate` runs the same CLI as the `acclimate` command.
+
+For a complete agent you can run without a model provider, see the [Python support agent example](https://github.com/anveld-dev/acclimate/tree/main/examples/python-support-agent). To start your own, copy the [Python evaluation starter](https://github.com/anveld-dev/acclimate/tree/main/examples/python-evaluation-starter).
+
+## Install
+
+`pip install acclimate-sdk` installs from PyPI. For an air-gapped machine, verify the release files against `SHA256SUMS` and install the wheel without an index:
+
+```sh
+python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
+```
+
+To build a wheel from a checkout, run `python3.11 -m pip wheel --no-deps --wheel-dir /tmp/acclimate-wheel ./python` or `uv build --wheel --out-dir /tmp/acclimate-wheel ./python`. Neither writes build files into the checkout, and neither needs Node.js. Importing the package on Python 3.10 or earlier fails with a message naming the version found.
+
+## Deliver the released version to a job
 
 ```python
 import os
 from acclimate import AcclimateClient
-from application import run_agent
 
 client = AcclimateClient(os.environ["ACCLIMATE_URL"], os.environ["ACCLIMATE_TOKEN"], "support-agent")
 with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
     result = run_agent(task, instructions=prepared.instructions, skill_files=prepared.skill_files)
-    save_job_result(result, version=prepared.version["id"], digest=prepared.version["digest"])
+    save_job_result(result, version=prepared.version["version"]["id"], digest=prepared.version["version"]["digest"])
 ```
 
-`run_agent` and `save_job_result` belong to your application. Use the context manager when the call owns and completes all use of the files before it returns or raises. For background work, keep the prepared object and call `cleanup()` after the real job has stopped and the result is retained. Pass `version_id` for a pinned release. The default verified cache is `~/.cache/acclimate/python`, and each call creates its own private working directory. Override these with `cache_dir` and `destination` for persistent jobs. Use a distinct cache directory for each SDK language. `prepared.directory` locates the staged files, and `prepared.bundle` carries the original verified payload and resolution metadata. Your app selects which memory files to use.
+`run_agent` and `save_job_result` belong to your application. Pass `version_id` instead of `channel` for a pinned release. For background work, keep the prepared object and call `cleanup()` after the job stops and its result is saved. The verified cache defaults to `~/.cache/acclimate/python`; set `cache_dir` and `destination` to change the cache and job directories. Only use directories the current user controls.
 
-The scope identifies the authenticated principal and namespaces the cache; it must remain stable and must never be a token. Reads resolve online by default. To permit fallback only on transport failure or HTTP 503, specify `offline_max_age` in seconds (up to 30 days) for a cached channel, or `offline_pinned_version` for an exact version. Returned `stale` marks fallback; `resolvedAt` is milliseconds since the Unix epoch. Denials, missing resources, malformed responses, and integrity failures never trigger fallback. A cached payload is always verified against metadata before parsing. Only use cache and destination directories controlled by the current user.
+The scope names the authenticated application and namespaces the cache. Keep it stable and never use a token. Preparation resolves online. To fall back to the cache only after a transport failure or HTTP 503, pass `offline={"max_age_ms": 900_000}` for a cached channel or `offline={"pinned_version_id": version_id}` for an exact version. This matches the TypeScript SDK's `offline` option. `prepared.version["stale"]` marks fallback. Denials, missing resources, malformed responses and integrity failures never fall back.
 
-All mutation methods require an explicit printable ASCII idempotency key, and serialize once for retries. Reuse the same key and request for a retry across calls. `ApiError` exposes `status`, `code`, and `request_id` (also `requestId`); transport failures raise `TransportError`. Redirects are rejected, including same-origin redirects, to prevent credential forwarding. Responses and timeouts are bounded. `resolve_channel` returns `(resolution, etag, not_modified)`. Use `create_connection` and `list_connections` to manage connections. Use `create_release` and `list_releases` to manage releases for a channel. HTTP dictionaries retain the camelCase keys defined in `acclimate.types`.
+## Client conventions
 
-For paired evaluations, export your cases, execute callback and independent grader from a Python module. The installed CLI accepts a module name or a source file. Package-relative imports work in both forms. The default adapter is `application.py` in the current directory.
+- Method names, keyword arguments and attributes are snake_case. HTTP dictionaries keep the service's camelCase keys, described by the TypedDicts in `acclimate.types`.
+- Every mutation takes an explicit printable ASCII idempotency key. Retry with the same key and request.
+- `ApiError` has `status`, `code`, `request_id` and `details`. Transport failures raise `TransportError`.
+- The client rejects redirects, so the token never leaves the configured origin, and bounds every response.
+- The client has every method of the TypeScript client, in snake_case. See the [Python SDK reference](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/python-sdk.mdx).
 
-```sh
-python -m acclimate coverage --app support_agent.evals
-python -m acclimate describe --app support_agent.evals
-python -m acclimate compare --app support_agent.evals --config "$EVALUATOR_CONFIG" --handoff "$HANDOFF" --live
-python -m acclimate status --read-config "$READER_CONFIG" --handoff "$HANDOFF"
-```
+The client, delivery helpers and evaluation runner are synchronous. `define_evaluation` accepts coroutine callbacks and runs them to completion. To run a whole evaluation from an asyncio application, await `acclimate.evaluation.run_evaluation_async`, which runs it in a worker thread, signals cancellation and waits for the worker to finish. The starter's `async_eval.py` shows the call.
 
-`coverage` lists the adapter, local source imports, external packages, declared revision files and artifact names. The worker fingerprints ordinary imports recursively within your application. Direct external imports bind their available Python source and installed wheel records. Declare dynamic imports, dependency lockfiles, assets and deployment settings in `revision_files` or `runtime`. The public descriptor contains revision hashes. Start a fresh evaluator process after changing imported code. The CLI uses the selected callbacks to run both pinned versions, and the read-only `status` and `verify-export` commands can run independently on another machine. [Application signatures](../examples/evaluation-starter/README.md) · [Evaluation setup](../docs/getting-started.md)
+## Report delivery
 
-If the comparison reports `output_invalid`, inspect `output-validation.json` in the private job directory for the failing field and a suggested correction. To diagnose application exceptions, enable `"captureCallbackErrors": true` in the private evaluator configuration. The worker writes `callback-error.json` with the callback phase, exception class and up to eight stack locations. Exception messages and locals stay out of the diagnostic.
+With a separate reporting credential, pass a `DeliveryReporter` to `client.prepare` and call `prepared.report_started()` from the job's actual start event. Save the returned record with your job ID so the connection can link it to the outcome. Calling it again on the same job returns the same event ID. Without a reporter, or when the queue is full, it returns `None`.
 
-The client, delivery helpers and evaluation runner are synchronous. Async applications should use the starter's [complete `async_eval.py` recipe](../examples/evaluation-starter/async_eval.py), which offloads the entire run, signals cooperative cancellation and drains the worker through repeated caller cancellations. Keep preparation, execution, result capture and cleanup in the worker's lifetime: cancelling an await does not stop a thread or external work. Durable evaluation needs a stable private local journal volume; preserve its exact root, service URL, principal and originating language/release for retries. A sealed report retries its saved body/key without rerunning callbacks. Started execution without a sealed report requires inspection; see [recovery decisions](../docs/evaluator-operations.md#recovery-decisions).
+`DeliveryReporter` starts one daemon thread on the first observation and keeps at most `max_queue` events. Report failures never affect delivery. `flush()` retries failed events with their original IDs, `wait(timeout=1)` waits for scheduled work, and `close(timeout=0.1)` stops the worker. A short-lived CLI can call `wait(1.2)` and then `close(0)` before it exits. Reports live in memory; a missing report means unknown, not that the agent didn't use the content.
 
-Run offline source tests from the repository root with `PYTHONPATH=python python3.11 -m unittest discover -s python/tests -v`. This deliberately imports the checkout. Installed applications omit `PYTHONPATH=python`; the wheel contains the SDK, while examples and starter scripts are obtained separately. The [strict typing fixtures](tests/typing/README.md) check an installed wheel from outside the checkout.
-
-The delivery-check command reads each staged file and prints the pinned version, digest and checked file inventory. With a separate reporting credential, it can also report preparation. In your app, pass a `DeliveryReporter` to `client.prepare` and call `prepared.report_started()` from the job’s actual start event. Save the returned startup record with your job ID so the connection can link it to the outcome. Calling it again on the same prepared job returns the same event ID. A missing reporter or a full reporting queue returns `None`. Once a full queue drains, call `report_started()` on the same prepared job to enqueue the original start event.
+The checkout's delivery check prints the pinned version, digest and staged files:
 
 ```sh
 export ACCLIMATE_URL=http://127.0.0.1:3000
-export ACCLIMATE_PROJECT=YOUR_PROJECT ACCLIMATE_BUNDLE=YOUR_BUNDLE
+export ACCLIMATE_WORKSPACE=YOUR_WORKSPACE ACCLIMATE_BUNDLE=YOUR_BUNDLE
 export ACCLIMATE_SCOPE=your-stable-app-identity
 # Set ACCLIMATE_TOKEN privately to your content-read credential.
-# Optional: set ACCLIMATE_INTEGRATION and ACCLIMATE_RECEIPT_TOKEN privately.
-PYTHONPATH=python python3 python/examples/delivery_check.py
+# Optional: set ACCLIMATE_CONNECTION and ACCLIMATE_RECEIPT_TOKEN privately.
+PYTHONPATH=python python3.11 python/examples/delivery_check.py
 ```
 
-The command above uses the checkout's example script and source SDK. For an installed wheel, run a separately copied `delivery_check.py` without `PYTHONPATH=python`. Create cache/job directories with
-mode `0700` if they already exist. Preparation cleans only the files it creates.
-Reporting clients in the recipe use a one-second timeout and no retries. Optional
-report failures leave delivery available. Without optional credentials,
-no reporting client or worker is created.
+## Diagnose an evaluation
 
-`DeliveryReporter` starts one daemon thread lazily on the first accepted observation,
-keeps at most `max_queue` events including in-flight work, and retains failed events
-without spinning. Fresh observations drain independently of failures. Call `flush()`
-to explicitly retry the original event IDs/times. `wait(timeout=1)` waits for scheduled
-work, returns a boolean, and does not retry failures. `pending_count` includes failed
-and in-flight events. `close(timeout=0.1)` stops claiming additional events and returns
-whether its worker stopped. Both timeouts accept 0–30 seconds. An already claimed
-request may finish after close; even a stuck injected client cannot hold up interpreter
-exit. A best-effort CLI can call `wait(1.2)` followed by `close(0)` before returning.
-Reports are memory-only; missing observations mean unknown and never prove model
-consumption.
+If a comparison reports `output_invalid`, read `output-validation.json` in the private job directory for the failing field and a suggested fix. When a callback raises, the worker writes `callback-error.json` to that private job directory with the phase, exception class, redacted message and traceback, and the command output names the first failure's file. The file never leaves the machine. Set `"captureCallbackErrors": false` in the evaluator configuration to opt out. Add `--verbose` or set `ACCLIMATE_DEBUG=1` to see the full traceback of a setup error such as an `ImportError` in your module. Every error has a documented code and exit status; see [error codes](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/error-codes.mdx).
+
+Durable evaluation needs a stable, private, local journal directory. Keep its path, the service URL, the principal and the SDK language and release the same until a run finishes. A sealed report retries its saved request without rerunning callbacks. A run that started executing without a sealed report needs inspection; see [recovery decisions](https://github.com/anveld-dev/acclimate/blob/main/docs/evaluator-operations.md#recovery-decisions).
+
+## Develop the SDK
+
+From the repository root, run the offline tests with `PYTHONPATH=python python3.11 -m unittest discover -s python/tests -v`. The [strict typing fixtures](https://github.com/anveld-dev/acclimate/blob/main/python/tests/typing/README.md) check an installed wheel from outside the checkout.

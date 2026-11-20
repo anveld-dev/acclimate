@@ -1,13 +1,13 @@
-import type { ComparisonCase, ExecutionResult, GradeResult } from '../../packages/sdk/src/compare.js';
-import type { VerifiedVersion } from '../../packages/sdk/src/types.js';
-import type { EvaluationDescriptor } from '../../packages/sdk/src/types.js';
+import type { ComparisonCase, ExecutionResult, GradeResult } from '@acclimate/sdk';
+import type { VerifiedVersion } from '@acclimate/sdk';
+import type { EvaluationDescriptor } from '@acclimate/sdk';
 
 /** Installed application code supplies callbacks; a service request supplies identities only. */
 export interface InstalledAdapter {
   describe(): EvaluationDescriptor;
   cases: readonly ComparisonCase<unknown, unknown>[];
   execute(input: {
-    bundle: VerifiedVersion;
+    version: VerifiedVersion;
     caseId: string;
     repetition: number;
     snapshot: unknown;

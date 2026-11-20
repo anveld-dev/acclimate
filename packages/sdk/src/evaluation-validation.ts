@@ -1,18 +1,26 @@
+import { AcclimateError } from './errors.js';
 import type { EvaluationDescriptor, EvaluationHandoff } from './types.js';
 
 const encoder = new TextEncoder();
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const fields = ['datasetRevision', 'graderRevision', 'runtime', 'expectedCases'];
 
-export class EvaluationConfigurationError extends Error {
+export class EvaluationConfigurationError extends AcclimateError<
+  'descriptor.mismatch' | 'config.schema' | 'config.url' | 'guided_target_unsupported'
+> {
   constructor(
-    readonly code:
-      | 'descriptor.mismatch'
-      | 'config.schema'
-      | 'config.url'
-      | 'guided_target_unsupported',
+    code: 'descriptor.mismatch' | 'config.schema' | 'config.url' | 'guided_target_unsupported',
+    /** The descriptor or handoff field that failed validation, when known. */
+    readonly field?: string,
+    /** Why the field failed, when there is more to say than its documented limits. */
+    readonly reason?: string,
   ) {
-    super('Invalid public evaluation configuration. Check its documented fields and limits.');
+    super(
+      code,
+      'Invalid public evaluation configuration' +
+        (field ? ` at ${field}` : '') +
+        (reason ? `: ${reason}.` : '. Check its documented fields and limits.'),
+    );
     this.name = 'EvaluationConfigurationError';
   }
 }
@@ -109,7 +117,7 @@ export function validateEvaluationDescriptor(value: unknown): EvaluationDescript
 }
 
 export interface GuidedTarget {
-  projectId: string;
+  workspaceId: string;
   bundleId?: string;
   requestId?: string;
   principalId?: string;
@@ -120,9 +128,9 @@ export interface GuidedTarget {
 export function assertGuidedTarget(scope: GuidedTarget): void {
   if (
     !scope ||
-    typeof scope.projectId !== 'string' ||
-    !/^[A-Za-z0-9._-]{1,128}$/.test(scope.projectId) ||
-    ['.', '..'].includes(scope.projectId) ||
+    typeof scope.workspaceId !== 'string' ||
+    !/^[A-Za-z0-9._-]{1,128}$/.test(scope.workspaceId) ||
+    ['.', '..'].includes(scope.workspaceId) ||
     (scope.bundleId !== undefined &&
       (typeof scope.bundleId !== 'string' || !uuid.test(scope.bundleId))) ||
     (scope.requestId !== undefined &&
@@ -170,32 +178,32 @@ export function validateEvaluationHandoff(value: unknown): EvaluationHandoff {
         ![
           'schemaVersion',
           'serviceUrl',
-          'projectId',
+          'workspaceId',
           'bundleId',
           'requestId',
-          'configuration',
+          'descriptor',
         ].includes(key),
     )
   )
     throw new EvaluationConfigurationError('config.schema');
   if (
-    typeof value.projectId !== 'string' ||
+    typeof value.workspaceId !== 'string' ||
     typeof value.bundleId !== 'string' ||
     typeof value.requestId !== 'string'
   )
     throw new EvaluationConfigurationError('config.schema');
   assertGuidedTarget({
-    projectId: value.projectId,
+    workspaceId: value.workspaceId,
     bundleId: value.bundleId,
     requestId: value.requestId,
   });
   return {
     schemaVersion: 1,
     serviceUrl: validateEvaluationServiceUrl(value.serviceUrl),
-    projectId: value.projectId,
+    workspaceId: value.workspaceId,
     bundleId: value.bundleId,
     requestId: value.requestId,
-    configuration: validateEvaluationDescriptor(value.configuration),
+    descriptor: validateEvaluationDescriptor(value.descriptor),
   };
 }
 

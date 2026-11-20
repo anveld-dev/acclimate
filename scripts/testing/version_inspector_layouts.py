@@ -31,7 +31,7 @@ def seed(w):
     w.start(); w.fresh_scenario(SimpleNamespace(effective_tags=[])); w.publish_initial('', files=FILES14)
     current = w.call('GET', w.channel)
     draft = w.call('POST', w.channel + '/drafts', dict(baseVersionId=current['version']['id'], baseRevision=current['revision'], payload=dict(schemaVersion=1, files=[dict(f, text=f['text']+'\nRevision two.\n') for f in FILES14])))
-    w.call('POST', w.channel+'/promotions', dict(versionId=draft['snapshotVersion']['id'], expectedRevision=current['revision'], unevaluatedReason='Disposable historical inspection fixture.'))
+    w.call('POST', w.channel+'/releases', dict(versionId=draft['snapshotVersion']['id'], expectedRevision=current['revision'], unevaluatedReason='Disposable historical inspection fixture.'))
     return draft
 
 

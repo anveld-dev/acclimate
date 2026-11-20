@@ -37,18 +37,18 @@ export async function editChannel(
     return { ok: false, message: 'Invalid edit request.' };
   try {
     requireSession(env);
-    const operationPath = `/v1/workspaces/${encodeURIComponent(env.CONSOLE_PROJECT || '')}/bundles/${encodeURIComponent(env.CONSOLE_BUNDLE || '')}/channels/${encodeURIComponent(env.CONSOLE_CHANNEL || 'stable')}/releases`;
+    const operationPath = `/v1/workspaces/${encodeURIComponent(env.CONSOLE_WORKSPACE || '')}/bundles/${encodeURIComponent(env.CONSOLE_BUNDLE || '')}/channels/${encodeURIComponent(env.CONSOLE_CHANNEL || 'stable')}/releases`;
     if (command.action !== 'save') {
       const prior = await lookupOperation(
         env,
-        { projectId: env.CONSOLE_PROJECT!, operationPath, key: command.key },
+        { workspaceId: env.CONSOLE_WORKSPACE!, operationPath, key: command.key },
         fetcher,
       );
       if (prior.status === 'committed') {
         const confirmed = await exactOperation<{ version: VersionMetadata; revision: string }>(
           env,
           {
-            projectId: env.CONSOLE_PROJECT!,
+            workspaceId: env.CONSOLE_WORKSPACE!,
             operationPath,
             key: command.key,
             body: JSON.stringify({
@@ -100,7 +100,7 @@ export async function editChannel(
       };
       validatePayload(payload);
       const version = await client.createVersion(
-        current.projectId,
+        current.workspaceId,
         current.bundleId,
         { parentVersionId: current.resolution.version.id, payload },
         command.key,
@@ -114,7 +114,11 @@ export async function editChannel(
       command.reason.length > 1000
     )
       return { ok: false, message: 'Add a short reason for this manual release.' };
-    const version = await client.getVersion(current.projectId, current.bundleId, command.versionId);
+    const version = await client.getVersion(
+      current.workspaceId,
+      current.bundleId,
+      command.versionId,
+    );
     if (command.action === 'rollback' && version.id === current.resolution.version.id)
       return { ok: false, message: 'This version is already the current release.' };
     if (command.action === 'publish' && version.parentVersionId !== current.resolution.version.id)
@@ -125,7 +129,7 @@ export async function editChannel(
     const promotion = await exactOperation<{ revision: string }>(
       env,
       {
-        projectId: current.projectId,
+        workspaceId: current.workspaceId,
         operationPath,
         key: command.key,
         body: JSON.stringify({

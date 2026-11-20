@@ -40,10 +40,10 @@ fn grants_check_uses_explicit_stdin_and_needs_no_service_or_runtime_configuratio
     for input in [
         "[]".to_owned(),
         format!(
-            r#"[{{"token":"{CANARY}","principalId":"{CANARY}","projectId":"{CANARY}","rights":["read","write"]}}]"#
+            r#"[{{"token":"{CANARY}","principalId":"{CANARY}","workspaceId":"{CANARY}","rights":["read","write"]}}]"#
         ),
         format!(
-            r#"[{{"token":"old-{CANARY}","principalId":"same-worker","projectId":"project","rights":["read","write"]}},{{"token":"replacement-{CANARY}","principalId":"same-worker","projectId":"project","rights":["read","write"]}}]"#
+            r#"[{{"token":"old-{CANARY}","principalId":"same-worker","workspaceId":"project","rights":["read","write"]}},{{"token":"replacement-{CANARY}","principalId":"same-worker","workspaceId":"project","rights":["read","write"]}}]"#
         ),
     ] {
         let output = check(&["--check-grants"], input.as_bytes());
@@ -57,7 +57,7 @@ fn grants_check_uses_explicit_stdin_and_needs_no_service_or_runtime_configuratio
 #[test]
 fn grants_check_rejects_malformed_unknown_duplicate_and_invalid_input_without_echo() {
     let grant = format!(
-        r#"{{"token":"{CANARY}","principalId":"worker","projectId":"project","rights":["read","write"]}}"#
+        r#"{{"token":"{CANARY}","principalId":"worker","workspaceId":"project","rights":["read","write"]}}"#
     );
     for input in [
         String::new(),
@@ -66,22 +66,22 @@ fn grants_check_rejects_malformed_unknown_duplicate_and_invalid_input_without_ec
         format!(r#"[["{CANARY}","worker","project",["read"]]]"#),
         format!("[{grant},{grant}]"),
         format!(
-            r#"[{{"token":"{CANARY}","principalId":"worker","projectId":"project","rights":["{CANARY}"]}}]"#
+            r#"[{{"token":"{CANARY}","principalId":"worker","workspaceId":"project","rights":["{CANARY}"]}}]"#
         ),
         format!(
-            r#"[{{"token":"{CANARY}","principalId":"worker","projectId":"project","rights":["read","read"]}}]"#
+            r#"[{{"token":"{CANARY}","principalId":"worker","workspaceId":"project","rights":["read","read"]}}]"#
         ),
         format!(
-            r#"[{{"token":"{CANARY}","principalId":"worker","projectId":"project","rights":["read"],"{CANARY}":"secret"}}]"#
+            r#"[{{"token":"{CANARY}","principalId":"worker","workspaceId":"project","rights":["read"],"{CANARY}":"secret"}}]"#
         ),
         format!(
-            r#"[{{"token":"{CANARY}","token":"replacement","principalId":"worker","projectId":"project","rights":["read"]}}]"#
+            r#"[{{"token":"{CANARY}","token":"replacement","principalId":"worker","workspaceId":"project","rights":["read"]}}]"#
         ),
         format!(
-            r#"[{{"token":"{CANARY}","principalId":"","projectId":"project","rights":["read"]}}]"#
+            r#"[{{"token":"{CANARY}","principalId":"","workspaceId":"project","rights":["read"]}}]"#
         ),
         format!(
-            r#"[{{"token":"{CANARY}","principalId":"worker","projectId":"project","rights":["read"]}},{{"token":"{CANARY}","principalId":"other","projectId":"other","rights":["read"]}}]"#
+            r#"[{{"token":"{CANARY}","principalId":"worker","workspaceId":"project","rights":["read"]}},{{"token":"{CANARY}","principalId":"other","workspaceId":"other","rights":["read"]}}]"#
         ),
     ] {
         let output = check(&["--check-grants"], input.as_bytes());

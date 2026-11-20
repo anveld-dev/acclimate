@@ -8,7 +8,7 @@ import { serveConnectedLearning } from './connected.js';
 import type { ConnectedLearningDriverOptions } from './connected.js';
 
 const usage =
-  'acclimate-learning --config /private/evaluator.json --integration UUID --installation ID --apps ./evaluators.mjs [--live]';
+  'acclimate-learning --config /private/evaluator.json --connection UUID --installation ID --apps ./evaluators.mjs [--live]';
 const startupHints: Partial<Record<ReturnType<typeof toSafeDiagnostic>['code'], string>> = {
   'learning.apps_module_missing':
     'Point --apps at the compiled evaluator module in this installation.',
@@ -43,7 +43,7 @@ async function main() {
   const { values } = parseArgs({
     options: {
       config: { type: 'string' },
-      integration: { type: 'string' },
+      connection: { type: 'string' },
       installation: { type: 'string' },
       apps: { type: 'string' },
       live: { type: 'boolean' },
@@ -54,7 +54,7 @@ async function main() {
     console.log(usage);
     return;
   }
-  if (!values.config || !values.integration || !values.installation || !values.apps) {
+  if (!values.config || !values.connection || !values.installation || !values.apps) {
     console.error(usage);
     process.exitCode = 1;
     return;
@@ -67,7 +67,7 @@ async function main() {
   process.once('SIGTERM', shutdown);
   try {
     await serveConnectedLearning({
-      integrationId: values.integration,
+      connectionId: values.connection,
       installationId: values.installation,
       configPath: values.config,
       apps,

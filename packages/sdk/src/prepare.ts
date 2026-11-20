@@ -1,4 +1,5 @@
 /// <reference lib="esnext.disposable" preserve="true" />
+import { AcclimateUsageError } from './errors.js';
 import { lstat, mkdir, mkdtemp, open, realpath, rm, rmdir, chmod, readdir } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -26,16 +27,16 @@ export type PrepareDeliveryOptions = Selection &
     cacheDir?: string;
     destination?: string;
     reporter?: DeliveryObserver & {
-      reportPrepared?(bundle: VerifiedVersion): unknown;
-      reportStarted?(bundle: VerifiedVersion): unknown;
-      bindStartedReceipt?(bundle: VerifiedVersion): () => Readonly<DeliveryReceiptRequest> | null;
-      reportStartedReceipt?(bundle: VerifiedVersion): Readonly<DeliveryReceiptRequest> | null;
+      reportPrepared?(version: VerifiedVersion): unknown;
+      reportStarted?(version: VerifiedVersion): unknown;
+      bindStartedReceipt?(version: VerifiedVersion): () => Readonly<DeliveryReceiptRequest> | null;
+      reportStartedReceipt?(version: VerifiedVersion): Readonly<DeliveryReceiptRequest> | null;
     };
   };
 export interface PreparedDelivery extends PreparedFiles {
   directory: string;
-  bundle: VerifiedVersion;
-  version: VerifiedVersion['version'];
+  /** The verified version this job runs. Its metadata is `version.version`. */
+  version: VerifiedVersion;
   instructions: string;
   skillFiles: PreparedFile[];
   /** Queue this job's start once. Retain its receipt with the job for field auditing. */
@@ -43,12 +44,21 @@ export interface PreparedDelivery extends PreparedFiles {
   [Symbol.asyncDispose](): Promise<void>;
 }
 
+/**
+ * The SDK's default bundle cache, `~/.cache/acclimate/typescript` under the real
+ * home directory. `client.prepare()` uses it when `cacheDir` is omitted; pass it
+ * to `resolveAndCache` so every entry point shares one cache.
+ */
+export async function defaultCacheDir(): Promise<string> {
+  return join(await realpath(homedir()), '.cache', 'acclimate', 'typescript');
+}
+
 export async function prepareDelivery(
   client: AcclimateClient,
   options: PrepareDeliveryOptions,
 ): Promise<PreparedDelivery> {
   const {
-    projectId,
+    workspaceId,
     bundleId,
     destination,
     cacheDir,
@@ -59,12 +69,12 @@ export async function prepareDelivery(
   } = options;
   const hasChannel = 'channel' in options;
   if (hasChannel === 'versionId' in options)
-    throw new TypeError('Select exactly one channel or versionId');
+    throw new AcclimateUsageError('Select exactly one channel or versionId', 'selection');
   const selection = hasChannel
-    ? { projectId, bundleId, channel: options.channel }
-    : { projectId, bundleId, versionId: options.versionId };
-  const bundle = await resolveAndCache(client, selection, {
-    cacheDir: cacheDir ?? join(await realpath(homedir()), '.cache', 'acclimate', 'typescript'),
+    ? { workspaceId, bundleId, channel: options.channel }
+    : { workspaceId, bundleId, versionId: options.versionId };
+  const verified = await resolveAndCache(client, selection, {
+    cacheDir: cacheDir ?? (await defaultCacheDir()),
     reporter,
     offline,
     maxCacheBytes,
@@ -84,14 +94,14 @@ export async function prepareDelivery(
   }
   let staged: PreparedFiles;
   try {
-    staged = await prepareFiles(bundle, directory);
+    staged = await prepareFiles(verified, directory);
   } catch (error) {
     await removeOwnedDirectory();
     throw error;
   }
   function observed(stage: 'reportPrepared' | 'reportStarted') {
     try {
-      Promise.resolve(reporter?.[stage]?.(bundle)).catch(() => {});
+      Promise.resolve(reporter?.[stage]?.(verified)).catch(() => {});
     } catch {}
   }
   observed('reportPrepared');
@@ -107,10 +117,9 @@ export async function prepareDelivery(
   }
   return {
     directory,
-    bundle,
-    version: bundle.version,
+    version: verified,
     files: staged.files,
-    instructions: bundle.payload.files
+    instructions: verified.payload.files
       .filter((file) => file.kind === 'instruction')
       .map((file) => file.text)
       .join('\n\n'),
@@ -119,13 +128,13 @@ export async function prepareDelivery(
       if (!started) {
         started = true;
         try {
-          queueBoundStart ??= reporter?.bindStartedReceipt?.(bundle);
+          queueBoundStart ??= reporter?.bindStartedReceipt?.(verified);
           if (queueBoundStart) {
             startedReceipt = queueBoundStart();
             // An explicit queue refusal can be retried. A thrown callback may have sent the event.
             started = startedReceipt !== null;
           } else if (reporter?.reportStartedReceipt) {
-            startedReceipt = reporter.reportStartedReceipt(bundle);
+            startedReceipt = reporter.reportStartedReceipt(verified);
           } else {
             observed('reportStarted');
           }
@@ -173,20 +182,20 @@ async function ensureSafeRoot(input: string): Promise<string> {
   return root;
 }
 export async function prepareFiles(
-  bundle: VerifiedVersion,
+  version: VerifiedVersion,
   destination: string,
   options: PrepareOptions = {},
 ): Promise<PreparedFiles> {
   if (options.collision !== undefined && options.collision !== 'error')
-    throw new TypeError('Only collision="error" is supported');
-  validatePayload(bundle.payload);
+    throw new AcclimateUsageError('Only collision="error" is supported', 'collision');
+  validatePayload(version.payload);
   const root = await ensureSafeRoot(destination),
     rootReal = await realpath(root);
   const prepared: PreparedFile[] = [],
     createdFiles: string[] = [],
     createdDirs: string[] = [];
   try {
-    for (const file of bundle.payload.files) {
+    for (const file of version.payload.files) {
       const target = resolve(root, ...file.path.split('/'));
       if (!target.startsWith(rootReal + '/'))
         throw new DeliveryError('unsafe_path', 'Bundle path escapes destination');

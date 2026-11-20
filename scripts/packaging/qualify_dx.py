@@ -248,11 +248,11 @@ def qualify(release, pg_bin):
         # Add a real project-read-only machine principal for second-reader verification.
         h.tokens['viewer'] = secrets.token_hex(32)
         grants = json.loads(h.env['ACCLIMATE_AUTH'])
-        grants.append({'token': h.tokens['viewer'], 'principalId': 'viewer', 'projectId': h.project, 'rights': ['read']})
+        grants.append({'token': h.tokens['viewer'], 'principalId': 'viewer', 'workspaceId': h.project, 'rights': ['read']})
         h.env['ACCLIMATE_AUTH'] = json.dumps(grants)
         h.start()
         proxy = ResponseLossProxy(h)
-        base = '/v1/projects/' + h.project
+        base = '/v1/workspaces/' + h.project
         payload = json.loads((FIXTURE / 'baseline.json').read_text())
         setup = h.call('POST', base + '/bundle-setups', {
             'name': 'Installed evaluator qualification', 'origin': 'example',
@@ -292,11 +292,11 @@ def qualify(release, pg_bin):
             assert len(descriptor['expectedCases']) == 2
             private = h.dir / language / 'private'
             private.mkdir(mode=0o700)
-            config, reader, intent, handoff = private / 'config' / 'evaluator.json', private / 'config' / 'reader.json', private / 'intent.json', app / 'evaluation-request.json'
-            private_json(config, {'schemaVersion': 1, 'serviceUrl': proxy.base, 'projectId': h.project,
+            config, reader, intent, handoff = private / 'config' / 'evaluator.json', private / 'config' / 'reader.json', private / 'intent.json', app / 'handoff.json'
+            private_json(config, {'schemaVersion': 1, 'serviceUrl': proxy.base, 'workspaceId': h.project,
                                  'evaluatorPrincipalId': 'evaluator', 'evaluatorToken': h.tokens['evaluator'],
                                  'journalRoot': str(private / 'journals')})
-            private_json(reader, {'schemaVersion': 1, 'serviceUrl': proxy.base, 'projectId': h.project, 'readToken': h.tokens['viewer']})
+            private_json(reader, {'schemaVersion': 1, 'serviceUrl': proxy.base, 'workspaceId': h.project, 'readToken': h.tokens['viewer']})
             run(command + ['doctor', '--config', str(config), '--bundle', bundle, '--policy', str(app / 'quality-policy.json')], cwd=app, env=app_env)
             creation = ['request', '--config', str(config), '--bundle', bundle, '--channel', 'stable',
                         '--payload', str(app / 'candidate.json'), '--intent', str(intent), '--out', str(handoff)]
@@ -383,7 +383,7 @@ def qualify(release, pg_bin):
         replacement_token = secrets.token_hex(32)
         h.tokens['replacement'] = replacement_token
         replacement_grant = {'token': replacement_token, 'principalId': 'evaluator',
-                             'projectId': h.project, 'rights': ['read', 'write']}
+                             'workspaceId': h.project, 'rights': ['read', 'write']}
         overlapping = grants + [replacement_grant]
 
         def validate_grants(value):
@@ -437,16 +437,18 @@ def qualify(release, pg_bin):
             assert first['invocation'] == {'callbacksStarted': 4, 'reusedEvidence': False}
             assert replay['invocation'] == {'callbacksStarted': 0, 'reusedEvidence': True}
             handle = ['--config', str(consumer['config']), '--name', first['runName']]
-            def followup(command, *args):
-                return run([*consumer['command'], command, *args], cwd=app, env=consumer['env'])
+            def followup(command, *args, expected=0):
+                return run([*consumer['command'], command, *args], cwd=app, env=consumer['env'], expected=expected)
             assert followup('status', *handle)['requestId'] == first['requestId']
-            gate = followup('check', *handle, '--policy', str(default_policy))
-            assert gate['verdict'] == 'pass' and gate['policyReceipt']['status'] == 'recorded'
+            # The starter's statistical example policy needs at least 10 cases; two are insufficient.
+            gate = followup('check', *handle, '--policy', str(default_policy), expected=3)
+            assert gate['verdict'] == 'indeterminate' and gate['code'] == 'inference.insufficient_data'
+            assert gate['policyReceipt']['status'] == 'recorded'
             journal = Path(json.loads(consumer['config'].read_bytes())['journalRoot'])
             reviewed = followup('check', '--read-config', str(consumer['reader']), '--handoff',
                                 str(journal / 'comparisons' / first['runName'] / 'request.json'),
-                                '--policy', str(default_policy))
-            assert reviewed['verdict'] == 'pass' and reviewed['policyReceipt']['status'] == 'read_only'
+                                '--policy', str(default_policy), expected=3)
+            assert reviewed['verdict'] == 'indeterminate' and reviewed['policyReceipt']['status'] == 'read_only'
             destination = app / 'named-review'
             followup('export', *handle, '--out', str(destination))
             followup('verify-export', '--manifest', str(destination / 'manifest.json'))

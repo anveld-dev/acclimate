@@ -346,7 +346,7 @@ def run(args):
         page.get_by_role('button', name='Show all file changes', exact=True).click()
         expect(page.locator('.content-diff h3')).to_have_count(3)
         checks.append('full review retains result folding, case hover/keyboard selection, filters, search, paging and artifact maps')
-        world.call('POST', world.channel + '/promotions', dict(versionId=versions[1]['id'],
+        world.call('POST', world.channel + '/releases', dict(versionId=versions[1]['id'],
             expectedRevision=world.original['revision'], unevaluatedReason='Advance disposable fixture channel.'))
         visit(page, browser, route(candidate=versions[0]['id'], comparison=full['id']))
         page.get_by_role('tab',name='Details',exact=True).click()

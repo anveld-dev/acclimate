@@ -23,8 +23,8 @@ const initial = {
 };
 
 export function useEvaluationHistory(options: EvaluationHistoryOptions): EvaluationHistoryModel {
-  const { projectId, bundleId, channel, actorScope, serviceIdentity } = options.scope;
-  const scopeKey = JSON.stringify([projectId, bundleId, channel, actorScope, serviceIdentity]);
+  const { workspaceId, bundleId, channel, actorScope, serviceIdentity } = options.scope;
+  const scopeKey = JSON.stringify([workspaceId, bundleId, channel, actorScope, serviceIdentity]);
   const [state, setState] = useState(() => ({ ...initial, scopeKey }));
   const selection = useRef({
     id: options.selectedRequestId,
@@ -46,7 +46,7 @@ export function useEvaluationHistory(options: EvaluationHistoryOptions): Evaluat
       cursor: string | null = null,
       selected: Evaluation | null = null;
     const cache = new Map<string, Comparison>();
-    const scope = { projectId, bundleId, channel };
+    const scope = { workspaceId, bundleId, channel };
     setState({ ...initial, scopeKey });
     const publishEvidence = async () => {
       const all = selected ? [...rows, selected] : rows;
@@ -252,7 +252,7 @@ export function useEvaluationHistory(options: EvaluationHistoryOptions): Evaluat
       clearTimeout(timer);
       controller.current = null;
     };
-  }, [projectId, bundleId, channel, actorScope, serviceIdentity]);
+  }, [workspaceId, bundleId, channel, actorScope, serviceIdentity]);
   useEffect(() => {
     controller.current?.refreshSelection();
   }, [options.selectedRequestId, options.selectedCandidateId]);

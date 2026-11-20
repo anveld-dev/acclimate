@@ -28,17 +28,17 @@ def call(method,path,token,body=None,session=None,status=200):
     return json.loads(value) if value else None
 try:
     h.start()
-    call('GET','/v1/projects',transport,status=401)
+    call('GET','/v1/workspaces',transport,status=401)
     # SDK grants remain usable without browser sessions with production authentication.
-    assert h.call('GET','/v1/projects')['items']
+    assert h.call('GET','/v1/workspaces')['items']
     operator=call('POST','/v1/auth/sessions',login,{'issuer':issuer,'subject':'operator'})
     member=call('POST','/v1/auth/sessions',login,{'issuer':issuer,'subject':'member'})
-    call('POST','/v1/projects',transport,{'id':'not-allowed','name':'Denied'},member['secret'],403)
-    project=call('POST','/v1/projects',transport,{'id':'hosted-fixture','name':'Hosted fixture'},operator['secret'])
+    call('POST','/v1/workspaces',transport,{'id':'not-allowed','name':'Denied'},member['secret'],403)
+    project=call('POST','/v1/workspaces',transport,{'id':'hosted-fixture','name':'Hosted fixture'},operator['secret'])
     assert project['role']=='admin'
-    entries=call('GET','/v1/projects',transport,session=operator['secret'])['items']
+    entries=call('GET','/v1/workspaces',transport,session=operator['secret'])['items']
     assert any(p['id']=='hosted-fixture' and p['role']=='admin' for p in entries)
-    root='/v1/projects/hosted-fixture'
+    root='/v1/workspaces/hosted-fixture'
     setup=call('POST',root+'/bundle-setups',transport,{'name':'Private hosted bundle','origin':'created','channel':'stable','payload':payload('Review fixtures.'),'reason':'Explicit authority fixture'},operator['secret'],201)
     bundle=root+'/bundles/'+setup['bundle']['id']
     membership=root+'/memberships/'+member['userId']

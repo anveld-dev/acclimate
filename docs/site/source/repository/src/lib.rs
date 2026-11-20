@@ -17,6 +17,7 @@ mod commands;
 mod connected_learning;
 mod connected_learning_worker;
 pub use connected_learning_worker::connected_learning_worker;
+pub use evaluations::{abandon_after_seconds, abandon_inactive_evaluations};
 pub mod compatibility;
 mod drafts;
 mod evaluation_progress;
@@ -24,6 +25,7 @@ mod evaluations;
 mod improvement;
 mod integrations;
 mod invitations;
+mod machine_tokens;
 pub mod mail;
 pub mod pagination;
 mod policy_receipts;
@@ -189,27 +191,6 @@ async fn request_limits(request: axum::extract::Request, next: axum::middleware:
         .into_response(),
     }
 }
-// Keep both spellings on the same method router and retain the original
-// handler-owned operation keys for replay across service upgrades.
-fn workspace_route_path(legacy: &str) -> String {
-    legacy
-        .replacen("/v1/projects", "/v1/workspaces", 1)
-        .replace("/integrations", "/connections")
-        .replace("/integration-observations", "/connection-observations")
-        .replace("/promotions", "/releases")
-}
-
-trait WorkspaceRoutes {
-    fn workspace_route(self, legacy: &str, methods: axum::routing::MethodRouter<AppState>) -> Self;
-}
-
-impl WorkspaceRoutes for Router<AppState> {
-    fn workspace_route(self, legacy: &str, methods: axum::routing::MethodRouter<AppState>) -> Self {
-        self.route(&workspace_route_path(legacy), methods.clone())
-            .route(legacy, methods)
-    }
-}
-
 pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(commands::routes())
@@ -222,46 +203,47 @@ pub fn router(state: AppState) -> Router {
         .merge(policy_receipts::routes())
         .merge(workspaces::routes())
         .merge(invitations::routes())
+        .merge(machine_tokens::routes())
         .route("/health", get(|| async { "ok" }))
         .route("/ready", get(runtime::readiness))
-        .workspace_route(
-            "/v1/projects/{project}/bundles",
+        .route(
+            "/v1/workspaces/{project}/bundles",
             post(bundles::create_bundle),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/versions",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/versions",
             post(bundles::create_version),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/versions/{version}",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/versions/{version}",
             get(bundles::get_version),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/versions/{version}/payload",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/versions/{version}/payload",
             get(bundles::get_payload),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/channels/{channel}",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}",
             get(channels::resolve),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/channels/{channel}/promotions",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/releases",
             get(channels::list_promotions).post(channels::promote),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/comparisons",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/comparisons",
             post(improvement::create_comparison).get(improvement::list_comparisons),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/comparisons/{id}",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/comparisons/{id}",
             get(improvement::get_comparison),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/proposals",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/proposals",
             post(improvement::create_proposal).get(improvement::list_proposals),
         )
-        .workspace_route(
-            "/v1/projects/{project}/bundles/{bundle}/proposals/{id}",
+        .route(
+            "/v1/workspaces/{project}/bundles/{bundle}/proposals/{id}",
             get(improvement::get_proposal),
         )
         .fallback(|| async { err(StatusCode::NOT_FOUND, "not_found", "Route not found") })
@@ -577,6 +559,7 @@ mod validation_tests {
                     output_ref: None,
                     error: None,
                     usage: None,
+                    components: None,
                 },
                 candidate: Outcome {
                     execution_status: "completed".into(),
@@ -585,9 +568,26 @@ mod validation_tests {
                     output_ref: None,
                     error: None,
                     usage: None,
+                    components: None,
                 },
             }],
         };
+        assert!(improvement::validate_comparison(&q).is_err());
+        // Named grade components are additive: finite values on a scored outcome are valid.
+        let mut q = q;
+        q.results[0].parent.reward = Some(0.5);
+        q.results[0].parent.components = Some(std::collections::BTreeMap::from([
+            ("correctness".into(), 1.0),
+            ("citations".into(), 0.0),
+        ]));
+        assert!(improvement::validate_comparison(&q).is_ok());
+        q.results[0].parent.components = Some(std::collections::BTreeMap::from([(
+            "correctness".into(),
+            f64::INFINITY,
+        )]));
+        assert!(improvement::validate_comparison(&q).is_err());
+        q.results[0].parent.components =
+            Some(std::collections::BTreeMap::from([("bad name".into(), 1.0)]));
         assert!(improvement::validate_comparison(&q).is_err());
     }
     struct Fake;

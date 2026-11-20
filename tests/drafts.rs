@@ -53,12 +53,12 @@ async fn immutable_siblings_generation_publish_and_expired_replay() {
         provider: None,
     });
     let payload = |text: &str| json!({"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":text}]});
-    let setup_url = format!("/v1/projects/{project}/bundle-setups");
+    let setup_url = format!("/v1/workspaces/{project}/bundle-setups");
     let (status,setup)=call(&app,"POST",&setup_url,"setup",json!({"name":"fixture","origin":"created","channel":"stable","payload":payload("base"),"reason":"initial seed"})).await;
     assert_eq!(status, 201, "{setup}");
     let base = setup["version"]["id"].as_str().unwrap();
     let bundle = setup["bundle"]["id"].as_str().unwrap();
-    let drafts = format!("/v1/projects/{project}/bundles/{bundle}/channels/stable/drafts");
+    let drafts = format!("/v1/workspaces/{project}/bundles/{bundle}/channels/stable/drafts");
     let (status, d1) = call(
         &app,
         "POST",
@@ -123,7 +123,7 @@ async fn immutable_siblings_generation_publish_and_expired_replay() {
     let (status, same_base_draft)=call(&app,"POST",&drafts,"same-base",json!({"baseVersionId":published["snapshotVersion"]["id"],"baseRevision":"2","payload":payload("third")})).await;
     assert_eq!(status, 201);
     let promotion_url =
-        format!("/v1/projects/{project}/bundles/{bundle}/channels/stable/promotions");
+        format!("/v1/workspaces/{project}/bundles/{bundle}/channels/stable/releases");
     let (status,_)=call(&app,"POST",&promotion_url,"repeat-version",json!({"versionId":published["snapshotVersion"]["id"],"expectedRevision":"2","unevaluatedReason":"same version reviewed"})).await;
     assert_eq!(status, 201);
     let (status, conflict) = call(
@@ -184,14 +184,14 @@ async fn publication_observes_concurrent_policy_checks_and_records_an_exact_over
         provider: None,
     });
     let payload = |text| json!({"schemaVersion":1,"files":[{"path":"AGENTS.md","kind":"instruction","text":text}]});
-    let (status,setup) = call(&app,"POST",&format!("/v1/projects/{project}/bundle-setups"),"setup",json!({"name":"test","origin":"created","channel":"stable","payload":payload("parent"),"reason":"first release"})).await;
+    let (status,setup) = call(&app,"POST",&format!("/v1/workspaces/{project}/bundle-setups"),"setup",json!({"name":"test","origin":"created","channel":"stable","payload":payload("parent"),"reason":"first release"})).await;
     assert_eq!(status, 201, "{setup}");
     let root = format!(
-        "/v1/projects/{project}/bundles/{}",
+        "/v1/workspaces/{project}/bundles/{}",
         setup["bundle"]["id"].as_str().unwrap()
     );
     let drafts = format!("{root}/channels/stable/drafts");
-    let promotions = format!("{root}/channels/stable/promotions");
+    let promotions = format!("{root}/channels/stable/releases");
     let parent = &setup["version"];
     let (status, draft) = call(
         &app,

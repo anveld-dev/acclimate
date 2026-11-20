@@ -13,11 +13,11 @@ import { bundleHref } from '../navigation';
 import { connectionHref } from '../lib/connection-navigation';
 
 export function DeliveryApp({
-  projectId,
+  workspaceId,
   app,
   canManage,
 }: {
-  projectId: string;
+  workspaceId: string;
   app: ConnectionObservation;
   canManage: boolean;
 }) {
@@ -29,7 +29,7 @@ export function DeliveryApp({
   const [initialError, setInitialError] = useState(false);
   useEffect(() => {
     let active = true;
-    readDeliveryDetail({ data: { projectId, integrationId: app.id } })
+    readDeliveryDetail({ data: { workspaceId, connectionId: app.id } })
       .then((result) => {
         if (!active) return;
         if (result.ok) setDetail(result.detail);
@@ -47,7 +47,7 @@ export function DeliveryApp({
     return () => {
       active = false;
     };
-  }, [projectId, app.id]);
+  }, [workspaceId, app.id]);
   async function more() {
     const cursor = detail?.receipts.nextCursor;
     if (!cursor || busy) return;
@@ -55,7 +55,7 @@ export function DeliveryApp({
     setError('');
     try {
       const response = await readDeliveryDetail({
-        data: { projectId, integrationId: app.id, cursor },
+        data: { workspaceId, connectionId: app.id, cursor },
       });
       if (!response.ok) {
         setError(response.message);
@@ -81,7 +81,7 @@ export function DeliveryApp({
   const report = receipts.find((item) => item.eventId === event) ?? receipts[0];
   const current = detail?.current;
   const same = report && current && isCurrentDelivery(report, current);
-  const scope = { projectId, bundleId: app.bundleId, channel: app.channel };
+  const scope = { workspaceId, bundleId: app.bundleId, channel: app.channel };
   return (
     <section
       className="delivery-app-workspace"
@@ -113,7 +113,7 @@ export function DeliveryApp({
           </a>
           {canManage && (
             <a
-              href={connectionHref(projectId, {}, app.id)}
+              href={connectionHref(workspaceId, {}, app.id)}
               aria-label={'Open connection settings for ' + app.displayName}
             >
               Connection settings <ArrowUpRight />

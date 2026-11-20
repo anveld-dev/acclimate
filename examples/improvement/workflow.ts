@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, realpath, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { prepare } from '../../packages/codex-plugin/src/index.js';
+import { prepare } from '@acclimate/codex-plugin';
 import path from 'node:path';
-import { resolveAndCache } from '../../packages/sdk/src/index.js';
-import { compare, submitComparison } from '../../packages/sdk/src/compare.js';
-import type { AcclimateClient } from '../../packages/sdk/src/client.js';
-import type { VerifiedVersion } from '../../packages/sdk/src/types.js';
+import { resolveAndCache } from '@acclimate/sdk';
+import { compare, submitComparison } from '@acclimate/sdk';
+import type { AcclimateClient } from '@acclimate/sdk';
+import type { VerifiedVersion } from '@acclimate/sdk';
 import { cases, datasetRevision } from './dataset.js';
 import { gradeFinding, graderRevision } from './grader.js';
 
@@ -18,7 +18,7 @@ export interface Model {
   ): Promise<{ text: string; usage: { inputTokens?: number; outputTokens?: number } | null }>;
 }
 export interface Config {
-  project: string;
+  workspace: string;
   bundle: string;
   channel: string;
   skillPath: string;
@@ -44,7 +44,7 @@ export async function improve(client: AcclimateClient, config: Config, model: Mo
   const cacheDir = path.join(outputDir, 'cache');
   const parent = await resolveAndCache(
     client,
-    { projectId: config.project, bundleId: config.bundle, channel: config.channel },
+    { workspaceId: config.workspace, bundleId: config.bundle, channel: config.channel },
     { cacheDir },
   );
   if (!parent.resolution) throw new Error('Channel resolution missing');
@@ -66,14 +66,14 @@ export async function improve(client: AcclimateClient, config: Config, model: Mo
   const staged = await prepare({ ...parent, payload });
   await staged.cleanup();
   const metadata = await client.createVersion(
-    config.project,
+    config.workspace,
     config.bundle,
     { parentVersionId: parent.version.id, payload },
     randomUUID(),
   );
   const candidate = await resolveAndCache(
     client,
-    { projectId: config.project, bundleId: config.bundle, versionId: metadata.id },
+    { workspaceId: config.workspace, bundleId: config.bundle, versionId: metadata.id },
     { cacheDir },
   );
   if (
@@ -144,13 +144,13 @@ export async function improve(client: AcclimateClient, config: Config, model: Mo
   });
   const comparison = await submitComparison(
     client,
-    config.project,
+    config.workspace,
     config.bundle,
     report,
     randomUUID(),
   );
   const summary = {
-    project: config.project,
+    workspace: config.workspace,
     bundle: config.bundle,
     channel: config.channel,
     channelRevision: parent.resolution.revision,

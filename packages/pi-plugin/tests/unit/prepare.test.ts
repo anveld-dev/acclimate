@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, access } from 'node:fs/promises';
 import { prepare } from '../../src/index.js';
-import type { VerifiedBundle } from '../../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../../sdk/src/types.js';
 
-const verified: VerifiedBundle = {
+const verified: VerifiedVersion = {
   version: { id: 'v3', bundleId: 'b', parentVersionId: null, digest: 'd', createdAt: 'now' },
   resolvedAt: 0,
   stale: false,

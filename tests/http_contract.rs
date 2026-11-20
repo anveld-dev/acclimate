@@ -106,7 +106,7 @@ impl Harness {
         (status, bytes, headers)
     }
     fn root(&self) -> String {
-        format!("/v1/projects/{}/bundles", self.project)
+        format!("/v1/workspaces/{}/bundles", self.project)
     }
     async fn bundle(&self) -> String {
         let (s, b, _) = self
@@ -310,7 +310,7 @@ async fn channel_etag_cas_comparisons_and_promotion_history() {
     let parent = h.version(&bundle, Value::Null, "base", "parent").await;
     let p = parent["id"].as_str().unwrap().to_owned();
     let channel = format!("{base}/channels/stable");
-    let promote_uri = format!("{channel}/promotions");
+    let promote_uri = format!("{channel}/releases");
     let (s, b, _) = h
         .req(
             "POST",
@@ -563,7 +563,7 @@ async fn paginated_history_is_scoped_stable_and_includes_rollback() {
     let second = h
         .version(&bundle, first["id"].clone(), "second", "history-v2")
         .await;
-    let uri = format!("{}/{bundle}/channels/stable/promotions", h.root());
+    let uri = format!("{}/{bundle}/channels/stable/releases", h.root());
     let mut records = Vec::new();
     for (i, version) in [&first, &second, &first].iter().enumerate() {
         let (status, body, _) = h.req("POST", &uri, Some("rw"), Some(&format!("history-{i}")),
@@ -653,7 +653,10 @@ async fn paginated_history_is_scoped_stable_and_includes_rollback() {
         .req("GET", &uri, Some("write-only"), None, Value::Null, None)
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    let foreign = uri.replace(&format!("/projects/{}/", h.project), "/projects/foreign/");
+    let foreign = uri.replace(
+        &format!("/workspaces/{}/", h.project),
+        "/workspaces/foreign/",
+    );
     let (status, _, _) = h
         .req("GET", &foreign, Some("read"), None, Value::Null, None)
         .await;
@@ -663,4 +666,43 @@ async fn paginated_history_is_scoped_stable_and_includes_rollback() {
         .req("GET", &missing, Some("read"), None, Value::Null, None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
+async fn only_canonical_route_spellings_exist_and_other_operation_paths_are_rejected() {
+    let h = Harness::new().await;
+    let bundle = h.bundle().await;
+    let p = &h.project;
+    for (method, uri) in [
+        ("GET", format!("/v1/workspaces/{p}/integrations")),
+        (
+            "POST",
+            format!("/v1/workspaces/{p}/bundles/{bundle}/channels/stable/promotions"),
+        ),
+    ] {
+        let (status, body, _) = h
+            .req(method, &uri, Some("rw"), Some("k"), json!({}), None)
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{method} {uri}");
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["error"]["code"], "not_found", "{method} {uri}");
+    }
+    for path in [
+        format!("v1/workspaces/{p}/bundles/{bundle}/versions"),
+        format!("/v1/workspaces/{p}/bundles/{bundle}/channels/stable/promotions"),
+        "/v1/workspaces".to_owned(),
+    ] {
+        let uri = format!(
+            "/v1/workspaces/{p}/operations/key?operationPath={}",
+            path.replace('/', "%2F")
+        );
+        let (status, body, _) = h
+            .req("GET", &uri, Some("rw"), None, Value::Null, None)
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{path}");
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["error"]["code"], "invalid_content");
+        assert_eq!(body["error"]["message"], "Unsupported operation path");
+    }
 }

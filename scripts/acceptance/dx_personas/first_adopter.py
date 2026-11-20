@@ -33,10 +33,10 @@ import { join } from 'node:path';
 import { prepareFiles } from '@acclimate/sdk';
 
 // An existing deterministic support-routing app: no model or tool credentials.
-export async function runExistingAgent({ bundle, task, signal }) {
+export async function runExistingAgent({ version, task, signal }) {
   signal?.throwIfAborted();
   const job = await mkdtemp(new URL('./private-jobs/job-', import.meta.url));
-  const prepared = await prepareFiles(bundle, job);
+  const prepared = await prepareFiles(version, job);
   let retained = false;
   let result;
   try {
@@ -47,7 +47,7 @@ export async function runExistingAgent({ bundle, task, signal }) {
       .map(f => readFile(f.absolutePath, 'utf8')))).join('\n');
     const queue = task.compromised && instruction.includes('compromised accounts to security')
       ? 'security' : 'normal';
-    result = { queue, versionId: bundle.version.id, digest: bundle.version.digest,
+    result = { queue, versionId: version.version.id, digest: version.version.digest,
       consumedFiles: prepared.files.length, awaitedRead: true, expectedLeaked: 'expected' in task };
     assert.equal(result.expectedLeaked, false);
     const saved = await open(join(job, 'result.json'), 'wx', 0o600);
@@ -82,8 +82,8 @@ def install_routing_app(f, app):
 import { runExistingAgent } from './agent.mjs';
 export const configId = 'first-adopter-support-routing';
 export const runtime = { settings: {app: 'support-routing'}, artifacts: {app: 'sha256:APP_DIGEST'} };
-export async function execute({ bundle, input, signal }) {
-  return {output: await runExistingAgent({bundle, task: input, signal}), usage: {costUsd: 0}};
+export async function execute({ version, input, signal }) {
+  return {output: await runExistingAgent({version, task: input, signal}), usage: {costUsd: 0}};
 }
 export async function grade({ output, expected }) {
   const queueMatches = output.queue === expected.queue;
@@ -176,7 +176,9 @@ def main():
                   'aggregation':'equal-case-means', 'minimumMeanImprovement':0.5,
                   'maximumCaseRegression':0, 'candidateThreshold':1,
                   'requiredCases':['compromised-account','ordinary-issue'],
-                  'maximumCandidateTaskFailures':0, 'cost':{'maximumCandidateUsd':0}}
+                  'maximumCandidateTaskFailures':0, 'cost':{'maximumCandidateUsd':0},
+                  # Two saved cases: a point-estimate check; the paired-t default needs 10.
+                  'inference':{'method':'none'}}
         f.write_json(app / 'quality-policy.json', policy)
         f.write_json(app / 'candidate.json', CANDIDATE)
         f.write_json(app / 'share-selection.json', {'schemaVersion':1, 'entries':[
@@ -205,13 +207,13 @@ def main():
         check('read-only identity rejected by evaluator preflight',
               readonly_doctor['authorization'], 'denied')
         check('read-only preflight supplies operator next action', readonly_doctor['nextAction'], 'ask_operator')
-        handoff = app / 'evaluation-request.json'
+        handoff = app / 'handoff.json'
         f.run(cli + ['request','--config',str(f.evaluator_config),'--bundle',bundle,
                      '--channel','stable','--payload',str(app/'candidate.json'),
                      '--intent',str(f.root/'first-intent.json'),'--out',str(handoff)], cwd=app)
         request = json.loads(handoff.read_text())
         missing_handoff = dict(request, requestId='00000000-0000-4000-8000-000000000002')
-        missing_path = f.write_json(app/'missing-evaluation-request.json', missing_handoff)
+        missing_path = f.write_json(app/'missing-handoff.json', missing_handoff)
         absent_request = f.run(cli + ['doctor','--config',str(f.evaluator_config),
             '--handoff',str(missing_path)], cwd=app, expected=2)
         check('missing request diagnostic', next(c['code'] for c in absent_request['checks']
@@ -235,7 +237,7 @@ def main():
         check('callbacks consumed one immutable instruction', sorted({e['consumedFiles'] for e in events}), [1])
         check('two immutable version IDs consumed', len({e['versionId'] for e in events}), 2)
         check('two immutable digests consumed', len({e['digest'] for e in events}), 2)
-        route = f'/v1/projects/{f.project}/bundles/{bundle}/evaluation-requests/{request["requestId"]}'
+        route = f'/v1/workspaces/{f.project}/bundles/{bundle}/evaluation-requests/{request["requestId"]}'
         authoritative = f.h.call('GET', route, actor='evaluator')
         check('service request completed', authoritative['status'], 'completed')
         check('candidate mean', policy_result['summary']['candidateMean'], 1)

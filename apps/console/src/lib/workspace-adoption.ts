@@ -1,25 +1,25 @@
 import type { AccessIdentity } from '../server/access-core';
 
 export type AdoptionReview = {
-  projectId: string;
+  workspaceId: string;
   reason: string;
   identity: AccessIdentity;
 };
 
 /** Capture exactly the workspace and verified actor shown by the review. */
 export function reviewWorkspaceAdoption(
-  projectId: string,
+  workspaceId: string,
   reason: string,
   identity: AccessIdentity,
 ): AdoptionReview | null {
   if (
-    !/^[a-zA-Z0-9_.-]{1,128}$/.test(projectId) ||
-    ['.', '..'].includes(projectId) ||
+    !/^[a-zA-Z0-9_.-]{1,128}$/.test(workspaceId) ||
+    ['.', '..'].includes(workspaceId) ||
     !reason.trim() ||
     reason.length > 2000
   )
     return null;
-  return { projectId, reason: reason.trim(), identity: { ...identity } };
+  return { workspaceId, reason: reason.trim(), identity: { ...identity } };
 }
 
 export function adoptionIdentityMatches(review: AdoptionReview, identity: AccessIdentity) {

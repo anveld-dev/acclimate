@@ -14,9 +14,17 @@ from ._evaluation_shared import (
 )
 
 
+_SCOPE_KEYS = ("serviceUrl","workspaceId","bundleId","requestId","evaluatorPrincipalId")
+
+
 def serialize_scope(scope: dict) -> bytes:
-    return json_bytes({key:scope[key] for key in
-        ("serviceUrl","projectId","bundleId","requestId","evaluatorPrincipalId")})
+    """The scope a journal records and compares on open."""
+    return json_bytes({key:scope[key] for key in _SCOPE_KEYS})
+
+
+def journal_directory_key(scope: dict) -> str:
+    """The journal directory name: a storage key the TypeScript SDK computes byte for byte."""
+    return hashlib.sha256(serialize_scope(scope)).hexdigest()
 
 
 class Journal:
@@ -25,7 +33,7 @@ class Journal:
             raise EvaluationError("runtime.unsupported")
         self.root = ensure_private_directory(root, journal_root=True)
         self.scope = parse_json(serialize_scope(scope))
-        self.directory = ensure_private_directory(self.root/hashlib.sha256(serialize_scope(scope)).hexdigest())
+        self.directory = ensure_private_directory(self.root/journal_directory_key(scope))
         self._fd: int | None = None
         self._artifact_bytes = 0
 

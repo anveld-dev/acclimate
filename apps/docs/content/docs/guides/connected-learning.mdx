@@ -10,7 +10,7 @@ Connect an application so it can report outcomes and approved corrections. Accli
 1. Ask your operator to [configure the service proposer](/docs/guides/service-generated-proposals) and provision distinct machine principals for outcomes and for evaluation. The outcome principal needs workspace `write`. The evaluator needs `read` and `write`. Keep a separate delivery credential.
 2. In your Node evaluator, build development and held-out audit apps with `defineEvaluation` from `@acclimate/sdk/evaluation`. Use `connectedEvaluationDescriptor(app)` from `@acclimate/sdk/learning` to register each exact private build. Use distinct development and audit case IDs, dataset revisions, and private inputs. Keep inputs and expected answers in the app. Use rewards from 0 to 1 with the connected selection policies.
 3. In **Connections**, open **Learning** for an enabled connection whose source channel has a published release. Enter the installation ID, machine principals, allowed paths, proposal allowance, and development and audit descriptors. Choose manual review or authorize automatic rollout. Releases apply to this connection. Automatic rollback defaults to enabled.
-4. Supply the connection UUID as `integrationId` on your delivery client. Resolve once per fresh job and keep the verified bundle and delivery revision with its result.
+4. Supply the connection UUID as `connectionId` on your delivery client. Resolve once per fresh job and keep the verified version and delivery revision with its result.
 
 By default, the proposer edits permitted existing files. If you want it to add or retire skills, use **Manage skill package permissions** to authorize the skill names separately.
 
@@ -23,8 +23,8 @@ import { createLearningOutcomeReporter } from '@acclimate/sdk/learning';
 
 const reportOutcome = createLearningOutcomeReporter({
   client: outcomeClient,
-  projectId,
-  integrationId,
+  workspaceId,
+  connectionId,
 });
 
 await reportOutcome(job.bundle, {
@@ -44,7 +44,7 @@ Use your durable outbox to retry saved outcomes across process restarts. To atta
 Default-export `{ development, audit: [...] }` from your installed evaluator module, using the same app definitions you registered. If you handle older corrections, add `recheck` to replay the original check on the supplied baseline. Declare `recheckExecution: 'model-free'` only when the callback runs without a model. See `docs/evaluator-operations.md` for the full callback recipe.
 
 ```sh
-acclimate-learning --config /private/evaluator.json --integration "$INTEGRATION_ID" \
+acclimate-learning --config /private/evaluator.json --connection "$CONNECTION_ID" \
   --installation "$INSTALLATION_ID" --apps ./dist/learning-evaluators.mjs
 ```
 

@@ -115,7 +115,7 @@ async function fixture() {
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl,
-      projectId: 'project',
+      workspaceId: 'project',
       evaluatorPrincipalId: 'evaluator',
       evaluatorToken: 'config-token-canary',
       journalRoot: journals,
@@ -127,7 +127,7 @@ async function fixture() {
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl,
-      projectId: 'project',
+      workspaceId: 'project',
       readToken: 'read-token-canary',
     }),
     { mode: 0o600 },
@@ -135,14 +135,14 @@ async function fixture() {
   const handoff: EvaluationHandoff = {
     schemaVersion: 1,
     serviceUrl,
-    projectId: 'project',
+    workspaceId: 'project',
     bundleId: ids.bundle,
     requestId: ids.request,
-    configuration: descriptor,
+    descriptor: descriptor,
   };
   const scope: JournalScope = {
     serviceUrl,
-    projectId: 'project',
+    workspaceId: 'project',
     bundleId: ids.bundle,
     requestId: ids.request,
     evaluatorPrincipalId: 'evaluator',
@@ -347,6 +347,8 @@ test('verifier rejects inspection claims inconsistent with role selection', asyn
   }
 });
 
+
+
 test('export budget stops mapping as soon as released bytes exceed the limit', async () => {
   const originalCases = [...descriptor.expectedCases];
   const originalResults = [...report.results];
@@ -447,7 +449,7 @@ test('scalar-only survives absent journals and a read-only teammate verifies ind
         manifestPath: result.manifestPath,
         online: {
           readConfigPath: f.readConfigPath,
-          expectedHandoff: { ...f.handoff, projectId: 'different' },
+          expectedHandoff: { ...f.handoff, workspaceId: 'different' },
         },
       }),
       { code: 'evidence.identity_mismatch' },

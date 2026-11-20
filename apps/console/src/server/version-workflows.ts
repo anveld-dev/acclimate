@@ -10,7 +10,7 @@ type Failure = { ok: false; message: string };
 function configuredClient(env: Env, fetcher: typeof fetch) {
   if (
     !env.CONSOLE_SERVICE_TOKEN?.trim() ||
-    !env.CONSOLE_PROJECT?.trim() ||
+    !env.CONSOLE_WORKSPACE?.trim() ||
     !env.CONSOLE_BUNDLE?.trim()
   )
     throw new Error('Missing configuration');
@@ -33,8 +33,8 @@ export async function readVersion(
     requireSession(env);
     const client = configuredClient(env, fetcher);
     const id = (input as { versionId: string }).versionId;
-    const version = await client.getVersion(env.CONSOLE_PROJECT!, env.CONSOLE_BUNDLE!, id);
-    const bytes = await client.getPayload(env.CONSOLE_PROJECT!, env.CONSOLE_BUNDLE!, id);
+    const version = await client.getVersion(env.CONSOLE_WORKSPACE!, env.CONSOLE_BUNDLE!, id);
+    const bytes = await client.getPayload(env.CONSOLE_WORKSPACE!, env.CONSOLE_BUNDLE!, id);
     const payload = verifyPayloadBytes(bytes, version.digest);
     return { ok: true, version, payload };
   } catch (error) {
@@ -59,7 +59,7 @@ export async function readHistory(
     requireSession(env);
     const client = configuredClient(env, fetcher);
     const page = await client.listReleases(
-      env.CONSOLE_PROJECT!,
+      env.CONSOLE_WORKSPACE!,
       env.CONSOLE_BUNDLE!,
       env.CONSOLE_CHANNEL || 'stable',
       { limit: 20, beforeRevision: cursor },

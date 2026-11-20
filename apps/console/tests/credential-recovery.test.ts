@@ -16,7 +16,7 @@ const env = {
   CONSOLE_SERVICE_TOKEN: 'fixture',
   CONSOLE_SESSION_TOKEN: 'session',
   CONSOLE_ALLOW_EDITS: 'true',
-  CONSOLE_PROJECT: 'project',
+  CONSOLE_WORKSPACE: 'project',
   CONSOLE_BUNDLE: 'bundle',
   CONSOLE_CHANNEL: 'stable',
 };
@@ -48,7 +48,7 @@ function fixture(revokedAt: string | null, errorDetails?: unknown) {
       items: [
         {
           id,
-          projectId: 'project',
+          workspaceId: 'project',
           bundleId: 'bundle',
           channel: 'stable',
           credentials: [{ id: original, kind: 'content-read', revokedAt }],

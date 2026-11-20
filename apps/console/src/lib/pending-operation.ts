@@ -4,7 +4,7 @@ const owners = ['draft', 'releases', 'improvement', 'library'] as const;
 export type PendingScope = {
   owner: (typeof owners)[number];
   actorScope: string;
-  projectId: string;
+  workspaceId: string;
   bundleId?: string;
   channel?: string;
   serviceIdentity: string;
@@ -28,7 +28,7 @@ function slot(scope: PendingScope) {
     JSON.stringify([
       scope.actorScope,
       scope.serviceIdentity,
-      scope.projectId,
+      scope.workspaceId,
       scope.bundleId,
       scope.channel,
       scope.owner,
@@ -84,7 +84,7 @@ export function freezePendingExact(
   disclosure?: PendingOperation['disclosure'],
 ): PendingOperation {
   try {
-    validateOperationTarget(scope.projectId, action, scope);
+    validateOperationTarget(scope.workspaceId, action, scope);
   } catch {
     throw Error('Unsupported pending operation.');
   }

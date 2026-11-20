@@ -1,5 +1,6 @@
-import type { VerifiedVersion } from '../../sdk/src/types.js';
-import { prepareNativeFiles } from '../../sdk/src/internal/native-files.js';
+import type { DeliveryReceiptRequest } from '../../sdk/src/types.js';
+import { nativeSource, prepareNativeFiles } from '../../sdk/src/native-files.js';
+import type { NativeInput } from '../../sdk/src/native-files.js';
 
 export interface PreparedPiVersion {
   cwd: string;
@@ -15,21 +16,27 @@ export interface PreparedPiVersion {
     kind: 'instruction' | 'skill' | 'memory';
     absolutePath: string;
   }>;
+  /** Queue the delivery's start receipt when `prepare` received `client.prepare()` output; otherwise null. */
+  reportStarted(): Readonly<DeliveryReceiptRequest> | null;
+  /** Remove the prepared workspace, then release the delivery it came from. */
   cleanup(): Promise<void>;
 }
 
 /** Stage verified files in a private workspace for a host-owned Pi ResourceLoader/session. */
-export async function prepare(bundle: VerifiedVersion): Promise<PreparedPiVersion> {
-  const staged = await prepareNativeFiles(
-    bundle,
-    {
+export async function prepare(
+  version: NativeInput,
+  _options: { approvedMemoryPaths?: string[] } = {},
+): Promise<PreparedPiVersion> {
+  const { version: verified, reportStarted, release } = nativeSource(version);
+  const staged = await prepareNativeFiles(verified, {
+    mapping: {
       instructionPath: 'AGENTS.md',
       skillRoot: '.agents/skills',
       memoryRoot: '.acclimate/memory',
     },
-    'acclimate-pi-',
-    'pi',
-  );
+    prefix: 'acclimate-pi-',
+    target: 'pi',
+  });
   const resources = staged.files.map(({ sourcePath, kind, absolutePath }) => ({
     path: sourcePath,
     kind,
@@ -37,15 +44,16 @@ export async function prepare(bundle: VerifiedVersion): Promise<PreparedPiVersio
   }));
   return {
     cwd: staged.cwd,
-    versionId: bundle.version.id,
-    digest: bundle.version.digest,
+    versionId: verified.version.id,
+    digest: verified.version.digest,
     instructionPath: staged.instructionPath,
     skillPaths: staged.skillPaths,
     memoryFiles: staged.memoryFiles,
     resources,
-    cleanup: staged.cleanup,
+    reportStarted,
+    async cleanup() {
+      await staged.cleanup();
+      await release();
+    },
   };
 }
-
-/** @deprecated Use PreparedPiVersion. */
-export type PreparedPiBundle = PreparedPiVersion;

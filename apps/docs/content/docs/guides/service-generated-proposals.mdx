@@ -14,13 +14,13 @@ The deployment operator sets `ACCLIMATE_MODEL_ENDPOINT` to the full OpenAI-compa
 Run the [operator CLI](/docs/reference/operator-cli) with the workspace's proposal authority. Explicitly name each permitted existing path. Repeat `--evidence` for each approved summary.
 
 ```sh
-npm run operator -- request-proposal --project PROJECT --bundle BUNDLE --parent VERSION \
+npm run operator -- request-proposal --workspace WORKSPACE --bundle BUNDLE --parent VERSION \
   --path skills/retry-review/SKILL.md --hypothesis 'Improve review' --evidence 'Observed failure'
-npm run operator -- proposal --project PROJECT --bundle BUNDLE --id PROPOSAL
+npm run operator -- proposal --workspace WORKSPACE --bundle BUNDLE --id PROPOSAL
 ```
 
 The first command submits asynchronous work. Use the returned proposal ID to read its status. With no provider configured, an accepted request fails during processing.
 
-The proposer can change text at the permitted paths and stores a candidate version with its rationale. Review its before-and-after files. Then [evaluate the candidate](/docs/guides/evaluate-a-change) with your app and make a [release decision](/docs/guides/review-and-release).
+The proposer can change text at the permitted paths and stores a candidate version with its rationale. Generated changes are held to a stricter rule than skills you write: a generated file is Markdown, and its `SKILL.md` frontmatter may set or change only `name` and `description`. Any other key an author declared, such as `allowed-tools`, `hooks` or `model`, stays exactly as written, because a generated change must never grant tools or permissions. Review its before-and-after files. Then [evaluate the candidate](/docs/guides/evaluate-a-change) with your app and make a [release decision](/docs/guides/review-and-release).
 
 For a worked example from the repository, `examples/service-proposer/README.md` describes `npm run example:improve -- run-service --live`. It uses the configured service proposer, runs up to four Codex reviews of the pinned versions, and stops before promotion.

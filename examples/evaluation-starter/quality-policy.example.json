@@ -1,10 +1,24 @@
 {
   "schemaVersion": 1,
-  "id": "no-regression",
+  "id": "quality-gate",
   "revision": "1",
-  "metric": { "name": "task reward", "unit": "reward", "direction": "higher" },
+  "metric": {
+    "name": "task reward",
+    "unit": "reward",
+    "direction": "higher",
+    "scale": { "minimum": 0, "maximum": 1 }
+  },
   "aggregation": "equal-case-means",
-  "minimumMeanImprovement": 0,
+  "minimumMeanImprovement": -0.05,
   "maximumCaseRegression": 0,
-  "requiredCases": []
+  "perCaseChecks": "protected-cases",
+  "requiredCases": [],
+  "inference": {
+    "method": "paired-t",
+    "confidence": 0.95,
+    "minCases": 10,
+    "minRepetitions": 2,
+    "sdFloor": 0.1,
+    "maximumMissingPercent": 15
+  }
 }

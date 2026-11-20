@@ -1,24 +1,87 @@
 ---
 title: Claude Agent SDK
-description: Prepare project instructions and skills, then pass the generated options to a fresh Claude Agent SDK session.
+description: Prepare project instructions and skills, run a fresh Claude Agent SDK query, and evaluate the same code with acclimate-eval.
 ---
 
-Prepare a Claude project workspace using `@acclimate/claude-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install). The `/native` entry targets the optional peer `@anthropic-ai/claude-agent-sdk` 0.3.325.
+Prepare a Claude project workspace using `@acclimate/claude-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install); both come from the same release, and the SDK is a peer of the plugin. The `/native` entry targets the optional peer `@anthropic-ai/claude-agent-sdk` `^0.3.325`.
 
-## Prepare project resources
+## Where the verified version comes from
 
-The plugin writes the instruction to `CLAUDE.md`, skills to `.claude/skills/<name>/`, and memory files to `.acclimate/memory/`. Use the main entry for staging and the native entry for session options.
+`prepare` takes a verified version, the SDK's checked copy of a version's bytes:
+
+- In a job, `client.prepare()` resolves the channel, verifies the digest and returns a delivery. Pass the delivery itself so its start receipt survives.
+- With `resolveAndCache(client, selection, { cacheDir })` you get the verified version directly.
+- In evaluation, the evaluator passes it to your `execute` function as `version`.
+
+## Run a job
+
+The plugin writes the instruction to `CLAUDE.md`, skills to `.claude/skills/<name>/` with their supporting files, and memory files to `.acclimate/memory/`. `claudeSessionOptions` returns `cwd`, `settingSources: ['project']` and the version's skill names. It leaves out `skills` when the version has none, because an empty list disables every skill.
 
 ```ts
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import { prepare } from '@acclimate/claude-plugin';
 import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
 
-const prepared = await prepare(verifiedVersion);
-const options = claudeSessionOptions(prepared);
+const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
+const prepared = await prepare(delivery);
+const abortController = new AbortController();
+for await (const message of query({
+  prompt,
+  options: {
+    ...claudeSessionOptions(prepared),
+    model,
+    abortController,
+    permissionMode: 'dontAsk',
+    allowedTools: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash'],
+    sandbox: { enabled: true },
+  },
+})) {
+  if (message.type === 'system' && message.subtype === 'init') prepared.reportStarted();
+}
+await prepared.cleanup();
 ```
 
-Pass the returned `cwd`, `settingSources: ['project']`, and skill names to a fresh Claude Agent SDK session. Supply your own model, prompt, and permissions. Add selected approved memory through your app's context. Call `await prepared.cleanup()` after the session stops using the files.
+Supply your own model, prompt and permissions. Add selected approved memory through your app's context. `prepared.cleanup()` removes the workspace and releases the delivery. Call it only after the query finished: if the query rejects, its process may still be running, so keep the files for inspection.
+
+## Use your repository's settings
+
+The session runs in a fresh directory, so your repository's `.claude/settings.json`, `.mcp.json`, hooks and subagents do not apply by default. Pass `baseDir` to copy them in:
+
+```ts
+const prepared = await prepare(delivery, { baseDir: '/absolute/path/to/repository' });
+```
+
+This copies `.claude/settings.json`, `.claude/agents/`, `.claude/commands/`, `.claude/hooks/`, `.claude/output-styles/` and `.mcp.json`. Instructions and skills still come only from the bundle: `CLAUDE.md`, `CLAUDE.local.md`, `.claude/skills/` and `.claude/settings.local.json` are never copied. `prepared.overlayFiles` lists the copied files with their SHA-256 digests. Record them in your runtime identity, because hooks and MCP servers change behavior.
+
+## Evaluate the same code
+
+Export `cases`, `execute` and `grade` from the module that runs Claude, so `acclimate-eval` compares versions with the code your jobs use:
+
+```ts
+import { ExecutionUncertainError } from '@acclimate/sdk/evaluation';
+
+export async function execute({ version, input, signal }) {
+  const prepared = await prepare(version);
+  const abortController = new AbortController();
+  signal.addEventListener('abort', () => abortController.abort(signal.reason), { once: true });
+  let answer = '';
+  try {
+    for await (const message of query({
+      prompt: input.prompt,
+      options: { ...claudeSessionOptions(prepared), model, abortController },
+    }))
+      if (message.type === 'result' && message.subtype === 'success') answer = message.result;
+  } catch (cause) {
+    // A rejected query does not prove the Claude process stopped: keep the files.
+    throw new ExecutionUncertainError({ cause });
+  }
+  await prepared.cleanup();
+  return { output: { answer } };
+}
+```
+
+The repository's `examples/claude-agent.ts` is the complete, typechecked version: delivery with receipts and result retention, plus `cases`, `execute` and `grade`. To compare Claude on an existing repository with frozen tests, set `"harness": "claude"` in the [native repository starter](/docs/guides/deliver-content#stage-a-repository-for-evaluation).
 
 ## Qualification
 
-Offline checks verify staged files and typecheck the options against SDK 0.3.325. Live Claude provider sessions remain unqualified.
+Offline checks verify staged files, the settings overlay and receipts, and typecheck the options and the example against SDK 0.3.325. The starter's Claude adapter is checked against a fake SDK module. Live Claude provider sessions remain unqualified.

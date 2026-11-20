@@ -1,3 +1,4 @@
+import { AcclimateError } from './errors.js';
 import type {
   CaseKey,
   CasePair,
@@ -30,11 +31,21 @@ export interface GradeResult {
   reward: number;
   error?: string | null;
 }
-export class TaskExecutionError extends Error {
+/** Throw from an execute callback when the task failed without gradeable output. */
+export class TaskExecutionError extends AcclimateError<'task.failed'> {
   readonly kind = 'task';
+  constructor(message = 'The task failed without gradeable output.', options?: ErrorOptions) {
+    super('task.failed', message, options);
+    this.name = 'TaskExecutionError';
+  }
 }
-export class InfrastructureError extends Error {
+/** Throw from an execute callback when the environment, not the agent, failed. */
+export class InfrastructureError extends AcclimateError<'infrastructure.failed'> {
   readonly kind = 'infrastructure';
+  constructor(message = 'The execution environment failed.', options?: ErrorOptions) {
+    super('infrastructure.failed', message, options);
+    this.name = 'InfrastructureError';
+  }
 }
 export interface CompareOptions<TSnapshot, TSettings, TOutput> {
   parent: ComparisonVersion;
@@ -291,10 +302,10 @@ export async function compare<TSnapshot, TSettings, TOutput>(
 /** Uploads the complete machine-readable report using the SDK's idempotent endpoint. */
 export function submitComparison(
   client: AcclimateClient,
-  projectId: string,
+  workspaceId: string,
   bundleId: string,
   report: ComparisonRequest,
   idempotencyKey: string,
 ) {
-  return client.createComparison(projectId, bundleId, report, idempotencyKey);
+  return client.createComparison(workspaceId, bundleId, report, idempotencyKey);
 }

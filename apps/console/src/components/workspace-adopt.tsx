@@ -27,7 +27,7 @@ export function WorkspaceAdopt({
   onPendingChange?: (pending: boolean) => void;
 }) {
   const titleId = useId();
-  const [projectId, setProjectId] = useState('');
+  const [workspaceId, setWorkspaceId] = useState('');
   const [reason, setReason] = useState('');
   const [review, setReview] = useState<AdoptionReview>();
   const [confirmed, setConfirmed] = useState(false);
@@ -52,7 +52,7 @@ export function WorkspaceAdopt({
       const result = await runAccessCommand({
         data: {
           kind: 'adoptWorkspace',
-          projectId: currentReview.projectId,
+          workspaceId: currentReview.workspaceId,
           reason: currentReview.reason,
           confirmedIdentity: currentReview.identity,
         },
@@ -100,11 +100,11 @@ export function WorkspaceAdopt({
             <Label htmlFor="adoption-workspace-id">Workspace ID to adopt</Label>
             <Input
               id="adoption-workspace-id"
-              value={projectId}
+              value={workspaceId}
               disabled={pending}
               onChange={(event) => {
                 edit();
-                setProjectId(event.target.value);
+                setWorkspaceId(event.target.value);
               }}
             />
             <Label htmlFor="adoption-reason">Reason for adoption</Label>
@@ -120,9 +120,9 @@ export function WorkspaceAdopt({
             />
             <Button
               variant="outline"
-              disabled={pending || !reviewWorkspaceAdoption(projectId, reason, identity)}
+              disabled={pending || !reviewWorkspaceAdoption(workspaceId, reason, identity)}
               onClick={() => {
-                setReview(reviewWorkspaceAdoption(projectId, reason, identity) ?? undefined);
+                setReview(reviewWorkspaceAdoption(workspaceId, reason, identity) ?? undefined);
                 setConfirmed(false);
                 setAdoption(undefined);
                 setMessage('');
@@ -137,7 +137,7 @@ export function WorkspaceAdopt({
               <dl className="space-y-3 text-sm">
                 <div>
                   <dt className="text-muted-foreground">Workspace ID</dt>
-                  <dd className="break-all font-mono">{currentReview.projectId}</dd>
+                  <dd className="break-all font-mono">{currentReview.workspaceId}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Reason</dt>
@@ -192,7 +192,7 @@ export function WorkspaceAdopt({
               </dl>
               {adoption.currentRole && (
                 <Button asChild variant="outline">
-                  <ConsoleLink href={workspaceHref(adoption.projectId)}>Open workspace</ConsoleLink>
+                  <ConsoleLink href={workspaceHref(adoption.workspaceId)}>Open workspace</ConsoleLink>
                 </Button>
               )}
             </div>

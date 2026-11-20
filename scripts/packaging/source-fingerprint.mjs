@@ -5,7 +5,8 @@ import { join } from 'node:path';
 const roots = [
   'packages/sdk/src', 'packages/codex-plugin/src', 'packages/claude-plugin/src',
   'packages/pi-plugin/src', 'packages/cursor-plugin/src', 'python/acclimate',
-  'examples/evaluation-starter', 'examples/ci', 'examples/native-repository',
+  'examples/evaluation-starter', 'examples/python-evaluation-starter', 'examples/ci',
+  'examples/native-repository',
   'scripts/packaging', 'src', 'migrations',
 ];
 const manifests = [

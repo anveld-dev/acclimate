@@ -37,7 +37,7 @@ export function VersionInspector({
 }) {
   return (
     <ScopedVersionInspector
-      key={JSON.stringify([scope.projectId, scope.bundleId, scope.channel, versionId])}
+      key={JSON.stringify([scope.workspaceId, scope.bundleId, scope.channel, versionId])}
       versionId={versionId}
       scope={scope}
       label={label}
@@ -58,7 +58,7 @@ function ScopedVersionInspector({
   contextLabel?: string;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
-  const scopeKey = JSON.stringify([scope.projectId, scope.bundleId, scope.channel, versionId]);
+  const scopeKey = JSON.stringify([scope.workspaceId, scope.bundleId, scope.channel, versionId]);
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
   const [result, setResult] = useState<Result | null>(null);
@@ -105,7 +105,7 @@ function ScopedVersionInspector({
     result?.ok && selected
       ? JSON.stringify(
           {
-            projectId: scope.projectId,
+            workspaceId: scope.workspaceId,
             bundleId: scope.bundleId,
             versionId: result.version.id,
             versionDigest: result.version.digest,

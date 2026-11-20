@@ -9,7 +9,7 @@ intentional errors and is checked separately, never run as an application.
 The combined closure fixtures also import the public progress DTOs/reporter and
 check the analysis API with typed comparison/descriptor inputs, component metrics,
 observations and uncertainty protocol. Its analysis binding must include
-`comparisonId`; omitting it adds the seventh expected negative diagnostic.
+`comparisonId`; omitting it adds the seventh expected negative diagnostic. The eighth rejects the removed `offline_max_age` keyword in favor of `offline={"max_age_ms": ...}`. The last rejects a `VerifiedVersionConnection` without `connectionId`; `positive.py` reads `VerifiedVersion["connection"]` with the same shape as the TypeScript `VerifiedVersion.connection`.
 
 Install a freshly built wheel in an external Python 3.11+ consumer venv with
 `--no-index --no-deps`. Install `mypy==1.18.2` in a separate developer-tool venv, then

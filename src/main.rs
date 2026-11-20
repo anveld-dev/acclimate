@@ -56,10 +56,14 @@ fn main() -> ExitCode {
 fn check_grants(input: impl Read) -> ExitCode {
     const MAX_INPUT: u64 = 1024 * 1024;
     let mut bytes = Vec::new();
-    let valid = input.take(MAX_INPUT + 1).read_to_end(&mut bytes).is_ok()
+    let parsed = if input.take(MAX_INPUT + 1).read_to_end(&mut bytes).is_ok()
         && bytes.len() <= MAX_INPUT as usize
-        && parse_grants(&bytes).is_ok();
-    if valid {
+    {
+        parse_grants(&bytes).map(|_| ())
+    } else {
+        Err(INVALID_GRANTS)
+    };
+    if parsed.is_ok() {
         println!(r#"{{"schemaVersion":1,"valid":true}}"#);
         ExitCode::SUCCESS
     } else {
@@ -69,8 +73,10 @@ fn check_grants(input: impl Read) -> ExitCode {
     }
 }
 
+const INVALID_GRANTS: &str = "invalid ACCLIMATE_AUTH JSON";
+
 fn parse_grants(bytes: &[u8]) -> Result<Vec<Grant>, &'static str> {
-    const INVALID: &str = "invalid ACCLIMATE_AUTH JSON";
+    const INVALID: &str = INVALID_GRANTS;
     let entries: Vec<&serde_json::value::RawValue> =
         serde_json::from_slice(bytes).map_err(|_| INVALID)?;
     let mut grants = Vec::with_capacity(entries.len());

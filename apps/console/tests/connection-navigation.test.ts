@@ -11,7 +11,7 @@ test('selecting a connection retains only the originating bundle and channel fil
   const url = new URL(href, 'https://console.invalid');
   assert.equal(url.pathname, '/w/workspace%20one/connections');
   assert.deepEqual(Object.fromEntries(url.searchParams), {
-    integration: 'id/one',
+    connection: 'id/one',
     bundleId: 'bundle/a',
     channel: 'canary & next',
   });

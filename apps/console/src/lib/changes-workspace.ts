@@ -2,7 +2,7 @@ import type { Comparison, Evaluation, EvaluationProgressView } from '@acclimate/
 
 /** Read scope and identity. A different identity must never reuse a history cache. */
 export interface ChangesHistoryScope {
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   channel: string;
   actorScope: string;

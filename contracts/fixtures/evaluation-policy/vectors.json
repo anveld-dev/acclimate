@@ -87,7 +87,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "pass",
@@ -180,7 +183,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "fail",
@@ -526,7 +532,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 1,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "pass",
@@ -649,7 +658,10 @@
         "minimumMeanImprovement": 2,
         "maximumCaseRegression": 0,
         "requiredCases": [],
-        "candidateThreshold": 9
+        "candidateThreshold": 9,
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "pass",
@@ -746,6 +758,9 @@
         "requiredCases": [],
         "cost": {
           "maximumCandidateUsd": 0
+        },
+        "inference": {
+          "method": "none"
         }
       },
       "expected": {
@@ -839,7 +854,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "pass",
@@ -937,6 +955,9 @@
         "requiredCases": [],
         "cost": {
           "maximumCandidateUsd": 0.25
+        },
+        "inference": {
+          "method": "none"
         }
       },
       "expected": {
@@ -1035,6 +1056,9 @@
         "requiredCases": [],
         "cost": {
           "maximumIncreaseUsd": 1
+        },
+        "inference": {
+          "method": "none"
         }
       },
       "expected": {
@@ -1129,7 +1153,11 @@
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
         "requiredCases": [],
-        "maximumCandidateTaskFailures": 0
+        "maximumCandidateTaskFailures": 0,
+        "perCaseChecks": "all-cases",
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "fail",
@@ -1230,7 +1258,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "indeterminate",
@@ -1323,7 +1354,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "indeterminate",
@@ -1444,7 +1478,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "indeterminate",
@@ -1593,7 +1630,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "pass",
@@ -1743,7 +1783,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0.20000000000000004,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "pass",
@@ -1865,7 +1908,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 1,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "pass",
@@ -1959,7 +2005,12 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": ["critical"]
+        "requiredCases": [
+          "critical"
+        ],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "error": "policy.inventory_incompatible"
@@ -2051,7 +2102,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "error": "evidence.identity_mismatch"
@@ -2163,7 +2217,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "error": "evidence.malformed"
@@ -2259,7 +2316,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "error": "evidence.malformed"
@@ -2355,7 +2415,10 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": []
+        "requiredCases": [],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "error": "policy.invalid"
@@ -2448,7 +2511,10 @@
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
         "requiredCases": [],
-        "maximumCandidateTaskFailures": 0.5
+        "maximumCandidateTaskFailures": 0.5,
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "error": "policy.invalid"
@@ -2541,7 +2607,10 @@
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
         "requiredCases": [],
-        "maximumCandidateTaskFailures": false
+        "maximumCandidateTaskFailures": false,
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "error": "policy.invalid"
@@ -2634,7 +2703,10 @@
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
         "requiredCases": [],
-        "cost": {}
+        "cost": {},
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "error": "policy.invalid"
@@ -2727,7 +2799,10 @@
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
         "requiredCases": [],
-        "candidateThreshold": 8
+        "candidateThreshold": 8,
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "fail",
@@ -2820,7 +2895,12 @@
         "aggregation": "equal-case-means",
         "minimumMeanImprovement": 0,
         "maximumCaseRegression": 0,
-        "requiredCases": ["line\ncase"]
+        "requiredCases": [
+          "line\ncase"
+        ],
+        "inference": {
+          "method": "none"
+        }
       },
       "expected": {
         "verdict": "pass",
@@ -2921,6 +3001,9 @@
         "cost": {
           "maximumCandidateUsd": 0.3,
           "maximumIncreaseUsd": 0.2
+        },
+        "inference": {
+          "method": "none"
         }
       },
       "expected": {

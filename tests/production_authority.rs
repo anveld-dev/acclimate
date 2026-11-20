@@ -122,7 +122,7 @@ async fn transport_is_classified_before_any_session_lookup() {
     let impersonation = call(
         &app,
         "GET",
-        "/v1/projects/unregistered/bundles",
+        "/v1/workspaces/unregistered/bundles",
         common::CONSOLE_TOKEN,
         None,
         json!(null),
@@ -215,7 +215,7 @@ async fn adoption_is_explicit_serialized_immutable_and_never_regrants() {
     let a = login(&app, "operator", None).await;
     let b = login(&app, "other-operator", None).await;
     let ordinary = login(&app, "ordinary-user", None).await;
-    let adopt = json!({"projectId":p,"reason":"Reviewed cutover ownership"});
+    let adopt = json!({"workspaceId":p,"reason":"Reviewed cutover ownership"});
     assert_eq!(
         call(
             &app,
@@ -269,7 +269,7 @@ async fn adoption_is_explicit_serialized_immutable_and_never_regrants() {
         "/v1/auth/workspace-adoptions",
         common::CONSOLE_TOKEN,
         winner["secret"].as_str(),
-        json!({"projectId":p,"reason":"Must not replace original"}),
+        json!({"workspaceId":p,"reason":"Must not replace original"}),
     )
     .await;
     assert_eq!(retry.0, StatusCode::OK);
@@ -298,7 +298,7 @@ async fn adoption_is_explicit_serialized_immutable_and_never_regrants() {
         call(
             &app,
             "GET",
-            &format!("/v1/projects/{p}/bundles"),
+            &format!("/v1/workspaces/{p}/bundles"),
             common::CONSOLE_TOKEN,
             winner["secret"].as_str(),
             json!(null)
@@ -310,7 +310,7 @@ async fn adoption_is_explicit_serialized_immutable_and_never_regrants() {
     let machine = call(
         &app,
         "GET",
-        &format!("/v1/projects/{p}/bundles"),
+        &format!("/v1/workspaces/{p}/bundles"),
         "production-machine",
         None,
         json!(null),
@@ -328,7 +328,7 @@ async fn adoption_is_explicit_serialized_immutable_and_never_regrants() {
         "/v1/auth/workspace-adoptions",
         common::CONSOLE_TOKEN,
         winner["secret"].as_str(),
-        json!({"projectId":missing,"reason":"explicit"}),
+        json!({"workspaceId":missing,"reason":"explicit"}),
     )
     .await;
     assert_eq!(not_found.0, StatusCode::NOT_FOUND);
@@ -340,7 +340,7 @@ async fn listing_projects_is_read_only() {
     let result = call(
         &router(s),
         "GET",
-        "/v1/projects",
+        "/v1/workspaces",
         "production-machine",
         None,
         json!(null),
@@ -381,7 +381,7 @@ async fn explicit_prefixed_console_authority_resolves_content_and_rejects_dot_wo
         let result = call(
             &app,
             "POST",
-            "/v1/projects",
+            "/v1/workspaces",
             console,
             session,
             json!({"id":id,"name":"Unaddressable"}),
@@ -412,9 +412,9 @@ async fn explicit_prefixed_console_authority_resolves_content_and_rejects_dot_wo
     sqlx::query("INSERT INTO versions(id,project_id,bundle_id,digest,payload,created_by) VALUES($1,$2,$3,'test-digest',$4,'fixture-author')").bind(version).bind(&p).bind(bundle).bind(br#"{"schemaVersion":1,"files":[]}"#.to_vec()).execute(&db).await.unwrap();
     sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'stable',1,$3)").bind(&p).bind(bundle).bind(version).execute(&db).await.unwrap();
     for path in [
-        format!("/v1/projects/{p}/bundles/{bundle}/channels/stable"),
-        format!("/v1/projects/{p}/bundles/{bundle}/versions/{version}"),
-        format!("/v1/projects/{p}/bundles/{bundle}/versions/{version}/payload"),
+        format!("/v1/workspaces/{p}/bundles/{bundle}/channels/stable"),
+        format!("/v1/workspaces/{p}/bundles/{bundle}/versions/{version}"),
+        format!("/v1/workspaces/{p}/bundles/{bundle}/versions/{version}/payload"),
     ] {
         let result = call(&app, "GET", &path, console, session, json!(null)).await;
         assert_eq!(

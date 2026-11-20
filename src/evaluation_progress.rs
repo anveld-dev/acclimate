@@ -1,5 +1,4 @@
 //! Optional activity reports. No lease, takeover, cancellation, or replay semantics.
-use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, CaseKey, db, err, path};
 use axum::{
     Json, Router,
@@ -41,8 +40,8 @@ enum Phase {
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route(
-            "/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/progress",
+        .route(
+            "/v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/progress",
             get(read).post(report),
         )
         .layer(DefaultBodyLimit::max(2048))
@@ -121,7 +120,7 @@ async fn report(
     h: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let actor = crate::auth::actor(&h, &s, &p, "write")?;
+    let actor = crate::auth::actor(&h, &s, &p, "evaluate")?;
     let q: Progress = serde_json::from_slice(&body).map_err(|_| {
         err(
             StatusCode::BAD_REQUEST,
@@ -145,7 +144,7 @@ async fn report(
     let canonical = serde_json::to_value(&q).map_err(db)?;
     let fingerprint = crate::digest(&serde_json::to_vec(&canonical).map_err(db)?);
     let mut tx = s.db.begin().await.map_err(db)?;
-    crate::auth::authorize_transaction(&mut tx, &actor, &p, "write").await?;
+    crate::auth::authorize_transaction(&mut tx, &actor, &p, "evaluate").await?;
     let row = sqlx::query("SELECT * FROM evaluation_requests WHERE project_id=$1 AND bundle_id=$2 AND id=$3 FOR UPDATE")
         .bind(&p).bind(path(&b)?).bind(path(&id)?).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(missing)?;
     if row.get::<String, _>("status") != "running"
@@ -181,7 +180,7 @@ async fn report(
         return Err(conflict());
     }
     if q.sequence > previous {
-        sqlx::query("UPDATE evaluation_requests SET progress_sequence=$2,progress_completed=$3,progress_fingerprint=$4 WHERE id=$1")
+        sqlx::query("UPDATE evaluation_requests SET progress_sequence=$2,progress_completed=$3,progress_fingerprint=$4,last_activity_at=now() WHERE id=$1")
             .bind(row.get::<Uuid,_>("id")).bind(q.sequence).bind(q.completed).bind(fingerprint).execute(&mut *tx).await.map_err(db)?;
         sqlx::query("INSERT INTO evaluation_progress(request_id,body,received_at,expires_at) VALUES($1,$2,clock_timestamp(),clock_timestamp()+interval '24 hours') ON CONFLICT(request_id) DO UPDATE SET body=EXCLUDED.body,received_at=clock_timestamp(),expires_at=clock_timestamp()+interval '24 hours'")
             .bind(row.get::<Uuid,_>("id")).bind(canonical).execute(&mut *tx).await.map_err(db)?;

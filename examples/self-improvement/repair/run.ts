@@ -4,8 +4,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { resolveAndCache } from '../../../packages/sdk/src/index.js';
-import type { VerifiedVersion } from '../../../packages/sdk/src/types.js';
+import { resolveAndCache } from '@acclimate/sdk';
+import type { VerifiedVersion } from '@acclimate/sdk';
 import { Luna, model } from '../luna.js';
 import { startService } from '../service.js';
 import { dataset, grade, policy, prompt as flatPrompt, screen } from '../twenty/domain.js';
@@ -90,7 +90,7 @@ try {
   );
   const cache = { cacheDir: path.join(output, 'cache') };
   const fetch = (versionId: string) =>
-    resolveAndCache(client, { projectId: project, bundleId: bundle.id, versionId }, cache);
+    resolveAndCache(client, { workspaceId: project, bundleId: bundle.id, versionId }, cache);
   await save('parent.json', await fetch(root.id));
   let draft = await fetch(scaffold.id),
     selected: VerifiedVersion | undefined;

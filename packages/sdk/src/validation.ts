@@ -1,3 +1,4 @@
+import { AcclimateError } from './errors.js';
 import type { BundlePayload } from './types.js';
 export type { CompatibilityTarget } from './types.js';
 export { compatibilityIssues, assertCompatible } from './compatibility.js';
@@ -12,12 +13,24 @@ export {
 } from './evaluation-validation.js';
 export type { GuidedTarget, EvaluationMismatchField } from './evaluation-validation.js';
 
-export class DeliveryError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
+export type DeliveryErrorCode =
+  | 'cache_miss'
+  | 'collision'
+  | 'digest_mismatch'
+  | 'invalid_cache'
+  | 'invalid_overlay'
+  | 'invalid_payload'
+  | 'invalid_response'
+  | 'stale_resolution'
+  | 'unsafe_cache'
+  | 'unsafe_destination'
+  | 'unsafe_path'
+  | 'unsupported_platform'
+  | 'unsupported_schema';
+/** Delivered content could not be resolved, verified, cached or written safely. */
+export class DeliveryError extends AcclimateError<DeliveryErrorCode> {
+  constructor(code: DeliveryErrorCode, message: string) {
+    super(code, message);
     this.name = 'DeliveryError';
   }
 }

@@ -10,7 +10,9 @@ def record_policy_receipt(client, handoff, verdict):
         return {"status": "unconfirmed", "code": "evidence.identity_mismatch"}
     report = {"requestId": handoff["requestId"], "attemptId": binding["attemptId"],
               "policy": policy, "verdict": verdict["verdict"], "checks": verdict["checks"]}
-    target = handoff["projectId"], handoff["bundleId"], comparison_id
+    if verdict.get("inference") is not None:
+        report["inference"] = verdict["inference"]
+    target = handoff["workspaceId"], handoff["bundleId"], comparison_id
     try:
         receipts = client.list_comparison_policy_receipts(*target)
         receipt = next((r for r in receipts["items"] if r["policy"]["sha256"] == policy["sha256"]), None)

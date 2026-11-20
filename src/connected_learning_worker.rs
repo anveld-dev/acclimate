@@ -1,11 +1,6 @@
-use crate::WorkspaceRoutes;
 use crate::{
     ApiResult, AppState, CaseKey, ComparisonRequest, PromoteRequest, ProposalRequest,
-    connected_learning::{
-        Descriptor, repetitions,
-        selection::Stage,
-        statistics::{AUDIT_Z, DEVELOPMENT_Z},
-    },
+    connected_learning::{Descriptor, repetitions, selection::Stage},
     db, err,
     evaluations::{CreateEvaluationRequest, decode, enqueue_evaluation, validate_report},
     improvement::{enqueue_managed_proposal, validate_comparison},
@@ -35,16 +30,16 @@ const REVIEW_DECLINED: &str = "Reviewer declined promotion";
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route("/v1/projects/{project}/integrations/{integration}/learning/field-requalifications/{version}",
+        .route("/v1/workspaces/{project}/connections/{integration}/learning/field-requalifications/{version}",
             axum::routing::get(field_requalification::inspect))
-        .workspace_route("/v1/projects/{project}/integrations/{integration}/learning/field-requalifications",
+        .route("/v1/workspaces/{project}/connections/{integration}/learning/field-requalifications",
             post(field_requalification::submit))
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/field-audits",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/field-audits",
             post(field_audits::submit),
         )
-        .workspace_route(
-            "/v1/projects/{project}/integrations/{integration}/learning/rounds/{round}/review",
+        .route(
+            "/v1/workspaces/{project}/connections/{integration}/learning/rounds/{round}/review",
             post(review),
         )
 }
@@ -688,6 +683,9 @@ impl Connection {
                     .map(|id| id.to_string())
             },
             require_bound_evidence: true,
+            run_name: None,
+            retry_of: None,
+            policy_digest: None,
         })
     }
 
@@ -794,6 +792,9 @@ impl Connection {
                 expected_cases: repetitions::calibration_keys(d),
                 proposal_id: None,
                 require_bound_evidence: true,
+                run_name: None,
+                retry_of: None,
+                policy_digest: None,
             };
             let evaluation =
                 enqueue_evaluation(tx, &self.project, self.bundle, WORKER, &request).await?;
@@ -940,7 +941,7 @@ impl Connection {
             policies.development.threshold(Stage::Development {
                 replay_passed: false,
             }),
-            DEVELOPMENT_Z,
+            policies.development.z(),
             target,
         );
         let cumulative = plan.project(
@@ -948,7 +949,7 @@ impl Connection {
             None,
             noise,
             policies.development.threshold(Stage::Cumulative),
-            DEVELOPMENT_Z,
+            policies.development.z(),
             target,
         );
         let audits: Vec<_> = self
@@ -961,7 +962,7 @@ impl Connection {
                     Some(index),
                     noise,
                     policies.audit.threshold(Stage::Audit),
-                    AUDIT_Z,
+                    policies.audit.z(),
                     audit_target,
                 )
             })
@@ -2067,7 +2068,18 @@ pub(crate) async fn authorize_proposal(
 pub async fn connected_learning_worker(s: AppState) {
     let mut retry_after = std::collections::HashMap::new();
     let mut next_replay_sweep = tokio::time::Instant::now();
+    let mut next_abandon_sweep = tokio::time::Instant::now();
+    let abandon_after = crate::evaluations::abandon_after_seconds();
     while !s.runtime.is_draining() {
+        if tokio::time::Instant::now() >= next_abandon_sweep {
+            next_abandon_sweep = tokio::time::Instant::now() + Duration::from_secs(30);
+            if let Some(_permit) = s.runtime.claim_permit().await
+                && let Err(error) =
+                    crate::evaluations::abandon_inactive_evaluations(&s.db, abandon_after).await
+            {
+                eprintln!("Evaluation abandonment sweep failed: {error}");
+            }
+        }
         if tokio::time::Instant::now() >= next_replay_sweep {
             next_replay_sweep = tokio::time::Instant::now() + Duration::from_secs(5);
             if let Some(_permit) = s.runtime.claim_permit().await
@@ -2230,8 +2242,9 @@ async fn review(
             "A declined review cannot override an application policy",
         ));
     }
+    // Operation key: the canonical route, see commands::operation_path.
     let route = format!(
-        "/v1/projects/{}/integrations/{integration}/learning/rounds/{round_id}/review",
+        "/v1/workspaces/{}/connections/{integration}/learning/rounds/{round_id}/review",
         connection.project
     );
     if state == "rejected" && round_decision.as_deref() == Some("review_declined") {
@@ -2324,6 +2337,7 @@ mod tests {
             output_ref: None,
             error: None,
             usage: None,
+            components: None,
         }
     }
 
@@ -2354,16 +2368,16 @@ mod tests {
                 .collect(),
         };
         let policy = crate::connected_learning::selection::Policies::default().development;
-        assert!(policy.check(&comparison).is_err());
+        assert!(policy.check(&comparison, false).is_err());
         comparison.results[0].candidate.reward = Some(1.0);
         comparison.results[1].candidate.reward = Some(1.0);
-        assert!(policy.check(&comparison).is_ok());
+        assert!(policy.check(&comparison, false).is_ok());
         comparison.results[1].candidate.reward = Some(0.0);
-        assert!(policy.check(&comparison).is_err());
+        assert!(policy.check(&comparison, false).is_err());
         comparison.results[1].candidate = scored(0.5, "task_failed");
-        assert!(policy.check(&comparison).is_err());
+        assert!(policy.check(&comparison, false).is_err());
         comparison.results[1].candidate = scored(0.5, "completed");
         comparison.results[1].candidate.reward = None;
-        assert!(policy.check(&comparison).is_err());
+        assert!(policy.check(&comparison, false).is_err());
     }
 }

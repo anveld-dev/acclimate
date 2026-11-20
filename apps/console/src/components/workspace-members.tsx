@@ -68,10 +68,10 @@ const ROLES = [
 type Role = (typeof ROLES)[number]['value'];
 
 export function WorkspaceMembers({
-  projectId,
+  workspaceId,
   initial,
 }: {
-  projectId: string;
+  workspaceId: string;
   initial?: AccessState;
 }) {
   const router = useRouter();
@@ -95,12 +95,12 @@ export function WorkspaceMembers({
   const generation = useRef(0);
   const readEpoch = useRef(0);
   const loadedPages = useRef(1);
-  const currentProject = useRef(projectId);
+  const currentProject = useRef(workspaceId);
   const feedbackScope = useRef({
-    projectId,
+    workspaceId,
     identityId: initial?.ok ? initial.identity.userId : undefined,
   });
-  currentProject.current = projectId;
+  currentProject.current = workspaceId;
 
   useEffect(
     () => () => {
@@ -113,13 +113,13 @@ export function WorkspaceMembers({
     let active = true;
     const identityId = initial?.ok ? initial.identity.userId : undefined;
     const sameIdentity =
-      feedbackScope.current.projectId === projectId &&
+      feedbackScope.current.workspaceId === workspaceId &&
       feedbackScope.current.identityId === identityId;
     // Polls may refresh rows without interrupting an action or clearing feedback.
     if (
       sameIdentity &&
       initial?.ok &&
-      initial.projects.some((p) => p.id === projectId && p.role === 'admin')
+      initial.projects.some((p) => p.id === workspaceId && p.role === 'admin')
     ) {
       if (loadedPages.current === 1) setAccess(initial);
       return;
@@ -128,7 +128,7 @@ export function WorkspaceMembers({
       setQuery('');
       setRoleFilter('all');
     }
-    feedbackScope.current = { projectId, identityId };
+    feedbackScope.current = { workspaceId, identityId };
     generation.current += 1;
     loadedPages.current = 1;
     setAccess(initial);
@@ -139,7 +139,7 @@ export function WorkspaceMembers({
     setRole('viewer');
     setMessage('');
     if (!initial)
-      void readWorkspaceAccess({ data: { projectId } })
+      void readWorkspaceAccess({ data: { workspaceId } })
         .then((value) => {
           if (active) setAccess(value);
         })
@@ -149,11 +149,11 @@ export function WorkspaceMembers({
     return () => {
       active = false;
     };
-  }, [projectId, initial]);
+  }, [workspaceId, initial]);
 
   async function run(command: AccessCommand) {
     if (pending) return;
-    const scope = projectId;
+    const scope = workspaceId;
     const version = generation.current;
     readEpoch.current += 1;
     setPending(true);
@@ -186,13 +186,13 @@ export function WorkspaceMembers({
 
   async function loadMore() {
     if (pending || !access?.ok || !access.nextMemberCursor) return;
-    const scope = projectId;
+    const scope = workspaceId;
     const version = generation.current;
     readEpoch.current += 1;
     setPending(true);
     try {
       const page = await readWorkspaceMembers({
-        data: { projectId: scope, cursor: access.nextMemberCursor },
+        data: { workspaceId: scope, cursor: access.nextMemberCursor },
       });
       if (scope !== currentProject.current || version !== generation.current) return;
       if (!page.ok) {
@@ -232,16 +232,16 @@ export function WorkspaceMembers({
   }
 
   const allowed =
-    access?.ok && access.projects.some((p) => p.id === projectId && p.role === 'admin');
+    access?.ok && access.projects.some((p) => p.id === workspaceId && p.role === 'admin');
 
   async function readMemberWindow(scope: string): Promise<AccessState> {
     const pages = loadedPages.current;
-    const next = await readWorkspaceAccess({ data: { projectId: scope } });
+    const next = await readWorkspaceAccess({ data: { workspaceId: scope } });
     if (!next.ok) return next;
     const members = [...(next.members ?? [])];
     let cursor = next.nextMemberCursor;
     for (let page = 1; page < pages && cursor; page++) {
-      const more = await readWorkspaceMembers({ data: { projectId: scope, cursor } });
+      const more = await readWorkspaceMembers({ data: { workspaceId: scope, cursor } });
       if (!more.ok) return { ...more, identity: null, projects: [] };
       members.push(
         ...more.items.filter((item) => !members.some((member) => member.id === item.id)),
@@ -253,7 +253,7 @@ export function WorkspaceMembers({
 
   useBackgroundRefresh(
     async () => {
-      const scope = projectId;
+      const scope = workspaceId;
       const version = generation.current;
       const epoch = readEpoch.current;
       const current = () =>
@@ -288,7 +288,7 @@ export function WorkspaceMembers({
             await router.invalidate();
           }
         }),
-        runInvitationCommand({ data: { kind: 'list', projectId: scope } })
+        runInvitationCommand({ data: { kind: 'list', workspaceId: scope } })
           .then((invites) => {
             if (!current() || accessLost) return;
             if (invites.ok) {
@@ -326,7 +326,7 @@ export function WorkspaceMembers({
     }
     setInvitationError('');
     if (allowed)
-      void runInvitationCommand({ data: { kind: 'list', projectId } })
+      void runInvitationCommand({ data: { kind: 'list', workspaceId } })
         .then((value) => {
           if (!active) return;
           if (value.ok) {
@@ -340,13 +340,13 @@ export function WorkspaceMembers({
     return () => {
       active = false;
     };
-  }, [projectId, allowed, initial]);
+  }, [workspaceId, allowed, initial]);
 
   async function invite(command: InvitationCommand) {
     if (pending || !allowed) return;
     const version = generation.current;
     readEpoch.current += 1;
-    const scope = projectId;
+    const scope = workspaceId;
     setPending(true);
     setMessage('');
     try {
@@ -367,7 +367,7 @@ export function WorkspaceMembers({
             ? 'An invitation already exists. You can resend it below.'
             : INVITATION_QUEUED,
       );
-      const list = await runInvitationCommand({ data: { kind: 'list', projectId: scope } });
+      const list = await runInvitationCommand({ data: { kind: 'list', workspaceId: scope } });
       if (version !== generation.current || scope !== currentProject.current) return;
       if (list.ok) setInvitations(list.items ?? []);
       await router.invalidate();
@@ -380,8 +380,8 @@ export function WorkspaceMembers({
   }
   const members = (access?.ok && access.members) || [];
   const workspaceName = access?.ok
-    ? (access.projects.find((project) => project.id === projectId)?.name ?? projectId)
-    : projectId;
+    ? (access.projects.find((project) => project.id === workspaceId)?.name ?? workspaceId)
+    : workspaceId;
   const search = query.trim().toLowerCase();
   const matchingMembers = members.filter(
     (member) =>
@@ -570,7 +570,7 @@ export function WorkspaceMembers({
                               if (value !== member.role)
                                 void run({
                                   kind: 'setMembership',
-                                  projectId,
+                                  workspaceId,
                                   userId: member.id,
                                   role: value as Role,
                                   confirmedIdentity: {
@@ -794,7 +794,7 @@ export function WorkspaceMembers({
                               ['queued', 'sending'].includes(invitation.deliveryStatus)
                             }
                             onSelect={() =>
-                              void invite({ kind: 'resend', projectId, id: invitation.id })
+                              void invite({ kind: 'resend', workspaceId, id: invitation.id })
                             }
                           >
                             Resend invitation
@@ -803,7 +803,7 @@ export function WorkspaceMembers({
                             className="text-destructive"
                             disabled={pending}
                             onSelect={() =>
-                              void invite({ kind: 'revoke', projectId, id: invitation.id })
+                              void invite({ kind: 'revoke', workspaceId, id: invitation.id })
                             }
                           >
                             Revoke invitation
@@ -843,7 +843,7 @@ export function WorkspaceMembers({
             onSubmit={(event) => {
               event.preventDefault();
               if (email.trim())
-                void invite({ kind: 'create', projectId, email: email.trim(), role });
+                void invite({ kind: 'create', workspaceId, email: email.trim(), role });
             }}
           >
             <div className="space-y-2">
@@ -934,7 +934,7 @@ export function WorkspaceMembers({
                 if (removing)
                   void run({
                     kind: 'removeMembership',
-                    projectId,
+                    workspaceId,
                     userId: removing.id,
                     confirmedIdentity: { issuer: removing.issuer, subject: removing.subject },
                   });

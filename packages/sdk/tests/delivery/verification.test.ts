@@ -66,7 +66,7 @@ function clientFor(content: Uint8Array, expectedDigest = digest(content), onPayl
     },
   });
 }
-const selection = { projectId: 'p1', bundleId: 'b1', versionId: 'v1' };
+const selection = { workspaceId: 'p1', bundleId: 'b1', versionId: 'v1' };
 
 test('delivery still evicts corrupted cached bytes and replaces them with verified network content', async () => {
   const cacheDir = await mkdtemp(join(await realpath(tmpdir()), 'acclimate-verification-'));

@@ -27,3 +27,17 @@ test('same datasets and colliding display prefixes retain distinct full actionab
   assert.match(labels[0].inspect, /Selected evidence/);
   assert.doesNotMatch(labels[1].inspect, /Selected evidence/);
 });
+
+test('a named run leads with the evaluator name and keeps the full request identity', () => {
+  const labels = evaluationRequestLabels(
+    {
+      id: 'request-id',
+      datasetRevision: 'saved-app',
+      status: 'completed',
+      runName: 'first-change',
+    },
+    false,
+  );
+  assert.match(labels.details, /^Details for run first-change, saved-app, request request-id/);
+  assert.match(labels.inspect, /run first-change/);
+});

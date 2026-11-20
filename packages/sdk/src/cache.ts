@@ -1,3 +1,4 @@
+import { AcclimateUsageError, TransportError } from './errors.js';
 import type { DeliveryObservation, DeliveryObserver } from './reporting.js';
 import { createHash } from 'node:crypto';
 import {
@@ -19,8 +20,8 @@ import { DeliveryError } from './validation.js';
 import { verifyPayloadBytes } from './verification.js';
 export { DeliveryError, validatePayload } from './validation.js';
 export type Selection =
-  | { projectId: string; bundleId: string; channel: string }
-  | { projectId: string; bundleId: string; versionId: string };
+  | { workspaceId: string; bundleId: string; channel: string }
+  | { workspaceId: string; bundleId: string; versionId: string };
 export type OfflinePolicy = false | { maxAgeMs: number } | { pinnedVersionId: string };
 export interface CachePolicy {
   cacheDir: string;
@@ -80,9 +81,9 @@ async function ensurePrivateDir(path: string): Promise<void> {
     );
 }
 function keyFor(client: AcclimateClient, parts: string[]): string {
-  if (client.integrationId) {
+  if (client.connectionId) {
     return createHash('sha256')
-      .update(JSON.stringify([client.baseUrl, client.scope, client.integrationId, ...parts]))
+      .update(JSON.stringify([client.baseUrl, client.scope, client.connectionId, ...parts]))
       .digest('hex');
   }
   return createHash('sha256')
@@ -105,12 +106,14 @@ async function loadEntry(dir: string): Promise<any | null> {
   }
 }
 
-// The native fetch deadline rejects with TimeoutError, while an explicit caller abort
+// The client wraps network failures in TransportError. Custom fetchers can still surface
+// the native errors: the fetch deadline rejects with TimeoutError, while an explicit caller abort
 // rejects with AbortError. Only transport failures and 503 permit offline use.
 function isTransportFailure(error: unknown): boolean {
   return error instanceof ApiError
     ? error.status === 503
-    : error instanceof TypeError ||
+    : error instanceof TransportError ||
+        error instanceof TypeError ||
         (error instanceof DOMException &&
           (error.name === 'AbortError' || error.name === 'TimeoutError'));
 }
@@ -132,16 +135,16 @@ export async function resolveAndCache(
       policy.maxResolutionAgeMs < 0 ||
       policy.maxResolutionAgeMs > 30 * 24 * 60 * 60 * 1000)
   )
-    throw new RangeError('maxResolutionAgeMs must be between 0 and 30 days');
+    throw new AcclimateUsageError('maxResolutionAgeMs must be between 0 and 30 days', 'maxResolutionAgeMs');
   if (
     policy.maxCacheBytes !== undefined &&
     (!Number.isFinite(policy.maxCacheBytes) ||
       policy.maxCacheBytes < 1 ||
       policy.maxCacheBytes > 1024 * 1024 * 1024)
   )
-    throw new RangeError('maxCacheBytes must be between 1 and 1073741824');
+    throw new AcclimateUsageError('maxCacheBytes must be between 1 and 1073741824', 'maxCacheBytes');
   if (typeof policy.cacheDir !== 'string' || !policy.cacheDir)
-    throw new TypeError('cacheDir is required');
+    throw new AcclimateUsageError('cacheDir is required', 'cacheDir');
   if (
     typeof offline === 'object' &&
     'maxAgeMs' in offline &&
@@ -149,19 +152,19 @@ export async function resolveAndCache(
       offline.maxAgeMs < 0 ||
       offline.maxAgeMs > 30 * 24 * 60 * 60 * 1000)
   )
-    throw new RangeError('offline.maxAgeMs must be between 0 and 30 days');
+    throw new AcclimateUsageError('offline.maxAgeMs must be between 0 and 30 days', 'offline.maxAgeMs');
   await ensurePrivateDir(policy.cacheDir);
   if ('channel' in selection) {
     const mapDir = join(
       resolve(policy.cacheDir),
-      keyFor(client, [selection.projectId, selection.bundleId, 'channel', selection.channel]),
+      keyFor(client, [selection.workspaceId, selection.bundleId, 'channel', selection.channel]),
     );
     const old = await loadEntry(mapDir);
     const age =
       old && typeof old.resolvedAt === 'number' ? Math.max(0, now - old.resolvedAt) : Infinity;
     try {
       const response = await client.resolveChannel(
-        selection.projectId,
+        selection.workspaceId,
         selection.bundleId,
         selection.channel,
         { etag: old?.etag },
@@ -223,7 +226,7 @@ export async function resolveAndCache(
       );
     try {
       version = await client.getVersion(
-        selection.projectId,
+        selection.workspaceId,
         selection.bundleId,
         selection.versionId,
       );
@@ -236,7 +239,7 @@ export async function resolveAndCache(
       const index = await loadEntry(
         join(
           resolve(policy.cacheDir),
-          keyFor(client, [selection.projectId, selection.bundleId, 'version', selection.versionId]),
+          keyFor(client, [selection.workspaceId, selection.bundleId, 'version', selection.versionId]),
         ),
       );
       if (!index?.version || !Number.isFinite(index.cachedAt))
@@ -254,7 +257,7 @@ export async function resolveAndCache(
     );
   const entryDir = join(
     resolve(policy.cacheDir),
-    keyFor(client, [selection.projectId, selection.bundleId, version.id, version.digest]),
+    keyFor(client, [selection.workspaceId, selection.bundleId, version.id, version.digest]),
   );
   let downloaded = false;
   let payload: BundlePayload | undefined;
@@ -268,7 +271,7 @@ export async function resolveAndCache(
     }
   }
   if (!payload) {
-    const bytes = await client.getPayload(selection.projectId, selection.bundleId, version.id);
+    const bytes = await client.getPayload(selection.workspaceId, selection.bundleId, version.id);
     if (bytes.byteLength > MAX_PAYLOAD)
       throw new DeliveryError('invalid_payload', 'Downloaded payload exceeds size limit');
     try {
@@ -289,7 +292,7 @@ export async function resolveAndCache(
     await saveEntry(
       join(
         resolve(policy.cacheDir),
-        keyFor(client, [selection.projectId, selection.bundleId, 'version', version.id]),
+        keyFor(client, [selection.workspaceId, selection.bundleId, 'version', version.id]),
       ),
       { version, cachedAt: now },
     );
@@ -303,11 +306,11 @@ export async function resolveAndCache(
     resolution,
     resolvedAt: pinnedOffline ? pinnedAt : resolvedAt,
     stale: stale || pinnedOffline,
-    ...(client.integrationId
+    ...(client.connectionId
       ? {
           connection: Object.freeze({
-            projectId: selection.projectId,
-            integrationId: client.integrationId,
+            workspaceId: selection.workspaceId,
+            connectionId: client.connectionId,
           }),
         }
       : {}),
@@ -315,7 +318,7 @@ export async function resolveAndCache(
   if (policy.reporter) {
     const observation: DeliveryObservation = {
       selection: { ...selection },
-      bundle: verified,
+      version: verified,
       source: downloaded ? 'network' : verified.stale ? 'offline' : 'cache',
       downloaded,
     };

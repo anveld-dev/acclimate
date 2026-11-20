@@ -23,7 +23,7 @@ from ._evaluation_shared import (
     read_reader_config, scope_from, sha256, validate_handoff, validate_json,
     safe_error,
 )
-from ._evaluation_journal import Journal, serialize_scope
+from ._evaluation_journal import Journal, journal_directory_key
 from .client import ApiError, TransportError
 
 MIB = 1024 * 1024
@@ -103,7 +103,7 @@ class ReviewManifestEntry(TypedDict):
 class ReviewManifestV1(TypedDict):
     schemaVersion: Literal[1]
     kind: Literal["acclimate-review-export"]
-    projectId: str
+    workspaceId: str
     bundleId: str
     requestId: str
     attemptId: str
@@ -362,7 +362,7 @@ def _projection(handoff, request, comparison):
     complete = len(seen) == len(identities) and all(outcome["executionStatus"] != "infrastructure_failed" and outcome["gradingStatus"] == "scored" for outcome in outcomes)
     if type(comparison.get("complete")) is not bool or comparison["complete"] != complete:
         _fail()
-    return {"schemaVersion": 1, "kind": "acclimate-comparison-review", "projectId": handoff["projectId"],
+    return {"schemaVersion": 1, "kind": "acclimate-comparison-review", "workspaceId": handoff["workspaceId"],
             "bundleId": handoff["bundleId"], "requestId": request["id"], "attemptId": request["attemptId"], "comparisonId": comparison["id"],
             "parent": {"versionId": comparison["parentVersionId"], "digest": comparison["parentDigest"]},
             "candidate": {"versionId": comparison["candidateVersionId"], "digest": comparison["candidateDigest"]},
@@ -381,19 +381,19 @@ def _authority(config_path, read_config_path, supplied):
         _fail("config.schema")
     handoff = validate_handoff(supplied)
     config = read_evaluator_config(config_path) if config_path else read_reader_config(read_config_path)
-    if config["serviceUrl"] != handoff["serviceUrl"] or config["projectId"] != handoff["projectId"]:
+    if config["serviceUrl"] != handoff["serviceUrl"] or config["workspaceId"] != handoff["workspaceId"]:
         _fail("evidence.identity_mismatch")
     client = make_client(config)
     try:
-        request = client.get_evaluation(handoff["projectId"], handoff["bundleId"], handoff["requestId"])
+        request = client.get_evaluation(handoff["workspaceId"], handoff["bundleId"], handoff["requestId"])
     except (ApiError, TransportError) as error:
         raise safe_error(error, phase="export", execution_state="finished") from None
-    if request.get("id") != handoff["requestId"] or _descriptor(request) != _descriptor(handoff["configuration"]):
+    if request.get("id") != handoff["requestId"] or _descriptor(request) != _descriptor(handoff["descriptor"]):
         _fail("evidence.identity_mismatch")
     if request.get("status") not in ("completed", "failed") or not request.get("comparisonId") or not request.get("attemptId") or not request.get("evaluatorPrincipal"):
         _fail("artifact.missing")
     try:
-        comparison = client.get_comparison(handoff["projectId"], handoff["bundleId"], request["comparisonId"])
+        comparison = client.get_comparison(handoff["workspaceId"], handoff["bundleId"], request["comparisonId"])
     except (ApiError, TransportError) as error:
         raise safe_error(error, phase="export", execution_state="finished") from None
     if comparison.get("id") != request["comparisonId"] or comparison.get("submitter") != request["evaluatorPrincipal"] or comparison.get("evaluation") != {"requestId": request["id"], "attemptId": request["attemptId"]} or _descriptor(comparison) != _descriptor(request) or any(comparison.get(key) != request.get(key) for key in ("parentVersionId", "candidateVersionId", "parentDigest", "candidateDigest")):
@@ -462,7 +462,7 @@ def export_review_evidence(*, handoff, output_directory, config_path=None, read_
         inspection, index = ("unavailable" if selection["entries"] else "not_requested"), None
         if selection["entries"]:
             scope = scope_from(config, handoff)
-            directory = Path(config["journalRoot"]) / hashlib.sha256(serialize_scope(scope)).hexdigest()
+            directory = Path(config["journalRoot"]) / journal_directory_key(scope)
             try:
                 _no_symlinks(directory)
                 exists = True
@@ -525,7 +525,7 @@ def export_review_evidence(*, handoff, output_directory, config_path=None, read_
         pending = []
         total = 0
         counts = {"required": sum(x["required"] for x in selection["entries"]), "exportedRequired": 0, "optionalMissing": 0}
-        manifest = {"schemaVersion": 1, "kind": "acclimate-review-export", "projectId": handoff["projectId"],
+        manifest = {"schemaVersion": 1, "kind": "acclimate-review-export", "workspaceId": handoff["workspaceId"],
                     "bundleId": handoff["bundleId"], "requestId": request["id"], "attemptId": request["attemptId"],
                     "comparisonId": comparison["id"], "parent": projection["parent"], "candidate": projection["candidate"],
                     "localInspection": inspection, "projection": None, "entries": [],
@@ -628,10 +628,10 @@ def verify_review_export(*, manifest_path, online=None) -> ReviewVerificationRes
         manifest_path = Path(manifest_path)
         manifest_bytes = _read_file(manifest_path, MAX_MANIFEST)
         m = _parse(manifest_bytes)
-        fields = ("schemaVersion", "kind", "projectId", "bundleId", "requestId", "attemptId", "comparisonId", "parent", "candidate", "localInspection", "projection", "entries", "exporter")
+        fields = ("schemaVersion", "kind", "workspaceId", "bundleId", "requestId", "attemptId", "comparisonId", "parent", "candidate", "localInspection", "projection", "entries", "exporter")
         if not _keys(m, fields) or type(m["schemaVersion"]) is not int or m["schemaVersion"] != 1 or m["kind"] != "acclimate-review-export" or m["localInspection"] not in ("not_requested", "validated", "unavailable") or type(m["entries"]) is not list or len(m["entries"]) > 2000 or not _keys(m["exporter"], ("name", "version")) or m["exporter"]["name"] != "acclimate-evidence" or not _text(m["exporter"]["version"], 128):
             _fail()
-        for field in ("projectId", "bundleId", "requestId", "attemptId", "comparisonId"):
+        for field in ("workspaceId", "bundleId", "requestId", "attemptId", "comparisonId"):
             if not _text(m[field], 1024):
                 _fail()
         for side in SIDES:
@@ -644,15 +644,15 @@ def verify_review_export(*, manifest_path, online=None) -> ReviewVerificationRes
         if len(projected_bytes) != m["projection"]["bytes"] or not _hash_matches(projected_bytes, m["projection"]["sha256"]):
             _fail("artifact.hash_mismatch")
         p = _parse(projected_bytes)
-        if not _keys(p, ("schemaVersion", "kind", "projectId", "bundleId", "requestId", "attemptId", "comparisonId", "parent", "candidate", "complete", "expectedCases", "results", "missingness")) or p["schemaVersion"] != 1 or p["kind"] != "acclimate-comparison-review" or type(p["complete"]) is not bool:
+        if not _keys(p, ("schemaVersion", "kind", "workspaceId", "bundleId", "requestId", "attemptId", "comparisonId", "parent", "candidate", "complete", "expectedCases", "results", "missingness")) or p["schemaVersion"] != 1 or p["kind"] != "acclimate-comparison-review" or type(p["complete"]) is not bool:
             _fail()
-        if any(m[key] != p[key] for key in ("projectId", "bundleId", "requestId", "attemptId", "comparisonId", "parent", "candidate")):
+        if any(m[key] != p[key] for key in ("workspaceId", "bundleId", "requestId", "attemptId", "comparisonId", "parent", "candidate")):
             _fail()
         expected = _inventory(p["expectedCases"])
         fake = {"id": p["comparisonId"], "parentVersionId": p["parent"]["versionId"], "parentDigest": p["parent"]["digest"],
                 "candidateVersionId": p["candidate"]["versionId"], "candidateDigest": p["candidate"]["digest"],
                 "expectedCases": p["expectedCases"], "results": p["results"], "complete": p["complete"]}
-        rebuilt = _projection({"projectId": p["projectId"], "bundleId": p["bundleId"]}, {"id": p["requestId"], "attemptId": p["attemptId"]}, fake)
+        rebuilt = _projection({"workspaceId": p["workspaceId"], "bundleId": p["bundleId"]}, {"id": p["requestId"], "attemptId": p["attemptId"]}, fake)
         if not _equal(p, rebuilt):
             _fail()
         expected_rows = {_identity({**pair, "side": side}) for pair in expected for side in SIDES}

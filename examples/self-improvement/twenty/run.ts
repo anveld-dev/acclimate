@@ -3,9 +3,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { compare, submitComparison } from '../../../packages/sdk/src/compare.js';
-import { resolveAndCache, ApiError } from '../../../packages/sdk/src/index.js';
-import type { BundlePayload, VerifiedVersion } from '../../../packages/sdk/src/types.js';
+import { compare, submitComparison } from '@acclimate/sdk';
+import { resolveAndCache, ApiError } from '@acclimate/sdk';
+import type { BundlePayload, VerifiedVersion } from '@acclimate/sdk';
 import { Luna, model } from '../luna.js';
 import { startService } from '../service.js';
 import { dataset, grade, policy, prompt, schema, screen, type Batch } from './domain.js';
@@ -103,10 +103,10 @@ try {
   );
   const cache = { cacheDir: path.join(output, 'cache') };
   const fetchVersion = (id: string) =>
-    resolveAndCache(client, { projectId: project, bundleId: bundle.id, versionId: id }, cache);
+    resolveAndCache(client, { workspaceId: project, bundleId: bundle.id, versionId: id }, cache);
   const root = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, channel: 'qualification' },
+    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
     cache,
   );
   await save('parent.json', root);
@@ -372,7 +372,7 @@ try {
   // Warm the same channel cache immediately before release, so an old cache entry cannot hide delayed refresh.
   const warm = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, channel: 'qualification' },
+    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
     cache,
   );
   assert.equal(warm.version.id, root.version.id);
@@ -397,7 +397,7 @@ try {
   );
   const refreshed = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, channel: 'qualification' },
+    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
     cache,
   );
   assert.equal(refreshed.version.id, candidate.version.id);

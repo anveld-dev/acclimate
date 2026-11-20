@@ -107,7 +107,7 @@ else:
 with os.fdopen(os.open(state_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as stream:
     json.dump(state, stream)
 client = AcclimateClient(config['serviceUrl'], config['evaluatorToken'], 'evaluator', retries=0, timeout=2)
-reporter = EvaluationProgressReporter(client, project_id=config['projectId'],
+reporter = EvaluationProgressReporter(client, workspace_id=config['workspaceId'],
     bundle_id=spec['bundleId'], request_id=spec['requestId'], attempt_id=spec['attemptId'])
 ok = reporter.report(**report)
 print(json.dumps(dict(ok=ok, report=report, sequencePersisted=True)))
@@ -134,7 +134,7 @@ CALLBACK_PROGRESS = r'''def report_owned_callback_progress(run, phase, completed
     with os.fdopen(os.open(state_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as stream:
         json.dump(state, stream)
     client = AcclimateClient(config['serviceUrl'], config['evaluatorToken'], 'evaluator', retries=0, timeout=2)
-    reporter = EvaluationProgressReporter(client, project_id=config['projectId'],
+    reporter = EvaluationProgressReporter(client, workspace_id=config['workspaceId'],
         bundle_id=binding['bundleId'], request_id=run.context.request_id, attempt_id=run.context.attempt_id)
     ok = reporter.report(**report)
     with os.fdopen(os.open(here / 'callback-progress.jsonl', os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'a') as log:
@@ -160,7 +160,7 @@ def journey(output):
     with PersonaFixture('platform-engineer', output) as f:
         h = f.h
         (f.root / 'private').chmod(0o700)
-        base = '/v1/projects/' + f.project
+        base = '/v1/workspaces/' + f.project
         gate = SubmissionGate(f.base_url)
         try:
             config = json.loads(f.evaluator_config.read_text())
@@ -233,15 +233,15 @@ def journey(output):
             assert caps['evaluator']['writeEvaluation'] is True
             assert caps['viewer']['writeEvaluation'] is False
             assert next(g for g in grants if g['principalId'] == 'evaluator')['rights'] == ['read', 'write']
-            connection = h.call('POST', base + '/integrations', dict(displayName='Platform fixture delivery', bundleId=bundle, channel='stable'))
-            integration = base + '/integrations/' + connection['id']
+            connection = h.call('POST', base + '/connections', dict(displayName='Platform fixture delivery', bundleId=bundle, channel='stable'))
+            integration = base + '/connections/' + connection['id']
             content = h.call('POST', integration + '/credentials', {'kind': 'content-read'})
             receipt = h.call('POST', integration + '/credentials', {'kind': 'receipt-write'})
             h.tokens['content'], h.tokens['receipt'] = content['secret'], receipt['secret']
-            observations = h.call('GET', base + '/integration-observations', actor='viewer')
+            observations = h.call('GET', base + '/connection-observations', actor='viewer')
             assert observations['items'][0]['latestObservation'] is None
             assert 'credentials' not in observations['items'][0]
-            reader_admin = h.call('GET', base + '/integrations', actor='viewer', status=403)
+            reader_admin = h.call('GET', base + '/connections', actor='viewer', status=403)
             h.call('GET', base + '/evaluation-capabilities', actor='content', status=401)
             h.call('GET', b + '/channels/stable', actor='content')
 
@@ -294,7 +294,7 @@ def journey(output):
                 evaluatorWriteCapability=True, readerWriteCapability=False, readerStartDenied=denied['error']['code'],
                 contentCannotReadUnpublished=True, deniedWriteLeftRequestRequested=True)
 
-            mismatch = dict(frozen, configuration={**frozen['configuration'], 'datasetRevision': 'wrong-installed-revision'})
+            mismatch = dict(frozen, descriptor={**frozen['descriptor'], 'datasetRevision': 'wrong-installed-revision'})
             target_doctor_before = counts()
             mismatch_file = f.write_json('private/mismatch-handoff.json', mismatch)
             result = invoke('doctor', '--config', f.evaluator_config, '--handoff', mismatch_file, expected=2)
@@ -401,7 +401,7 @@ def journey(output):
             report_hash = hashlib.sha256((state_file.parent / 'submit-body.json').read_bytes()).hexdigest()
             replacement = secrets.token_hex(32)
             h.tokens['replacement'] = replacement
-            overlapping = grants + [dict(token=replacement, principalId='evaluator', projectId=f.project, rights=['read', 'write'])]
+            overlapping = grants + [dict(token=replacement, principalId='evaluator', workspaceId=f.project, rights=['read', 'write'])]
             validate(overlapping)
             h.env['ACCLIMATE_AUTH'] = json.dumps(overlapping)
             h.restart()
@@ -485,7 +485,7 @@ def journey(output):
             # must stay bound to the same latest event rather than mixed maxima.
             now = datetime.now(timezone.utc)
             def observation(stage, when):
-                return dict(eventId=str(uuid.uuid4()), integrationId=connection['id'], projectId=f.project,
+                return dict(eventId=str(uuid.uuid4()), connectionId=connection['id'], workspaceId=f.project,
                     bundleId=bundle, channel='stable', revision='1', versionId=setup['version']['id'],
                     digest=setup['version']['digest'], stage=stage, occurredAt=when.isoformat(),
                     source='network', resolvedAt=when.isoformat(), stale=False)
@@ -493,7 +493,7 @@ def journey(output):
             h.call('POST', integration + '/receipts', fresh, actor='receipt')
             older = observation('verified', now - timedelta(hours=2))
             old_receipt = h.call('POST', integration + '/receipts', older, actor='receipt')
-            latest = h.call('GET', base + '/integration-observations', actor='viewer')['items'][0]
+            latest = h.call('GET', base + '/connection-observations', actor='viewer')['items'][0]
             assert latest['latestObservation']['eventId'] == older['eventId']
             assert latest['latestObservation']['stage'] == older['stage']
             assert datetime.fromisoformat(latest['latestObservation']['occurredAt'].replace('Z', '+00:00')) == now - timedelta(hours=2)
@@ -501,17 +501,17 @@ def journey(output):
             # Advance only this owned fixture's receive-time facts to exercise
             # retention and old activity without claiming a real elapsed wait.
             h.sql("UPDATE integration_receipts SET received_at=now()-interval '2 hours' WHERE integration_id='" + connection['id'] + "'")
-            aged = h.call('GET', base + '/integration-observations', actor='viewer')['items'][0]['latestObservation']
+            aged = h.call('GET', base + '/connection-observations', actor='viewer')['items'][0]['latestObservation']
             assert aged is not None
             age = datetime.now(timezone.utc) - datetime.fromisoformat(aged['receivedAt'].replace('Z', '+00:00'))
             assert age > timedelta(minutes=119)
             h.sql("UPDATE integration_receipts SET received_at=now()-interval '31 days' WHERE integration_id='" + connection['id'] + "'")
-            expired = h.call('GET', base + '/integration-observations', actor='viewer')['items'][0]
+            expired = h.call('GET', base + '/connection-observations', actor='viewer')['items'][0]
             assert expired['latestObservation'] is None
             before_admin = h.sql('SELECT count(*) FROM integration_credentials')
             admin_denied = h.call('POST', integration + '/credentials', {'kind': 'content-read'}, actor='viewer', status=403)
             assert h.sql('SELECT count(*) FROM integration_credentials') == before_admin
-            evidence['results']['reader_delivery'] = dict(status='accepted', integrationId=connection['id'],
+            evidence['results']['reader_delivery'] = dict(status='accepted', connectionId=connection['id'],
                 initiallyUnknown=True, latestEventId=older['eventId'], latestStage=older['stage'],
                 delayedReceipt=old_receipt['delayed'], latestFieldsCoherent=True, credentialMetadataAbsent=True,
                 agedActivityVisible=True, agedReceiveTimeFixtureHours=2, expiredAfterFixtureDays=31,

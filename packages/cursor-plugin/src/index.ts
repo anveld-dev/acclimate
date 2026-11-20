@@ -1,6 +1,7 @@
-import type { VerifiedVersion } from '../../sdk/src/types.js';
+import type { DeliveryReceiptRequest, VerifiedVersion } from '../../sdk/src/types.js';
 import { DeliveryError, validatePayload } from '../../sdk/src/cache.js';
-import { prepareNativeFiles } from '../../sdk/src/internal/native-files.js';
+import { nativeSource, prepareNativeFiles } from '../../sdk/src/native-files.js';
+import type { NativeInput } from '../../sdk/src/native-files.js';
 
 export interface PreparedCursorVersion {
   cwd: string;
@@ -11,50 +12,54 @@ export interface PreparedCursorVersion {
   skillPaths: string[];
   /** Available to the host for explicit selection; never automatically added to a prompt. */
   memoryFiles: Array<{ path: string; text: string; absolutePath: string }>;
+  /** Queue the delivery's start receipt when `prepare` received `client.prepare()` output; otherwise null. */
+  reportStarted(): Readonly<DeliveryReceiptRequest> | null;
+  /** Remove the prepared workspace, then release the delivery it came from. */
   cleanup(): Promise<void>;
 }
 
 /** Prepare native project resources in a private, owned workspace for a fresh local agent. */
 export async function prepare(
-  bundle: VerifiedVersion,
+  version: NativeInput,
   options: { approvedMemoryPaths?: string[] } = {},
 ): Promise<PreparedCursorVersion> {
-  validatePayload(bundle.payload);
+  const { version: verified, reportStarted, release } = nativeSource(version);
+  validatePayload(verified.payload);
   const approved = new Set(options.approvedMemoryPaths ?? []);
   for (const selected of approved) {
-    if (!bundle.payload.files.some((file) => file.kind === 'memory' && file.path === selected))
+    if (!verified.payload.files.some((file) => file.kind === 'memory' && file.path === selected))
       throw new DeliveryError('invalid_payload', `Approved memory not found: ${selected}`);
   }
-  const selectedBundle: VerifiedVersion = {
-    ...bundle,
+  const approvedOnly: VerifiedVersion = {
+    ...verified,
     payload: {
-      ...bundle.payload,
-      files: bundle.payload.files.filter(
+      ...verified.payload,
+      files: verified.payload.files.filter(
         (file) => file.kind !== 'memory' || approved.has(file.path),
       ),
     },
   };
-  const staged = await prepareNativeFiles(
-    selectedBundle,
-    {
+  const staged = await prepareNativeFiles(approvedOnly, {
+    mapping: {
       instructionPath: 'AGENTS.md',
       skillRoot: '.cursor/skills',
       memoryRoot: '.acclimate/memory',
     },
-    'acclimate-cursor-',
-    'cursor',
-  );
+    prefix: 'acclimate-cursor-',
+    target: 'cursor',
+  });
   return {
     cwd: staged.cwd,
-    versionId: bundle.version.id,
-    digest: bundle.version.digest,
+    versionId: verified.version.id,
+    digest: verified.version.digest,
     settingSources: ['project'],
     instructionPath: staged.instructionPath,
     skillPaths: staged.skillPaths,
     memoryFiles: staged.memoryFiles,
-    cleanup: staged.cleanup,
+    reportStarted,
+    async cleanup() {
+      await staged.cleanup();
+      await release();
+    },
   };
 }
-
-/** @deprecated Use PreparedCursorVersion. */
-export type PreparedCursorBundle = PreparedCursorVersion;

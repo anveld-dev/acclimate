@@ -53,7 +53,7 @@ async fn postgres_bundle_scope_and_immutable_payload() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v1/projects/project-a/bundles")
+                .uri("/v1/workspaces/project-a/bundles")
                 .header("authorization", "Bearer reader")
                 .header("idempotency-key", bundle_key.clone())
                 .body(Body::from(r#"{"name":"test"}"#))
@@ -69,13 +69,14 @@ async fn postgres_bundle_scope_and_immutable_payload() {
     )
     .unwrap();
     let bid = bundle["id"].as_str().unwrap();
-    sqlx::query("UPDATE idempotency SET expires_at=now()-interval '1 second' WHERE project_id='project-a' AND path='/v1/projects/project-a/bundles' AND key=$1").bind(&bundle_key).execute(&db).await.unwrap();
+    // Stored operation keys are the canonical route.
+    sqlx::query("UPDATE idempotency SET expires_at=now()-interval '1 second' WHERE project_id='project-a' AND path='/v1/workspaces/project-a/bundles' AND key=$1").bind(&bundle_key).execute(&db).await.unwrap();
     let reused = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v1/projects/project-a/bundles")
+                .uri("/v1/workspaces/project-a/bundles")
                 .header("authorization", "Bearer reader")
                 .header("idempotency-key", bundle_key.clone())
                 .body(Body::from(r#"{"name":"test-after-expiry"}"#))
@@ -85,7 +86,7 @@ async fn postgres_bundle_scope_and_immutable_payload() {
         .unwrap();
     assert_eq!(reused.status(), StatusCode::CREATED);
     let req = json!({"parentVersionId":null,"payload":{"schemaVersion":1,"files":[{"path":"x.md","kind":"instruction","text":"hello"}]}});
-    let uri = format!("/v1/projects/project-a/bundles/{bid}/versions");
+    let uri = format!("/v1/workspaces/project-a/bundles/{bid}/versions");
     let ver_resp = app
         .clone()
         .oneshot(
@@ -107,7 +108,7 @@ async fn postgres_bundle_scope_and_immutable_payload() {
     )
     .unwrap();
     let channel = format!("seed-{}", uuid::Uuid::new_v4());
-    let promote_uri = format!("/v1/projects/project-a/bundles/{bid}/channels/{channel}/promotions");
+    let promote_uri = format!("/v1/workspaces/project-a/bundles/{bid}/channels/{channel}/releases");
     let make_promote = |key: String| {
         Request::builder().method("POST").uri(&promote_uri).header("authorization","Bearer reader").header("idempotency-key",key).header("content-type","application/json").body(Body::from(json!({"versionId":ver["id"],"expectedRevision":"0","unevaluatedReason":"test seed"}).to_string())).unwrap()
     };
@@ -138,7 +139,7 @@ async fn postgres_bundle_scope_and_immutable_payload() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/v1/projects/project-a/bundles/{bid}/proposals"))
+                .uri(format!("/v1/workspaces/project-a/bundles/{bid}/proposals"))
                 .header("authorization", "Bearer reader")
                 .header("idempotency-key", proposal_key)
                 .body(Body::from(proposal_body.to_string()))
@@ -158,7 +159,7 @@ async fn postgres_bundle_scope_and_immutable_payload() {
         .oneshot(
             Request::builder()
                 .uri(format!(
-                    "/v1/projects/project-a/bundles/{bid}/proposals/{}",
+                    "/v1/workspaces/project-a/bundles/{bid}/proposals/{}",
                     proposal["id"].as_str().unwrap()
                 ))
                 .header("authorization", "Bearer reader")
@@ -185,7 +186,7 @@ async fn postgres_bundle_scope_and_immutable_payload() {
             .oneshot(
                 Request::builder()
                     .uri(format!(
-                        "/v1/projects/project-a/bundles/{bid}/proposals/{}",
+                        "/v1/workspaces/project-a/bundles/{bid}/proposals/{}",
                         proposal["id"].as_str().unwrap()
                     ))
                     .header("authorization", "Bearer reader")
@@ -226,7 +227,7 @@ async fn postgres_bundle_scope_and_immutable_payload() {
         .oneshot(
             Request::builder()
                 .uri(format!(
-                    "/v1/projects/project-b/bundles/{bid}/versions/{}",
+                    "/v1/workspaces/project-b/bundles/{bid}/versions/{}",
                     ver["id"].as_str().unwrap()
                 ))
                 .header("authorization", "Bearer other")

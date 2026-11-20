@@ -14,7 +14,7 @@ export interface Bundle {
   compatibilityTarget: CompatibilityTarget;
   id: string;
   name: string;
-  projectId: string;
+  workspaceId: string;
   createdAt: string;
   origin: BundleOrigin;
   sourceLabel: string | null;
@@ -98,10 +98,10 @@ export interface EvaluationDescriptor {
 export interface EvaluationHandoff {
   schemaVersion: 1;
   serviceUrl: string;
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   requestId: string;
-  configuration: EvaluationDescriptor;
+  descriptor: EvaluationDescriptor;
 }
 /** Point-in-time machine authorization, never an execution reservation or provider probe. */
 export interface ComparisonPolicyReport {
@@ -110,9 +110,41 @@ export interface ComparisonPolicyReport {
   policy: { id: string; revision: string; sha256: string };
   verdict: 'pass' | 'fail' | 'indeterminate';
   checks: Array<{ code: string; result: 'pass' | 'fail' | 'unknown' }>;
+  /** Statistics behind the mean-difference check (method, n, sd, floor, df, t, bound, threshold). */
+  inference?: PolicyReceiptInference;
+}
+
+/** The inference block a policy verdict reports; see the evaluation policy module. */
+export interface PolicyReceiptInference {
+  method: 'paired-t' | 'none';
+  estimand: 'sampled-cases' | 'observed-cases';
+  status: 'estimated' | 'insufficient_data' | 'incomplete' | 'not_applicable';
+  stage: 'general' | 'development' | 'cumulative' | 'audit';
+  check: string;
+  confidence: number | null;
+  threshold: number;
+  thresholdSource: 'minimumMeanImprovement' | 'stepMargin' | 'nonInferiorityMargin';
+  n: number;
+  minCases: number;
+  minRepetitions: number;
+  repetitions: number;
+  meanDifference: number | null;
+  sd: number | null;
+  sdFloor: number | null;
+  sdFloorSource: 'declared' | 'scale' | 'observed-range' | null;
+  calibratedSd: number | null;
+  sdUsed: number | null;
+  standardError: number | null;
+  df: number | null;
+  criticalValue: number | null;
+  lowerBound: number | null;
+  imputed: { parent: number; candidate: number };
+  maximumMissingPercent: number;
 }
 
 export interface ComparisonPolicyReceipt extends ComparisonPolicyReport {
+  /** Whether this policy is the one pinned on the evaluation request before the run. */
+  policyPin?: 'matched' | 'mismatched' | 'unpinned';
   comparisonId: string;
   reportedBy: string;
   receivedAt: string;
@@ -120,12 +152,21 @@ export interface ComparisonPolicyReceipt extends ComparisonPolicyReport {
 
 export interface EvaluationCapabilities {
   schemaVersion: 1;
-  projectId: string;
+  workspaceId: string;
   principalId: string;
   checkedAt: string;
   readUnpublished: true;
+  /** True when the principal holds `evaluate` (or `write`, which implies it). */
   writeEvaluation: boolean;
   retainedEvaluationOperations: true;
+  /** Reported by services that support the narrow `evaluate` right. */
+  rights?: { read: boolean; evaluate: boolean; write: boolean; propose: boolean; promote: boolean };
+  credential?: { kind: 'static' } | { kind: 'machineToken'; id: string; expiresAt: string };
+  abandonment?: { explicit: boolean; inactivitySeconds: number };
+  /** Requests accept `runName` and `retryOf`. Absent on older services. */
+  runLabels?: true;
+  /** Requests accept `policyDigest`, pinning the quality policy before the run. Absent on older services. */
+  policyPins?: true;
 }
 /** Optional reported activity. Never a lease or evidence of external quiescence. */
 export interface EvaluationProgressRequest {
@@ -162,6 +203,8 @@ export interface Outcome {
   outputRef: string | null;
   error: string | null;
   usage: Usage | null;
+  /** Optional named numeric grade components, such as correctness. Present only on scored arms. */
+  components?: Record<string, number>;
 }
 export interface CasePair extends CaseKey {
   parent: Outcome;
@@ -200,7 +243,7 @@ export interface VerifiedVersion {
   resolvedAt: number;
   stale: boolean;
   /** Present when the SDK resolved the bundle for an explicitly scoped connection. */
-  connection?: Readonly<{ projectId: string; integrationId: string }>;
+  connection?: Readonly<{ workspaceId: string; connectionId: string }>;
 }
 
 /** Bounded service listing. Cursors are opaque and must be sent back unchanged. */
@@ -276,18 +319,31 @@ export interface EvaluationRequest {
   graderRevision: string;
   expectedCases: CaseKey[];
   proposalId?: string | null;
+  /** The evaluator's label for this run, such as the CLI `--name`. Display only. */
+  runName?: string;
+  /** An earlier request on the same parent and candidate content that this run supersedes. */
+  retryOf?: string;
+  /** sha256 digest of the quality policy chosen before the run. Receipts record whether they match. */
+  policyDigest?: string;
 }
 export interface Evaluation extends EvaluationRequest {
   requireBoundEvidence: true;
   id: string;
   proposalId: string | null;
-  status: 'requested' | 'running' | 'completed' | 'failed' | 'interrupted';
+  /** `abandoned` is a server-side terminal state: the attempt's outcome is unknown,
+   * its later reports are refused and its evidence never counts. */
+  status: 'requested' | 'running' | 'completed' | 'failed' | 'interrupted' | 'abandoned';
   evaluatorPrincipal: string | null;
   attemptId: string | null;
   comparisonId: string | null;
   error: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Last start, progress report or bound report from the current attempt. */
+  lastActivityAt?: string;
+  abandonedAt?: string;
+  /** The principal that abandoned it, or `service:evaluation-expiry` after inactivity. */
+  abandonedBy?: string;
 }
 export interface StartEvaluationRequest {
   attemptId: string;
@@ -295,6 +351,10 @@ export interface StartEvaluationRequest {
 export interface FinishEvaluationRequest {
   attemptId: string;
   comparisonId: string;
+}
+/** Abandon a requested or running attempt whose outcome is unknown, such as a cancelled CI job. */
+export interface AbandonEvaluationRequest {
+  reason: string;
 }
 export interface InterruptEvaluationRequest {
   reason: string;
@@ -312,7 +372,7 @@ export interface Connection {
     revokedAt: string | null;
   }>;
   id: string;
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   channel: string;
   displayName: string;
@@ -364,8 +424,8 @@ export interface LearningEnrollment
   automaticRollback: boolean;
   audits?: LearningEvaluationDescriptor[];
   auditCount: number;
-  projectId: string;
-  integrationId: string;
+  workspaceId: string;
+  connectionId: string;
   bundleId: string;
   channel: string;
   authorizedBy: string;
@@ -672,8 +732,8 @@ export interface LearningWork {
 }
 export interface DeliveryReceiptRequest {
   eventId: string;
-  integrationId: string;
-  projectId: string;
+  connectionId: string;
+  workspaceId: string;
   bundleId: string;
   channel?: string | null;
   revision?: string | null;
@@ -715,25 +775,3 @@ export type Operation =
     }
   | { status: 'not_observed'; operationId: string }
   | { status: 'closed'; operationId: string; path?: string };
-
-/** @deprecated Use Workspace. */
-export type Project = Workspace;
-/** @deprecated Use Release. */
-export type Promotion = Release;
-/** @deprecated Use ReleasePage. */
-export type PromotionPage = ReleasePage;
-/** @deprecated Use CreateReleaseRequest. */
-export type PromoteRequest = CreateReleaseRequest;
-/** @deprecated Use Connection. */
-export type Integration = Connection;
-/** @deprecated Use CreateConnectionRequest. */
-export type CreateIntegrationRequest = CreateConnectionRequest;
-/** @deprecated Use ConnectionCredential. */
-export type IntegrationCredential = ConnectionCredential;
-/** @deprecated Use ConnectionCredentialKind. */
-export type IntegrationCredentialKind = ConnectionCredentialKind;
-/** @deprecated Use ConnectionObservation. */
-export type IntegrationObservation = ConnectionObservation;
-
-/** @deprecated Use VerifiedVersion. */
-export type VerifiedBundle = VerifiedVersion;

@@ -47,6 +47,10 @@ with tempfile.TemporaryDirectory(prefix='acclimate-wheel-dx-') as temporary:
     module = subprocess.run([str(python), '-m', 'acclimate', 'describe'], cwd=app, env=clean_env,
                             check=True, capture_output=True, text=True)
     assert json.loads(module.stdout) == descriptor
+    # The wheel's console script runs the same CLI as python -m acclimate.
+    script = subprocess.run([str(directory / 'venv' / 'bin' / 'acclimate'), 'describe'], cwd=app, env=clean_env,
+                            check=True, capture_output=True, text=True)
+    assert json.loads(script.stdout) == descriptor
 
     assert descriptor['runtime']['configId'] == 'installed-qualification-worker'
     assert descriptor['runtime']['execution'] == 'live'
@@ -55,6 +59,15 @@ with tempfile.TemporaryDirectory(prefix='acclimate-wheel-dx-') as temporary:
     subprocess.run([str(python), '-m', 'unittest', 'discover', '-s', 'test', '-v'], cwd=app, env=clean_env, check=True)
     if args.analysis_fixtures:
         fixture = json.loads(args.analysis_fixtures.read_text())
+        # Vector 0's expected result is computed on the shared input with its patches applied.
+        for patch in fixture['vectors'][0]['patches']:
+            target = fixture['input']
+            for segment in patch['path'][:-1]:
+                target = target[segment]
+            if patch.get('remove'):
+                del target[patch['path'][-1]]
+            else:
+                target[patch['path'][-1]] = patch['value']
         paths = []
         for key in ('comparison', 'expectedDescriptor', 'expectedBinding'):
             filename = directory / (key + '.json')

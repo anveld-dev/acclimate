@@ -30,7 +30,7 @@ test('listing preserves opaque cursors and rejects direct and longer cursor cycl
 
 const env = {
   ...consoleEnvironment,
-  CONSOLE_PROJECT: 'project',
+  CONSOLE_WORKSPACE: 'project',
   CONSOLE_BUNDLE: 'bundle',
   CONSOLE_CHANNEL: 'stable',
 };

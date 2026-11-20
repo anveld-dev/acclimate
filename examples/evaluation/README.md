@@ -8,7 +8,7 @@ To use an adapter included in this checkout, install and configure the checkout 
 {
   "schemaVersion": 1,
   "serviceUrl": "https://api.example.com",
-  "projectId": "YOUR_PROJECT_ID",
+  "workspaceId": "YOUR_WORKSPACE_ID",
   "evaluatorPrincipalId": "YOUR_DEDICATED_EVALUATOR_PRINCIPAL",
   "evaluatorToken": "YOUR_SCOPED_EVALUATOR_TOKEN",
   "journalRoot": "/absolute/private/evaluation-journals"
@@ -27,12 +27,12 @@ npm run evaluate:app -- --config /absolute/private/evaluator.json --bundleID UUI
 For the policy decision on the saved request, download its public JSON from the console and run:
 
 ```sh
-npm run --silent evaluate:app -- check --config /absolute/private/evaluator.json --handoff evaluation-request.json --policy /path/to/your/quality-policy.json
+npm run --silent evaluate:app -- check --config /absolute/private/evaluator.json --handoff handoff.json --policy /path/to/your/quality-policy.json
 ```
 
 This installed adapter prepares each immutable bundle using the Codex plugin, then runs the existing `service-proposer` saved review cases and independent exact-finding grader. It authorizes at most four Luna turns, each with a 110-second timeout, read-only filesystem, disabled network and no approvals. Use it only when paid execution is intended and Codex authentication is already configured.
 
-Applications can supply their own installed `InstalledAdapter` to `runEvaluation`. Its `describe()` returns dataset/grader revisions, a fixed case inventory, and runtime identity including app-owned `configId`/`configRevision`. Its installed callbacks own execution and grading. The request must structurally match those values before any execution starts. A service request cannot name a script, module, URL, path or credential to execute. The CLI selects only names installed in its explicit allowlist.
+The checkout's `evaluate:app` command passes an installed `InstalledAdapter` to the test harness in [`scripts/evaluator-tests/runner.ts`](../../scripts/evaluator-tests/runner.ts). Your own application uses the public `runEvaluation` from `@acclimate/sdk/evaluation` or the installed CLI instead. Its `describe()` returns dataset/grader revisions, a fixed case inventory, and runtime identity including app-owned `configId`/`configRevision`. Its installed callbacks own execution and grading. The request must structurally match those values before any execution starts. A service request cannot name a script, module, URL, path or credential to execute. The CLI selects only names installed in its explicit allowlist.
 
 The native example retains prepared inputs and reports `execution.uncertain` when its SDK await fails; a timeout/error is not proof that provider work stopped. It does not automatically execute the candidate after an uncertain parent run. The [native repository starter](../native-repository/README.md) adds persistent job locators and operator-reviewed quarantine recovery.
 

@@ -1,9 +1,8 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { AcclimateClient, ApiError } from '../client.js';
 import { resolveAndCache } from '../cache.js';
-import { TaskExecutionError } from '../compare.js';
 import type {
   CachedLearningParent,
   Comparison,
@@ -11,7 +10,6 @@ import type {
   Evaluation,
   EvaluationDescriptor,
   EvaluationHandoff,
-  Outcome,
   VerifiedVersion,
 } from '../types.js';
 import {
@@ -20,28 +18,16 @@ import {
   validateEvaluationHandoff,
 } from '../validation.js';
 import { createEvaluationTransport } from '../internal/evaluation-transport.js';
-import {
-  assertJson,
-  assertEvaluationOutput,
-  OutputValidationError,
-  captureDefinition,
-  deepFreeze,
-  MAX_ARTIFACT,
-  MAX_PRIVATE,
-  MAX_REQUEST,
-} from './definition.js';
+import { captureDefinition, deepFreeze, MAX_REQUEST } from './definition.js';
 import type { CapturedDefinition } from './definition.js';
 import { readEvaluatorConfig } from './config.js';
-import {
-  CallbackCancelled,
-  EvaluationError,
-  ExecutionUncertainError,
-  toSafeDiagnostic,
-} from './errors.js';
+import { EvaluationError, ExecutionUncertainError, toSafeDiagnostic } from './errors.js';
 import type { ExecutionState, EvaluationPhase } from './errors.js';
 import { acquireFileLock, openJournal, sha256 } from './journal.js';
 import type { ArtifactIndex, AttemptJournal, EvaluationJournal, JournalScope } from './journal.js';
 import { atomicPrivateWrite, privateDirectory } from './private-state.js';
+import { runTrials } from './trials.js';
+import type { RunControls, RunSummary } from './controls.js';
 import type {
   EvaluationRunResult,
   EvaluatorConfig,
@@ -62,19 +48,47 @@ const frozen = (request: Evaluation): AttemptJournal['request'] =>
     expectedCases: request.expectedCases,
   });
 
-async function saveCallbackError(directory: string, phase: 'execute' | 'grade', error: unknown) {
+/** Remove credentials that commonly appear in provider error messages. */
+export function redactDiagnosticText(value: string, secrets: readonly string[] = []): string {
+  let text = value.slice(0, 16384);
+  for (const secret of secrets)
+    if (secret && secret.length >= 8) text = text.split(secret).join('[redacted]');
+  return text
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/giu, '$1 [redacted]')
+    .replace(/\b(sk|pk|rk|ghp|gho|github_pat|xox[abpr])[-_][A-Za-z0-9_-]{8,}/gu, '[redacted]')
+    .replace(
+      /\b((?:api[_-]?key|access[_-]?token|token|secret|password|authorization)["']?\s*[:=]\s*["']?)[^\s"',;]{4,}/giu,
+      '$1[redacted]',
+    );
+}
+
+/**
+ * Keep the callback's exception type, redacted message and stack in the private job
+ * directory. The file never leaves this machine. Set captureCallbackErrors: false to opt out.
+ */
+async function saveCallbackError(
+  directory: string,
+  phase: 'execute' | 'grade',
+  error: unknown,
+  secrets: readonly string[],
+): Promise<string> {
   let exceptionType = 'ThrownValue';
+  let message = '';
+  let code: string | undefined;
+  let stack: string | undefined;
   const frames: Array<{ file: string; line: number; function: string }> = [];
-  // Custom errors may override stack/name accessors. Diagnostics are optional and
-  // only retain structured local frame locations, never the message or source.
+  // Custom errors may override stack/name accessors. Diagnostics are optional.
   try {
     if (error instanceof Error) {
       const name = error.constructor.name;
       exceptionType = /^[A-Za-z_$][\w$]{0,127}$/.test(name) ? name : 'Error';
-      const stack = error.stack;
-      const heading = String(error);
-      if (typeof stack === 'string' && stack.startsWith(heading + '\n')) {
-        for (const frame of stack.slice(heading.length + 1, heading.length + 16385).split('\n')) {
+      message = redactDiagnosticText(String(error.message), secrets).slice(0, 4096);
+      const errorCode = (error as { code?: unknown }).code;
+      if (typeof errorCode === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(errorCode)) code = errorCode;
+      const raw = error.stack;
+      if (typeof raw === 'string') {
+        stack = redactDiagnosticText(raw, secrets).slice(0, 16384);
+        for (const frame of raw.split('\n').slice(1, 200)) {
           const match =
             /^\s*at (?:async )?(?:(.+?) \()?((?:file:\/\/\/|\/|[A-Za-z]:[\\/]).+?):(\d+):\d+\)?$/.exec(
               frame,
@@ -88,14 +102,25 @@ async function saveCallbackError(directory: string, phase: 'execute' | 'grade', 
           if (frames.length === 8) break;
         }
       }
+    } else if (['string', 'number', 'boolean'].includes(typeof error)) {
+      message = redactDiagnosticText(String(error), secrets).slice(0, 4096);
     }
   } catch {
     /* Still retain the stage when application metadata is unreadable. */
   }
+  const file = path.join(directory, 'callback-error.json');
   await atomicPrivateWrite(
-    path.join(directory, 'callback-error.json'),
-    JSON.stringify({ phase, exceptionType, frames }) + '\n',
+    file,
+    JSON.stringify({
+      phase,
+      exceptionType,
+      ...(code ? { code } : {}),
+      message,
+      frames,
+      ...(stack ? { stack } : {}),
+    }) + '\n',
   );
+  return file;
 }
 class ObservedInterruption extends Error {
   readonly request: Evaluation;
@@ -206,7 +231,7 @@ function assertTarget(config: EvaluatorConfig, handoff: EvaluationHandoff) {
   validateEvaluationHandoff(handoff);
   try {
     assertGuidedTarget({
-      projectId: config.projectId,
+      workspaceId: config.workspaceId,
       bundleId: handoff.bundleId,
       requestId: handoff.requestId,
       principalId: config.evaluatorPrincipalId,
@@ -214,16 +239,16 @@ function assertTarget(config: EvaluatorConfig, handoff: EvaluationHandoff) {
   } catch {
     throw new EvaluationError('guided_target_unsupported');
   }
-  if (handoff.serviceUrl !== config.serviceUrl || handoff.projectId !== config.projectId)
+  if (handoff.serviceUrl !== config.serviceUrl || handoff.workspaceId !== config.workspaceId)
     throw new EvaluationError('auth.principal_mismatch');
 }
 export async function verifyEvaluatorAuthority(
   api: AcclimateClient,
-  config: Pick<EvaluatorConfig, 'projectId' | 'evaluatorPrincipalId'>,
+  config: Pick<EvaluatorConfig, 'workspaceId' | 'evaluatorPrincipalId'>,
 ) {
   let capabilities;
   try {
-    capabilities = await api.getEvaluationCapabilities(config.projectId);
+    capabilities = await api.getEvaluationCapabilities(config.workspaceId);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404)
       throw new EvaluationError('capabilities.unsupported');
@@ -232,7 +257,7 @@ export async function verifyEvaluatorAuthority(
   if (capabilities.schemaVersion !== 1 || capabilities.retainedEvaluationOperations !== true)
     throw new EvaluationError('capabilities.unsupported');
   if (
-    capabilities.projectId !== config.projectId ||
+    capabilities.workspaceId !== config.workspaceId ||
     capabilities.principalId !== config.evaluatorPrincipalId
   )
     throw new EvaluationError('auth.principal_mismatch');
@@ -241,7 +266,7 @@ export async function verifyEvaluatorAuthority(
 }
 async function verified(
   api: AcclimateClient,
-  config: Pick<EvaluatorConfig, 'projectId'>,
+  config: Pick<EvaluatorConfig, 'workspaceId'>,
   bundleId: string,
   request: Evaluation,
   cacheDir: string,
@@ -249,12 +274,12 @@ async function verified(
 ): Promise<[VerifiedVersion, VerifiedVersion]> {
   const parent = await resolveAndCache(
     api,
-    { projectId: config.projectId, bundleId, versionId: request.parentVersionId },
+    { workspaceId: config.workspaceId, bundleId, versionId: request.parentVersionId },
     { cacheDir },
   );
   const candidate = await resolveAndCache(
     api,
-    { projectId: config.projectId, bundleId, versionId: request.candidateVersionId },
+    { workspaceId: config.workspaceId, bundleId, versionId: request.candidateVersionId },
     { cacheDir },
   );
   if (
@@ -267,7 +292,7 @@ async function verified(
     const seen = new Set([candidate.version.id]);
     while (ancestor && ancestor !== parent.version.id && cumulative && !seen.has(ancestor)) {
       seen.add(ancestor);
-      const version = await api.getVersion(config.projectId, bundleId, ancestor);
+      const version = await api.getVersion(config.workspaceId, bundleId, ancestor);
       if (version.id !== ancestor || version.bundleId !== bundleId)
         throw new EvaluationError('version.binding_mismatch');
       ancestor = version.parentVersionId;
@@ -277,11 +302,11 @@ async function verified(
   return [deepFreeze(parent), deepFreeze(candidate)];
 }
 /** An empty request/channel listing does not establish bundle existence. */
-async function assertBundleExists(api: AcclimateClient, projectId: string, bundleId: string) {
+async function assertBundleExists(api: AcclimateClient, workspaceId: string, bundleId: string) {
   let cursor: string | undefined;
   const seen = new Set<string>();
   for (let pages = 0; pages < 100; pages++) {
-    const page = await api.listBundles(projectId, { limit: 100, ...(cursor ? { cursor } : {}) });
+    const page = await api.listBundles(workspaceId, { limit: 100, ...(cursor ? { cursor } : {}) });
     if (
       !page ||
       !Array.isArray(page.items) ||
@@ -314,11 +339,11 @@ export async function preflightEvaluation<I, E, O>(
   const requestId = 'handoff' in target ? target.handoff.requestId : target.requestId;
   if ('handoff' in target) {
     assertTarget(config, target.handoff);
-    assertDescriptor(target.handoff.configuration, captured.descriptor);
+    assertDescriptor(target.handoff.descriptor, captured.descriptor);
   }
   try {
     assertGuidedTarget({
-      projectId: config.projectId,
+      workspaceId: config.workspaceId,
       bundleId,
       requestId,
       principalId: config.evaluatorPrincipalId,
@@ -359,11 +384,11 @@ export async function preflightEvaluation<I, E, O>(
     pass('serviceIdentity');
     pass('evaluatorAccess');
     currentCheck = 'targetBundle';
-    await assertBundleExists(api, config.projectId, bundleId);
+    await assertBundleExists(api, config.workspaceId, bundleId);
     pass('targetBundle');
     if (requestId) {
       currentCheck = 'targetRequest';
-      const request = await api.getEvaluation(config.projectId, bundleId, requestId);
+      const request = await api.getEvaluation(config.workspaceId, bundleId, requestId);
       if (request.id !== requestId || request.requireBoundEvidence !== true)
         throw new EvaluationError('evidence.identity_mismatch');
       pass('targetRequest');
@@ -397,35 +422,13 @@ export async function preflightEvaluation<I, E, O>(
       check: currentCheck,
       status: diagnostic.code === 'capabilities.unsupported' ? 'unverified' : 'failed',
       code: diagnostic.code,
-      ...(diagnostic.pathIssue && {
-        pathIssue: diagnostic.pathIssue,
-        field: diagnostic.field,
-        hint: diagnostic.hint,
-      }),
+      ...(diagnostic.pathIssue && { pathIssue: diagnostic.pathIssue }),
+      ...(diagnostic.field && { field: diagnostic.field }),
+      ...(diagnostic.hint && { hint: diagnostic.hint }),
+      ...(diagnostic.serviceUrl && { serviceUrl: diagnostic.serviceUrl }),
     });
   } finally {
     if (probe) await rm(probe, { recursive: true, force: true });
-  }
-  return result;
-}
-const unavailable = (error = 'cancelled'): Outcome => ({
-  executionStatus: 'infrastructure_failed',
-  gradingStatus: 'missing',
-  reward: null,
-  outputRef: null,
-  error,
-  usage: null,
-});
-function usage(value: unknown): Outcome['usage'] {
-  if (value == null) return null;
-  if (typeof value !== 'object') return null;
-  const result: NonNullable<Outcome['usage']> = {};
-  for (const key of ['inputTokens', 'outputTokens', 'costUsd'] as const) {
-    const n = (value as Record<string, unknown>)[key];
-    if (n !== undefined) {
-      if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return null;
-      result[key] = n;
-    }
   }
   return result;
 }
@@ -444,9 +447,15 @@ export async function runEvaluationRequest<I, E, O>(
     config = await readEvaluatorConfig(options.configPath),
     handoff = validateEvaluationHandoff(options.handoff);
   assertTarget(config, handoff);
-  assertDescriptor(handoff.configuration, captured.descriptor);
+  assertDescriptor(handoff.descriptor, captured.descriptor);
   if ((captured.execution === 'live') !== (options.allowLive === true))
-    throw new EvaluationError('config.schema');
+    throw new EvaluationError('config.schema', {
+      field: 'allowLive',
+      reason:
+        captured.execution === 'live'
+          ? 'This evaluation is live. Pass allowLive: true (--live on the CLI) to authorize model calls.'
+          : 'This evaluation is model-free. Omit allowLive (--live on the CLI).',
+    });
   const transport = createEvaluationTransport(config);
   await verifyEvaluatorAuthority(transport.client, config);
   return runCapturedEvaluation({
@@ -458,6 +467,7 @@ export async function runEvaluationRequest<I, E, O>(
     retryMissingTrial: options.retryMissingTrial,
     cachedParent: options.cachedParent,
     cumulative,
+    controls: options.controls,
   });
 }
 
@@ -466,7 +476,7 @@ export async function runCapturedEvaluation(options: {
   captured: CapturedDefinition<any, any, any>;
   config: Pick<
     EvaluatorConfig,
-    'serviceUrl' | 'projectId' | 'evaluatorPrincipalId' | 'journalRoot' | 'captureCallbackErrors'
+    'serviceUrl' | 'workspaceId' | 'evaluatorPrincipalId' | 'journalRoot' | 'captureCallbackErrors'
   >;
   handoff: EvaluationHandoff;
   transport: ReturnType<typeof createEvaluationTransport>;
@@ -474,12 +484,13 @@ export async function runCapturedEvaluation(options: {
   retryMissingTrial?: boolean;
   cachedParent?: () => Promise<CachedLearningParent | null | undefined>;
   cumulative?: boolean;
+  controls?: RunControls;
 }): Promise<EvaluationRunResult> {
   const { captured, config, handoff, transport } = options,
     api = transport.client;
   const scope: JournalScope = {
     serviceUrl: config.serviceUrl,
-    projectId: config.projectId,
+    workspaceId: config.workspaceId,
     bundleId: handoff.bundleId,
     requestId: handoff.requestId,
     evaluatorPrincipalId: config.evaluatorPrincipalId,
@@ -489,8 +500,11 @@ export async function runCapturedEvaluation(options: {
     phase: EvaluationPhase = 'verify',
     certainty: ExecutionState = 'not_started';
   const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), journal.signal]);
-  let cancelled = false;
   let callbacksStarted = 0;
+  let firstCallbackFailure: EvaluationRunResult['firstCallbackFailure'];
+  const captureErrors = config.captureCallbackErrors !== false;
+  const secrets = [(config as Partial<EvaluatorConfig>).evaluatorToken ?? ''];
+  let runSummary: RunSummary | undefined;
   try {
     // Recovery diagnostics must reflect durable work even if the first
     // authoritative read fails before we can reconcile the remote lifecycle.
@@ -500,7 +514,7 @@ export async function runCapturedEvaluation(options: {
       : state?.executionStarted
         ? 'may_have_started'
         : 'not_started';
-    let request = await api.getEvaluation(scope.projectId, scope.bundleId, scope.requestId);
+    let request = await api.getEvaluation(scope.workspaceId, scope.bundleId, scope.requestId);
     if (request.id !== scope.requestId || request.requireBoundEvidence !== true)
       throw new EvaluationError('evidence.identity_mismatch');
     assertDescriptor(request, captured.descriptor);
@@ -515,7 +529,8 @@ export async function runCapturedEvaluation(options: {
       if (state.comparisonId && request.comparisonId && state.comparisonId !== request.comparisonId)
         throw new EvaluationError('evidence.identity_mismatch');
     }
-    if (request.status === 'interrupted')
+    // An abandoned attempt is settled like an interruption: nothing more is reported.
+    if (request.status === 'interrupted' || request.status === 'abandoned')
       return {
         schemaVersion: 1,
         evaluation: request,
@@ -568,7 +583,7 @@ export async function runCapturedEvaluation(options: {
     }
     const check = async () => {
       journal.assertOwned();
-      const latest = await api.getEvaluation(scope.projectId, scope.bundleId, scope.requestId);
+      const latest = await api.getEvaluation(scope.workspaceId, scope.bundleId, scope.requestId);
       journal.assertOwned();
       assertFrozen(latest, scope.requestId, state!.request);
       if (
@@ -576,7 +591,8 @@ export async function runCapturedEvaluation(options: {
         latest.evaluatorPrincipal !== scope.evaluatorPrincipalId
       )
         throw new EvaluationError('auth.principal_mismatch');
-      if (latest.status === 'interrupted') throw new ObservedInterruption(latest);
+      if (latest.status === 'interrupted' || latest.status === 'abandoned')
+        throw new ObservedInterruption(latest);
       if (latest.status !== 'running') throw new EvaluationError('evidence.identity_mismatch');
       return latest;
     };
@@ -585,7 +601,7 @@ export async function runCapturedEvaluation(options: {
     if (!state.report) {
       signal.throwIfAborted();
       phase = 'verify';
-      const bundles = await verified(
+      const versions = await verified(
         api,
         config,
         scope.bundleId,
@@ -633,285 +649,72 @@ export async function runCapturedEvaluation(options: {
         reportSha256: '',
         entries: [],
       };
-      let artifactBytes = 0;
+      // Concurrent arms share one index; serialize its updates in completion order.
+      let indexWrites: Promise<unknown> = Promise.resolve();
+      const updateIndex = <T>(change: () => Promise<T>): Promise<T> => {
+        const next = indexWrites.then(change);
+        indexWrites = next.catch(() => undefined);
+        return next;
+      };
+      const attemptId = state.attemptId;
+      const trials = await runTrials({
+        captured,
+        requestId: scope.requestId,
+        attemptId,
+        versions,
+        jobsRoot: path.join(journal.directory, 'jobs'),
+        signal,
+        controls: { ...captured.controls, ...options.controls },
+        retryMissingTrial: options.retryMissingTrial,
+        captureCallbackErrors: captureErrors,
+        cachedParent: cachedParent ? cachedResults : undefined,
+        hooks: {
+          checkpoint: async () => {
+            await check();
+          },
+          assertOwned: () => journal.assertOwned(),
+          writeArtifact: (identity, value) =>
+            updateIndex(async () => {
+              const entry = await journal.writeArtifact(identity, value);
+              index.entries.push(entry);
+              await journal.saveArtifactIndex(index);
+              return entry;
+            }),
+          discardArtifacts: (entries) =>
+            updateIndex(async () => {
+              const discarded = new Set<unknown>(entries);
+              index.entries = index.entries.filter((entry) => !discarded.has(entry));
+              await journal.saveArtifactIndex(index);
+            }),
+          recordOutputError: async (directory, error) => {
+            journal.assertOwned();
+            // Keep field names inside the application's private job.
+            const file = path.join(directory, 'output-validation.json');
+            await atomicPrivateWrite(
+              file,
+              JSON.stringify({ field: error.field, reason: error.reason }),
+            );
+            return file;
+          },
+          saveCallbackError: (directory, phase, error) =>
+            saveCallbackError(directory, phase, error, secrets),
+          isFatal: (error) =>
+            error instanceof ExecutionUncertainError ||
+            (error instanceof EvaluationError && error.code === 'journal.ownership_lost'),
+          onCallbackStarted: () => {
+            callbacksStarted++;
+          },
+        },
+      });
+      await indexWrites;
+      runSummary = trials.summary;
+      firstCallbackFailure = trials.firstCallbackFailure;
       const report: ComparisonRequest = {
         ...frozen(request),
-        evaluation: { requestId: scope.requestId, attemptId: state.attemptId },
+        evaluation: { requestId: scope.requestId, attemptId },
         ...(cachedParent ? { parentSourceComparisonId: cachedParent.comparisonId } : {}),
-        results: [],
+        results: trials.results,
       };
-      let pairIndex = -1;
-      for (const item of captured.cases)
-        for (let repetition = 0; repetition < (item.repetitions ?? 1); repetition++) {
-          pairIndex++;
-          const pair = {
-            caseId: item.caseId,
-            repetition,
-            parent: unavailable(),
-            candidate: unavailable(),
-          };
-          if (cachedParent)
-            pair.parent = cachedResults.get(JSON.stringify([item.caseId, repetition]))!;
-          const firstSide = captured.collection?.pairs[pairIndex].firstSide ?? 'parent';
-          const order =
-            firstSide === 'parent'
-              ? (['parent', 'candidate'] as const)
-              : (['candidate', 'parent'] as const);
-          for (const [armIndex, side] of order.entries()) {
-            if (cachedParent && side === 'parent') continue;
-            const attempts = options.retryMissingTrial ? 2 : 1;
-            const firstArtifact = index.entries.length;
-            for (let retry = 0; retry < attempts; retry++) {
-              if (signal.aborted || cancelled) {
-                pair[side] = unavailable();
-                break;
-              }
-              if (retry && index.entries.length > firstArtifact) {
-                index.entries.length = firstArtifact;
-                await journal.saveArtifactIndex(index);
-              }
-              await check();
-              const bundle = bundles[side === 'parent' ? 0 : 1];
-              const jobId = createHash('sha256')
-                .update(
-                  JSON.stringify([
-                    scope.requestId,
-                    state.attemptId,
-                    side,
-                    bundle.version.id,
-                    item.caseId,
-                    repetition,
-                    ...(retry ? [retry] : []),
-                  ]),
-                )
-                .digest('hex');
-              const privateJobDirectory = path.join(journal.directory, 'jobs', jobId);
-              await privateDirectory(privateJobDirectory);
-              const context = {
-                requestId: scope.requestId,
-                attemptId: state.attemptId,
-                side,
-                jobId,
-                privateJobDirectory,
-                ...(captured.collection
-                  ? {
-                      collection: Object.freeze({
-                        protocol: captured.collection.protocol,
-                        scheduleDigest: captured.collection.digest,
-                        pairIndex,
-                        armIndex,
-                        firstSide,
-                      }),
-                    }
-                  : {}),
-              };
-              await atomicPrivateWrite(
-                path.join(privateJobDirectory, 'binding.json'),
-                JSON.stringify({
-                  ...context,
-                  privateJobDirectory: undefined,
-                  collection: undefined,
-                  caseId: item.caseId,
-                  repetition,
-                  versionId: bundle.version.id,
-                  digest: bundle.version.digest,
-                }) + '\n',
-              );
-              if (context.collection) {
-                await atomicPrivateWrite(
-                  path.join(privateJobDirectory, 'collection-binding.json'),
-                  JSON.stringify({
-                    schemaVersion: 1,
-                    jobId,
-                    caseId: item.caseId,
-                    repetition,
-                    side,
-                    ...context.collection,
-                  }) + '\n',
-                );
-              }
-              journal.assertOwned();
-              if (signal.aborted || cancelled) {
-                pair[side] = unavailable();
-                continue;
-              }
-              const recordOutputError = async (error: OutputValidationError) => {
-                journal.assertOwned();
-                // Keep field names inside the application's private job.
-                await atomicPrivateWrite(
-                  path.join(privateJobDirectory, 'output-validation.json'),
-                  JSON.stringify({ field: error.field, reason: error.reason }),
-                );
-              };
-              let execution;
-              try {
-                callbacksStarted++;
-                execution = await captured.execute({
-                  bundle: structuredClone(bundle),
-                  caseId: item.caseId,
-                  repetition,
-                  input: structuredClone(item.input),
-                  signal,
-                  context: Object.freeze(context),
-                });
-                journal.assertOwned();
-              } catch (error) {
-                if (error instanceof ExecutionUncertainError) throw error;
-                if (error instanceof CallbackCancelled) {
-                  cancelled = true;
-                  pair[side] = unavailable();
-                  continue;
-                }
-                if (error instanceof EvaluationError && error.code === 'journal.ownership_lost')
-                  throw error;
-                if (error instanceof OutputValidationError) {
-                  await recordOutputError(error);
-                  pair[side] = unavailable('output_invalid');
-                  continue;
-                }
-                if (config.captureCallbackErrors)
-                  await saveCallbackError(privateJobDirectory, 'execute', error);
-                pair[side] =
-                  error instanceof TaskExecutionError
-                    ? { ...unavailable('task_failed'), executionStatus: 'task_failed' }
-                    : unavailable('execution_failed');
-                continue;
-              }
-              let entry;
-              let capturedOutput: unknown;
-              let capturedExecutionStatus: 'completed' | 'task_failed' = 'completed';
-              let capturedReference: unknown;
-              let capturedUsage: Outcome['usage'] = null;
-              try {
-                const returnedOutput = execution.output;
-                assertEvaluationOutput(returnedOutput);
-                capturedOutput = structuredClone(returnedOutput);
-                const returnedStatus = execution.executionStatus;
-                if (!['completed', 'task_failed', undefined].includes(returnedStatus))
-                  throw new Error();
-                capturedExecutionStatus = returnedStatus ?? 'completed';
-                capturedReference = execution.outputRef;
-                capturedUsage = usage(execution.usage);
-                if (
-                  artifactBytes + Buffer.byteLength(JSON.stringify(capturedOutput)) + 16 * 1024 >
-                  MAX_PRIVATE
-                ) {
-                  cancelled = true;
-                  throw new Error();
-                }
-                entry = await journal.writeArtifact(
-                  {
-                    requestId: scope.requestId,
-                    attemptId: state.attemptId,
-                    caseId: item.caseId,
-                    repetition,
-                    side,
-                    versionId: bundle.version.id,
-                    digest: bundle.version.digest,
-                    role: 'output',
-                  },
-                  capturedOutput,
-                );
-                artifactBytes += entry.bytes;
-                index.entries.push(entry);
-                await journal.saveArtifactIndex(index);
-              } catch (error) {
-                if (error instanceof OutputValidationError) {
-                  await recordOutputError(error);
-                }
-                pair[side] = unavailable('output_invalid');
-                continue;
-              }
-              const reference = capturedReference ?? `acclimate:artifact:${entry.sha256}`;
-              if (
-                typeof reference !== 'string' ||
-                Buffer.byteLength(reference) > 1024 ||
-                /[\u0000-\u001f\u007f\ud800-\udfff]/u.test(reference)
-              ) {
-                pair[side] = unavailable('output_reference_invalid');
-                continue;
-              }
-              const outcome: Outcome = {
-                executionStatus: capturedExecutionStatus,
-                gradingStatus: 'missing',
-                reward: null,
-                outputRef: reference,
-                error: null,
-                usage: capturedUsage,
-              };
-              if (signal.aborted || cancelled) {
-                pair[side] = { ...outcome, error: 'cancelled' };
-                continue;
-              }
-              await check();
-              journal.assertOwned();
-              if (signal.aborted || cancelled) {
-                pair[side] = { ...outcome, error: 'cancelled' };
-                continue;
-              }
-              let gradeReturned = false;
-              try {
-                const grade = await captured.grade({
-                  output: structuredClone(capturedOutput),
-                  expected: structuredClone(item.expected),
-                  caseId: item.caseId,
-                  repetition,
-                  signal,
-                });
-                gradeReturned = true;
-                journal.assertOwned();
-                const reward = grade.reward;
-                if (typeof reward !== 'number' || !Number.isFinite(reward)) throw new Error();
-                const returnedExplanation = grade.explanation;
-                let capturedExplanation: unknown;
-                if (returnedExplanation !== undefined) {
-                  assertJson(returnedExplanation, MAX_ARTIFACT);
-                  capturedExplanation = structuredClone(returnedExplanation);
-                  if (
-                    artifactBytes +
-                      Buffer.byteLength(JSON.stringify(capturedExplanation)) +
-                      16 * 1024 >
-                    MAX_PRIVATE
-                  ) {
-                    cancelled = true;
-                    throw new Error();
-                  }
-                  const explanation = await journal.writeArtifact(
-                    {
-                      requestId: scope.requestId,
-                      attemptId: state.attemptId,
-                      caseId: item.caseId,
-                      repetition,
-                      side,
-                      versionId: bundle.version.id,
-                      digest: bundle.version.digest,
-                      role: 'grader-explanation',
-                    },
-                    capturedExplanation,
-                  );
-                  artifactBytes += explanation.bytes;
-                  index.entries.push(explanation);
-                  await journal.saveArtifactIndex(index);
-                }
-                pair[side] = { ...outcome, gradingStatus: 'scored', reward };
-                break;
-              } catch (error) {
-                if (error instanceof ExecutionUncertainError) throw error;
-                if (error instanceof EvaluationError && error.code === 'journal.ownership_lost')
-                  throw error;
-                if (error instanceof CallbackCancelled) cancelled = true;
-                else if (!gradeReturned && config.captureCallbackErrors)
-                  await saveCallbackError(privateJobDirectory, 'grade', error);
-                pair[side] = {
-                  ...outcome,
-                  gradingStatus: 'failed',
-                  error: error instanceof CallbackCancelled ? 'cancelled' : 'grading_failed',
-                };
-              }
-            }
-          }
-          report.results.push(pair);
-        }
       journal.assertOwned();
       assertReport(report, request, state.attemptId);
       const body = JSON.stringify(report);
@@ -961,9 +764,10 @@ export async function runCapturedEvaluation(options: {
       finished.comparisonId !== state.comparisonId
     )
       throw new EvaluationError('evidence.identity_mismatch');
-    request = await api.getEvaluation(scope.projectId, scope.bundleId, scope.requestId);
+    request = await api.getEvaluation(scope.workspaceId, scope.bundleId, scope.requestId);
     assertFrozen(request, scope.requestId, state.request);
-    if (request.status === 'interrupted')
+    // An abandoned attempt is settled like an interruption: nothing more is reported.
+    if (request.status === 'interrupted' || request.status === 'abandoned')
       return {
         schemaVersion: 1,
         evaluation: request,
@@ -975,7 +779,11 @@ export async function runCapturedEvaluation(options: {
     const result = await terminal(api, scope, request, callbacksStarted, reusedEvidence, state);
     state.completed = true;
     await journal.save(state);
-    return result;
+    const extras = {
+      ...(firstCallbackFailure ? { firstCallbackFailure } : {}),
+      ...(runSummary ? { runSummary } : {}),
+    };
+    return { ...result, ...extras };
   } catch (error) {
     if (error instanceof ObservedInterruption) {
       return {
@@ -1058,7 +866,7 @@ async function terminal(
       (state.comparisonId && state.comparisonId !== request.comparisonId))
   )
     throw new EvaluationError('evidence.identity_mismatch');
-  const comparison = await api.getComparison(scope.projectId, scope.bundleId, request.comparisonId);
+  const comparison = await api.getComparison(scope.workspaceId, scope.bundleId, request.comparisonId);
   assertReport(comparison, request, request.attemptId);
   if (comparison.id !== request.comparisonId || comparison.submitter !== request.evaluatorPrincipal)
     throw new EvaluationError('evidence.identity_mismatch');

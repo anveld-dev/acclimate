@@ -20,11 +20,11 @@ cargo build --release
 
 Inject runtime environment from your secret manager. `npm start` starts the built Rust service, `npm run start:console` starts the built console, and `npm run dev` runs Vite with the same required production configuration. Supply an explicitly provisioned PostgreSQL database and credentials for both processes.
 
-Rust validates PostgreSQL/access/issuer configuration before listening, holds exclusive queue ownership, initializes the schema and registers project rows named in explicit machine grants. That registration never grants human membership. The console validates its own required settings before built or development listening. Use the public console URL through the configured TLS proxy, not its private listener.
+Rust validates PostgreSQL/access/issuer configuration before listening, holds exclusive queue ownership, initializes the schema and registers the workspaces named in explicit machine grants. That registration never grants human membership. The console validates its own required settings before built or development listening. Use the public console URL through the configured TLS proxy, not its private listener.
 
 ## Access and startup
 
-The exact operator identities configured for the pinned issuer may create workspaces. To recover an existing machine-created project with no human memberships, an operator reviews its exact ID, their verified identity and a reason, then explicitly adopts it. The immutable audit never silently restores access on retry. Other access changes use current workspace admins and verified user IDs.
+The exact operator identities configured for the pinned issuer may create workspaces. To recover an existing machine-created workspace with no human memberships, an operator reviews its exact ID, their verified identity and a reason, then explicitly adopts it. The immutable audit never silently restores access on retry. Other access changes use current workspace admins and verified user IDs.
 
 For a fresh install, point the service at an empty database. Subsequent starts reuse the database initialized by this build. Keep any database created by the former migration chain with its matching service build. See the [deployment and recovery instructions](../deploy/README.md#upgrades-and-recovery).
 
@@ -34,7 +34,7 @@ HTTP requests have a 2MiB limit, 30-second deadline and 64-handler concurrency c
 
 ## Publish and consume content
 
-Configure `ACCLIMATE_URL`, `ACCLIMATE_PROJECT`, `ACCLIMATE_SCOPE` and `ACCLIMATE_TOKEN` for the workspace. To publish the first version of a new bundle, supply your bundle JSON, its name and the reason for the initial release.
+Configure `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE`, `ACCLIMATE_SCOPE` and `ACCLIMATE_TOKEN` for the workspace. To publish the first version of a new bundle, supply your bundle JSON, its name and the reason for the initial release.
 
 ```sh
 npm run example:publish -- "$BUNDLE_FILE" "$BUNDLE_NAME" "$INITIAL_RELEASE_REASON"
@@ -82,7 +82,7 @@ The operator CLI also exposes `request-proposal`, `proposal`, `review`, `history
 
 ## Run a real improvement review
 
-Set the service URL, token, scope, project, bundle and channel as above, plus `ACCLIMATE_SKILL_PATH=skills/retry-review/SKILL.md`. Then run:
+Set the service URL, token, scope, workspace, bundle and channel as above, plus `ACCLIMATE_SKILL_PATH=skills/retry-review/SKILL.md`. Then run:
 
 ```sh
 npm run example:improve -- run --live

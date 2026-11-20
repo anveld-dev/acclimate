@@ -1,16 +1,16 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { rejectObsoleteConsoleModes } from './configuration';
 import { getCookie, setCookie } from '@tanstack/react-start/server';
-export type Selection = { projectId: string; bundleId: string; channel: string };
+export type Selection = { workspaceId: string; bundleId: string; channel: string };
 export type BundleScope = Selection;
-export type ResourceScope = { projectId: string; bundleId?: string; channel?: string };
+export type ResourceScope = { workspaceId: string; bundleId?: string; channel?: string };
 export type Environment = Record<string, string | undefined>;
 // Scope is supplied by the rendered URL/form, never borrowed from another tab's cookie.
 export function scopedEnvironment(env: Environment, scope: ResourceScope): Environment {
   if (
     !scope ||
-    typeof scope.projectId !== 'string' ||
-    !/^[^\x00-\x20\x7f/]{1,200}$/.test(scope.projectId) ||
+    typeof scope.workspaceId !== 'string' ||
+    !/^[^\x00-\x20\x7f/]{1,200}$/.test(scope.workspaceId) ||
     [scope.bundleId, scope.channel].some(
       (value) =>
         value !== undefined &&
@@ -20,7 +20,7 @@ export function scopedEnvironment(env: Environment, scope: ResourceScope): Envir
     throw new Error('Invalid resource scope.');
   return {
     ...env,
-    CONSOLE_PROJECT: scope.projectId,
+    CONSOLE_WORKSPACE: scope.workspaceId,
     CONSOLE_BUNDLE: scope.bundleId,
     CONSOLE_CHANNEL: scope.channel,
   };
@@ -60,7 +60,7 @@ export function validSelection(value: unknown): value is Selection {
   return (
     !!value &&
     typeof value === 'object' &&
-    ['projectId', 'bundleId', 'channel'].every(
+    ['workspaceId', 'bundleId', 'channel'].every(
       (k) =>
         typeof (value as Record<string, unknown>)[k] === 'string' &&
         /^[^\x00-\x20\x7f/]{1,200}$/.test((value as Record<string, string>)[k]),
@@ -78,7 +78,7 @@ export function selectedEnvironment(
     CONSOLE_SESSION_TOKEN: session,
     ...(selection
       ? {
-          CONSOLE_PROJECT: selection.projectId,
+          CONSOLE_WORKSPACE: selection.workspaceId,
           CONSOLE_BUNDLE: selection.bundleId,
           CONSOLE_CHANNEL: selection.channel,
         }

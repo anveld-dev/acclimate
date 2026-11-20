@@ -7,7 +7,7 @@ const env = {
   ...consoleEnvironment,
   CONSOLE_ALLOW_EDITS: 'true',
   CONSOLE_SERVICE_TOKEN: 'local-private',
-  CONSOLE_PROJECT: 'demo',
+  CONSOLE_WORKSPACE: 'demo',
   CONSOLE_BUNDLE: '11111111-1111-4111-8111-111111111111',
 };
 const payload = {
@@ -31,7 +31,7 @@ function fixture(parent = 'parent', conflict = false) {
     const url = String(input);
     if (url.includes('/v1/workspaces?'))
       return Response.json({
-        items: [{ id: env.CONSOLE_PROJECT, name: 'Workspace', role: 'admin' }],
+        items: [{ id: env.CONSOLE_WORKSPACE, name: 'Workspace', role: 'admin' }],
         nextCursor: null,
       });
     if (url.includes('/operations/'))

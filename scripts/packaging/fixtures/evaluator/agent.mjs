@@ -1,7 +1,7 @@
 // Private payment worker for installed-consumer qualification.
-export async function runExistingAgent({ bundle, task, signal }) {
+export async function runExistingAgent({ version, task, signal }) {
   signal?.throwIfAborted();
-  const instruction = bundle.payload.files
+  const instruction = version.payload.files
     .filter(file => file.kind === 'instruction')
     .map(file => file.text).join('\n');
   const reuseKey = instruction.includes('Reuse the same idempotency key');

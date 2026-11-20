@@ -15,15 +15,23 @@ async function main() {
   }
   const root = values['--state-root'];
   const harness = values['--harness'] ?? 'codex';
-  if (!root || !path.isAbsolute(root) || !['codex', 'claude', 'pi', 'cursor'].includes(harness))
-    throw new Error('native.invalid_demo_arguments');
+  if (!root || !path.isAbsolute(root))
+    throw new Error('native.invalid_demo_arguments: pass --state-root as an absolute path to a new directory');
+  if (!['codex', 'claude', 'pi', 'cursor'].includes(harness))
+    throw new Error(`native.invalid_demo_arguments: --harness ${harness} is not codex, claude, pi or cursor`);
   const parent = path.dirname(root);
-  if ((await realpath(parent)) !== parent) throw new Error('native.noncanonical_demo_parent');
-  await mkdir(root, { mode: 0o700 }); // Refuse an existing run; no journal or artifact reuse.
+  const canonical = await realpath(parent);
+  if (canonical !== parent)
+    throw new Error(`native.noncanonical_demo_parent: ${parent} resolves to ${canonical}; pass --state-root ${path.join(canonical, path.basename(root))}`);
+  // Refuse an existing run; no journal or artifact reuse.
+  await mkdir(root, { mode: 0o700 }).catch((error) => {
+    if (error.code === 'EEXIST') throw new Error(`native.demo_state_exists: ${root} already exists; choose a new --state-root`);
+    throw error;
+  });
   for (const child of ['workspaces', 'jobs', 'artifacts'])
     await mkdir(path.join(root, child), { mode: 0o700 });
   const info = await lstat(root);
-  if (info.mode & 0o077) throw new Error('native.private_demo_root_required');
+  if (info.mode & 0o077) throw new Error(`native.private_demo_root_required: chmod 700 ${root} (check your umask)`);
   const worker = spawn(
     process.execPath,
     [fileURLToPath(new URL('./worker.mjs', import.meta.url)), root, harness],
@@ -40,7 +48,7 @@ async function main() {
   });
 }
 
-main().catch(() => {
-  console.error(JSON.stringify({ error: { code: 'native.demo_configuration_failed' } }));
+main().catch((error) => {
+  console.error(String(error?.message ?? error).split('\n')[0]);
   process.exitCode = 1;
 });

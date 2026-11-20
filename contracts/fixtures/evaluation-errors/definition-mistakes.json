@@ -1,0 +1,15 @@
+{
+  "description": "The same definition mistake must produce the same code in both SDKs. Field names follow each language's argument names.",
+  "mistakes": [
+    { "mistake": "missing_grade", "code": "definition.invalid", "typescript": "grade", "python": "grade" },
+    { "mistake": "misspelled_execution", "code": "definition.invalid", "typescript": "execution", "python": "execution" },
+    { "mistake": "empty_cases", "code": "definition.invalid", "typescript": "cases", "python": "cases" },
+    { "mistake": "duplicate_case_id", "code": "definition.invalid", "typescript": "cases[1].caseId", "python": "cases[1].case_id" },
+    { "mistake": "blank_case_id", "code": "definition.invalid", "typescript": "cases[0].caseId", "python": "cases[0].case_id" },
+    { "mistake": "zero_repetitions", "code": "definition.invalid", "typescript": "cases[0].repetitions", "python": "cases[0].repetitions" },
+    { "mistake": "date_in_input", "code": "definition.invalid", "typescript": "cases[0][\"input\"][\"when\"]", "python": "cases[0][\"input\"][\"when\"]" },
+    { "mistake": "empty_config_id", "code": "definition.invalid", "typescript": "configId", "python": "config_id" },
+    { "mistake": "reserved_runtime_key", "code": "definition.invalid", "typescript": "runtime.configId", "python": "runtime.configId" },
+    { "mistake": "non_string_runtime_value", "code": "definition.invalid", "typescript": "runtime.model", "python": "runtime.model" }
+  ]
+}

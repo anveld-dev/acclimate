@@ -9,7 +9,7 @@ from scripts.bdd.learning import enroll_reviews, grade_through_audit, report_fai
 
 def open_learning(w):
     browser = w.browser()
-    browser.visit(browser.workspace_path('connections') + '?integration=' + w.integration['id']
+    browser.visit(browser.workspace_path('connections') + '?connection=' + w.integration['id']
                   + '&connectionTab=learning')
     return browser.page.get_by_role('region', name='Continuous learning')
 
@@ -19,7 +19,10 @@ def blocking_receipt(w, phase, **threshold):
                     policy=dict(schemaVersion=1, id=phase + '-quality', revision='1',
                                 metric=dict(name='Instruction coverage', unit='reward', direction='higher'),
                                 aggregation='equal-case-means', requiredCases=[],
-                                maximumCaseRegression=0, **threshold))
+                                maximumCaseRegression=0,
+                                # The fixture has too few cases for the default paired test; these
+                                # scenarios need a definite failing receipt, not an indeterminate one.
+                                inference=dict(method='none'), **threshold))
     assert receipt['verdict'] == 'fail'
     assert receipt['comparisonId'] == w.round[phase + 'ComparisonId']
     return receipt
@@ -207,7 +210,7 @@ def automatic_rollback(context):
     for index in range(8):
         path = f'src/review-{index}.ts'
         job = dict(changedPaths=[path, 'CHANGELOG.md'], expectedPaths=[path])
-        grade = w.sdk('gradeFieldJob', actor='evaluator', integrationId=w.integration['id'],
+        grade = w.sdk('gradeFieldJob', actor='evaluator', connectionId=w.integration['id'],
                       readerToken=w.read_credential['secret'], receiptToken=w.write_credential['secret'],
                       outcomeToken=w.h.tokens['other'], fieldJob=job)
         assert grade.get('verdict') == 'loss', grade

@@ -26,7 +26,7 @@ export function WorkspaceCreate({
   onPendingChange,
 }: {
   access: AccessState;
-  onCreated?: (projectId: string) => void;
+  onCreated?: (workspaceId: string) => void;
   showHeading?: boolean;
   onPendingChange?: (pending: boolean) => void;
 }) {

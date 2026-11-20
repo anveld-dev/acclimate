@@ -1,4 +1,3 @@
-import { canonicalOperationPath } from '../lib/operation-target';
 import { consoleClient } from './console-client';
 import { ApiError, DeliveryError, validatePayload } from '@acclimate/sdk';
 import type { BundlePayload, Draft, PublishDraftRequest } from '@acclimate/sdk';
@@ -38,7 +37,7 @@ export async function draftCommand(
   );
   if (mutating && env.CONSOLE_ALLOW_EDITS !== 'true')
     return failure('Editing is disabled for this console.');
-  if (!env.CONSOLE_SERVICE_TOKEN || !env.CONSOLE_PROJECT || !env.CONSOLE_BUNDLE)
+  if (!env.CONSOLE_SERVICE_TOKEN || !env.CONSOLE_WORKSPACE || !env.CONSOLE_BUNDLE)
     return failure('Select a configured workspace first.');
   if (
     !input ||
@@ -66,7 +65,7 @@ export async function draftCommand(
     }
     if (input.action === 'validate') return { ok: true as const, validated: true };
     const client = consoleClient(env, fetcher);
-    const p = env.CONSOLE_PROJECT,
+    const p = env.CONSOLE_WORKSPACE,
       b = env.CONSOLE_BUNDLE,
       c = env.CONSOLE_CHANNEL || 'stable';
     if (input.action === 'list')
@@ -79,18 +78,17 @@ export async function draftCommand(
         ok: true as const,
         operation: await (input.action === 'close' ? closeOperation : lookupOperation)(
           env,
-          { projectId: p, key: input.key, operationPath: input.operationPath },
+          { workspaceId: p, key: input.key, operationPath: input.operationPath },
           fetcher,
         ),
       };
     if (input.action === 'retry') {
       const root = `/v1/workspaces/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}/channels/${encodeURIComponent(c)}/drafts`;
-      const target = canonicalOperationPath(input.operationPath);
-      if (target !== root && !target.startsWith(root + '/'))
+      if (input.operationPath !== root && !input.operationPath.startsWith(root + '/'))
         return failure('Operation scope changed.');
       return {
         ok: true as const,
-        draft: await exactOperation<Draft>(env, { projectId: p, ...input }, fetcher),
+        draft: await exactOperation<Draft>(env, { workspaceId: p, ...input }, fetcher),
       };
     }
     if (input.action === 'history')
@@ -109,10 +107,10 @@ export async function draftCommand(
       if (!base.ok) return base;
       return { ok: true as const, draft, payload: snapshot.payload, base: base.payload };
     }
-    const wire = draftRequest(input, { projectId: p, bundleId: b, channel: c });
+    const wire = draftRequest(input, { workspaceId: p, bundleId: b, channel: c });
     const draft = await exactOperation<Draft>(
       env,
-      { projectId: p, key: input.key, ...wire },
+      { workspaceId: p, key: input.key, ...wire },
       fetcher,
     );
     return { ok: true as const, draft };

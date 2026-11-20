@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, open, readFile, realpath, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import {
   defineEvaluation,
   ExecutionUncertainError,
@@ -23,19 +24,19 @@ import {
   journalDirectory,
   openJournal,
   sha256,
-  serializeScope,
+  journalDirectoryKey,
 } from '../../src/evaluation/journal.js';
 import type { AttemptJournal, JournalScope } from '../../src/evaluation/journal.js';
 import type { EvaluationDefinition, EvaluatorConfig } from '../../src/evaluation/types.js';
 import type { Comparison, EvaluationHandoff, ComparisonRequest } from '../../src/types.js';
 import {
   fixture,
-  projectId,
+  workspaceId,
   bundleId,
   requestId,
   evaluatorPrincipalId,
   serviceUrl,
-} from '../../../../examples/evaluation/fixture.js';
+} from '../../../../scripts/evaluator-tests/fixture.js';
 import type { createEvaluationTransport } from '../../src/internal/evaluation-transport.js';
 
 const defaultDefinition = (): EvaluationDefinition<
@@ -100,21 +101,21 @@ async function setup(definition = defaultDefinition()) {
     mutate: async <T>(op: string, _scope: unknown, body: string, key: string): Promise<T> => {
       const value = JSON.parse(body);
       if (op === 'start')
-        return (await api.startEvaluation(projectId, bundleId, requestId, value, key)) as T;
+        return (await api.startEvaluation(workspaceId, bundleId, requestId, value, key)) as T;
       if (op === 'submit') {
         submitted.push({ key, body });
-        comparison = await api.createComparison(projectId, bundleId, value, key);
+        comparison = await api.createComparison(workspaceId, bundleId, value, key);
         return comparison as T;
       }
       if (op === 'finish')
-        return (await api.finishEvaluation(projectId, bundleId, requestId, value, key)) as T;
+        return (await api.finishEvaluation(workspaceId, bundleId, requestId, value, key)) as T;
       throw new Error('unexpected operation');
     },
   } as ReturnType<typeof createEvaluationTransport>;
   const config: EvaluatorConfig = {
     schemaVersion: 1,
     serviceUrl,
-    projectId,
+    workspaceId,
     evaluatorPrincipalId,
     evaluatorToken: 'private-token-canary',
     journalRoot: root,
@@ -122,13 +123,13 @@ async function setup(definition = defaultDefinition()) {
   const handoff: EvaluationHandoff = {
     schemaVersion: 1,
     serviceUrl,
-    projectId,
+    workspaceId,
     bundleId,
     requestId,
-    configuration: structuredClone(app.descriptor),
+    descriptor: structuredClone(app.descriptor),
   };
   const options = { captured: captureDefinition(app), config, handoff, transport };
-  const scope: JournalScope = { serviceUrl, projectId, bundleId, requestId, evaluatorPrincipalId };
+  const scope: JournalScope = { serviceUrl, workspaceId, bundleId, requestId, evaluatorPrincipalId };
   return {
     app,
     f,
@@ -141,13 +142,14 @@ async function setup(definition = defaultDefinition()) {
   };
 }
 
-test('callback diagnostics retain private frame locations only when enabled', async () => {
-  for (const enabled of [false, true]) {
+test('callback diagnostics keep a redacted message and stack locally by default, with an opt-out', async () => {
+  for (const enabled of [false, undefined, true]) {
     const definition = defaultDefinition();
     const directories: string[] = [];
     definition.execute = async ({ context, repetition }) => {
       directories.push(context.privateJobDirectory);
-      if (repetition === 0) throw new TypeError('private callback canary\n    at /secret/path:1:1');
+      if (repetition === 0)
+        throw new TypeError('private callback canary Authorization: Bearer sk-live-0123456789abcdef');
       return { output: { answer: 'ok' } };
     };
     definition.grade = async () => {
@@ -155,13 +157,24 @@ test('callback diagnostics retain private frame locations only when enabled', as
     };
     const run = await setup(definition);
     try {
-      run.options.config.captureCallbackErrors = enabled;
+      if (enabled !== undefined) run.options.config.captureCallbackErrors = enabled;
+      else delete run.options.config.captureCallbackErrors;
       const result = await runCapturedEvaluation(run.options);
       assert.equal(result.evaluation.status, 'failed');
-      assert.doesNotMatch(JSON.stringify(result), /canary|secret\/path|callback-error/);
+      // The message stays in the private file. Only the local file path is reported.
+      assert.doesNotMatch(JSON.stringify(result), /canary|sk-live/);
+      assert.doesNotMatch(JSON.stringify(run.submitted), /canary|callback-error|sk-live/);
+      assert.equal(result.firstCallbackFailure?.caseId, 'one');
+      assert.equal(result.firstCallbackFailure?.repetition, 0);
+      assert.equal(result.firstCallbackFailure?.stage, 'execute');
+      assert.equal(result.firstCallbackFailure?.reason, 'execution_failed');
+      assert.equal(
+        result.firstCallbackFailure?.diagnosticFile,
+        enabled === false ? undefined : path.join(directories[0], 'callback-error.json'),
+      );
       for (const [i, dir] of directories.entries()) {
         const filename = path.join(dir, 'callback-error.json');
-        if (!enabled) {
+        if (enabled === false) {
           await assert.rejects(readFile(filename), { code: 'ENOENT' });
           continue;
         }
@@ -169,8 +182,10 @@ test('callback diagnostics retain private frame locations only when enabled', as
         const diagnostic = JSON.parse(body);
         assert.equal(diagnostic.phase, i < 2 ? 'execute' : 'grade');
         assert.equal(diagnostic.exceptionType, i < 2 ? 'TypeError' : 'RangeError');
+        assert.match(diagnostic.message, /canary/);
+        assert.match(diagnostic.stack, /canary/);
         assert.ok(diagnostic.frames.length > 0 && diagnostic.frames.length <= 8);
-        assert.doesNotMatch(body, /canary|secret\/path/);
+        assert.doesNotMatch(body, /sk-live-0123456789abcdef/);
       }
     } finally {
       await run.cleanup();
@@ -224,19 +239,19 @@ test('installed runner isolates verified bundles and uses exact full-side callba
     definition = defaultDefinition();
   let original = '';
   definition.execute = async (args) => {
-    const side = args.bundle.version.parentVersionId ? 'candidate' : 'parent';
+    const side = args.version.version.parentVersionId ? 'candidate' : 'parent';
     trace.push(side + '-execute-' + args.repetition);
     assert.equal('expected' in args, false);
-    assert.equal(args.bundle.payload.files[0].text, original || args.bundle.payload.files[0].text);
-    original = args.bundle.payload.files[0].text;
+    assert.equal(args.version.payload.files[0].text, original || args.version.payload.files[0].text);
+    original = args.version.payload.files[0].text;
     assert.equal(
       JSON.parse(
         await readFile(path.join(args.context.privateJobDirectory, 'binding.json'), 'utf8'),
       ).requestId,
       requestId,
     );
-    args.bundle.payload.files[0].text = 'mutation';
-    args.bundle.version.digest = 'mutated';
+    args.version.payload.files[0].text = 'mutation';
+    args.version.version.digest = 'mutated';
     args.input.task = 'mutation';
     return { output: { answer: 'private-answer' } };
   };
@@ -360,9 +375,9 @@ test('non-JSON adapter output identifies the field only in the private job', asy
   const providerResult = { observedAt: new Date() };
   assert.throws(() => assertEvaluationOutput(providerResult), /observedAt.*toISOString/);
   if (false) {
+    // @ts-expect-error The compiler names output.observedAt and asks for toISOString().
     defineEvaluation({
       ...defaultDefinition(),
-      // @ts-expect-error Dates require an explicit conversion at the durable adapter boundary.
       execute: async () => ({ output: providerResult }),
       grade: async () => ({ reward: 1 }),
     });
@@ -619,6 +634,37 @@ test('observed interruption returns the validated snapshot without a second fail
   }
 });
 
+test('an attempt the service abandons mid-run settles without executing or reporting', async () => {
+  const definition = defaultDefinition();
+  let executions = 0;
+  definition.execute = async () => {
+    executions++;
+    return { output: { answer: 'x' } };
+  };
+  const s = await setup(definition);
+  const mutate = s.options.transport.mutate;
+  s.options.transport.mutate = async <T>(...args: Parameters<typeof mutate>) => {
+    const result = await mutate<T>(...args);
+    if (args[0] === 'start')
+      s.f.request = {
+        ...s.f.request,
+        status: 'abandoned',
+        error: 'CI job cancelled',
+        abandonedBy: 'machine:ci',
+      };
+    return result;
+  };
+  try {
+    const result = await runCapturedEvaluation(s.options);
+    assert.equal(result.executionState, 'interrupted');
+    assert.equal(result.evaluation.status, 'abandoned');
+    assert.equal(executions, 0);
+    assert.equal(s.submitted.length, 0);
+  } finally {
+    await s.cleanup();
+  }
+});
+
 test('comparison/index crash window is repaired before finish and on terminal recovery without callbacks', async () => {
   const definition = defaultDefinition();
   let executions = 0;
@@ -659,14 +705,49 @@ test('comparison/index crash window is repaired before finish and on terminal re
   }
 });
 
-for (const stage of ['execute', 'grade'] as const)
+test('uncertainty from one execute fails that arm only, is never retried and leaves a marker', async () => {
+  const definition = defaultDefinition();
+  let executions = 0;
+  definition.execute = async () => {
+    executions++;
+    if (executions === 1)
+      throw new ExecutionUncertainError({ cause: new Error('turn timed out; stop unconfirmed') });
+    return { output: { answer: 'private-answer' } };
+  };
+  const s = await setup(definition);
+  try {
+    const result = await runCapturedEvaluation({ ...s.options, retryMissingTrial: true });
+    assert.equal(executions, 4);
+    assert.equal(s.submitted.length, 1);
+    const report = JSON.parse(s.submitted[0].body) as ComparisonRequest;
+    const first = report.results.find((pair) => pair.repetition === 0)!;
+    const uncertainSide = first.parent.error === 'execution_uncertain' ? first.parent : first.candidate;
+    assert.equal(uncertainSide.executionStatus, 'infrastructure_failed');
+    assert.equal(uncertainSide.error, 'execution_uncertain');
+    assert.equal(
+      report.results.flatMap((pair) => [pair.parent, pair.candidate]).filter((arm) => arm.reward === 1)
+        .length,
+      3,
+    );
+    assert.ok(result.comparison);
+    const jobs = path.join(s.directory, 'jobs');
+    const markers = [];
+    for (const job of await readdir(jobs))
+      if (await readFile(path.join(jobs, job, 'uncertain.json'), 'utf8').catch(() => null))
+        markers.push(job);
+    assert.equal(markers.length, 1);
+  } finally {
+    await s.cleanup();
+  }
+});
+
+for (const stage of ['grade'] as const)
   test(`uncertainty from ${stage} stops every later callback and leaves an unreplayable marker`, async () => {
     const definition = defaultDefinition();
     let executions = 0,
       grades = 0;
     definition.execute = async () => {
       executions++;
-      if (stage === 'execute') throw new ExecutionUncertainError();
       return { output: { answer: 'x' } };
     };
     definition.grade = async () => {
@@ -694,7 +775,7 @@ for (const stage of ['execute', 'grade'] as const)
           error.diagnostic.executionState === 'may_have_started',
       );
       assert.equal(executions, 1);
-      assert.equal(grades, stage === 'grade' ? 1 : 0);
+      assert.equal(grades, 1);
     } finally {
       await s.cleanup();
     }
@@ -706,9 +787,13 @@ test('recovery diagnostics preserve durable certainty when the initial lifecycle
     let executions = 0;
     definition.execute = async () => {
       executions++;
-      if (!sealed) throw new ExecutionUncertainError();
       return { output: { answer: 'private-answer' } };
     };
+    // An uncertain grade leaves started work without a sealed report.
+    if (!sealed)
+      definition.grade = async () => {
+        throw new ExecutionUncertainError();
+      };
     const s = await setup(definition);
     const mutate = s.options.transport.mutate;
     s.options.transport.mutate = async <T>(...args: Parameters<typeof mutate>) => {
@@ -956,8 +1041,23 @@ test('foreign Python journal refuses ownership and scope serialization is explic
       (error) => error instanceof EvaluationError && error.code === 'journal.foreign',
     );
     assert.equal(
-      serializeScope(s.scope),
-      JSON.stringify({ serviceUrl, projectId, bundleId, requestId, evaluatorPrincipalId }),
+      journalDirectoryKey(s.scope),
+      JSON.stringify({ serviceUrl, workspaceId, bundleId, requestId, evaluatorPrincipalId }),
+    );
+    // The Python evaluator pins the same digest for this scope.
+    assert.equal(
+      createHash('sha256')
+        .update(
+          journalDirectoryKey({
+            requestId: '44444444-4444-4444-8444-444444444444',
+            bundleId: '33333333-3333-4333-8333-333333333333',
+            serviceUrl: 'https://fixture.example',
+            workspaceId: 'café',
+            evaluatorPrincipalId: 'evaluator',
+          }),
+        )
+        .digest('hex'),
+      '0f5583cf11d8613c3b08cc4b3219f22d3ce14927f5610e0289a8bce87a909d71',
     );
     assert.equal(s.f.events.length, 0);
   } finally {
@@ -1017,14 +1117,14 @@ test('public config/handoff preflight and run work through bounded authenticated
         }
         value = {
           schemaVersion: 1,
-          projectId,
+          workspaceId,
           principalId: evaluatorPrincipalId,
           checkedAt: new Date().toISOString(),
           readUnpublished: true,
           writeEvaluation: true,
           retainedEvaluationOperations: true,
         };
-      } else if (req.method === 'GET' && pathname === `/v1/workspaces/${projectId}/bundles`) {
+      } else if (req.method === 'GET' && pathname === `/v1/workspaces/${workspaceId}/bundles`) {
         const cursor = new URL(req.url!, 'http://localhost').searchParams.get('cursor');
         value =
           inventoryMode === 'loop'
@@ -1055,11 +1155,11 @@ test('public config/handoff preflight and run work through bounded authenticated
         const body = JSON.parse(text),
           key = String(req.headers['idempotency-key']);
         if (pathname.endsWith('/start'))
-          value = await f.api.startEvaluation(projectId, bundleId, requestId, body, key);
+          value = await f.api.startEvaluation(workspaceId, bundleId, requestId, body, key);
         else if (pathname.endsWith('/finish'))
-          value = await f.api.finishEvaluation(projectId, bundleId, requestId, body, key);
+          value = await f.api.finishEvaluation(workspaceId, bundleId, requestId, body, key);
         else if (pathname.endsWith('/comparisons'))
-          value = comparison = await f.api.createComparison(projectId, bundleId, body, key);
+          value = comparison = await f.api.createComparison(workspaceId, bundleId, body, key);
         else throw new Error('Unexpected mutation');
       } else throw new Error('Unexpected path');
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -1078,7 +1178,7 @@ test('public config/handoff preflight and run work through bounded authenticated
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl: origin,
-      projectId,
+      workspaceId,
       evaluatorPrincipalId,
       evaluatorToken: 'private-public-test-token',
       journalRoot,
@@ -1088,10 +1188,10 @@ test('public config/handoff preflight and run work through bounded authenticated
   const handoff: EvaluationHandoff = {
     schemaVersion: 1,
     serviceUrl: origin,
-    projectId,
+    workspaceId,
     bundleId,
     requestId,
-    configuration: structuredClone(app.descriptor),
+    descriptor: structuredClone(app.descriptor),
   };
   try {
     const before = reads;
@@ -1189,12 +1289,12 @@ test('missing python3 blocks public preflight and run before claim or callbacks 
       res.end('{}');
       return;
     }
-    if (req.method === 'GET' && req.url === `/v1/workspaces/${projectId}/evaluation-capabilities`) {
+    if (req.method === 'GET' && req.url === `/v1/workspaces/${workspaceId}/evaluation-capabilities`) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(
         JSON.stringify({
           schemaVersion: 1,
-          projectId,
+          workspaceId,
           principalId: evaluatorPrincipalId,
           checkedAt: new Date().toISOString(),
           readUnpublished: true,
@@ -1217,7 +1317,7 @@ test('missing python3 blocks public preflight and run before claim or callbacks 
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl,
-      projectId,
+      workspaceId,
       evaluatorPrincipalId,
       evaluatorToken: token,
       journalRoot,
@@ -1230,7 +1330,7 @@ import {defineEvaluation,preflightEvaluation,runEvaluation} from ${JSON.stringif
 let callbacks=0;
 const app=defineEvaluation({configId:'no-python',configRevision:'1',datasetRevision:'fixture1',graderRevision:'fixture1',runtime:{app:'fixture'},execution:'model-free',cases:[{caseId:'one',input:null,expected:null}],execute:async()=>{callbacks++;return{output:null};},grade:async()=>{callbacks++;return{reward:1};}});
 const configPath=${JSON.stringify(configPath)};
-const handoff={schemaVersion:1,serviceUrl:${JSON.stringify(serviceUrl)},projectId:${JSON.stringify(projectId)},bundleId:${JSON.stringify(bundleId)},requestId:${JSON.stringify(requestId)},configuration:app.descriptor};
+const handoff={schemaVersion:1,serviceUrl:${JSON.stringify(serviceUrl)},workspaceId:${JSON.stringify(workspaceId)},bundleId:${JSON.stringify(bundleId)},requestId:${JSON.stringify(requestId)},descriptor:app.descriptor};
 const preflight=await preflightEvaluation({app,configPath,target:{handoff}});
 assert.equal(preflight.status,'blocked');
 assert.ok(preflight.checks.some(check=>check.code==='runtime.unsupported'));
@@ -1296,7 +1396,7 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
     path.join(await realpath(tmpdir()), 'acclimate-response-budget-'),
   );
   const token = 'response-budget-fixture-token',
-    base = `/v1/workspaces/${projectId}/bundles/${bundleId}`;
+    base = `/v1/workspaces/${workspaceId}/bundles/${bundleId}`;
   const submitted: Array<{ key: string; body: string }> = [],
     retained = new Map<string, { body: string; comparison: Comparison }>();
   const handlerErrors: unknown[] = [];
@@ -1311,11 +1411,11 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
     try {
       assert.equal(req.headers.authorization, `Bearer ${token}`);
       const route = new URL(req.url!, 'http://localhost').pathname;
-      if (req.method === 'GET' && route === `/v1/workspaces/${projectId}/evaluation-capabilities`)
-        return send(200, await f.api.getEvaluationCapabilities(projectId));
+      if (req.method === 'GET' && route === `/v1/workspaces/${workspaceId}/evaluation-capabilities`)
+        return send(200, await f.api.getEvaluationCapabilities(workspaceId));
       assert.ok(route.startsWith(base + '/'));
       if (req.method === 'GET' && route === `${base}/evaluation-requests/${requestId}`)
-        return send(200, await f.api.getEvaluation(projectId, bundleId, requestId));
+        return send(200, await f.api.getEvaluation(workspaceId, bundleId, requestId));
       if (
         req.method === 'GET' &&
         originalComparison &&
@@ -1339,9 +1439,9 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
       for await (const chunk of req) body += chunk;
       const value = JSON.parse(body);
       if (route === `${base}/evaluation-requests/${requestId}/start`)
-        return send(200, await f.api.startEvaluation(projectId, bundleId, requestId, value, key));
+        return send(200, await f.api.startEvaluation(workspaceId, bundleId, requestId, value, key));
       if (route === `${base}/evaluation-requests/${requestId}/finish`)
-        return send(200, await f.api.finishEvaluation(projectId, bundleId, requestId, value, key));
+        return send(200, await f.api.finishEvaluation(workspaceId, bundleId, requestId, value, key));
       assert.equal(route, `${base}/comparisons`);
       submitted.push({ key, body });
       const saved = retained.get(key);
@@ -1349,7 +1449,7 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
         assert.equal(body, saved.body);
         return send(201, saved.comparison);
       }
-      originalComparison = await f.api.createComparison(projectId, bundleId, value, key);
+      originalComparison = await f.api.createComparison(workspaceId, bundleId, value, key);
       retained.set(key, { body, comparison: structuredClone(originalComparison) });
       // The write has committed. A tiny compressed response expands beyond the
       // decoded 4 MiB client budget, so Content-Length is not a sufficient guard.
@@ -1381,7 +1481,7 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl: origin,
-      projectId,
+      workspaceId,
       evaluatorPrincipalId,
       evaluatorToken: token,
       journalRoot,
@@ -1391,14 +1491,14 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
   const handoff: EvaluationHandoff = {
     schemaVersion: 1,
     serviceUrl: origin,
-    projectId,
+    workspaceId,
     bundleId,
     requestId,
-    configuration: structuredClone(app.descriptor),
+    descriptor: structuredClone(app.descriptor),
   };
   const scope: JournalScope = {
     serviceUrl: origin,
-    projectId,
+    workspaceId,
     bundleId,
     requestId,
     evaluatorPrincipalId,
@@ -1447,5 +1547,49 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('the live runner applies declared concurrency and case selection with a complete artifact index', async () => {
+  const definition = defaultDefinition();
+  definition.concurrency = 2;
+  definition.cases = [
+    { caseId: 'one', input: { task: 'execute' }, expected: { answer: 'private-answer' }, repetitions: 2 },
+    { caseId: 'two', input: { task: 'execute' }, expected: { answer: 'private-answer' } },
+  ];
+  let active = 0,
+    peak = 0;
+  definition.execute = async () => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    active--;
+    return { output: { answer: 'private-answer' } };
+  };
+  const s = await setup(definition);
+  try {
+    const progress: string[] = [];
+    const result = await runCapturedEvaluation({
+      ...s.options,
+      controls: {
+        selection: { kind: 'cases', caseIds: ['one'] },
+        progress: (event) => progress.push(`${event.completed}/${event.total} ${event.caseId}#${event.repetition} ${event.side}`),
+      },
+    });
+    assert.equal(peak, 2);
+    assert.equal(result.callbacksStarted, 4);
+    assert.equal(progress.length, 4);
+    assert.ok(progress.every((line) => line.endsWith('parent') || line.endsWith('candidate')));
+    const two = result.comparison!.results.find((row) => row.caseId === 'two')!;
+    assert.deepEqual([two.parent.error, two.candidate.error], ['not_selected', 'not_selected']);
+    assert.equal(result.comparison!.complete, false);
+    assert.equal(result.runSummary?.partial, true);
+    assert.deepEqual(result.runSummary?.outputs, { comparedPairs: 2, identicalPairs: 2 });
+    assert.equal(result.evaluation.runtime.concurrency, '2');
+    const index = JSON.parse(await readFile(path.join(s.directory, 'artifact-index.json'), 'utf8'));
+    // Two pairs × two arms = four indexed outputs, none lost to concurrent index writes.
+    assert.equal(index.entries.filter((entry: { role: string }) => entry.role === 'output').length, 4);
+  } finally {
+    await s.cleanup();
   }
 });

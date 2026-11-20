@@ -5,6 +5,7 @@ import {
   AcclimateClient,
   ApiError,
   DeliveryError,
+  TransportError,
   compare,
   resolveAndCache,
   prepareFiles,
@@ -24,7 +25,7 @@ const client = new AcclimateClient({
   retries: 0,
   timeoutMs: 2000,
 });
-const base = { projectId: input.projectId, bundleId: input.bundleId };
+const base = { workspaceId: input.workspaceId, bundleId: input.bundleId };
 const policy = {
   cacheDir: join(input.directory, 'cache'),
   ...(input.offline ? { offline: { maxAgeMs: 300000 } } : {}),
@@ -44,8 +45,8 @@ function reviewDefinition(datasetRevision, reviewCases) {
     cases: Object.entries(reviewCases).map(([caseId, requiredText]) => ({
       caseId, input: { path: 'AGENTS.md', requiredText }, expected: true, repetitions: 2,
     })),
-    execute: async ({ bundle, input: task }) => ({
-      output: bundle.payload.files.some((file) => file.path === task.path && file.text.includes(task.requiredText)),
+    execute: async ({ version, input: task }) => ({
+      output: version.payload.files.some((file) => file.path === task.path && file.text.includes(task.requiredText)),
       usage: { costUsd: 0 },
     }),
     grade: async ({ output, expected }) => ({ reward: Number(output === expected) }),
@@ -98,17 +99,17 @@ async function evaluate() {
     cases: Array.from(repetitionCounts, ([caseId, repetitions]) => ({
       caseId, repetitions, snapshot: casesById.get(caseId).input, settings: null,
     })),
-    execute: ({ version, snapshot }) => definition.execute({ bundle: bundles.get(version.version.id), input: snapshot }),
+    execute: ({ version, snapshot }) => definition.execute({ version: bundles.get(version.version.id), input: snapshot }),
     grade: ({ output, caseId }) => definition.grade({ output, expected: answers.get(caseId) }),
   });
   assert.deepEqual(report.expectedCases, expectedCases);
-  return client.createComparison(base.projectId, base.bundleId, report, crypto.randomUUID());
+  return client.createComparison(base.workspaceId, base.bundleId, report, crypto.randomUUID());
 }
 
 async function reportPolicy() {
   const { checkComparison, parseEvaluationPolicy } = await import('@acclimate/sdk/evaluation/policy');
-  const request = await client.getEvaluation(base.projectId, base.bundleId, input.requestId);
-  const comparison = await client.getComparison(base.projectId, base.bundleId, request.comparisonId);
+  const request = await client.getEvaluation(base.workspaceId, base.bundleId, input.requestId);
+  const comparison = await client.getComparison(base.workspaceId, base.bundleId, request.comparisonId);
   const { datasetRevision, graderRevision, runtime, expectedCases } = request;
   const descriptor = { datasetRevision, graderRevision, runtime, expectedCases };
   const parsed = parseEvaluationPolicy(JSON.stringify(input.policy), descriptor);
@@ -128,7 +129,7 @@ async function reportPolicy() {
     policy: parsed.policy,
     policyDigest: parsed.sha256,
   });
-  return client.reportComparisonPolicyReceipt(base.projectId, base.bundleId, comparison.id, {
+  return client.reportComparisonPolicyReceipt(base.workspaceId, base.bundleId, comparison.id, {
     requestId: request.id, attemptId: request.attemptId, policy, checks, verdict,
   });
 }
@@ -140,13 +141,13 @@ function fieldJobPasses(instructions, job, defaultChecks = []) {
 }
 
 async function gradeFieldJob() {
-  const target = { projectId: base.projectId, integrationId: input.integrationId };
+  const target = { workspaceId: base.workspaceId, connectionId: input.connectionId };
   const scopedClient = (token, role) =>
     new AcclimateClient({
       baseUrl: input.baseUrl,
       token,
-      scope: input.integrationId + ':' + role,
-      integrationId: input.integrationId,
+      scope: input.connectionId + ':' + role,
+      connectionId: input.connectionId,
       retries: 0,
     });
   const reporter = createReceiptReporter({
@@ -180,12 +181,12 @@ async function gradeFieldJob() {
     await reporter.flush();
     assert.equal(reporter.pendingCount, 0);
     const instructions = await readFile(join(job.directory, 'AGENTS.md'), 'utf8');
-    const outcome = await reportOutcome(job.bundle, {
+    const outcome = await reportOutcome(job.version, {
       outcomeId: crypto.randomUUID(),
       startedReceipt,
       status: grade(instructions) === 'correct' ? 'completed' : 'failed',
     });
-    const verdict = await audit(job.bundle, { job: instructions, outcome, startedReceipt });
+    const verdict = await audit(job.version, { job: instructions, outcome, startedReceipt });
     assert(verdict, 'Expected a grade against the served release’s control');
     return verdict;
   } finally {
@@ -201,7 +202,7 @@ async function replayFieldJob() {
   const attempts = Array.from({ length: 3 }, () =>
     fieldJobPasses(instructions, input.fieldJob, input.defaultChecks) ? 'pass' : 'regression');
   const verdict = attempts.filter((result) => result === 'pass').length >= 2 ? 'pass' : 'regression';
-  const receipt = await client.reportLearningFieldReplay(base.projectId, input.integrationId, {
+  const receipt = await client.reportLearningFieldReplay(base.workspaceId, input.connectionId, {
     versionId: candidate.version.id, digest: candidate.version.digest, baselineRevision: input.baselineRevision,
     outcomeId: input.outcomeId, verdict, attempts,
   });
@@ -218,8 +219,8 @@ async function delivery() {
           retries: 0,
           timeoutMs: 1000,
         }),
-        projectId: base.projectId,
-        integrationId: input.integrationId,
+        workspaceId: base.workspaceId,
+        connectionId: input.connectionId,
       })
     : undefined;
   const bundle = await resolveAndCache(client, selection, { ...policy, reporter });
@@ -350,8 +351,8 @@ async function recoverReporting() {
   });
   const reporter = createReceiptReporter({
     client: reportClient,
-    projectId: base.projectId,
-    integrationId: input.integrationId,
+    workspaceId: base.workspaceId,
+    connectionId: input.connectionId,
     now: () => now,
   });
   try {
@@ -363,7 +364,7 @@ async function recoverReporting() {
     reporter.reportPrepared(bundle);
     await reporter.flush();
     const pendingBefore = reporter.pendingCount;
-    const receivedBefore = (await client.listDeliveryReceipts(base.projectId, input.integrationId)).items;
+    const receivedBefore = (await client.listDeliveryReceipts(base.workspaceId, input.connectionId)).items;
     const originals = [...originalEvents.values()];
     const preparedEvent = originals.map((raw) => JSON.parse(raw)).find((event) => event.stage === 'prepared');
     now += input.expired ? 24 * 60 * 60 * 1000 + 1 : 1000;
@@ -378,10 +379,10 @@ async function recoverReporting() {
 }
 async function compareMutation() {
   const parent = {
-    version: await client.getVersion(base.projectId, base.bundleId, input.parentVersionId),
+    version: await client.getVersion(base.workspaceId, base.bundleId, input.parentVersionId),
   };
   const candidate = {
-    version: await client.getVersion(base.projectId, base.bundleId, input.candidateVersionId),
+    version: await client.getVersion(base.workspaceId, base.bundleId, input.candidateVersionId),
   };
   const original = {
     parentVersionId: parent.version.id,
@@ -452,7 +453,7 @@ try {
     !(
       error instanceof ApiError ||
       error instanceof DeliveryError ||
-      (error instanceof TypeError && error.message === 'fetch failed')
+      error instanceof TransportError
     )
   )
     throw error;

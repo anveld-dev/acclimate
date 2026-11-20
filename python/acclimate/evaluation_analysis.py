@@ -1,15 +1,18 @@
-"""App-asserted named metrics and optional paired fixed-task bootstrap analysis.
+"""App-asserted named metrics and optional paired interval analysis.
 
-No execution attestation, population inference, policy verdict or release action.
-Intervals require the caller's explicit stochastic sampling/independence declaration.
+No execution attestation, policy verdict or release action. Intervals are labeled by question:
+``paired-within-case-bootstrap`` answers "these tasks again" (fixed cases) and ``paired-t``
+answers "tasks like these" (cases sampled from the tasks you care about).
 """
 from __future__ import annotations
 
 import math
 from typing import Any, Literal, NotRequired, TypedDict
 
+from ._student_t import student_t_quantile
 from .evaluation_policy import EvidenceGaps, _add_gap, _scalar_gap, check_comparison
 from .types import Comparison, EvaluationDescriptor
+from ._evaluation_shared import EvaluationError
 
 
 class AnalysisMetric(TypedDict):
@@ -33,7 +36,9 @@ class ComponentObservation(TypedDict):
     values: dict[str, float | None]
 
 
-class PairedUncertainty(TypedDict):
+class FixedCaseBootstrap(TypedDict):
+    """These tasks again: variance-scaled within-case bootstrap, at least 3 repetitions."""
+
     method: Literal["paired-within-case-bootstrap"]
     estimand: Literal["fixed-cases"]
     samplingProtocol: str
@@ -41,6 +46,20 @@ class PairedUncertainty(TypedDict):
     confidenceLevel: float
     resamples: int
     seed: int
+
+
+class SampledCaseT(TypedDict):
+    """Tasks like these: two-sided Student t interval on case means, at least 2 cases."""
+
+    method: Literal["paired-t"]
+    estimand: Literal["sampled-cases"]
+    samplingProtocol: str
+    confidenceLevel: float
+
+
+PairedUncertainty = FixedCaseBootstrap | SampledCaseT
+_TWO_SIDED_T = {0.8: 0.9, 0.9: 0.95, 0.95: 0.975, 0.98: 0.99}
+MINIMUM_BOOTSTRAP_REPETITIONS = 3
 
 
 class AnalysisComparisonBinding(TypedDict):
@@ -81,6 +100,7 @@ class MetricUncertainty(TypedDict):
     status: Literal["not_requested", "insufficient_data", "estimated", "indeterminate"]
     code: str
     interval: AnalysisInterval | None
+    estimand: Literal["fixed-cases", "sampled-cases"] | None
 
 
 class MetricAnalysis(TypedDict):
@@ -96,7 +116,7 @@ class MetricAnalysis(TypedDict):
 
 class ComparisonAnalysis(TypedDict):
     schemaVersion: Literal[1]
-    interpretation: Literal["app-asserted-fixed-case-analysis"]
+    interpretation: Literal["app-asserted-fixed-case-analysis", "app-asserted-sampled-case-analysis"]
     executionAttested: Literal[False]
     aggregation: Literal["equal-case-means"]
     expectedBinding: AnalysisComparisonBinding
@@ -105,10 +125,10 @@ class ComparisonAnalysis(TypedDict):
     metrics: list[MetricAnalysis]
 
 
-class AnalysisError(ValueError):
+class AnalysisError(EvaluationError, ValueError):
     def __init__(self, code: str):
-        self.code = code
-        super().__init__("The analysis configuration or component observation is invalid or does not match trusted evidence.")
+        super().__init__(code, phase="policy",  # type: ignore[arg-type]
+            message="The analysis configuration or component observation is invalid or does not match trusted evidence.")
 
 
 def _record(value: Any) -> bool:
@@ -150,6 +170,14 @@ def _mean(values: list[float]) -> float:
     return _arithmetic(total / len(values))
 
 
+def policy_analysis_metric(metric: dict) -> dict:
+    """The analysis metric for a policy metric: the scalar reward, or the named grade component it gates on."""
+    base = {key: metric[key] for key in ("name", "unit", "direction")}
+    if metric.get("component"):
+        return {**base, "id": metric["component"], "source": "component"}
+    return {**base, "id": "reward", "source": "reward"}
+
+
 def analyze_comparison(*, comparison: Comparison, expected_descriptor: EvaluationDescriptor,
                        expected_binding: AnalysisComparisonBinding,
                        metrics: list[AnalysisMetric] | None = None,
@@ -172,21 +200,27 @@ def analyze_comparison(*, comparison: Comparison, expected_descriptor: Evaluatio
         raise AnalysisError("analysis.invalid_config")
     protocol = uncertainty
     if protocol is not None and (
-        not _record(protocol) or not _fields(protocol, ["method", "estimand", "samplingProtocol", "independentStochasticPairs",
-                                                       "confidenceLevel", "resamples", "seed"])
-        or protocol["method"] != "paired-within-case-bootstrap" or protocol["estimand"] != "fixed-cases"
-        or not _string(protocol["samplingProtocol"]) or protocol["independentStochasticPairs"] is not True
-        or not _finite(protocol["confidenceLevel"]) or not 0.8 <= protocol["confidenceLevel"] <= 0.99
-        or not _integer(protocol["resamples"]) or not 100 <= protocol["resamples"] <= 10000
-        or not _integer(protocol["seed"]) or not 0 <= protocol["seed"] <= 0xffffffff
+        not _record(protocol) or not _string(protocol.get("samplingProtocol"))
+        or (not _fields(protocol, ["method", "estimand", "samplingProtocol", "confidenceLevel"])
+            or protocol["estimand"] != "sampled-cases"
+            or not (_finite(protocol["confidenceLevel"]) and protocol["confidenceLevel"] in _TWO_SIDED_T)
+            if protocol.get("method") == "paired-t" else
+            not _fields(protocol, ["method", "estimand", "samplingProtocol", "independentStochasticPairs",
+                                   "confidenceLevel", "resamples", "seed"])
+            or protocol["method"] != "paired-within-case-bootstrap" or protocol["estimand"] != "fixed-cases"
+            or protocol["independentStochasticPairs"] is not True
+            or not _finite(protocol["confidenceLevel"]) or not 0.8 <= protocol["confidenceLevel"] <= 0.99
+            or not _integer(protocol["resamples"]) or not 100 <= protocol["resamples"] <= 10000
+            or not _integer(protocol["seed"]) or not 0 <= protocol["seed"] <= 0xffffffff)
     ):
         raise AnalysisError("analysis.invalid_config")
+    estimand = protocol["estimand"] if protocol is not None else None
     # Strict supported descriptor/inventory/outcome/binding validation; no gate is inferred.
     check_comparison(comparison=comparison, expected_descriptor=expected_descriptor, expected_binding=expected_binding,
                      policy={"schemaVersion": 1, "id": "analysis-validation", "revision": "1",
                              "metric": {"name": "Scalar reward", "unit": "reward", "direction": "higher"},
                              "aggregation": "equal-case-means", "minimumMeanImprovement": 0,
-                             "maximumCaseRegression": 0, "requiredCases": []})
+                             "maximumCaseRegression": 0, "requiredCases": [], "inference": {"method": "none"}})
     descriptor, binding = expected_descriptor, expected_binding
     ordered = sorted(descriptor["expectedCases"], key=lambda row: (row["caseId"].encode("utf-8"), row["repetition"]))
     expected = {(row["caseId"], row["repetition"]) for row in ordered}
@@ -230,8 +264,13 @@ def analyze_comparison(*, comparison: Comparison, expected_descriptor: Evaluatio
                         nonfinite = True
                     values.append(None)
                     continue
-                value = outcome["reward"] if metric["source"] == "reward" else observed.get(
-                    (row["caseId"], row["repetition"], side), {}).get("values", {}).get(metric["id"])
+                if metric["source"] == "reward":
+                    value = outcome["reward"]
+                else:
+                    # A side observation wins; otherwise read the component recorded on the outcome.
+                    value = observed.get((row["caseId"], row["repetition"], side), {}).get("values", {}).get(metric["id"])
+                    if value is None:
+                        value = (outcome.get("components") or {}).get(metric["id"])
                 if type(value) in (int, float) and not _finite(value):
                     nonfinite = True
                 if not _finite(value):
@@ -247,7 +286,8 @@ def analyze_comparison(*, comparison: Comparison, expected_descriptor: Evaluatio
             "counts": {"distinctCases": len(groups), "expectedPairs": len(ordered), "comparablePairs": comparable,
                        "missingPairs": len(ordered) - comparable}, "summary": None, "cases": [],
             "uncertainty": {"status": "indeterminate" if protocol else "not_requested",
-                            "code": "evidence.incomplete" if protocol else "uncertainty.not_requested", "interval": None}}
+                            "code": "evidence.incomplete" if protocol else "uncertainty.not_requested", "interval": None,
+                            "estimand": estimand}}
         results.append(result)
         if gaps["total"]:
             result["evidenceGaps"] = gaps
@@ -271,11 +311,33 @@ def analyze_comparison(*, comparison: Comparison, expected_descriptor: Evaluatio
             result["status"], result["code"] = "descriptive", "analysis.descriptive"
             if protocol is None:
                 continue
-            if len(groups) < 2 or any(len(rows) < 2 for rows in differences):
-                result["uncertainty"] = {"status": "insufficient_data", "code": "uncertainty.insufficient_repetitions", "interval": None}
+            def insufficient(code):
+                result["uncertainty"] = {"status": "insufficient_data", "code": code, "interval": None, "estimand": estimand}
+
+            if protocol["method"] == "paired-t":
+                means = [row["orientedMeanImprovement"] for row in result["cases"]]
+                if len(means) < 2:
+                    insufficient("uncertainty.insufficient_cases")
+                    continue
+                if all(value == means[0] for value in means):
+                    insufficient("uncertainty.no_observed_paired_variation")
+                    continue
+                center = result["summary"]["orientedMeanImprovement"]
+                squares = 0.0
+                for value in means:
+                    squares = _arithmetic(squares + _arithmetic((value - center) * (value - center)))
+                half_width = _arithmetic((student_t_quantile(_TWO_SIDED_T[protocol["confidenceLevel"]], len(means) - 1)
+                                          * math.sqrt(squares / (len(means) - 1))) / math.sqrt(len(means)))
+                result["uncertainty"] = {"status": "estimated", "code": "uncertainty.sampled_case_t_interval",
+                                         "interval": {"lower": _arithmetic(center - half_width),
+                                                      "upper": _arithmetic(center + half_width)},
+                                         "estimand": estimand}
+                continue
+            if len(groups) < 2 or any(len(rows) < MINIMUM_BOOTSTRAP_REPETITIONS for rows in differences):
+                insufficient("uncertainty.insufficient_repetitions")
                 continue
             if all(all(value == rows[0] for value in rows) for rows in differences):
-                result["uncertainty"] = {"status": "insufficient_data", "code": "uncertainty.no_observed_paired_variation", "interval": None}
+                insufficient("uncertainty.no_observed_paired_variation")
                 continue
             state = int(protocol["seed"])
 
@@ -284,9 +346,14 @@ def analyze_comparison(*, comparison: Comparison, expected_descriptor: Evaluatio
                 state = (1664525 * state + 1013904223) & 0xffffffff
                 return math.floor(state / 4294967296 * length)
 
+            # Resampling r values understates case-mean variance by (r - 1) / r; scale it back.
+            centers = [_mean(rows) for rows in differences]
+            factors = [math.sqrt(len(rows) / (len(rows) - 1)) for rows in differences]
             draws = []
             for _ in range(int(protocol["resamples"])):
-                draws.append(_mean([_mean([rows[draw(len(rows))] for _ in rows]) for rows in differences]))
+                draws.append(_mean([
+                    _arithmetic(centers[index] + factors[index] * (_mean([rows[draw(len(rows))] for _ in rows]) - centers[index]))
+                    for index, rows in enumerate(differences)]))
             draws.sort()
 
             def quantile(p: float) -> float:
@@ -295,12 +362,17 @@ def analyze_comparison(*, comparison: Comparison, expected_descriptor: Evaluatio
             alpha = (1 - protocol["confidenceLevel"]) / 2
             lower, upper = quantile(alpha), quantile(1 - alpha)
             result["uncertainty"] = (
-                {"status": "insufficient_data", "code": "uncertainty.degenerate_resamples", "interval": None} if lower == upper else
-                {"status": "estimated", "code": "uncertainty.approximate_fixed_case_interval", "interval": {"lower": lower, "upper": upper}})
+                {"status": "insufficient_data", "code": "uncertainty.degenerate_resamples", "interval": None,
+                 "estimand": estimand} if lower == upper else
+                {"status": "estimated", "code": "uncertainty.approximate_fixed_case_interval",
+                 "interval": {"lower": lower, "upper": upper}, "estimand": estimand})
         except (ArithmeticError, OverflowError):
             result["status"], result["code"], result["summary"], result["cases"] = "indeterminate", "analysis.nonfinite", None, []
             result["uncertainty"] = {"status": "indeterminate" if protocol else "not_requested",
-                "code": "analysis.nonfinite" if protocol else "uncertainty.not_requested", "interval": None}
-    return {"schemaVersion": 1, "interpretation": "app-asserted-fixed-case-analysis", "executionAttested": False,
+                "code": "analysis.nonfinite" if protocol else "uncertainty.not_requested", "interval": None,
+                "estimand": estimand}
+    return {"schemaVersion": 1,
+        "interpretation": "app-asserted-sampled-case-analysis" if estimand == "sampled-cases"
+        else "app-asserted-fixed-case-analysis", "executionAttested": False,
         "aggregation": "equal-case-means", "expectedBinding": dict(binding), "graderRevision": descriptor["graderRevision"],
         "uncertaintyProtocol": dict(protocol) if protocol is not None else None, "metrics": results}

@@ -7,7 +7,7 @@ from acclimate import AcclimateClient, ApiError, TransportError, DeliveryError, 
 
 c=json.loads(Path(sys.argv[1]).read_text())
 client=AcclimateClient(c['baseUrl'],c['token'],c['scope'],retries=0,timeout=2)
-p,b=c['projectId'],c['bundleId']
+p,b=c['workspaceId'],c['bundleId']
 key=lambda:uuid.uuid4().hex
 
 def delivery():
@@ -15,9 +15,9 @@ def delivery():
     prepared=None
     if c.get('reporting'):
         rc=AcclimateClient(c['baseUrl'],c.get('receiptToken','fixture-invalid-report-token'),'python-reporter',retries=0,timeout=1)
-        reporter=DeliveryReporter(rc,p,c['integrationId'])
+        reporter=DeliveryReporter(rc,p,c['connectionId'])
     try:
-        bundle=resolve_and_cache(client,p,b,channel='stable',cache_dir=str(Path(c['directory'])/'python-cache'),offline_max_age=300 if c.get('offline') else None,reporter=reporter)
+        bundle=resolve_and_cache(client,p,b,channel='stable',cache_dir=str(Path(c['directory'])/'python-cache'),offline={'max_age_ms': 300_000} if c.get('offline') else None,reporter=reporter)
         destination=Path(c['directory'])/('python-prepared-'+key())
         prepared=prepare_files(bundle,str(destination))
         started=False

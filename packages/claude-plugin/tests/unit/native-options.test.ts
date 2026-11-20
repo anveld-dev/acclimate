@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { prepare } from '../../src/index.js';
 import { claudeSessionOptions } from '../../src/native.js';
-import type { VerifiedBundle } from '../../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../../sdk/src/types.js';
 
-const bundle: VerifiedBundle = {
+const bundle: VerifiedVersion = {
   version: {
     id: 'native-claude',
     bundleId: 'b',
@@ -40,6 +40,19 @@ test('prepared Claude session options conform to the pinned native SDK', async (
       skills: ['lookup'],
     });
     assert.equal(prepared.memoryFiles[0]!.text, 'Memory.');
+  } finally {
+    await prepared.cleanup();
+  }
+});
+
+test('an empty skill list is omitted so the Agent SDK keeps its default skills', async () => {
+  const withoutSkills = structuredClone(bundle);
+  withoutSkills.payload.files = withoutSkills.payload.files.filter((file) => file.kind !== 'skill');
+  const prepared = await prepare(withoutSkills);
+  try {
+    const options: Options = claudeSessionOptions(prepared);
+    assert.deepEqual(options, { cwd: prepared.cwd, settingSources: ['project'] });
+    assert.equal('skills' in options, false);
   } finally {
     await prepared.cleanup();
   }

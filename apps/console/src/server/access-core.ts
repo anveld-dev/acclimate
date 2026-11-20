@@ -34,19 +34,24 @@ export type VerifiedUser = {
 };
 type Confirmed = { issuer: string; subject: string };
 export type AccessCommand =
-  | { kind: 'adoptWorkspace'; projectId: string; reason: string; confirmedIdentity: AccessIdentity }
+  | {
+      kind: 'adoptWorkspace';
+      workspaceId: string;
+      reason: string;
+      confirmedIdentity: AccessIdentity;
+    }
   | { kind: 'createProject'; id: string; name: string }
-  | { kind: 'userLookup'; projectId: string; userId: string }
+  | { kind: 'userLookup'; workspaceId: string; userId: string }
   | {
       kind: 'setMembership';
-      projectId: string;
+      workspaceId: string;
       userId: string;
       role: 'viewer' | 'editor' | 'admin';
       confirmedIdentity: Confirmed;
     }
-  | { kind: 'removeMembership'; projectId: string; userId: string; confirmedIdentity: Confirmed };
+  | { kind: 'removeMembership'; workspaceId: string; userId: string; confirmedIdentity: Confirmed };
 export type WorkspaceAdoption = {
-  projectId: string;
+  workspaceId: string;
   userId: string;
   reason: string;
   createdAt: string;
@@ -64,6 +69,10 @@ export type AccessResult =
   | { ok: false; message: string };
 class Denied extends Error {}
 class SessionExpired extends Denied {}
+/** True when the service or session refused the caller (including an expired session). */
+export function accessDenied(error: unknown): boolean {
+  return error instanceof Denied;
+}
 class LastAdmin extends Error {}
 export function accessTransport(env: Environment, fetcher: typeof fetch) {
   if (!env.CONSOLE_SESSION_TOKEN) throw new SessionExpired();
@@ -101,6 +110,16 @@ export function accessTransport(env: Environment, fetcher: typeof fetch) {
       ) {
         const problem = new Error(String(error.error.message).slice(0, 500));
         problem.name = 'InvitationError';
+        throw problem;
+      }
+      if (
+        ['invalid_content', 'not_found', 'machine_token_limit', 'machine_token_inactive'].includes(
+          error?.error?.code,
+        ) &&
+        path.includes('/machine-tokens')
+      ) {
+        const problem = new Error(String(error.error.message).slice(0, 500));
+        problem.name = 'MachineTokenError';
         throw problem;
       }
       if ([401, 403].includes(response.status)) throw new Denied();
@@ -195,7 +214,7 @@ export async function readWorkspaceAccessState(
     nextMemberCursor: members.nextCursor,
   };
 }
-const projectId = (value: unknown): value is string =>
+const workspaceId = (value: unknown): value is string =>
   typeof value === 'string' &&
   !['.', '..'].includes(value) &&
   /^[a-zA-Z0-9_.-]{1,128}$/.test(value);
@@ -235,19 +254,19 @@ export async function accessCommand(
           message: 'Your account changed. Review workspace adoption again before confirming.',
         };
       if (
-        !projectId(input.projectId) ||
-        ['.', '..'].includes(input.projectId) ||
+        !workspaceId(input.workspaceId) ||
+        ['.', '..'].includes(input.workspaceId) ||
         typeof input.reason !== 'string' ||
         !input.reason.trim() ||
         input.reason.length > 2000
       )
         return { ok: false, message: 'Enter an exact workspace ID and adoption reason.' };
       const value = await request('/v1/auth/workspace-adoptions', 'POST', {
-        projectId: input.projectId,
+        workspaceId: input.workspaceId,
         reason: input.reason.trim(),
       });
       const adoption: WorkspaceAdoption = {
-        projectId: value.projectId,
+        workspaceId: value.workspaceId,
         userId: value.userId,
         reason: value.reason,
         createdAt: value.createdAt,
@@ -255,7 +274,7 @@ export async function accessCommand(
         currentRole: value.currentRole ?? null,
       };
       if (
-        adoption.projectId !== input.projectId ||
+        adoption.workspaceId !== input.workspaceId ||
         !userId(adoption.userId) ||
         typeof adoption.reason !== 'string' ||
         typeof adoption.createdAt !== 'string'
@@ -265,7 +284,7 @@ export async function accessCommand(
     }
     if (input.kind === 'createProject') {
       if (
-        !projectId(input.id) ||
+        !workspaceId(input.id) ||
         typeof input.name !== 'string' ||
         !input.name.trim() ||
         input.name.length > 200
@@ -274,9 +293,9 @@ export async function accessCommand(
       const p = await request('/v1/workspaces', 'POST', { id: input.id, name: input.name.trim() });
       return { ok: true, kind: input.kind, project: { id: p.id, name: p.name, role: p.role } };
     }
-    if (!projectId(input.projectId) || !userId(input.userId))
+    if (!workspaceId(input.workspaceId) || !userId(input.userId))
       return { ok: false, message: 'Enter a workspace and verified user ID.' };
-    const path = `/v1/workspaces/${encodeURIComponent(input.projectId)}`;
+    const path = `/v1/workspaces/${encodeURIComponent(input.workspaceId)}`;
     const value = await request(`${path}/users/${encodeURIComponent(input.userId)}`);
     const user: VerifiedUser = safeMember(value);
     if (input.kind === 'userLookup') return { ok: true, kind: input.kind, user };
@@ -332,7 +351,7 @@ export async function readMembershipPage(
   | { ok: false; message: string; denied?: boolean }
 > {
   try {
-    if (!projectId(project) || (cursor !== undefined && !/^[0-9a-f]{1,512}$/i.test(cursor)))
+    if (!workspaceId(project) || (cursor !== undefined && !/^[0-9a-f]{1,512}$/i.test(cursor)))
       throw new Denied();
     const request = accessTransport(env, fetcher);
     const page = await request(

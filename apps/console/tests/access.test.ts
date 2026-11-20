@@ -104,7 +104,7 @@ test('lookup confirms identity; mismatched confirmation never mutates', async ()
   const f = fixture();
   const lookup = await accessCommand(
     env,
-    { kind: 'userLookup', projectId: 'p', userId },
+    { kind: 'userLookup', workspaceId: 'p', userId },
     f.fetcher,
   );
   assert.deepEqual(lookup, {
@@ -116,7 +116,7 @@ test('lookup confirms identity; mismatched confirmation never mutates', async ()
     env,
     {
       kind: 'setMembership',
-      projectId: 'p',
+      workspaceId: 'p',
       userId,
       role: 'admin',
       confirmedIdentity: { issuer: 'https://issuer.example', subject: 'another-person' },
@@ -135,7 +135,7 @@ test('membership command rechecks verified identity and leaves actor to session 
     env,
     {
       kind: 'setMembership',
-      projectId: 'p',
+      workspaceId: 'p',
       userId,
       role: 'viewer',
       confirmedIdentity: { issuer: 'https://issuer.example', subject: 'person' },
@@ -178,7 +178,7 @@ test('operator creation and confirmed removal use session authority without acto
     env,
     {
       kind: 'removeMembership',
-      projectId: 'p',
+      workspaceId: 'p',
       userId,
       confirmedIdentity: { issuer: 'https://issuer.example', subject: 'person' },
     },
@@ -223,14 +223,14 @@ test('member management reads only the explicitly requested authorized workspace
   const { readWorkspaceAccessState } = await import('../src/server/access-core');
   const f = fixture();
   const state = await readWorkspaceAccessState(
-    { ...env, CONSOLE_PROJECT: 'other-cookie-project' },
+    { ...env, CONSOLE_WORKSPACE: 'other-cookie-project' },
     'p',
     f.fetcher,
   );
   assert.equal(state.ok, true);
   assert.deepEqual(state.projects, [{ id: 'p', name: 'Project', role: 'admin' }]);
   const denied = await readWorkspaceAccessState(
-    { ...env, CONSOLE_PROJECT: 'p' },
+    { ...env, CONSOLE_WORKSPACE: 'p' },
     'other',
     f.fetcher,
   );
@@ -241,10 +241,10 @@ test('member management reads only the explicitly requested authorized workspace
 test('membership commands keep their explicit workspace when the remembered selection changes', async () => {
   const f = fixture();
   const result = await accessCommand(
-    { ...env, CONSOLE_PROJECT: 'another-workspace' },
+    { ...env, CONSOLE_WORKSPACE: 'another-workspace' },
     {
       kind: 'removeMembership',
-      projectId: 'p',
+      workspaceId: 'p',
       userId,
       confirmedIdentity: { issuer: 'https://issuer.example', subject: 'person' },
     },

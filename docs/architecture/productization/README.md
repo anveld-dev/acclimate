@@ -37,7 +37,7 @@ The first implementation target is **saved draft → browser/service restart →
 
 | Interface | Decision |
 | --- | --- |
-| Scope | A workspace is an existing project. Every operation carries and revalidates `{projectId, bundleId, channel}`. No new organization layer. |
+| Scope | A workspace is an existing project. Every operation carries and revalidates `{workspaceId, bundleId, channel}`. No new organization layer. |
 | Identity | Rust owns membership and session authority in the same PostgreSQL database as domain records. Browser identity and SDK machine grants remain separate. There is no local-operator mode. |
 | Draft | A mutable working record points to an immutable version. `generation` protects saves; the bound base and channel revision protect release. Snapshots under one base are siblings; a small snapshot association table retains their generations. |
 | Evidence | Parent/candidate IDs and digests, frozen declared settings and case identities describe the comparison; outputs remain app-owned. Unpublished-draft ancestry cannot silently bypass the channel-parent release rule. |

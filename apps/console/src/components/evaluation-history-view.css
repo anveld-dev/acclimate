@@ -301,7 +301,7 @@
 .ledger-request-status[data-state='running']::before {
   border: 2px solid light-dark(#506485, #a9bddb);
 }
-.ledger-request-status:is([data-state='failed'], [data-state='interrupted'])::before {
+.ledger-request-status:is([data-state='failed'], [data-state='interrupted'], [data-state='abandoned'])::before {
   background: var(--destructive);
   border-color: var(--destructive);
 }

@@ -19,7 +19,7 @@ delete testEnvironment.NODE_TEST_CONTEXT;
 async function main() {
   const [stateRoot, target] = process.argv.slice(2);
   const source = await freezeSourceInventory({
-    sourceRoot: fileURLToPath(new URL('./fixture', import.meta.url)),
+    sourceRoot: fileURLToPath(new URL('../fixture', import.meta.url)),
     paths: ['package.json', 'src/retry.js', 'tests/retry.test.mjs'],
     revision: 'retry-fixture-v1',
   });
@@ -40,7 +40,7 @@ async function main() {
       { path: 'memory/withheld.md', kind: 'memory', text: 'WITHHELD-CANARY\n' },
     ],
   };
-  const bundle = {
+  const version = {
     version: {
       id: '11111111-1111-4111-8111-111111111111',
       bundleId: '22222222-2222-4222-8222-222222222222',
@@ -73,14 +73,14 @@ async function main() {
       jobId: context.jobId,
       caseId: 'request-scoped-retry',
       repetition: 0,
-      versionId: bundle.version.id,
-      digest: bundle.version.digest,
+      versionId: version.version.id,
+      digest: version.version.digest,
     }) + '\n',
     { mode: 0o600, flag: 'wx' },
   );
   const harness = await installedHarness(target);
   const result = await runRepositoryJob({
-    bundle,
+    version,
     context,
     source,
     harness: target,
@@ -125,7 +125,7 @@ async function main() {
   });
   const patch = await readFile(path.join(stateRoot, 'artifacts', context.jobId, 'result.patch'), 'utf8');
   const original = await readFile(
-    fileURLToPath(new URL('./fixture/src/retry.js', import.meta.url)),
+    fileURLToPath(new URL('../fixture/src/retry.js', import.meta.url)),
     'utf8',
   );
   if (
@@ -146,7 +146,9 @@ async function main() {
   );
 }
 
-main().catch(() => {
-  console.error(JSON.stringify({ error: { code: 'native.fixture_failed' } }));
+main().catch((error) => {
+  const code = error?.code ?? 'native.fixture_failed';
+  const message = String(error?.message ?? error).split('\n')[0];
+  console.error(message.startsWith(code) ? message : `${code}: ${message}`);
   process.exitCode = 1;
 });

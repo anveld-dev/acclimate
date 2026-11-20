@@ -27,9 +27,9 @@ export type ConsoleState =
         storage: 'postgresql';
         isWorkingTree: false;
       };
-      projectId: string;
+      workspaceId: string;
       bundleId: string;
-      projectName?: string;
+      workspaceName?: string;
       bundleName?: string;
       channel: string;
       resolution: ChannelResolution;
@@ -38,7 +38,7 @@ export type ConsoleState =
     };
 
 const observations = new Map<string, string>();
-const required = ['CONSOLE_SERVICE_TOKEN', 'CONSOLE_PROJECT', 'CONSOLE_BUNDLE'] as const;
+const required = ['CONSOLE_SERVICE_TOKEN', 'CONSOLE_WORKSPACE', 'CONSOLE_BUNDLE'] as const;
 
 // This module is imported only inside a server function. Never return env or raw errors.
 export async function readChannel(
@@ -49,7 +49,7 @@ export async function readChannel(
     .update(
       JSON.stringify([
         env.CONSOLE_SESSION_TOKEN,
-        env.CONSOLE_PROJECT,
+        env.CONSOLE_WORKSPACE,
         env.CONSOLE_BUNDLE,
         env.CONSOLE_CHANNEL,
       ]),
@@ -60,19 +60,19 @@ export async function readChannel(
   if (missing.length) return { status: 'setup', missing };
   try {
     requireSession(env);
-    const projectId = env.CONSOLE_PROJECT!;
+    const workspaceId = env.CONSOLE_WORKSPACE!;
     const bundleId = env.CONSOLE_BUNDLE!;
     const channel = env.CONSOLE_CHANNEL || 'stable';
     const client = consoleClient(env, fetcher);
-    const { resolution } = await client.resolveChannel(projectId, bundleId, channel);
+    const { resolution } = await client.resolveChannel(workspaceId, bundleId, channel);
     if (!resolution) throw new Error('Missing channel');
     const membership = (
       await allPages((cursor) => client.listWorkspaces({ limit: 100, cursor }))
-    ).find((project) => project.id === projectId)?.role;
+    ).find((project) => project.id === workspaceId)?.role;
     const [bytes, history, bundles] = await Promise.all([
-      client.getPayload(projectId, bundleId, resolution.version.id),
-      client.listReleases(projectId, bundleId, channel, { limit: 20 }),
-      allPages((cursor) => client.listBundles(projectId, { limit: 100, cursor })),
+      client.getPayload(workspaceId, bundleId, resolution.version.id),
+      client.listReleases(workspaceId, bundleId, channel, { limit: 20 }),
+      allPages((cursor) => client.listBundles(workspaceId, { limit: 100, cursor })),
     ]);
     const payload = verifyPayloadBytes(bytes, resolution.version.digest);
     const bundle = bundles.find((entry) => entry.id === bundleId);
@@ -103,7 +103,7 @@ export async function readChannel(
         storage: 'postgresql',
         isWorkingTree: false,
       },
-      projectId,
+      workspaceId,
       bundleId,
       bundleName: bundle.name,
       channel,

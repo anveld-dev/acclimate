@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { access, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { prepare } from '../../src/index.js';
-import type { VerifiedBundle } from '../../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../../sdk/src/types.js';
 
-const bundle: VerifiedBundle = {
+const bundle: VerifiedVersion = {
   version: { id: 'v1', bundleId: 'b', parentVersionId: null, digest: 'digest', createdAt: 'now' },
   resolvedAt: 0,
   stale: false,
@@ -54,7 +54,7 @@ test('rejects Cursor-incompatible skill names and invalid manifests', async () =
   await assert.rejects(prepare(invalid), /Cursor skill names require/);
   const mismatch = structuredClone(bundle);
   mismatch.payload.files[1]!.text = '---\nname: wrong\ndescription: Find values.\n---';
-  await assert.rejects(prepare(mismatch), /Skill metadata requires/);
+  await assert.rejects(prepare(mismatch), /\[skill_metadata\]/);
 });
 
 test('memory is absent unless explicitly approved', async () => {

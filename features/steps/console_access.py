@@ -95,7 +95,7 @@ def create(context):
     p.get_by_label('Workspace ID',exact=True).fill(w.browser_project)
     p.get_by_label('Workspace name',exact=True).fill('Browser workspace')
     p.get_by_role('button',name='Create workspace',exact=True).click()
-    expect(p).to_have_url(w.browser_fixture.base+w.browser_fixture.workspace_path(project_id=w.browser_project))
+    expect(p).to_have_url(w.browser_fixture.base+w.browser_fixture.workspace_path(workspace_id=w.browser_project))
 
 @then('its creator can select it with administrator rights')
 def created(context):
@@ -128,7 +128,7 @@ def admin_connection(context):
     w=context.world
     w.integration=w.call('POST',w.root+'/connections',dict(bundleId=w.setup['bundle']['id'],channel='stable',displayName='Recovery fixture'),actor='admin')
     w.integration_path=w.root+'/connections/'+w.integration['id']
-    w.browser().visit(w.browser().workspace_path('connections')+'?integration='+w.integration['id'])
+    w.browser().visit(w.browser().workspace_path('connections')+'?connection='+w.integration['id'])
 
 @when('the browser loses a successful credential issuance response')
 def lost_credential(context):

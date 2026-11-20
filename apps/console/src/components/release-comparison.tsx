@@ -100,7 +100,7 @@ export function ReleaseComparison({
     return () => {
       active = false;
     };
-  }, [scope.projectId, scope.bundleId, scope.channel, release.id, attempt]);
+  }, [scope.workspaceId, scope.bundleId, scope.channel, release.id, attempt]);
   const changes = files && 'before' in files ? artifactChanges(files.before, files.after) : [];
   const selected = changes.find((change) => change.path === path) ?? changes[0];
   const summary =

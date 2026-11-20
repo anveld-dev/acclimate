@@ -15,13 +15,26 @@ class Client:
         self.events = []
         self.fail = True
 
-    def report_delivery_receipt(self, project, integration, receipt):
+    def report_delivery_receipt(self, workspace, connection, receipt):
         self.events.append(receipt.copy())
         if self.fail:
             raise OSError("offline")
 
 
 class ReceiptTests(unittest.TestCase):
+    def test_bind_rejects_a_version_from_another_scope(self):
+        reporter = DeliveryReporter(Client(), "p", "i")
+        scoped = {"version": {"id": "v", "bundleId": "b", "digest": BUNDLE["version"]["digest"]},
+                  "connection": {"workspaceId": "p", "connectionId": "I"}}
+        reporter.bind("b", scoped, "cache")  # connection IDs compare case-insensitively
+        for wrong in ({**scoped, "connection": {"workspaceId": "other", "connectionId": "i"}},
+                      {**scoped, "connection": {"workspaceId": "p", "connectionId": "other"}},
+                      {**scoped, "version": {**scoped["version"], "bundleId": "other"}}):
+            with self.assertRaisesRegex(Exception, "Delivery scope must match reporter scope"):
+                reporter.bind("b", wrong, "cache")
+        with self.assertRaisesRegex(Exception, "verified version"):
+            reporter.bind("b", {}, "cache")
+
     def test_lazy_worker_retry_keeps_event_and_expiry_drops(self):
         clock = [100000.0]
         client = Client()

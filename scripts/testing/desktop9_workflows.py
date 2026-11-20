@@ -87,9 +87,9 @@ def fixtures(w):
     w.publish_initial('',files=FILES);w.create_integration();first=w.integration
     setup=w.call('POST',w.root+'/bundle-setups',dict(name=LONG_NAME,origin='created',channel=LONG_CHANNEL,payload=dict(schemaVersion=1,files=FILES),reason='Disposable rich admin layout fixture.'))
     w.setup=setup;w.bundle=w.root+'/bundles/'+setup['bundle']['id'];w.channel=w.bundle+'/channels/'+LONG_CHANNEL;w.original=setup['resolution']
-    selected=w.call('POST',w.root+'/integrations',dict(displayName=LONG_APP,bundleId=setup['bundle']['id'],channel=LONG_CHANNEL))
-    other=w.call('POST',w.root+'/integrations',dict(displayName='Background worker with the same scoped channel',bundleId=setup['bundle']['id'],channel=LONG_CHANNEL))
-    w.integration=selected;w.integration_path=w.root+'/integrations/'+selected['id'];w.issue('content-read');w.issue('receipt-write')
+    selected=w.call('POST',w.root+'/connections',dict(displayName=LONG_APP,bundleId=setup['bundle']['id'],channel=LONG_CHANNEL))
+    other=w.call('POST',w.root+'/connections',dict(displayName='Background worker with the same scoped channel',bundleId=setup['bundle']['id'],channel=LONG_CHANNEL))
+    w.integration=selected;w.integration_path=w.root+'/connections/'+selected['id'];w.issue('content-read');w.issue('receipt-write')
     now=datetime.now(timezone.utc).isoformat();event=dict(w.delivery_event(),channel=LONG_CHANNEL,revision=w.original['revision'],resolvedAt=now,stale=False)
     receipt=w.call('POST',w.integration_path+'/receipts',event,actor='receipt-writer')
     people=[]
@@ -119,7 +119,7 @@ def selected_facts(w,p,f):
 
 
 def connection_geometry(w,b,e,f):
-    p=b.page;route=b.workspace_path('connections')+'?'+urlencode(dict(integration=f['selected']['id']));results=[]
+    p=b.page;route=b.workspace_path('connections')+'?'+urlencode(dict(connection=f['selected']['id']));results=[]
     for width in (1440,1920,1024):
         p.set_viewport_size(dict(width=width,height=1000));visit(p,b,route);expect(p.locator('.connection-row')).to_have_count(3);selected_facts(w,p,f)
         g=capture(e,p,f'{width}-selected-connections')
@@ -144,7 +144,7 @@ def connection_geometry(w,b,e,f):
     visit(p,b,filtered);expect(p.locator('.connection-row')).to_have_count(2)
     for name,item in ((LONG_APP,f['selected']),(f['other']['displayName'],f['other'])):
         target=row_for(p,name);href=target.get_attribute('href');activate(p,target);expect(p).to_have_url(b.base+href)
-        query=parse_qs(urlsplit(p.url).query);assert query==dict(integration=[item['id']],bundleId=[w.setup['bundle']['id']],channel=[LONG_CHANNEL]),query
+        query=parse_qs(urlsplit(p.url).query);assert query==dict(connection=[item['id']],bundleId=[w.setup['bundle']['id']],channel=[LONG_CHANNEL]),query
         expect(row_for(p,name)).to_have_attribute('aria-current','page')
         expect(p.locator('.connection-detail').get_by_role('heading',name=name,exact=True)).to_be_visible()
     p.get_by_role('link',name='Clear filters',exact=True).click();expect(p).to_have_url(b.base+b.workspace_path('connections'));expect(p.locator('.connection-row')).to_have_count(3)
@@ -154,7 +154,7 @@ def connection_geometry(w,b,e,f):
 
 
 def connection_confirmation(w,b,e,f):
-    p=b.page;p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,b.workspace_path('connections')+'?'+urlencode(dict(integration=f['selected']['id'])))
+    p=b.page;p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,b.workspace_path('connections')+'?'+urlencode(dict(connection=f['selected']['id'])))
     credential=p.get_by_text(w.write_credential['id'],exact=True).locator('xpath=../..')
     revoke=credential.get_by_role('button',name=re.compile(r'^Revoke (read|reporting) credential '));activate(p,revoke)
     dialog=p.get_by_role('dialog',name='Revoke credential?',exact=True);expect(dialog).to_be_visible()
@@ -226,7 +226,7 @@ def native(w,b,e,f):
         try:
             b.sign_in(context);p=context.pages[0];p.set_default_timeout(10000);p.on('pageerror',lambda error:b.errors.append(str(error)))
             visit(p,b,b.workspace_path('connections'));before=p.evaluate('({width:innerWidth,dpr:devicePixelRatio})');p.goto('chrome://settings/appearance',wait_until='domcontentloaded');p.evaluate('chrome.settingsPrivate.setDefaultZoom(2)')
-            route=b.workspace_path('connections')+'?'+urlencode(dict(integration=f['selected']['id']));visit(p,b,route);p.wait_for_function('w=>Math.abs(innerWidth-w)<2',arg=before['width']/2);assert p.evaluate('devicePixelRatio')==before['dpr']*2
+            route=b.workspace_path('connections')+'?'+urlencode(dict(connection=f['selected']['id']));visit(p,b,route);p.wait_for_function('w=>Math.abs(innerWidth-w)<2',arg=before['width']/2);assert p.evaluate('devicePixelRatio')==before['dpr']*2
             cdp=context.new_cdp_session(p)
             try:
                 selected_facts(w,p,f);g=capture(e,p,'native200-selected-connections-stacked',cdp=cdp)
@@ -244,13 +244,13 @@ def main():
     output=args.output.resolve();output.mkdir(parents=True,exist_ok=False,mode=0o700);e=Evidence(output,False);w=World(pg_bin(args.pg_bin));before=build_fingerprint();unchanged=False
     try:
         w.start();w.fresh_scenario(SimpleNamespace(effective_tags=[]));f=fixtures(w);b=w.browser();p=b.page
-        initial=dict(release=w.call('GET',w.channel),members=w.call('GET',w.root+'/memberships')['items'],integrations=w.call('GET',w.root+'/integrations')['items'],receipts=w.call('GET',w.integration_path+'/receipts')['items'])
+        initial=dict(release=w.call('GET',w.channel),members=w.call('GET',w.root+'/memberships')['items'],integrations=w.call('GET',w.root+'/connections')['items'],receipts=w.call('GET',w.integration_path+'/receipts')['items'])
         if args.only=='all':e.run('selected-connections-rich-inventory-and-receipt',p,lambda:connection_geometry(w,b,e,f))
         if args.only=='all':e.run('scoped-credential-confirmation',p,lambda:connection_confirmation(w,b,e,f))
         if args.only=='all':e.run('sdk-copy-scope-and-sequential-layout',p,lambda:sdk(w,b,e))
         e.run('members-identity-adjacency-and-last-admin',p,lambda:members(w,b,e,f))
         if args.only=='all':e.run('actual-native200-admin-layouts',p,lambda:native(w,b,e,f))
-        final=dict(release=w.call('GET',w.channel),members=w.call('GET',w.root+'/memberships')['items'],integrations=w.call('GET',w.root+'/integrations')['items'],receipts=w.call('GET',w.integration_path+'/receipts')['items'])
+        final=dict(release=w.call('GET',w.channel),members=w.call('GET',w.root+'/memberships')['items'],integrations=w.call('GET',w.root+'/connections')['items'],receipts=w.call('GET',w.integration_path+'/receipts')['items'])
         assert final==initial,'UI validation changed persisted fixture records';assert not b.errors,b.errors;unchanged=True
     except Exception as error:e.failures.append(dict(check='fixture-or-invariants',error=str(error),traceback=traceback.format_exc()))
     finally:

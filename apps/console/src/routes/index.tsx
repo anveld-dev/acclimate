@@ -12,7 +12,7 @@ function Landing() {
   const nav = useNavigation();
   const router = useRouter();
   const access = nav?.access;
-  const project = nav?.projectId ?? (access?.ok ? access.projects[0]?.id : undefined);
+  const project = nav?.workspaceId ?? (access?.ok ? access.projects[0]?.id : undefined);
   if (project) return <Navigate {...consoleDestination(workspaceHref(project))} replace />;
   if (!access?.ok)
     return (

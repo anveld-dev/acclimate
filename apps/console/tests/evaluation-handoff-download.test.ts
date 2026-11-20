@@ -50,7 +50,7 @@ test('request download retains exactly the public handoff and releases its blob 
     button.props.onClick();
     assert.equal(clicked, true);
     assert.equal(removed, true);
-    assert.equal(link.download, 'evaluation-request.json');
+    assert.equal(link.download, 'handoff.json');
     assert.equal(link.href, 'blob:public-request');
     assert.equal(saved?.type, 'application/json');
     assert.equal(await saved?.text(), handoff + '\n');

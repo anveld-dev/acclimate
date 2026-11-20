@@ -49,6 +49,42 @@ export function pairCounts(rows: EvaluationPair[]) {
   for (const row of rows) if (row.expected) counts[row.change]++;
   return counts;
 }
+/**
+ * One change per expected case, from the means of its repetitions. This matches the equal-case
+ * mean: a case with many repetitions counts once. A case with any unscored pair is not comparable.
+ */
+export function caseChanges(comparison: Comparison) {
+  const cases = new Map<string, { parent: number[]; candidate: number[]; complete: boolean }>();
+  for (const row of evaluationPairs(comparison)) {
+    if (!row.expected) continue;
+    const entry = cases.get(row.key.caseId) ?? { parent: [], candidate: [], complete: true };
+    if (row.change === 'unscored') entry.complete = false;
+    else {
+      entry.parent.push(row.pair!.parent.reward!);
+      entry.candidate.push(row.pair!.candidate.reward!);
+    }
+    cases.set(row.key.caseId, entry);
+  }
+  const mean = (values: number[]) =>
+    values.reduce((value, next, index) => value * (index / (index + 1)) + next / (index + 1), 0);
+  return [...cases].map(([caseId, entry]) => {
+    const parent = mean(entry.parent),
+      candidate = mean(entry.candidate);
+    const change: PairChange = !entry.complete
+      ? 'unscored'
+      : candidate > parent
+        ? 'higher'
+        : candidate < parent
+          ? 'lower'
+          : 'same';
+    return { caseId, change };
+  });
+}
+export function caseCounts(comparison: Comparison) {
+  const counts = { higher: 0, lower: 0, same: 0, unscored: 0 };
+  for (const row of caseChanges(comparison)) counts[row.change]++;
+  return counts;
+}
 export function selectPairs(rows: EvaluationPair[], filter: PairFilter, query: string) {
   const search = query.trim().toLocaleLowerCase();
   return rows.filter(

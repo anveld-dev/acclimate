@@ -1,0 +1,166 @@
+---
+title: Error codes and exit codes
+description: Look up what an evaluator diagnostic or exit code means and what to do next.
+---
+
+Every error the SDKs raise on purpose has a stable `code`. The TypeScript and Python SDKs use the same codes, messages, next actions and exit codes. Both test suites check them against this page.
+
+## Error classes
+
+Catch the base class to handle any SDK error, then branch on `code`.
+
+| TypeScript | Python | Codes |
+| --- | --- | --- |
+| `AcclimateError` | `acclimate.errors.AcclimateError` | Base class for every error below. |
+| `AcclimateUsageError` | `acclimate.errors.UsageError` | `usage.invalid_argument`: an SDK function received an invalid argument. The Python class also subclasses `ValueError`. |
+| `TransportError` | `acclimate.TransportError` | `transport.unreachable` or `transport.timeout`: the service could not be reached. Only this error means an outage. It carries `serviceUrl` (`service_url` in Python). |
+| `ApiError` | `acclimate.ApiError` | The service's error code, such as `not_found` or `base_conflict`, with the HTTP `status`. |
+| `DeliveryError` | `acclimate.DeliveryError` | Delivery and cache codes such as `invalid_payload`, `unsafe_cache` and `cache_miss`. |
+| `EvaluationError` | `acclimate.evaluation.EvaluationError` | The diagnostic codes in the table below. `diagnostic` holds the safe fields. |
+| `DefinitionError` | `acclimate.evaluation.DefinitionError` | `definition.invalid` from `defineEvaluation` or `define_evaluation`. `field` and `reason` name the problem. |
+| `OutputValidationError` | `acclimate.evaluation.OutputValidationError` | `output.invalid`: a callback returned a value that is not plain JSON. |
+| `AppSetupError` | `SetupError` (internal) | `application.invalid`, `application.import_failed` or `definition.invalid` while loading the application module. |
+| `EvaluationUsageError` | `EvaluationUsageError` (internal) | The `usage.*` codes for an invalid command line. |
+| `PolicyError`, `AnalysisError` | `PolicyError`, `AnalysisError` | Policy and analysis codes. Both subclass `EvaluationError`. |
+| `TaskExecutionError`, `InfrastructureError` | `TaskExecutionError` | Raise these from an execute callback. |
+
+TypeScript exports every class from `@acclimate/sdk/evaluation`. The base classes are also exported from `@acclimate/sdk`.
+
+## Reading a diagnostic
+
+The evaluator CLI prints errors to stderr. On a terminal you get readable text. Otherwise, or with `--json`, you get one JSON line:
+
+```json
+{"schemaVersion":1,"command":"compare","error":{"code":"usage.missing_flag","field":"--live","reason":"This evaluator is live. Add --live to authorize model calls.","phase":"configure","executionState":"not_started","nextAction":"fix_command","message":"A required flag is missing. --live: This evaluator is live. Add --live to authorize model calls."}}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `code` | One of the codes below. |
+| `message` | The readable explanation. |
+| `field`, `reason` | The flag, file, definition field or case that caused the error, and why. |
+| `hint` | What to try next. |
+| `nextAction` | A machine-readable next step. |
+| `phase`, `executionState` | Where the error happened and whether callbacks may have started. |
+| `serviceUrl` | The service the evaluator tried to reach, for `service.unavailable`. |
+| `cause` | The first line of the underlying exception, such as an `ImportError` in your module. |
+
+Pass `--verbose`, or set `ACCLIMATE_DEBUG=1`, to include the full stack trace and chained cause.
+
+Diagnostics never include config paths, tokens, case inputs or expected values. Callback failures during a run are recorded privately on the evaluator machine. See [callback failures](/docs/reference/evaluator-cli#callback-failures).
+
+## Exit codes and diagnostic codes
+
+CI can route on the exit code alone: `2` means the candidate is worse, while `4` and `5` mean the pipeline needs attention.
+
+{/* BEGIN GENERATED: npx tsx scripts/error-codes.ts --write */}
+
+### Exit codes
+
+| Exit | Name | Meaning |
+| --- | --- | --- |
+| 0 | `ok` | The command succeeded. For a policy check, the candidate passed. |
+| 1 | `usage` | Fix the command line, config, application module or definition, then rerun. |
+| 2 | `gateFailed` | The quality gate failed: the policy verdict is `fail`. |
+| 3 | `indeterminate` | The evidence cannot support a verdict yet: the policy is indeterminate, the run has not finished, or exported evidence is missing. |
+| 4 | `infrastructure` | The run or the service failed: the request finished as `failed`, the service was unreachable or returned a server error, or a policy receipt was not confirmed. |
+| 5 | `recovery` | Recovery is required before retrying: execution may have started, a submission is unconfirmed, the journal needs attention, or the request was interrupted or conflicts with a newer parent. |
+
+### Diagnostic codes
+
+Execution state overrides the default exit: a diagnostic with `executionState` `may_have_started` or `report_saved` always exits 5.
+
+| Code | Exit | Next action | Meaning |
+| --- | --- | --- | --- |
+| `usage.missing_command` | 1 | `fix_command` | No command given. Run with --help to list the commands. |
+| `usage.unknown_command` | 1 | `fix_command` | Unknown command. Run with --help to list the commands. |
+| `usage.unknown_flag` | 1 | `fix_command` | This command does not accept that flag. |
+| `usage.missing_flag` | 1 | `fix_command` | A required flag is missing. |
+| `usage.invalid_flag` | 1 | `fix_command` | A flag has an invalid or repeated value. |
+| `usage.conflicting_flags` | 1 | `fix_command` | These flags cannot be used together. |
+| `config.missing` | 1 | `fix_config` | The evaluator config file does not exist. |
+| `config.schema` | 1 | `fix_config` | The evaluator config, handoff or command input has an invalid field. |
+| `config.permissions` | 1 | `fix_config` | A private file or directory has unsafe ownership, mode or path. |
+| `config.url` | 1 | `fix_config` | serviceUrl must be an https:// origin, or http:// on localhost, with no path, query or credentials. |
+| `handoff.missing` | 1 | `fix_config` | The handoff file does not exist. |
+| `definition.invalid` | 1 | `fix_application` | The evaluation definition is invalid. |
+| `definition.report_budget_exceeded` | 1 | `fix_application` | The case inventory exceeds the comparison report size limit. Split the cases into smaller evaluations. |
+| `application.invalid` | 1 | `fix_application` | The application module does not export a valid adapter. |
+| `application.import_failed` | 1 | `fix_application` | The application module could not be imported. |
+| `payload.incompatible` | 1 | `fix_command` | The payload breaks a compatibility rule of a native harness the application declares. |
+| `output.invalid` | 1 | `fix_application` | A callback returned a value that is not plain JSON. |
+| `runtime.unsupported` | 1 | `fix_config` | This platform cannot run the durable evaluator. Use Linux or macOS with python3 available. |
+| `capabilities.unsupported` | 1 | `upgrade_service` | The service does not support retained evaluation operations. |
+| `bundle.missing` | 1 | `fix_config` | The bundle does not exist in this workspace or the evaluator cannot read it. |
+| `request.missing` | 1 | `fix_config` | The evaluation request does not exist in this workspace. |
+| `version.missing` | 1 | `fix_config` | A parent or candidate version does not exist in this workspace. |
+| `guided_target_unsupported` | 1 | `fix_config` | The workspace, bundle, request or channel identifier is not in the supported format. |
+| `auth.denied` | 1 | `ask_operator` | The service denied this token. Check the evaluator or reader token and its permissions. |
+| `auth.principal_mismatch` | 1 | `ask_operator` | The token belongs to a different principal or workspace than the config names. |
+| `learning.apps_module_missing` | 1 | `fix_config` | The learning application module is missing. |
+| `learning.apps_module_load_failed` | 1 | `fix_config` | The learning application module could not be loaded. |
+| `learning.apps_invalid_export` | 1 | `fix_config` | The learning application module has an invalid export. |
+| `learning.recheck_callback_missing` | 1 | `fix_config` | The learning application does not export the recheck callback. |
+| `learning.field_replay_callback_missing` | 1 | `fix_config` | The learning application does not export the field replay callback. |
+| `learning.incident_replay_callback_missing` | 1 | `fix_config` | The learning application does not export the incident replay callback. |
+| `descriptor.mismatch` | 1 | `fix_application` | The installed cases, grader or runtime differ from the ones the request was created with. |
+| `version.binding_mismatch` | 1 | `fix_config` | The parent or candidate version does not match the request, config or handoff. |
+| `service.unavailable` | 4 | `check_service` | The Acclimate service is unreachable or returned a server error. |
+| `transport.response_too_large` | 4 | `fix_config` | A service response exceeded the size limit. |
+| `journal.busy` | 5 | `retry_same_command` | Another evaluator process owns this request. No execution started here. |
+| `journal.foreign` | 5 | `inspect_external_app` | The journal belongs to a different request or evaluator. |
+| `journal.missing` | 5 | `inspect_external_app` | The request has started, but this machine has no journal for it. |
+| `journal.relocated` | 5 | `restore_original_journal` | The journal moved from its original location. |
+| `journal.invalid` | 5 | `fix_config` | The journal is corrupt or was edited. |
+| `journal.ownership_lost` | 5 | `inspect_external_app` | This process lost ownership of the journal during the run. |
+| `execution.uncertain` | 5 | `inspect_external_app` | Callbacks may have started, and the evaluator cannot prove they stopped. |
+| `submission.unconfirmed` | 5 | `retry_same_command` | The report was saved locally, but the service has not confirmed the submission. |
+| `request.interrupted` | 5 | `interrupt_then_new_request` | The request was interrupted. |
+| `request.base_conflict` | 5 | `fix_config` | The published parent changed after this request was created. |
+| `request.channel_empty` | 1 | `ask_operator` | The channel has no published release, so there is no parent to compare with. |
+| `request.intent_mismatch` | 1 | `fix_config` | The saved run intent differs from this command. Reuse the original inputs, or start a new run name. |
+| `policy.invalid` | 1 | `fix_config` | The quality policy is invalid. |
+| `policy.inventory_incompatible` | 1 | `fix_config` | The policy requires cases that are not in the evaluation inventory. |
+| `evidence.not_terminal` | 3 | `fix_config` | The request has not finished, so there is no complete evidence yet. |
+| `evidence.identity_mismatch` | 1 | `fix_config` | The evidence does not match the expected request, attempt or submitter. |
+| `evidence.malformed` | 1 | `fix_config` | The service returned evidence in an unexpected shape. |
+| `evidence.reward_out_of_range` | 1 | `fix_config` | A scored reward is outside the reward scale declared by the policy. Fix the grader or the policy metric.scale. |
+| `evidence.incomplete` | 3 | `fix_config` | The service returned incomplete evidence. |
+| `cost.unknown` | 3 | `fix_config` | Cost evidence is missing for some outcomes. |
+| `analysis.nonfinite` | 1 | `fix_config` | An analysis input or result is not a finite number. |
+| `analysis.invalid_config` | 1 | `fix_config` | The analysis configuration is invalid. |
+| `analysis.invalid_observations` | 1 | `fix_config` | An analysis observation is invalid. |
+| `analysis.identity_mismatch` | 1 | `fix_config` | An analysis observation does not match the trusted evidence. |
+| `artifact.missing` | 3 | `fix_config` | A private review artifact is missing from the journal. |
+| `artifact.hash_mismatch` | 1 | `fix_config` | A private review artifact does not match its recorded digest. |
+| `artifact.integrity` | 1 | `fix_config` | The private artifact index is inconsistent with the saved report. |
+| `artifact.selection_invalid` | 1 | `fix_config` | The artifact selection file is invalid. |
+| `artifact.mapper_failed` | 1 | `fix_application` | toReviewArtifact threw or returned an invalid value. |
+| `internal.error` | 4 | `fix_config` | An unexpected error occurred. Rerun with --verbose or ACCLIMATE_DEBUG=1 for details. |
+
+### Policy check codes
+
+A verdict lists the checks it ran in `checks`. A `pass or fail` check decides the verdict; an `unknown` check marks missing evidence and makes the verdict indeterminate unless another check failed.
+
+| Check | Result | Meaning |
+| --- | --- | --- |
+| `policy.minimum_mean_improvement` | pass or fail | The lower confidence bound (or the point estimate under `none`) clears `minimumMeanImprovement`. |
+| `policy.non_inferiority` | pass or fail | Audit stage: the lower bound clears minus `nonInferiorityMargin`. |
+| `policy.step_non_inferiority` | pass or fail | Connected development step: the lower bound clears minus `stepMargin`. |
+| `policy.development_benefit` | pass or fail | Connected development step: a point gain, an attested replay or a cost saving. |
+| `policy.maximum_case_regression` | pass or fail | No checked case regressed by more than `maximumCaseRegression`. Absent when the `perCaseChecks` set is empty. |
+| `policy.maximum_regressed_cases` | pass or fail | Checked cases that regressed by more than `maximumCaseRegression`, minus those that improved by more, are at most `maximumRegressedCases`. |
+| `policy.protected_case_threshold` | pass or fail | Every repetition of a case in `protectedCaseThresholds` meets its threshold. |
+| `policy.candidate_threshold` | pass or fail | The candidate mean meets `candidateThreshold`. |
+| `policy.maximum_candidate_task_failures` | pass or fail | Candidate task failures over the checked cases are at most `maximumCandidateTaskFailures`. |
+| `policy.maximum_candidate_cost` | pass or fail | The candidate cost is at most `cost.maximumCandidateUsd`. |
+| `policy.maximum_cost_increase` | pass or fail | The cost increase is at most `cost.maximumIncreaseUsd`. |
+| `policy.minimum_cost_savings` | pass or fail | The cost saving is at least `minimumCostSavingsUsd`. |
+| `inference.minimum_cases` | unknown | Fewer distinct cases than `inference.minCases`. |
+| `inference.minimum_repetitions` | unknown | A case has fewer repetitions than `inference.minRepetitions` (default 2). |
+| `inference.zero_variance` | unknown | Every case difference is identical and there is no SD floor. |
+| `evidence.incomplete` | unknown | Pairs are missing, or more trials are missing than `maximumMissingPercent` allows. |
+| `cost.unknown` | unknown | A cost limit is declared and some cost is unknown. |
+| `analysis.nonfinite` | unknown | An intermediate result is not a finite number. |
+
+{/* END GENERATED */}

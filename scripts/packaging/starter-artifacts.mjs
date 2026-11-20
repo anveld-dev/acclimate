@@ -6,7 +6,7 @@ import { gzipSync } from 'node:zlib';
 const inventories = JSON.parse(await readFile(new URL('./starter-files.json', import.meta.url), 'utf8'));
 
 const excluded = new Set(['node_modules', '__pycache__', '.cache', '.local', 'dist', '.DS_Store']);
-const privateNames = new Set(['evaluator.json', 'reader.json', 'intent.json', 'attempt.json', 'attempt.python.json', 'ownership.lock', 'job.json', 'evaluation-request.json']);
+const privateNames = new Set(['evaluator.json', 'reader.json', 'intent.json', 'attempt.json', 'attempt.python.json', 'ownership.lock', 'job.json', 'handoff.json']);
 
 async function checkSource(directory, inventory, omitted, relative = '') {
   const root = await lstat(directory);
@@ -79,13 +79,15 @@ export async function archiveStarters(root, output, metadata) {
   const produced = [];
   try {
     for (const starter of metadata.starters) {
-      if (!['evaluation', 'ci', 'native-repository'].includes(starter.name) ||
+      if (!['evaluation', 'python-evaluation', 'ci', 'native-repository'].includes(starter.name) ||
           basename(starter.file) !== starter.file || !/^acclimate-[a-z-]+-starter-[0-9A-Za-z.+-]+\.tgz$/.test(starter.file))
         throw new Error('Invalid starter artifact identity');
       const dirname = `${starter.name}-starter`;
       const destination = join(workspace, dirname);
-      const source = starter.name === 'evaluation' ? 'evaluation-starter' : starter.name;
-      const omitted = starter.name === 'native-repository' ? new Set(['QUALIFICATION.md', 'test']) : new Set();
+      const source = starter.name.endsWith('evaluation') ? dirname : starter.name;
+      // Each starter's own tests and qualification notes stay in the repository.
+      const omitted = starter.name === 'native-repository' ? new Set(['QUALIFICATION.md', 'test'])
+        : starter.name === 'ci' ? new Set(['test']) : new Set();
       await copyStarter(join(root, 'examples', source), destination, inventories[starter.name], omitted);
       const packageFile = join(destination, 'package.json');
       try {

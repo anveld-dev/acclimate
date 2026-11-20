@@ -1,4 +1,3 @@
-use crate::WorkspaceRoutes;
 use crate::{ApiResult, AppState, auth::Actor, db, err};
 use axum::{
     Json, Router,
@@ -12,7 +11,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Row, Transaction};
 
-/// The installed evaluator promises retained operations only for this route grammar.
+/// The installed evaluator promises retained operations only for this grammar of
+/// operation keys (see `operation_path`).
 pub(crate) fn guided_project(project: &str) -> bool {
     !project.is_empty()
         && project.len() <= 128
@@ -26,7 +26,7 @@ pub(crate) fn guided_uuid(value: &str) -> bool {
     uuid::Uuid::parse_str(value).is_ok_and(|id| id.to_string() == value)
 }
 fn guided_evaluator_route(project: &str, path: &str) -> bool {
-    let Some(suffix) = path.strip_prefix(&format!("/v1/projects/{project}/")) else {
+    let Some(suffix) = path.strip_prefix(&format!("/v1/workspaces/{project}/")) else {
         return false;
     };
     match suffix.split('/').collect::<Vec<_>>().as_slice() {
@@ -36,7 +36,7 @@ fn guided_evaluator_route(project: &str, path: &str) -> bool {
             bundle,
             "evaluation-requests",
             request,
-            "start" | "finish" | "interrupt",
+            "start" | "finish" | "interrupt" | "abandon",
         ] => guided_uuid(bundle) && guided_uuid(request),
         _ => false,
     }
@@ -53,7 +53,7 @@ fn guided_evaluator_body(path: &str, body: &[u8]) -> bool {
         canonical(&body["attemptId"])
     } else if path.ends_with("/finish") {
         canonical(&body["attemptId"]) && canonical(&body["comparisonId"])
-    } else if path.ends_with("/interrupt") {
+    } else if path.ends_with("/interrupt") || path.ends_with("/abandon") {
         true
     } else {
         canonical(&body["parentVersionId"])
@@ -65,9 +65,21 @@ fn guided_evaluator_body(path: &str, body: &[u8]) -> bool {
     }
 }
 
-// This is the sole action/namespace definition for execution, replay, lookup and close.
+// Operation keys are the canonical public route the client called
+// (`/v1/workspaces/{p}/...`). Handlers record each retained operation under that
+// path in `operation_records`, `idempotency`, `mutation_audit` and the request
+// fingerprint, so `Operation.path` is the stored path unchanged.
+fn operation_path(requested: &str) -> Option<&str> {
+    matches!(
+        requested.split('/').collect::<Vec<_>>().as_slice(),
+        ["", "v1", "workspaces", _, _, ..]
+    )
+    .then_some(requested)
+}
+// This is the sole action/namespace definition for execution, replay, lookup and
+// close. It parses operation keys, which are canonical request routes.
 fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
-    let suffix = path.strip_prefix(&format!("/v1/projects/{project}/"))?;
+    let suffix = path.strip_prefix(&format!("/v1/workspaces/{project}/"))?;
     let p: Vec<_> = suffix.split('/').collect();
     if p.iter().any(|s| s.is_empty() || *s == "." || *s == "..") {
         return None;
@@ -82,22 +94,25 @@ fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
         // A marked write retains its receipt; lookup/close require current write authority.
         ["bundles", b, "versions"] if uuid(b) => Some(&["write"]),
         ["bundles", b, "proposals"] if uuid(b) => Some(&["propose"]),
-        ["bundles", b, "evaluation-requests"] if uuid(b) => Some(&["write"]),
-        ["bundles", b, "comparisons"] if guided_uuid(b) => Some(&["write"]),
+        // Evaluator operations need only the narrow `evaluate` right, which `write` implies.
+        ["bundles", b, "evaluation-requests"] if uuid(b) => Some(&["evaluate"]),
+        ["bundles", b, "comparisons"] if guided_uuid(b) => Some(&["evaluate"]),
         [
             "bundles",
             b,
             "evaluation-requests",
             e,
-            "start" | "finish" | "interrupt",
-        ] if guided_uuid(b) && guided_uuid(e) => Some(&["write"]),
-        ["bundles", b, "channels", c, "promotions"]
+            "start" | "finish" | "interrupt" | "abandon",
+        ] if guided_uuid(b) && guided_uuid(e) => Some(&["evaluate"]),
+        ["bundles", b, "channels", c, "releases"]
             if uuid(b) && crate::channels::valid_channel(c) =>
         {
             Some(&["promote"])
         }
+        // An evaluator stages its candidate as a draft; saving over, discarding
+        // and publishing drafts still require `write` or `promote`.
         ["bundles", b, "channels", c, "drafts"] if uuid(b) && crate::channels::valid_channel(c) => {
-            Some(&["write"])
+            Some(&["evaluate"])
         }
         ["bundles", b, "channels", c, "drafts", d, "save" | "discard"]
             if uuid(b) && uuid(d) && crate::channels::valid_channel(c) =>
@@ -364,8 +379,11 @@ struct OperationScope {
 }
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .workspace_route("/v1/projects/{project}/operations/{id}", get(operation))
-        .workspace_route("/v1/projects/{project}/operations/{id}/close", post(close))
+        .route("/v1/workspaces/{project}/operations/{id}", get(operation))
+        .route(
+            "/v1/workspaces/{project}/operations/{id}/close",
+            post(close),
+        )
 }
 async fn operation(
     State(s): State<AppState>,
@@ -400,27 +418,17 @@ async fn outcome(
 ) -> ApiResult<Json<Value>> {
     validate_key(&id)?;
     let requested_path = scope.operation_path.as_deref().unwrap_or("");
-    let canonical = requested_path.starts_with("/v1/workspaces/");
-    let legacy_path = canonical.then(|| {
-        let mut segments: Vec<_> = requested_path.split('/').collect();
-        segments[2] = "projects";
-        if let [
-            "",
-            "v1",
-            "projects",
-            _,
-            "bundles",
-            _,
-            "channels",
-            _,
-            action @ "releases",
-        ] = segments.as_mut_slice()
-        {
-            *action = "promotions";
-        }
-        segments.join("/")
-    });
-    let path = legacy_path.as_deref().unwrap_or(requested_path);
+    let path = if requested_path.is_empty() {
+        ""
+    } else {
+        operation_path(requested_path).ok_or_else(|| {
+            err(
+                StatusCode::BAD_REQUEST,
+                "invalid_content",
+                "Unsupported operation path",
+            )
+        })?
+    };
     if !path.is_empty() && rights(&p, path).is_none() {
         return Err(err(
             StatusCode::BAD_REQUEST,
@@ -433,7 +441,7 @@ async fn outcome(
         .and_then(|r| r.first().copied())
         .unwrap_or(if closing { "write" } else { "read" });
     let actor = if path.is_empty() {
-        ["read", "write", "promote", "propose"]
+        ["read", "evaluate", "write", "promote", "propose"]
             .into_iter()
             .find_map(|right| crate::auth::actor(&h, &s, &p, right).ok())
             .ok_or_else(|| {
@@ -485,13 +493,8 @@ async fn outcome(
         )
         .await?;
     }
-    let response_path = if canonical && actual_path == path {
-        requested_path
-    } else {
-        &actual_path
-    };
     let value = if let Some(row) = committed {
-        json!({"status":"committed","operationId":id,"path":response_path,"requestFingerprint":format!("sha256:{}",hex::encode(row.get::<Vec<u8>,_>("fingerprint"))),"result":serde_json::from_slice::<Value>(&row.get::<Vec<u8>,_>("response_body")).map_err(db)?})
+        json!({"status":"committed","operationId":id,"path":actual_path,"requestFingerprint":format!("sha256:{}",hex::encode(row.get::<Vec<u8>,_>("fingerprint"))),"result":serde_json::from_slice::<Value>(&row.get::<Vec<u8>,_>("response_body")).map_err(db)?})
     } else if closing || row.is_some() {
         if closing {
             sqlx::query("INSERT INTO operation_records(principal_id,project_id,namespace,key,path,status) VALUES($1,$2,$3,$4,$5,'closed') ON CONFLICT DO NOTHING").bind(&actor.principal).bind(&p).bind(namespace(path)).bind(&id).bind(path).execute(&mut *tx).await.map_err(db)?;
@@ -705,10 +708,11 @@ mod tests {
             format!("bundles/{bundle}/evaluation-requests/{request}/start"),
             format!("bundles/{bundle}/evaluation-requests/{request}/finish"),
             format!("bundles/{bundle}/evaluation-requests/{request}/interrupt"),
+            format!("bundles/{bundle}/evaluation-requests/{request}/abandon"),
         ] {
-            let route = format!("/v1/projects/p/{suffix}");
+            let route = format!("/v1/workspaces/p/{suffix}");
             assert!(guided_evaluator_route("p", &route));
-            assert_eq!(rights("p", &route), Some(["write"].as_slice()));
+            assert_eq!(rights("p", &route), Some(["evaluate"].as_slice()));
             assert_eq!(namespace(&route), route);
             assert!(!guided_evaluator_route(
                 "p",
@@ -717,23 +721,57 @@ mod tests {
         }
     }
     #[test]
+    fn operation_paths_are_canonical_workspace_routes() {
+        let bundle = "11111111-1111-4111-8111-111111111111";
+        for path in [
+            format!("/v1/workspaces/p/bundles/{bundle}/channels/releases/releases"),
+            format!("/v1/workspaces/p/bundles/{bundle}/channels/c/drafts"),
+            "/v1/workspaces/p/bundle-setups".to_owned(),
+        ] {
+            assert_eq!(operation_path(&path), Some(path.as_str()));
+        }
+        assert_eq!(
+            rights(
+                "p",
+                &format!("/v1/workspaces/p/bundles/{bundle}/channels/c/releases")
+            ),
+            Some(["promote"].as_slice())
+        );
+        for rejected in [
+            "/v2/workspaces/p/bundle-setups",
+            "v1/workspaces/p/bundle-setups",
+            "/v1/workspaces",
+            "/v1/workspaces/p",
+            "/bundle-setups",
+        ] {
+            assert!(operation_path(rejected).is_none());
+        }
+        assert!(
+            rights(
+                "p",
+                &format!("/v1/workspaces/p/bundles/{bundle}/channels/c/promotions")
+            )
+            .is_none()
+        );
+    }
+    #[test]
     fn version_receipts_keep_authoring_uuid_syntax_and_route_namespace() {
         for bundle in [
             "abcdefab-1111-4111-8111-111111111111",
             "ABCDEFAB-1111-4111-8111-111111111111",
         ] {
-            let route = format!("/v1/projects/p/bundles/{bundle}/versions");
+            let route = format!("/v1/workspaces/p/bundles/{bundle}/versions");
             assert_eq!(rights("p", &route), Some(["write"].as_slice()));
             assert_eq!(namespace(&route), route);
             // This authoring extension does not broaden the evaluator promise.
             assert!(!guided_evaluator_route("p", &route));
             assert!(rights("other", &route).is_none());
         }
-        assert!(rights("p", "/v1/projects/p/bundles/not-a-uuid/versions").is_none());
+        assert!(rights("p", "/v1/workspaces/p/bundles/not-a-uuid/versions").is_none());
         assert!(
             rights(
                 "p",
-                "/v1/projects/p/bundles/abcdefab111141118111111111111111/versions"
+                "/v1/workspaces/p/bundles/abcdefab111141118111111111111111/versions"
             )
             .is_none()
         );
@@ -741,14 +779,14 @@ mod tests {
     #[test]
     fn namespaces_and_action_rights_remain_compatible() {
         assert_eq!(
-            lock("u", "p", "/v1/projects/p/bundle-setups", "k"),
+            lock("u", "p", "/v1/workspaces/p/bundle-setups", "k"),
             "content:u:p:k"
         );
         assert_eq!(
             lock(
                 "u",
                 "p",
-                "/v1/projects/p/bundles/11111111-1111-4111-8111-111111111111/channels/c/drafts",
+                "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/channels/c/drafts",
                 "k"
             ),
             "content:u:p:k"
@@ -757,37 +795,50 @@ mod tests {
             lock(
                 "u",
                 "p",
-                "/v1/projects/p/bundles/11111111-1111-4111-8111-111111111111/proposals",
+                "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/proposals",
                 "k"
             ),
             lock(
                 "u",
                 "p",
-                "/v1/projects/p/bundles/11111111-1111-4111-8111-111111111111/evaluation-requests",
+                "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/evaluation-requests",
                 "k"
             )
         );
         assert_eq!(
-            rights("p", "/v1/projects/p/bundle-setups"),
+            rights("p", "/v1/workspaces/p/bundle-setups"),
             Some(["write", "promote"].as_slice())
         );
         assert_eq!(
             rights(
                 "p",
-                "/v1/projects/p/bundles/11111111-1111-4111-8111-111111111111/channels/c/drafts/22222222-2222-4222-8222-222222222222/publish"
+                "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/channels/c/drafts/22222222-2222-4222-8222-222222222222/publish"
             ),
             Some(["promote"].as_slice())
         );
+        // Evaluators stage candidate drafts; changing or publishing them is not evaluation.
+        let drafts =
+            "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/channels/c/drafts";
+        assert_eq!(rights("p", drafts), Some(["evaluate"].as_slice()));
+        for action in ["save", "discard"] {
+            assert_eq!(
+                rights(
+                    "p",
+                    &format!("{drafts}/22222222-2222-4222-8222-222222222222/{action}")
+                ),
+                Some(["write"].as_slice())
+            );
+        }
         assert!(
             rights(
                 "p",
-                "/v1/projects/x/bundles/11111111-1111-4111-8111-111111111111/proposals"
+                "/v1/workspaces/x/bundles/11111111-1111-4111-8111-111111111111/proposals"
             )
             .is_none()
         );
-        assert!(rights("p", "/v1/projects/p/credentials").is_none());
+        assert!(rights("p", "/v1/workspaces/p/credentials").is_none());
         assert!(!global(
-            "/v1/projects/p/bundles/11111111-1111-4111-8111-111111111111/channels/drafts/promotions"
+            "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/channels/drafts/releases"
         ));
     }
 }

@@ -1,7 +1,9 @@
 """These application mistakes must remain static errors; never execute this file."""
-from acclimate import Evaluation, FinishEvaluationRequest, StartEvaluationRequest
+from acclimate import (
+    AcclimateClient, Evaluation, FinishEvaluationRequest, StartEvaluationRequest, VerifiedVersionConnection,
+)
 from acclimate.evaluation import (
-    Case, EvaluationApp, ExecuteInput, ExecutionResult, GradeInput, GradeResult, define_evaluation,
+    Case, EvaluationApp, EvaluationError, ExecuteInput, ExecutionResult, GradeInput, GradeResult, define_evaluation,
 )
 from acclimate.evaluation_analysis import AnalysisComparisonBinding
 
@@ -48,3 +50,20 @@ bad_executor_app: EvaluationApp[dict[str, str], dict[str, str], dict[str, str]] 
     cases=[Case("case", {"category": "billing"}, {"queue": "billing"})],
     execute=bad_execute, grade=grade,  # reject: arg-type
 )
+
+
+# Execution status, usage keys, execution mode and error codes are closed sets.
+done_status = ExecutionResult({"queue": "billing"}, execution_status="done")  # reject: arg-type
+snake_usage = ExecutionResult({"queue": "billing"}, usage={"input_tokens": 3})  # reject: arg-type
+typo_mode: EvaluationApp[dict[str, str], dict[str, str], dict[str, str]] = define_evaluation(
+    config_id="typing", config_revision="1", dataset_revision="1", grader_revision="1",
+    runtime={"model": "none"}, execution="modelfree",  # reject: arg-type
+    cases=[Case("case", {"category": "billing"}, {"queue": "billing"})],
+    execute=execute, grade=grade,
+)
+typo_code = EvaluationError("config.schmea")  # reject: arg-type
+def legacy_offline_option(client: AcclimateClient) -> None:
+    client.prepare("p", "b", channel="stable", offline_max_age=60)  # reject: call-arg
+
+# A connection names both its workspace and its connection, with the canonical keys.
+partial_connection: VerifiedVersionConnection = {"workspaceId": "w"}  # reject: typeddict-item

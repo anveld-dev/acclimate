@@ -139,10 +139,10 @@ def payload(text):
 
 
 def qualify(h):
-    root = '/v1/projects/' + h.project
+    root = '/v1/workspaces/' + h.project
     assert h.call('GET', root + '/bundles')['items'] == []
     h.call('GET', root + '/bundles', actor='outsider', status=403)
-    assert h.call('GET', '/v1/projects/other-product-gate/bundles', actor='outsider')['items'] == []
+    assert h.call('GET', '/v1/workspaces/other-product-gate/bundles', actor='outsider')['items'] == []
     setup_body = dict(name='Disposable product qualification', origin='example', sourceLabel='Explicit model-free demo', channel='stable', payload=payload('Review code.'), reason='Explicit initial fixture review')
     setup = h.call('POST', root + '/bundle-setups', setup_body)
     b = root + '/bundles/' + setup['bundle']['id']

@@ -1,0 +1,4 @@
+self-hosted-runner:
+  # The example workflows in examples/ci run on an evaluator runner with this label.
+  labels:
+    - acclimate-evaluator

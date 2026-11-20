@@ -21,15 +21,15 @@ test('optional reporter retains exact event across failure and bounds its queue'
   let clock = 0;
   const reporter = createReceiptReporter({
     client,
-    projectId: 'p',
-    integrationId: 'i',
+    workspaceId: 'p',
+    connectionId: 'i',
     maxPending: 1,
     now: () => clock,
   });
   const event: DeliveryReceiptRequest = {
     eventId: 'event',
-    integrationId: 'i',
-    projectId: 'p',
+    connectionId: 'i',
+    workspaceId: 'p',
     bundleId: 'b',
     versionId: 'v',
     digest: 'digest',
@@ -59,9 +59,9 @@ test('fresh receipt at the completed-pass boundary is sent by its awaited flush'
   const client = new AcclimateClient({ baseUrl: 'https://fixture.invalid', token: 'fixture', scope: 'p',
     fetch: async () => { throw Error('Injected transport should handle this receipt'); } });
   let later: Promise<void> | undefined;
-  const event = (eventId: string): DeliveryReceiptRequest => ({ eventId, integrationId: 'i', projectId: 'p',
+  const event = (eventId: string): DeliveryReceiptRequest => ({ eventId, connectionId: 'i', workspaceId: 'p',
     bundleId: 'b', versionId: 'v', digest: 'sha256:test', stage: 'prepared', source: 'network', occurredAt: new Date(0).toISOString() });
-  const reporter = createReceiptReporter({ client, projectId: 'p', integrationId: 'i' });
+  const reporter = createReceiptReporter({ client, workspaceId: 'p', connectionId: 'i' });
   client.reportDeliveryReceipt = async (_project, _integration, receipt) => {
     sent.push(receipt.eventId);
     if (receipt.eventId === 'first') queueMicrotask(() => queueMicrotask(() => {

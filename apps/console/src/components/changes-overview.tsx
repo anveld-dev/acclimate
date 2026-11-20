@@ -27,10 +27,10 @@ type OverviewProps = {
 };
 
 export function ChangesOverview(props: OverviewProps) {
-  const { actorScope, serviceIdentity, projectId, bundleId, channel } = props.state;
+  const { actorScope, serviceIdentity, workspaceId, bundleId, channel } = props.state;
   return (
     <ScopedChangesOverview
-      key={JSON.stringify([actorScope, serviceIdentity, projectId, bundleId, channel])}
+      key={JSON.stringify([actorScope, serviceIdentity, workspaceId, bundleId, channel])}
       {...props}
     />
   );
@@ -41,7 +41,7 @@ function ScopedChangesOverview({ state, search, board, toolbar }: OverviewProps)
   const [historyFilters, setHistoryFilters] = useState<HistoryFilters>({ query: '', status: '' });
   const router = useRouter();
   const scope = {
-    projectId: state.projectId,
+    workspaceId: state.workspaceId,
     bundleId: state.bundleId,
     channel: state.channel,
     actorScope: state.actorScope,
@@ -327,7 +327,7 @@ function ScopedChangesOverview({ state, search, board, toolbar }: OverviewProps)
                 >
                   <HistoryFiles
                     value={version}
-                    scopeKey={`${state.actorScope}:${state.serviceIdentity}:${state.projectId}:${state.bundleId}`}
+                    scopeKey={`${state.actorScope}:${state.serviceIdentity}:${state.workspaceId}:${state.bundleId}`}
                     requestedPath={string(search.path) || undefined}
                     onSelectPath={(path) => {
                       void router.navigate({ href: href({ path }) });

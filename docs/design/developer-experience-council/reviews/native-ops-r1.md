@@ -8,7 +8,7 @@ Reviewed normative PLAN.md revision D1, SHA-256 `afa98dc2146c5a70ddda6aeda15730e
 
 Reviewed plan sections 3–6 and 11–15 against the actual native plugins, shared preparation, native helpers, application examples, and deployment runbook.
 
-- `packages/sdk/src/internal/native-files.ts:52` chooses an unrecorded random temporary workspace; `:99–102` recursively deletes that owned workspace.
+- `packages/sdk/src/native-files.ts:52` chooses an unrecorded random temporary workspace; `:99–102` recursively deletes that owned workspace.
 - `packages/codex-plugin/src/index.ts:19–21`, `packages/claude-plugin/src/index.ts:22–24`, and `packages/pi-plugin/src/index.ts:26–28` stage resources in harness paths and `.acclimate/memory`.
 - `packages/pi-plugin/src/native.ts:29–41` additionally uses `.acclimate/pi-agent`, disables ambient loader sources, and explicitly selects memory paths.
 - `packages/cursor-plugin/src/index.ts:23–38` filters memory before staging, unlike the other plugin defaults.

@@ -14,14 +14,14 @@ for (const pinned of config.pinned || []) {
 const readClient = new AcclimateClient({
   baseUrl: config.baseUrl,
   token: config.readToken,
-  scope: 'native-walk-read-' + config.integrationId,
+  scope: 'native-walk-read-' + config.connectionId,
   retries: 0,
   timeoutMs: 2000,
 });
 const receiptClient = new AcclimateClient({
   baseUrl: config.baseUrl,
   token: config.denyReceipt ? 'fixture-invalid-receipt-token' : config.receiptToken,
-  scope: 'native-walk-receipts-' + config.integrationId,
+  scope: 'native-walk-receipts-' + config.connectionId,
   retries: 0,
   timeoutMs: 2000,
 });
@@ -42,12 +42,12 @@ receiptClient.reportDeliveryReceipt = async (...args) => {
 };
 const reporter = createReceiptReporter({
   client: receiptClient,
-  projectId: config.projectId,
-  integrationId: config.integrationId,
+  workspaceId: config.workspaceId,
+  connectionId: config.connectionId,
 });
 const bundle = await resolveAndCache(
   readClient,
-  { projectId: config.projectId, bundleId: config.bundleId, channel: 'stable' },
+  { workspaceId: config.workspaceId, bundleId: config.bundleId, channel: 'stable' },
   { cacheDir: join(process.cwd(), 'cache'), reporter },
 );
 assert.equal(bundle.version.id, config.expectedVersion.id);

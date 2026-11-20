@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readDeliveryDetailState, readSetupReportState } from '../src/server/delivery-detail-core';
 import { consoleEnvironment } from './console-fixture';
 const scope = {
-  projectId: 'project',
+  workspaceId: 'project',
   bundleId: '22222222-2222-4222-8222-222222222222',
   channel: 'stable',
 };
@@ -15,7 +15,7 @@ const receipt = {
   occurredAt: '2026-01-01T00:00:00.123Z',
   receivedAt: '2026-01-01T00:00:02.223Z',
   stage: 'started',
-  integrationId: appId,
+  connectionId: appId,
   ...scope,
   source: 'network',
   delayed: false,
@@ -28,7 +28,7 @@ test('detail binds a receipt and promotion to the selected app scope and project
   for (const mismatch of [false, true]) {
     const result = await readDeliveryDetailState(
       consoleEnvironment,
-      { projectId: scope.projectId, integrationId: appId },
+      { workspaceId: scope.workspaceId, connectionId: appId },
       async (request, init) => {
         assert.equal(
           new Headers(init?.headers).get('x-acclimate-session'),

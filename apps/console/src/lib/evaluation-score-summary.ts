@@ -27,6 +27,13 @@ export function evaluationScoreSummary(comparison: Comparison) {
           ),
         )
       : null;
+  // Per-arm missingness among expected outcomes. Means use complete pairs only, so evidence
+  // missing from one arm can bias them; the view flags it instead of hiding it.
+  const expectedRows = summary.rows.slice(0, comparison.expectedCases.length);
+  const unusable = (side: 'parent' | 'candidate') =>
+    expectedRows.filter(({ pair }) => !gradeable(pair?.[side])).length;
+  const parentUnusable = unusable('parent');
+  const candidateUnusable = unusable('candidate');
   const parentMean = mean('parent');
   const candidateMean = mean('candidate');
   const minimum = Math.min(0, parentMean ?? 0, candidateMean ?? 0);
@@ -40,6 +47,9 @@ export function evaluationScoreSummary(comparison: Comparison) {
     candidateMean,
     minimum,
     maximum: maximum === minimum ? 1 : maximum,
+    parentUnusable,
+    candidateUnusable,
+    oneSidedMissing: (parentUnusable === 0) !== (candidateUnusable === 0),
     missingGrades: summary.missingGrades,
     executionFailures: summary.executionFailures,
     complete: comparison.complete,

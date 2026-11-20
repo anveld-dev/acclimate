@@ -15,7 +15,7 @@ class FakeClient:
 
 
 def reporter(client):
-    return EvaluationProgressReporter(client, project_id="p",
+    return EvaluationProgressReporter(client, workspace_id="p",
         bundle_id="00000000-0000-0000-0000-000000000001",
         request_id="00000000-0000-0000-0000-000000000002", attempt_id="attempt")
 

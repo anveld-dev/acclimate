@@ -584,8 +584,7 @@ function ConnectionWorkspace({
       <code>{state.workspaceId}</code>
       <CopyButton value={state.workspaceId} label="Copy workspace ID" iconOnly />
       <span className="connection-directory-footnote-note">
-        Creating a connection does not connect a running app. SDK clients can fetch content without
-        one.
+        A connection links an app to one bundle and channel. Give the app its connection ID and a content-read credential to scope delivery.
       </span>
     </div>
   );

@@ -47,9 +47,9 @@ class RecipeTests(unittest.TestCase):
                                    ACCLIMATE_TOKEN='read-only', ACCLIMATE_WORKSPACE='p', ACCLIMATE_BUNDLE='b',
                                    ACCLIMATE_CHANNEL='stable', ACCLIMATE_SCOPE='test-app',
                                    ACCLIMATE_CACHE=directory + '/cache', ACCLIMATE_JOB_DIR=directory + '/job',
-                                   ACCLIMATE_RECEIPT_TOKEN='', ACCLIMATE_CONNECTION='')
+                                   ACCLIMATE_RECEIPT_TOKEN='', ACCLIMATE_CONNECTION='a7100000-0000-4000-8000-000000000001')
                         if reporting != 'disabled':
-                            env.update(ACCLIMATE_RECEIPT_TOKEN='receipt-only', ACCLIMATE_CONNECTION='i')
+                            env.update(ACCLIMATE_RECEIPT_TOKEN='receipt-only')
                         result = subprocess.run([sys.executable, str(root / 'python/examples/delivery_check.py')],
                                                 env=env, capture_output=True, text=True, timeout=5)
                         self.assertEqual(result.returncode, 0, result.stderr)

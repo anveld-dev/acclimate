@@ -179,7 +179,7 @@ export function BundleContent({
             <p className="p-4 text-sm text-muted-foreground">
               {filtered
                 ? 'No matching entries. Clear filters to see all content.'
-                : 'No published entries in this release.'}
+                : 'No published entries.'}
             </p>
           )}
         </FileNavigator>

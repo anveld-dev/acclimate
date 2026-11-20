@@ -11,13 +11,13 @@ Feature: Python application integration
     Then Python receives "Review code." and the exact released digest
 
   @PYTHON-02
-  Scenario: Python offline delivery requires explicit permission
+  Scenario: Python channel delivery requires online confirmation for each new job
     Given a Python application prepared the stable release
     When the service becomes unavailable
     And Python requests the release without offline permission
     Then Python delivery fails without returning content
     When Python explicitly permits bounded offline delivery
-    Then Python receives "Review code." from a stale cached mapping
+    Then Python delivery fails without returning content
 
   @PYTHON-03
   Scenario: Upload and release an immutable version through the Python client

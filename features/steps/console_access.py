@@ -13,6 +13,7 @@ def open_member(context):
 def delivery_rights(context):
     w=context.world
     p=w.browser_fixture.page
+    expect(p.get_by_test_id('entry-content')).to_contain_text('Review code.')
     expect(p.get_by_role('link',name='Edit entry',exact=True)).to_have_count(0)
     # Observe delivery as an ordinary workspace member without granting credential administration.
     connection=w.call('POST',w.root+'/connections',dict(bundleId=w.setup['bundle']['id'],

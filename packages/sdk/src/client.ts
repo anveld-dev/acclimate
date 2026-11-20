@@ -377,6 +377,11 @@ export class AcclimateClient {
     );
     return result.notModified ? { resolution: null, etag: result.etag, notModified: true } : result;
   }
+  /** Inspect the channel’s latest release for evaluation or management. */
+  async inspectSource(workspaceId: string, bundleId: string, channel: string): Promise<ChannelResolution | null> {
+    const [release] = (await this.listReleases(workspaceId, bundleId, channel, { limit: 1 })).items;
+    return release ? { channel: release.channel, revision: release.revision, version: release.version } : null;
+  }
   listReleases(
     workspaceId: string,
     bundleId: string,

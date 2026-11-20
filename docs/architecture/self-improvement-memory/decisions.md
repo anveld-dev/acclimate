@@ -74,7 +74,7 @@ The earlier design lived in this folder as `round-lifecycle.md`, `proposer-and-s
 | R13 | Lesson names | Moot: lessons are removed (D4) |
 | R14 | Fresh parents, no parent cache | Moot: evaluations score one version each, and no parent arm exists |
 | R15 | Problem IDs `P<n>`, `P0` for unattributed attempts, no aliases | `P<n>` from `P1`. No `P0`, because an unattributed diagnosis is a format error. No aliases. |
-| R16 | Migrations 0016 and 0017 for rounds and memory | Renumbered: `0016` and `0017` remove, `0018` and `0019` add (README, phased plan) |
+| R16 | Migration assignments for rounds and memory | Renumbered: `0017` and `0018` remove, `0019` and `0020` add (README, phased plan) |
 | R17 | Fixes on today's loop first, then rounds and memory together | Removal first, then the loop skeleton, then the optimizer and memory |
 | R18 | Screen job retries for crash recovery only | Unchanged for every optimizer call: `attempts` counts claims, and an invalid output fails the call with `error_code = 'format-rejected'` |
 | R19 | `currentDevelopment` evolve feedback computed at admission | Becomes `feedback`, rendered from the round's `incumbent` evaluation |
@@ -224,7 +224,7 @@ A review of the rewritten folder (paper fidelity, consistency, and code accuracy
 | 2 | Scanner placement | Applied. The scanner runs in the call task before commit. A finding commits `failed` / `scanner-rejected` with `output = {scan, diagnosis}`. |
 | 3 | Error vocabulary | Applied, with one addition. `learning_optimizer_calls.error_code` holds `provider-failed`, `format-rejected`, `optimizer-context-too-large` and `scanner-rejected`, as asked, plus `cancelled` for calls that `cancel_children` closes, so every `failed` row has a code. The loop never reads `cancelled`. |
 | 4 | Mid-round `PUT` | Applied. `409` for `channel`, `appPrincipalId` and `heldOut`. `setting` is accepted. `learning_rounds.channel` and `held_out` stay as pins and are on `LearningRound`. |
-| 5 | `durable_commands` | Applied. `0017` deletes the `learning/%` rows and keeps the table and `DurableCommand`, so the schema has 19 tables. `DurableCommand` has no caller in phase 2 and gets a phase-2-only `allow(dead_code)`. |
+| 5 | `durable_commands` | Applied. `0018` deletes the `learning/%` rows and keeps the table and `DurableCommand`, so the schema has 19 tables. `DurableCommand` has no caller in phase 2 and gets a phase-2-only `allow(dead_code)`. |
 | 6, 10 | `promote_in_tx` and the `reason` rename | Applied by dropping the rename. `unevaluated_reason` and `unevaluatedReason` keep their names, and only `comparisonId` and `policyOverride` go. `adopt` passes a `PromoteRequest` with no publication argument. The missed callers are listed in removal.md. |
 | 7 | Phase 1 build | Applied. `LearningSelectionPolicy` is inlined as `Record<string, unknown>`, `toReviewArtifact` goes with `artifacts.ts`, `parseCommandJson` moves into `local.ts`, and the two Rust `policy_override: None` sites are listed. |
 | 8 | Phase 2 build | Applied with option (a): phase 2 deletes `ProposalModel`, `OpenAiModel` and `AppState.provider`, and phase 4 adds `OptimizerModel` and a new client. `reconstruct(parent, content)` stays `pub` without `ProposalRequest`. `proposal_scanner` becomes a `pub mod` with `pub fn scan`. `changed_files` is restored in phase 4. The `create_setup` call to `internal_channel` is listed. |
@@ -257,3 +257,5 @@ The maintainer approved a one-file, one-command SDK flow (`defineLoop` and `accl
 ## 2026-11-20 amendment: one OpenAI-compatible model endpoint
 
 Use CLIProxyAPI with Codex sign-in for the experiment's `gpt-6-luna` and `gpt-6.2-sol` task models and `gpt-6.2-astra` optimizer. Use the SDK’s OpenAI-compatible task adapter and keep the optimizer’s integrity relay at the service boundary. The experiment no longer launches Codex subprocesses or grants repository access. Version-specific W1 guidance lives in the harness, where the optimizer can add it to skills. Repeat noise and cost calibration in the pilot with the new interface. Freeze the proxy revision, configuration digest, base URL and requested model identities. See the [experiment protocol](experiment.md) and [deployment guide](../../../deploy/README.md#cliproxyapi-with-codex-sign-in).
+
+The merge placed main’s `0016_automatic_delivery.sql` before the paper-first migrations, which now run as `0017` through `0021`.

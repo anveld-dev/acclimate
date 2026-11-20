@@ -82,11 +82,10 @@ def reconcile_initial(context):
         dialog.accept()
     p.on('dialog',leave_creation)
     try:
-        browser.visit(browser.bundle_path('changes',bundle_id=bundle['id']))
+        browser.visit(browser.bundle_path('content',bundle_id=bundle['id']))
     finally:
         p.remove_listener('dialog',leave_creation)
-    expect(p.get_by_role('status').filter(has_text='A bundle publication is still unresolved.')).to_be_visible()
-    p.get_by_role('link',name='Open creation recovery',exact=True).click()
+    p.get_by_role('link',name='Back to bundles',exact=True).click()
     expect(p.get_by_role('button',name='Pending creation',exact=True)).to_be_disabled()
     p.get_by_role('button',name='Check result',exact=True).click()
     expect(p.get_by_test_id('entry-content')).to_contain_text('Keep these exact instructions.')
@@ -158,3 +157,5 @@ def keyboard_result(context):
     release = p.get_by_role('navigation', name='Bundle navigation').get_by_role('link', name='Releases')
     tab_to(p, release)
     assert_focus_visible(release)
+    p.keyboard.press('Enter')
+    expect(p.get_by_test_id('release-decision').first).to_be_visible()

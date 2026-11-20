@@ -65,7 +65,7 @@ Response: the `LearningLoop` document (see "Wire types").
 
 ### Table
 
-Migration `0018_learning_loop.sql`, after `learning_loops`:
+Migration `0019_learning_loop.sql`, after `learning_loops`:
 
 ```sql
 CREATE TABLE learning_evolve_cases (
@@ -165,7 +165,7 @@ Removed with this route's old shape: `status`, `lesson`, `feedback`, `startedRec
 
 ### Table
 
-Migration `0018_learning_loop.sql`, after `learning_rounds`:
+Migration `0019_learning_loop.sql`, after `learning_rounds`:
 
 ```sql
 CREATE TABLE learning_evaluations (
@@ -528,7 +528,7 @@ Also change `contracts/README.md:9` to "The learning loop's routes, splits and e
 
 | Phase | Files |
 | --- | --- |
-| 3 | `migrations/0018_learning_loop.sql` (both tables here), `src/learning.rs`, `src/learning/evaluations.rs`, `src/learning/evolve.rs`, `src/lib.rs`, `src/commands.rs` (scope parameter, audited routes), `contracts/openapi.json`, `contracts/learning.md`, `contracts/README.md`, `packages/sdk/src/types.ts`, `client.ts`, `learning/index.ts`, `learning/loop.ts`, `learning/outcomes.ts`, `learning/held-out.ts`, `learning/serve-cli.ts`, `evaluation/errors.ts`, `python/acclimate/types.py`, `client.py`, `learning.py`, the console files above without round detail and memory, the docs above |
+| 3 | `migrations/0019_learning_loop.sql` (both tables here), `src/learning.rs`, `src/learning/evaluations.rs`, `src/learning/evolve.rs`, `src/lib.rs`, `src/commands.rs` (scope parameter, audited routes), `contracts/openapi.json`, `contracts/learning.md`, `contracts/README.md`, `packages/sdk/src/types.ts`, `client.ts`, `learning/index.ts`, `learning/loop.ts`, `learning/outcomes.ts`, `learning/held-out.ts`, `learning/serve-cli.ts`, `evaluation/errors.ts`, `python/acclimate/types.py`, `client.py`, `learning.py`, the console files above without round detail and memory, the docs above |
 | 4 | `GET /memory`, `LearningCandidate` rows in `GET /rounds/{roundId}`, the console round detail and memory sections, `LearningMemory` in OpenAPI and both SDKs |
 
 ## Tests

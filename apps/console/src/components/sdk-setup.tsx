@@ -98,7 +98,7 @@ function InstallSnippet({ command }: { command: string }) {
 function EnvironmentSnippet({ apiUrl }: { apiUrl: string }) {
   return (
     <pre className="sdk-environment-snippet">
-      {`ACCLIMATE_URL=${apiUrl}\nACCLIMATE_TOKEN=<content-read credential>\nACCLIMATE_SCOPE=<stable app identity>`}
+      {`ACCLIMATE_URL=${apiUrl}\nACCLIMATE_TOKEN=<content-read credential>\nACCLIMATE_SCOPE=<stable app identity>\nACCLIMATE_CONNECTION=<connection ID>`}
     </pre>
   );
 }
@@ -416,6 +416,10 @@ export function SdkSetup({
                     <div>
                       <dt>ACCLIMATE_TOKEN</dt>
                       <dd>Private content-read credential.</dd>
+                    </div>
+                    <div>
+                      <dt>ACCLIMATE_CONNECTION</dt>
+                      <dd>The ID of the connection configured for the bundle.</dd>
                     </div>
                     <div>
                       <dt>ACCLIMATE_SCOPE</dt>

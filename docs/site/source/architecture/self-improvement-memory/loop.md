@@ -46,7 +46,7 @@ The new worker replaces connected learning's scheduler. [removal.md](removal.md)
 
 ## Tables
 
-### `learning_loops` (migration `0018_learning_loop.sql`)
+### `learning_loops` (migration `0019_learning_loop.sql`)
 
 ```sql
 CREATE TABLE learning_loops (
@@ -75,7 +75,7 @@ CREATE TABLE learning_loops (
 
 `bundles` has `UNIQUE (project_id, id)` (`migrations/0001_init.sql:94`), and `channels` is keyed `(project_id, bundle_id, name)` (`:158-166`). The channel foreign key means a loop can only be enrolled on a channel that already has a head. That head is H0. The validation of `app_principal`, `setting` and `held_out` is in the `PUT` handler ([evaluator-and-contracts.md](evaluator-and-contracts.md)). `app_principal` has no prefix check: machine-token principals start with `machine:`, and static grant principals cannot contain `:` (`src/auth.rs:28-30`), and both may hold `evaluate`.
 
-### `learning_rounds` (migration `0018_learning_loop.sql`)
+### `learning_rounds` (migration `0019_learning_loop.sql`)
 
 ```sql
 CREATE TABLE learning_rounds (
@@ -140,9 +140,9 @@ The `incumbent_score` check fails a round that reaches `proposing` without a sco
 
 **A stopped round can hold a decision.** A stop during `scoring_held_out` comes after the adopt or keep has committed, and an adopted version is already on the channel and in memory. The round keeps its `decision`, `reason`, `adopted_sample`, `adopted_version_id` and `selection`, and becomes `stopped` with no held-out score. Only a round stopped before its decision gets `reason = 'stopped'`.
 
-Migration `0020_optimizer_effort.sql` adds `learning_rounds.optimizer_reasoning_effort`, a nullable text column that pins `ACCLIMATE_MODEL_REASONING_EFFORT` at round start. It also indexes evolve case IDs in paging order.
+Migration `0021_optimizer_effort.sql` adds `learning_rounds.optimizer_reasoning_effort`, a nullable text column that pins `ACCLIMATE_MODEL_REASONING_EFFORT` at round start. It also indexes evolve case IDs in paging order.
 
-### Migration `0019_learning_optimizer.sql`: the parts this file owns
+### Migration `0020_learning_optimizer.sql`: the parts this file owns
 
 [optimizer.md](optimizer.md) holds the one `CREATE TABLE learning_candidates`. This file owns the candidate status machine, and the checks that enforce it are in that definition:
 
@@ -152,14 +152,14 @@ Migration `0020_optimizer_effort.sql` adds `learning_rounds.optimizer_reasoning_
 - `evaluating`, `evaluated` and `evaluation_failed` require an `evaluate` verdict, a `version_id` and an `evaluation_id`.
 - `evaluated` exactly when `evolve_score` is set.
 
-After the candidate table, `0019` adds:
+After the candidate table, `0020` adds:
 
 ```sql
 ALTER TABLE learning_rounds
     ADD FOREIGN KEY (id, adopted_sample) REFERENCES learning_candidates (round_id, sample);
 ```
 
-W3 is also enforced by two partial unique indexes, each defined in its owner's migration SQL: `learning_evaluations_one_open ON learning_evaluations (round_id) WHERE status IN ('queued','running')` in `0018` ([evaluator-and-contracts.md](evaluator-and-contracts.md)), and `learning_optimizer_calls_one_open ON learning_optimizer_calls (round_id) WHERE status IN ('queued','running')` in `0019` ([optimizer.md](optimizer.md)).
+W3 is also enforced by two partial unique indexes, each defined in its owner's migration SQL: `learning_evaluations_one_open ON learning_evaluations (round_id) WHERE status IN ('queued','running')` in `0019` ([evaluator-and-contracts.md](evaluator-and-contracts.md)), and `learning_optimizer_calls_one_open ON learning_optimizer_calls (round_id) WHERE status IN ('queued','running')` in `0020` ([optimizer.md](optimizer.md)).
 
 ### Where round and candidate state lives
 
@@ -527,8 +527,8 @@ Against the tree after phase 2, where [removal.md](removal.md) has already delet
 
 | File | Change |
 | --- | --- |
-| `migrations/0018_learning_loop.sql` | `learning_loops`, `learning_rounds` and `learning_rounds_one_active`. The evaluation tables and `learning_evaluations_one_open` are [evaluator-and-contracts.md](evaluator-and-contracts.md)'s, in the same file. |
-| `migrations/0019_learning_optimizer.sql` | The `adopted_sample` foreign key. The candidate table with its status checks and `learning_optimizer_calls_one_open` are [optimizer.md](optimizer.md)'s, and the memory tables [memory.md](memory.md)'s. |
+| `migrations/0019_learning_loop.sql` | `learning_loops`, `learning_rounds` and `learning_rounds_one_active`. The evaluation tables and `learning_evaluations_one_open` are [evaluator-and-contracts.md](evaluator-and-contracts.md)'s, in the same file. |
+| `migrations/0020_learning_optimizer.sql` | The `adopted_sample` foreign key. The candidate table with its status checks and `learning_optimizer_calls_one_open` are [optimizer.md](optimizer.md)'s, and the memory tables [memory.md](memory.md)'s. |
 | `src/learning/worker.rs` (new) | `learning_worker`, `tick`, `advance_round`, `start_round`, `adopt`, `keep`, `fail_round`, `stop_round`, `cancel_children`, `sweep`, `ACTIVE_ROUND_STATES`, `CallTasks` |
 | `src/learning.rs` | `mod worker;`. Pause, resume, stop and `PUT` call `worker::stop_round` and take the loop row lock first. |
 | `src/lib.rs` | `mod learning;` and `pub use learning::worker::learning_worker;` |

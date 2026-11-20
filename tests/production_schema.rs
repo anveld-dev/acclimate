@@ -35,6 +35,10 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
         .await
         .unwrap();
 
+    // Exercise the upgrade from main with existing connected-learning data.
+    let automatic_delivery = migrator.iter().find(|m| m.version == 16).unwrap();
+    connection.apply(automatic_delivery).await.unwrap();
+
     migrator.run(&mut connection).await.unwrap();
 
     let tables: Vec<String> = sqlx::query_scalar(
@@ -196,7 +200,8 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
     ] {
         let mut request = Request::builder()
             .uri(format!("{bundle}/channels/{channel}"))
-            .header("authorization", "Bearer upgrade-reader");
+            .header("authorization", "Bearer upgrade-reader")
+            .header("if-none-match", "\"1\"");
         if let Some(id) = connection {
             request = request.header("x-acclimate-connection-id", id);
         }

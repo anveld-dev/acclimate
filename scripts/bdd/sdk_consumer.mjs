@@ -4,6 +4,7 @@ import { join, basename } from 'node:path';
 import {
   AcclimateClient,
   ApiError,
+  AcclimateUsageError,
   DeliveryError,
   TransportError,
   resolveAndCache,
@@ -15,13 +16,14 @@ const client = new AcclimateClient({
   baseUrl: input.baseUrl,
   token: input.token,
   scope: input.scope,
+  ...(['delivery', 'editJob', 'collision', 'cleanup', 'native'].includes(input.action) && { connectionId: input.connectionId }),
   retries: 0,
   timeoutMs: 2000,
 });
 const base = { workspaceId: input.workspaceId, bundleId: input.bundleId };
 const policy = {
   cacheDir: join(input.directory, 'cache'),
-  ...(input.offline ? { offline: { maxAgeMs: 300000 } } : {}),
+  ...(input.offline ? { offline: { pinnedVersionId: input.versionId ?? "legacy-channel" } } : {}),
 };
 const selection = input.versionId
   ? { ...base, versionId: input.versionId }
@@ -41,11 +43,10 @@ async function delivery() {
         connectionId: input.connectionId,
       })
     : undefined;
-  const bundle = await resolveAndCache(client, selection, { ...policy, reporter });
   const destination = join(input.directory, 'prepared-' + crypto.randomUUID());
-  const prepared = await prepareFiles(bundle, destination);
+  const job = await client.prepare({ ...selection, ...policy, reporter, destination });
+  const bundle = job.version;
   if (input.reporting) {
-    reporter.reportPrepared(bundle);
     if (input.started) {
       const { spawn } = await import('node:child_process');
       const app = spawn(process.execPath, ['-e', "console.log('app started')"], {
@@ -59,7 +60,7 @@ async function delivery() {
         if (!started && output.includes('app started\n')) {
           started = true;
           try {
-            reporter.reportStarted(bundle);
+            job.reportStarted();
           } catch {}
         }
       });
@@ -223,6 +224,7 @@ try {
 } catch (error) {
   if (
     !(
+      error instanceof AcclimateUsageError ||
       error instanceof ApiError ||
       error instanceof DeliveryError ||
       error instanceof TransportError

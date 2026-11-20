@@ -113,9 +113,9 @@ class AcclimateClient:
     ) -> "PreparedDelivery":
         """Resolve and stage verified content for one job. Use as a context manager or call cleanup.
 
-        ``offline`` permits fallback on a transport failure or HTTP 503 only:
-        ``{"max_age_ms": 300_000}`` for a cached channel, or
-        ``{"pinned_version_id": version_id}`` for one exact cached version.
+        Each channel job confirms its release online. For an exact version, pass
+        ``offline={"pinned_version_id": version_id}`` to permit verified cache fallback
+        after a transport failure or HTTP 503.
         """
         from .delivery import resolve_and_cache, _stage_delivery
 
@@ -314,6 +314,14 @@ class AcclimateClient:
             channel_resolution=True,
             delivery=True,
         )
+
+    def inspect_source(self, workspace_id: str, bundle_id: str, channel: str) -> ChannelResolution | None:
+        """Read source history for evaluation or management."""
+        releases = self.list_releases(workspace_id, bundle_id, channel, limit=1)["items"]
+        if not releases:
+            return None
+        release = releases[0]
+        return {"channel": release["channel"], "revision": release["revision"], "version": release["version"]}
 
     def list_releases(
         self, workspace_id: str, bundle_id: str, channel: str, *,

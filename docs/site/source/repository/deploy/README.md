@@ -66,10 +66,10 @@ On first startup, the service applies its embedded schema baseline to an empty d
 
 ## Upgrade to the learning-loop schema
 
-Migrations `0016_remove_manual_changes.sql` and `0017_remove_connected_learning.sql` drop the manual change workflow and connected learning. They are destructive and irreversible. The self-improvement loop ships in a later release.
+Migrations `0017_remove_manual_changes.sql` and `0018_remove_connected_learning.sql` drop the manual change workflow and connected learning. They are destructive and irreversible. Migrations `0019` through `0021` install the self-improvement loop.
 
 1. Take a full backup before starting the new build: `python3 scripts/operations/backup.py dump /private/backups/acclimate-pre-loop.dump --pg-bin /path/to/postgresql-16/bin`. The backup is the archive. To read old rounds, proposals or comparisons, restore it into a separate database and run the `pre-learning-loop` build against it.
-2. After `0017`, a connection receives its own channel's version, not a learned version. To keep a learned version, release it on the connection's channel with a reason before you upgrade. [Upgrade and recover](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/operate/upgrades-and-recovery.mdx) has the query that lists affected connections.
+2. After `0018`, a connection receives its own channel's version, not a learned version. Record the delivered version IDs before upgrading. After upgrading, you can release a retained version on the source channel with a reason, which updates all connections using that channel. [Upgrade and recover](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/operate/upgrades-and-recovery.mdx) has the query that lists affected connections.
 3. No drain is needed. Queued rounds, proposals and evaluation requests are dropped. Stop app-side `acclimate-learning` evaluators: their `…/learning/work` requests return `404 not_found`.
 4. `learn-<connectionId>` channels stay as ordinary channels with their release history.
 

@@ -17,7 +17,11 @@ def pull_payload(*, config_path, bundle_id, channel, out):
     """Write a new private payload file."""
     config = read_evaluator_config(config_path)
     try:
-        resolved = resolve_and_cache(make_client(config), config["workspaceId"], bundle_id, channel=channel,
+        client = make_client(config)
+        source = client.inspect_source(config["workspaceId"], bundle_id, channel)
+        if not source:
+            raise EvaluationError("bundle.missing", field="--bundle", reason="This channel has no release.")
+        resolved = resolve_and_cache(client, config["workspaceId"], bundle_id, version_id=source["version"]["id"],
                                      cache_dir=str(Path(config["journalRoot"]) / "command-cache"))
     except ApiError as error:
         if error.status == 404:
@@ -35,9 +39,8 @@ def pull_payload(*, config_path, bundle_id, channel, out):
         stream.write(json.dumps(resolved["payload"], indent=2, ensure_ascii=False) + "\n")
         stream.flush()
         os.fsync(stream.fileno())
-    resolution = resolved.get("resolution") or {}
     return {"schemaVersion": 1, "bundleId": bundle_id, "channel": channel, "versionId": resolved["version"]["id"],
-            "digest": resolved["version"]["digest"], "revision": resolution.get("revision"),
+            "digest": resolved["version"]["digest"], "revision": source["revision"],
             "files": len(resolved["payload"]["files"]), "out": target}
 
 

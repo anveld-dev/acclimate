@@ -28,16 +28,15 @@ Feature: Application SDK delivery
     Then delivery fails rather than returning cached content
 
   @SDK-04
-  Scenario: Explicit bounded offline permission can reuse a verified cached release
+  Scenario: A channel job requires online confirmation even with offline permission
     Given an application resolved and prepared the stable release
     When the service becomes unavailable
     And the application permits bounded offline delivery
-    Then its prepared instruction file contains "Review code."
-    And the returned mapping is marked stale
+    Then delivery fails rather than returning cached content
 
   @SDK-05
-  Scenario: Another SDK identity cannot reuse the first identity's offline mapping
-    Given an application resolved and prepared the stable release
+  Scenario: Another SDK identity cannot reuse the first identity's offline version
+    Given an application cached the original version by ID
     When the service becomes unavailable
     And another SDK identity requests bounded offline delivery
     Then no cached mapping is disclosed

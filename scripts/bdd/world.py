@@ -90,6 +90,8 @@ class World:
         target=self.sdk_directory
         config = dict(action=action, baseUrl=self.h.base, token=self.h.tokens[actor], scope='bdd-'+actor,
                       workspaceId=self.h.project, bundleId=getattr(self, 'setup', {}).get('bundle', {}).get('id'), directory=str(target), **options)
+        if action in ('delivery', 'editJob', 'collision', 'cleanup', 'native', 'pythonDelivery') and hasattr(self, 'integration'):
+            config.setdefault('connectionId', self.integration['id'])
         path = target / 'config.json'
         path.write_text(json.dumps(config))
         path.chmod(0o600)

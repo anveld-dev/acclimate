@@ -30,8 +30,8 @@ async function fixture() {
     traffic.push(`${req.method} ${req.url}`);
     const route = new URL(req.url!, 'http://fixture').pathname;
     res.setHeader('content-type', 'application/json');
-    if (route.endsWith(`/bundles/${bundleId}/channels/stable`))
-      return res.end(JSON.stringify({ channel: 'stable', revision: '3', version }));
+    if (route.endsWith(`/bundles/${bundleId}/channels/stable/releases`))
+      return res.end(JSON.stringify({ items: [{ channel: 'stable', revision: '3', version }] }));
     if (route.endsWith(`/versions/${versionId}/payload`)) return res.end(bytes);
     if (route.endsWith(`/versions/${versionId}`)) return res.end(JSON.stringify(version));
     res.statusCode = 404;

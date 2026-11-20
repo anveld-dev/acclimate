@@ -1,6 +1,6 @@
 # Self-improvement memory: removal
 
-This file lists everything D7 and D8 remove: each server module, migration, table, route, setting, SDK and Python module, CLI command, console surface, example, workflow, doc and test. It also gives the order that keeps the repository building after every step. It owns phases 1 and 2 of the [phased plan](README.md#phased-plan), migrations `0016_remove_manual_changes.sql` and `0017_remove_connected_learning.sql`, the data-archive question (README question 5) and the `CONTEXT.md` glossary.
+This file lists everything D7 and D8 remove: each server module, migration, table, route, setting, SDK and Python module, CLI command, console surface, example, workflow, doc and test. It also gives the order that keeps the repository building after every step. It owns phases 1 and 2 of the [phased plan](README.md#phased-plan), migrations `0017_remove_manual_changes.sql` and `0018_remove_connected_learning.sql`, the data-archive question (README question 5) and the `CONTEXT.md` glossary.
 
 Names follow the [README](README.md#names). Line numbers are for commit 4096ff1b. Line counts are `wc -l`.
 
@@ -42,9 +42,9 @@ Connected learning still runs in phase 1. It creates proposals, evaluation reque
 | `propose` right | `src/auth.rs:6` (`RIGHTS`), `src/commands.rs:96`, `src/commands.rs:444`, `src/evaluations.rs:240`, `src/machine_tokens.rs:278` (the rights message; `:544` is a test); the machine-token right schemas in `contracts/openapi.json:6155` and `:6486-6499`; `packages/sdk/src/types.ts:163`; `python/acclimate/types.py:305` | Remove. `validate_grants` (`src/auth.rs:18`) then rejects an `ACCLIMATE_AUTH` grant that still lists `propose`, through its rights check at `:41`. |
 | Draft operation keys | `src/commands.rs:112-126` (draft rights), `:130-132` (`global`) | Delete the draft rows. `global` becomes `path.ends_with("/bundle-setups")`. Drop the draft cases in the tests at `:728-841`. |
 
-### Migration `0016_remove_manual_changes.sql`
+### Migration `0017_remove_manual_changes.sql`
 
-Tested against a database migrated through `0015` on PostgreSQL 18.
+Runs after main’s `0016_automatic_delivery.sql`.
 
 ```sql
 -- Phase 1: remove the hand-made change workflow (D8).
@@ -189,7 +189,7 @@ Delete the **Changes** bundle view and everything only it uses. The **Content** 
 ### Order inside phase 1
 
 1. Move bundle setup to `src/bundles.rs`. `cargo test` passes with drafts still present.
-2. Delete drafts, policy receipts and quality gating in the server, add `0016`, update OpenAPI, Rust tests and features. The SDK still compiles, because its draft and policy-receipt methods are plain HTTP calls.
+2. Delete drafts, policy receipts and quality gating in the server, add `0017`, update OpenAPI, Rust tests and features. The SDK still compiles, because its draft and policy-receipt methods are plain HTTP calls.
 3. Delete the public proposal and evaluation-request create routes and the `propose` right.
 4. Delete the SDK and Python manual code, the operator CLI and the exports, then run `npm run pack:verify`.
 5. Delete the console Changes view.
@@ -230,9 +230,9 @@ After phase 2 the service delivers versions and runs no learning. `contracts/lea
 | `src/main.rs:3`, `:183-184`, `:188`, `:224-234`, `:245-273` | Stop spawning `connected_learning_worker` and `proposal_worker`. Move `runtime.worker_started()` (`src/improvement.rs:432`) into `invitation_worker`, so `wait_for_worker` (`src/main.rs:187`) still returns. Phase 3 adds the loop worker beside it. |
 | Startup | Fail when any setting in the Removed row of the README is set, naming it (`tests/runtime_preflight.rs`) |
 
-### Migration `0017_remove_connected_learning.sql`
+### Migration `0018_remove_connected_learning.sql`
 
-Tested against a database migrated through `0016`. The final schema holds 19 tables, no views and one function (`machine_token_events_append_only`).
+Tested against a database migrated through `0017`. The final schema holds 19 tables, no views and one function (`machine_token_events_append_only`).
 
 ```sql
 -- Phase 2: remove connected learning and the comparison machinery (D7, D8).
@@ -393,7 +393,7 @@ Python has no learning driver. `serveLearningLoop` is TypeScript only (README, C
 ### Order inside phase 2
 
 1. Move the W1 fixtures to `examples/self-improvement-memory/fixtures/w1/`. Delete the SDK learning driver and the connected examples, scripts and CI job. The server is unchanged, so every suite passes.
-2. In one commit: delete the server modules and the model client, add `0017`, rewrite `channels.rs`, `integrations.rs`, `commands.rs`, `lib.rs`, `main.rs`, `proposal_edits.rs` and `proposal_scanner.rs`'s visibility, update OpenAPI, the Rust tests and `scripts/operations/qualify.py`. This must be one step, because every deleted module calls the others.
+2. In one commit: delete the server modules and the model client, add `0018`, rewrite `channels.rs`, `integrations.rs`, `commands.rs`, `lib.rs`, `main.rs`, `proposal_edits.rs` and `proposal_scanner.rs`'s visibility, update OpenAPI, the Rust tests and `scripts/operations/qualify.py`. This must be one step, because every deleted module calls the others.
 3. Delete the client methods and types in TypeScript and Python, and the progress reporters. Run `npm run pack:verify`.
 4. Delete the console learning page.
 5. Delete and rewrite the docs, then regenerate `docs/site`.
@@ -411,10 +411,10 @@ The two migrations are destructive and irreversible. The data in the dropped tab
 The upgrade note in `deploy/README.md` and `apps/docs/content/docs/operate/upgrades-and-recovery.mdx` says:
 
 1. Take a full backup: `python3 scripts/operations/backup.py dump /private/backups/acclimate-pre-loop.dump`. Restore it into a database with the `pre-learning-loop` build to read old rounds.
-2. Before phase 2, find connections that receive a learned version. After `0017` they receive their own channel's version instead:
+2. Before phase 2, find connections that receive a learned version. After `0018` they receive their own channel's version instead:
 
    ```sql
-   SELECT e.project_id, e.integration_id, e.source_channel, e.delivery_channel,
+   SELECT e.project_id, e.bundle_id, e.integration_id, e.source_channel, e.delivery_channel,
           d.version_id AS delivered, s.version_id AS source_head
    FROM connected_learning_enrollments e
    JOIN channels d ON (d.project_id, d.bundle_id, d.name) = (e.project_id, e.bundle_id, e.delivery_channel)
@@ -422,7 +422,7 @@ The upgrade note in `deploy/README.md` and `apps/docs/content/docs/operate/upgra
    WHERE d.version_id <> s.version_id;
    ```
 
-   To keep a learned version, release it on the connection's channel with a reason before upgrading.
+   Before upgrading, record the delivered version ID for each affected connection. After upgrading, you can release that version on the source channel with a reason. This also updates any other connection using that channel.
 3. No drain is needed. Queued rounds, proposals and evaluation requests are dropped. Evaluators still polling `…/learning/work` get `404 not_found` and must be stopped.
 4. `learn-<connectionId>` channels stay as ordinary channels with their release history.
 
@@ -467,7 +467,7 @@ Internal terms: keep **Operation result** and **Delivery receipt**. Delete Propo
 
 | Test | Checks |
 | --- | --- |
-| `tests/production_schema.rs` | Apply migrations through `0015`, seed one row in every dropped table, a connected-learning `durable_commands` row, a `learn-*` channel, a propose-only token and a `read`+`propose` token, then run to the latest. Assert the exact kept table set of 19, no views, the `promotions` columns `(…, unevaluated_reason, reviewer, created_at)` with no `comparison_id`, `policy_override` or `policy_approval_promotion_id`, an empty `durable_commands`, the revoked token with its `revoked` event, the trimmed rights, and that the `learn-*` channel resolves. |
+| `tests/production_schema.rs` | Apply migrations through `0015`, seed one row in every dropped table, a connected-learning `durable_commands` row, a `learn-*` channel, a propose-only token and a `read`+`propose` token, apply `0016_automatic_delivery.sql`, then run to the latest. Assert the exact kept table set of 19, no views, the `promotions` columns `(…, unevaluated_reason, reviewer, created_at)` with no `comparison_id`, `policy_override` or `policy_approval_promotion_id`, an empty `durable_commands`, the revoked token with its `revoked` event, the trimmed rights, and that the `learn-*` channel resolves. |
 | `tests/http_contract.rs` `only_canonical_route_spellings_exist…` | Every route in both removal tables returns `404 not_found` |
 | `tests/runtime_preflight.rs` | Each removed setting fails startup with its name |
 | `tests/grant_preflight.rs` | A grant with `propose` is rejected |
@@ -478,5 +478,5 @@ Internal terms: keep **Operation result** and **Delivery receipt**. Delete Propo
 
 ## Open questions
 
-1. **The `learn-*` channels.** They become ordinary channels. Should `0017` instead delete channels whose only releases came from connected learning?
+1. **The `learn-*` channels.** They become ordinary channels. Should `0018` instead delete channels whose only releases came from connected learning?
 2. **`try`, `describe`, `coverage`, `doctor` and `pull`.** They help an app author write the evaluation the loop runs, so they stay. Should they move to the `acclimate-learning` bin in phase 3 and `acclimate-eval` go?

@@ -214,19 +214,13 @@ class DeliveryReceipt(DeliveryReceiptRequest):
     delayed: bool
 
 
-class OfflineMaxAge(TypedDict):
-    """Use a cached channel resolution up to this age after a transport failure or HTTP 503."""
-
-    max_age_ms: int
-
-
 class OfflinePinnedVersion(TypedDict):
     """Use the cached copy of this exact version after a transport failure or HTTP 503."""
 
     pinned_version_id: str
 
 
-OfflinePolicy = OfflineMaxAge | OfflinePinnedVersion
+OfflinePolicy = OfflinePinnedVersion
 
 
 class OperationCommitted(TypedDict):
@@ -653,7 +647,6 @@ __all__ = [
     "ConnectionCredential",
     "DeliveryReceiptRequest",
     "DeliveryReceipt",
-    "OfflineMaxAge",
     "OfflinePinnedVersion",
     "OfflinePolicy",
     "OperationCommitted",

@@ -61,9 +61,9 @@ The paper's Problem is `{id, root cause, opened_round, attempts}`. Its Attempt i
 | `domain` | `domain` | `domain` | `setting.domain` of the round |
 | Provenance | `provenance` | `provenance` with `domain`, `benchmark`, `policyModel` and `round` only | §5.2 |
 
-## 4. Migration: memory part of `0019_learning_optimizer.sql`
+## 4. Migration: memory part of `0020_learning_optimizer.sql`
 
-`0019` also adds `learning_candidates` and `learning_optimizer_calls` ([optimizer.md](optimizer.md)), which must come first because attempts reference candidates. `learning_loops.memory_revision`, `learning_rounds.memory_revision` and `learning_rounds.memory_digest` are added by `0018` ([loop.md](loop.md)). This section adds no column to any other table.
+`0020` also adds `learning_candidates` and `learning_optimizer_calls` ([optimizer.md](optimizer.md)), which must come first because attempts reference candidates. `learning_loops.memory_revision`, `learning_rounds.memory_revision` and `learning_rounds.memory_digest` are added by `0019` ([loop.md](loop.md)). This section adds no column to any other table.
 
 ```sql
 CREATE TABLE learning_memory_problems (
@@ -130,7 +130,7 @@ Notes:
 - The `(project_id, bundle_id, round)` key makes an attempt name a round of its own bundle. `write_back` sets `round_id` and `round` from one row, and a test checks they agree.
 - The array checks make `fixed` and `missed` a partition of `predicted`. Case-ID arrays are stored sorted and without duplicates.
 - No head table, no snapshot table and no `next_problem` counter are needed. The `learning_loops` row is the head, the pin plus append-only rows make a re-render exact, and the next problem number is the count of the bundle's problems plus one (problems are never deleted).
-- No rows are created by the migration. Connected-learning rounds are gone after `0017` ([removal.md](removal.md)), so there is nothing to backfill even by accident.
+- No rows are created by the migration. Connected-learning rounds are gone after `0018` ([removal.md](removal.md)), so there is nothing to backfill even by accident.
 
 ## 5. Record shapes
 
@@ -383,7 +383,7 @@ Errors: a bundle that is not enrolled, or a `revision` above `currentRevision`, 
 
 | File | Change |
 | --- | --- |
-| `migrations/0019_learning_optimizer.sql` | §4, after the candidate and optimizer-call tables |
+| `migrations/0020_learning_optimizer.sql` | §4, after the candidate and optimizer-call tables |
 | `src/learning/memory.rs` (new) | `render_memory`, `write_back`, `resolve_problem`, `root_cause_key`, `normalize_root_cause`, `attempt_outcome`, `ROOT_CAUSE_MAX_BYTES`, unit tests |
 | `src/learning/worker.rs` | `adopt` calls `memory::write_back` last in its transaction. `start_round` pins `memory_revision`. The `proposing` step stores `memory_digest`. ([loop.md](loop.md)) |
 | `src/learning/optimizer.rs` | `validate_diagnosis` uses `normalize_root_cause` and checks `{id}` against the rendered document. Input building checks the digest. ([optimizer.md](optimizer.md)) |

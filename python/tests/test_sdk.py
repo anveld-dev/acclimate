@@ -114,6 +114,7 @@ class SDKTest(unittest.TestCase):
         )
 
     def test_prepare_scopes_delivery_and_cleanup_to_the_real_job(self):
+        self.client.connection_id = "a7100000-0000-4000-8000-000000000001"
         with tempfile.TemporaryDirectory() as tmp:
             cache = Path(tmp).resolve() / "cache"
             reporter = Mock()
@@ -154,7 +155,8 @@ class SDKTest(unittest.TestCase):
             events.append(receipt)
 
         writer.report_delivery_receipt.side_effect = send
-        reporter = DeliveryReporter(writer, "p", "i", max_queue=1, clock=lambda: now[0])
+        self.client.connection_id = "a7100000-0000-4000-8000-000000000001"
+        reporter = DeliveryReporter(writer, "p", "a7100000-0000-4000-8000-000000000001", max_queue=1, clock=lambda: now[0])
         try:
             with tempfile.TemporaryDirectory() as temp, self.client.prepare(
                 "p", "b1", channel="stable", cache_dir=Path(temp).resolve() / "cache",
@@ -193,14 +195,11 @@ class SDKTest(unittest.TestCase):
             self.assertFalse(v["stale"])
             self.assertFalse(resolve_and_cache(self.client, "p", "b1", **kw)["stale"])
             Handler.mode = "unavailable"
-            self.assertTrue(
-                resolve_and_cache(self.client, "p", "b1", **kw, offline={"max_age_ms": 60_000})[
-                    "stale"
-                ]
-            )
+            with self.assertRaises(ApiError):
+                resolve_and_cache(self.client, "p", "b1", **kw)
             Handler.mode = "deny"
             with self.assertRaises(ApiError) as e:
-                resolve_and_cache(self.client, "p", "b1", **kw, offline={"max_age_ms": 60_000})
+                resolve_and_cache(self.client, "p", "b1", **kw)
             self.assertEqual(
                 (e.exception.code, e.exception.request_id), ("denied", "r1")
             )
@@ -220,9 +219,8 @@ class SDKTest(unittest.TestCase):
             verified = resolve_and_cache(scoped, "p", "b1", **kw)
             self.assertEqual(verified["connection"], {"workspaceId": "p", "connectionId": connection.lower()})
             Handler.mode = "unavailable"
-            stale = resolve_and_cache(scoped, "p", "b1", **kw, offline={"max_age_ms": 60_000})
-            self.assertTrue(stale["stale"])
-            self.assertEqual(stale["connection"], verified["connection"])
+            with self.assertRaises(ApiError):
+                resolve_and_cache(scoped, "p", "b1", **kw)
 
     def test_offline_pinned_version_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:

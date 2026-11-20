@@ -545,7 +545,7 @@ The held-out split never reaches the optimizer (D5). The code enforces it by con
 
 ## Migration
 
-`0019_learning_optimizer.sql` adds these two tables alongside the memory tables ([memory.md](memory.md)). This is the one definition of `learning_candidates`. Its status checks are the ones [loop.md](loop.md) relies on.
+`0020_learning_optimizer.sql` adds these two tables alongside the memory tables ([memory.md](memory.md)). This is the one definition of `learning_candidates`. Its status checks are the ones [loop.md](loop.md) relies on.
 
 ```sql
 CREATE TABLE learning_candidates (
@@ -602,7 +602,7 @@ CREATE UNIQUE INDEX learning_optimizer_calls_one_open ON learning_optimizer_call
     WHERE status IN ('queued','running');
 ```
 
-The `(id, adopted_sample)` foreign key from `learning_rounds` to this table is in [loop.md](loop.md) ("Migration `0019_learning_optimizer.sql`").
+The `(id, adopted_sample)` foreign key from `learning_rounds` to this table is in [loop.md](loop.md) ("Migration `0020_learning_optimizer.sql`").
 
 ## Files to touch
 
@@ -614,7 +614,7 @@ The `(id, adopted_sample)` foreign key from `learning_rounds` to this table is i
 | `src/main.rs` | Build `Arc<dyn OptimizerModel>` from the `ACCLIMATE_MODEL*` settings. The start-up `sweep` in [loop.md](loop.md) covers `learning_optimizer_calls`. |
 | `src/proposal_edits.rs` | Rewritten from phase 2's `reconstruct(parent, content)`: `Changes`, `Edit`, `FileOp`, `reconstruct(parent, changes, target)`, and `changed_files` restored |
 | `src/proposal_scanner.rs` | A `pub mod` since phase 2. Rule names, `Finding`, `Field`, `findings` with the parent exemption. `pub fn scan`, kept in phases 2 and 3 for its tests, is replaced by `findings`. |
-| `migrations/0019_learning_optimizer.sql` | The two tables above |
+| `migrations/0020_learning_optimizer.sql` | The two tables above |
 | `tests/proposal_patch.rs` | Rewritten for `reconstruct` |
 | `tests/optimizer_provider_http.rs` (new) | The HTTP boundary tests for `OpenAiModel`. Phase 2 deleted `tests/proposal_provider_http.rs` with the old client. |
 | `tests/learning_optimizer.rs` (new) | Integration tests with a fake `OptimizerModel` and the fixture evaluator |

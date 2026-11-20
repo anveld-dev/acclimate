@@ -30,12 +30,6 @@ def allowed(context):
     context.world.python_result=context.world.sdk('pythonDelivery',offline=True)
 
 
-@then('Python receives "{text}" from a stale cached mapping')
-def cached(context,text):
-    result=context.world.python_result
-    assert result['instruction']==text and result['stale'] is True
-
-
 @when('a Python application uploads and releases a version')
 def author(context):
     context.world.python_result=context.world.sdk('pythonAuthor')

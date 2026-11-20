@@ -78,17 +78,12 @@ test('opt-in delivery reports actual network/cache/offline source and explicit p
     );
     events.length = 0;
     offline = true;
-    await resolveAndCache(client, selection, {
-      cacheDir: dir,
-      offline: { maxAgeMs: 10000 },
-      reporter,
-    });
+    await assert.rejects(resolveAndCache(client, selection, { cacheDir: dir, reporter }));
     await reporter.flush();
-    assert(events.every((e) => e.source === 'offline' && e.stale === true));
-    assert.equal(events.length, 2);
+    assert.equal(events.length, 0);
+    offline = false;
     await resolveAndCache(client, selection, {
       cacheDir: dir,
-      offline: { maxAgeMs: 10000 },
       reporter: {
         observeDelivery() {
           throw new Error('reporter broken');
@@ -200,6 +195,7 @@ test('a prepared job retries a refused start at its original time and queues it 
     baseUrl: 'https://service.test',
     token: 'read',
     scope: 'p',
+    connectionId: 'a7100000-0000-4000-8000-000000000001',
     fetch: async (url) =>
       String(url).endsWith('/payload')
         ? new Response(bytes)
@@ -224,7 +220,7 @@ test('a prepared job retries a refused start at its original time and queues it 
   const reporter = createReceiptReporter({
     client: writer,
     workspaceId: 'p',
-    connectionId: 'i',
+    connectionId: 'a7100000-0000-4000-8000-000000000001',
     maxPending: 1,
     now: () => clock,
   });

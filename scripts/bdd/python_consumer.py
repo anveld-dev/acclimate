@@ -3,10 +3,10 @@ import json
 import sys
 import uuid
 from pathlib import Path
-from acclimate import AcclimateClient, ApiError, TransportError, DeliveryError, resolve_and_cache, prepare_files, DeliveryReporter
+from acclimate import AcclimateClient, ApiError, TransportError, DeliveryError, UsageError, DeliveryReporter
 
 c=json.loads(Path(sys.argv[1]).read_text())
-client=AcclimateClient(c['baseUrl'],c['token'],c['scope'],retries=0,timeout=2)
+client=AcclimateClient(c['baseUrl'],c['token'],c['scope'],connection_id=c.get('connectionId'),retries=0,timeout=2)
 p,b=c['workspaceId'],c['bundleId']
 key=lambda:uuid.uuid4().hex
 
@@ -17,9 +17,11 @@ def delivery():
         rc=AcclimateClient(c['baseUrl'],c.get('receiptToken','fixture-invalid-report-token'),'python-reporter',retries=0,timeout=1)
         reporter=DeliveryReporter(rc,p,c['connectionId'])
     try:
-        bundle=resolve_and_cache(client,p,b,channel='stable',cache_dir=str(Path(c['directory'])/'python-cache'),offline={'max_age_ms': 300_000} if c.get('offline') else None,reporter=reporter)
         destination=Path(c['directory'])/('python-prepared-'+key())
-        prepared=prepare_files(bundle,str(destination))
+        prepared=client.prepare(p,b,channel='stable',cache_dir=Path(c['directory'])/'python-cache',
+                                destination=destination,reporter=reporter,
+                                offline={'pinned_version_id': 'legacy-channel'} if c.get('offline') else None)
+        bundle=prepared.version
         started=False
         if reporter:
             # Observe actual app output, then report that start. No provider is called.
@@ -27,7 +29,7 @@ def delivery():
             app=subprocess.run([sys.executable,'-c',"print('app started')"],capture_output=True,text=True,check=True,timeout=5)
             started=app.stdout.strip()=='app started'
             if started:
-                bundle['reporter'].report_started()
+                prepared.report_started()
             reporter.wait(2)
         return dict(version=bundle['version'],stale=bundle['stale'],instruction=(destination/'AGENTS.md').read_text(),started=started,pending=reporter.pending_count if reporter else 0)
     finally:
@@ -47,5 +49,5 @@ def author():
 try:
     result=author() if c['action']=='pythonAuthor' else delivery()
     print(json.dumps(result))
-except (ApiError,TransportError,DeliveryError) as error:
+except (ApiError,TransportError,DeliveryError,UsageError) as error:
     print(json.dumps(dict(error=dict(name=type(error).__name__,code=getattr(error,'code',None),status=getattr(error,'status',None)))))

@@ -33,15 +33,16 @@ pub(crate) async fn resolve(
     }
     let r=sqlx::query("SELECT c.revision,v.id,v.bundle_id,v.parent_version_id,v.digest,v.created_at FROM channels c JOIN versions v ON v.id=c.version_id AND v.project_id=c.project_id AND v.bundle_id=c.bundle_id WHERE c.project_id=$1 AND c.bundle_id=$2 AND c.name=$3").bind(&p).bind(path(&b)?).bind(&c).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Channel not found"))?;
     let rev: i64 = r.get("revision");
-    let etag = format!("\"{rev}\"");
-    if h.get(header::IF_NONE_MATCH).and_then(|x| x.to_str().ok()) == Some(etag.as_str()) {
-        return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response());
-    }
     let out = ChannelResolution {
         channel: c,
         revision: rev.to_string(),
         version: crate::store::meta(&r),
     };
+    // A connection can move from a learned channel to its source at the same revision.
+    let etag = format!("\"{rev}:{}\"", out.version.id);
+    if h.get(header::IF_NONE_MATCH).and_then(|x| x.to_str().ok()) == Some(etag.as_str()) {
+        return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response());
+    }
     Ok((StatusCode::OK, [(header::ETAG, etag)], Json(out)).into_response())
 }
 pub(crate) async fn list_promotions(

@@ -20,6 +20,7 @@ def selected(context):
     assert w.delivery['version'] == w.original['version']
 
 
+@given('an application cached the original version by ID')
 @when('a fresh job requests the original version by ID')
 def pin(context):
     w = context.world
@@ -61,7 +62,8 @@ def stale(context):
 
 @when('another SDK identity requests bounded offline delivery')
 def other_identity(context):
-    context.world.delivery = context.world.sdk('delivery', actor='other', offline=True)
+    w = context.world
+    w.delivery = w.sdk('delivery', actor='other', versionId=w.original['version']['id'], offline=True)
 
 
 @then('no cached mapping is disclosed')
@@ -73,7 +75,7 @@ def no_mapping(context):
 @given('that integration cached the published release')
 def integration_cache(context):
     w = context.world
-    w.delivery = w.sdk('delivery', actor='content-reader')
+    w.delivery = w.sdk('delivery', actor='content-reader', versionId=w.original['version']['id'])
     assert w.delivery['version'] == w.original['version']
 
 
@@ -81,7 +83,7 @@ def integration_cache(context):
 def integration_offline(context):
     w = context.world
     w.prepared_before_request = set(w.sdk_directory.glob('prepared-*'))
-    w.delivery = w.sdk('delivery', actor='content-reader', offline=True)
+    w.delivery = w.sdk('delivery', actor='content-reader', versionId=w.original['version']['id'], offline=True)
 
 
 @then('delivery is denied despite the cached files')

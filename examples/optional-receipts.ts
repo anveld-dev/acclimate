@@ -2,7 +2,7 @@
 import { AcclimateClient, createReceiptReporter } from '@acclimate/sdk';
 
 export function optionalReceipts(env: NodeJS.ProcessEnv, workspaceId: string) {
-  if (!env.ACCLIMATE_RECEIPT_TOKEN && !env.ACCLIMATE_CONNECTION) return undefined;
+  if (!env.ACCLIMATE_RECEIPT_TOKEN) return undefined;
   try {
     if (!env.ACCLIMATE_RECEIPT_TOKEN || !env.ACCLIMATE_CONNECTION)
       throw new Error('Both receipt token and connection ID are required');

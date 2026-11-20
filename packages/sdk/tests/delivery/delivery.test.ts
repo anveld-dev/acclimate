@@ -86,7 +86,7 @@ test('mutation retry preserves exact bytes and idempotency key; errors retain re
   }
 });
 
-test('conditional channel and exact-byte digest cache; explicit stale fallback never masks denial', async () => {
+test('cached content requires fresh channel confirmation for every job', async () => {
   let calls = 0,
     channelFailure = 0;
   const f = await fixture((req, res) => {
@@ -131,20 +131,13 @@ test('conditional channel and exact-byte digest cache; explicit stale fallback n
       'Review the supplied diff and support every finding.',
     );
     assert.equal(calls, 2);
-    channelFailure = 503;
-    const stale = await resolveAndCache(
-      client,
-      { workspaceId: 'p', bundleId: 'b1', channel: 'stable' },
-      { ...policy, offline: { maxAgeMs: 99999 } },
-    );
-    assert.equal(stale.stale, true);
-    for (const status of [403, 404]) {
+    for (const status of [503, 403, 404]) {
       channelFailure = status;
       await assert.rejects(
         resolveAndCache(
           client,
           { workspaceId: 'p', bundleId: 'b1', channel: 'stable' },
-          { ...policy, offline: { maxAgeMs: 99999 } },
+          policy,
         ),
         ApiError,
       );
@@ -308,7 +301,7 @@ test('connection-qualified delivery isolates conditional and offline entries for
         scope: 'project-reader',
         connectionId,
       });
-    const policy = { cacheDir: dir, offline: { maxAgeMs: 60_000 } };
+    const policy = { cacheDir: dir };
     const selection = { workspaceId: 'p', bundleId: 'b1', channel: 'stable' };
     const resolved = await resolveAndCache(make(enrolled), selection, policy);
     assert.equal(resolved.version.id, 'candidate');
@@ -320,11 +313,7 @@ test('connection-qualified delivery isolates conditional and offline entries for
     );
     assert.equal(seen[2]?.etag, undefined);
     offline = true;
-    assert.equal(
-      (await resolveAndCache(make(enrolled), selection, policy)).version.id,
-      'candidate',
-    );
-    assert.equal((await resolveAndCache(make(sibling), selection, policy)).version.id, 'v1');
+    await assert.rejects(resolveAndCache(make(enrolled), selection, policy), ApiError);
     await assert.rejects(resolveAndCache(make(), selection, policy), ApiError);
   } finally {
     await service.close();
@@ -339,7 +328,7 @@ test('client.prepare pins a real selection, owns per-job files and reports obser
   });
   const root = await mkdtemp(join(await realpath(tmpdir()), 'prepare-delivery-'));
   try {
-    const client = new AcclimateClient({ baseUrl: f.baseUrl, token: 'read', scope: 'app' });
+    const client = new AcclimateClient({ baseUrl: f.baseUrl, token: 'read', scope: 'app', connectionId: 'a7100000-0000-4000-8000-000000000001' });
     const stages: string[] = [];
     const options = { workspaceId: 'p', bundleId: 'b1', cacheDir: join(root, 'cache') };
     const first = await client.prepare({

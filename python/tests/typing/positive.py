@@ -67,8 +67,8 @@ def delivery(client: AcclimateClient, api_error: ApiError) -> None:
     assert_type(version["payload"], BundlePayload)
     assert_type(prepare_files(version, "/private/workspace"), PreparedFiles)
     validate_payload(version["payload"])
-    stale = resolve_and_cache(client, "workspace", "bundle", channel="stable", cache_dir="/private/cache",
-                              offline={"max_age_ms": 300_000})
+    stale = resolve_and_cache(client, "workspace", "bundle", version_id="v1", cache_dir="/private/cache",
+                              offline={"pinned_version_id": "v1"})
     assert_type(stale["stale"], bool)
     connection = version.get("connection")
     if connection is not None:

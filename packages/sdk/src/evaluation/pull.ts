@@ -11,7 +11,8 @@ export const pullHelp =
   'pull --config CONFIG --bundle ID [--channel CHANNEL] --out FILE  Save the published bundle as a payload to edit.';
 
 /**
- * Save a channel's published payload to a new private JSON file.
+ * Save a channel's published payload as the JSON file `compare --payload` reads.
+ * The file is new and private to this user. Edit it, then compare it with its parent.
  */
 export async function pullPayload(options: {
   configPath: string;
@@ -21,11 +22,13 @@ export async function pullPayload(options: {
 }) {
   const config = await readEvaluatorConfig(options.configPath);
   const client = createEvaluatorClient(config);
-  let resolved;
+  let resolved, source;
   try {
+    source = await client.inspectSource(config.workspaceId, options.bundleId, options.channel);
+    if (!source) throw new EvaluationError('bundle.missing', { field: '--bundle', reason: 'This channel has no release.' });
     resolved = await resolveAndCache(
       client,
-      { workspaceId: config.workspaceId, bundleId: options.bundleId, channel: options.channel },
+      { workspaceId: config.workspaceId, bundleId: options.bundleId, versionId: source.version.id },
       { cacheDir: path.join(config.journalRoot, 'command-cache') },
     );
   } catch (error) {
@@ -63,7 +66,7 @@ export async function pullPayload(options: {
     channel: options.channel,
     versionId: resolved.version.id,
     digest: resolved.version.digest,
-    revision: resolved.resolution?.revision ?? null,
+    revision: source.revision,
     files: resolved.payload.files.length,
     out,
   };
@@ -87,7 +90,8 @@ export async function pullCommand(flags: Record<string, string | boolean>) {
   });
   if (process.stderr.isTTY)
     process.stderr.write(
-      `Saved ${channel} (version ${result.versionId}, ${result.files} ${result.files === 1 ? 'file' : 'files'}) to ${result.out}.\n`,
+      `Saved ${channel} (version ${result.versionId}, ${result.files} ${result.files === 1 ? 'file' : 'files'}) to ${result.out}.\n` +
+        `Edit it, then run: acclimate-eval compare --config CONFIG --bundle ${result.bundleId} --channel ${channel} --payload ${result.out} --name NAME\n`,
     );
   return { status: 0, result };
 }

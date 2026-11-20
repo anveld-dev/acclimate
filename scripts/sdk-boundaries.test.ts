@@ -91,23 +91,15 @@ async function harness() {
   };
 }
 
-test('offline fallback uses same scoped mapping, permits unavailable only and never denial or missing', async () => {
+test('channel delivery requires the service even when bytes are cached', async () => {
   const h = await harness();
   try {
     const selection = { workspaceId: 'p', bundleId: 'b1', channel: 'stable' };
-    const first = await resolveAndCache(h.client, selection, h.policy);
-    h.mode(503);
-    const cached = await resolveAndCache(h.client, selection, {
-      ...h.policy,
-      offline: { maxAgeMs: 60_000 },
-    });
-    assert.equal(cached.version.id, first.version.id);
-    assert.equal(cached.stale, true);
-    assert.equal(h.downloads(), 1);
-    for (const status of [401, 403, 404]) {
+    await resolveAndCache(h.client, selection, h.policy);
+    for (const status of [503, 401, 403, 404]) {
       h.mode(status);
       await assert.rejects(
-        resolveAndCache(h.client, selection, { ...h.policy, offline: { maxAgeMs: 60_000 } }),
+        resolveAndCache(h.client, selection, h.policy),
         (e) => e instanceof ApiError && e.status === status,
       );
     }
@@ -168,25 +160,14 @@ test('a cache directory symlink cannot redirect private writes', async () => {
   }
 });
 
-test('offline cache age must be finite and bounded before fetching', async () => {
+test('a new job cannot select an offline version', async () => {
   const h = await harness();
   try {
-    for (const maxAgeMs of [Infinity, NaN, -1, 31 * 24 * 60 * 60 * 1000]) {
-      await assert.rejects(
-        resolveAndCache(
-          h.client,
-          { workspaceId: 'p', bundleId: 'b1', channel: 'stable' },
-          { ...h.policy, offline: { maxAgeMs } },
-        ),
-        /offline.maxAgeMs/,
-      );
-    }
+    await assert.rejects(resolveAndCache(h.client, { workspaceId: 'p', bundleId: 'b1', channel: 'stable' },
+      { ...h.policy, offline: { pinnedVersionId: 'v1' } }), /resolve the channel online/);
     assert.equal(h.downloads(), 0);
-  } finally {
-    await h.close();
-  }
+  } finally { await h.close(); }
 });
-
 test('existing public cache and preparation directories are rejected without chmod', async () => {
   const h = await harness();
   try {

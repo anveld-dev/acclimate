@@ -5,11 +5,16 @@ import { AcclimateClient, resolveAndCache, prepareFiles } from '@acclimate/sdk';
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const client = new AcclimateClient({baseUrl:config.baseUrl,token:config.token,scope:'operator',retries:0});
 const policy = {cacheDir:join(process.cwd(),'cache')};
-const released = await resolveAndCache(client,{workspaceId:config.project,bundleId:config.bundleId,channel:'stable'},policy);
-assert.equal(released.version.id,config.version.id);
-assert.equal(released.version.digest,config.version.digest);
-const pinned = await resolveAndCache(client,{workspaceId:config.project,bundleId:config.bundleId,versionId:config.version.id},policy);
-assert.equal(pinned.version.digest,released.version.digest);
+const source = await client.inspectSource(config.project, config.bundleId, 'stable');
+assert.deepEqual(source.version, config.version);
+const prepared = await client.prepare({ workspaceId: config.project, bundleId: config.bundleId, channel: 'stable', ...policy });
+try {
+  assert.deepEqual(prepared.version.version, config.version);
+} finally {
+  await prepared.cleanup();
+}
+const pinned = await resolveAndCache(client, { workspaceId: config.project, bundleId: config.bundleId, versionId: config.version.id }, policy);
+assert.deepEqual(pinned.version, config.version);
 await prepareFiles(pinned,join(process.cwd(),'prepared'));
 assert.equal(await readFile(join(process.cwd(),'prepared/AGENTS.md'),'utf8'),'Review duplicate retries.');
-console.log('Clean packed SDK: resolve, pin, prepare passed');
+console.log('Packed SDK verified source history and prepared the released version.');

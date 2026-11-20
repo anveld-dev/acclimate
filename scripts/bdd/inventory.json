@@ -498,7 +498,7 @@
     "lane": "sdk"
   },
   "PYTHON-02": {
-    "name": "Python offline delivery requires explicit permission",
+    "name": "Python channel delivery requires online confirmation for each new job",
     "source": "features/python_sdk.feature",
     "cases": 1,
     "lane": "sdk"
@@ -564,13 +564,13 @@
     "lane": "sdk"
   },
   "SDK-04": {
-    "name": "Explicit bounded offline permission can reuse a verified cached release",
+    "name": "A channel job requires online confirmation even with offline permission",
     "source": "features/sdk_delivery.feature",
     "cases": 1,
     "lane": "sdk"
   },
   "SDK-05": {
-    "name": "Another SDK identity cannot reuse the first identity's offline mapping",
+    "name": "Another SDK identity cannot reuse the first identity's offline version",
     "source": "features/sdk_delivery.feature",
     "cases": 1,
     "lane": "sdk"

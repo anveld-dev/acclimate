@@ -2,7 +2,7 @@
 import { AcclimateUsageError } from './errors.js';
 import { lstat, mkdir, mkdtemp, open, realpath, rm, rmdir, chmod, readdir } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { VerifiedVersion, FileKind, DeliveryReceiptRequest } from './types.js';
 import { validatePayload, DeliveryError, resolveAndCache } from './cache.js';
 import type { Selection, CachePolicy } from './cache.js';
@@ -65,7 +65,6 @@ export async function prepareDelivery(
     reporter,
     offline,
     maxCacheBytes,
-    maxResolutionAgeMs,
   } = options;
   const hasChannel = 'channel' in options;
   if (hasChannel === 'versionId' in options)
@@ -78,7 +77,6 @@ export async function prepareDelivery(
     reporter,
     offline,
     maxCacheBytes,
-    maxResolutionAgeMs,
   });
   const directory =
     destination === undefined

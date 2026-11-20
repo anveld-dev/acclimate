@@ -2,6 +2,7 @@
 DROP VIEW connected_learning_round_replays;
 DROP VIEW connected_learning_correction_work;
 DROP VIEW connected_learning_replay_results;
+-- Drop the view recreated in 0016 before dropping its enrollment and round tables.
 DROP VIEW connected_learning_available_audits;
 
 DROP TABLE

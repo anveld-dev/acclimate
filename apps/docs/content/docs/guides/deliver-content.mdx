@@ -3,23 +3,24 @@ title: Deliver content to jobs
 description: Prepare a pinned version for each job and stage an existing repository for a native coding agent.
 ---
 
-Prepare a verified version when your application starts a job. In the console, open the bundle's **App setup** guide for the API URL, workspace ID, bundle ID, channel, and SDK recipe. Use a scoped read credential.
+Prepare a verified version when your application starts a job. In the console, open the bundle's **App setup** guide for the API URL, workspace ID, bundle ID, channel, and SDK recipe. Use a content-read credential for the connection.
 
 ## Prepare the job's content
 
-Select a channel for a fresh resolution, or select an exact version with `versionId` (Python `version_id`). Give your agent the prepared instructions and skill files, and choose which approved memory to include. Save the version ID and digest with the result.
+Set the connection ID on the SDK client and resolve its channel once per new job. Give your agent the prepared instructions and skill files, and choose which approved memory to include. Save the version ID and digest with the result.
 
 ```ts
 import { AcclimateClient } from '@acclimate/sdk';
 
-const { ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE } = process.env;
-if (!ACCLIMATE_URL || !ACCLIMATE_TOKEN || !ACCLIMATE_SCOPE) {
-  throw new Error('Set ACCLIMATE_URL, ACCLIMATE_TOKEN, and ACCLIMATE_SCOPE');
+const { ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE, ACCLIMATE_CONNECTION } = process.env;
+if (!ACCLIMATE_URL || !ACCLIMATE_TOKEN || !ACCLIMATE_SCOPE || !ACCLIMATE_CONNECTION) {
+  throw new Error('Set ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE, and ACCLIMATE_CONNECTION');
 }
 const client = new AcclimateClient({
   baseUrl: ACCLIMATE_URL,
   token: ACCLIMATE_TOKEN,
   scope: ACCLIMATE_SCOPE,
+  connectionId: ACCLIMATE_CONNECTION,
 });
 const prepared = await client.prepare({ workspaceId, bundleId, channel: 'stable' });
 ```

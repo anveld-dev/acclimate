@@ -33,10 +33,9 @@ The task, IDs, agent call and result storage belong to your application. Pass `v
 
 The cache defaults to `~/.cache/acclimate/python`. Set `cache_dir` to change it and `destination` to choose the job directory. Keep a separate cache directory for each SDK language.
 
-Preparation resolves online. To fall back to the cache after a transport failure or HTTP 503, pass `offline`, with the same shape and unit as the TypeScript SDK:
+Every channel job confirms its release online. For an exact version, allow verified cache fallback after a transport failure or HTTP 503 with its pinned version ID.
 
 ```py
-client.prepare(workspace_id, bundle_id, channel="stable", offline={"max_age_ms": 15 * 60 * 1000})
 client.prepare(workspace_id, bundle_id, version_id=pinned, offline={"pinned_version_id": pinned})
 ```
 
@@ -56,7 +55,7 @@ The Python client uses snake_case equivalents of the shared TypeScript client me
 | --- | --- |
 | Workspaces and bundles | `list_workspaces`, `get_principal`, `list_bundles`, `create_bundle`, `create_bundle_setup` |
 | Versions | `create_version`, `get_version`, `get_payload` |
-| Channels and releases | `list_channels`, `resolve_channel`, `list_releases`, `create_release` |
+| Channels and releases | `list_channels`, `resolve_channel`, `inspect_source`, `list_releases`, `create_release` |
 | Connections and receipts | `create_connection`, `list_connections`, `create_connection_credential`, `revoke_connection`, `revoke_connection_credential`, `report_delivery_receipt`, `list_delivery_receipts`, `list_connection_observations` |
 | Retained operations | `get_operation`, `close_operation` |
 | Other | `health`, `prepare` |

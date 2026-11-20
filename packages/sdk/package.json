@@ -53,6 +53,7 @@
     }
   },
   "bin": {
+    "acclimate": "./dist/learning/learn-cli.js",
     "acclimate-eval": "./dist/evaluation/bin.js",
     "acclimate-learning": "./dist/learning/serve-cli.js"
   },
@@ -60,6 +61,9 @@
     "dist",
     "README.md"
   ],
+  "dependencies": {
+    "tsx": "^4.20.0"
+  },
   "engines": {
     "node": ">=22.22.0"
   },

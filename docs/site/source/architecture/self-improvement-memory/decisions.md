@@ -21,6 +21,10 @@ These supersede every earlier decision that conflicts with them.
 | D9 | **Budget is not a constraint.** k=5 always. |
 | D10 | **Experiment.** The product loop is the experiment loop. Conditions come from bundle setup: Full SIM continues the source bundle; Harness Transfer is a new bundle with H_S and empty memory; Cold Start is a new bundle with H0. Paper-sized first: 10 source runs, a cross-model transition, primary contrast Full SIM − Harness Transfer on the held-out split. Optional descriptive control: today's flat history on the pre-change release build. |
 
+### 2026-11-20 amendment to D10
+
+Freeze `gpt-6.2-astra` at high effort for all optimizer stages and conditions. The task models remain `gpt-6-luna` for the source and `gpt-6.2-sol` for the target, both at low effort. S0c stops progression to S1 for a maintainer decision if either target round-zero W1 held-out score reaches 85%. The stronger optimizer’s held-out edge shrank to 0.05 points on the higher-scoring seed in Appendix E.4.2. This gate applies to the study pilot.
+
 ### How the names follow from the decisions
 
 | Decision | Consequence in the design |
@@ -244,3 +248,7 @@ A review of the rewritten folder (paper fidelity, consistency, and code accuracy
 | 27 | Context-too-large pause reason | Applied. It overwrites an operator pause reason. |
 
 No point was rejected outright. The parts not applied as first proposed are point 3's code list (one code added), point 21's two kept deviations, and the options chosen for points 8, 10, 14 and 16.
+
+## Amendment 2026-11-20: one-token setup
+
+The maintainer approved a one-file, one-command SDK flow (`defineLoop` and `acclimate learn`). The service therefore lets the app principal enroll itself when it holds `promote`, and adds `GET /v1/workspaces/{workspaceId}/principal` so a client can learn its own principal ID. The earlier rule that the enroller must differ from the app principal came from connected learning's separate evaluator trust domain, which D7 removed. Improvement memory stays unreadable to the app principal. Teams that keep enrollment separate can still enroll with an administrator and pass `ACCLIMATE_APP_PRINCIPAL`.

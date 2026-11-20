@@ -2,7 +2,25 @@ import numpy as np
 import pytest
 from scipy import stats
 
+import analyze
 from analyze import curve_score, holm, paired, signed_rank
+from run import read, write
+
+
+def test_pilot_records_target_ceiling_before_stopping(tmp_path, monkeypatch):
+    target = tmp_path / "S0c" / "b1" / "B"
+    target.mkdir(parents=True)
+    (target / "ledger.json").touch()
+    write(tmp_path / "key.json", {"1": {"B": "cold"}})
+    monkeypatch.setattr(analyze, "evidence", lambda _: ({"roundZero": {"score": .85}}, [], []))
+
+    with pytest.raises(ValueError, match="Stop before S1 for a maintainer decision"):
+        analyze.pilot_report(tmp_path, 272_000)
+
+    report = read(tmp_path / "S0c" / "pilot.json")
+    assert report["targetRoundZero"] == {"cold": .85}
+    assert report["targetCeilingReached"]
+    assert not report["passed"]
 
 
 def test_paired_statistics_match_known_ten_block_effect():

@@ -452,6 +452,12 @@ async fn context_overflow_pauses_immediately() {
 async fn memory_and_evolve_cases_require_the_right_principal() {
     let f = Fixture::new().await;
     assert_eq!(
+        f.req("GET", "/evolve-cases", "app", None, Value::Null)
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
         f.req("GET", "/memory", "reader", None, Value::Null).await.0,
         404
     );
@@ -485,6 +491,20 @@ async fn memory_and_evolve_cases_require_the_right_principal() {
         f.ok("POST", "/evolve-cases", &editor, None, request).await["added"],
         1
     );
+    for caller in [&viewer, "app"] {
+        let listed = f
+            .ok("GET", "/evolve-cases", caller, None, Value::Null)
+            .await;
+        assert_eq!(listed["items"][0]["caseId"], "human-case");
+    }
+    for caller in ["reader", "other"] {
+        assert_eq!(
+            f.req("GET", "/evolve-cases", caller, None, Value::Null)
+                .await
+                .0,
+            403
+        );
+    }
     assert_eq!(
         f.req("GET", "/work", &editor, None, Value::Null).await.0,
         403

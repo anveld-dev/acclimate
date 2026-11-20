@@ -58,6 +58,7 @@ export function codexTurn(
   signal: AbortSignal,
   privateRoots: string[],
   outputSchema?: unknown,
+  reasoningEffort: 'low' | 'high' = 'low',
 ) {
   const code = Object.fromEntries(
     Object.entries(process.env).filter(
@@ -80,7 +81,7 @@ export function codexTurn(
     const result = await codex
       .startThread({
         model,
-        modelReasoningEffort: 'low',
+        modelReasoningEffort: reasoningEffort,
         workingDirectory: cwd,
         skipGitRepoCheck: true,
         sandboxMode: 'read-only',

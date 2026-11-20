@@ -19,6 +19,12 @@ The private configuration for `doctor` and `pull` supplies the HTTPS service URL
 
 ## Learning evaluator
 
+The TypeScript SDK installs the `acclimate` executable. Run `npx acclimate learn [--config acclimate.loop.ts] [--once]` to enroll a bundle, sync evolve cases, serve evaluations and stream round progress. The config default-exports a `defineLoop` result. TypeScript and JavaScript modules are supported, and case paths resolve relative to that module.
+
+Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN`. The command discovers the machine principal and checks for **Evaluate** and **Promote**. Set `ACCLIMATE_APP_PRINCIPAL` to supply the principal explicitly, and `ACCLIMATE_ENROLL_TOKEN` to use a separate credential with **Promote**. Use `--evaluator-config /private/evaluator.json` to reuse an existing evaluator connection and journal. Otherwise the journal lives under `.acclimate/` next to the loop config. `--once` exits after one completed round. [Learning loop quick start](/docs/guides/learning-loop)
+
+### Manual evaluator
+
 `acclimate-learning` is included in the TypeScript SDK. Its module default-exports `execution` (`model-free` or `live`), `execute`, `grade` and `heldOut`.
 
 | Command | Result |

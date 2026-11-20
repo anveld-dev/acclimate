@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 
 export const sourceModel = 'gpt-6-luna';
+export const optimizerModel = 'gpt-6.2-astra';
+export const optimizerReasoningEffort = 'high';
 export const targetModel = 'gpt-6.2-sol';
 export const setting = (policyModel: string) => ({
   domain: 'cli-support',

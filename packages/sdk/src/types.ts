@@ -75,6 +75,11 @@ export interface ListOptions {
   limit?: number;
   cursor?: string;
 }
+export interface WorkspacePrincipal {
+  principalId: string;
+  kind: 'machine' | 'user';
+  rights: string[];
+}
 export interface Workspace {
   id: string;
   name: string;
@@ -328,6 +333,11 @@ export interface LearningEvolveCase<I = import('./evaluation/types.js').Json, E 
   caseId: string;
   input: I;
   expected: E;
+}
+export interface LearningEvolveCasesPage {
+  items: (LearningEvolveCase & { addedRevision: number })[];
+  next: string | null;
+  evolveRevision: number;
 }
 export interface LearningEvolveCasesRequest {
   cases?: LearningEvolveCase[];

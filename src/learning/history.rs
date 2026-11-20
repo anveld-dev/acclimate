@@ -6,17 +6,20 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 pub(super) async fn render_history(tx: &mut Tx<'_>, round: &Pins) -> Result<Value, sqlx::Error> {
-    let rows: Vec<(Uuid, Value)> = sqlx::query_as(
-        "SELECT id,jsonb_build_object('round',number,'state',state,'decision',decision,'reason',reason,
+    let rows: Vec<(Uuid, Option<String>, Value)> = sqlx::query_as(
+        "SELECT id,optimizer_reasoning_effort,jsonb_build_object('round',number,'state',state,'decision',decision,'reason',reason,
             'parentVersionId',parent_version_id,'adoptedVersionId',adopted_version_id,
             'setting',setting,'evolveRevision',evolve_revision,'optimizerModel',optimizer_model,
-            'selection',selection - ARRAY['versionId','digest','model','inputDigest'])
+            'selection',selection - ARRAY['versionId','digest','model','inputDigest','reasoningEffort'])
          FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) AND number<$3 AND setting=$4
          ORDER BY number")
         .bind(&round.project_id).bind(round.bundle_id).bind(round.number).bind(&round.setting)
         .fetch_all(&mut **tx).await?;
     let mut history = Vec::with_capacity(rows.len());
-    for (id, mut entry) in rows {
+    for (id, effort, mut entry) in rows {
+        if let Some(effort) = effort {
+            entry["optimizerReasoningEffort"] = json!(effort);
+        }
         entry["incumbent"] = json!(
             evolve_evaluation(tx, id, "incumbent", None)
                 .await?

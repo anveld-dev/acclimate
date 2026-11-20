@@ -18,8 +18,10 @@ sys.path.insert(0, str(ROOT))
 from scripts.productization.qualify import Harness
 
 NODE = ["node", "--import", "tsx", str(HERE / "main.ts")]
+CEILING_THRESHOLD = 0.85
 DEFAULTS = {
-    "ACCLIMATE_MODEL": "gpt-6-luna",
+    "ACCLIMATE_MODEL": "gpt-6.2-astra",
+    "ACCLIMATE_MODEL_REASONING_EFFORT": "high",
     "ACCLIMATE_MODEL_TIMEOUT_SECONDS": "600",
     "ACCLIMATE_MODEL_MAX_COMPLETION_TOKENS": "32768",
     "ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS": "600",
@@ -136,6 +138,8 @@ def run_attempt(options, config, destination, source_dir=None, cancelled=None):
                 findings = harness.pg(
                     "psql", harness.env["DATABASE_URL"], "-XqAt", "-v", "ON_ERROR_STOP=1",
                     "-v", f"project={summary['project']}", "-v", f"bundle={summary['bundleId']}",
+                    "-v", f"optimizer_model={config['serviceSettings']['ACCLIMATE_MODEL']}",
+                    "-v", f"optimizer_effort={config['serviceSettings']['ACCLIMATE_MODEL_REASONING_EFFORT']}",
                     "-v", f"first={summary['firstNumber']}", "-v", f"last={summary['lastNumber']}",
                     "-f", str(HERE / "checks.sql"),
                 ).stdout

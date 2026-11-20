@@ -1,69 +1,95 @@
 ---
-title: Enroll a learning loop
-description: Set up an evaluator, add evolve cases, and monitor recurring evaluations of a released bundle.
+title: Run a learning loop
+description: Enroll a released bundle, sync cases and serve evaluations with one TypeScript config.
 ---
 
-An enrolled bundle runs rounds that propose, evaluate and release improvements to its harness. Configure the service optimizer before enrolling. [Optimizer settings](/docs/reference/configuration)
+## Five-minute setup
 
-## Enroll a bundle
-
-1. Release a version on the channel that the loop will evaluate. For app delivery, resolve that channel directly or use a connection bound to it.
-2. In **Members**, issue a machine token with **Evaluate** for the app. Save its principal ID and keep its token in the app's private configuration. A static grant with `evaluate` or `write` also works.
-3. Prepare a private evaluator module with `execute`, `grade` and a `heldOut` array. Run the command below to get its commitment locally.
-4. As a workspace administrator, open the bundle's **Learning** tab. Select the published channel, enter the app principal ID, and fill in the domain, benchmark and policy model for your workload. Paste the digest and enter the case count from the command output. Select **Enroll loop**.
+Release your bundle on a channel and configure the service optimizer. Issue a workspace machine token with **Promote** and **Evaluate** and set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` in your shell. Use Node.js 22.22 or later and authenticate the Codex runtime separately. [Optimizer settings](/docs/reference/configuration) · [Machine-token access](/docs/operate/evaluator-access)
 
 ```bash
-acclimate-learning held-out --app ./learning-app.mjs
+npm install @acclimate/sdk @acclimate/codex-plugin @openai/codex-sdk
 ```
 
-The evaluator owns the held-out inputs and expected results. Enrollment sends only their digest and count. The app principal serves evaluations and reports outcomes.
-
-## Add evolve cases
-
-Add the first case to start rounds. In **Learning → Evolve cases**, enter a setup case ID, JSON input and JSON expected result, and submit it with your signed-in workspace session. Editors and administrators can add or retire cases when console edits are enabled. The table shows the case IDs reported by an incumbent evaluation and the revision that evaluation used.
-
-For batch setup, use the TypeScript SDK with a client authenticated as the app principal or a workspace member with write access.
+In an ESM project (`"type": "module"`), save this as `acclimate.loop.ts`. Ask the agent for a final JSON object with an `action` field.
 
 ```ts
-import { addEvolveCases } from '@acclimate/sdk/learning';
+import { defineLoop, exact } from '@acclimate/sdk/learning';
+import { codex } from '@acclimate/codex-plugin';
 
-await addEvolveCases(client, { workspaceId, bundleId }, {
-  cases: [{
-    caseId: 'refund-07',
-    input: { ticket: 'Refund requested for a duplicate charge' },
-    expected: { action: 'refund' },
-  }],
+export default defineLoop({
+  bundle: 'support-agent',
+  channel: 'stable',
+  agent: codex({ model: 'gpt-6.2-sol', parse: text => JSON.parse(text) as { action: string } }),
+  cases: './cases.jsonl',
+  grade: exact('action'),
 });
 ```
 
-Use 1–128 letters, digits or `._:-` characters for each ID. The `outcome:` prefix is reserved. Input and expected result may each be any JSON value up to 64 KiB. Repeating the same live case is a no-op. To change a case, choose **Retire an evolve case** or pass its ID in `retire`, then add a case with a new ID. A request can add up to 100 cases and retire up to 100 IDs. Each change creates a revision. A round pins its revision at the start.
+Save your labeled examples next to the config. Each line in `cases.jsonl` is one case.
 
-## Report an outcome
-
-When a job has a known expected result, persist a UUID with the job and report the outcome with the verified version it ran. Use the same UUID and body when retrying.
-
-```ts
-import { createLearningOutcomeReporter } from '@acclimate/sdk/learning';
-
-const report = createLearningOutcomeReporter({ client, workspaceId, bundleId });
-const receipt = await report(verifiedVersion, {
-  outcomeId: job.outcomeId,
-  input: job.input,
-  expected: { action: 'escalate' },
-});
+```jsonl
+{"caseId":"case-0","input":"Duplicate charge. Return an action as JSON.","expected":"refund"}
+{"caseId":"case-2","input":"Account locked. Return an action as JSON.","expected":"escalate"}
 ```
 
-The service checks the version ID and digest against the bundle and creates the evolve case `outcome:<outcomeId>`. That case is available from the next round. Skip reporting when the expected result is unknown.
+```bash
+npx acclimate learn
+```
 
-## Serve evaluations
+The CLI looks up your token's principal, finds the bundle by name, enrolls it, commits the held-out digest and syncs the evolve split. It serves evaluations from the same process and prints incumbent, candidate, selection and held-out results. Keep the `.acclimate/` journal across restarts and out of version control. Use `--once` to exit after a completed round or `--config` to select a different config file.
 
-Run the TypeScript evaluator with a private config containing the service URL, workspace, enrolled principal token and a durable journal directory. Add `--live` when the module declares `execution: 'live'`.
+## Cases and settings
+
+- Supply a relative `.jsonl` or `.json` path, or an inline array of `{ caseId?, input, expected }`. Input and expected each accept up to 64 KiB of JSON. Use unique IDs up to 128 characters from letters, digits and `._:-`. Omitted IDs hash the canonical JSON input.
+- The default split is 0.5. A case is held out when the SHA-256 hash of its case ID falls below that fraction of the hash space. This implements the paper's disjoint random halves with stable assignment and approximately equal counts. Both splits need at least one case. [Paper, Appendix B.2](https://arxiv.org/html/2611.18856v1#A2.SS2)
+- Held-out cases stay in the evaluator's dataset. Acclimate receives their digest, count and scores. The adapter sends each case input to its configured model as the prompt, including held-out inputs. Use a local `execute` when prompts must stay on the machine.
+- Rerunning syncs setup cases. It adds missing cases, retires removed setup cases and preserves outcomes. Give edited cases new IDs, as case data is immutable and retired IDs cannot be reused. Keep case IDs and the split fixed to preserve the boundary between evolve and held-out data. Pause the loop and let the active round finish before changing the held-out commitment.
+- The setting defaults to the bundle name for `domain`, the cases filename for `benchmark` (or `inline`), and the adapter's model for `policyModel`. A model change starts the paper's continual setting transition on the next round, while the active round keeps its pinned setting. Let the active round finish with the previous evaluator before switching the running model. Override any field with `setting`. For custom execution, set `setting.policyModel` to the model you run. [Continual harness optimization](https://arxiv.org/abs/2611.18856)
+
+## Run and grade your agent
+
+Use `claude({ model, effort?, parse? })` from `@acclimate/claude-plugin` with `@anthropic-ai/claude-agent-sdk` installed, or `codex({ model, effort?, parse? })` with `@openai/codex-sdk`. Both prepare the verified bundle for a fresh native session per rollout and retain the latest 16 KiB of transcript. The output is the final text, or the result of your `parse` callback.
+
+For your own runtime, replace `agent` with `execute({ version, input, signal, ... })` and return `{ output, trace? }`. Adapters default to live execution. Custom callbacks default to model-free, so set `live: true` if yours calls a model. `caseConcurrency` defaults to 1.
+
+- `exact()` compares the full output with `expected` using deep equality. `exact('action')` compares the top-level `action` field with `expected`.
+- `tests(command, { cwd })` copies the optional fixture directory to a temporary workspace, writes the JSON output as `output.json` and runs your shell command there. Exit code 0 scores 1. Use a trusted command and fixture.
+- A custom `grade(output, expected)` may return a score from 0 to 1 or `{ score, passed }`. A numeric score of 1 passes. Inline cases infer the expected type, and `execute` or the adapter's parser infers the output type.
+
+## Report a production outcome
+
+Create a job by bundle name to pin its verified release. Use the same evaluator principal as the loop to report outcomes.
+
+```ts
+import { createAcclimate } from '@acclimate/sdk';
+import { prepare } from '@acclimate/codex-plugin';
+
+const acclimate = createAcclimate();
+const input = 'Duplicate charge. Return an action as JSON.';
+const job = await acclimate.job('support-agent', { channel: 'stable', input });
+const staged = await job.prepare(prepare);
+try {
+  // Run your agent in staged.cwd. Report the known answer when available.
+  await job.expect('refund');
+} finally {
+  await staged.cleanup();
+}
+```
+
+`expect` binds the first valid outcome to the job's version and generated `outcomeId`. To report after a restart, persist the ID, `job.version.version.id` and input, and recreate the job with `{ versionId, outcomeId, input }`. Use `expect(expected, { input })` to supply input at reporting time. The receipt identifies the new evolve case as `outcome:<outcomeId>`.
+
+## Separate enrollment or use the console
+
+Set `ACCLIMATE_APP_PRINCIPAL` to use an explicit app principal instead of looking it up. Set `ACCLIMATE_ENROLL_TOKEN` to use a separate enrollment credential with **Promote**. The evaluator token still needs **Evaluate** and its principal must match the app principal. Use `--evaluator-config /private/evaluator.json` to read the service URL, workspace, evaluator credential and journal location from an existing private evaluator config.
+
+For manual setup, default-export `{ execution, execute, grade, heldOut }` from your evaluator module. Print its local digest with `acclimate-learning held-out --app ./learning-app.mjs`. In the bundle's **Learning** tab, select the released channel, supply the app principal and setting, then paste the digest and case count. Add evolve cases in **Learning → Evolve cases** or with `addEvolveCases` from the SDK.
 
 ```bash
 acclimate-learning --config /private/evaluator.json --bundle "$ACCLIMATE_BUNDLE" --app ./learning-app.mjs
 ```
 
-The evaluator serves one work item at a time. It runs each case five times, grades each rollout and reports whole cases as they finish. On restart it resumes the journaled attempt and skips cases already reported. See the [evaluator CLI reference](/docs/reference/evaluator-cli) for the module and configuration.
+Add `--live` for a manual live evaluator. The runner grades five rollouts per case and resumes journaled work after a restart. [Evaluator CLI reference](/docs/reference/evaluator-cli#learning-evaluator)
 
 ## Follow a round
 

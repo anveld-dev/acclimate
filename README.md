@@ -1,6 +1,6 @@
 # Acclimate
 
-**Acclimate versions and delivers your agent’s instructions, skills and memory files.** Its learning loop proposes, evaluates and releases improvements to enrolled bundles.
+**Acclimate versions and delivers your agent’s instructions, skills and memory files.** Its learning loop, based on [Self-Improvement Memory (arXiv 2611.18856)](https://arxiv.org/abs/2611.18856), proposes, evaluates and releases improvements to enrolled bundles.
 
 Your application still runs the agent and grades its work. Acclimate versions the instructions, skills and memory files it uses, delivers the released version to the next job, and lets you point a channel back at an earlier version.
 
@@ -18,6 +18,37 @@ source .local/stack/env.sh
 ```
 
 The first start pulls the released images, or builds from source in 10 to 20 minutes if none are published for your checkout's version. It prints the console URL and a login. It also gives that login a ready `local-demo` workspace with an example bundle on the `stable` channel, and writes the CLI settings to `env.sh`. Run `npm run local:trust` to trust its HTTPS certificate in your browser. [Run Acclimate locally](apps/docs/content/docs/get-started/run-locally.mdx)
+
+## Run a learning loop
+
+Install `@acclimate/sdk`, `@acclimate/codex-plugin` and `@openai/codex-sdk` in your TypeScript project. Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` using a machine token with **Promote** and **Evaluate**. With a bundle released and the service optimizer configured, save this as `acclimate.loop.ts`.
+
+```ts
+import { defineLoop, exact } from '@acclimate/sdk/learning';
+import { codex } from '@acclimate/codex-plugin';
+
+export default defineLoop({
+  bundle: 'support-agent',
+  channel: 'stable',
+  agent: codex({ model: 'gpt-6.2-sol', parse: text => JSON.parse(text) as { action: string } }),
+  cases: './cases.jsonl',
+  grade: exact('action'),
+});
+```
+
+Add labeled tickets to `cases.jsonl`, then run `npx acclimate learn`. [Learning loop quick start](apps/docs/content/docs/guides/learning-loop.mdx)
+
+Report production jobs that have a known answer, and they become evolve cases for the next round:
+
+```ts
+import { createAcclimate } from '@acclimate/sdk';
+
+const job = await createAcclimate().job('support-agent', { channel: 'stable', input: ticket });
+// Run the agent with the files from job.prepare(...), then:
+await job.expect({ action: 'refund' });
+```
+
+To move to a new model, change `codex({ model })` and run `npx acclimate learn` again. The loop records the new setting and keeps its improvement memory, so later rounds build on what earlier models learned.
 
 ## Deliver content to jobs
 

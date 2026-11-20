@@ -491,6 +491,20 @@ class PreparedDelivery(AbstractContextManager["PreparedDelivery"]):
         self.cleanup()
 
 
+def _stage_delivery(version: VerifiedVersion, destination: str | Path | None) -> PreparedDelivery:
+    if destination is None:
+        directory = tempfile.mkdtemp(prefix="acclimate-job-", dir=os.path.realpath(tempfile.gettempdir()))
+    else:
+        directory = os.path.abspath(destination)
+    try:
+        staged = prepare_files(version, directory)
+    except BaseException:
+        if destination is None:
+            _remove_job_directory(directory)
+        raise
+    return PreparedDelivery(version, staged, directory, destination is None)
+
+
 def _remove_job_directory(directory: str) -> None:
     try:
         os.rmdir(directory)

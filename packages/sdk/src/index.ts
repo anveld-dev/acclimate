@@ -23,3 +23,5 @@ export type { ExecutionResult, GradeResult } from './compare.js';
 
 export { compatibilityIssues, assertCompatible } from './compatibility.js';
 export type { CompatibilityIssue } from './compatibility.js';
+export { createAcclimate } from './jobs.js';
+export type { AcclimateJob, AcclimateOptions, JobOptions } from './jobs.js';

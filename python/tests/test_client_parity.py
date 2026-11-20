@@ -105,6 +105,11 @@ class ParityTest(unittest.TestCase):
                 self.assertEqual(call(), {"items": [], "nextCursor": None})
                 self.assertEqual((self.last()["method"], self.last()["path"]), ("GET", path))
 
+    def test_get_principal_uses_the_workspace_route(self):
+        Recorder.response = {"principalId": "machine:app", "kind": "machine", "rights": ["evaluate"]}
+        self.assertEqual(self.client.get_principal("w"), Recorder.response)
+        self.assertEqual((self.last()["method"], self.last()["path"]), ("GET", "/v1/workspaces/w/principal"))
+
     def test_bundle_setup_posts_one_keyed_write(self):
         request = {
             "name": "Support",
@@ -154,6 +159,9 @@ class ParityTest(unittest.TestCase):
              "GET", "/rounds/r?evaluation=x+y", None, None),
             (lambda: c.get_learning_memory("w", "b"), "GET", "/memory", None, None),
             (lambda: c.get_learning_memory("w", "b", revision=0), "GET", "/memory?revision=0", None, None),
+            (lambda: c.list_learning_evolve_cases("w", "b"), "GET", "/evolve-cases", None, None),
+            (lambda: c.list_learning_evolve_cases("w", "b", after="a:b", limit=100),
+             "GET", "/evolve-cases?after=a%3Ab&limit=100", None, None),
             (lambda: c.add_learning_evolve_cases("w", "b", evolve), "POST", "/evolve-cases", None, evolve),
             (lambda: c.report_learning_outcome("w", "b", outcome), "POST", "/outcomes", "outcome-id", outcome),
             (lambda: c.get_learning_work("w", "b"), "GET", "/work", None, None),
@@ -168,6 +176,14 @@ class ParityTest(unittest.TestCase):
                 actual = self.last()
                 self.assertEqual((actual["method"], actual["path"], actual["key"], actual["body"]),
                                  (method, prefix + suffix, key, body))
+
+    def test_live_evolve_cases_preserve_page_and_entry_revisions(self):
+        Recorder.response = {
+            "items": [{"caseId": "a", "input": {"text": "hello"}, "expected": 1, "addedRevision": 2}],
+            "next": "a",
+            "evolveRevision": 3,
+        }
+        self.assertEqual(self.client.list_learning_evolve_cases("w", "b"), Recorder.response)
 
     def test_learning_inspection_preserves_candidate_and_memory_records(self):
         candidate: types.LearningCandidate = {
@@ -286,7 +302,7 @@ class OpenApiContractTest(unittest.TestCase):
         for name in ("LearningLoopRequest", "LearningLoop", "LearningEvaluationReport",
                      "LearningEvaluationReportRequest", "LearningWork", "LearningOutcomeRequest",
                      "LearningRound", "LearningCandidate", "LearningDiagnosis", "LearningSelection",
-                     "LearningMemory"):
+                     "LearningMemory", "LearningEvolveCasesPage", "LearningLiveEvolveCase"):
             with self.subTest(schema=name):
                 schema, typed_dict = schemas[name], getattr(types, name)
                 self.assertEqual(set(schema["properties"]), set(typed_dict.__annotations__))

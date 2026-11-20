@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from scipy import optimize, stats
 
-from run import ledger_hashes, read, write
+from run import CEILING_THRESHOLD, ledger_hashes, read, write
 
 
 def interval(values):
@@ -239,11 +239,16 @@ def harm_stop(root):
 
 def pilot_report(root, optimizer_context):
     policy = defaultdict(list)
+    target_codes = read(root / "key.json").get("1", {}) if (root / "key.json").exists() else {}
+    target_round_zero = {}
     rounds, replies, run_replies = [], [], []
     for directory in sorted((root / "S0c").glob("b*/?")):
         if not (directory / "ledger.json").exists():
             continue
-        _, records, rollouts = evidence(directory)
+        summary, records, rollouts = evidence(directory)
+        condition = target_codes.get(directory.name)
+        if directory.parent.name == "b1" and condition in ("full", "cold") and summary["roundZero"]:
+            target_round_zero[condition] = summary["roundZero"]["score"]
         rounds.extend(records)
         for row in rollouts:
             policy[row["model"]].append(row)
@@ -263,20 +268,28 @@ def pilot_report(root, optimizer_context):
         token_growth.extend(b - a for a, b in zip(peaks, peaks[1:]))
     measured = [r["inputTokens"] for r in replies if r["inputTokens"] is not None]
     projected = max(measured) + 17 * max(0, *token_growth) if measured and token_growth else None
+    ceiling_reached = any(score >= CEILING_THRESHOLD for score in target_round_zero.values())
     report = {
+        "targetRoundZero": target_round_zero,
+        "targetCeilingThreshold": CEILING_THRESHOLD,
+        "targetCeilingReached": ceiling_reached,
         "policy": {model: {"turns": sum(r["turns"] for r in rows),
                            "meanInputTokens": means([r["inputTokens"] for r in rows if r["inputTokens"] is not None]),
                            "meanOutputTokens": means([r["outputTokens"] for r in rows if r["outputTokens"] is not None]),
                            "meanMilliseconds": means([r["milliseconds"] for r in rows]),
                            "meanTraceBytes": means([len((r["trace"] or "").encode()) for r in rows])}
                    for model, rows in policy.items()},
+        "optimizer": {"replies": len(replies), "meanInputTokens": means(measured),
+                      "meanOutputTokens": means([r["outputTokens"] for r in replies if r["outputTokens"] is not None]),
+                      "meanMilliseconds": means([r["milliseconds"] for r in replies])},
         "formatRejectionRate": rejection, "optimizerContext": optimizer_context,
         "optimizerInputGrowthTokens": token_growth, "projectedRound20InputTokens": projected,
         "keepRate": sum(r["decision"] == "kept" for r in rounds) / max(1, len(rounds)),
         "passed": len([r for r in source if r["state"] == "completed"]) == 6
         and len([r for r in rounds if r["state"] == "completed"]) == 9 and rejection <= .20
         and any(r["decision"] == "adopted" for r in source)
-        and projected is not None and projected <= optimizer_context / 2,
+        and projected is not None and projected <= optimizer_context / 2
+        and set(target_round_zero) == {"full", "cold"} and not ceiling_reached,
     }
     anchors = list(report["policy"].values())
     if anchors and measured:
@@ -285,8 +298,11 @@ def pilot_report(root, optimizer_context):
             "outputTokens": int(624_000 * max(r["meanOutputTokens"] or 0 for r in anchors)
                                 + 2800 * np.mean([r["outputTokens"] or 0 for r in replies])),
             "serialPolicyHours": 624_000 * max(r["meanMilliseconds"] for r in anchors) / 3_600_000,
+            "serialOptimizerHours": 2800 * report["optimizer"]["meanMilliseconds"] / 3_600_000,
         }
     write(root / "S0c" / "pilot.json", report)
+    if ceiling_reached:
+        raise ValueError("K3: target round-0 held-out score reached 85%. Stop before S1 for a maintainer decision.")
     if not report["passed"]:
         raise ValueError("K3: pilot gate failed. See S0c/pilot.json.")
 

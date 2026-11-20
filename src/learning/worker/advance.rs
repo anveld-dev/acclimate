@@ -261,10 +261,18 @@ async fn selecting(tx: &mut Tx<'_>, row: &LoopRow, round: &Pins) -> Result<(), s
     let Some((output, input_digest)) = selector_result(tx, row, round, Kind::Select).await? else {
         return Ok(());
     };
+    let record_effort = |mut selection: Value| {
+        if let Some(effort) = &round.optimizer_reasoning_effort {
+            selection["reasoningEffort"] = json!(effort);
+        }
+        selection
+    };
     match stored(&output)? {
         Selection::Keep { reason } => {
-            let selection = json!({"decision":"keep","sample":null,"versionId":null,"digest":null,
-                "reason":reason,"model":round.optimizer_model,"inputDigest":input_digest});
+            let selection = record_effort(
+                json!({"decision":"keep","sample":null,"versionId":null,"digest":null,
+                "reason":reason,"model":round.optimizer_model,"inputDigest":input_digest}),
+            );
             keep(tx, row, round, "selector-kept", Some(selection)).await
         }
         Selection::Adopt { sample, reason } => {
@@ -272,8 +280,10 @@ async fn selecting(tx: &mut Tx<'_>, row: &LoopRow, round: &Pins) -> Result<(), s
                 "SELECT v.id,v.digest FROM learning_candidates c JOIN versions v ON v.id=c.version_id
                  WHERE (c.round_id,c.sample)=($1,$2) AND c.status='evaluated'")
                 .bind(round.id).bind(sample).fetch_one(&mut **tx).await?;
-            let selection = json!({"decision":"adopt","sample":sample,"versionId":version_id,"digest":digest,
-                "reason":reason,"model":round.optimizer_model,"inputDigest":input_digest});
+            let selection = record_effort(
+                json!({"decision":"adopt","sample":sample,"versionId":version_id,"digest":digest,
+                "reason":reason,"model":round.optimizer_model,"inputDigest":input_digest}),
+            );
             adopt(tx, row, round, selection).await
         }
     }

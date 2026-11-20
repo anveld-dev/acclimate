@@ -77,6 +77,16 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
             "workspace_invitations",
         ]
     );
+    let effort_column: (String, String) = sqlx::query_as(
+        "SELECT data_type,is_nullable FROM information_schema.columns
+         WHERE table_schema=current_schema() AND table_name='learning_rounds'
+         AND column_name='optimizer_reasoning_effort'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(effort_column, ("text".into(), "YES".into()));
+
     let views: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM information_schema.views WHERE table_schema=current_schema()",
     )

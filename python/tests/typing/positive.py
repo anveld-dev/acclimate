@@ -2,7 +2,12 @@
 from typing import Literal, assert_type
 
 from acclimate import (
+    Acclimate,
     AcclimateClient,
+    Job,
+    LearningEvolveCasesPage,
+    LearningJson,
+    LearningOutcomeReceipt,
     ApiError,
     TransportError,
     DeliveryError,
@@ -41,6 +46,7 @@ from acclimate import (
     BundleSetupRequest,
     Connection,
 )
+from acclimate.learning import LoopDefinition, define_loop, exact
 from acclimate.evaluation import (
     Case, EvaluationApp, ExecuteInput, ExecutionResult, GradeInput, GradeResult,
     define_evaluation, preflight_evaluation,
@@ -113,3 +119,23 @@ def helpers(run: ExecuteInput[dict[str, str]]) -> ExecutionResult[dict[str, str]
     assert_type(run.instructions, str)
     assert_type(run.skill_files, tuple[BundleFile, ...])
     return ExecutionResult({"queue": run.instructions}, usage={"inputTokens": 3, "costUsd": 0.01})
+
+
+def learning(client: AcclimateClient, input: LearningJson) -> None:
+    assert_type(client.list_learning_evolve_cases("w", "b"), LearningEvolveCasesPage)
+    job = Acclimate.from_env().job("support", channel="stable", input=input)
+    assert_type(job, Job)
+    assert_type(job.version, VerifiedVersion)
+    assert_type(job.outcome_id, str)
+    assert_type(job.prepare(), PreparedDelivery)
+    assert_type(job.expect({"action": "refund"}), LearningOutcomeReceipt)
+
+
+def learning_execute(version: VerifiedVersion, input: LearningJson, rollout: int) -> LearningJson:
+    return input
+
+
+assert_type(define_loop(
+    bundle="support", channel="stable", execute=learning_execute, policy_model="model",
+    cases="cases.jsonl", grade=exact(),
+), LoopDefinition)

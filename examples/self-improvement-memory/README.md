@@ -36,7 +36,7 @@ sim_pg=/opt/homebrew/opt/postgresql@16/bin
 
 The freeze is zero-call. Review and archive it before S0c. It records fixture and code hashes, the executable hash, tool versions, model settings, and both split commitments. Build the service from the commit being registered and use the same service binary for every condition. Use `--service-bin` on both scripts if the binary is outside `target/debug`.
 
-**Paid S0c.** Authenticate the Codex CLI with an account that can run `gpt-6-luna` and `gpt-6.2-sol` at low effort. The optimizer proxy uses the same Codex account for `gpt-6-luna`. The private Acclimate operator, app and model-proxy tokens are generated locally. Select the provider and credentials before freezing and verify the available context and concurrency for that account. Keep the provider fixed through the study. Use a dedicated Codex configuration without external MCP servers or user instructions. Each model turn uses an ephemeral Codex session, and optimizer turns have shell tools disabled.
+**Paid S0c.** Authenticate the Codex CLI with an account that can run `gpt-6-luna` and `gpt-6.2-sol` at low effort. The optimizer proxy uses the same Codex account for the fixed `gpt-6.2-astra` optimizer at high effort. The private Acclimate operator, app and model-proxy tokens are generated locally. Select the provider and credentials before freezing and verify the available context and concurrency for that account. Keep the provider fixed through the study. Use a dedicated Codex configuration without external MCP servers or user instructions. Each model turn uses an ephemeral Codex session, and optimizer turns have shell tools disabled.
 
 ```sh
 "$sim_python" examples/self-improvement-memory/run.py --stage S0c --live \
@@ -44,7 +44,7 @@ The freeze is zero-call. Review and archive it before S0c. It records fixture an
   --freeze "$sim_out/pilot-freeze.json"
 ```
 
-S0c runs two three-round source legs and three one-round targets from the first source. Review `S0c/pilot.json` for rates, token growth and the cost projection. A failed K3 gate requires a new pilot after resolving the finding. Archive the prior pilot directory and use a fresh evidence root for the repeat. When K3 passes, generate the final preregistration and record it with the frozen protocol before S1. This step makes zero model calls.
+S0c runs two three-round source legs and three one-round targets from the first source. Review `S0c/pilot.json` for rates, token growth and the cost projection. If either target round-zero W1 held-out score (H0 or H_S under `gpt-6.2-sol`) reaches 85%, stop before S1 for a maintainer decision. For other K3 failures, resolve the finding and run a new pilot. Archive the prior pilot directory and use a fresh evidence root for the repeat. When K3 passes, generate the final preregistration and record it with the frozen protocol before S1. This step makes zero model calls.
 
 ```sh
 "$sim_python" examples/self-improvement-memory/freeze.py \

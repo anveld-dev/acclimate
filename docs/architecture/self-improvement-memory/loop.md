@@ -140,6 +140,8 @@ The `incumbent_score` check fails a round that reaches `proposing` without a sco
 
 **A stopped round can hold a decision.** A stop during `scoring_held_out` comes after the adopt or keep has committed, and an adopted version is already on the channel and in memory. The round keeps its `decision`, `reason`, `adopted_sample`, `adopted_version_id` and `selection`, and becomes `stopped` with no held-out score. Only a round stopped before its decision gets `reason = 'stopped'`.
 
+Migration `0020_optimizer_effort.sql` adds `learning_rounds.optimizer_reasoning_effort`, a nullable text column that pins `ACCLIMATE_MODEL_REASONING_EFFORT` at round start. It also indexes evolve case IDs in paging order.
+
 ### Migration `0019_learning_optimizer.sql`: the parts this file owns
 
 [optimizer.md](optimizer.md) holds the one `CREATE TABLE learning_candidates`. This file owns the candidate status machine, and the checks that enforce it are in that definition:
@@ -164,7 +166,7 @@ W3 is also enforced by two partial unique indexes, each defined in its owner's m
 | Fact | Column |
 | --- | --- |
 | Which round is active | `learning_rounds.state` in an active state. At most one per loop (`learning_rounds_one_active`). |
-| What the round started from | `parent_version_id`, `channel`, `channel_revision`, `evolve_revision`, `memory_revision`, `setting`, `held_out`, `optimizer_model` |
+| What the round started from | `parent_version_id`, `channel`, `channel_revision`, `evolve_revision`, `memory_revision`, `setting`, `held_out`, `optimizer_model`, `optimizer_reasoning_effort` |
 | What the optimizer saw | `history_digest`, `memory_digest`, and each call's `input_digest` |
 | Which sample is in progress | The candidate row with status `generating` or `evaluating`. At most one exists. |
 | Each sample's diagnosis, scan, screen verdict and evolve score | `learning_candidates` |
@@ -232,7 +234,7 @@ UPDATE learning_optimizer_calls
 
 - `advance_round` creates each call row, with its `input_digest`, under the bundle row lock.
 - `run_call` claims with `UPDATE … SET status='running', attempts=attempts+1, claimed_at=now() WHERE … AND status='queued' AND attempts<3`.
-- It renders its input from the round's pinned values and checks the digest against the row's `input_digest`. It checks that the configured model equals `learning_rounds.optimizer_model`, then calls the model with no transaction open. The one format retry happens inside the call. For `propose`, the output is validated, reconstructed and scanned inside the call, before anything is committed.
+- It renders its input from the round's pinned values and checks the digest against the row's `input_digest`. It checks that the configured model and reasoning effort equal the round’s optimizer pins, then calls the model with no transaction open. The one format retry happens inside the call. For `propose`, the output is validated, reconstructed and scanned inside the call, before anything is committed.
 - It commits only its own row: `succeeded` with `output`, or `failed` with an `error_code` and a free-text `error`, guarded by `status='running' AND attempts=$n`. It takes no loop lock and does not recheck round state. A guard miss discards the result. This is how a stop or a sweep invalidates a late reply.
 - The codes the loop reads are `provider-failed`, `format-rejected`, `optimizer-context-too-large` and `scanner-rejected` (`propose` only). Input drift, a model mismatch and the attempt limit are `provider-failed`. `cancelled` marks a call that `cancel_children` closed, and the loop never reads it.
 - It never writes candidate or round rows.
@@ -259,9 +261,9 @@ SELECT c.version_id, c.revision, v.digest
  WHERE (c.project_id, c.bundle_id, c.name) = ($1, $2, $channel) FOR SHARE;
 
 INSERT INTO learning_rounds (id, project_id, bundle_id, number, state, parent_version_id, channel,
-    channel_revision, evolve_revision, memory_revision, setting, held_out, optimizer_model)
+    channel_revision, evolve_revision, memory_revision, setting, held_out, optimizer_model, optimizer_reasoning_effort)
 VALUES ($id, $1, $2, $next_round, 'scoring_incumbent', $head_version, $channel,
-    $head_revision, $evolve_revision, $memory_revision, $setting, $held_out, $model);
+    $head_revision, $evolve_revision, $memory_revision, $setting, $held_out, $model, $reasoning_effort);
 
 INSERT INTO learning_evaluations (id, round_id, role, sample, split, version_id, digest,
     evolve_revision, status, deadline_at)
@@ -391,7 +393,7 @@ VALUES ($h, $round, 'retained', NULL, 'held_out', $adopted_version, $adopted_dig
         now() + make_interval(secs => $queue_seconds));
 ```
 
-`selection` is `{decision: "adopt", sample, versionId, digest, reason, model, inputDigest}`. `inputDigest` is the `select` call's `input_digest`, `model` is `optimizer_model` and `reason` is the selector's.
+`selection` is `{decision: "adopt", sample, versionId, digest, reason, model, inputDigest}`. `inputDigest` is the `select` call's `input_digest`, `model` is `optimizer_model` and `reason` is the selector's. When set, `reasoningEffort` records the pinned effort.
 
 `adopt` checks the revision itself before it calls `promote_in_tx`, so a moved channel is a normal outcome and not an error to map. The advisory lock is reentrant in the same session, so `promote_in_tx` taking it again is harmless. Any other `promote_in_tx` error (for example, a bundle target that changed during the round) rolls back the whole step as a tick error. Nothing is released and nothing is written to memory.
 

@@ -15,7 +15,7 @@ import { acquireFileLock } from '../evaluation/journal.js';
 import { redactDiagnosticText } from '../evaluation/runner.js';
 import { withVersionHelpers } from '../evaluation/definition.js';
 import { retryInfrastructureOnce } from '../evaluation/trials.js';
-import type { ExecuteInput, GradeInput, Json } from '../evaluation/types.js';
+import type { EvaluatorConfig, ExecuteInput, GradeInput, Json } from '../evaluation/types.js';
 import { createEvaluatorClient } from '../internal/evaluation-transport.js';
 import type {
   LearningEvaluationReportRequest,
@@ -24,6 +24,7 @@ import type {
   LearningWorkItem,
   VerifiedVersion,
 } from '../types.js';
+import { TranscriptError } from './trace.js';
 import { heldOutDigest } from './held-out.js';
 import { caseIdPattern, uuidPattern } from './outcomes.js';
 
@@ -38,8 +39,10 @@ export interface LearningLoopApp<I = Json, E = Json, O = Json> {
   ): { score: number; passed: boolean } | Promise<{ score: number; passed: boolean }>;
 }
 
-export interface LearningLoopOptions<I = Json, E = Json, O = Json> {
-  configPath: string;
+export type LearningLoopOptions<I = Json, E = Json, O = Json> = (
+  | { configPath: string; config?: never }
+  | { config: EvaluatorConfig; configPath?: never }
+) & {
   bundleId: string;
   app: LearningLoopApp<I, E, O>;
   allowLive?: boolean;
@@ -47,8 +50,9 @@ export interface LearningLoopOptions<I = Json, E = Json, O = Json> {
   caseConcurrency?: number;
   pollIntervalMs?: number;
   signal?: AbortSignal;
+  shouldServeRound?: (roundId: string) => boolean;
   onDiagnostic?: (diagnostic: SafeDiagnostic) => void;
-}
+};
 
 export function captureLearningApp<I, E, O>(app: LearningLoopApp<I, E, O>) {
   try {
@@ -162,7 +166,10 @@ async function runRollout<I, E, O>(
     if (heldOut) return failure(true, '');
     const message = error instanceof Error ? error.message : '';
     const text = redactDiagnosticText(`${stage}.failed ${message.split(token).join('[redacted]')}`);
-    return failure(false, utf8Prefix(Buffer.from(text), 4 * 1024));
+    return {
+      ...failure(false, utf8Prefix(Buffer.from(text), 4 * 1024)),
+      trace: error instanceof TranscriptError ? traceExcerpt(error.trace, token) : null,
+    };
   }
 }
 
@@ -189,7 +196,7 @@ export async function serveLearningLoop<I, E, O>(
     pollIntervalMs > 2_147_483_647
   )
     throw new EvaluationError('usage.invalid_flag');
-  const config = await readEvaluatorConfig(options.configPath);
+  const config = options.config ?? await readEvaluatorConfig(options.configPath);
   const { workspaceId, journalRoot, evaluatorToken } = config;
   const client = createEvaluatorClient(config);
   const diagnostic = (error: unknown) => {
@@ -425,6 +432,7 @@ export async function serveLearningLoop<I, E, O>(
       if (work.status !== 'stopped') {
         for (const item of work.items) {
           if (signal.aborted) break;
+          if (options.shouldServeRound && !options.shouldServeRound(item.roundId)) continue;
           try {
             await serve(item);
           } catch (error) {

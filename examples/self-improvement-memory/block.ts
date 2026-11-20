@@ -20,7 +20,14 @@ import {
   type OptimizerData,
   type OptimizerReply,
 } from './adapter.js';
-import { conditions, IntegrityError, setting, type Condition } from './conditions.js';
+import {
+  conditions,
+  IntegrityError,
+  optimizerModel,
+  optimizerReasoningEffort,
+  setting,
+  type Condition,
+} from './conditions.js';
 import { codexTurn, evaluator } from './evaluator.js';
 import { heldOut, meanScore, type Case } from './heldout.js';
 
@@ -90,7 +97,11 @@ const save = (file: string, data: unknown) =>
 export async function runCondition(options: RunOptions): Promise<RunSummary> {
   const { project, directory, scratch, evolve, held, source } = options;
   const plan = conditions[options.condition];
-  const optimizerModel = options.serviceSettings.ACCLIMATE_MODEL;
+  check(
+    options.serviceSettings.ACCLIMATE_MODEL === optimizerModel &&
+      options.serviceSettings.ACCLIMATE_MODEL_REASONING_EFFORT === optimizerReasoningEffort,
+    'optimizer settings differ from frozen protocol',
+  );
   const modelToken = crypto.randomUUID();
   const operatorToken = crypto.randomUUID();
   const appToken = crypto.randomUUID();
@@ -134,6 +145,7 @@ export async function runCondition(options: RunOptions): Promise<RunSummary> {
   const proposalRecords = new Map<string, { diagnosis: LearningDiagnosis; returnedAt: string }>();
   const adapter = optimizerAdapter({
     model: optimizerModel,
+    reasoningEffort: optimizerReasoningEffort,
     token: modelToken,
     ledger: adapterLog,
     guard,
@@ -188,6 +200,8 @@ export async function runCondition(options: RunOptions): Promise<RunSummary> {
             author,
             AbortSignal.any([signal, AbortSignal.timeout(540_000)]),
             [process.cwd(), options.evidenceRoot],
+            undefined,
+            optimizerReasoningEffort,
           )(prompt);
     },
     recordReply(round, sample, content, returnedAt) {
@@ -505,7 +519,9 @@ export async function runCondition(options: RunOptions): Promise<RunSummary> {
           round.evolveRevision === evolveRevision &&
             round.heldOut.digest === heldCommit.digest &&
             round.setting.policyModel === plan.model &&
-            round.optimizerModel === optimizerModel,
+            round.optimizerModel === optimizerModel &&
+            'optimizerReasoningEffort' in round &&
+            round.optimizerReasoningEffort === optimizerReasoningEffort,
           'round provenance differs from frozen protocol',
         );
         if (round.reason === 'optimizer-context-too-large')

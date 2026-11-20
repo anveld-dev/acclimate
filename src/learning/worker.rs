@@ -1,6 +1,6 @@
 use super::{
     ACTIVE_ROUND_STATES, LoopRow, Tx, active_round, evolve, find_loop,
-    optimizer::{self, CallKey, Kind, Pins},
+    optimizer::{self, CallKey, Kind, OptimizerModel, Pins},
     positive_setting,
 };
 mod advance;
@@ -141,12 +141,7 @@ async fn advance_round(s: &AppState, project: &str, bundle: Uuid) -> Result<(), 
     };
     let mut tx = s.db.begin().await?;
     if let Some(row) = find_loop(&mut tx, project, bundle, true).await? {
-        advance_locked(
-            &mut tx,
-            &row,
-            s.optimizer.as_ref().map(|model| model.model()),
-        )
-        .await?;
+        advance_locked(&mut tx, &row, s.optimizer.as_deref()).await?;
     }
     tx.commit().await
 }
@@ -154,14 +149,14 @@ async fn advance_round(s: &AppState, project: &str, bundle: Uuid) -> Result<(), 
 async fn advance_locked(
     tx: &mut Tx<'_>,
     row: &LoopRow,
-    model: Option<&str>,
+    optimizer: Option<&dyn OptimizerModel>,
 ) -> Result<(), sqlx::Error> {
     let Some(round) = active_round(tx, &row.project_id, row.bundle_id).await? else {
         if row.status == "running"
             && evolve::live_count(tx, &row.project_id, row.bundle_id, row.evolve_revision).await?
                 > 0
         {
-            start_round(tx, row, model).await?;
+            start_round(tx, row, optimizer).await?;
         }
         return Ok(());
     };
@@ -227,15 +222,16 @@ async fn channel_head(
 async fn start_round(
     tx: &mut Tx<'_>,
     row: &LoopRow,
-    model: Option<&str>,
+    optimizer: Option<&dyn OptimizerModel>,
 ) -> Result<(), sqlx::Error> {
     let (version, revision, digest) = channel_head(tx, row, &row.channel).await?;
     let round = Uuid::new_v4();
     sqlx::query("INSERT INTO learning_rounds(id,project_id,bundle_id,number,state,parent_version_id,channel,
-                   channel_revision,evolve_revision,memory_revision,setting,held_out,optimizer_model)
-                 VALUES($1,$2,$3,$4,'scoring_incumbent',$5,$6,$7,$8,$9,$10,$11,$12)")
+                   channel_revision,evolve_revision,memory_revision,setting,held_out,optimizer_model,optimizer_reasoning_effort)
+                 VALUES($1,$2,$3,$4,'scoring_incumbent',$5,$6,$7,$8,$9,$10,$11,$12,$13)")
         .bind(round).bind(&row.project_id).bind(row.bundle_id).bind(row.next_round).bind(version).bind(&row.channel)
-        .bind(revision).bind(row.evolve_revision).bind(row.memory_revision).bind(&row.setting).bind(&row.held_out).bind(model)
+        .bind(revision).bind(row.evolve_revision).bind(row.memory_revision).bind(&row.setting).bind(&row.held_out).bind(optimizer.map(OptimizerModel::model))
+        .bind(optimizer.and_then(OptimizerModel::reasoning_effort))
         .execute(&mut **tx).await?;
     queue(
         tx,

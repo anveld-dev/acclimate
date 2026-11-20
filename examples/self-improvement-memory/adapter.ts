@@ -57,6 +57,7 @@ export interface OptimizerReply {
 }
 export function optimizerAdapter(options: {
   model: string;
+  reasoningEffort: string;
   token: string;
   ledger: string;
   guard: ReturnType<typeof requestGuard>;
@@ -83,11 +84,17 @@ export function optimizerAdapter(options: {
           return;
         }
       }
-      const { model, messages } = JSON.parse(raw) as {
+      const {
+        model,
+        reasoning_effort: reasoningEffort,
+        messages,
+      } = JSON.parse(raw) as {
         model: string;
+        reasoning_effort?: string;
         messages: { role: string; content: string }[];
       };
-      if (model !== options.model) throw new IntegrityError('K1: unexpected optimizer model');
+      if (model !== options.model || reasoningEffort !== options.reasoningEffort)
+        throw new IntegrityError('K1: unexpected optimizer model or reasoning effort');
       const instruction = messages[0].content;
       const kind = instruction.startsWith('You improve a harness:')
         ? 'propose'
@@ -118,6 +125,7 @@ export function optimizerAdapter(options: {
         sample,
         kind,
         model,
+        reasoningEffort,
         retry: Object.hasOwn(data, 'parserError'),
         digest: sha256(raw),
         bytes: Buffer.byteLength(raw),

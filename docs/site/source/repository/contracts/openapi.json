@@ -3055,10 +3055,7 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "items",
-                    "next"
-                  ],
+                  "required": ["items", "next"],
                   "properties": {
                     "items": {
                       "type": "array",
@@ -3306,6 +3303,102 @@
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/evolve-cases": {
+      "get": {
+        "operationId": "listLearningEvolveCases",
+        "description": "List live evolve cases in ascending ASCII case ID order. Requires the loop app principal or a signed-in member with read access. Each page reflects its returned evolve revision.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "description": "Exclusive case ID cursor. Omit or leave empty for the first page.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{0,128}$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningEvolveCasesPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid learning request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "operationId": "addLearningEvolveCases",
         "description": "Add or retire evolve cases. Requires the loop app principal or a signed-in workspace member with write access.",
@@ -3843,6 +3936,55 @@
           },
           "413": {
             "description": "The request exceeds 2 MiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/principal": {
+      "get": {
+        "operationId": "getPrincipal",
+        "description": "The caller's own identity in this workspace and the rights it holds there. A CLI holding an opaque machine token uses it to enroll a learning loop as its own app principal.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Principal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No access to the workspace.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4545,11 +4687,7 @@
       "LearningSetting": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "domain",
-          "benchmark",
-          "policyModel"
-        ],
+        "required": ["domain", "benchmark", "policyModel"],
         "properties": {
           "domain": {
             "type": "string",
@@ -4574,10 +4712,7 @@
       "LearningHeldOut": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "digest",
-          "cases"
-        ],
+        "required": ["digest", "cases"],
         "properties": {
           "digest": {
             "type": "string",
@@ -4593,12 +4728,7 @@
       "LearningLoopRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "channel",
-          "appPrincipalId",
-          "setting",
-          "heldOut"
-        ],
+        "required": ["channel", "appPrincipalId", "setting", "heldOut"],
         "properties": {
           "channel": {
             "type": "string",
@@ -4659,21 +4789,11 @@
             ]
           },
           "decision": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "kept",
-              "adopted",
-              null
-            ]
+            "type": ["string", "null"],
+            "enum": ["kept", "adopted", null]
           },
           "reason": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "enum": [
               "selector-kept",
               "no-candidates",
@@ -4814,23 +4934,11 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "running",
-              "paused",
-              "stopped"
-            ]
+            "enum": ["running", "paused", "stopped"]
           },
           "pauseReason": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "operator",
-              "failed-rounds",
-              "optimizer-context-too-large",
-              null
-            ]
+            "type": ["string", "null"],
+            "enum": ["operator", "failed-rounds", "optimizer-context-too-large", null]
           },
           "evolveRevision": {
             "type": "integer",
@@ -4908,6 +5016,7 @@
           "setting",
           "heldOut",
           "optimizerModel",
+          "optimizerReasoningEffort",
           "selection",
           "candidates",
           "evaluations"
@@ -4936,21 +5045,11 @@
             ]
           },
           "decision": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "kept",
-              "adopted",
-              null
-            ]
+            "type": ["string", "null"],
+            "enum": ["kept", "adopted", null]
           },
           "reason": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "enum": [
               "selector-kept",
               "no-candidates",
@@ -5085,6 +5184,10 @@
           "heldOut": {
             "$ref": "#/components/schemas/LearningHeldOut"
           },
+          "optimizerReasoningEffort": {
+            "type": ["string", "null"],
+            "enum": ["low", "medium", "high", "xhigh", "max", "ultra", null]
+          },
           "optimizerModel": {
             "anyOf": [
               {
@@ -5122,19 +5225,14 @@
       "LearningDiagnosis": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "problem",
-          "predicted"
-        ],
+        "required": ["problem", "predicted"],
         "properties": {
           "problem": {
             "oneOf": [
               {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "id"
-                ],
+                "required": ["id"],
                 "properties": {
                   "id": {
                     "type": "string"
@@ -5144,9 +5242,7 @@
               {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "new"
-                ],
+                "required": ["new"],
                 "properties": {
                   "new": {
                     "type": "string"
@@ -5167,22 +5263,11 @@
       "LearningSelection": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "decision",
-          "sample",
-          "versionId",
-          "digest",
-          "reason",
-          "model",
-          "inputDigest"
-        ],
+        "required": ["decision", "sample", "versionId", "digest", "reason", "model", "inputDigest"],
         "properties": {
           "decision": {
             "type": "string",
-            "enum": [
-              "adopt",
-              "keep"
-            ]
+            "enum": ["adopt", "keep"]
           },
           "sample": {
             "anyOf": [
@@ -5223,6 +5308,10 @@
           },
           "model": {
             "type": "string"
+          },
+          "reasoningEffort": {
+            "type": ["string", "null"],
+            "enum": ["low", "medium", "high", "xhigh", "max", "ultra", null]
           },
           "inputDigest": {
             "type": "string",
@@ -5265,17 +5354,8 @@
             ]
           },
           "dropReason": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "provider-failed",
-              "format-rejected",
-              "scanner-rejected",
-              "no-change",
-              null
-            ]
+            "type": ["string", "null"],
+            "enum": ["provider-failed", "format-rejected", "scanner-rejected", "no-change", null]
           },
           "rationale": {
             "anyOf": [
@@ -5312,10 +5392,7 @@
               {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "clean",
-                  "findings"
-                ],
+                "required": ["clean", "findings"],
                 "properties": {
                   "clean": {
                     "type": "boolean"
@@ -5325,29 +5402,17 @@
                     "items": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": [
-                        "rule",
-                        "field",
-                        "path"
-                      ],
+                      "required": ["rule", "field", "path"],
                       "properties": {
                         "rule": {
                           "type": "string"
                         },
                         "field": {
                           "type": "string",
-                          "enum": [
-                            "rationale",
-                            "rootCause",
-                            "path",
-                            "text"
-                          ]
+                          "enum": ["rationale", "rootCause", "path", "text"]
                         },
                         "path": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
+                          "type": ["string", "null"],
                           "description": "Affected bundle path, when available and safe to return."
                         }
                       }
@@ -5365,17 +5430,11 @@
               {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "verdict",
-                  "reason"
-                ],
+                "required": ["verdict", "reason"],
                 "properties": {
                   "verdict": {
                     "type": "string",
-                    "enum": [
-                      "evaluate",
-                      "skip"
-                    ]
+                    "enum": ["evaluate", "skip"]
                   },
                   "reason": {
                     "type": "string"
@@ -5426,21 +5485,14 @@
       "LearningChanges": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "edits",
-          "files"
-        ],
+        "required": ["edits", "files"],
         "properties": {
           "edits": {
             "type": "array",
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "path",
-                "oldText",
-                "newText"
-              ],
+              "required": ["path", "oldText", "newText"],
               "properties": {
                 "path": {
                   "type": "string"
@@ -5461,17 +5513,11 @@
                 {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "op",
-                    "path",
-                    "text"
-                  ],
+                  "required": ["op", "path", "text"],
                   "properties": {
                     "op": {
                       "type": "string",
-                      "enum": [
-                        "write"
-                      ]
+                      "enum": ["write"]
                     },
                     "path": {
                       "type": "string"
@@ -5484,16 +5530,11 @@
                 {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "op",
-                    "path"
-                  ],
+                  "required": ["op", "path"],
                   "properties": {
                     "op": {
                       "type": "string",
-                      "enum": [
-                        "delete"
-                      ]
+                      "enum": ["delete"]
                     },
                     "path": {
                       "type": "string"
@@ -5531,11 +5572,7 @@
           "improvementMemory": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "schemaVersion",
-              "memoryRevision",
-              "problems"
-            ],
+            "required": ["schemaVersion", "memoryRevision", "problems"],
             "properties": {
               "schemaVersion": {
                 "const": 1
@@ -5549,12 +5586,7 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "id",
-                    "rootCause",
-                    "openedRound",
-                    "attempts"
-                  ],
+                  "required": ["id", "rootCause", "openedRound", "attempts"],
                   "properties": {
                     "id": {
                       "type": "string"
@@ -5582,14 +5614,7 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "revision",
-                "problemId",
-                "roundId",
-                "round",
-                "versionId",
-                "provenance"
-              ],
+              "required": ["revision", "problemId", "roundId", "round", "versionId", "provenance"],
               "properties": {
                 "revision": {
                   "type": "integer",
@@ -5644,6 +5669,10 @@
                       "type": "string",
                       "pattern": "^sha256:[0-9a-f]{64}$"
                     },
+                    "optimizerReasoningEffort": {
+                      "type": ["string", "null"],
+                      "enum": ["low", "medium", "high", "xhigh", "max", "ultra", null]
+                    },
                     "optimizerModel": {
                       "type": "string"
                     }
@@ -5691,10 +5720,7 @@
           "what": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "rationale",
-              "changes"
-            ],
+            "required": ["rationale", "changes"],
             "properties": {
               "rationale": {
                 "type": "string"
@@ -5742,12 +5768,7 @@
           "provenance": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "domain",
-              "benchmark",
-              "policyModel",
-              "round"
-            ],
+            "required": ["domain", "benchmark", "policyModel", "round"],
             "properties": {
               "domain": {
                 "type": "string"
@@ -5798,11 +5819,7 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "incumbent",
-              "candidate",
-              "retained"
-            ]
+            "enum": ["incumbent", "candidate", "retained"]
           },
           "sample": {
             "anyOf": [
@@ -5818,10 +5835,7 @@
           },
           "split": {
             "type": "string",
-            "enum": [
-              "evolve",
-              "heldOut"
-            ]
+            "enum": ["evolve", "heldOut"]
           },
           "versionId": {
             "type": "string",
@@ -5858,21 +5872,14 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "queued",
-              "running"
-            ]
+            "enum": ["queued", "running"]
           }
         }
       },
       "LearningWork": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "bundleId",
-          "status",
-          "items"
-        ],
+        "required": ["bundleId", "status", "items"],
         "properties": {
           "bundleId": {
             "type": "string",
@@ -5880,11 +5887,7 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "running",
-              "paused",
-              "stopped"
-            ]
+            "enum": ["running", "paused", "stopped"]
           },
           "items": {
             "type": "array",
@@ -5927,11 +5930,7 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "incumbent",
-              "candidate",
-              "retained"
-            ]
+            "enum": ["incumbent", "candidate", "retained"]
           },
           "sample": {
             "anyOf": [
@@ -5947,10 +5946,7 @@
           },
           "split": {
             "type": "string",
-            "enum": [
-              "evolve",
-              "heldOut"
-            ]
+            "enum": ["evolve", "heldOut"]
           },
           "versionId": {
             "type": "string",
@@ -5977,13 +5973,7 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "queued",
-              "running",
-              "scored",
-              "failed",
-              "cancelled"
-            ]
+            "enum": ["queued", "running", "scored", "failed", "cancelled"]
           },
           "score": {
             "anyOf": [
@@ -6035,11 +6025,7 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "caseId",
-                "passedRollouts",
-                "meanScore"
-              ],
+              "required": ["caseId", "passedRollouts", "meanScore"],
               "properties": {
                 "caseId": {
                   "type": "string",
@@ -6075,14 +6061,10 @@
               "not": {
                 "anyOf": [
                   {
-                    "required": [
-                      "caseSummaries"
-                    ]
+                    "required": ["caseSummaries"]
                   },
                   {
-                    "required": [
-                      "report"
-                    ]
+                    "required": ["report"]
                   }
                 ]
               }
@@ -6093,10 +6075,7 @@
       "LearningHeldOutRollout": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "score",
-          "passed"
-        ],
+        "required": ["score", "passed"],
         "properties": {
           "score": {
             "type": "number",
@@ -6111,10 +6090,7 @@
       "LearningRollout": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "score",
-          "passed"
-        ],
+        "required": ["score", "passed"],
         "properties": {
           "score": {
             "type": "number",
@@ -6149,19 +6125,14 @@
       "LearningEvaluationReport": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "cases"
-        ],
+        "required": ["cases"],
         "properties": {
           "cases": {
             "type": "array",
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "caseId",
-                "rollouts"
-              ],
+              "required": ["caseId", "rollouts"],
               "properties": {
                 "caseId": {
                   "type": "string",
@@ -6183,9 +6154,7 @@
       "LearningEvaluationStart": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "attemptId"
-        ],
+        "required": ["attemptId"],
         "properties": {
           "attemptId": {
             "type": "string",
@@ -6198,9 +6167,7 @@
       "LearningEvaluationReportRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "attemptId"
-        ],
+        "required": ["attemptId"],
         "properties": {
           "attemptId": {
             "type": "string",
@@ -6213,10 +6180,7 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "caseId",
-                "rollouts"
-              ],
+              "required": ["caseId", "rollouts"],
               "properties": {
                 "caseId": {
                   "type": "string",
@@ -6242,14 +6206,10 @@
         },
         "oneOf": [
           {
-            "required": [
-              "cases"
-            ]
+            "required": ["cases"]
           },
           {
-            "required": [
-              "error"
-            ]
+            "required": ["error"]
           }
         ],
         "description": "Report whole cases or a terminal evaluation error. For a heldOut assignment, every rollout must satisfy LearningHeldOutRollout."
@@ -6257,12 +6217,7 @@
       "LearningEvaluationAssignment": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "evaluation",
-          "cases",
-          "heldOut",
-          "reportedCaseIds"
-        ],
+        "required": ["evaluation", "cases", "heldOut", "reportedCaseIds"],
         "properties": {
           "evaluation": {
             "$ref": "#/components/schemas/LearningEvaluation"
@@ -6302,11 +6257,7 @@
       "LearningEvolveCase": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "caseId",
-          "input",
-          "expected"
-        ],
+        "required": ["caseId", "input", "expected"],
         "properties": {
           "caseId": {
             "type": "string",
@@ -6317,6 +6268,50 @@
           },
           "expected": {
             "description": "Any JSON value encoded in at most 64 KiB."
+          }
+        }
+      },
+      "LearningLiveEvolveCase": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["caseId", "input", "expected", "addedRevision"],
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "input": {
+            "description": "Any JSON value encoded in at most 64 KiB."
+          },
+          "expected": {
+            "description": "Any JSON value encoded in at most 64 KiB."
+          },
+          "addedRevision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "LearningEvolveCasesPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items", "next", "evolveRevision"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LearningLiveEvolveCase"
+            },
+            "maxItems": 100
+          },
+          "next": {
+            "description": "Exclusive cursor for the next page, or null on the last page.",
+            "type": ["string", "null"],
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "evolveRevision": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -6343,9 +6338,7 @@
         },
         "anyOf": [
           {
-            "required": [
-              "cases"
-            ],
+            "required": ["cases"],
             "properties": {
               "cases": {
                 "minItems": 1
@@ -6353,9 +6346,7 @@
             }
           },
           {
-            "required": [
-              "retire"
-            ],
+            "required": ["retire"],
             "properties": {
               "retire": {
                 "minItems": 1
@@ -6367,12 +6358,7 @@
       "LearningEvolveCasesReceipt": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "evolveRevision",
-          "added",
-          "retired",
-          "liveCases"
-        ],
+        "required": ["evolveRevision", "added", "retired", "liveCases"],
         "properties": {
           "evolveRevision": {
             "type": "integer",
@@ -6395,13 +6381,7 @@
       "LearningOutcomeRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "outcomeId",
-          "versionId",
-          "digest",
-          "input",
-          "expected"
-        ],
+        "required": ["outcomeId", "versionId", "digest", "input", "expected"],
         "properties": {
           "outcomeId": {
             "type": "string",
@@ -6426,11 +6406,7 @@
       "LearningOutcomeReceipt": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "outcomeId",
-          "caseId",
-          "evolveRevision"
-        ],
+        "required": ["outcomeId", "caseId", "evolveRevision"],
         "properties": {
           "outcomeId": {
             "type": "string",
@@ -6443,6 +6419,28 @@
           "evolveRevision": {
             "type": "integer",
             "minimum": 0
+          }
+        }
+      },
+      "Principal": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["principalId", "kind", "rights"],
+        "properties": {
+          "principalId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["machine", "user"]
+          },
+          "rights": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["read", "evaluate", "write", "promote"]
+            }
           }
         }
       }

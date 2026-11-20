@@ -55,6 +55,7 @@ Names come from the [README](README.md#names). The round state machine is in the
 | `ACCLIMATE_MODEL_ENDPOINT` | An OpenAI-compatible chat completions URL. Unset means no optimizer: every `propose` call fails as `provider-failed`, so each round fails with `optimizer-unavailable`. |
 | `ACCLIMATE_MODEL_TOKEN` | Required when the endpoint is set |
 | `ACCLIMATE_MODEL` | Required when the endpoint is set. Validated as today (`src/lib.rs:284-293`). It is stored as `learning_rounds.optimizer_model` at `start_round`. |
+| `ACCLIMATE_MODEL_REASONING_EFFORT` | Optional. One of `low`, `medium`, `high`, `xhigh`, `max` or `ultra`. Pinned as `learning_rounds.optimizer_reasoning_effort` and sent as `reasoning_effort` when set. |
 | `ACCLIMATE_MODEL_TIMEOUT_SECONDS` | Integer 30-3600, default 600. The whole-request timeout of one HTTP request. |
 | `ACCLIMATE_MODEL_MAX_COMPLETION_TOKENS` | Integer 1024-262144, default 32768. Sent as `max_completion_tokens` on every call. |
 
@@ -133,7 +134,7 @@ Parser error messages are written by the service. They name the rule, path and i
    RETURNING attempts, input_digest;
    ```
 
-2. **Render.** Read the round's pinned values and render the data, a read-only step. If `digest(data)` differs from the row's `input_digest`, the call fails with `provider-failed` and `error = 'input drift'`, which guards against a rendering bug, since every input is pinned. If `model.model()` differs from `learning_rounds.optimizer_model`, it fails with `provider-failed` and `error = 'model changed'`, so one round never mixes models.
+2. **Render.** Read the round's pinned values and render the data, a read-only step. If `digest(data)` differs from the row's `input_digest`, the call fails with `provider-failed` and `error = 'input drift'`, which guards against a rendering bug, since every input is pinned. If `model.model()` differs from `learning_rounds.optimizer_model`, it fails with `provider-failed` and `error = 'model changed'`. A changed reasoning-effort pin likewise fails with `error = 'reasoning effort changed'`.
 3. **Call.** `call_with_retry`, with no transaction open. For `propose`, the validator parses the envelope and runs `reconstruct` and `validate_diagnosis`. The scanner then runs on the validated output, before anything is committed ([Scanner](#scanner)).
 4. **Commit.** One statement on the call row, guarded by the claim. It takes no loop lock and does not recheck the round's state.
 

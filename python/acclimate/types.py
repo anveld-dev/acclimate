@@ -122,6 +122,12 @@ class Page(TypedDict, Generic[_T]):
     nextCursor: str | None
 
 
+class WorkspacePrincipal(TypedDict):
+    principalId: str
+    kind: Literal["machine", "user"]
+    rights: list[str]
+
+
 class Workspace(TypedDict):
     id: str
     name: str
@@ -316,6 +322,9 @@ class LearningDiagnosis(TypedDict):
     predicted: list[str]
 
 
+_ReasoningEffort = Literal["low", "medium", "high", "xhigh", "max", "ultra"]
+
+
 class LearningSelection(TypedDict):
     decision: Literal["adopt", "keep"]
     sample: int | None
@@ -323,6 +332,7 @@ class LearningSelection(TypedDict):
     digest: str | None
     reason: str
     model: str
+    reasoningEffort: NotRequired[_ReasoningEffort | None]
     inputDigest: str
 
 
@@ -457,6 +467,7 @@ class LearningRound(LearningRoundSummary):
     setting: LearningSetting
     heldOut: LearningHeldOut
     optimizerModel: str | None
+    optimizerReasoningEffort: _ReasoningEffort | None
     selection: LearningSelection | None
     candidates: list[LearningCandidate]
     evaluations: list[LearningEvaluation]
@@ -470,6 +481,16 @@ class LearningEvolveCase(TypedDict):
     caseId: str
     input: LearningJson
     expected: LearningJson
+
+
+class LearningLiveEvolveCase(LearningEvolveCase):
+    addedRevision: int
+
+
+class LearningEvolveCasesPage(TypedDict):
+    items: list[LearningLiveEvolveCase]
+    next: str | None
+    evolveRevision: int
 
 
 class LearningEvaluationAssignment(TypedDict):
@@ -572,6 +593,7 @@ class LearningRoundPage(TypedDict):
 
 
 __all__ = [
+    "LearningJson",
     "LearningSetting",
     "LearningHeldOut",
     "LearningLoopRequest",
@@ -591,6 +613,8 @@ __all__ = [
     "LearningEvaluationStart",
     "LearningEvolveCase",
     "LearningEvaluationAssignment",
+    "LearningLiveEvolveCase",
+    "LearningEvolveCasesPage",
     "LearningEvolveCasesRequest",
     "LearningEvolveCasesReceipt",
     "LearningOutcomeRequest",
@@ -617,6 +641,7 @@ __all__ = [
     "ConnectionObservationPage",
     "Page",
     "Workspace",
+    "WorkspacePrincipal",
     "Channel",
     "BundleOrigin",
     "BundleSetupRequest",

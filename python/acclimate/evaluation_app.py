@@ -14,7 +14,7 @@ from ._application_imports import SetupError, load_adapter
 
 HELP = """Load cases, execute and grade from application.py.
 Use --app PACKAGE.MODULE or --app FILE.py to select a different module.
-Commands: try, describe, coverage, doctor, pull.
+Commands: try, describe, coverage, doctor, pull, learn.
 Run python -m acclimate COMMAND --help for flags."""
 
 
@@ -264,6 +264,10 @@ def main(argv=None, directory=None):
     from ._evaluation_shared import EvaluationError, EXIT_CODES
 
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "learn":
+        from ._learning_cli import learn_main
+
+        return learn_main(args[1:], directory)
     wants_help = "--help" in args or "-h" in args
     if not wants_help and ("--version" in args or "-V" in args):
         print(sdk_version())

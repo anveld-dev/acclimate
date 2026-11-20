@@ -20,6 +20,63 @@ struct CasesRequest {
 }
 
 #[derive(Deserialize)]
+pub(super) struct CasePage {
+    after: Option<String>,
+    limit: Option<i64>,
+}
+
+#[derive(Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+struct LiveCase {
+    case_id: String,
+    input: Value,
+    expected: Value,
+    added_revision: i64,
+}
+
+pub(super) async fn list_cases(
+    State(s): State<AppState>,
+    Path((project, bundle)): Path<(String, String)>,
+    h: HeaderMap,
+    query: Result<Query<CasePage>, axum::extract::rejection::QueryRejection>,
+) -> Reply {
+    let Query(query) = query.map_err(|_| invalid("Invalid evolve case page"))?;
+    let limit = query.limit.unwrap_or(20);
+    let after = query.after.as_deref().filter(|id| !id.is_empty());
+    if !(1..=100).contains(&limit) || after.is_some_and(|id| !valid_case_id(id)) {
+        return Err(invalid("Invalid evolve case page"));
+    }
+    let bundle = path(&bundle)?;
+    let (mut tx, actor) = actor_tx(&s, &h, &project, "read").await?;
+    let row = require_loop(&mut tx, &project, bundle, false).await?;
+    if actor.user_id.is_none() {
+        require_app(&actor, &row.app_principal)?;
+    }
+    let revision = row.evolve_revision;
+    let mut items: Vec<LiveCase> = sqlx::query_as(
+        "SELECT case_id,input,expected,added_revision FROM learning_evolve_cases
+         WHERE (project_id,bundle_id)=($1,$2) AND added_revision<=$3
+         AND (retired_revision IS NULL OR retired_revision>$3)
+         AND case_id COLLATE \"C\">$4
+         ORDER BY case_id COLLATE \"C\" LIMIT $5",
+    )
+    .bind(&project)
+    .bind(bundle)
+    .bind(revision)
+    .bind(after.unwrap_or_default())
+    .bind(limit + 1)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(db)?;
+    let has_more = items.len() > limit as usize;
+    items.truncate(limit as usize);
+    let next = items.last().filter(|_| has_more).map(|row| &row.case_id);
+    Ok(Json(
+        json!({"items":items,"next":next,"evolveRevision":revision}),
+    ))
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Outcome {
     outcome_id: Uuid,

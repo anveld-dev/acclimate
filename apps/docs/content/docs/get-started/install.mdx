@@ -27,7 +27,7 @@ npm install @acclimate/sdk
 npx acclimate-eval --help
 ```
 
-The SDK includes the `acclimate-eval` command. Install a plugin package, such as `@acclimate/codex-plugin`, alongside the SDK when you need [native preparation](/docs/guides/deliver-content#choose-a-native-integration).
+The SDK includes `acclimate-eval` and `acclimate learn`. [Learning loop quick start](/docs/guides/learning-loop) Install a plugin package, such as `@acclimate/codex-plugin`, alongside the SDK when you need [native preparation](/docs/guides/deliver-content#choose-a-native-integration).
 
 </Tab>
 <Tab value="Python">
@@ -56,7 +56,7 @@ Choose a version on the [GitHub Releases page](https://github.com/anveld-dev/acc
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
 
-Run the install command from your app directory with the matching file. This example uses release 0.1.0.
+Run the install command from your app directory with the matching file. For an offline install, prepopulate the npm cache with the release’s runtime dependencies, including `tsx` and its platform-specific `esbuild` package. This example uses release 0.1.0.
 
 ```sh
 npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz

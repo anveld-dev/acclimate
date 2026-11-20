@@ -6,7 +6,8 @@ WITH rounds AS (
 )
 SELECT 'round-pins' WHERE (
   SELECT count(DISTINCT setting) <> 1 OR count(DISTINCT evolve_revision) <> 1
-      OR count(DISTINCT optimizer_model) <> 1 FROM rounds
+      OR bool_or(optimizer_model IS DISTINCT FROM :'optimizer_model'
+                  OR optimizer_reasoning_effort IS DISTINCT FROM :'optimizer_effort') FROM rounds
 )
 UNION ALL
 SELECT 'memory:' || r.number FROM rounds r

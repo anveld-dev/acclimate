@@ -44,7 +44,7 @@ pub(crate) fn routes() -> Router<AppState> {
         .route(&format!("{PREFIX}/rounds/{{round}}"), get(get_round))
         .route(
             &format!("{PREFIX}/evolve-cases"),
-            post(evolve::submit_cases),
+            get(evolve::list_cases).post(evolve::submit_cases),
         )
         .route(&format!("{PREFIX}/outcomes"), post(evolve::submit_outcome))
         .route(&format!("{PREFIX}/memory"), get(memory::get))
@@ -180,13 +180,6 @@ fn require_app(actor: &auth::Actor, principal: &str) -> ApiResult<()> {
     }
     Ok(())
 }
-fn admin_is_not_app(actor: &auth::Actor, principal: &str) -> ApiResult<()> {
-    if actor.principal == principal {
-        return Err(denied());
-    }
-    Ok(())
-}
-
 async fn audit(
     tx: &mut Tx<'_>,
     actor: &auth::Actor,
@@ -234,7 +227,6 @@ async fn enroll(
     let (mut tx, actor) = actor_tx(&s, &h, &project, "promote").await?;
     let request = body(raw)?;
     let input: Enrollment = parse(&request)?;
-    admin_is_not_app(&actor, &input.app_principal_id)?;
     if !request["setting"].is_object()
         || !request["heldOut"].is_object()
         || !crate::channels::valid_channel(&input.channel)
@@ -312,7 +304,6 @@ async fn enroll(
         Some(row) => row,
         None => require_loop(&mut tx, &project, bundle, true).await?,
     };
-    admin_is_not_app(&actor, &row.app_principal)?;
     if let Some(command) = &command
         && let Some(receipt) = command
             .replay(&mut tx, || conflict("Idempotency key already used"))
@@ -377,7 +368,6 @@ async fn change_status(
 ) -> Reply {
     let (mut tx, actor) = actor_tx(s, h, project, "promote").await?;
     let row = require_loop(&mut tx, project, bundle, true).await?;
-    admin_is_not_app(&actor, &row.app_principal)?;
     let command =
         DurableCommand::optional(h, project, bundle, operation, &actor.principal, Value::Null)?;
     if let Some(command) = &command
@@ -558,7 +548,8 @@ async fn get_round(
         "evolveRevision": row.get::<i64,_>("evolve_revision"), "memoryRevision": row.get::<i64,_>("memory_revision"),
         "memoryDigest": row.get::<Option<String>,_>("memory_digest"), "historyDigest": row.get::<Option<String>,_>("history_digest"),
         "setting": row.get::<Value,_>("setting"), "heldOut": row.get::<Value,_>("held_out"),
-        "optimizerModel": row.get::<Option<String>,_>("optimizer_model"), "selection": row.get::<Option<Value>,_>("selection"),
+        "optimizerModel": row.get::<Option<String>,_>("optimizer_model"),
+        "optimizerReasoningEffort": row.get::<Option<String>,_>("optimizer_reasoning_effort"), "selection": row.get::<Option<Value>,_>("selection"),
         "candidates": optimizer::candidates(&mut tx, round).await.map_err(db)?, "evaluations": evals
     });
     result

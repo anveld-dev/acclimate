@@ -1,11 +1,9 @@
 import json
-import os
 import re
 import socket
 import urllib.error
 import urllib.parse
 import urllib.request
-import tempfile
 from pathlib import Path
 from typing import Any, Literal
 from .types import *
@@ -119,7 +117,7 @@ class AcclimateClient:
         ``{"max_age_ms": 300_000}`` for a cached channel, or
         ``{"pinned_version_id": version_id}`` for one exact cached version.
         """
-        from .delivery import prepare_files, resolve_and_cache, _remove_job_directory
+        from .delivery import resolve_and_cache, _stage_delivery
 
         if cache_dir is None:
             cache_dir = Path.home().resolve() / ".cache" / "acclimate" / "python"
@@ -129,17 +127,7 @@ class AcclimateClient:
             offline=offline,
             max_cache_bytes=max_cache_bytes, reporter=reporter,
         )
-        if destination is None:
-            directory = tempfile.mkdtemp(prefix="acclimate-job-", dir=os.path.realpath(tempfile.gettempdir()))
-        else:
-            directory = os.path.abspath(destination)
-        try:
-            staged = prepare_files(version, directory)
-        except BaseException:
-            if destination is None:
-                _remove_job_directory(directory)
-            raise
-        return PreparedDelivery(version, staged, directory, destination is None)
+        return _stage_delivery(version, destination)
 
     def _request(
         self,
@@ -266,6 +254,9 @@ class AcclimateClient:
 
     def list_workspaces(self, *, cursor: str | None = None, limit: int = 50) -> Page[Workspace]:
         return self._request("GET", "/v1/workspaces" + self._listing(cursor, limit))
+
+    def get_principal(self, workspace_id: str) -> WorkspacePrincipal:
+        return self._request("GET", self._workspace(workspace_id) + "/principal")
 
     def list_bundles(self, workspace_id: str, *, cursor: str | None = None, limit: int = 50) -> Page[Bundle]:
         return self._request("GET", self._base(workspace_id) + self._listing(cursor, limit))
@@ -402,6 +393,12 @@ class AcclimateClient:
         """Read the latest optimizer memory or the exact revision requested."""
         path = self._loop_path(workspace_id, bundle_id) + "/memory"
         return self._request("GET", path + self._learning_query(revision=revision))
+
+    def list_learning_evolve_cases(
+        self, workspace_id: str, bundle_id: str, *, after: str | None = None, limit: int | None = None
+    ) -> LearningEvolveCasesPage:
+        path = self._loop_path(workspace_id, bundle_id) + "/evolve-cases"
+        return self._request("GET", path + self._learning_query(after=after, limit=limit))
 
     def add_learning_evolve_cases(self, workspace_id: str, bundle_id: str, body: LearningEvolveCasesRequest,
                                   key: str | None = None) -> LearningEvolveCasesReceipt:

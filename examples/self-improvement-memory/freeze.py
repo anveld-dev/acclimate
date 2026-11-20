@@ -11,7 +11,7 @@ import subprocess
 import sys
 import unicodedata
 
-from run import DEFAULTS, HERE, ROOT, node
+from run import CEILING_THRESHOLD, DEFAULTS, HERE, ROOT, node
 
 FIXTURES = HERE / "fixtures/w1"
 LLM_COMMIT = "46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f"
@@ -121,11 +121,17 @@ def canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
 
 
+def passing_pilot(pilot, optimizer_context):
+    return bool(pilot and pilot["passed"] and pilot["optimizerContext"] == optimizer_context
+                and all(0 <= pilot.get("targetRoundZero", {}).get(condition, 1) < CEILING_THRESHOLD
+                        for condition in ("full", "cold")))
+
+
 def freeze(source_tree, service_bin, pg_bin, pilot_path, optimizer_context):
     checks = zero_call_checks()
     commitments = node({"action": "freeze", "python": sys.executable, "seed": "", "block": 1}, capture=True)
     pilot = load(pilot_path) if pilot_path else None
-    if pilot and (not pilot["passed"] or pilot["optimizerContext"] != optimizer_context):
+    if pilot_path and not passing_pilot(pilot, optimizer_context):
         raise ValueError("Use a passing pilot report for the frozen optimizer context")
     document = {
         "schemaVersion": 1, **build_record(source_tree, service_bin, pg_bin),
@@ -133,7 +139,8 @@ def freeze(source_tree, service_bin, pg_bin, pilot_path, optimizer_context):
         "runtimeSettings": {"ACCLIMATE_MODEL_ENDPOINT": "ephemeral loopback adapter",
                             "ACCLIMATE_MODEL_TOKEN": "ephemeral, redacted"},
         "models": {"source": "gpt-6-luna", "target": "gpt-6.2-sol",
-                   "optimizer": "gpt-6-luna", "effort": "low"},
+                   "optimizer": DEFAULTS["ACCLIMATE_MODEL"], "effort": "low",
+                   "optimizerReasoningEffort": DEFAULTS["ACCLIMATE_MODEL_REASONING_EFFORT"]},
         "optimizerContext": optimizer_context,
         "setting": {"domain": "cli-support", "benchmark": "llm-0.38-argv"},
         "n": 10, "N": 10, "k": 5, "rolloutsPerCase": 5, "caseConcurrency": 8,
@@ -157,6 +164,10 @@ def verify(path, source_tree, service_bin, pg_bin):
     for key, value in build_record(source_tree, service_bin, pg_bin).items():
         if document.get(key) != value:
             raise ValueError(f"Preregistration no longer matches the environment: {key}")
+    if document.get("serviceSettings") != DEFAULTS:
+        raise ValueError("Preregistration does not match the frozen service settings")
+    if document["pilot"] is not None and not passing_pilot(document["pilot"], document["optimizerContext"]):
+        raise ValueError("Preregistration has no passing pilot report")
     return {**document, "seed": seed}
 
 

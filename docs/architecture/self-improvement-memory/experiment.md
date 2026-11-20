@@ -44,7 +44,7 @@ A **block** b = 1…10 is one source run and its three target runs.
 - **H0** is `examples/self-improvement-memory/fixtures/w1/baseline.json`, moved unchanged from `examples/real-app-learning/baseline.json` in phase 2 with its digest ([removal.md](removal.md)). Earlier calibration was measured with it (§9.1).
 - **Memory** is per workspace + bundle (D6), so a new bundle starts empty. HT and CS build their own memory during the target run, where the paper's conditions have none (deviation V1).
 - **Setting.** Every loop has `setting = {domain: "cli-support", benchmark: "llm-0.38-argv", policyModel}`. Only `policyModel` changes at the transition, so rules 2 and 4 see it in each attempt's `provenance`. The evolve split and the held-out split are the same in every run, so `evolve_revision` contents and `heldOut.digest` match across conditions.
-- **Optimizer model.** `ACCLIMATE_MODEL = gpt-6-luna` in every stage and condition, for `propose`, `screen` and `select`. Earlier Acclimate experiments used the same model for the task agent and the optimizer (`examples/real-app-learning/run.ts:24`, `:261`, at tag `pre-learning-loop`).
+- **Optimizer model.** `ACCLIMATE_MODEL=gpt-6.2-astra` and `ACCLIMATE_MODEL_REASONING_EFFORT=high` are frozen for `propose`, `screen` and `select` in every stage and condition. The study uses a separate, stronger optimizer, following the paper’s optimizer ablation (Appendix E.4.2). Both task models use low effort.
 - **No condition names.** Bundles get random neutral slugs. The loop cannot see which condition it serves, because a condition is only which bundle and which start version.
 
 Problem-Only is not run: it needs a memory view, which would be a mode (D2).
@@ -81,7 +81,7 @@ At five rollouts, measurement noise of one held-out difference is about 2.0 to 2
 | --- | --- | --- |
 | S0a | Model-free dry run of the driver with a fake optimizer and a fake policy (§13) | All integrity checks pass |
 | S0b | Author and freeze H: zero-call checks, disjointness, digests, the frozen preregistration | Preregistration committed |
-| S0c | Live pilot: 2 source runs of 3 rounds, then 1 round of each target condition from one of them | Pilot gates (§10, K3). Pilot data is never analysed. |
+| S0c | Live pilot: 2 source runs of 3 rounds, then 1 round of each target condition from one of them | Pilot gates (§10, K3), including the target round-zero ceiling check. Pilot data is excluded from efficacy analysis. |
 | S1 | 10 independent source runs of 10 rounds | Harm stop only (K4 applies to S2) |
 | S2 | For each block, the 3 target runs of 10 rounds, plus round-0 and retention scoring | none |
 | C (optional) | Pre-change Flat control (§16) | none. Runs alongside S1 and S2. |
@@ -143,7 +143,8 @@ The driver does nothing inside a round except serve evaluations. After each roun
   "retained": {"versionId": "…", "digest": "sha256:…", "heldOutScore": 0.4133, "heldOutError": null,
                "cases": 60, "rollouts": 300, "infraFailures": 0},
   "incumbentScore": 0.3550, "evolveRevision": 1, "memoryRevision": 9,
-  "memoryDigest": "sha256:…", "historyDigest": "sha256:…", "optimizerModel": "gpt-6-luna",
+  "memoryDigest": "sha256:…", "historyDigest": "sha256:…", "optimizerModel": "gpt-6.2-astra",
+  "optimizerReasoningEffort": "high",
   "samples": [{"sample": 1, "status": "evaluated", "dropReason": null, "screen": "evaluate",
                "problem": "P3", "predicted": 4, "evolveScore": 0.39,
                "diagnosisBeforeEvaluation": true}],
@@ -270,23 +271,25 @@ These checks live in the driver and in read-only queries on the driver's own clu
 
 | ID | Trigger | Action |
 | --- | --- | --- |
-| K1 Integrity | Any of: an H case ID or the fingerprint of a whole H input appears in an optimizer request; a held-out report carries `trace` or `error`; the fenced data of an optimizer request holds a key outside its kind's set (`setting`, `harness`, `feedback`, `history` and `improvementMemory` for every kind, plus `candidates` for `screen` and `select`, plus `parserError` on a retry, as in [optimizer.md](optimizer.md) "Data keys"); a condition code or bundle slug appears in an optimizer request or a delivered payload; memory JSON or a `P<n>` ID appears in a delivered payload or task prompt; a sample's evaluation appears in `GET /work` before the adapter returned that sample's `propose` reply, or the stored `diagnosis` differs from that reply; an adopted attempt's `predicted` differs from its candidate's `diagnosis.predicted`; Full SIM's round 11 does not pin the source run's final memory revision, or an HT or CS round 1 pins a nonzero one; Full SIM and HT start digests differ; `evolve_revision`, the E content digest or `heldOut.digest` differs within a block; `optimizer_model` or the adapter's model differs from the frozen one; an evaluation ran under a policy model other than its round's `setting.policyModel`; the rendered `history` lists fewer rounds than the earlier rounds with the same `setting`, or `improvementMemory` lists fewer attempts than `memory_revision`; any `POST /outcomes`, evolve-case change, manual channel release or `channel-moved` round during a run; a round after the 10th counted round reached `selecting` | Stop the stage. Fix. Restart every affected run (target runs from a fresh checkpoint copy). |
+| K1 Integrity | Any of: an H case ID or the fingerprint of a whole H input appears in an optimizer request; a held-out report carries `trace` or `error`; the fenced data of an optimizer request holds a key outside its kind's set (`setting`, `harness`, `feedback`, `history` and `improvementMemory` for every kind, plus `candidates` for `screen` and `select`, plus `parserError` on a retry, as in [optimizer.md](optimizer.md) "Data keys"); a condition code or bundle slug appears in an optimizer request or a delivered payload; memory JSON or a `P<n>` ID appears in a delivered payload or task prompt; a sample's evaluation appears in `GET /work` before the adapter returned that sample's `propose` reply, or the stored `diagnosis` differs from that reply; an adopted attempt's `predicted` differs from its candidate's `diagnosis.predicted`; Full SIM's round 11 does not pin the source run's final memory revision, or an HT or CS round 1 pins a nonzero one; Full SIM and HT start digests differ; `evolve_revision`, the E content digest or `heldOut.digest` differs within a block; the round’s optimizer model or reasoning effort, or the adapter’s request model or reasoning effort, differs from the frozen protocol; an evaluation ran under a policy model other than its round's `setting.policyModel`; the rendered `history` lists fewer rounds than the earlier rounds with the same `setting`, or `improvementMemory` lists fewer attempts than `memory_revision`; any `POST /outcomes`, evolve-case change, manual channel release or `channel-moved` round during a run; a round after the 10th counted round reached `selecting` | Stop the stage. Fix. Restart every affected run (target runs from a fresh checkpoint copy). |
 | K2 Context | Any round `failed` with `optimizer-context-too-large`. Memory and history only grow within a run, so the loop cannot continue on that bundle. Full SIM, which carries up to 20 attempts of memory beside 10 rounds of target history, is hit first. | Stop the stage for a maintainer decision. A larger-context optimizer model is an amendment and restarts every block. |
-| K3 Pilot | `format-rejected` above 20% of samples; no `adopted` round in the 6 pilot source rounds; the pilot's measured input growth projects Full SIM's round-20 input (10 rounds of history, up to 20 attempts) above 50% of the optimizer's context; any K1 event | Fix and repeat the pilot, or pause for a maintainer decision. Pilot data is discarded. |
+| K3 Pilot | Either target round-zero W1 held-out score (H0 or H_S under `gpt-6.2-sol`) is ≥ 85%; `format-rejected` above 20% of samples; no `adopted` round in the 6 pilot source rounds; the pilot's measured input growth projects Full SIM's round-20 input (10 rounds of history, up to 20 attempts) above 50% of the optimizer's context; any K1 event | Stop before S1 for a maintainer decision if either baseline reaches the ceiling threshold. For other failures, fix and repeat the pilot or pause for a maintainer decision. Pilot data is excluded from efficacy analysis. |
 | K4 Harm | After 5 completed blocks, the upper 95% bound of mean T1 is below −5 pp. `analyze.py` reports only whether it fired. | Stop and report. Harm-only, so it does not inflate T1's type I error. |
 | K5 Infrastructure | A service exit, a run stuck for 2 hours, a loop paused with `failed-rounds`, or more than 5% of a run's rollouts failing for infrastructure reasons (the evaluator retries such a rollout once before reporting it). The first experiment lost its lease under concurrent lint (`docs/research/real-app-learning-experiment/README.md:69`). | Restart the run with the same seeds, at most twice: a source run from scratch, a target run from a fresh checkpoint copy. No repository lint or builds during live stages. |
-| K6 Drift | The provider announces a change to `gpt-6-luna` or `gpt-6.2-sol` during a stage | Pause. Blocks from before and after are not mixed in one contrast without a recorded amendment. |
+| K6 Drift | The provider announces a change to `gpt-6-luna`, `gpt-6.2-sol` or `gpt-6.2-astra` during a stage | Pause. Blocks from before and after are not mixed in one contrast without a recorded amendment. |
 
 There is no efficacy stop and no efficacy peeking. Analysts see only integrity and infrastructure counts until every block is done.
+
+In Appendix E.4.2, the stronger optimizer’s held-out edge shrank to 0.05 points on the higher-scoring seed. S0c records both target round-zero measurements in the pilot report. S1 requires a passing report in the final preregistration.
 
 ### 10.1 SQL sketches
 
 Run read-only after the service stops, while the private PostgreSQL instance is still available. `$1, $2` are the workspace and bundle, `$3, $4` the run's first and last round numbers.
 
 ```sql
--- One setting, evolve revision and optimizer model per run
+-- One setting, evolve revision and optimizer configuration per run
 SELECT count(DISTINCT setting) AS settings, count(DISTINCT evolve_revision) AS revisions,
-       count(DISTINCT optimizer_model) AS models
+       count(DISTINCT (optimizer_model, optimizer_reasoning_effort)) AS optimizer_configurations
 FROM learning_rounds
 WHERE (project_id, bundle_id) = ($1, $2) AND number BETWEEN $3 AND $4;   -- expect 1, 1, 1
 
@@ -387,7 +390,7 @@ Raw evidence stays under `artifacts/sim-experiment/` and is not published, as wi
 
 | Test | Checks |
 | --- | --- |
-| `examples/self-improvement-memory/tests/sim-experiment.test.ts` (`npm run test:sim-experiment`, model-free, owned PostgreSQL) | A fake optimizer returns fixed edits, diagnoses, screens and selections, and a fake policy returns seeded argv. One block runs a 2-round source and the 3 target conditions for 2 rounds on tiny fixtures from a real checkpoint copy. Asserts: 5 samples per round; Full SIM's first target round pins the source memory revision and renders an empty history, and HT and CS start at 0; diagnoses predate their evaluations; Full SIM and HT start digests match; no H ID reaches the adapter; held-out reports carry no traces; the retained evaluation binds the channel head; the pause stops at exactly the planned count; the §10.1 queries return the expected rows. |
+| `examples/self-improvement-memory/tests/sim-experiment.test.ts` (`npm run test:sim-experiment`, model-free, owned PostgreSQL) | A fake optimizer returns fixed edits, diagnoses, screens and selections, and a fake policy returns seeded argv. One block runs a 2-round source and the 3 target conditions for 2 rounds on tiny fixtures from a real checkpoint copy. Asserts: Astra at high effort in round provenance and optimizer requests; 5 samples per round; Full SIM's first target round pins the source memory revision and renders an empty history, and HT and CS start at 0; diagnoses predate their evaluations; Full SIM and HT start digests match; no H ID reaches the adapter; held-out reports carry no traces; the retained evaluation binds the channel head; the pause stops at exactly the planned count; the §10.1 queries return the expected rows. |
 | `examples/self-improvement-memory/test_analyze.py` | Synthetic blocks with a known effect. The paired t, signed-rank, intervals, d_z and Holm results match SciPy references. |
 | `examples/self-improvement-memory/test_freeze.py` | Disjointness rejects a duplicated input under a new ID. Each negative control fails the grader. |
 | K1 unit tests in `tests/adapter.test.ts` | A request with an H case ID, a whole H input, a condition code or a key outside its kind's set is refused and aborts the stage. `setting` on every kind and `parserError` on a retry are not flagged. An input shared with E is not flagged. |
@@ -403,7 +406,7 @@ Planning information only. No stage stops or pauses on spend (D9).
 | Main | Five-admission rerun: 1,304 turns, 22,174,986 input and 54,649 output tokens, 2 h 0 min 48 s (`5-admission-rerun.md:111`, `:113`) | 17,005 | 42 | 5.56 |
 | Slow | First experiment: 255 attempts in about 44 minutes, 6,329,265 input tokens over 253 (`README.md:40`) | 25,017 | — | 10.35 |
 
-Proposer turns averaged about 15,000 input tokens (`5-admission-rerun.md:106`). Full history, memory and five evaluated candidates in `select` make calls larger, so the estimate uses 60,000 per optimizer call.
+The earlier proposer averaged about 15,000 input tokens (`5-admission-rerun.md:106`). The planning estimate reserves 60,000 input tokens per high-effort Astra optimizer call because full history, memory and five evaluated candidates can make requests larger. S0c measures Astra’s actual input, output and latency.
 
 ### 14.2 Per round and per run
 
@@ -426,10 +429,10 @@ Per block: source 15,000 + H0 round 0 under luna 300; targets 3 × 15,000 + roun
 | S0c pilot | 14,700 | 63 | 0.25 B | 0.6 M | 22 |
 | S1 + S2, 10 blocks | 624,000 | 2,800 | 10.8 B | 26 M | 964 |
 
-- Input tokens include optimizer calls at 60,000 each (about 0.17 B). At the slow anchor the main stages use about 15.6 B input tokens and 1,777 serial turn-hours.
-- **Critical path.** With case concurrency 8 (N2), a round takes about 17 minutes of rollouts (1,500 / 8 × 5.56 s) plus about 10 minutes of optimizer calls, so a run takes about 4.5 hours and a block about 9.5 hours (source, then the three targets together). At concurrency 1, a round takes about 2.5 hours and a block 50 to 55 hours.
+- Input tokens include optimizer calls at 60,000 each (about 0.17 B for S1 and S2). Output-token and serial-hour totals use the task-policy anchor. Use S0c to add Astra’s output tokens and time, including high-effort reasoning. At the slow anchor the main stages use about 15.6 B input tokens and 1,777 serial turn-hours.
+- **Critical path.** With case concurrency 8 (N2), a round takes about 17 minutes of rollouts (1,500 / 8 × 5.56 s) plus a provisional 10 minutes for high-effort Astra calls, so a run takes about 4.5 hours and a block about 9.5 hours (source, then the three targets together). At concurrency 1, a round takes about 2.5 hours and a block 50 to 55 hours.
 - **Wall clock.** With all 10 blocks in parallel: about 30 hours at an account limit of 32 concurrent turns, and about 10 hours (the critical path) at 160.
-- **Unknowns.** `gpt-6.2-sol` tokens and latency per turn are unmeasured. The pilot measures them, and the frozen estimates are updated before S1.
+- **Unknowns.** `gpt-6.2-sol` policy and high-effort `gpt-6.2-astra` optimizer tokens and latency are unmeasured. The pilot measures them, and the frozen estimates are updated before S1.
 
 ## 15. Deviations from the paper
 
@@ -486,4 +489,4 @@ Shared questions are in the [README](README.md#open-questions). These are owned 
 
 1. **Stage C.** Run the pre-change Flat control? It is descriptive only (§16).
 2. **`gpt-6.2-sol` as a Codex task model.** The bundled Codex CLI catalog lists this task model. Entitlement for the pilot credentials, rate limits, latency and token use await live verification.
-3. **Optimizer context.** Full SIM's round 20 carries 10 rounds of target history and up to 20 attempts. The pilot's projection decides whether `gpt-6-luna` fits, or whether the optimizer model must change before S1 (K2, K3).
+3. **Optimizer context.** Full SIM's round 20 carries 10 rounds of target history and up to 20 attempts. The pilot’s projection checks whether the frozen Astra configuration fits. A failure stops progression before S1 (K2, K3).

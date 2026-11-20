@@ -271,13 +271,83 @@ async fn session(f: &Fixture, role: &str) -> String {
     secret
 }
 
+async fn principal(f: &Fixture, caller: &str) -> (u16, Value) {
+    let mut req = Request::builder()
+        .method("GET")
+        .uri(format!("/v1/workspaces/{}/principal", f.project));
+    if let Some(session) = caller.strip_prefix("console/") {
+        req = req
+            .header("authorization", format!("Bearer {}", common::CONSOLE_TOKEN))
+            .header("x-acclimate-session", session);
+    } else {
+        req = req.header("authorization", format!("Bearer {caller}"));
+    }
+    let reply = f
+        .app
+        .clone()
+        .oneshot(req.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = reply.status().as_u16();
+    let bytes = to_bytes(reply.into_body(), 65_536).await.unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
+async fn one_token_enrolls_itself_and_reads_its_identity() {
+    let f = Fixture::new().await;
+    assert_eq!(
+        principal(&f, "app").await,
+        (
+            200,
+            json!({"principalId":"app","kind":"machine","rights":["read","evaluate","promote"]})
+        )
+    );
+    assert_eq!(principal(&f, "reader").await.1["rights"], json!(["read"]));
+    let editor = format!("console/{}", session(&f, "editor").await);
+    assert_eq!(
+        principal(&f, &editor).await.1["rights"],
+        json!(["read", "evaluate", "write"])
+    );
+    let admin = format!("console/{}", session(&f, "admin").await);
+    assert_eq!(
+        principal(&f, &admin).await.1["rights"],
+        json!(["read", "evaluate", "write", "promote"])
+    );
+    assert_eq!(principal(&f, "unknown-token").await.0, 401);
+    let loop_doc = f.ok("PUT", "", "app", None, enrollment()).await;
+    assert_eq!(loop_doc["appPrincipalId"], "app");
+    assert_eq!(loop_doc["enrolledBy"], "app");
+    assert_eq!(
+        f.ok("POST", "/pause", "app", None, Value::Null).await["status"],
+        "paused"
+    );
+    assert_eq!(
+        f.ok("POST", "/resume", "app", None, Value::Null).await["status"],
+        "running"
+    );
+    // Improvement memory stays optimizer-only: the app principal cannot read it.
+    assert_eq!(
+        f.req("GET", "/memory", "app", None, Value::Null).await.0,
+        403
+    );
+    assert_eq!(
+        f.req("GET", "/memory", "admin", None, Value::Null).await.0,
+        200
+    );
+}
+
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn enrollment_authority_validation_and_idempotency() {
     let f = Fixture::new().await;
     let body = enrollment();
     let editor = format!("console/{}", session(&f, "editor").await);
-    for caller in [&editor[..], "app", "reader"] {
+    for caller in [&editor[..], "other", "reader"] {
         assert_eq!(f.req("PUT", "", caller, None, body.clone()).await.0, 403);
     }
     for (key, value) in [
@@ -405,6 +475,44 @@ async fn evolve_revisions_and_outcome_replay() {
     );
     assert_eq!(put(json!({"cases":[case("a")]})).await.0, 409);
     assert_eq!(put(json!({"retire":["a"]})).await.1["evolveRevision"], 2);
+    let first = f
+        .ok(
+            "GET",
+            "/evolve-cases?after=&limit=1",
+            "app",
+            None,
+            Value::Null,
+        )
+        .await;
+    let mut c = case("c");
+    c["addedRevision"] = json!(2);
+    assert_eq!(first, json!({"items":[c],"next":"c","evolveRevision":2}));
+    let last = f
+        .ok(
+            "GET",
+            "/evolve-cases?after=c&limit=1",
+            "app",
+            None,
+            Value::Null,
+        )
+        .await;
+    let mut d = case("d");
+    d["addedRevision"] = json!(2);
+    assert_eq!(last, json!({"items":[d],"next":null,"evolveRevision":2}));
+    for query in ["limit=0", "limit=101", "after=%20"] {
+        assert_eq!(
+            f.req(
+                "GET",
+                &format!("/evolve-cases?{query}"),
+                "app",
+                None,
+                Value::Null
+            )
+            .await
+            .0,
+            400
+        );
+    }
     let outcome_id = Uuid::new_v4();
     let mut outcome = json!({"outcomeId":outcome_id,"versionId":f.version,"digest":DIGEST,"input":null,"expected":{"action":"refund"}});
     let send = |body| f.req("POST", "/outcomes", "app", None, body);

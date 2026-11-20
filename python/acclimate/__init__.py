@@ -27,6 +27,7 @@ from .delivery import (
     resolve_and_cache as resolve_and_cache,
     validate_payload as validate_payload,
 )
+from ._jobs import Acclimate as Acclimate, Job as Job
 from .receipts import (
     DeliveryReporter as DeliveryReporter,
     BoundDeliveryReporter as BoundDeliveryReporter,
@@ -39,6 +40,8 @@ from .types import *
 
 __all__ = [
     "AcclimateClient",
+    "Acclimate",
+    "Job",
     "AcclimateError",
     "UsageError",
     "ApiError",

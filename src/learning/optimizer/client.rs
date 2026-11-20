@@ -14,6 +14,7 @@ pub struct OpenAiModel {
     model: String,
     client: reqwest::Client,
     max_completion_tokens: u32,
+    reasoning_effort: Option<String>,
 }
 
 fn setting(name: &str, range: std::ops::RangeInclusive<u32>, default: u32) -> io::Result<u32> {
@@ -27,6 +28,13 @@ fn setting(name: &str, range: std::ops::RangeInclusive<u32>, default: u32) -> io
 
 impl OpenAiModel {
     pub fn from_env() -> io::Result<Option<Arc<dyn OptimizerModel>>> {
+        const EFFORT: &str = "ACCLIMATE_MODEL_REASONING_EFFORT";
+        let effort = match std::env::var(EFFORT) {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(_) => return Err(io::Error::other("Invalid ACCLIMATE_MODEL_REASONING_EFFORT")),
+        };
+        validate_effort(effort.as_deref())?;
         let seconds = setting("ACCLIMATE_MODEL_TIMEOUT_SECONDS", 30..=3600, 600)?;
         let tokens = setting(
             "ACCLIMATE_MODEL_MAX_COMPLETION_TOKENS",
@@ -42,9 +50,9 @@ impl OpenAiModel {
             .map_err(|_| io::Error::other("ACCLIMATE_MODEL_TOKEN is required"))?;
         let model = std::env::var("ACCLIMATE_MODEL")
             .map_err(|_| io::Error::other("ACCLIMATE_MODEL is required"))?;
-        Ok(Some(Arc::new(Self::new(
-            &endpoint, token, &model, seconds, tokens,
-        )?)))
+        Ok(Some(Arc::new(
+            Self::new(&endpoint, token, &model, seconds, tokens)?.with_reasoning_effort(effort)?,
+        )))
     }
 
     pub fn new(
@@ -83,15 +91,22 @@ impl OpenAiModel {
             model: model.trim().into(),
             client,
             max_completion_tokens: tokens,
+            reasoning_effort: None,
         })
     }
 
-    async fn complete(&self, kind: Kind, data: &Value) -> Result<String, ModelError> {
+    pub fn with_reasoning_effort(mut self, effort: Option<String>) -> io::Result<Self> {
+        validate_effort(effort.as_deref())?;
+        self.reasoning_effort = effort;
+        Ok(self)
+    }
+
+    fn request_body(&self, kind: Kind, data: &Value) -> Value {
         let data = data
             .to_string()
             .replace('<', "\\u003c")
             .replace('>', "\\u003e");
-        let body = json!({
+        let mut body = json!({
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_text(kind)},
@@ -100,6 +115,14 @@ impl OpenAiModel {
             "response_format": {"type": "json_object"},
             "max_completion_tokens": self.max_completion_tokens,
         });
+        if let Some(effort) = &self.reasoning_effort {
+            body["reasoning_effort"] = json!(effort);
+        }
+        body
+    }
+
+    async fn complete(&self, kind: Kind, data: &Value) -> Result<String, ModelError> {
+        let body = self.request_body(kind, data);
         for delay in [Some(5), Some(30), None] {
             let response = self
                 .client
@@ -140,6 +163,13 @@ impl OpenAiModel {
             }
         }
         unreachable!()
+    }
+}
+
+fn validate_effort(effort: Option<&str>) -> io::Result<()> {
+    match effort {
+        None | Some("low" | "medium" | "high" | "xhigh" | "max" | "ultra") => Ok(()),
+        _ => Err(io::Error::other("Invalid ACCLIMATE_MODEL_REASONING_EFFORT")),
     }
 }
 
@@ -235,6 +265,9 @@ impl OptimizerModel for OpenAiModel {
     fn model(&self) -> &str {
         &self.model
     }
+    fn reasoning_effort(&self) -> Option<&str> {
+        self.reasoning_effort.as_deref()
+    }
     fn propose<'a>(&'a self, data: &'a Value) -> ModelFuture<'a> {
         Box::pin(self.complete(Kind::Propose, data))
     }
@@ -243,5 +276,40 @@ impl OptimizerModel for OpenAiModel {
     }
     fn select<'a>(&'a self, data: &'a Value) -> ModelFuture<'a> {
         Box::pin(self.complete(Kind::Select, data))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_body_omits_unset_effort_and_sends_configured_effort() {
+        let endpoint = "http://localhost/completions";
+        let model =
+            OpenAiModel::new(endpoint, "fixture".into(), "gpt-6.2-astra", 30, 1234).unwrap();
+        let data = json!({});
+        assert!(
+            model
+                .request_body(Kind::Propose, &data)
+                .get("reasoning_effort")
+                .is_none()
+        );
+        let model = model.with_reasoning_effort(Some("high".into())).unwrap();
+        for kind in [Kind::Propose, Kind::Screen, Kind::Select] {
+            let body = model.request_body(kind, &data);
+            assert_eq!(body["model"], "gpt-6.2-astra");
+            assert_eq!(body["reasoning_effort"], "high");
+        }
+    }
+
+    #[test]
+    fn accepts_only_supported_efforts() {
+        for effort in ["low", "medium", "high", "xhigh", "max", "ultra"] {
+            assert!(validate_effort(Some(effort)).is_ok());
+        }
+        for effort in ["", "minimal", "High", "high ", "none"] {
+            assert!(validate_effort(Some(effort)).is_err());
+        }
     }
 }

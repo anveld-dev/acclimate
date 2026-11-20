@@ -44,3 +44,6 @@ export async function prepare(
     },
   };
 }
+
+export { codex } from './learning.js';
+export type { CodexLoopOptions, CodexNativeClient } from './learning.js';

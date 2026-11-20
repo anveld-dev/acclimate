@@ -202,11 +202,14 @@ pub(super) async fn write_back(tx: &mut Tx<'_>, round: &Pins) -> Result<i32, sql
     let domain = round.setting["domain"]
         .as_str()
         .ok_or_else(|| invariant("Missing domain pin"))?;
-    let provenance = json!({
+    let mut provenance = json!({
         "domain": domain, "benchmark": round.setting["benchmark"], "policyModel": round.setting["policyModel"],
         "round": round.number, "evolveRevision": round.evolve_revision, "heldOutDigest": held_out_digest,
         "optimizerModel": round.optimizer_model
     });
+    if let Some(effort) = &round.optimizer_reasoning_effort {
+        provenance["optimizerReasoningEffort"] = json!(effort);
+    }
     sqlx::query("INSERT INTO learning_memory_attempts(
         project_id,bundle_id,revision,problem_id,round_id,round,sample,what,files,predicted,fixed,missed,passed,total,domain,provenance)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)")
@@ -242,7 +245,10 @@ pub(super) async fn get(
     let bundle = path(&bundle)?;
     let (mut tx, actor) = actor_tx(&s, &headers, &project, "read").await?;
     let row = require_loop(&mut tx, &project, bundle, false).await?;
-    admin_is_not_app(&actor, &row.app_principal)?;
+    // Improvement memory is optimizer-only: operators read it, the app principal does not.
+    if actor.principal == row.app_principal {
+        return Err(denied());
+    }
     let revision = query.revision.unwrap_or(row.memory_revision);
     if revision > row.memory_revision {
         return Err(missing("Memory revision not found"));

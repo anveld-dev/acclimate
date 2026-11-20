@@ -34,6 +34,9 @@ pub type ModelFuture<'a> = Pin<Box<dyn Future<Output = Result<String, ModelError
 
 pub trait OptimizerModel: Send + Sync {
     fn model(&self) -> &str;
+    fn reasoning_effort(&self) -> Option<&str> {
+        None
+    }
     fn propose<'a>(&'a self, data: &'a Value) -> ModelFuture<'a>;
     fn screen<'a>(&'a self, data: &'a Value) -> ModelFuture<'a>;
     fn select<'a>(&'a self, data: &'a Value) -> ModelFuture<'a>;
@@ -76,6 +79,7 @@ pub(super) struct Pins {
     pub memory_revision: i64,
     pub setting: Value,
     pub optimizer_model: Option<String>,
+    pub optimizer_reasoning_effort: Option<String>,
     history_digest: Option<String>,
     memory_digest: Option<String>,
 }
@@ -84,7 +88,7 @@ impl Pins {
     pub(super) async fn load(tx: &mut Tx<'_>, id: Uuid) -> Result<Self, sqlx::Error> {
         sqlx::query_as(
             "SELECT id,project_id,bundle_id,number,parent_version_id,channel,channel_revision,
-            evolve_revision,memory_revision,setting,optimizer_model,history_digest,memory_digest
+            evolve_revision,memory_revision,setting,optimizer_model,optimizer_reasoning_effort,history_digest,memory_digest
             FROM learning_rounds WHERE id=$1",
         )
         .bind(id)
@@ -627,10 +631,12 @@ pub(super) async fn run_call(s: &AppState, key: CallKey) -> Result<(), sqlx::Err
     {
         Err(ModelError::Provider("input drift".into()))
     } else if let Some(model) = &s.optimizer {
-        if Some(model.model()) == round.optimizer_model.as_deref() {
-            request(model.as_ref(), key.kind, &input, &target).await
-        } else {
+        if Some(model.model()) != round.optimizer_model.as_deref() {
             Err(ModelError::Provider("model changed".into()))
+        } else if model.reasoning_effort() != round.optimizer_reasoning_effort.as_deref() {
+            Err(ModelError::Provider("reasoning effort changed".into()))
+        } else {
+            request(model.as_ref(), key.kind, &input, &target).await
         }
     } else {
         Err(ModelError::Provider("optimizer unavailable".into()))

@@ -9,7 +9,7 @@ Install `@acclimate/sdk` with Node.js 22.22 or later. See [install the SDKs](/do
 
 | Entry point | Runtime exports |
 | --- | --- |
-| `@acclimate/sdk` | `AcclimateClient`, `ApiError`, `resolveAndCache`, `defaultCacheDir`, `prepareFiles`, `verifyPayloadBytes`, `validatePayload`, `DeliveryError`, `createReceiptReporter`, `TaskExecutionError`, `InfrastructureError`, `compatibilityIssues`, `assertCompatible`, `AcclimateError`, `AcclimateUsageError`, `TransportError` |
+| `@acclimate/sdk` | `createAcclimate`, `AcclimateClient`, `ApiError`, `resolveAndCache`, `defaultCacheDir`, `prepareFiles`, `verifyPayloadBytes`, `validatePayload`, `DeliveryError`, `createReceiptReporter`, `TaskExecutionError`, `InfrastructureError`, `compatibilityIssues`, `assertCompatible`, `AcclimateError`, `AcclimateUsageError`, `TransportError` |
 | `@acclimate/sdk/validation` | `validatePayload`, `DeliveryError`, `compatibilityIssues`, `assertCompatible`, `validateEvaluationDescriptor`, `validateEvaluationServiceUrl`, `assertGuidedTarget`, `EvaluationConfigurationError` |
 | `@acclimate/sdk/evaluation` | `defineEvaluation`, `defineApplication`, `preflightEvaluation`, `assertEvaluationOutput`, `createEvaluationManifest`, `restoreEvaluationManifest`, `canonicalEvaluationJson`, `toSafeDiagnostic`, `exitCodeFor`, `EVALUATION_ERROR_CODES`, `EXIT_CODES`, and the error classes `AcclimateError`, `AcclimateUsageError`, `TransportError`, `EvaluationError`, `EvaluationUsageError`, `DefinitionError`, `OutputValidationError`, `AppSetupError`, `EvaluatorConfigError`, `EvaluationBusyError`, `ExecutionUncertainError`, `CallbackCancelled` |
 | `@acclimate/sdk/evaluation` (local runs) | `tryEvaluation`, `loadLocalPayload`, `localPayloadDigest`, `localVersion`, `LocalRunError` check callback shapes without a service. Results are advisory. |
@@ -18,7 +18,10 @@ Install `@acclimate/sdk` with Node.js 22.22 or later. See [install the SDKs](/do
 | `@acclimate/sdk/evaluation/manifest` | `createEvaluationManifest`, `restoreEvaluationManifest`, `canonicalEvaluationJson` |
 | `@acclimate/sdk/evaluation/cli` | `evaluationMain`, `evaluationReadMain`, `parseEvaluatorArguments`, `reportEvaluatorError`, `verboseRequested`, `sdkVersion`, `EVALUATOR_COMMANDS`, `ADAPTER_FREE_COMMANDS` |
 | `@acclimate/sdk/evaluation/app-cli` | `applicationMain`, `loadApplication`, `resolveApplicationFile`, `defineApplication`, and the `ApplicationAdapter` type |
-| `@acclimate/sdk/native-files` | `prepareNativeFiles` and `nativeSource`, for plugin authors |
+| `@acclimate/sdk/learning` | `defineLoop`, `exact`, `tests`, `serveLearningLoop`, `heldOutDigest`, `addEvolveCases`, `createLearningOutcomeReporter` |
+| `@acclimate/codex-plugin`, `@acclimate/codex-plugin/native` | `codex` creates the native Codex learning adapter. |
+| `@acclimate/claude-plugin`, `@acclimate/claude-plugin/native` | `claude` creates the native Claude learning adapter. |
+| `@acclimate/sdk/native-files` | `prepareNativeFiles`, `nativeSource` and `transcriptTail`, for plugin authors. |
 
 The root entry also exports every wire type, such as `Bundle`, `VersionMetadata`, `Release` and `Page`, plus option types such as `ClientOptions`, `CachePolicy`, `OfflinePolicy` and `PrepareDeliveryOptions`. The types match [`contracts/openapi.json`](/docs/reference/http-api).
 
@@ -26,9 +29,12 @@ The root entry also exports every wire type, such as `Bundle`, `VersionMetadata`
 
 | Command | Use |
 | --- | --- |
+| `acclimate` | Use `acclimate learn` to enroll, sync, serve and follow a loop from an `acclimate.loop.ts` config. |
 | `acclimate-eval` | The [evaluator CLI](/docs/reference/evaluator-cli). It loads `application.mjs` or `application.mts` from the current directory. |
 
 ## Deliver a pinned version
+
+`createAcclimate(options?)` reads `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` by default. Its `job(bundleName, { channel, input?, outcomeId? })` resolves and verifies the release. Use `versionId` in place of `channel` to recreate a pinned job. The job exposes the verified `version`, an `outcomeId`, `prepare(nativePrepare)` or `prepare(destination)`, and `expect(expected, { input }?)`. `expect` retries the bound outcome with the same ID and body. [Production outcomes](/docs/guides/learning-loop#report-a-production-outcome)
 
 Construct `AcclimateClient` with `baseUrl`, `token`, and a stable `scope` that identifies the authenticated application. Use the connection UUID as `connectionId` when resolving for a connection. Call `client.prepare` with `workspaceId`, `bundleId`, and exactly one of `channel` or `versionId`. It returns the verified `version` (its metadata is `version.version`), `directory`, `instructions`, `skillFiles`, `reportStarted()`, and `cleanup()`.
 
@@ -61,11 +67,11 @@ Import loop wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningR
 | --- | --- |
 | Enroll and control | `enrollLearningLoop`, `pauseLearningLoop`, `resumeLearningLoop`, `stopLearningLoop` |
 | Inspect | `getLearningLoop`, `listLearningRounds`, `getLearningRound`, `getLearningMemory` |
-| Add evolve cases or outcomes | `addLearningEvolveCases`, `reportLearningOutcome` |
+| Sync evolve cases or report outcomes | `listLearningEvolveCases`, `addLearningEvolveCases`, `reportLearningOutcome` |
 | Serve evaluation work | `getLearningWork`, `startLearningEvaluation`, `reportLearningEvaluation` |
 
-Each method takes the workspace ID and bundle ID first. See the [HTTP contract](/docs/reference/http-api#learning-loop) for the request shapes.
+Each loop method takes the workspace ID and bundle ID first. `getPrincipal(workspaceId)` returns `{ principalId, kind, rights }` for the authenticated caller. `listLearningEvolveCases` accepts `{ after?, limit? }` and returns `{ items, next, evolveRevision }`. See the [HTTP contract](/docs/reference/http-api#learning-loop) for the request shapes.
 
-`@acclimate/sdk/learning` exports `serveLearningLoop`, `heldOutDigest`, `addEvolveCases`, `createLearningOutcomeReporter` and the `LearningLoopApp` and `LearningLoopOptions` types. The `acclimate-learning` bin serves an enrolled bundle. See the [learning evaluator CLI](/docs/reference/evaluator-cli#learning-evaluator).
+Use `defineLoop(config)` with `LoopConfig`, `LoopAgent`, `LoopCase`, `LoopExecute` and `LoopGrade` to configure the one-command setup. For direct evaluator control, use `serveLearningLoop` with `LearningLoopApp` and `LearningLoopOptions`. [Learning evaluator CLI](/docs/reference/evaluator-cli#learning-evaluator)
 
 `getLearningRound` returns candidates and the selector decision. `getLearningMemory` returns the latest improvement memory or a specific revision when you supply `revision`. Read memory as a workspace reader other than the app principal.

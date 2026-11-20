@@ -37,7 +37,7 @@ This file is the app-facing contract after the change. It covers enrollment, the
 
 | Rule | Detail |
 | --- | --- |
-| Caller | A workspace administrator: a signed-in admin, or a machine principal with `promote`, as `learning_admin` does today (`src/connected_learning.rs:204-212`). The caller must not be the app principal (as `:391-395`). Enrolling authorizes releases on `channel`, so `enrolled_by` records the caller of every accepted `PUT`. |
+| Caller | A workspace administrator: a signed-in admin, or a machine principal with `promote`, as `learning_admin` does today (`src/connected_learning.rs:204-212`). The app principal may enroll itself when it holds `promote` (amendment 2026-11-20, [decisions.md](decisions.md)); `GET /v1/workspaces/{workspaceId}/principal` lets a client find its own principal ID. Enrolling authorizes releases on `channel`, so `enrolled_by` records the caller of every accepted `PUT`. |
 | Body | Closed (`deny_unknown_fields`). Old fields such as `permittedPaths`, `automaticRollout`, `audits` or `outcomePrincipal` get `400 invalid_content`. |
 | `channel` | Passes `valid_channel` (`src/channels.rs:3-8`) and already has a release on this bundle. A channel with no head gets `400` "Release a version on the learning channel first". |
 | `appPrincipalId` | At most 1,024 bytes. Holds `evaluate` (directly or through `write`, `src/auth.rs:9-15`) on this workspace through a static grant (checked as `src/connected_learning.rs:402-410` does) or an active `machine_tokens` row with that `principal_id`. Otherwise `400`. |

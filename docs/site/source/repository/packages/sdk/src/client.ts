@@ -6,8 +6,8 @@ import type {
   CreateConnectionRequest, CreateReleaseRequest, CreateVersionRequest, DeliveryReceipt,
   DeliveryReceiptRequest, ListOptions, Operation, Page, Release, ReleasePage,
   VersionMetadata, Workspace,
-  LearningLoopRequest, LearningLoop, LearningRoundSummary, LearningRound, LearningMemory,
-  LearningEvolveCasesRequest, LearningEvolveCasesReceipt, LearningOutcomeRequest,
+  WorkspacePrincipal, LearningLoopRequest, LearningLoop, LearningRoundSummary, LearningRound, LearningMemory,
+  LearningEvolveCasesRequest, LearningEvolveCasesReceipt, LearningEvolveCasesPage, LearningOutcomeRequest,
   LearningOutcomeReceipt, LearningWork, LearningEvaluationStart, LearningEvaluationAssignment,
   LearningEvaluationReportRequest, LearningEvaluation,
 } from './types.js';
@@ -445,6 +445,9 @@ export class AcclimateClient {
   getLearningMemory(workspaceId: string, bundleId: string, options: { revision?: number } = {}): Promise<LearningMemory> {
     return this.request('GET', this.loopPath(workspaceId, bundleId) + '/memory' + this.learningQuery(options));
   }
+  listLearningEvolveCases(workspaceId: string, bundleId: string, options: { after?: string; limit?: number } = {}): Promise<LearningEvolveCasesPage> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/evolve-cases' + this.learningQuery(options));
+  }
   addLearningEvolveCases(workspaceId: string, bundleId: string, body: LearningEvolveCasesRequest, key?: string): Promise<LearningEvolveCasesReceipt> {
     return this.request('POST', this.loopPath(workspaceId, bundleId) + '/evolve-cases', JSON.stringify(body), key, {}, false, false, true);
   }
@@ -468,6 +471,9 @@ export class AcclimateClient {
   }
   listWorkspaces(options: ListOptions = {}): Promise<Page<Workspace>> {
     return this.request('GET', `/v1/workspaces${this.listing(options)}`);
+  }
+  getPrincipal(workspaceId: string): Promise<WorkspacePrincipal> {
+    return this.request('GET', this.path(workspaceId, '/principal'));
   }
   listBundles(workspaceId: string, options: ListOptions = {}): Promise<Page<Bundle>> {
     return this.request('GET', this.path(workspaceId, `/bundles${this.listing(options)}`));

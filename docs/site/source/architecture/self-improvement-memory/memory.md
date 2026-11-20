@@ -171,6 +171,7 @@ Notes:
 | `evolveRevision` | `learning_rounds.evolve_revision`. Both evaluations used to compute the outcome carry the same value (§6). | No |
 | `heldOutDigest` | `learning_rounds.held_out.digest`, the commitment pinned for the round | No |
 | `optimizerModel` | `learning_rounds.optimizer_model` | No |
+| `optimizerReasoningEffort` | `learning_rounds.optimizer_reasoning_effort`, included when set | No |
 
 Policy epochs, the dataset descriptor and the grader are provenance only (D7). The dataset is the evolve revision. A grader change is expressed by changing `setting.benchmark` through `PUT`, since the grader lives in the evaluator. Connection and runtime provenance are gone with connected learning (decisions.md, M2).
 

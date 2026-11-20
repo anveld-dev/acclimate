@@ -120,18 +120,23 @@ try {
     `
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { AcclimateClient, ApiError, resolveAndCache, prepareFiles } from '@acclimate/sdk';
+import { AcclimateClient, ApiError, resolveAndCache, prepareFiles, createAcclimate } from '@acclimate/sdk';
 import { validatePayload, compatibilityIssues } from '@acclimate/sdk/validation';
 import { defineEvaluation, preflightEvaluation } from '@acclimate/sdk/evaluation';
-import { serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases } from '@acclimate/sdk/learning';
+import { serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases, defineLoop, exact, tests } from '@acclimate/sdk/learning';
 import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
 import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
-import { prepare as codex } from '@acclimate/codex-plugin';
-import { prepare as claude } from '@acclimate/claude-plugin';
+import { prepare as codex, codex as codexAgent } from '@acclimate/codex-plugin';
+import { codex as codexNative } from '@acclimate/codex-plugin/native';
+import { prepare as claude, claude as claudeAgent } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';
 import { prepare as cursor } from '@acclimate/cursor-plugin';
-for (const value of [AcclimateClient, ApiError, resolveAndCache, prepareFiles, codex, claude, pi, cursor]) assert.equal(typeof value, 'function');
-for (const value of [defineEvaluation, preflightEvaluation, evaluationMain, createEvaluationManifest, restoreEvaluationManifest, serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases]) assert.equal(typeof value, 'function');
+for (const value of [AcclimateClient, ApiError, resolveAndCache, prepareFiles, codex, claude, pi, cursor, createAcclimate, codexAgent, claudeAgent, codexNative]) assert.equal(typeof value, 'function');
+for (const value of [defineEvaluation, preflightEvaluation, evaluationMain, createEvaluationManifest, restoreEvaluationManifest, serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases, defineLoop, exact, tests]) assert.equal(typeof value, 'function');
+assert.equal(codexAgent, codexNative);
+assert.equal(codexAgent({ model: 'fixture' }).model, 'fixture');
+assert.equal(claudeAgent({ model: 'fixture' }).model, 'fixture');
+assert.equal((await import('@acclimate/claude-plugin/native')).claude, claudeAgent);
 const rootExports = await import('@acclimate/sdk');
 const evaluatorExports = await import('@acclimate/sdk/evaluation');
 for (const name of ['compare', 'submitComparison']) assert.equal(Object.hasOwn(rootExports, name), false);
@@ -155,14 +160,15 @@ for (const prepare of [codex, claude, pi, cursor]) { const staged = await prepar
   await writeFile(
     join(temp, 'consumer.ts'),
     `
-import { AcclimateClient, type VerifiedVersion } from '@acclimate/sdk';
+import { AcclimateClient, createAcclimate, type AcclimateJob, type VerifiedVersion } from '@acclimate/sdk';
 import { validatePayload, compatibilityIssues } from '@acclimate/sdk/validation';
 import { defineEvaluation, preflightEvaluation } from '@acclimate/sdk/evaluation';
-import { serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases, type LearningLoopApp, type LearningLoopOptions } from '@acclimate/sdk/learning';
+import { serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases, defineLoop, exact, tests, type LearningLoopApp, type LearningLoopOptions } from '@acclimate/sdk/learning';
 import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
 import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
-import { prepare as codex } from '@acclimate/codex-plugin';
-import { prepare as claude } from '@acclimate/claude-plugin';
+import { prepare as codex, codex as codexAgent } from '@acclimate/codex-plugin';
+import { codex as codexNative } from '@acclimate/codex-plugin/native';
+import { prepare as claude, claude as claudeAgent } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';
 import { prepare as cursor } from '@acclimate/cursor-plugin';
 declare const bundle: VerifiedVersion;
@@ -173,10 +179,18 @@ void [defineEvaluation, preflightEvaluation, evaluationMain, createEvaluationMan
 const learningApp = { execution: 'model-free', heldOut: [{caseId: 'test', input: 0, expected: 1}],
   execute: ({ input }) => ({ output: input }), grade: () => ({ score: 1, passed: true }) } satisfies LearningLoopApp<number, number, number>;
 const options: LearningLoopOptions<number, number, number> = { configPath: 'evaluator.json', bundleId: 'b', app: learningApp, caseConcurrency: 4 };
-void [serveLearningLoop<number, number, number>, options, heldOutDigest(learningApp.heldOut), createLearningOutcomeReporter, addEvolveCases];
+declare const job: AcclimateJob;
+void [createAcclimate, job.prepare(codex), job.expect, tests, exact, claudeAgent, codexNative];
+void defineLoop({ bundle: 'b', channel: 'stable', cases: [{ input: 1, expected: { count: 2 } }],
+  agent: codexAgent({ model: 'fixture', parse: (text) => text.length }),
+  grade: (output, expected) => Number(output.toFixed() === expected.count.toFixed()) });
+void [serveLearningLoop<number, number, number>, options, heldOutDigest(learningApp.heldOut), createLearningOutcomeReporter, addEvolveCases, defineLoop, exact, tests];
 `,
   );
   run(process.execPath, ['consumer.mjs'], temp);
+  await cp(join(root, 'scripts/packaging/fixtures/learn-consumer.mjs'), join(temp, 'learn-consumer.mjs'));
+  run(join(temp, 'node_modules/.bin/acclimate'), ['--help'], temp);
+  run(process.execPath, ['learn-consumer.mjs'], temp);
   run(
     process.execPath,
     [

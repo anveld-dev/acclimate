@@ -20,6 +20,8 @@ type Round = {
   state: string;
   memoryRevision: number;
   historyDigest: string;
+  optimizerModel: string;
+  optimizerReasoningEffort: string;
   memory: { improvementMemory: { problems: { attempts: unknown[] }[] } };
   candidates: { diagnosis: unknown; evaluationId: string; sample: number }[];
   evaluations: {
@@ -32,7 +34,14 @@ type Round = {
   retained: { versionId: string };
   adoptedVersionId: string;
   turns: Record<string, number>;
-  optimizer: { event: string; kind: string; returnedAt: string; sample: number }[];
+  optimizer: {
+    event: string;
+    kind: string;
+    returnedAt: string;
+    sample: number;
+    model: string;
+    reasoningEffort: string;
+  }[];
 };
 type Summary = {
   finalDigest: string;
@@ -89,6 +98,12 @@ test(
           'sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
         );
         for (const round of records) {
+          assert.equal(round.optimizerModel, 'gpt-6.2-astra');
+          assert.equal(round.optimizerReasoningEffort, 'high');
+          for (const call of round.optimizer) {
+            assert.equal(call.model, 'gpt-6.2-astra');
+            assert.equal(call.reasoningEffort, 'high');
+          }
           assert.equal(round.candidates.length, 5);
           assert.equal(round.optimizer.filter((r) => r.event === 'request').length, 7);
           for (const candidate of round.candidates) {

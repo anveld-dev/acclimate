@@ -19,7 +19,10 @@ def blocking_receipt(w, phase, **threshold):
                     policy=dict(schemaVersion=1, id=phase + '-quality', revision='1',
                                 metric=dict(name='Instruction coverage', unit='reward', direction='higher'),
                                 aggregation='equal-case-means', requiredCases=[],
-                                maximumCaseRegression=0, **threshold))
+                                maximumCaseRegression=0,
+                                # The fixture has too few cases for the default paired test; these
+                                # scenarios need a definite failing receipt, not an indeterminate one.
+                                inference=dict(method='none'), **threshold))
     assert receipt['verdict'] == 'fail'
     assert receipt['comparisonId'] == w.round[phase + 'ComparisonId']
     return receipt

@@ -13,6 +13,7 @@ import unittest
 import acclimate
 from acclimate import AcclimateClient, ApiError, resolve_and_cache, types
 from acclimate._python_version import require_supported_python
+from acclimate.learning import held_out_digest
 
 ROOT = Path(__file__).resolve().parents[2]
 TS_CLIENT = ROOT / "packages" / "sdk" / "src" / "client.ts"
@@ -130,6 +131,48 @@ class ParityTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "connection_id must be a UUID"):
             AcclimateClient(self.url, "token", "scope", connection_id="not-a-uuid")
 
+    def test_learning_loop_routes_and_idempotency_keys(self):
+        c = self.client
+        prefix = "/v1/workspaces/w/bundles/b/learning"
+        enroll = {"channel": "stable", "appPrincipalId": "machine:app",
+                  "setting": {"domain": "support", "benchmark": "tickets", "policyModel": "model"},
+                  "heldOut": {"digest": "sha256:" + "a" * 64, "cases": 2}}
+        evolve = {"cases": [{"caseId": "a", "input": None, "expected": 1}], "retire": ["b"]}
+        outcome = {"outcomeId": "outcome-id", "versionId": "version-id", "digest": "digest",
+                   "input": None, "expected": 1}
+        start = {"attemptId": "attempt"}
+        report = {"attemptId": "attempt", "error": "learning.held_out_mismatch"}
+        routes = [
+            (lambda: c.enroll_learning_loop("w", "b", enroll), "PUT", "", None, enroll),
+            (lambda: c.get_learning_loop("w", "b"), "GET", "", None, None),
+            (lambda: c.pause_learning_loop("w", "b"), "POST", "/pause", None, None),
+            (lambda: c.resume_learning_loop("w", "b", "resume"), "POST", "/resume", "resume", None),
+            (lambda: c.stop_learning_loop("w", "b"), "POST", "/stop", None, None),
+            (lambda: c.list_learning_rounds("w", "b", before=10, limit=2),
+             "GET", "/rounds?before=10&limit=2", None, None),
+            (lambda: c.get_learning_round("w", "b", "r", evaluation="x y"),
+             "GET", "/rounds/r?evaluation=x+y", None, None),
+            (lambda: c.get_learning_memory("w", "b", revision=0), "GET", "/memory?revision=0", None, None),
+            (lambda: c.add_learning_evolve_cases("w", "b", evolve), "POST", "/evolve-cases", None, evolve),
+            (lambda: c.report_learning_outcome("w", "b", outcome), "POST", "/outcomes", "outcome-id", outcome),
+            (lambda: c.get_learning_work("w", "b"), "GET", "/work", None, None),
+            (lambda: c.start_learning_evaluation("w", "b", "e", start),
+             "POST", "/evaluations/e/start", "attempt", start),
+            (lambda: c.report_learning_evaluation("w", "b", "e", report, "attempt:error"),
+             "POST", "/evaluations/e/report", "attempt:error", report),
+        ]
+        for call, method, suffix, key, body in routes:
+            with self.subTest(method=method, suffix=suffix):
+                self.assertEqual(call(), Recorder.response)
+                actual = self.last()
+                self.assertEqual((actual["method"], actual["path"], actual["key"], actual["body"]),
+                                 (method, prefix + suffix, key, body))
+
+    def test_held_out_commitment_matches_shared_fixture(self):
+        fixture = json.loads((FIXTURES / "learning-held-out-v1.json").read_text())
+        self.assertEqual(held_out_digest(fixture["cases"]), fixture["digest"])
+        self.assertEqual(held_out_digest(list(reversed(fixture["cases"]))), fixture["digest"])
+
     def test_offline_policy_matches_the_typescript_shape(self):
         with tempfile.TemporaryDirectory() as tmp:
             for offline in (
@@ -167,11 +210,11 @@ class ReferenceDocsTest(unittest.TestCase):
 
 class NamespaceTest(unittest.TestCase):
     def test_removed_workflow_exports_are_absent(self):
-        for name in ("Proposal", "Comparison", "Draft", "EvaluationHandoff", "LearningWork",
+        for name in ("Proposal", "Comparison", "Draft", "EvaluationHandoff",
                      "EvaluationProgressReporter"):
             self.assertFalse(hasattr(acclimate, name), name)
         for name in ("create_proposal", "create_draft", "create_comparison", "start_evaluation",
-                     "get_learning_work", "report_comparison_policy_receipt"):
+                     "report_comparison_policy_receipt"):
             self.assertFalse(hasattr(AcclimateClient, name), name)
 
     def test_root_exports_only_public_sdk_names(self):
@@ -197,6 +240,15 @@ class NamespaceTest(unittest.TestCase):
 
 
 class OpenApiContractTest(unittest.TestCase):
+    def test_learning_schema_fields_and_required_keys(self):
+        schemas = json.loads((ROOT / "contracts" / "openapi.json").read_text())["components"]["schemas"]
+        for name in ("LearningLoopRequest", "LearningLoop", "LearningEvaluationReport",
+                     "LearningEvaluationReportRequest", "LearningWork", "LearningOutcomeRequest"):
+            with self.subTest(schema=name):
+                schema, typed_dict = schemas[name], getattr(types, name)
+                self.assertEqual(set(schema["properties"]), set(typed_dict.__annotations__))
+                self.assertEqual(set(schema.get("required", [])), set(typed_dict.__required_keys__))
+
     def test_release_request_schema_matches_both_sdks(self):
         schemas = json.loads((ROOT / "contracts" / "openapi.json").read_text())["components"]["schemas"]
         schema = schemas["PromoteRequest"]

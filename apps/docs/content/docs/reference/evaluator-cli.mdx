@@ -16,3 +16,18 @@ Use `acclimate-eval` for TypeScript, or `acclimate` (also `python -m acclimate`)
 For `try`, files under `skills/` become skills, files under `memory/` become memory files, and other text files become instructions. The application supplies private cases, an execution callback and a grading callback. A model-free adapter can run `try` without `--live`. The check runs locally and leaves channel state untouched.
 
 The private configuration for `doctor` and `pull` supplies the HTTPS service URL, workspace and token. See the [evaluator operations runbook](https://github.com/anveld-dev/acclimate/blob/main/docs/evaluator-operations.md) for configuration and [error codes](/docs/reference/error-codes) for diagnostic output.
+
+## Learning evaluator
+
+`acclimate-learning` is included in the TypeScript SDK. Its module default-exports `execution` (`model-free` or `live`), `execute`, `grade` and `heldOut`.
+
+| Command | Result |
+| --- | --- |
+| `acclimate-learning held-out --app ./learning-app.mjs` | Prints the held-out commitment as JSON without contacting the service. |
+| `acclimate-learning --config /private/evaluator.json --bundle UUID --app ./learning-app.mjs` | Polls and serves an enrolled bundle's evaluations. Add `--live` for live execution. |
+
+The private JSON config uses `schemaVersion: 1`, `serviceUrl`, `workspaceId`, `evaluatorPrincipalId`, `evaluatorToken` (or `evaluatorTokenFile`) and `journalRoot`. The principal must match the enrolled app principal. The journal directory must persist across restarts.
+
+`execute` receives a verified version, prepared bundle content, case ID, input, rollout index and abort signal. Return an `output` and optional `trace`. `grade` receives the output and expected result, plus case ID, rollout index and signal. Return `{ score, passed }`, with a score between 0 and 1 and a boolean pass flag. Each entry of `heldOut` has `caseId`, `input` and `expected`.
+
+See the [operations runbook](https://github.com/anveld-dev/acclimate/blob/main/docs/evaluator-operations.md#serve-the-learning-loop) for an app module example and restart behavior.

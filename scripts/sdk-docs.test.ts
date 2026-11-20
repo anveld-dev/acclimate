@@ -10,7 +10,7 @@ interface Manifest {
   bin: Record<string, string>;
 }
 
-test('the TypeScript SDK reference names every public entry point, runtime export and command', async () => {
+test('the SDK references document every public entry point, runtime export and command', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', sdk), 'utf8')) as Manifest;
   const reference = await readFile(
     new URL('apps/docs/content/docs/reference/typescript-sdk.mdx', root),
@@ -25,14 +25,18 @@ test('the TypeScript SDK reference names every public entry point, runtime expor
     for (const name of Object.keys(await import(source.href)))
       if (!documented.has(name)) missing.push(`${entry}: ${name}`);
   }
+  const cliReference = await readFile(new URL('apps/docs/content/docs/reference/evaluator-cli.mdx', root), 'utf8');
+  const documentedCommands = new Set([...cliReference.matchAll(/^\| `([\w-]+)(?: [^`]+)?` \|/gm)].map((match) => match[1]));
   for (const command of Object.keys(manifest.bin))
-    if (!documented.has(command)) missing.push(`bin: ${command}`);
+    if (!documented.has(command) && !documentedCommands.has(command)) missing.push(`bin: ${command}`);
   assert.deepEqual(missing, [], 'Document these in reference/typescript-sdk.mdx');
 });
 
-test('the evaluator CLI reference lists the remaining commands', async () => {
+test('the evaluator CLI reference lists the local commands and learning bin', async () => {
   const { EVALUATOR_COMMANDS } = await import('../packages/sdk/src/evaluation/cli.js');
   const reference = await readFile(new URL('apps/docs/content/docs/reference/evaluator-cli.mdx', root), 'utf8');
   const documented = [...reference.matchAll(/^\| `([\w-]+)(?: [^`]+)?` \|/gm)].map((match) => match[1]);
-  assert.deepEqual(documented.sort(), [...EVALUATOR_COMMANDS].sort());
+  assert.deepEqual(documented.filter(command => command !== 'acclimate-learning').sort(), [...EVALUATOR_COMMANDS].sort());
+  assert.match(reference, /\bacclimate-learning held-out --app\b/);
+  assert.match(reference, /\bacclimate-learning --config\b/);
 });

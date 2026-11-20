@@ -31,7 +31,7 @@ test('channel switch retains Content filters and selected path without leaking u
 });
 
 test('setup retains its existing route and fragment navigation', () => {
-  assert.deepEqual(Object.values(bundleViewLabels), ['Content', 'Releases']);
+  assert.deepEqual(Object.values(bundleViewLabels), ['Content', 'Releases', 'Learning']);
   const href = bundleHref(scope, 'connect') + '#reporting';
   const destination = consoleDestination(href);
   assert.equal(destination.params._splat, 'workspace/bundles/bundle/channels/canary/connect');

@@ -87,3 +87,18 @@ Differences from the TypeScript client:
 `DeliveryReporter(client, workspace_id, connection_id, *, max_queue=100)` reports delivery stages for a connection from a background thread. Pass it to `client.prepare(..., reporter=reporter)` and call `prepared.report_started()` when the job starts. Report failures never block delivery. Call `wait(timeout)` and then `close(timeout)` before a short-lived process exits.
 
 `EvaluationProgressReporter(client, *, workspace_id, bundle_id, request_id, attempt_id)` reports optional progress for a running evaluation with `report(sequence=..., phase=..., completed=..., total=...)`. It returns `False` instead of raising when a report fails.
+
+## Learning
+
+Import wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningRoundSummary`, `LearningRound`, `LearningEvaluation` and `LearningWork` from `acclimate.types`. The client methods take the workspace ID and bundle ID first. JSON keys follow the [HTTP contract](/docs/reference/http-api#learning-loop).
+
+| Task | Client methods |
+| --- | --- |
+| Enroll and control | `enroll_learning_loop`, `pause_learning_loop`, `resume_learning_loop`, `stop_learning_loop` |
+| Inspect | `get_learning_loop`, `list_learning_rounds`, `get_learning_round` |
+| Add evolve cases or outcomes | `add_learning_evolve_cases`, `report_learning_outcome` |
+| Serve evaluation work | `get_learning_work`, `start_learning_evaluation`, `report_learning_evaluation` |
+
+`acclimate.learning.held_out_digest(cases)` computes the enrollment digest from the evaluator's private case array. A custom Python evaluator can poll, start and report work through the client methods. The packaged learning runner uses the TypeScript SDK.
+
+The SDK also exposes `get_learning_memory` for the phase 4 memory route.

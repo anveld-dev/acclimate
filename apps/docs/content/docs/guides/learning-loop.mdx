@@ -1,0 +1,72 @@
+---
+title: Enroll a learning loop
+description: Set up an evaluator, add evolve cases, and monitor recurring evaluations of a released bundle.
+---
+
+An enrolled bundle scores its released version on the evolve and held-out splits. In phase 3, each round keeps the current release. Candidate generation, automatic adoption and improvement memory arrive with the optimizer in phase 4.
+
+## Enroll a bundle
+
+1. Release a version on the channel that the loop will evaluate. For app delivery, resolve that channel directly or use a connection bound to it.
+2. In **Members**, issue a machine token with **Evaluate** for the app. Save its principal ID and keep its token in the app's private configuration. A static grant with `evaluate` or `write` also works.
+3. Prepare a private evaluator module with `execute`, `grade` and a `heldOut` array. Run the command below to get its commitment locally.
+4. As a workspace administrator, open the bundle's **Learning** tab. Select the published channel, enter the app principal ID, and fill in the domain, benchmark and policy model for your workload. Paste the digest and enter the case count from the command output. Select **Enroll loop**.
+
+```bash
+acclimate-learning held-out --app ./learning-app.mjs
+```
+
+The evaluator owns the held-out inputs and expected results. Enrollment sends only their digest and count. The same app principal serves evaluations, adds setup cases and reports outcomes.
+
+## Add evolve cases
+
+Add the first case to start rounds. In **Learning → Evolve cases**, enter a setup case ID, JSON input and JSON expected result, and submit it with the enrolled app principal token. The table shows the case IDs reported by an incumbent evaluation and the revision that evaluation used.
+
+For batch setup, use the TypeScript SDK with a client authenticated as the app principal.
+
+```ts
+import { addEvolveCases } from '@acclimate/sdk/learning';
+
+await addEvolveCases(client, { workspaceId, bundleId }, {
+  cases: [{
+    caseId: 'refund-07',
+    input: { ticket: 'Refund requested for a duplicate charge' },
+    expected: { action: 'refund' },
+  }],
+});
+```
+
+Use 1–128 letters, digits or `._:-` characters for each ID. The `outcome:` prefix is reserved. Input and expected result may each be any JSON value up to 64 KiB. Repeating the same live case is a no-op. To change a case, pass its ID in `retire` and add a case with a new ID. A request can add up to 100 cases and retire up to 100 IDs. Each change creates a revision. A round pins its revision at the start.
+
+## Report an outcome
+
+When a job has a known expected result, persist a UUID with the job and report the outcome with the verified version it ran. Use the same UUID and body when retrying.
+
+```ts
+import { createLearningOutcomeReporter } from '@acclimate/sdk/learning';
+
+const report = createLearningOutcomeReporter({ client, workspaceId, bundleId });
+const receipt = await report(verifiedVersion, {
+  outcomeId: job.outcomeId,
+  input: job.input,
+  expected: { action: 'escalate' },
+});
+```
+
+The service checks the version ID and digest against the bundle and creates the evolve case `outcome:<outcomeId>`. That case is available from the next round. Skip reporting when the expected result is unknown.
+
+## Serve evaluations
+
+Run the TypeScript evaluator with a private config containing the service URL, workspace, enrolled principal token and a durable journal directory. Add `--live` when the module declares `execution: 'live'`.
+
+```bash
+acclimate-learning --config /private/evaluator.json --bundle "$ACCLIMATE_BUNDLE" --app ./learning-app.mjs
+```
+
+The evaluator serves one work item at a time. It runs each case five times, grades each rollout and reports whole cases as they finish. On restart it resumes the journaled attempt and skips cases already reported. See the [evaluator CLI reference](/docs/reference/evaluator-cli) for the module and configuration.
+
+## Monitor and control rounds
+
+Refresh the **Learning** tab to see progress, recent decisions and historical scores. Each plotted point is the measured score for that round. The evolve score is measured on the incumbent at the start of the round. The held-out score is measured on the retained version for monitoring only. A failed held-out evaluation appears in the round list and the round can still complete.
+
+**Pause** lets the active round finish and prevents new rounds. **Resume** starts scheduling again. **Stop** cancels open evaluations. To restart a stopped loop, enroll it again from the same tab. The evolve split and round history carry forward.

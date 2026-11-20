@@ -1,7 +1,7 @@
 import type { BundleScope } from './server/selection';
 
 export type WorkspaceView = 'bundles' | 'connections' | 'delivery' | 'members';
-export type BundleView = 'content' | 'releases' | 'connect';
+export type BundleView = 'content' | 'releases' | 'learning' | 'connect';
 export type ConsoleLocation = {
   workspaceId: string;
   bundleId?: string;
@@ -27,7 +27,8 @@ export function bundleHref(
   search: Record<string, string | number | undefined> = {},
 ) {
   const base = `/w/${part(scope.workspaceId)}/bundles/${part(scope.bundleId)}`;
-  const path = `${base}/channels/${part(scope.channel)}/${view}`;
+  const path =
+    view === 'learning' ? `${base}/learning` : `${base}/channels/${part(scope.channel)}/${view}`;
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(search))
     if (value !== undefined && value !== '') query.set(key, String(value));
@@ -45,6 +46,8 @@ export function parseConsoleLocation(path: string): ConsoleLocation | null {
       return { workspaceId, view: 'members' };
     if (parts[2] !== 'bundles' || !parts[3]) return null;
     const bundleId = parts[3];
+    if (parts.length === 5 && parts[4] === 'learning')
+      return { workspaceId, bundleId, view: 'learning' };
     if (
       parts.length === 7 &&
       parts[4] === 'channels' &&
@@ -70,6 +73,7 @@ export function channelSwitchSearch(view: BundleView, search: Record<string, unk
 export const bundleViewLabels: Record<Exclude<BundleView, 'connect'>, string> = {
   content: 'Content',
   releases: 'Releases',
+  learning: 'Learning',
 };
 
 /** Short breadcrumb only; the detail surface retains the complete path or identity. */

@@ -21,6 +21,8 @@ export type SafeCode =
   | 'definition.invalid'
   | 'application.invalid'
   | 'application.import_failed'
+  | 'learning.apps_invalid_export'
+  | 'learning.held_out_mismatch'
   | 'output.invalid'
   | 'payload.incompatible'
   | 'runtime.unsupported'
@@ -103,6 +105,8 @@ export const EVALUATION_ERROR_CODES: Readonly<Record<SafeCode, Readonly<CodeInfo
   'config.url': config('serviceUrl must be an https:// origin, or http:// on localhost, with no path, query or credentials.'),
   'definition.invalid': app('The evaluation definition is invalid.'),
   'application.invalid': app('The application module does not export a valid adapter.'),
+  'learning.apps_invalid_export': app('Default-export an object with execute, grade, heldOut and an execution mode.'),
+  'learning.held_out_mismatch': app('The installed held-out cases do not match the loop\'s held-out commitment.'),
   'application.import_failed': app('The application module could not be imported.'),
   'payload.incompatible': { message: 'The payload breaks a compatibility rule of a native harness the application declares.', nextAction: 'fix_command', exitCode: 1 },
   'output.invalid': app('A callback returned a value that is not plain JSON.'),

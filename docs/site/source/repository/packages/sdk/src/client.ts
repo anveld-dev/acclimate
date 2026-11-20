@@ -6,6 +6,10 @@ import type {
   CreateConnectionRequest, CreateReleaseRequest, CreateVersionRequest, DeliveryReceipt,
   DeliveryReceiptRequest, ListOptions, Operation, Page, Release, ReleasePage,
   VersionMetadata, Workspace,
+  LearningLoopRequest, LearningLoop, LearningRoundSummary, LearningRound, LearningMemory,
+  LearningEvolveCasesRequest, LearningEvolveCasesReceipt, LearningOutcomeRequest,
+  LearningOutcomeReceipt, LearningWork, LearningEvaluationStart, LearningEvaluationAssignment,
+  LearningEvaluationReportRequest, LearningEvaluation,
 } from './types.js';
 
 /** Error codes the Acclimate service returns, plus codes the client assigns to HTTP failures. */
@@ -24,6 +28,7 @@ export type ApiErrorCode =
   | 'invalid_content'
   | 'invalid_cursor'
   | 'invalid_session'
+  | 'learning_conflict'
   | 'invitation_closed'
   | 'invitation_exists'
   | 'invitation_limit'
@@ -256,15 +261,17 @@ export class AcclimateClient {
     headers: Record<string, string> = {},
     raw = false,
     channelResolution = false,
+    optionalKey = false,
   ): Promise<T> {
     const mutation = method !== 'GET' && method !== 'HEAD';
-    if (mutation && (!idempotencyKey || !/^[\x20-\x7e]{1,128}$/.test(idempotencyKey)))
+    if (mutation && !(optionalKey && idempotencyKey === undefined) && (!idempotencyKey || !/^[\x20-\x7e]{1,128}$/.test(idempotencyKey)))
       throw new AcclimateUsageError(
         'mutations require a printable ASCII idempotency key (1..128 characters)',
         'idempotencyKey',
       );
+    const retries = mutation && idempotencyKey ? this.retries : 0;
     let last: unknown;
-    for (let attempt = 0; attempt <= (mutation ? this.retries : 0); attempt++) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const response = await this.send(this.baseUrl + path, {
           method,
@@ -286,7 +293,7 @@ export class AcclimateClient {
             if (error instanceof ApiError) throw error;
             return null;
           });
-          if (mutation && response.status >= 500 && attempt < this.retries) continue;
+          if (response.status >= 500 && attempt < retries) continue;
           throw new ApiError(
             response.status,
             err?.error?.code ?? 'http_error',
@@ -306,7 +313,7 @@ export class AcclimateClient {
       } catch (error) {
         if (error instanceof ApiError) throw error;
         last = error;
-        if (attempt >= (mutation ? this.retries : 0)) throw error;
+        if (attempt >= retries) throw error;
       }
     }
     throw last;
@@ -404,6 +411,54 @@ export class AcclimateClient {
       JSON.stringify(request),
       key,
     );
+  }
+  private loopPath(workspaceId: string, bundleId: string): string {
+    return this.path(workspaceId, `/bundles/${this.part(bundleId)}/learning`);
+  }
+  private learningQuery(options: Record<string, string | number | undefined>): string {
+    const query = new URLSearchParams();
+    for (const [name, value] of Object.entries(options))
+      if (value !== undefined) query.set(name, String(value));
+    return query.size ? `?${query}` : '';
+  }
+  enrollLearningLoop(workspaceId: string, bundleId: string, body: LearningLoopRequest, key?: string): Promise<LearningLoop> {
+    return this.request('PUT', this.loopPath(workspaceId, bundleId), JSON.stringify(body), key, {}, false, false, true);
+  }
+  getLearningLoop(workspaceId: string, bundleId: string): Promise<LearningLoop> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId));
+  }
+  pauseLearningLoop(workspaceId: string, bundleId: string, key?: string): Promise<LearningLoop> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/pause', undefined, key, {}, false, false, true);
+  }
+  resumeLearningLoop(workspaceId: string, bundleId: string, key?: string): Promise<LearningLoop> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/resume', undefined, key, {}, false, false, true);
+  }
+  stopLearningLoop(workspaceId: string, bundleId: string, key?: string): Promise<LearningLoop> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/stop', undefined, key, {}, false, false, true);
+  }
+  listLearningRounds(workspaceId: string, bundleId: string, options: { before?: number; limit?: number } = {}): Promise<{ items: LearningRoundSummary[]; next: number | null }> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/rounds' + this.learningQuery(options));
+  }
+  getLearningRound(workspaceId: string, bundleId: string, roundId: string, options: { evaluation?: string } = {}): Promise<LearningRound> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + `/rounds/${this.part(roundId)}` + this.learningQuery(options));
+  }
+  getLearningMemory(workspaceId: string, bundleId: string, options: { revision?: number } = {}): Promise<LearningMemory> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/memory' + this.learningQuery(options));
+  }
+  addLearningEvolveCases(workspaceId: string, bundleId: string, body: LearningEvolveCasesRequest, key?: string): Promise<LearningEvolveCasesReceipt> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/evolve-cases', JSON.stringify(body), key, {}, false, false, true);
+  }
+  reportLearningOutcome(workspaceId: string, bundleId: string, body: LearningOutcomeRequest, key = body.outcomeId): Promise<LearningOutcomeReceipt> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/outcomes', JSON.stringify(body), key);
+  }
+  getLearningWork(workspaceId: string, bundleId: string): Promise<LearningWork> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/work');
+  }
+  startLearningEvaluation(workspaceId: string, bundleId: string, evaluationId: string, body: LearningEvaluationStart, key = body.attemptId): Promise<LearningEvaluationAssignment> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + `/evaluations/${this.part(evaluationId)}/start`, JSON.stringify(body), key);
+  }
+  reportLearningEvaluation(workspaceId: string, bundleId: string, evaluationId: string, body: LearningEvaluationReportRequest, key: string): Promise<LearningEvaluation> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + `/evaluations/${this.part(evaluationId)}/report`, JSON.stringify(body), key);
   }
   private listing(options: ListOptions = {}): string {
     const query = new URLSearchParams();

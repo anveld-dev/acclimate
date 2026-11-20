@@ -147,6 +147,34 @@ async fn begin_mutation_inner<'a>(
     body: &[u8],
     require_admin: bool,
 ) -> ApiResult<MutationStart<'a>> {
+    let mut tx = s.db.begin().await.map_err(db)?;
+    crate::auth::authorize_transaction(&mut tx, a, project, &a.required_right).await?;
+    if rights(project, path).is_some() {
+        authorize(&mut tx, s, a, h, project, path).await?;
+    }
+    prepare_mutation(tx, a, project, path, h, body, require_admin).await
+}
+
+pub(crate) async fn begin_authorized_mutation<'a>(
+    tx: Transaction<'a, Postgres>,
+    a: &Actor,
+    project: &str,
+    path: &str,
+    h: &HeaderMap,
+    body: &[u8],
+) -> ApiResult<MutationStart<'a>> {
+    prepare_mutation(tx, a, project, path, h, body, false).await
+}
+
+async fn prepare_mutation<'a>(
+    mut tx: Transaction<'a, Postgres>,
+    a: &Actor,
+    project: &str,
+    path: &str,
+    h: &HeaderMap,
+    body: &[u8],
+    require_admin: bool,
+) -> ApiResult<MutationStart<'a>> {
     let key = h
         .get("idempotency-key")
         .and_then(|x| x.to_str().ok())
@@ -170,11 +198,6 @@ async fn begin_mutation_inner<'a>(
     hash.update([0]);
     hash.update(body);
     let fingerprint = hash.finalize().to_vec();
-    let mut tx = s.db.begin().await.map_err(db)?;
-    crate::auth::authorize_transaction(&mut tx, a, project, &a.required_right).await?;
-    if audited {
-        authorize(&mut tx, s, a, h, project, path).await?;
-    }
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(lock(&a.principal, project, path, key))
         .execute(&mut *tx)
@@ -207,7 +230,15 @@ async fn begin_mutation_inner<'a>(
         {
             return Err(err(
                 StatusCode::CONFLICT,
-                "idempotency_conflict",
+                if path
+                    .strip_prefix(&format!("/v1/workspaces/{project}/bundles/"))
+                    .and_then(|suffix| suffix.split_once('/'))
+                    .is_some_and(|(_, route)| route.starts_with("learning/evaluations/"))
+                {
+                    "learning_conflict"
+                } else {
+                    "idempotency_conflict"
+                },
                 "Key was used with different request bytes",
             ));
         }
@@ -281,10 +312,53 @@ pub(crate) async fn finish_mutation(
     } else {
         sqlx::query("INSERT INTO idempotency(principal_id,project_id,method,path,key,fingerprint,response_status,response_body,expires_at) VALUES($1,$2,'POST',$3,$4,$5,$6,$7,now()+interval '24 hours')").bind(&c.principal).bind(&c.project).bind(&c.path).bind(&c.key).bind(&c.fingerprint).bind(status.as_u16() as i32).bind(&bytes).execute(&mut *c.tx).await.map_err(db)?;
     }
-    sqlx::query("INSERT INTO mutation_audit(project_id,actor_user_id,service_principal,principal_id,path,operation_key) VALUES($1,$2,$3,$4,$5,$6)").bind(&c.project).bind(c.user_id).bind(&c.service_principal).bind(&c.principal).bind(&c.path).bind(&c.key).execute(&mut *c.tx).await.map_err(db)?;
+    write_audit(
+        &mut c.tx,
+        &c.project,
+        c.user_id,
+        &c.service_principal,
+        &c.principal,
+        &c.path,
+        &c.key,
+    )
+    .await?;
     c.tx.commit().await.map_err(db)?;
     Ok((status, [(header::CONTENT_TYPE, "application/json")], bytes).into_response())
 }
+pub(crate) async fn audit_mutation(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: &Actor,
+    project: &str,
+    path: &str,
+    key: &str,
+) -> ApiResult<()> {
+    write_audit(
+        tx,
+        project,
+        actor.user_id,
+        &actor.service_principal,
+        &actor.principal,
+        path,
+        key,
+    )
+    .await
+}
+
+async fn write_audit(
+    tx: &mut Transaction<'_, Postgres>,
+    project: &str,
+    user: Option<uuid::Uuid>,
+    service: &str,
+    principal: &str,
+    path: &str,
+    key: &str,
+) -> ApiResult<()> {
+    sqlx::query("INSERT INTO mutation_audit(project_id,actor_user_id,service_principal,principal_id,path,operation_key) VALUES($1,$2,$3,$4,$5,$6)")
+        .bind(project).bind(user).bind(service).bind(principal).bind(path).bind(key)
+        .execute(&mut **tx).await.map_err(db)?;
+    Ok(())
+}
+
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OperationScope {
@@ -447,7 +521,7 @@ struct DurableReceipt {
 impl DurableCommand {
     pub(crate) fn new(
         project: &str,
-        integration: uuid::Uuid,
+        scope_id: uuid::Uuid,
         operation: &str,
         principal: &str,
         key: impl ToString,
@@ -455,7 +529,7 @@ impl DurableCommand {
     ) -> Self {
         Self {
             project: project.into(),
-            scope: format!("learning/{integration}/{operation}"),
+            scope: format!("learning/{scope_id}/{operation}"),
             principal: principal.into(),
             key: key.to_string(),
             request,
@@ -468,7 +542,7 @@ impl DurableCommand {
     pub(crate) fn optional(
         headers: &HeaderMap,
         project: &str,
-        integration: uuid::Uuid,
+        scope_id: uuid::Uuid,
         operation: &str,
         principal: &str,
         request: Value,
@@ -487,8 +561,7 @@ impl DurableCommand {
                             "Invalid idempotency key",
                         )
                     })?;
-                let mut command =
-                    Self::new(project, integration, operation, principal, key, request);
+                let mut command = Self::new(project, scope_id, operation, principal, key, request);
                 command.principal_owned = true;
                 Ok(command)
             })

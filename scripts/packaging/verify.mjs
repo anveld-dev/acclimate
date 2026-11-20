@@ -123,6 +123,7 @@ import { readFile } from 'node:fs/promises';
 import { AcclimateClient, ApiError, resolveAndCache, prepareFiles } from '@acclimate/sdk';
 import { validatePayload, compatibilityIssues } from '@acclimate/sdk/validation';
 import { defineEvaluation, preflightEvaluation } from '@acclimate/sdk/evaluation';
+import { serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases } from '@acclimate/sdk/learning';
 import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
 import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
 import { prepare as codex } from '@acclimate/codex-plugin';
@@ -130,13 +131,13 @@ import { prepare as claude } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';
 import { prepare as cursor } from '@acclimate/cursor-plugin';
 for (const value of [AcclimateClient, ApiError, resolveAndCache, prepareFiles, codex, claude, pi, cursor]) assert.equal(typeof value, 'function');
-for (const value of [defineEvaluation, preflightEvaluation, evaluationMain, createEvaluationManifest, restoreEvaluationManifest]) assert.equal(typeof value, 'function');
+for (const value of [defineEvaluation, preflightEvaluation, evaluationMain, createEvaluationManifest, restoreEvaluationManifest, serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases]) assert.equal(typeof value, 'function');
 const rootExports = await import('@acclimate/sdk');
 const evaluatorExports = await import('@acclimate/sdk/evaluation');
 for (const name of ['compare', 'submitComparison']) assert.equal(Object.hasOwn(rootExports, name), false);
 for (const name of ['runEvaluation', 'planEvaluation', 'runLocalComparison', 'createEvaluationProgressReporter'])
   assert.equal(Object.hasOwn(evaluatorExports, name), false);
-for (const subpath of ['evaluation/policy', 'evaluation/artifacts', 'evaluation/analysis', 'evaluation/progress', 'learning'])
+for (const subpath of ['evaluation/policy', 'evaluation/artifacts', 'evaluation/analysis', 'evaluation/progress', 'learning/loop'])
   await assert.rejects(import('@acclimate/sdk/' + subpath), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
 const application = defineEvaluation({configId:'installed-check',configRevision:'1',datasetRevision:'cases-1',graderRevision:'grade-1',runtime:{app:'fixture'},execution:'model-free',cases:[{caseId:'task',input:{value:1},expected:1}],execute:async()=>({output:1}),grade:async()=>({reward:1})});
 assert.equal(application.descriptor.runtime.configId, 'installed-check');
@@ -157,6 +158,7 @@ for (const prepare of [codex, claude, pi, cursor]) { const staged = await prepar
 import { AcclimateClient, type VerifiedVersion } from '@acclimate/sdk';
 import { validatePayload, compatibilityIssues } from '@acclimate/sdk/validation';
 import { defineEvaluation, preflightEvaluation } from '@acclimate/sdk/evaluation';
+import { serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases, type LearningLoopApp, type LearningLoopOptions } from '@acclimate/sdk/learning';
 import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
 import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
 import { prepare as codex } from '@acclimate/codex-plugin';
@@ -168,6 +170,10 @@ validatePayload(bundle.payload);
 void compatibilityIssues(bundle.payload, 'codex');
 void [AcclimateClient, codex(bundle), claude(bundle), pi(bundle), cursor(bundle)];
 void [defineEvaluation, preflightEvaluation, evaluationMain, createEvaluationManifest, restoreEvaluationManifest];
+const learningApp = { execution: 'model-free', heldOut: [{caseId: 'test', input: 0, expected: 1}],
+  execute: ({ input }) => ({ output: input }), grade: () => ({ score: 1, passed: true }) } satisfies LearningLoopApp<number, number, number>;
+const options: LearningLoopOptions<number, number, number> = { configPath: 'evaluator.json', bundleId: 'b', app: learningApp, caseConcurrency: 4 };
+void [serveLearningLoop<number, number, number>, options, heldOutDigest(learningApp.heldOut), createLearningOutcomeReporter, addEvolveCases];
 `,
   );
   run(process.execPath, ['consumer.mjs'], temp);
@@ -284,7 +290,8 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
     const descriptor = describe('acclimate-eval.mjs');
     const bin = join(temp, 'node_modules/.bin/acclimate-eval');
     run(bin, ['--help'], app);
-    for (const name of ['acclimate-operator', 'acclimate-learning']) {
+    run(join(temp, 'node_modules/.bin/acclimate-learning'), ['--help'], app);
+    for (const name of ['acclimate-operator']) {
       if (await lstat(join(temp, 'node_modules/.bin', name)).catch(error => {
         if (error.code !== 'ENOENT') throw error;
         return null;

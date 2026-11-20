@@ -52,3 +52,20 @@ Use `resolveAndCache` when you want a verified version for a native plugin or yo
 | `ExecutionUncertainError`, `CallbackCancelled` | Thrown from your callbacks: when external work might still be running, or after the callback stops for cooperative cancellation. |
 
 [Versioning and compatibility](/docs/reference/versioning) covers which SDK versions work with which service versions and how deprecated names are removed.
+
+## Learning
+
+Import loop wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningRoundSummary`, `LearningRound`, `LearningEvaluation` and `LearningWork` from `@acclimate/sdk`.
+
+| Task | `AcclimateClient` methods |
+| --- | --- |
+| Enroll and control | `enrollLearningLoop`, `pauseLearningLoop`, `resumeLearningLoop`, `stopLearningLoop` |
+| Inspect | `getLearningLoop`, `listLearningRounds`, `getLearningRound` |
+| Add evolve cases or outcomes | `addLearningEvolveCases`, `reportLearningOutcome` |
+| Serve evaluation work | `getLearningWork`, `startLearningEvaluation`, `reportLearningEvaluation` |
+
+Each method takes the workspace ID and bundle ID first. See the [HTTP contract](/docs/reference/http-api#learning-loop) for the request shapes.
+
+`@acclimate/sdk/learning` exports `serveLearningLoop`, `heldOutDigest`, `addEvolveCases`, `createLearningOutcomeReporter` and the `LearningLoopApp` and `LearningLoopOptions` types. The `acclimate-learning` bin serves an enrolled bundle. See the [learning evaluator CLI](/docs/reference/evaluator-cli#learning-evaluator).
+
+The SDK also exposes `getLearningMemory` for the phase 4 memory route.

@@ -1,3 +1,4 @@
+import { readLearningChannel } from '../server/learning-loop';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SdkSetup } from './sdk-setup';
 import { isCurrentDelivery } from '../lib/delivery-release';
@@ -162,6 +163,24 @@ function ConnectionWorkspace({
 }) {
   const navigate = useNavigate();
   const selected = state.selected?.integration;
+  const [learningChannel, setLearningChannel] = useState<string | null>(null);
+  const selectedBundleId = selected?.bundleId;
+  useEffect(() => {
+    if (!selectedBundleId) return;
+    let active = true;
+    void readLearningChannel({
+      data: { workspaceId: state.workspaceId, bundleId: selectedBundleId },
+    })
+      .then((channel) => {
+        if (active) setLearningChannel(channel);
+      })
+      .catch(() => {
+        if (active) setLearningChannel(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [state.workspaceId, selectedBundleId]);
   const [receiptPage, setReceiptPage] = useState<Page<DeliveryReceipt>>(
     state.selected?.receipts ?? { items: [], nextCursor: null },
   );
@@ -830,6 +849,13 @@ function ConnectionWorkspace({
             {!state.canManage && (
               <p className="text-sm text-muted-foreground">
                 Credential changes are disabled for this console.
+              </p>
+            )}
+            {learningChannel === selected.channel && (
+              <p className="text-sm">
+                <ConsoleLink className="underline" href={bundleHref(binding!, 'learning')}>
+                  Receives versions adopted by the learning loop
+                </ConsoleLink>
               </p>
             )}
             <dl className="connection-status-strip">

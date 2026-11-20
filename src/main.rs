@@ -1,6 +1,6 @@
 use acclimate_service::{
     AccessConfig, AppState, Grant, RuntimeStatus, backfill_projects, invitation_worker,
-    recover_invitation_mail, router, runtime::SHUTDOWN_GRACE, validate_grants,
+    learning_worker, recover_invitation_mail, router, runtime::SHUTDOWN_GRACE, validate_grants,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use std::{env, io::Read, net::SocketAddr, process::ExitCode, sync::Arc, time::Duration};
@@ -192,10 +192,12 @@ async fn run() -> RunResult {
     backfill_projects(&state).await?;
     recover_invitation_mail(&state).await?;
     let app = router(state.clone());
-    let mut mail_worker = tokio::spawn(invitation_worker(state));
+    let mut mail_worker = tokio::spawn(invitation_worker(state.clone()));
+    let mut loop_worker = tokio::spawn(learning_worker(state));
     // No socket is opened until the worker has actually entered its task.
     tokio::select! {
         _ = runtime.wait_for_worker() => {},
+        result = &mut loop_worker => return Err(std::io::Error::other(format!("learning worker exited during startup: {result:?}")).into()),
         result = &mut mail_worker => return Err(std::io::Error::other(format!("invitation worker exited during startup: {result:?}")).into()),
     }
     runtime.mark_initialized();
@@ -203,6 +205,8 @@ async fn run() -> RunResult {
         Ok(listener) => listener,
         Err(error) => {
             runtime.begin_draining();
+            loop_worker.abort();
+            let _ = loop_worker.await;
             mail_worker.abort();
             let _ = mail_worker.await;
             return Err(error.into());
@@ -219,12 +223,17 @@ async fn run() -> RunResult {
     let mut server_finished = false;
     let mut ownership_lost = false;
     let mut mail_finished = false;
+    let mut loop_finished = false;
     // This is the only shutdown coordinator, including signals and fatal exits.
     let result: RunResult = tokio::select! {
         _ = shutdown_signal() => Ok(()),
         result = &mut server => {
             server_finished = true;
             match result { Ok(result) => result.map_err(Into::into), Err(error) => Err(error.into()) }
+        },
+        result = &mut loop_worker => {
+            loop_finished = true;
+            Err(std::io::Error::other(format!("learning worker exited unexpectedly: {result:?}")).into())
         },
         result = &mut mail_worker => {
             mail_finished = true;
@@ -238,11 +247,16 @@ async fn run() -> RunResult {
     runtime.begin_draining();
     if ownership_lost {
         runtime.ownership_lost();
+        loop_worker.abort();
         mail_worker.abort();
     }
     let _ = stop_http.send(());
     let drained = tokio::time::timeout(SHUTDOWN_GRACE, async {
         runtime.settle_claims().await;
+        if !loop_finished {
+            let _ = (&mut loop_worker).await;
+            loop_finished = true;
+        }
         if !mail_finished {
             let _ = (&mut mail_worker).await;
             mail_finished = true;
@@ -254,6 +268,10 @@ async fn run() -> RunResult {
     })
     .await
     .is_ok();
+    if !loop_finished {
+        loop_worker.abort();
+        let _ = loop_worker.await;
+    }
     if !mail_finished {
         mail_worker.abort();
         let _ = mail_worker.await;

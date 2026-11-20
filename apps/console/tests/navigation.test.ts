@@ -48,3 +48,14 @@ test('published views identify their channel and removed routes do not parse', (
   ])
     assert.equal(parseConsoleLocation(path), null);
 });
+
+test('learning is bundle scoped and round-trips without the selected channel', () => {
+  const scope = { workspaceId: 'acme', bundleId: 'b', channel: 'canary' };
+  const href = bundleHref(scope, 'learning');
+  assert.equal(href, '/w/acme/bundles/b/learning');
+  assert.deepEqual(parseConsoleLocation(href), {
+    workspaceId: 'acme',
+    bundleId: 'b',
+    view: 'learning',
+  });
+});

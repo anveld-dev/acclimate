@@ -17,6 +17,8 @@ mod commands;
 pub mod compatibility;
 mod integrations;
 mod invitations;
+mod learning;
+pub use learning::worker::learning_worker;
 mod machine_tokens;
 pub mod mail;
 pub mod proposal_edits;
@@ -124,6 +126,7 @@ pub fn router(state: AppState) -> Router {
         .merge(integrations::routes())
         .merge(workspaces::routes())
         .merge(invitations::routes())
+        .merge(learning::routes())
         .merge(machine_tokens::routes())
         .route("/health", get(|| async { "ok" }))
         .route("/ready", get(runtime::readiness))

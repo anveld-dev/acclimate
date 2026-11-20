@@ -51,3 +51,26 @@ Bundle entries are UTF-8 text with a portable relative path and a kind of `instr
 For scoped content writes, provide an `Idempotency-Key` of 1–128 printable ASCII characters. Retry with the same key and exact request bytes. A different body with that key can return a 409 conflict. Bundle setup and release writes support retained results. Send `X-Acclimate-Durable-Operation: true` with a UUID idempotency key. Look up or close a lost write with `GET /operations/{key}?operationPath=...` or `POST /operations/{key}/close`.
 
 Release writes take `versionId`, `expectedRevision` and `unevaluatedReason`. On a revision conflict, re-read the channel before submitting a new release.
+
+## Learning loop
+
+Paths below are relative to `/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning`.
+
+| Method and suffix | Caller | Request and response |
+| --- | --- | --- |
+| `PUT` | Administrator | Send `channel`, `appPrincipalId`, `setting: {domain, benchmark, policyModel}` and `heldOut: {digest, cases}`. Returns `LearningLoop`. |
+| `GET` | Reader | Returns `LearningLoop`. An unenrolled bundle returns 404. |
+| `POST /pause`, `/resume`, `/stop` | Administrator | No body. Returns `LearningLoop`. |
+| `GET /rounds` | Reader | Optional `before` round cursor and `limit` (default 20, max 100). Returns `{items, next}` with round summaries. |
+| `GET /rounds/{roundId}` | Reader | Returns `LearningRound`, including summary fields, pinned settings and evaluations. Optional `evaluation` ID includes the full report for one evolve evaluation. |
+| `POST /evolve-cases` | App principal | Send `cases: [{caseId, input, expected}]` and/or `retire: [caseId]`. Returns `{evolveRevision, added, retired, liveCases}`. |
+| `POST /outcomes` | App principal | Send `outcomeId`, `versionId`, `digest`, `input` and `expected`. Returns `{outcomeId, caseId, evolveRevision}`. |
+| `GET /work` | App principal | Returns `{bundleId, status, items}` with queued or running evaluations. |
+| `POST /evaluations/{evaluationId}/start` | App principal | Send `attemptId`. Returns `{evaluation, cases, heldOut, reportedCaseIds}`. |
+| `POST /evaluations/{evaluationId}/report` | App principal | Send `attemptId` with `cases: [{caseId, rollouts}]` or an `error`. Returns `LearningEvaluation`. |
+
+Administrators are signed-in workspace admins or machine principals with `promote`. The enrolled app principal must hold `evaluate` and be distinct from the enrolling administrator. The service returns 409 if enrollment changes the channel, principal or held-out commitment while a round is active. Pause and wait for the round to end before changing those fields.
+
+Start and report require `Idempotency-Key`. Keep the same attempt ID on restart and skip the assignment's `reportedCaseIds`. A case report contains exactly five rollout scores and pass flags. Evolve rollouts can carry optional `trace` and `error` strings. Held-out rollouts carry only `score` and `passed`. Each completed evaluation's score is the mean of its case means.
+
+Enrollment, controls and evolve writes accept optional idempotency keys. An outcome is keyed by its durable `outcomeId`. See [enrollment and evaluator setup](/docs/guides/learning-loop).

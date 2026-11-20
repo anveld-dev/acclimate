@@ -155,9 +155,10 @@ class AcclimateClient:
         delivery: bool = False,
         _body_bytes: bytes | None = None,
         _retained: bool = False,
+        _optional_key: bool = False,
     ):
         mutation = method != "GET"
-        if mutation and (
+        if mutation and not (_optional_key and key is None) and (
             not isinstance(key, str) or not re.fullmatch(r"[\x20-\x7e]{1,128}", key)
         ):
             raise UsageError(
@@ -181,7 +182,8 @@ class AcclimateClient:
             headers["X-Acclimate-Connection-Id"] = self.connection_id
         if _retained:
             headers["X-Acclimate-Durable-Operation"] = "true"
-        for attempt in range(self.retries + 1 if mutation else 1):
+        retries = self.retries if mutation and key else 0
+        for attempt in range(retries + 1):
             req = urllib.request.Request(
                 self.base_url + path, data=data, headers=headers, method=method
             )
@@ -209,7 +211,7 @@ class AcclimateClient:
                             error = {}
                         if not isinstance(error, dict):
                             error = {}
-                        if mutation and status >= 500 and attempt < self.retries:
+                        if mutation and status >= 500 and attempt < retries:
                             continue
                         raise ApiError(
                             status,
@@ -239,7 +241,7 @@ class AcclimateClient:
                 ConnectionError,
                 OSError,
             ) as e:
-                if attempt == (self.retries if mutation else 0):
+                if attempt == retries:
                     raise TransportError(
                         f"Could not reach the Acclimate service at {self.base_url}. "
                         "Check that the service is running and reachable from this machine.",
@@ -360,6 +362,68 @@ class AcclimateClient:
         if cursor is not None:
             query["cursor"] = cursor
         return self._request("GET", "/v1/workspaces/" + self._part(workspace_id) + "/connections?" + urllib.parse.urlencode(query))
+
+    def _loop_path(self, workspace_id: str, bundle_id: str) -> str:
+        return self._base(workspace_id, bundle_id) + "/learning"
+
+    @staticmethod
+    def _learning_query(**options: str | int | None) -> str:
+        query = urllib.parse.urlencode({k: v for k, v in options.items() if v is not None})
+        return "?" + query if query else ""
+
+    def enroll_learning_loop(self, workspace_id: str, bundle_id: str, body: LearningLoopRequest,
+                             key: str | None = None) -> LearningLoop:
+        return self._request("PUT", self._loop_path(workspace_id, bundle_id), body, key, _optional_key=True)
+
+    def get_learning_loop(self, workspace_id: str, bundle_id: str) -> LearningLoop:
+        return self._request("GET", self._loop_path(workspace_id, bundle_id))
+
+    def pause_learning_loop(self, workspace_id: str, bundle_id: str, key: str | None = None) -> LearningLoop:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/pause", key=key, _optional_key=True)
+
+    def resume_learning_loop(self, workspace_id: str, bundle_id: str, key: str | None = None) -> LearningLoop:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/resume", key=key, _optional_key=True)
+
+    def stop_learning_loop(self, workspace_id: str, bundle_id: str, key: str | None = None) -> LearningLoop:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/stop", key=key, _optional_key=True)
+
+    def list_learning_rounds(self, workspace_id: str, bundle_id: str, *,
+                             before: int | None = None, limit: int | None = None) -> LearningRoundPage:
+        path = self._loop_path(workspace_id, bundle_id) + "/rounds"
+        return self._request("GET", path + self._learning_query(before=before, limit=limit))
+
+    def get_learning_round(self, workspace_id: str, bundle_id: str, round_id: str, *,
+                           evaluation: str | None = None) -> LearningRound:
+        path = self._loop_path(workspace_id, bundle_id) + "/rounds/" + self._part(round_id)
+        return self._request("GET", path + self._learning_query(evaluation=evaluation))
+
+    def get_learning_memory(self, workspace_id: str, bundle_id: str, *,
+                            revision: int | None = None) -> LearningMemory:
+        path = self._loop_path(workspace_id, bundle_id) + "/memory"
+        return self._request("GET", path + self._learning_query(revision=revision))
+
+    def add_learning_evolve_cases(self, workspace_id: str, bundle_id: str, body: LearningEvolveCasesRequest,
+                                  key: str | None = None) -> LearningEvolveCasesReceipt:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/evolve-cases",
+                             body, key, _optional_key=True)
+
+    def report_learning_outcome(self, workspace_id: str, bundle_id: str, body: LearningOutcomeRequest,
+                                key: str | None = None) -> LearningOutcomeReceipt:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/outcomes",
+                             body, body["outcomeId"] if key is None else key)
+
+    def get_learning_work(self, workspace_id: str, bundle_id: str) -> LearningWork:
+        return self._request("GET", self._loop_path(workspace_id, bundle_id) + "/work")
+
+    def start_learning_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str,
+                                  body: LearningEvaluationStart, key: str | None = None) -> LearningEvaluationAssignment:
+        path = self._loop_path(workspace_id, bundle_id) + "/evaluations/" + self._part(evaluation_id) + "/start"
+        return self._request("POST", path, body, body["attemptId"] if key is None else key)
+
+    def report_learning_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str,
+                                   body: LearningEvaluationReportRequest, key: str) -> LearningEvaluation:
+        path = self._loop_path(workspace_id, bundle_id) + "/evaluations/" + self._part(evaluation_id) + "/report"
+        return self._request("POST", path, body, key)
 
     def _connection(self, workspace_id: str, connection_id: str) -> str:
         return "/v1/workspaces/" + self._part(workspace_id) + "/connections/" + self._part(connection_id)

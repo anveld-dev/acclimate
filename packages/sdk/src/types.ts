@@ -172,3 +172,222 @@ export type Operation =
     }
   | { status: 'not_observed'; operationId: string }
   | { status: 'closed'; operationId: string; path?: string };
+
+export interface LearningSetting {
+  domain: string;
+  benchmark: string;
+  policyModel: string;
+}
+export interface LearningHeldOut {
+  digest: string;
+  cases: number;
+}
+export interface LearningLoopRequest {
+  channel: string;
+  appPrincipalId: string;
+  setting: LearningSetting;
+  heldOut: LearningHeldOut;
+}
+export type LearningLoopStatus = 'running' | 'paused' | 'stopped';
+export interface LearningLoop extends LearningLoopRequest {
+  workspaceId: string;
+  bundleId: string;
+  status: LearningLoopStatus;
+  pauseReason: 'operator' | 'failed-rounds' | 'optimizer-context-too-large' | null;
+  evolveRevision: number;
+  liveCases: number;
+  memoryRevision: number;
+  nextRound: number;
+  failedRounds: number;
+  enrolledBy: string;
+  createdAt: string;
+  updatedAt: string;
+  activeRound: LearningRoundSummary | null;
+  rounds: LearningRoundSummary[];
+}
+export interface LearningRoundSummary {
+  id: string;
+  number: number;
+  state: 'scoring_incumbent' | 'proposing' | 'screening' | 'evaluating' | 'selecting'
+    | 'scoring_held_out' | 'completed' | 'failed' | 'stopped';
+  decision: 'adopted' | 'kept' | null;
+  reason: 'selector-kept' | 'no-candidates' | 'no-survivors' | 'no-evaluated-candidates'
+    | 'channel-moved' | 'incumbent-evaluation-failed' | 'optimizer-unavailable'
+    | 'optimizer-context-too-large' | 'selector-unavailable' | 'stopped' | null;
+  parentVersionId: string;
+  adoptedSample: number | null;
+  adoptedVersionId: string | null;
+  incumbentScore: number | null;
+  heldOutScore: number | null;
+  heldOutError: string | null;
+  createdAt: string;
+  endedAt: string | null;
+}
+export interface LearningRound extends LearningRoundSummary {
+  channel: string;
+  channelRevision: string;
+  evolveRevision: number;
+  memoryRevision: number;
+  memoryDigest: string | null;
+  historyDigest: string | null;
+  setting: LearningSetting;
+  heldOut: LearningHeldOut;
+  optimizerModel: string | null;
+  selection: LearningSelection | null;
+  candidates: LearningCandidate[];
+  evaluations: LearningEvaluation[];
+}
+export interface LearningDiagnosis {
+  problem: { id: string } | { new: string };
+  predicted: string[];
+}
+export interface LearningSelection {
+  decision: 'adopt' | 'keep';
+  sample: number | null;
+  versionId: string | null;
+  digest: string | null;
+  reason: string;
+  model: string;
+  inputDigest: string;
+}
+export interface LearningCandidate {
+  sample: number;
+  status: 'generating' | 'generated' | 'dropped' | 'screened_out' | 'evaluating'
+    | 'evaluated' | 'evaluation_failed';
+  dropReason: 'provider-failed' | 'format-rejected' | 'scanner-rejected' | 'no-change' | null;
+  rationale: string | null;
+  changes: {
+    edits: { path: string; oldText: string; newText: string }[];
+    files: ({ op: 'write'; path: string; text: string } | { op: 'delete'; path: string })[];
+  } | null;
+  diagnosis: LearningDiagnosis | null;
+  scan: { clean: boolean; findings: { rule: string; path: string }[] } | null;
+  screen: { verdict: 'evaluate' | 'skip'; reason: string } | null;
+  versionId: string | null;
+  evaluationId: string | null;
+  evolveScore: number | null;
+}
+export type LearningEvaluationStatus = 'queued' | 'running' | 'scored' | 'failed' | 'cancelled';
+export interface LearningWorkItem {
+  evaluationId: string;
+  roundId: string;
+  roundNumber: number;
+  role: 'incumbent' | 'candidate' | 'retained';
+  sample: number | null;
+  split: 'evolve' | 'heldOut';
+  versionId: string;
+  digest: string;
+  evolveRevision: number | null;
+  heldOut: LearningHeldOut | null;
+  status: 'queued' | 'running';
+  deadlineAt: string;
+}
+export interface LearningWork {
+  bundleId: string;
+  status: LearningLoopStatus;
+  items: LearningWorkItem[];
+}
+export interface LearningEvaluation extends Pick<LearningWorkItem,
+  'roundId' | 'role' | 'sample' | 'split' | 'versionId' | 'digest' | 'evolveRevision' | 'deadlineAt'> {
+  id: string;
+  status: LearningEvaluationStatus;
+  score: number | null;
+  cases: number;
+  reportedCases: number;
+  createdAt: string;
+  startedAt: string | null;
+  error: string | null;
+  caseSummaries?: { caseId: string; passedRollouts: number; meanScore: number }[];
+  report?: LearningEvaluationReport;
+}
+export interface LearningHeldOutRollout {
+  score: number;
+  passed: boolean;
+}
+export interface LearningRollout extends LearningHeldOutRollout {
+  trace?: string | null;
+  error?: string | null;
+}
+export interface LearningEvaluationReport {
+  cases: { caseId: string; rollouts: LearningRollout[] }[];
+}
+export type LearningEvaluationReportRequest = { attemptId: string } & (
+  | (LearningEvaluationReport & { error?: never })
+  | { error: string; cases?: never }
+);
+export interface LearningEvaluationStart {
+  attemptId: string;
+}
+export interface LearningEvaluationAssignment {
+  evaluation: LearningEvaluation;
+  cases: LearningEvolveCase[] | null;
+  heldOut: LearningHeldOut | null;
+  reportedCaseIds: string[];
+}
+export interface LearningEvolveCase<I = import('./evaluation/types.js').Json, E = import('./evaluation/types.js').Json> {
+  caseId: string;
+  input: I;
+  expected: E;
+}
+export interface LearningEvolveCasesRequest {
+  cases?: LearningEvolveCase[];
+  retire?: string[];
+}
+export interface LearningEvolveCasesReceipt {
+  evolveRevision: number;
+  added: number;
+  retired: number;
+  liveCases: number;
+}
+export interface LearningOutcomeRequest extends Pick<LearningEvolveCase, 'input' | 'expected'> {
+  outcomeId: string;
+  versionId: string;
+  digest: string;
+}
+export interface LearningOutcomeReceipt {
+  outcomeId: string;
+  caseId: string;
+  evolveRevision: number;
+}
+export interface LearningMemory {
+  currentRevision: number;
+  memoryRevision: number;
+  memoryDigest: string;
+  improvementMemory: {
+    schemaVersion: 1;
+    memoryRevision: number;
+    problems: {
+      id: string;
+      rootCause: string;
+      openedRound: number;
+      attempts: {
+        round: number;
+        sample: number;
+        accepted: true;
+        backfilled: boolean;
+        what: { rationale: string; changes: NonNullable<LearningCandidate['changes']> };
+        files: string[];
+        predicted: string[];
+        fixed: string[];
+        missed: string[];
+        passed: number;
+        total: number;
+        domain: string;
+        provenance: LearningSetting & { round: number };
+      }[];
+    }[];
+  };
+  records: {
+    revision: number;
+    problemId: string;
+    roundId: string;
+    round: number;
+    versionId: string;
+    provenance: LearningSetting & {
+      round: number;
+      evolveRevision: number;
+      heldOutDigest: string;
+      optimizerModel: string;
+    };
+  }[];
+}

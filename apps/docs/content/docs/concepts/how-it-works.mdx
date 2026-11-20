@@ -1,6 +1,6 @@
 ---
 title: How Acclimate works
-description: How jobs receive immutable versions and how the planned loop will improve them.
+description: How jobs receive immutable versions and how the learning loop evaluates them.
 ---
 
 ## Versioned delivery
@@ -9,8 +9,10 @@ A workspace owns bundles and connections. Import instructions, skills and memory
 
 On each job start, the SDK resolves the channel, fetches and verifies the payload, and prepares job-local files. An active job keeps its pinned version through subsequent releases. Optional delivery receipts let a workspace see what version an application reported using. [Deliver content to jobs](/docs/guides/deliver-content)
 
-## Planned self-improvement loop
+## Learning loop
 
-The loop ships in a later phase. For each enrolled bundle, the loop will score the incumbent on the evolve split. The optimizer proposes five candidates based on scores, traces and errors, previous rounds and improvement memory. It screens the candidates before execution and evaluates the survivors on the evolve split. The selector keeps the incumbent or adopts a survivor, releasing it to the learning channel and recording its diagnosis and results in improvement memory.
+An enrolled bundle runs recurring evaluations on the released version. The app runs the agent and grades five rollouts per case. An outcome with a known expected result becomes an evolve case. The evaluator keeps a fixed held-out split and reports its score for monitoring only.
 
-The evaluator keeps a fixed held-out split and scores the retained version each round for monitoring. The optimizer receives evolve feedback. An application outcome with an expected answer becomes an evolve case. Your application runs the agent and grades its work.
+Phase 3 establishes baseline scores while keeping the release each round. In phase 4 the optimizer will propose and screen five candidates, score the survivors on the evolve split and select a version to retain. An adoption will release that version on the learning channel and record its diagnosis and results in improvement memory.
+
+[Enroll a learning loop](/docs/guides/learning-loop)

@@ -190,7 +190,9 @@ export function bindEvaluationRepetitions<I, E, O>(
 const filesOf = (version: ExecuteInput['version'], kind: BundleFile['kind']) =>
   Object.freeze((version?.payload?.files ?? []).filter((file) => file.kind === kind));
 /** Add read-only helpers for the version's instructions, skills and memory files. */
-function withVersionHelpers<I>(input: Omit<ExecuteInput<I>, VersionHelper>): ExecuteInput<I> {
+export function withVersionHelpers<T extends { version: ExecuteInput["version"] }>(
+  input: T,
+): T & Pick<ExecuteInput, VersionHelper> {
   const helpers: PropertyDescriptorMap = {
     instructionFiles: { get: () => filesOf(input.version, 'instruction'), enumerable: false },
     skillFiles: { get: () => filesOf(input.version, 'skill'), enumerable: false },
@@ -203,7 +205,7 @@ function withVersionHelpers<I>(input: Omit<ExecuteInput<I>, VersionHelper>): Exe
       enumerable: false,
     },
   };
-  return Object.defineProperties({ ...input }, helpers) as ExecuteInput<I>;
+  return Object.defineProperties({ ...input }, helpers) as T & Pick<ExecuteInput, VersionHelper>;
 }
 
 const text = (value: unknown, maximum: number): value is string =>

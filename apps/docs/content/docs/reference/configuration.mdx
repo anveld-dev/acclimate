@@ -36,7 +36,10 @@ These variables are used by the repository's app setup recipes and command-line 
 
 Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from both the Rust and console environments. Startup rejects any defined value.
 
-The service accepts `ACCLIMATE_MODEL`, `ACCLIMATE_MODEL_ENDPOINT`, `ACCLIMATE_MODEL_TOKEN`, `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS` and `ACCLIMATE_LEARNING_EVALUATION_SECONDS` for future learning phases. This release has no readers for these settings.
+| Learning setting | Purpose |
+| --- | --- |
+| `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS` | Time allowed to start a queued evaluation. Defaults to 604,800 seconds (7 days). |
+| `ACCLIMATE_LEARNING_EVALUATION_SECONDS` | Time allowed to finish a started evaluation. Defaults to 86,400 seconds (24 hours). |
 
 ### Invitation email
 
@@ -62,7 +65,7 @@ Set `ACCLIMATE_SMTP_HOST` to enable application invitation email. Configure Keyc
 | `CONSOLE_SERVICE_TOKEN` | Required. Match Rust's `ACCLIMATE_CONSOLE_TOKEN`. Use a different value from `CONSOLE_LOGIN_TOKEN`. |
 | `CONSOLE_OIDC_ISSUER` | Required exact HTTPS realm issuer. Match `ACCLIMATE_OIDC_ISSUER` verbatim. |
 | `CONSOLE_OIDC_CLIENT_ID`, `CONSOLE_OIDC_CLIENT_SECRET` | Required confidential client ID and credential. The bundled realm uses `acclimate-console`. Register the exact `CONSOLE_ORIGIN` plus `/auth/callback`. |
-| `CONSOLE_ALLOW_EDITS` | Set to the literal `true` to enable authoring and connection mutations for authorized users. Defaults to disabled. |
+| `CONSOLE_ALLOW_EDITS` | Set to the literal `true` to enable authoring, connection and learning mutations for authorized users. Defaults to disabled. |
 | `CONSOLE_WORKSPACE`, `CONSOLE_BUNDLE`, `CONSOLE_CHANNEL` | Optional fallback workspace, bundle and channel for server operations without a saved selection. Many operations use `stable` when a channel is absent. Prefer selecting the scope in the console. |
 | `HOST`, `PORT` | Listener settings. The native console and dev wrappers default to `127.0.0.1` and `3100` and accept port numbers 1–65,535. Compose binds `0.0.0.0:3100` on the private network. |
 | `NODE_ENV` | The console image runs with `production`. |

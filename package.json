@@ -110,6 +110,10 @@
     "./sdk/evaluation/manifest": {
       "types": "./dist/packages/sdk/src/evaluation/manifest.d.ts",
       "import": "./dist/packages/sdk/src/evaluation/manifest.js"
+    },
+    "./sdk/learning": {
+      "types": "./dist/packages/sdk/src/learning/index.d.ts",
+      "import": "./dist/packages/sdk/src/learning/index.js"
     }
   },
   "engines": {

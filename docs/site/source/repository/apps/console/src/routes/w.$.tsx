@@ -2,7 +2,7 @@ import { ArrowLeft, GitBranch } from 'lucide-react';
 import { PageHeader } from '../components/page-header';
 import { Button } from '@/components/ui/button';
 import { WorkspaceMenuButton } from '../components/workspace-chrome';
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router';
 import {
   parseConsoleLocation,
   bundleHref,
@@ -18,6 +18,8 @@ import { readWorkspaceAccess } from '../server/access-actions';
 import { BundleLibrary } from '../components/bundle-library';
 import { BundleContent } from '../components/bundle-content';
 import { SdkSetup, UseInAnApp } from '../components/sdk-setup';
+import { BundleLearning } from '../components/bundle-learning';
+import { readLearningLoop } from '../server/learning-loop';
 import { BundleReleases } from '../components/bundle-releases';
 import { WorkspaceConnections } from '../components/workspace-connections';
 import { WorkspaceDelivery } from '../components/workspace-delivery';
@@ -101,6 +103,13 @@ export const Route = createFileRoute('/w/$')({
       bundleId: location.bundleId!,
       channel: location.channel || String(deps.search.channel || 'stable'),
     };
+    if (location.view === 'learning')
+      return {
+        kind: 'learning' as const,
+        location,
+        scope,
+        result: await readLearningLoop({ data: scope }),
+      };
     return {
       kind: 'bundle' as const,
       location,
@@ -112,6 +121,7 @@ export const Route = createFileRoute('/w/$')({
 });
 function ScopedPage() {
   const data = Route.useLoaderData();
+  const router = useRouter();
   const search = Route.useSearch();
   const navigation = useNavigation();
   const workspaceKey = `${navigation?.actorScope}:${navigation?.role}:${data.kind === 'missing' ? '' : data.location.workspaceId}`;
@@ -194,6 +204,29 @@ function ScopedPage() {
         />
       </div>
     );
+  if (data.kind === 'learning') {
+    const channel = data.result.ok
+      ? (data.result.loop?.channel ?? data.result.channels[0])
+      : undefined;
+    const scope = { ...data.scope, channel: channel ?? data.scope.channel };
+    return (
+      <div className="bundle-page bundle-workspace">
+        <BundleScopeHeader
+          name={data.result.ok ? data.result.bundleName : navigation?.bundleName || scope.bundleId}
+          scope={scope}
+          view="learning"
+          search={search}
+          description="Evaluate the bundle in recurring learning rounds."
+        />
+        <BundleLearning
+          key={`${workspaceKey}:${scope.bundleId}`}
+          scope={data.scope}
+          state={data.result}
+          refresh={() => router.invalidate({ sync: true })}
+        />
+      </div>
+    );
+  }
   const { state, scope, location } = data;
   const view = location.view as BundleView;
   if (state.status !== 'ready')
@@ -237,6 +270,7 @@ function ScopedPage() {
   const description = {
     content: 'The instructions, skills and memory your app receives.',
     releases: 'See what shipped or restore an earlier release.',
+    learning: 'Evaluate the bundle in recurring learning rounds.',
     connect: 'Use this bundle in your agent app.',
   }[view];
   const identity = `${state.actorScope}:${scope.workspaceId}:${scope.bundleId}:${scope.channel}`;
@@ -300,7 +334,9 @@ function BundleScopeHeader({
           </Button>
         </>
       }
-      titleAccessory={<ChannelPicker scope={scope} view={view} search={search} />}
+      titleAccessory={
+        view !== 'learning' && <ChannelPicker scope={scope} view={view} search={search} />
+      }
       actions={
         apiUrl && (
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -309,9 +345,10 @@ function BundleScopeHeader({
         )
       }
       footer={
-        !unavailableChannel && (
-          <nav aria-label="Bundle navigation" className="bundle-tabs bundle-scope-navigation">
-            {(Object.keys(bundleViewLabels) as (keyof typeof bundleViewLabels)[]).map((tab) => (
+        <nav aria-label="Bundle navigation" className="bundle-tabs bundle-scope-navigation">
+          {(Object.keys(bundleViewLabels) as (keyof typeof bundleViewLabels)[])
+            .filter((tab) => !unavailableChannel || tab === 'learning')
+            .map((tab) => (
               <ConsoleLink
                 key={tab}
                 href={bundleHref(scope, tab)}
@@ -321,8 +358,7 @@ function BundleScopeHeader({
                 {bundleViewLabels[tab]}
               </ConsoleLink>
             ))}
-          </nav>
-        )
+        </nav>
       }
     />
   );

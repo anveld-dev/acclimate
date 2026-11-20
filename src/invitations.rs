@@ -295,7 +295,6 @@ pub async fn recover_invitation_mail(s: &AppState) -> Result<(), sqlx::Error> {
 }
 /// At-least-once SMTP: a crash after acceptance can duplicate the same harmless link.
 pub async fn invitation_worker(s: AppState) -> Result<(), sqlx::Error> {
-    let _worker = s.runtime.worker_started();
     let Some(mail) = &s.access.mail else {
         s.runtime.wait_for_drain().await;
         return Ok(());

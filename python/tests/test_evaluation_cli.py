@@ -63,7 +63,7 @@ class CommandTests(unittest.TestCase):
                 if route.endswith("/policy-receipts"):
                     return self.reply({"items": list(owner.policy_receipts.values())})
                 if route.endswith("/evaluation-capabilities"):
-                    return self.reply({"schemaVersion": 1, "projectId": "project", "principalId": "evaluator", "checkedAt": NOW, "readUnpublished": True, "writeEvaluation": True, "retainedEvaluationOperations": True, **({"runLabels": True} if state["runLabels"] else {}), **({"policyPins": True} if state["policyPins"] else {})})
+                    return self.reply({"schemaVersion": 1, "workspaceId": "project", "principalId": "evaluator", "checkedAt": NOW, "readUnpublished": True, "writeEvaluation": True, "retainedEvaluationOperations": True, **({"runLabels": True} if state["runLabels"] else {}), **({"policyPins": True} if state["policyPins"] else {})})
                 if route=="/v1/workspaces/project/bundles":
                     return self.reply({"items":[{"id":BUNDLE}],"nextCursor":None})
                 if "/operations/" in route:
@@ -138,8 +138,8 @@ class CommandTests(unittest.TestCase):
         self.thread.start()
         self.service = f"http://127.0.0.1:{self.server.server_address[1]}"
         self.config, self.reader = self.configuration / "evaluator.json", self.configuration / "reader.json"
-        self.config.write_bytes(encoded({"schemaVersion": 1, "serviceUrl": self.service, "projectId": "project", "evaluatorPrincipalId": "evaluator", "evaluatorToken": "PRIVATE_CANARY", "journalRoot": str(self.root / "journals")}))
-        self.reader.write_bytes(encoded({"schemaVersion": 1, "serviceUrl": self.service, "projectId": "project", "readToken": "READER_CANARY"}))
+        self.config.write_bytes(encoded({"schemaVersion": 1, "serviceUrl": self.service, "workspaceId": "project", "evaluatorPrincipalId": "evaluator", "evaluatorToken": "PRIVATE_CANARY", "journalRoot": str(self.root / "journals")}))
+        self.reader.write_bytes(encoded({"schemaVersion": 1, "serviceUrl": self.service, "workspaceId": "project", "readToken": "READER_CANARY"}))
         self.config.chmod(0o600)
         self.reader.chmod(0o600)
         self.payload_file, self.intent, self.handoff, self.policy = [self.root / name for name in ("candidate.json", "intent.json", "request.json", "policy.json")]
@@ -149,7 +149,7 @@ class CommandTests(unittest.TestCase):
         self.policy.write_bytes(encoded(self.quality))
         def execute(run):
             self.state["executions"] += 1
-            return ExecutionResult(output={"correct": run.bundle["payload"]["files"][0]["text"] == ("bad" if self.state["flip"] else "good")})
+            return ExecutionResult(output={"correct": run.version["payload"]["files"][0]["text"] == ("bad" if self.state["flip"] else "good")})
         def grade(run):
             if self.state["failGrade"]:
                 raise RuntimeError("PRIVATE_GRADER_CANARY")
@@ -206,6 +206,40 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(self.invoke(["export", *handle, "--out", str(destination)])[0], 0)
         self.assertEqual(self.invoke(["verify-export", "--manifest", str(destination / "manifest.json")])[0], 0)
         self.assertEqual(self.state["executions"], 2)
+
+    @staticmethod
+    def downgrade_to_0_1(directory):
+        """Rewrite a run's intent and handoff exactly as 0.1 wrote them, before the key renames."""
+        handoff = json.loads((directory / "request.json").read_bytes())
+        legacy = {"schemaVersion": 1, "serviceUrl": handoff["serviceUrl"], "projectId": handoff["workspaceId"],
+                  "bundleId": handoff["bundleId"], "requestId": handoff["requestId"], "configuration": handoff["descriptor"]}
+        (directory / "request.json").write_bytes(encoded(legacy))
+        intent = json.loads((directory / "intent.json").read_bytes())
+        intent["identity"] = {("projectId" if key == "workspaceId" else key): value for key, value in intent["identity"].items()}
+        (directory / "intent.json").write_bytes(encoded(intent))
+        return handoff
+
+    def test_a_0_1_named_run_recovers_and_an_old_handoff_flag_fails_with_the_rename(self):
+        handle = ["--config", str(self.config), "--name", "first-run"]
+        compare = ["compare", *handle, "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
+        code, first, error = self.invoke(compare)
+        self.assertEqual(code, 0, error)
+        run = self.root / "journals" / "comparisons" / "first-run"
+        handoff = self.downgrade_to_0_1(run)
+        legacy_bytes = (run / "request.json").read_bytes()
+        outside = self.root / "old-handoff.json"
+        outside.write_bytes(legacy_bytes)
+        status, _, error = self.invoke(["status", "--config", str(self.config), "--handoff", str(outside)])
+        self.assertEqual((status, error["error"]["code"], error["error"]["field"]), (1, "config.schema", "projectId"))
+        self.assertIn("projectId was renamed to workspaceId in 0.2.0", error["error"]["reason"])
+        self.assertEqual(outside.read_bytes(), legacy_bytes)
+        _, again, error = self.invoke(compare)
+        self.assertEqual(again["invocation"], {"callbacksStarted": 0, "reusedEvidence": True}, error)
+        self.assertEqual(again["requestId"], first["requestId"])
+        self.assertEqual(json.loads((run / "request.json").read_bytes()), handoff)
+        self.downgrade_to_0_1(run)
+        self.assertEqual(self.invoke(["status", *handle])[1]["requestId"], first["requestId"])
+        self.assertEqual(json.loads((run / "request.json").read_bytes()), handoff)
 
     def test_fresh_attempt_requires_settled_predecessor_and_matching_target(self):
         inputs = ["compare", "--config", str(self.config), "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
@@ -537,7 +571,7 @@ class CommandTests(unittest.TestCase):
     def test_interrupt_does_not_wait_for_the_running_scope_lock(self):
         self.assertEqual(self.invoke(self.request_args)[0], 0)
         config = json.loads(self.config.read_text())
-        scope = {"serviceUrl": self.service, "projectId": "project", "bundleId": BUNDLE, "requestId": REQUEST, "evaluatorPrincipalId": "evaluator"}
+        scope = {"serviceUrl": self.service, "workspaceId": "project", "bundleId": BUNDLE, "requestId": REQUEST, "evaluatorPrincipalId": "evaluator"}
         with Journal(config["journalRoot"], scope) as journal:
             status, result, error = self.invoke(["interrupt", "--config", str(self.config), "--handoff", str(self.handoff), "--reason", "reviewed"])
             self.assertEqual(status, 0, error)
@@ -583,7 +617,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(result["checks"][-1]["code"],"bundle.missing")
         self.assertEqual(result["nextAction"],"fix_config")
         self.handoff.write_bytes(encoded({"schemaVersion":1,"serviceUrl":self.service,
-            "projectId":"project","bundleId":BUNDLE,"requestId":REQUEST,"configuration":self.app.descriptor}))
+            "workspaceId":"project","bundleId":BUNDLE,"requestId":REQUEST,"descriptor":self.app.descriptor}))
         status,result,error=self.invoke(["doctor","--config",str(self.config),"--handoff",str(self.handoff)])
         self.assertEqual(status,1)
         self.assertEqual(result["checks"][-1]["code"],"request.missing")
@@ -599,7 +633,7 @@ class CommandTests(unittest.TestCase):
     def test_interrupt_rejects_mismatched_descriptor_before_mutation(self):
         self.assertEqual(self.invoke(self.request_args)[0], 0)
         handoff = json.loads(self.handoff.read_bytes())
-        handoff["configuration"]["graderRevision"] = "another-grader"
+        handoff["descriptor"]["graderRevision"] = "another-grader"
         self.handoff.write_bytes(encoded(handoff))
         status, _, error = self.invoke(["interrupt", "--config", str(self.config), "--handoff", str(self.handoff), "--reason", "reviewed"])
         self.assertEqual(status, 1)

@@ -84,14 +84,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 class SDKTest(unittest.TestCase):
-    def test_promotion_history_query_and_errors(self):
+    def test_release_history_query_and_errors(self):
         client = self.client
-        page = client.list_promotions("p", "b", "stable", limit=100, before_revision="a&b")
+        page = client.list_releases("p", "b", "stable", limit=100, before_revision="a&b")
         self.assertEqual(page, {"items": [], "nextBeforeRevision": None})
         self.assertTrue(Handler.last_history_path.endswith("limit=100&beforeRevision=a%26b"))
         for options, status, code in [({"limit": 0}, 400, "invalid_content"), ({"before_revision": "denied"}, 403, "denied")]:
             with self.assertRaises(ApiError) as caught:
-                client.list_promotions("p", "b", "stable", **options)
+                client.list_releases("p", "b", "stable", **options)
             self.assertEqual((caught.exception.status, caught.exception.code), (status, code))
 
     @classmethod
@@ -118,9 +118,10 @@ class SDKTest(unittest.TestCase):
             cache = Path(tmp).resolve() / "cache"
             reporter = Mock()
             with self.client.prepare("p", "b1", channel="stable", cache_dir=cache, reporter=reporter) as job:
-                self.assertEqual(job.version["digest"], VERSION["digest"])
+                self.assertEqual(job.version["version"]["digest"], VERSION["digest"])
+                self.assertFalse(hasattr(job, "bundle"))
                 self.assertEqual(job.instructions, "\n\n".join(
-                    file["text"] for file in job.bundle["payload"]["files"] if file["kind"] == "instruction"))
+                    file["text"] for file in job.version["payload"]["files"] if file["kind"] == "instruction"))
                 self.assertEqual(job.skill_files, [file for file in job.files if file["kind"] == "skill"])
                 self.assertTrue(Path(job.files[0]["absolutePath"]).exists())
                 binding = reporter.bind.return_value
@@ -136,7 +137,7 @@ class SDKTest(unittest.TestCase):
             job.cleanup()
             destination = Path(tmp).resolve() / "job"
             with self.client.prepare("p", "b1", version_id=VERSION["id"], cache_dir=cache, destination=destination) as pinned:
-                self.assertEqual(pinned.version["id"], job.version["id"])
+                self.assertEqual(pinned.version["version"]["id"], job.version["version"]["id"])
                 retained = destination / "app-result.json"
                 retained.write_text("ok")
             self.assertEqual(retained.read_text(), "ok")

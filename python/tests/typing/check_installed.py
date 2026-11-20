@@ -50,7 +50,7 @@ for name in ("FileKind", "CompatibilityTarget", "Operation"):
 for method, request in (("start_evaluation", StartEvaluationRequest), ("finish_evaluation", FinishEvaluationRequest)):
     hints = get_type_hints(getattr(AcclimateClient, method))
     assert hints["request"] is request and hints["return"] is Evaluation, method
-assert get_type_hints(ExecuteInput)["bundle"] is acclimate.VerifiedBundle
+assert get_type_hints(ExecuteInput)["version"] is acclimate.VerifiedVersion
 assert {"output", "expected"} <= get_type_hints(GradeInput).keys()
 print(json.dumps({"sdkPath": str(root), "pep561Marker": True, "runtimeDependencies": []}))
 '''], cwd=directory, env=env, check=True, text=True, capture_output=True,

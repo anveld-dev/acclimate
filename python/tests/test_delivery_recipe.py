@@ -44,12 +44,12 @@ class RecipeTests(unittest.TestCase):
                     with tempfile.TemporaryDirectory(prefix='acclimate-python-recipe-') as directory:
                         env = dict(os.environ, PYTHONPATH=str(root / 'python'),
                                    ACCLIMATE_URL='http://127.0.0.1:' + str(server.server_port),
-                                   ACCLIMATE_TOKEN='read-only', ACCLIMATE_PROJECT='p', ACCLIMATE_BUNDLE='b',
+                                   ACCLIMATE_TOKEN='read-only', ACCLIMATE_WORKSPACE='p', ACCLIMATE_BUNDLE='b',
                                    ACCLIMATE_CHANNEL='stable', ACCLIMATE_SCOPE='test-app',
                                    ACCLIMATE_CACHE=directory + '/cache', ACCLIMATE_JOB_DIR=directory + '/job',
-                                   ACCLIMATE_RECEIPT_TOKEN='', ACCLIMATE_INTEGRATION='')
+                                   ACCLIMATE_RECEIPT_TOKEN='', ACCLIMATE_CONNECTION='')
                         if reporting != 'disabled':
-                            env.update(ACCLIMATE_RECEIPT_TOKEN='receipt-only', ACCLIMATE_INTEGRATION='i')
+                            env.update(ACCLIMATE_RECEIPT_TOKEN='receipt-only', ACCLIMATE_CONNECTION='i')
                         result = subprocess.run([sys.executable, str(root / 'python/examples/delivery_check.py')],
                                                 env=env, capture_output=True, text=True, timeout=5)
                         self.assertEqual(result.returncode, 0, result.stderr)
@@ -68,3 +68,16 @@ class RecipeTests(unittest.TestCase):
                 finally:
                     server.shutdown()
                     server.server_close()
+
+    def test_renamed_environment_variables_fail_with_the_new_name(self):
+        root = Path(__file__).resolve().parents[2]
+        base = {key: value for key, value in os.environ.items() if not key.startswith('ACCLIMATE_')}
+        base.update(PYTHONPATH=str(root / 'python'), ACCLIMATE_URL='http://127.0.0.1:9', ACCLIMATE_TOKEN='read-only',
+                    ACCLIMATE_SCOPE='test-app', ACCLIMATE_BUNDLE='b')
+        for old, new, extra in (('ACCLIMATE_PROJECT', 'ACCLIMATE_WORKSPACE', {}),
+                                ('ACCLIMATE_INTEGRATION', 'ACCLIMATE_CONNECTION', {'ACCLIMATE_WORKSPACE': 'w'})):
+            with self.subTest(old=old):
+                result = subprocess.run([sys.executable, str(root / 'python/examples/delivery_check.py')],
+                                        env={**base, **extra, old: 'value'}, capture_output=True, text=True, timeout=5)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f'{old} was renamed to {new} in 0.2.0', result.stderr)

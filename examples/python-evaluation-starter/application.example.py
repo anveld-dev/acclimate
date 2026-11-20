@@ -19,9 +19,9 @@ revision_files = ["requirements.lock"]
 
 
 def execute(run):
-    # run.bundle["payload"]["files"] holds the instructions, skills and memory of
+    # run.version["payload"]["files"] holds the instructions, skills and memory of
     # the version under test. Decide how they reach your agent.
-    result = run_agent(bundle=run.bundle, task=run.input, cancellation=run.cancellation)
+    result = run_agent(version=run.version, task=run.input, cancellation=run.cancellation)
     return ExecutionResult(output=result.answer, usage=result.measured_usage)
 
 

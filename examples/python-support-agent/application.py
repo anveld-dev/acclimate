@@ -25,14 +25,14 @@ cases = json.loads((HERE / "cases.json").read_text(encoding="utf-8"))
 revision_files = ["cases.json", "knowledge_base.json"]
 
 
-def system_prompt(bundle):
+def system_prompt(version):
     """Join the instruction files of the version under test into one system prompt."""
-    files = bundle["payload"]["files"]
+    files = version["payload"]["files"]
     return "\n\n".join(item["text"] for item in sorted(files, key=lambda f: f["path"]) if item["kind"] == "instruction")
 
 
 def execute(run):
-    reply = answer(system_prompt(run.bundle), run.input["question"])
+    reply = answer(system_prompt(run.version), run.input["question"])
     return ExecutionResult(
         output={"text": reply.text, "citations": list(reply.citations), "escalated": reply.escalated},
         usage={"inputTokens": reply.input_tokens, "outputTokens": reply.output_tokens},

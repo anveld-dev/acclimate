@@ -55,7 +55,7 @@ class PullTests(unittest.TestCase):
         self.config = configuration / "evaluator.json"
         self.config.write_text(json.dumps({
             "schemaVersion": 1, "serviceUrl": f"http://127.0.0.1:{self.server.server_address[1]}",
-            "projectId": "project", "evaluatorPrincipalId": "evaluator", "evaluatorToken": "PRIVATE_CANARY",
+            "workspaceId": "project", "evaluatorPrincipalId": "evaluator", "evaluatorToken": "PRIVATE_CANARY",
             "journalRoot": str(self.root / "journals")}))
         self.config.chmod(0o600)
         self.empty = self.root / "no-application"

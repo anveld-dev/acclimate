@@ -19,8 +19,8 @@ from acclimate.evaluation import (
     Case, ExecutionResult, GradeResult, CallbackCancelled, EvaluationError,
     ExecutionUncertainError, define_evaluation, preflight_evaluation, run_evaluation,
 )
-from acclimate._evaluation_shared import json_bytes, mutate, read_evaluator_config, ensure_private_directory
-from acclimate._evaluation_journal import Journal, serialize_scope
+from acclimate._evaluation_shared import json_bytes, mutate, read_evaluator_config, ensure_private_directory, validate_handoff
+from acclimate._evaluation_journal import Journal, journal_directory_key, serialize_scope
 from acclimate.client import AcclimateClient, ApiError, TransportError
 
 
@@ -58,7 +58,7 @@ class FakeService:
         self.interrupt_after_start=False
 
     def get_evaluation_capabilities(self,_):
-        return {"schemaVersion":1,"projectId":"project","principalId":"evaluator","checkedAt":"2026-11-16T00:00:00Z",
+        return {"schemaVersion":1,"workspaceId":"project","principalId":"evaluator","checkedAt":"2026-11-16T00:00:00Z",
             "readUnpublished":True,"writeEvaluation":self.write_access,"retainedEvaluationOperations":True}
 
     def get_evaluation(self,*_):
@@ -116,7 +116,7 @@ class EvaluationCoreTests(unittest.TestCase):
         self.root=Path(self.temp.name).resolve()
         self.config=self.root/"config.json"
         self.journal_root=self.root/"journals"
-        self.config.write_bytes(json_bytes({"schemaVersion":1,"serviceUrl":"https://fixture.example","projectId":"project",
+        self.config.write_bytes(json_bytes({"schemaVersion":1,"serviceUrl":"https://fixture.example","workspaceId":"project",
             "evaluatorPrincipalId":"evaluator","evaluatorToken":"private-canary-token","journalRoot":str(self.journal_root)}))
         self.config.chmod(0o600)
 
@@ -129,8 +129,8 @@ class EvaluationCoreTests(unittest.TestCase):
             execute=execute or (lambda run:ExecutionResult({"ok":True})),grade=grade or (lambda run:GradeResult(float(run.output["ok"]))))
 
     def handoff(self,app):
-        return {"schemaVersion":1,"serviceUrl":"https://fixture.example","projectId":"project","bundleId":BUNDLE,
-            "requestId":REQUEST,"configuration":app.descriptor}
+        return {"schemaVersion":1,"serviceUrl":"https://fixture.example","workspaceId":"project","bundleId":BUNDLE,
+            "requestId":REQUEST,"descriptor":app.descriptor}
 
     def run_app(self,app,service,**kwargs):
         with patch("acclimate.evaluation.make_client",return_value=service):
@@ -139,12 +139,12 @@ class EvaluationCoreTests(unittest.TestCase):
     def test_actual_pair_trace_and_all_mutable_input_isolation(self):
         events=[]
         def execute(run):
-            text=run.bundle["payload"]["files"][0]["text"]
+            text=run.version["payload"]["files"][0]["text"]
             events.append(("execute",run.repetition,text,run.input["task"]))
             self.assertTrue(Path(run.context.private_job_directory,"binding.json").exists())
             self.assertFalse(hasattr(run,"expected"))
-            run.bundle["payload"]["files"].clear()
-            run.bundle["version"]["id"]="mutated"
+            run.version["payload"]["files"].clear()
+            run.version["version"]["id"]="mutated"
             run.input["task"]="mutated"
             return ExecutionResult({"ok":True})
         def grade(run):
@@ -265,7 +265,7 @@ class EvaluationCoreTests(unittest.TestCase):
                     import shutil
                     shutil.rmtree(p)
                 calls=[]
-                app=self.app(lambda run:(calls.append(run.bundle["version"]["id"]) or ExecutionResult({"ok":True})))
+                app=self.app(lambda run:(calls.append(run.version["version"]["id"]) or ExecutionResult({"ok":True})))
                 service=FakeService(app)
                 service.lose_once=operation
                 with self.assertRaises(EvaluationError) as caught:
@@ -282,7 +282,7 @@ class EvaluationCoreTests(unittest.TestCase):
     def test_committed_oversized_http_submit_response_recovers_without_callbacks(self):
         events=[]
         def execute(run):
-            events.append(("execute",run.bundle["version"]["id"]))
+            events.append(("execute",run.version["version"]["id"]))
             return ExecutionResult({"ok":True})
         def grade(run):
             events.append(("grade",run.case_id))
@@ -368,7 +368,7 @@ class EvaluationCoreTests(unittest.TestCase):
         class Crash(BaseException):
             pass
         calls=[]
-        app=self.app(lambda run:(calls.append(run.bundle["version"]["id"]) or ExecutionResult({"ok":True})))
+        app=self.app(lambda run:(calls.append(run.version["version"]["id"]) or ExecutionResult({"ok":True})))
         service=FakeService(app)
         original=Journal.save_artifact_index
         def crash_before_index_seal(journal,index):
@@ -399,7 +399,7 @@ class EvaluationCoreTests(unittest.TestCase):
         app=self.app(grade=lambda run:GradeResult(1,explanation={"private":"explanation"}))
         service=FakeService(app)
         self.run_app(app,service)
-        scope={"serviceUrl":"https://fixture.example","projectId":"project","bundleId":BUNDLE,
+        scope={"serviceUrl":"https://fixture.example","workspaceId":"project","bundleId":BUNDLE,
             "requestId":REQUEST,"evaluatorPrincipalId":"evaluator"}
         with Journal(self.journal_root,scope) as journal:
             index=journal.read_artifact_index()
@@ -826,7 +826,7 @@ class EvaluationCoreTests(unittest.TestCase):
         try:
             self.assertTrue(entered.wait(5))
             cancelled.set()
-            scope={"serviceUrl":"https://fixture.example","projectId":"project","bundleId":BUNDLE,
+            scope={"serviceUrl":"https://fixture.example","workspaceId":"project","bundleId":BUNDLE,
                 "requestId":REQUEST,"evaluatorPrincipalId":"evaluator"}
             with self.assertRaises(EvaluationError) as caught:
                 with Journal(self.journal_root,scope):
@@ -862,14 +862,14 @@ class EvaluationCoreTests(unittest.TestCase):
         client.max_json_response_bytes=4*1024*1024
         client._opener=Opener(b"{}")
         data=b'{"attemptId":"66666666-6666-4666-8666-666666666666"}'
-        mutate(client,"start",{"projectId":"project","bundleId":BUNDLE,"requestId":REQUEST},data,"retry-key")
+        mutate(client,"start",{"workspaceId":"project","bundleId":BUNDLE,"requestId":REQUEST},data,"retry-key")
         sent=client._opener.requests[0]
         self.assertEqual(sent.data,data)
         self.assertEqual(sent.get_header("Idempotency-key"),"retry-key")
         self.assertEqual(sent.get_header("X-acclimate-durable-operation"),"true")
 
     def test_real_process_lock_and_foreign_journal(self):
-        scope={"serviceUrl":"https://fixture.example","projectId":"project","bundleId":BUNDLE,
+        scope={"serviceUrl":"https://fixture.example","workspaceId":"project","bundleId":BUNDLE,
             "requestId":REQUEST,"evaluatorPrincipalId":"evaluator"}
         with Journal(self.root/"locks",scope) as journal:
             program="import fcntl,os,sys; f=os.open(sys.argv[1],os.O_RDWR);\ntry: fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)\nexcept BlockingIOError: sys.exit(7)"
@@ -885,10 +885,55 @@ class EvaluationCoreTests(unittest.TestCase):
 
     def test_scope_serialization_is_exact_legacy_order_with_unicode(self):
         scope={"requestId":REQUEST,"bundleId":BUNDLE,"serviceUrl":"https://fixture.example",
-            "projectId":"caf\u00e9","evaluatorPrincipalId":"line\\quote\""}
-        expected=(f'{{"serviceUrl":"https://fixture.example","projectId":"caf\u00e9","bundleId":"{BUNDLE}",'
+            "workspaceId":"caf\u00e9","evaluatorPrincipalId":"line\\quote\""}
+        expected=(f'{{"serviceUrl":"https://fixture.example","workspaceId":"caf\u00e9","bundleId":"{BUNDLE}",'
             f'"requestId":"{REQUEST}","evaluatorPrincipalId":"line\\\\quote\\\""}}').encode()
         self.assertEqual(serialize_scope(scope),expected)
+
+    def test_journal_directory_key_is_the_frozen_0_1_encoding(self):
+        scope={"serviceUrl":"https://fixture.example","workspaceId":"caf\u00e9","bundleId":BUNDLE,
+            "requestId":REQUEST,"evaluatorPrincipalId":"evaluator"}
+        legacy=(f'{{"serviceUrl":"https://fixture.example","projectId":"caf\u00e9","bundleId":"{BUNDLE}",'
+            f'"requestId":"{REQUEST}","evaluatorPrincipalId":"evaluator"}}').encode()
+        self.assertEqual(journal_directory_key(scope),hashlib.sha256(legacy).hexdigest())
+        with Journal(self.journal_root,scope) as journal:
+            self.assertEqual(journal.directory.name,hashlib.sha256(legacy).hexdigest())
+
+    def test_a_0_1_journal_recovers_from_the_same_directory_and_is_rewritten(self):
+        calls=[]
+        app=self.app(lambda run:(calls.append(run.version["version"]["id"]) or ExecutionResult({"ok":True})))
+        service=FakeService(app)
+        service.lose_once="comparisons"
+        with self.assertRaises(EvaluationError):
+            self.run_app(app,service)
+        [state_file]=self.journal_root.glob("*/attempt.python.json")
+        state=json.loads(state_file.read_bytes())
+        # Rewrite the saved state as 0.1 wrote it: the workspace ID under scope.projectId.
+        state["scope"]={("projectId" if key=="workspaceId" else key):value for key,value in state["scope"].items()}
+        state_file.write_bytes(json_bytes(state))
+        result=self.run_app(app,service)
+        self.assertEqual(result["comparison"]["id"],COMPARISON)
+        self.assertEqual(calls,[PARENT,CANDIDATE])
+        self.assertEqual(json.loads(state_file.read_bytes())["scope"]["workspaceId"],"project")
+        self.assertNotIn("projectId",json.loads(state_file.read_bytes())["scope"])
+
+    def test_old_config_and_handoff_keys_fail_with_the_rename(self):
+        config=json.loads(self.config.read_bytes())
+        legacy={("projectId" if key=="workspaceId" else key):value for key,value in config.items()}
+        self.config.write_bytes(json_bytes(legacy))
+        with self.assertRaises(EvaluationError) as caught:
+            read_evaluator_config(str(self.config))
+        self.assertEqual((caught.exception.code,caught.exception.field,caught.exception.reason),
+            ("config.schema","projectId","projectId was renamed to workspaceId in 0.2.0"))
+        self.assertIn("projectId was renamed to workspaceId in 0.2.0",str(caught.exception))
+        handoff=self.handoff(self.app())
+        for old,new in (("projectId","workspaceId"),("configuration","descriptor")):
+            with self.subTest(old=old):
+                renamed={(old if key==new else key):value for key,value in handoff.items()}
+                with self.assertRaises(EvaluationError) as caught:
+                    validate_handoff(renamed)
+                self.assertEqual((caught.exception.code,caught.exception.field,caught.exception.reason),
+                    ("config.schema",old,f"{old} was renamed to {new} in 0.2.0"))
 
     def test_private_directory_flushes_new_ancestor_entries_before_returning(self):
         existing=self.root/"existing"
@@ -922,7 +967,7 @@ class EvaluationCoreTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node") and Path("node_modules/tsx").exists(),"Node/tsx external-consumer prerequisite unavailable")
     def test_typescript_and_python_use_same_kernel_lock_and_refuse_foreign_state(self):
-        scope={"serviceUrl":"https://fixture.example","projectId":"project","bundleId":BUNDLE,
+        scope={"serviceUrl":"https://fixture.example","workspaceId":"project","bundleId":BUNDLE,
             "requestId":REQUEST,"evaluatorPrincipalId":"evaluator"}
         script="""import {openJournal} from './packages/sdk/src/evaluation/journal.ts';
 try { const journal=await openJournal(process.argv[1],JSON.parse(process.argv[2]));await journal.close();process.exitCode=9; }

@@ -50,10 +50,10 @@ class SupportAgentExampleTest(unittest.TestCase):
         from acclimate.evaluation import GradeResult
 
         def rewards(version):
-            bundle = {"payload": bundle_files.payload_from_directory(EXAMPLE / "prompts" / version)}
+            verified = {"payload": bundle_files.payload_from_directory(EXAMPLE / "prompts" / version)}
             scores = {}
             for case in application.cases:
-                run = type("Run", (), {"bundle": bundle, "input": case["input"]})
+                run = type("Run", (), {"version": verified, "input": case["input"]})
                 output = application.execute(run).output
                 graded = application.grade(type("Grade", (), {"output": output, "expected": case["expected"]}))
                 self.assertIsInstance(graded, GradeResult)

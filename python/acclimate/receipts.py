@@ -20,10 +20,10 @@ def _deadline(timeout):
 
 
 class DeliveryReporter:
-    def __init__(self, client, project_id, integration_id, *, max_queue=100, clock=time.time):
+    def __init__(self, client, workspace_id, connection_id, *, max_queue=100, clock=time.time):
         if type(max_queue) is not int or not 1 <= max_queue <= 1000:
             raise UsageError("max_queue must be 1..1000")
-        self.client, self.project_id, self.integration_id = client, project_id, integration_id
+        self.client, self.workspace_id, self.connection_id = client, workspace_id, connection_id
         self.max_queue, self.clock = max_queue, clock
         self._ready, self._failed = deque(), deque()
         self._condition = Condition()
@@ -31,10 +31,10 @@ class DeliveryReporter:
         self._active = False
         self._closed = False
 
-    def bind(self, bundle_id, bundle, source):
+    def bind(self, bundle_id, version, source):
         if source not in ("network", "cache", "offline"):
             raise UsageError("invalid receipt source")
-        return BoundDeliveryReporter(self, bundle_id, bundle, source)
+        return BoundDeliveryReporter(self, bundle_id, version, source)
 
     def _expire(self):
         now = self.clock()
@@ -69,7 +69,7 @@ class DeliveryReporter:
             failed = False
             try:
                 if self.clock() - created < 86400:
-                    self.client.report_delivery_receipt(self.project_id, self.integration_id, receipt)
+                    self.client.report_delivery_receipt(self.workspace_id, self.connection_id, receipt)
             except Exception:
                 failed = True
             with self._condition:
@@ -127,23 +127,23 @@ class DeliveryReporter:
 
 
 class BoundDeliveryReporter:
-    def __init__(self, reporter, bundle_id, bundle, source):
-        self.reporter, self.bundle_id, self.bundle, self.source = reporter, bundle_id, bundle, source
+    def __init__(self, reporter, bundle_id, version, source):
+        self.reporter, self.bundle_id, self.version, self.source = reporter, bundle_id, version, source
 
     def _make_receipt(self, stage):
         if stage not in ("resolved", "downloaded", "verified", "prepared", "started"):
             raise UsageError("invalid receipt stage")
-        resolution = self.bundle.get("resolution")
+        resolution = self.version.get("resolution")
         if stage == "resolved" and resolution is None or stage == "downloaded" and self.source != "network":
             raise UsageError("impossible receipt stage/source")
         r = self.reporter
-        receipt = dict(eventId=str(uuid.uuid4()), integrationId=r.integration_id,
-                       projectId=r.project_id, bundleId=self.bundle_id,
-                       versionId=self.bundle["version"]["id"], digest=self.bundle["version"]["digest"],
+        receipt = dict(eventId=str(uuid.uuid4()), connectionId=r.connection_id,
+                       workspaceId=r.workspace_id, bundleId=self.bundle_id,
+                       versionId=self.version["version"]["id"], digest=self.version["version"]["digest"],
                        stage=stage, occurredAt=_timestamp(r.clock()), source=self.source)
         if resolution is not None:
             receipt.update(channel=resolution["channel"], revision=resolution["revision"],
-                           resolvedAt=_timestamp(self.bundle["resolvedAt"] / 1000), stale=self.bundle["stale"])
+                           resolvedAt=_timestamp(self.version["resolvedAt"] / 1000), stale=self.version["stale"])
         return receipt
 
     def _queue_prepared_start(self, prior):

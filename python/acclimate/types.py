@@ -31,7 +31,7 @@ class CreateBundleRequest(TypedDict):
 class Bundle(TypedDict):
     id: str
     name: str
-    projectId: str
+    workspaceId: str
     compatibilityTarget: CompatibilityTarget
     createdAt: str
 
@@ -203,10 +203,10 @@ class EvaluationDescriptor(TypedDict):
 class EvaluationHandoff(TypedDict):
     schemaVersion: Literal[1]
     serviceUrl: str
-    projectId: str
+    workspaceId: str
     bundleId: str
     requestId: str
-    configuration: EvaluationDescriptor
+    descriptor: EvaluationDescriptor
 
 
 class _EvaluationTarget(EvaluationDescriptor):
@@ -306,7 +306,7 @@ class EvaluationAbandonmentPolicy(TypedDict):
 
 class EvaluationCapabilities(TypedDict):
     schemaVersion: Literal[1]
-    projectId: str
+    workspaceId: str
     principalId: str
     checkedAt: str
     readUnpublished: Literal[True]
@@ -469,7 +469,7 @@ class ConnectionCredentialSummary(TypedDict):
 
 class Connection(TypedDict):
     id: str
-    projectId: str
+    workspaceId: str
     bundleId: str
     channel: str
     displayName: str
@@ -492,8 +492,8 @@ class ConnectionCredential(TypedDict):
 
 class DeliveryReceiptRequest(TypedDict):
     eventId: str
-    integrationId: str
-    projectId: str
+    connectionId: str
+    workspaceId: str
     bundleId: str
     versionId: str
     digest: str
@@ -560,8 +560,8 @@ class LearningEnrollmentRequest(TypedDict):
 
 
 class LearningEnrollment(TypedDict):
-    projectId: str
-    integrationId: str
+    workspaceId: str
+    connectionId: str
     bundleId: str
     channel: str
     installationId: str
@@ -801,22 +801,6 @@ class OperationClosed(TypedDict):
 
 Operation = OperationCommitted | OperationNotObserved | OperationClosed
 
-# Deprecated. Use Release.
-Promotion = Release
-# Deprecated. Use ReleasePage.
-PromotionPage = ReleasePage
-# Deprecated. Use CreateReleaseRequest.
-PromoteRequest = CreateReleaseRequest
-# Deprecated. Use ConnectionObservation.
-IntegrationObservation = ConnectionObservation
-# Deprecated. Use ConnectionLatestObservation.
-IntegrationLatestObservation = ConnectionLatestObservation
-# Deprecated. Use ConnectionObservationPage.
-IntegrationObservationPage = ConnectionObservationPage
-
-# Deprecated. Use VerifiedVersion.
-VerifiedBundle = VerifiedVersion
-
 __all__ = [
     "FileKind",
     "CompatibilityTarget",
@@ -926,11 +910,4 @@ __all__ = [
     "OperationNotObserved",
     "OperationClosed",
     "Operation",
-    "Promotion",
-    "PromotionPage",
-    "PromoteRequest",
-    "IntegrationObservation",
-    "IntegrationLatestObservation",
-    "IntegrationObservationPage",
-    "VerifiedBundle",
 ]

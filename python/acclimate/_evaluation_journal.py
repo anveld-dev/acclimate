@@ -14,9 +14,31 @@ from ._evaluation_shared import (
 )
 
 
+_SCOPE_KEYS = ("serviceUrl","workspaceId","bundleId","requestId","evaluatorPrincipalId")
+
+
 def serialize_scope(scope: dict) -> bytes:
-    return json_bytes({key:scope[key] for key in
-        ("serviceUrl","projectId","bundleId","requestId","evaluatorPrincipalId")})
+    """The scope a journal records and compares on open."""
+    return json_bytes({key:scope[key] for key in _SCOPE_KEYS})
+
+
+def journal_directory_key(scope: dict) -> str:
+    """The journal directory name: a frozen storage key shared with the TypeScript SDK.
+
+    It hashes the 0.1 scope encoding byte for byte, with the workspace ID under
+    ``projectId``, so journals written before the 0.2.0 rename are still found.
+    Never change it.
+    """
+    return hashlib.sha256(json_bytes({"serviceUrl":scope["serviceUrl"],"projectId":scope["workspaceId"],
+        "bundleId":scope["bundleId"],"requestId":scope["requestId"],
+        "evaluatorPrincipalId":scope["evaluatorPrincipalId"]})).hexdigest()
+
+
+def _recorded_scope(value):
+    # Recovery only: a 0.1 journal recorded the workspace ID as scope.projectId.
+    if type(value) is dict and "projectId" in value and "workspaceId" not in value:
+        return {("workspaceId" if key == "projectId" else key): item for key, item in value.items()}
+    return value
 
 
 class Journal:
@@ -25,7 +47,7 @@ class Journal:
             raise EvaluationError("runtime.unsupported")
         self.root = ensure_private_directory(root, journal_root=True)
         self.scope = parse_json(serialize_scope(scope))
-        self.directory = ensure_private_directory(self.root/hashlib.sha256(serialize_scope(scope)).hexdigest())
+        self.directory = ensure_private_directory(self.root/journal_directory_key(scope))
         self._fd: int | None = None
         self._artifact_bytes = 0
 
@@ -75,6 +97,8 @@ class Journal:
         if not path.exists() and not path.is_symlink():
             return None
         state=parse_json(read_private_bytes(path,4*MIB),code="journal.invalid")
+        if type(state) is dict:
+            state["scope"]=_recorded_scope(state.get("scope"))
         if type(state) is not dict or state.get("format")!="acclimate-python-evaluation-1" or state.get("scope")!=self.scope:
             raise EvaluationError("journal.invalid",phase="claim")
         if state.get("journalRoot")!=str(self.root):

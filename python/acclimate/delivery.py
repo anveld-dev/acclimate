@@ -215,7 +215,7 @@ def _offline_policy(offline: Any) -> tuple[float | None, str | None]:
 
 def resolve_and_cache(
     client: AcclimateClient,
-    project_id: str,
+    workspace_id: str,
     bundle_id: str,
     *,
     cache_dir: str,
@@ -244,11 +244,11 @@ def resolve_and_cache(
     resolution = None
     try:
         if channel is not None:
-            key = _key(client, project_id, bundle_id, "channel", channel)
+            key = _key(client, workspace_id, bundle_id, "channel", channel)
             old = _read(fd, key)
             try:
                 response, etag, not_modified = client.resolve_channel(
-                    project_id,
+                    workspace_id,
                     bundle_id,
                     channel,
                     etag=old.get("etag") if isinstance(old, dict) else None,
@@ -303,9 +303,9 @@ def resolve_and_cache(
             version = resolution["version"]
         else:
             assert version_id is not None
-            index_key = _key(client, project_id, bundle_id, "version", version_id)
+            index_key = _key(client, workspace_id, bundle_id, "version", version_id)
             try:
-                version = client.get_version(project_id, bundle_id, version_id)
+                version = client.get_version(workspace_id, bundle_id, version_id)
             except (TransportError, ApiError) as e:
                 if not _fallback(e) or offline_pinned_version != version_id:
                     raise
@@ -321,7 +321,7 @@ def resolve_and_cache(
                 resolved_at = old["cachedAt"]
             _version(version, bundle_id, version_id)
         payload_key = _key(
-            client, project_id, bundle_id, version["id"], version["digest"]
+            client, workspace_id, bundle_id, version["id"], version["digest"]
         )
         cached = _read(fd, payload_key)
         data = None
@@ -337,7 +337,7 @@ def resolve_and_cache(
                 raise DeliveryError("digest_mismatch", "Cached payload digest mismatch")
         downloaded = data is None
         if data is None:
-            data = client.get_payload(project_id, bundle_id, version["id"])
+            data = client.get_payload(workspace_id, bundle_id, version["id"])
             if len(data) > 1048576:
                 raise DeliveryError("invalid_payload", "Payload exceeds size limit")
             if "sha256:" + hashlib.sha256(data).hexdigest() != version["digest"]:
@@ -358,7 +358,7 @@ def resolve_and_cache(
         if not stale:
             _write(
                 fd,
-                _key(client, project_id, bundle_id, "version", version["id"]),
+                _key(client, workspace_id, bundle_id, "version", version["id"]),
                 {"version": version, "cachedAt": now},
             )
         # Evict oldest regular entries without following symlinks; preserve the payload just used.
@@ -441,12 +441,12 @@ class PreparedFiles:
 class PreparedDelivery(AbstractContextManager["PreparedDelivery"]):
     """Pinned instructions, staged skills and the complete file inventory for one job."""
 
-    def __init__(self, bundle: VerifiedVersion, staged: PreparedFiles, directory: str, owned: bool):
-        self.bundle = bundle
-        self.version = bundle["version"]
+    def __init__(self, version: VerifiedVersion, staged: PreparedFiles, directory: str, owned: bool):
+        # The verified version this job runs. Its metadata is ``version["version"]``.
+        self.version = version
         self.files = staged.files
         self.directory = directory
-        self.instructions = "\n\n".join(f["text"] for f in bundle["payload"]["files"] if f["kind"] == "instruction")
+        self.instructions = "\n\n".join(f["text"] for f in version["payload"]["files"] if f["kind"] == "instruction")
         self.skill_files = [f for f in self.files if f["kind"] == "skill"]
         self._staged = staged
         self._owned = owned
@@ -460,7 +460,7 @@ class PreparedDelivery(AbstractContextManager["PreparedDelivery"]):
         with self._start_lock:
             if not self._started:
                 self._started = True
-                binding = self.bundle.get("reporter")
+                binding = self.version.get("reporter")
                 if binding is not None:
                     try:
                         if isinstance(binding, BoundDeliveryReporter):
@@ -496,13 +496,13 @@ def _remove_job_directory(directory: str) -> None:
             raise
 
 
-def prepare_files(bundle: VerifiedVersion, destination: str) -> PreparedFiles:
-    validate_payload(bundle["payload"])
+def prepare_files(version: VerifiedVersion, destination: str) -> PreparedFiles:
+    validate_payload(version["payload"])
     root = os.path.abspath(destination)
     root_fd = _private_dir(root)
     result = PreparedFiles(root_fd, [], [])
     try:
-        for item in bundle["payload"]["files"]:
+        for item in version["payload"]["files"]:
             parts = item["path"].split("/")
             current = os.dup(root_fd)
             try:
@@ -554,7 +554,7 @@ def prepare_files(bundle: VerifiedVersion, destination: str) -> PreparedFiles:
                 )
             finally:
                 os.close(current)
-        reporter = bundle.get("reporter")
+        reporter = version.get("reporter")
         if reporter is not None:
             try:
                 reporter.report_prepared()

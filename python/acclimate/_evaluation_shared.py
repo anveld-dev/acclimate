@@ -21,7 +21,7 @@ from .errors import AcclimateError
 
 MIB = 1024 * 1024
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
-PROJECT_RE = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
+WORKSPACE_RE = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
 DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
 
@@ -378,8 +378,8 @@ def parse_json(data: bytes | str, *, code="config.schema") -> Any:
         raise EvaluationError(code) from None
 
 
-def guided_project(value: Any) -> bool:
-    return type(value) is str and bool(PROJECT_RE.fullmatch(value)) and value not in (".", "..")
+def guided_workspace(value: Any) -> bool:
+    return type(value) is str and bool(WORKSPACE_RE.fullmatch(value)) and value not in (".", "..")
 
 
 def guided_uuid(value: Any) -> bool:
@@ -449,13 +449,26 @@ def validate_service_url(value: Any) -> None:
         raise EvaluationError("config.url") from None
 
 
+# Keys that 0.2.0 renamed in the handoff and config files. An old file fails
+# loudly with the new name instead of being read with a guessed meaning.
+_RENAMED_KEYS = (("projectId", "workspaceId"), ("configuration", "descriptor"))
+
+
+def reject_renamed_keys(value: Any, renamed=_RENAMED_KEYS) -> None:
+    if type(value) is dict:
+        for old, new in renamed:
+            if old in value:
+                raise EvaluationError("config.schema", field=old, reason=f"{old} was renamed to {new} in 0.2.0")
+
+
 def validate_handoff(value: Any) -> dict:
-    if type(value) is not dict or set(value) != {"schemaVersion","serviceUrl","projectId","bundleId","requestId","configuration"} or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1:
+    reject_renamed_keys(value)
+    if type(value) is not dict or set(value) != {"schemaVersion","serviceUrl","workspaceId","bundleId","requestId","descriptor"} or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1:
         raise EvaluationError("config.schema")
     validate_service_url(value["serviceUrl"])
-    if not guided_project(value["projectId"]) or not guided_uuid(value["bundleId"]) or not guided_uuid(value["requestId"]):
+    if not guided_workspace(value["workspaceId"]) or not guided_uuid(value["bundleId"]) or not guided_uuid(value["requestId"]):
         raise EvaluationError("guided_target_unsupported")
-    validate_descriptor(value["configuration"])
+    validate_descriptor(value["descriptor"])
     return clone_json(value)
 
 
@@ -622,7 +635,8 @@ def _read_config(path: str | Path, reader: bool) -> dict:
     filename = _canonical_path(path, alias_issue="configAlias")
     _private_parent(filename)
     value = parse_json(read_private_bytes(filename, config_file=True))
-    fields = {"schemaVersion","serviceUrl","projectId","readToken"} if reader else {"schemaVersion","serviceUrl","projectId","evaluatorPrincipalId","journalRoot"}
+    reject_renamed_keys(value, _RENAMED_KEYS[:1])
+    fields = {"schemaVersion","serviceUrl","workspaceId","readToken"} if reader else {"schemaVersion","serviceUrl","workspaceId","evaluatorPrincipalId","journalRoot"}
     # The evaluator token is inline, in a private file, or in ACCLIMATE_EVALUATOR_TOKEN.
     optional = set() if reader else {"captureCallbackErrors","evaluatorToken","evaluatorTokenFile"}
     if (type(value) is not dict or not fields.issubset(value) or set(value) - fields - optional
@@ -631,7 +645,7 @@ def _read_config(path: str | Path, reader: bool) -> dict:
             or ("evaluatorToken" in value and "evaluatorTokenFile" in value)):
         raise EvaluationError("config.schema")
     validate_service_url(value["serviceUrl"])
-    if not guided_project(value["projectId"]):
+    if not guided_workspace(value["workspaceId"]):
         raise EvaluationError("guided_target_unsupported")
     if not reader and (not _text(value["evaluatorPrincipalId"],1024,trimmed=True) or not _text(value["journalRoot"],4096,trimmed=True) or not Path(value["journalRoot"]).is_absolute()):
         raise EvaluationError("config.schema")
@@ -669,17 +683,17 @@ def make_client(config: dict) -> AcclimateClient:
 
 
 def scope_from(config: dict, handoff: dict) -> dict:
-    if handoff["serviceUrl"] != config["serviceUrl"] or handoff["projectId"] != config["projectId"]:
+    if handoff["serviceUrl"] != config["serviceUrl"] or handoff["workspaceId"] != config["workspaceId"]:
         raise EvaluationError("auth.principal_mismatch")
-    return {"serviceUrl":config["serviceUrl"],"projectId":config["projectId"],
+    return {"serviceUrl":config["serviceUrl"],"workspaceId":config["workspaceId"],
         "bundleId":handoff["bundleId"],"requestId":handoff["requestId"],
         "evaluatorPrincipalId":config["evaluatorPrincipalId"]}
 
 
 def mutation_path(operation: str, scope: dict) -> str:
-    if not guided_project(scope.get("projectId")) or not guided_uuid(scope.get("bundleId")):
+    if not guided_workspace(scope.get("workspaceId")) or not guided_uuid(scope.get("bundleId")):
         raise EvaluationError("guided_target_unsupported")
-    base=f'/v1/workspaces/{scope["projectId"]}/bundles/{scope["bundleId"]}'
+    base=f'/v1/workspaces/{scope["workspaceId"]}/bundles/{scope["bundleId"]}'
     if operation == "submit":
         return base+"/comparisons"
     if operation == "createRequest":

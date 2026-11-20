@@ -94,16 +94,17 @@ class ExecutionContext:
     collection: CollectionContext | None = None
 
 
-def _files(bundle: Any, kind: str) -> tuple[BundleFile, ...]:
+def _files(version: Any, kind: str) -> tuple[BundleFile, ...]:
     try:
-        return tuple(file for file in bundle["payload"]["files"] if file.get("kind") == kind)
+        return tuple(file for file in version["payload"]["files"] if file.get("kind") == kind)
     except (KeyError, TypeError, AttributeError):
         return ()
 
 
 @dataclass(frozen=True)
 class ExecuteInput(Generic[I]):
-    bundle: VerifiedVersion
+    #: The verified parent or candidate version under test.
+    version: VerifiedVersion
     input: I
     case_id: str
     #: 0-based index of this run of the case.
@@ -119,17 +120,17 @@ class ExecuteInput(Generic[I]):
     @property
     def instruction_files(self) -> tuple[BundleFile, ...]:
         """Instruction files in payload order."""
-        return _files(self.bundle, "instruction")
+        return _files(self.version, "instruction")
 
     @property
     def skill_files(self) -> tuple[BundleFile, ...]:
         """Skill files in payload order."""
-        return _files(self.bundle, "skill")
+        return _files(self.version, "skill")
 
     @property
     def memory_files(self) -> tuple[BundleFile, ...]:
         """Memory files in payload order."""
-        return _files(self.bundle, "memory")
+        return _files(self.version, "memory")
 
 
 @dataclass(frozen=True)
@@ -458,7 +459,7 @@ def _assert_request(request: dict, handoff: dict, app: EvaluationApp, frozen: di
         raise EvaluationError("evidence.identity_mismatch",phase="verify")
     validate_descriptor(descriptor_from(request))
     assert_descriptor(request,app.descriptor)
-    assert_descriptor(request,handoff["configuration"])
+    assert_descriptor(request,handoff["descriptor"])
     for key in ("parentVersionId","candidateVersionId"):
         if not guided_uuid(request.get(key)):
             raise EvaluationError("version.binding_mismatch",phase="verify")
@@ -474,8 +475,8 @@ def _assert_request(request: dict, handoff: dict, app: EvaluationApp, frozen: di
 
 
 def _bundles(client,config: dict,handoff: dict,request: dict,cache: Path):
-    parent=resolve_and_cache(client,config["projectId"],handoff["bundleId"],version_id=request["parentVersionId"],cache_dir=str(cache))
-    candidate=resolve_and_cache(client,config["projectId"],handoff["bundleId"],version_id=request["candidateVersionId"],cache_dir=str(cache))
+    parent=resolve_and_cache(client,config["workspaceId"],handoff["bundleId"],version_id=request["parentVersionId"],cache_dir=str(cache))
+    candidate=resolve_and_cache(client,config["workspaceId"],handoff["bundleId"],version_id=request["candidateVersionId"],cache_dir=str(cache))
     if parent["version"]["digest"]!=request["parentDigest"] or candidate["version"]["digest"]!=request["candidateDigest"] or candidate["version"]["parentVersionId"]!=parent["version"]["id"]:
         raise EvaluationError("version.binding_mismatch",phase="verify")
     return {"parent":clone_json(parent),"candidate":clone_json(candidate)}
@@ -483,26 +484,26 @@ def _bundles(client,config: dict,handoff: dict,request: dict,cache: Path):
 
 def _authority(client,config: dict):
     try:
-        caps=client.get_evaluation_capabilities(config["projectId"])
+        caps=client.get_evaluation_capabilities(config["workspaceId"])
     except Exception as error:
         if isinstance(error,ApiError) and error.status==404:
             raise EvaluationError("capabilities.unsupported",phase="preflight",next_action="upgrade_service",http_status=404) from None
         raise safe_error(error,phase="preflight") from None
     if type(caps.get("schemaVersion")) is not int or caps.get("schemaVersion")!=1 or caps.get("retainedEvaluationOperations") is not True:
         raise EvaluationError("capabilities.unsupported",phase="preflight",next_action="upgrade_service")
-    if caps.get("projectId")!=config["projectId"] or caps.get("principalId")!=config["evaluatorPrincipalId"]:
+    if caps.get("workspaceId")!=config["workspaceId"] or caps.get("principalId")!=config["evaluatorPrincipalId"]:
         raise EvaluationError("auth.principal_mismatch",phase="preflight",next_action="ask_operator")
     if caps.get("readUnpublished") is not True or caps.get("writeEvaluation") is not True:
         raise EvaluationError("auth.denied",phase="preflight",next_action="ask_operator")
     return caps
 
 
-def _assert_bundle_exists(client,project_id: str,bundle_id: str):
+def _assert_bundle_exists(client,workspace_id: str,bundle_id: str):
     # Empty request/channel listings also succeed for a nonexistent bundle.
     cursor=None
     seen=set()
     for _ in range(100):
-        page=client._request("GET",client._base(project_id)+client._listing(cursor,100))
+        page=client._request("GET",client._base(workspace_id)+client._listing(cursor,100))
         if (type(page) is not dict or type(page.get("items")) is not list or len(page["items"])>100 or
             any(type(item) is not dict or type(item.get("id")) is not str for item in page["items"]) or
             "nextCursor" not in page or (page["nextCursor"] is not None and
@@ -561,15 +562,15 @@ def preflight_evaluation(*, app: EvaluationApp, config_path: str,
         authorization="verified"
         checks.extend([{"check":"serviceIdentity","status":"passed"},{"check":"evaluatorAccess","status":"passed"}])
         current_check="targetBundle"
-        _assert_bundle_exists(client,config["projectId"],selected["bundleId"] if selected else target["bundleId"])
+        _assert_bundle_exists(client,config["workspaceId"],selected["bundleId"] if selected else target["bundleId"])
         checks.append({"check":"targetBundle","status":"passed"})
         if selected is None and target.get("requestId"):
-            selected={"schemaVersion":1,"serviceUrl":config["serviceUrl"],"projectId":config["projectId"],
-                "bundleId":target["bundleId"],"requestId":target["requestId"],"configuration":app.descriptor}
+            selected={"schemaVersion":1,"serviceUrl":config["serviceUrl"],"workspaceId":config["workspaceId"],
+                "bundleId":target["bundleId"],"requestId":target["requestId"],"descriptor":app.descriptor}
             selected=validate_handoff(selected)
         if selected:
             current_check="targetRequest"
-            request=client.get_evaluation(config["projectId"],selected["bundleId"],selected["requestId"])
+            request=client.get_evaluation(config["workspaceId"],selected["bundleId"],selected["requestId"])
             checks.append({"check":"targetRequest","status":"passed"})
             current_check="descriptor"
             _assert_request(request,selected,app)
@@ -759,7 +760,7 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: EvaluationH
         capture_errors = config.get("captureCallbackErrors", True) is not False
         secrets = (config.get("evaluatorToken", ""),)
         scope=scope_from(config,handoff)
-        assert_descriptor(handoff["configuration"],app.descriptor)
+        assert_descriptor(handoff["descriptor"],app.descriptor)
         phase="preflight"
         check=preflight_evaluation(app=app,config_path=config_path,target={"handoff":handoff})
         if check["status"]!="ready":
@@ -768,7 +769,7 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: EvaluationH
         client=make_client(config)
         phase="claim"
         with Journal(config["journalRoot"],scope) as journal:
-            request=client.get_evaluation(config["projectId"],handoff["bundleId"],handoff["requestId"])
+            request=client.get_evaluation(config["workspaceId"],handoff["bundleId"],handoff["requestId"])
             _assert_request(request,handoff,app)
             state=journal.read()
             if state:
@@ -786,7 +787,7 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: EvaluationH
                     return None
                 if current.get("evaluatorPrincipal")!=config["evaluatorPrincipalId"] or not guided_uuid(current.get("attemptId")) or not guided_uuid(current.get("comparisonId")):
                     raise EvaluationError("evidence.identity_mismatch",phase="inspect")
-                comparison=client.get_comparison(config["projectId"],handoff["bundleId"],current["comparisonId"])
+                comparison=client.get_comparison(config["workspaceId"],handoff["bundleId"],current["comparisonId"])
                 _assert_report(comparison,current,current["attemptId"])
                 if comparison.get("id")!=current["comparisonId"] or comparison.get("submitter")!=current["evaluatorPrincipal"]:
                     raise EvaluationError("evidence.identity_mismatch",phase="inspect")
@@ -821,7 +822,7 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: EvaluationH
 
             def current_request():
                 journal.assert_owned()
-                latest=client.get_evaluation(config["projectId"],handoff["bundleId"],handoff["requestId"])
+                latest=client.get_evaluation(config["workspaceId"],handoff["bundleId"],handoff["requestId"])
                 # The read may block while ownership is lost or cancellation is
                 # requested. Historical authority checks do not guard callbacks.
                 journal.assert_owned()
@@ -905,7 +906,7 @@ def run_evaluation(*, app: EvaluationApp, config_path: str, handoff: EvaluationH
                     state["wireBodies"]["finish"]=journal.save_body("finish",json_bytes({"attemptId":state["attemptId"],"comparisonId":state["comparisonId"]}))
                     journal.save(state)
                 mutate(client,"finish",scope,journal.read_body("finish",state),state["keys"]["finish"])
-                request=client.get_evaluation(config["projectId"],handoff["bundleId"],handoff["requestId"])
+                request=client.get_evaluation(config["workspaceId"],handoff["bundleId"],handoff["requestId"])
                 _assert_request(request,handoff,app,state["request"])
                 done=terminal(request, reused_evidence)
                 if not done:

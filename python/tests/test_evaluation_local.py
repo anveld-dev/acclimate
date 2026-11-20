@@ -36,7 +36,7 @@ CANDIDATE = {"schemaVersion": 1, "files": [{"path": "AGENTS.md", "kind": "instru
 
 
 def sees_polite(run):
-    return "polite" in run.bundle["payload"]["files"][0]["text"]
+    return "polite" in run.version["payload"]["files"][0]["text"]
 
 
 def make_app(execute=None, grade=None, cases=None, **options):
@@ -161,8 +161,8 @@ class LocalComparisonTests(LocalTestCase):
 
         def execute(run):
             seen.append((run.case_id, run.repetition, run.context.side, run.context.collection.first_side))
-            self.assertEqual(set(run.bundle), {"version", "payload", "resolvedAt", "stale"})
-            self.assertEqual(run.bundle["version"]["bundleId"], LOCAL_BUNDLE_ID)
+            self.assertEqual(set(run.version), {"version", "payload", "resolvedAt", "stale"})
+            self.assertEqual(run.version["version"]["bundleId"], LOCAL_BUNDLE_ID)
             return ExecutionResult({"polite": sees_polite(run)})
 
         app = make_app(execute=execute, collection={"protocol": "seeded-balanced-v1", "seed": "s"})
@@ -193,7 +193,7 @@ class LocalComparisonTests(LocalTestCase):
         app = make_app(execute=lambda run: ExecutionResult({"same": True}), grade=lambda run: GradeResult(1))
         result = self.run_local(app)
         self.assertEqual(result["summary"]["outputs"], {"comparedPairs": 4, "identicalPairs": 4})
-        self.assertIn("Check that execute uses the bundle argument", result["warnings"][0])
+        self.assertIn("Check that execute uses the version it is given", result["warnings"][0])
         same = self.run_local(app, candidate=PARENT, name="same")
         self.assertIn("are the same payload", same["warnings"][0])
 
@@ -464,18 +464,18 @@ class ServiceRunnerTests(LocalTestCase):
     def setUp(self):
         super().setUp()
         self.config = self.root / "config.json"
-        self.config.write_bytes(json_bytes({"schemaVersion": 1, "serviceUrl": "https://fixture.example", "projectId": "project",
+        self.config.write_bytes(json_bytes({"schemaVersion": 1, "serviceUrl": "https://fixture.example", "workspaceId": "project",
                                             "evaluatorPrincipalId": "evaluator", "evaluatorToken": "private-canary-token",
                                             "journalRoot": str(self.root / "journals")}))
         self.config.chmod(0o600)
 
     def handoff(self, app):
-        return {"schemaVersion": 1, "serviceUrl": "https://fixture.example", "projectId": "project", "bundleId": BUNDLE,
-                "requestId": REQUEST, "configuration": app.descriptor}
+        return {"schemaVersion": 1, "serviceUrl": "https://fixture.example", "workspaceId": "project", "bundleId": BUNDLE,
+                "requestId": REQUEST, "descriptor": app.descriptor}
 
     def test_service_run_reports_summary_and_selected_pairs_stay_partial(self):
         events = []
-        app = make_app(execute=lambda run: ExecutionResult({"text": run.bundle["payload"]["files"][0]["text"]}),
+        app = make_app(execute=lambda run: ExecutionResult({"text": run.version["payload"]["files"][0]["text"]}),
                        grade=lambda run: GradeResult(1), concurrency=2)
         bound = bind_run_controls(app, RunControls(selection={"kind": "cases", "caseIds": ["a"]}, progress=events.append))
         self.assertEqual(bound.descriptor, app.descriptor)

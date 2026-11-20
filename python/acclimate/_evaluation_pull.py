@@ -17,7 +17,7 @@ def pull_payload(*, config_path, bundle_id, channel, out):
     """Write a new private payload file. Edit it, then compare it with its parent."""
     config = read_evaluator_config(config_path)
     try:
-        resolved = resolve_and_cache(make_client(config), config["projectId"], bundle_id, channel=channel,
+        resolved = resolve_and_cache(make_client(config), config["workspaceId"], bundle_id, channel=channel,
                                      cache_dir=str(Path(config["journalRoot"]) / "command-cache"))
     except ApiError as error:
         if error.status == 404:

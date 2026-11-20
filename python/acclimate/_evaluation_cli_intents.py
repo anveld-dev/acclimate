@@ -72,7 +72,19 @@ def command_lock(filename: str | Path):
 
 
 def _identity(config):
-    return {key: config[key] for key in ("serviceUrl", "projectId", "evaluatorPrincipalId", "journalRoot")}
+    return {key: config[key] for key in ("serviceUrl", "workspaceId", "evaluatorPrincipalId", "journalRoot")}
+
+
+def _legacy_identity(identity):
+    """The 0.1 spelling of an intent identity, which recorded the workspace ID as projectId."""
+    return {("projectId" if key == "workspaceId" else key): value for key, value in identity.items()}
+
+
+def _current_identity(value):
+    # Recovery only: an intent written by 0.1 recorded identity.projectId.
+    if type(value) is dict and "projectId" in value and "workspaceId" not in value:
+        return {("workspaceId" if key == "projectId" else key): item for key, item in value.items()}
+    return value
 
 
 def _fail(code="request.intent_mismatch"):
@@ -92,11 +104,11 @@ def _command_failure(error):
     return _fail("submission.unconfirmed")
 
 
-def _published_base(client, project_id, bundle_id, channel):
+def _published_base(client, workspace_id, bundle_id, channel):
     """The channel's current release, or a diagnostic that names the missing baseline."""
     empty = EvaluationError("request.channel_empty", phase="claim", next_action="ask_operator")
     try:
-        current = client.resolve_channel(project_id, bundle_id, channel)[0]
+        current = client.resolve_channel(workspace_id, bundle_id, channel)[0]
     except ApiError as error:
         # Preflight already found the bundle, so a missing resolution is an unpublished channel.
         if error.status == 404 and error.code == "not_found":
@@ -123,20 +135,56 @@ def _read_intent(filename):
         path.lstat()
     except FileNotFoundError:
         return None
-    return parse_json(read_private_bytes(path, 4 * 1024 * 1024))
+    state = parse_json(read_private_bytes(path, 4 * 1024 * 1024))
+    if type(state) is dict:
+        if "identity" in state:
+            state["identity"] = _current_identity(state["identity"])
+        if type(state.get("selection")) is dict and "identity" in state["selection"]:
+            state["selection"]["identity"] = _current_identity(state["selection"]["identity"])
+    return state
+
+
+def _legacy_handoff_bytes(handoff):
+    """The bytes 0.1 wrote for this handoff, before projectId and configuration were renamed."""
+    legacy = {"schemaVersion": handoff["schemaVersion"], "serviceUrl": handoff["serviceUrl"], "projectId": handoff["workspaceId"],
+              "bundleId": handoff["bundleId"], "requestId": handoff["requestId"], "configuration": handoff["descriptor"]}
+    return json_bytes(legacy) + b"\n"
+
+
+def read_owned_handoff(filename):
+    """Read a handoff this CLI wrote under the journal root, upgrading one written by 0.1.
+
+    Only the journal's own run files are upgraded, so an in-flight named run recovers after
+    the rename. A handoff supplied with --handoff is never rewritten and must use 0.2.0 keys.
+    """
+    data = read_command_bytes(filename)
+    value = parse_json(data)
+    if type(value) is dict and "projectId" in value and "workspaceId" not in value and "configuration" in value and "descriptor" not in value:
+        renamed = {"workspaceId" if key == "projectId" else "descriptor" if key == "configuration" else key: item for key, item in value.items()}
+        handoff = validate_handoff(renamed)
+        # Upgrade only the exact bytes 0.1 wrote; anything else reports the rename below.
+        if data == _legacy_handoff_bytes(handoff):
+            _write_handoff(filename, handoff)
+            return handoff
+    return validate_handoff(value)
 
 
 def _write_handoff(filename, handoff):
     target = Path(os.path.abspath(filename))
     content = json_bytes(handoff) + b"\n"
+    upgrade = False
     try:
         target.lstat()
     except FileNotFoundError:
         pass
     else:
-        if read_command_bytes(target) != content:
+        existing = read_command_bytes(target)
+        if existing == content:
+            return
+        # A 0.1 recovery: this intent already wrote the same handoff with the old keys. Replace it.
+        if existing != _legacy_handoff_bytes(handoff):
             raise _fail()
-        return
+        upgrade = True
     parent = target.parent
     info = parent.lstat()
     if parent.resolve() != parent or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
@@ -148,11 +196,14 @@ def _write_handoff(filename, handoff):
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
-        try:
-            os.link(temporary, target, follow_symlinks=False)
-        except FileExistsError:
-            if read_command_bytes(target) != content:
-                raise _fail()
+        if upgrade:
+            os.replace(temporary, target)
+        else:
+            try:
+                os.link(temporary, target, follow_symlinks=False)
+            except FileExistsError:
+                if read_command_bytes(target) != content:
+                    raise _fail()
         directory = os.open(parent, os.O_RDONLY | os.O_NOFOLLOW)
         try:
             os.fsync(directory)
@@ -164,11 +215,13 @@ def _write_handoff(filename, handoff):
 
 def _recover(client, operation, scope, body, key):
     route = mutation_path(operation, scope)
-    receipt = client.get_operation(scope["projectId"], key, operation_path=route)
+    receipt = client.get_operation(scope["workspaceId"], key, operation_path=route)
     if receipt.get("status") == "closed":
         raise _fail()
     if receipt.get("status") != "committed":
         return None
+    # The service keys retained operations by the original internal path /v1/projects/...; this is a
+    # stored fingerprint key, not a route, so it keeps that spelling.
     fingerprint = "sha256:" + hashlib.sha256(b"POST\0" + route.replace("/v1/workspaces/", "/v1/projects/", 1).encode() + b"\0" + body).hexdigest()
     if receipt.get("requestFingerprint") != fingerprint or not isinstance(receipt.get("result"), dict):
         raise _fail()
@@ -200,7 +253,7 @@ def _claim_successor(handoff_file, request_id, output):
         os.fsync(stream.fileno())
 
 
-def _optional_request_fields(client, project_id, run_name, retry_of, policy_digest=None):
+def _optional_request_fields(client, workspace_id, run_name, retry_of, policy_digest=None):
     """Console display labels and the pinned policy digest.
 
     Older services reject unknown request fields, so each is sent only when the service advertises it.
@@ -208,7 +261,7 @@ def _optional_request_fields(client, project_id, run_name, retry_of, policy_dige
     if not run_name and not retry_of and not policy_digest:
         return {}
     try:
-        capabilities = client.get_evaluation_capabilities(project_id)
+        capabilities = client.get_evaluation_capabilities(workspace_id)
     except Exception:
         capabilities = {}
     fields = {}
@@ -245,7 +298,7 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
             raise _fail()
     ensure_private_directory(filename.parent)
     client = make_client(config)
-    scope = {"projectId": config["projectId"], "bundleId": bundle_id, "channel": channel}
+    scope = {"workspaceId": config["workspaceId"], "bundleId": bundle_id, "channel": channel}
     def save(state):
         content = json_bytes(state) + b"\n"
         if len(content) > 4 * 1024 * 1024:
@@ -262,7 +315,7 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
             if state is not None and (state.get("schemaVersion") != 1 or state.get("kind") != "acclimate-request-intent" or state.get("identity") != _identity(config) or state.get("bundleId") != bundle_id or state.get("channel") != channel or state.get("output") != output or state.get("payload") != payload or state.get("descriptor") != app.descriptor):
                 raise _fail()
             if state is None:
-                current = _published_base(client, config["projectId"], bundle_id, channel)
+                current = _published_base(client, config["workspaceId"], bundle_id, channel)
                 if prior and (current["version"]["id"] != prior["base"]["versionId"]
                               or current["version"]["digest"] != prior["base"]["digest"]
                               or current["revision"] != prior["base"]["revision"]):
@@ -295,7 +348,7 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
             if not state.get("draft"):
                 draft = _recover(client, "createDraft", scope, draft_body, state["keys"]["draft"])
                 if draft is None:
-                    current = client.resolve_channel(config["projectId"], bundle_id, channel)[0]
+                    current = client.resolve_channel(config["workspaceId"], bundle_id, channel)[0]
                     if not current or current["version"]["id"] != base["versionId"] or current["revision"] != base["revision"]:
                         raise _fail("request.base_conflict")
                     draft = mutate(client, "createDraft", scope, draft_body, state["keys"]["draft"])
@@ -306,10 +359,10 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
             if not draft.get("id") or draft.get("channel") != channel or draft.get("baseVersionId") != base["versionId"] or draft.get("baseRevision") != base["revision"] or version.get("parentVersionId") != base["versionId"] or version.get("bundleId") != bundle_id or draft.get("generation") != 1:
                 raise _fail()
             if not state.get("request"):
-                current = client.resolve_channel(config["projectId"], bundle_id, channel)[0]
+                current = client.resolve_channel(config["workspaceId"], bundle_id, channel)[0]
                 if not current or current["version"]["id"] != base["versionId"] or current["revision"] != base["revision"]:
                     raise _fail("request.base_conflict")
-                candidate = resolve_and_cache(client, config["projectId"], bundle_id, version_id=version["id"], cache_dir=str(Path(config["journalRoot"]) / "command-cache"))
+                candidate = resolve_and_cache(client, config["workspaceId"], bundle_id, version_id=version["id"], cache_dir=str(Path(config["journalRoot"]) / "command-cache"))
                 if candidate["version"]["digest"] != version["digest"] or candidate["version"]["parentVersionId"] != base["versionId"] or candidate["payload"] != payload:
                     raise _fail()
                 # Labels and the policy pin chosen for a saved body stay fixed across recovery. A
@@ -320,7 +373,7 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
                         raise _fail()
                     labels = {key: saved[key] for key in ("runName", "retryOf", "policyDigest") if key in saved}
                 else:
-                    labels = _optional_request_fields(client, config["projectId"], run_name,
+                    labels = _optional_request_fields(client, config["workspaceId"], run_name,
                                                       state.get("retryAfterRequestId"), policy_digest)
                 body = json_bytes({"parentVersionId": base["versionId"], "parentDigest": base["digest"], "candidateVersionId": version["id"], "candidateDigest": version["digest"], **state["descriptor"], "requireBoundEvidence": True, **labels})
                 if state.get("requestBody") and state["requestBody"].encode() != body:
@@ -333,7 +386,7 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
                 save(state)
             _assert_request(state["request"], state)
             request = state["request"]
-            handoff = validate_handoff({"schemaVersion": 1, "serviceUrl": config["serviceUrl"], "projectId": config["projectId"], "bundleId": bundle_id, "requestId": request["id"], "configuration": state["descriptor"]})
+            handoff = validate_handoff({"schemaVersion": 1, "serviceUrl": config["serviceUrl"], "workspaceId": config["workspaceId"], "bundleId": bundle_id, "requestId": request["id"], "descriptor": state["descriptor"]})
             _write_handoff(output, handoff)
             return {
                 "schemaVersion": 1,
@@ -352,7 +405,7 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
 def _assert_interrupt_request(request, handoff):
     if request.get("id") != handoff["requestId"] or request.get("requireBoundEvidence") is not True:
         raise EvaluationError("evidence.identity_mismatch", phase="inspect")
-    assert_descriptor(request, handoff["configuration"])
+    assert_descriptor(request, handoff["descriptor"])
 
 
 def interrupt_from_intent(config, handoff, reason):
@@ -360,7 +413,9 @@ def interrupt_from_intent(config, handoff, reason):
         raise EvaluationError("config.schema")
     root = ensure_private_directory(Path(config["journalRoot"]) / "command-intents")
     selection = {"identity": _identity(config), "bundleId": handoff["bundleId"], "requestId": handoff["requestId"], "reason": reason}
-    digest = hashlib.sha256(json_bytes(selection)).hexdigest()
+    # The file name is a frozen storage key: it hashes the 0.1 encoding, with projectId, so an
+    # interrupt intent written before the rename is found again.
+    digest = hashlib.sha256(json_bytes({**selection, "identity": _legacy_identity(selection["identity"])})).hexdigest()
     filename = root / ("interrupt-" + digest + ".json")
     with command_lock(str(filename) + ".lock"):
         state = _read_intent(filename)
@@ -371,10 +426,10 @@ def interrupt_from_intent(config, handoff, reason):
             raise _fail()
         client = make_client(config)
         try:
-            before = client.get_evaluation(config["projectId"], handoff["bundleId"], handoff["requestId"])
+            before = client.get_evaluation(config["workspaceId"], handoff["bundleId"], handoff["requestId"])
             _assert_interrupt_request(before, handoff)
-            result = mutate(client, "interrupt", {"projectId": config["projectId"], "bundleId": handoff["bundleId"], "requestId": handoff["requestId"]}, state["body"].encode(), state["key"])
-            current = client.get_evaluation(config["projectId"], handoff["bundleId"], handoff["requestId"])
+            result = mutate(client, "interrupt", {"workspaceId": config["workspaceId"], "bundleId": handoff["bundleId"], "requestId": handoff["requestId"]}, state["body"].encode(), state["key"])
+            current = client.get_evaluation(config["workspaceId"], handoff["bundleId"], handoff["requestId"])
         except Exception as error:
             raise _command_failure(error) from None
         _assert_interrupt_request(result, handoff)

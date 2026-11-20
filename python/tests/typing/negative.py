@@ -62,3 +62,8 @@ typo_mode: EvaluationApp[dict[str, str], dict[str, str], dict[str, str]] = defin
 typo_code = EvaluationError("config.schmea")  # reject: arg-type
 def legacy_offline_option(client: AcclimateClient) -> None:
     client.prepare("p", "b", channel="stable", offline_max_age=60)  # reject: call-arg
+
+
+# The client option renamed in 0.2.0 is gone, not aliased.
+def renamed_connection_option() -> AcclimateClient:
+    return AcclimateClient("https://acclimate.example", "token", "app", integration_id="c")  # reject: call-arg

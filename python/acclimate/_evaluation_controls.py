@@ -218,7 +218,7 @@ def run_warnings(summary: dict | None, digests: dict | None = None) -> list[str]
                             "Supply a changed candidate to measure a difference.")
         else:
             warnings.append(f"Both arms returned identical output on all {compared} compared pair{'' if compared == 1 else 's'}. "
-                            "Check that execute uses the bundle argument; an adapter that ignores it compares the agent with itself.")
+                            "Check that execute uses the version it is given; an adapter that ignores it compares the agent with itself.")
     if summary["stopReason"] == "deadline":
         warnings.append(f'Stopped at the {_format_ms(summary["deadlineMs"])} deadline. The result is partial and indeterminate.')
     if summary["stopReason"] == "cost_limit":

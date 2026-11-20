@@ -22,9 +22,9 @@ from acclimate import (
     VersionMetadata,
     ChannelResolution,
     CreateVersionRequest,
-    PromoteRequest,
-    Promotion,
-    PromotionPage,
+    CreateReleaseRequest,
+    Release,
+    ReleasePage,
     ProposalRequest,
     Proposal,
     CaseKey,
@@ -34,7 +34,7 @@ from acclimate import (
     EvaluationBinding,
     ComparisonRequest,
     Comparison,
-    VerifiedBundle,
+    VerifiedVersion,
     EvaluationDescriptor,
     EvaluationHandoff,
     EvaluationRequest,
@@ -49,9 +49,9 @@ from acclimate import (
     EvaluationProgressObservation,
     EvaluationProgressView,
     EvaluationProgressReporter,
-    IntegrationLatestObservation,
-    IntegrationObservation,
-    IntegrationObservationPage,
+    ConnectionLatestObservation,
+    ConnectionObservation,
+    ConnectionObservationPage,
     Draft,
     CreateDraftRequest,
     SaveDraftRequest,
@@ -120,15 +120,16 @@ def lifecycle(client: AcclimateClient, evaluation: Evaluation) -> None:
 def delivery(client: AcclimateClient, api_error: ApiError) -> None:
     with client.prepare("p", "b", channel="stable") as job:
         assert_type(job, PreparedDelivery)
-        assert_type(job.version, VersionMetadata)
+        assert_type(job.version, VerifiedVersion)
+        assert_type(job.version["version"], VersionMetadata)
         assert_type(job.instructions, str)
     assert_type(api_error.status, int)
-    bundle = resolve_and_cache(client, "project", "bundle", channel="stable", cache_dir="/private/cache")
-    assert_type(bundle, VerifiedBundle)
-    assert_type(bundle["payload"], BundlePayload)
-    assert_type(prepare_files(bundle, "/private/workspace"), PreparedFiles)
-    validate_payload(bundle["payload"])
-    stale = resolve_and_cache(client, "project", "bundle", channel="stable", cache_dir="/private/cache",
+    version = resolve_and_cache(client, "workspace", "bundle", channel="stable", cache_dir="/private/cache")
+    assert_type(version, VerifiedVersion)
+    assert_type(version["payload"], BundlePayload)
+    assert_type(prepare_files(version, "/private/workspace"), PreparedFiles)
+    validate_payload(version["payload"])
+    stale = resolve_and_cache(client, "workspace", "bundle", channel="stable", cache_dir="/private/cache",
                               offline={"max_age_ms": 300_000})
     assert_type(stale["stale"], bool)
     pinned = client.prepare("p", "b", version_id="v", offline={"pinned_version_id": "v"})
@@ -148,7 +149,7 @@ def listings(client: AcclimateClient, setup: BundleSetupRequest, outcome: Learni
 
 
 def execute(run: ExecuteInput[dict[str, str]]) -> ExecutionResult[dict[str, str]]:
-    assert_type(run.bundle, VerifiedBundle)
+    assert_type(run.version, VerifiedVersion)
     return ExecutionResult({"queue": run.input["category"]})
 
 

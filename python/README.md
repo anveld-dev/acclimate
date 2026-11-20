@@ -15,8 +15,8 @@ from support_agent import run_agent, score_result, saved_cases
 
 cases = saved_cases  # [{"caseId": ..., "input": ..., "expected": ...}]
 
-def execute(run):  # run.bundle holds the version under test
-    result = run_agent(files=run.bundle["payload"]["files"], task=run.input)
+def execute(run):  # run.version holds the version under test
+    result = run_agent(files=run.version["payload"]["files"], task=run.input)
     return ExecutionResult(output=result.answer)
 
 def grade(run):
@@ -60,12 +60,12 @@ from acclimate import AcclimateClient
 client = AcclimateClient(os.environ["ACCLIMATE_URL"], os.environ["ACCLIMATE_TOKEN"], "support-agent")
 with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
     result = run_agent(task, instructions=prepared.instructions, skill_files=prepared.skill_files)
-    save_job_result(result, version=prepared.version["id"], digest=prepared.version["digest"])
+    save_job_result(result, version=prepared.version["version"]["id"], digest=prepared.version["version"]["digest"])
 ```
 
 `run_agent` and `save_job_result` belong to your application. Pass `version_id` instead of `channel` for a pinned release. For background work, keep the prepared object and call `cleanup()` after the job stops and its result is saved. The verified cache defaults to `~/.cache/acclimate/python`; set `cache_dir` and `destination` to change the cache and job directories. Only use directories the current user controls.
 
-The scope names the authenticated application and namespaces the cache. Keep it stable and never use a token. Preparation resolves online. To fall back to the cache only after a transport failure or HTTP 503, pass `offline={"max_age_ms": 900_000}` for a cached channel or `offline={"pinned_version_id": version_id}` for an exact version. This matches the TypeScript SDK's `offline` option. `prepared.bundle["stale"]` marks fallback. Denials, missing resources, malformed responses and integrity failures never fall back.
+The scope names the authenticated application and namespaces the cache. Keep it stable and never use a token. Preparation resolves online. To fall back to the cache only after a transport failure or HTTP 503, pass `offline={"max_age_ms": 900_000}` for a cached channel or `offline={"pinned_version_id": version_id}` for an exact version. This matches the TypeScript SDK's `offline` option. `prepared.version["stale"]` marks fallback. Denials, missing resources, malformed responses and integrity failures never fall back.
 
 ## Client conventions
 
@@ -87,10 +87,10 @@ The checkout's delivery check prints the pinned version, digest and staged files
 
 ```sh
 export ACCLIMATE_URL=http://127.0.0.1:3000
-export ACCLIMATE_PROJECT=YOUR_WORKSPACE ACCLIMATE_BUNDLE=YOUR_BUNDLE
+export ACCLIMATE_WORKSPACE=YOUR_WORKSPACE ACCLIMATE_BUNDLE=YOUR_BUNDLE
 export ACCLIMATE_SCOPE=your-stable-app-identity
 # Set ACCLIMATE_TOKEN privately to your content-read credential.
-# Optional: set ACCLIMATE_INTEGRATION and ACCLIMATE_RECEIPT_TOKEN privately.
+# Optional: set ACCLIMATE_CONNECTION and ACCLIMATE_RECEIPT_TOKEN privately.
 PYTHONPATH=python python3.11 python/examples/delivery_check.py
 ```
 

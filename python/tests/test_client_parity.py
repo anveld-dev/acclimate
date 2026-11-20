@@ -20,10 +20,7 @@ FIXTURES = ROOT / "contracts" / "fixtures"
 
 # TypeScript methods with no Python counterpart, and why. Keep this list in sync
 # with the parity table in apps/docs/content/docs/reference/python-sdk.mdx.
-DELIBERATE_OMISSIONS = {
-    # Deprecated alias of list_workspaces; the rename pass removes deprecated aliases.
-    "list_projects",
-}
+DELIBERATE_OMISSIONS: set[str] = set()
 
 
 def snake(name: str) -> str:
@@ -54,7 +51,7 @@ class Recorder(http.server.BaseHTTPRequestHandler):
             "method": self.command,
             "path": self.path,
             "key": self.headers.get("Idempotency-Key"),
-            "integration": self.headers.get("X-Acclimate-Integration-Id"),
+            "connection": self.headers.get("X-Acclimate-Connection-Id"),
             "body": json.loads(body) if body else None,
         })
         data = json.dumps(Recorder.response).encode()
@@ -194,16 +191,19 @@ class ParityTest(unittest.TestCase):
         self.client.review_learning_round("w", "c", "r1", True, "k5")
         self.assertEqual(self.last()["body"], {"approve": True})
 
-    def test_integration_id_marks_delivery_reads_only(self):
+    def test_connection_id_marks_delivery_reads_only(self):
         connection = "0D6B1E8C-0000-4000-8000-000000000001"
-        client = AcclimateClient(self.url, "token", "scope", integration_id=connection)
+        client = AcclimateClient(self.url, "token", "scope", connection_id=connection)
         Recorder.response = json.loads((FIXTURES / "version-v1.json").read_text())
         client.get_version("w", "b", "v")
-        self.assertEqual(self.last()["integration"], connection.lower())
+        self.assertEqual(self.last()["connection"], connection.lower())
         client.list_bundles("w")
-        self.assertIsNone(self.last()["integration"])
-        with self.assertRaisesRegex(ValueError, "integration_id must be a UUID"):
-            AcclimateClient(self.url, "token", "scope", integration_id="not-a-uuid")
+        self.assertIsNone(self.last()["connection"])
+        with self.assertRaisesRegex(ValueError, "connection_id must be a UUID"):
+            AcclimateClient(self.url, "token", "scope", connection_id="not-a-uuid")
+        # The option renamed in 0.2.0 is rejected, not silently ignored.
+        with self.assertRaises(TypeError):
+            AcclimateClient(self.url, "token", "scope", integration_id=connection)  # type: ignore[call-arg]
 
     def test_offline_policy_matches_the_typescript_shape(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -228,7 +228,7 @@ class ReferenceDocsTest(unittest.TestCase):
     def test_python_reference_lists_every_client_method(self):
         reference = (ROOT / "apps" / "docs" / "content" / "docs" / "reference" / "python-sdk.mdx").read_text()
         documented = set(re.findall(r"`([a-z_]+)`", reference))
-        deprecated = {
+        aliases = {
             name for name, value in vars(AcclimateClient).items()
             if callable(value) and value.__name__ != name
         }
@@ -237,7 +237,7 @@ class ReferenceDocsTest(unittest.TestCase):
             if callable(value) and not name.startswith("_")
         }
         self.assertEqual(sorted(public - documented), [])
-        self.assertLessEqual(deprecated, documented, "list deprecated aliases under Deprecated names")
+        self.assertEqual(sorted(aliases), [], "0.2.0 removed the deprecated method aliases")
 
 
 class NamespaceTest(unittest.TestCase):

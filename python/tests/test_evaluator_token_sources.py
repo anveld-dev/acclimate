@@ -14,7 +14,7 @@ class EvaluatorTokenSources(unittest.TestCase):
         self._temp = tempfile.TemporaryDirectory()
         self.root = Path(os.path.realpath(self._temp.name))
         self.root.chmod(0o700)
-        self.base = {"schemaVersion": 1, "serviceUrl": "https://acclimate.example", "projectId": "workspace",
+        self.base = {"schemaVersion": 1, "serviceUrl": "https://acclimate.example", "workspaceId": "workspace",
                      "evaluatorPrincipalId": "machine:ci", "journalRoot": str(self.root / "journal")}
         self.secrets = self.root / "secrets"
         self.secrets.mkdir(mode=0o700)

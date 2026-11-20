@@ -22,6 +22,7 @@ from ._evaluation_shared import (
 )
 from ._evaluation_cli_intents import (
     assert_settled_predecessor, create_request_from_intent, interrupt_from_intent, read_command_bytes,
+    read_owned_handoff,
     read_command_json,
 )
 from .evaluation_analysis import analyze_comparison, policy_analysis_metric
@@ -245,6 +246,9 @@ def _read_handoff(filename, flag, name=None):
     try:
         if not os.path.lexists(filename):
             raise EvaluationError("config.missing")
+        # A named run's file belongs to the journal, so one written by 0.1 is upgraded in place.
+        if name is not None:
+            return read_owned_handoff(filename)
         value = read_command_json(filename)
     except EvaluationError as error:
         if error.code == "config.missing":
@@ -264,9 +268,9 @@ def _handoff(flags):
 def _connection(flags, handoff):
     _exactly_one(flags, "config", "read-config")
     config = read_reader_config(_required(flags, "read-config")) if flags.get("read-config") else read_evaluator_config(_required(flags, "config"))
-    if config["serviceUrl"] != handoff["serviceUrl"] or config["projectId"] != handoff["projectId"]:
+    if config["serviceUrl"] != handoff["serviceUrl"] or config["workspaceId"] != handoff["workspaceId"]:
         raise EvaluationError("version.binding_mismatch", phase="inspect")
-    return make_client(config), config["projectId"]
+    return make_client(config), config["workspaceId"]
 
 
 def _assert_request(request, handoff, app=None):
@@ -276,7 +280,7 @@ def _assert_request(request, handoff, app=None):
         raise EvaluationError("version.binding_mismatch", phase="inspect")
     if request.get("id") != handoff["requestId"] or request.get("status") not in ("requested", "running", "completed", "failed", "interrupted", "abandoned") or (request.get("attemptId") is not None and not guided_uuid(request["attemptId"])) or (request.get("comparisonId") is not None and not guided_uuid(request["comparisonId"])):
         raise EvaluationError("version.binding_mismatch", phase="inspect")
-    assert_descriptor(request, handoff["configuration"])
+    assert_descriptor(request, handoff["descriptor"])
     if app is not None:
         assert_descriptor(request, app.descriptor)
 
@@ -285,12 +289,12 @@ def _safe_request(request):
     return {"schemaVersion": 1, "requestId": request["id"], "status": request["status"], "comparisonId": request.get("comparisonId"), "attemptId": request.get("attemptId")}
 
 
-def _read_progress(client, project_id, bundle_id, request):
+def _read_progress(client, workspace_id, bundle_id, request):
     unknown = {"activity": "unknown", "reason": "unavailable"}
     def timestamp(value):
         return type(value) is str and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?(?:Z|[+-][0-9]{2}:[0-9]{2})", value)
     try:
-        view = client.get_evaluation_progress(project_id, bundle_id, request["id"])
+        view = client.get_evaluation_progress(workspace_id, bundle_id, request["id"])
         if (view.get("schemaVersion") != 1 or view["requestId"] != request["id"]
                 or view["attemptId"] != request["attemptId"] or view["status"] != request["status"]
                 or not timestamp(view["checkedAt"])):
@@ -373,7 +377,7 @@ def _create_request(app, flags, predecessor=None, policy_digest=None):
     config_path = _required(flags, "config")
     config = read_evaluator_config(config_path)
     bundle_id, channel = _required(flags, "bundle"), _required(flags, "channel")
-    mutation_path("createDraft", {"projectId": config["projectId"], "bundleId": bundle_id, "channel": channel})
+    mutation_path("createDraft", {"workspaceId": config["workspaceId"], "bundleId": bundle_id, "channel": channel})
     preflight = preflight_evaluation(app=app, config_path=config_path, target={"bundleId": bundle_id})
     if preflight["status"] != "ready":
         return _readiness_status(preflight), preflight
@@ -401,7 +405,7 @@ def _dispatch(app, command, flags, review, cwd=None):
         config_path, reason = _required(flags, "config"), _required(flags, "reason")
         handoff = _handoff(flags)
         config = read_evaluator_config(config_path)
-        if config["serviceUrl"] != handoff["serviceUrl"] or config["projectId"] != handoff["projectId"]:
+        if config["serviceUrl"] != handoff["serviceUrl"] or config["workspaceId"] != handoff["workspaceId"]:
             raise EvaluationError("version.binding_mismatch", field="--handoff",
                                   reason="The handoff names a different service or workspace than the config.")
         return 0, _safe_request(interrupt_from_intent(config, handoff, reason))
@@ -446,8 +450,8 @@ def _dispatch(app, command, flags, review, cwd=None):
                 if prior["bundleId"] != flags["bundle"]:
                     raise EvaluationError("request.intent_mismatch", field="--bundle",
                                           reason="The prior run used a different bundle.")
-                client, project_id = _connection(flags, prior)
-                request = client.get_evaluation(project_id, prior["bundleId"], prior["requestId"])
+                client, workspace_id = _connection(flags, prior)
+                request = client.get_evaluation(workspace_id, prior["bundleId"], prior["requestId"])
                 _assert_request(request, prior)
                 assert_settled_predecessor(request)
                 predecessor = handoff_file, request
@@ -526,16 +530,16 @@ def _dispatch(app, command, flags, review, cwd=None):
         return 0, {key: result[key] for key in ("schemaVersion", "status", "localInspection", "selection")}
     if command == "check":
         policy = parse_evaluation_policy(read_command_bytes(_required(flags, "policy")).decode(), app.descriptor)
-        client, project_id = _connection(flags, handoff)
-        request = client.get_evaluation(project_id, handoff["bundleId"], handoff["requestId"])
+        client, workspace_id = _connection(flags, handoff)
+        request = client.get_evaluation(workspace_id, handoff["bundleId"], handoff["requestId"])
         _assert_request(request, handoff, app)
         if request.get("status") not in ("completed", "failed") or not request.get("comparisonId"):
             return 3, {"schemaVersion": 1, "verdict": "indeterminate", "code": "evidence.not_terminal", "requestId": request["id"]}
-        parent = client.get_version(project_id, handoff["bundleId"], request["parentVersionId"])
-        candidate = client.get_version(project_id, handoff["bundleId"], request["candidateVersionId"])
+        parent = client.get_version(workspace_id, handoff["bundleId"], request["parentVersionId"])
+        candidate = client.get_version(workspace_id, handoff["bundleId"], request["candidateVersionId"])
         if parent.get("id") != request["parentVersionId"] or candidate.get("id") != request["candidateVersionId"] or parent.get("bundleId") != handoff["bundleId"] or candidate.get("bundleId") != handoff["bundleId"] or parent.get("digest") != request["parentDigest"] or candidate.get("digest") != request["candidateDigest"] or candidate.get("parentVersionId") != parent["id"]:
             raise EvaluationError("version.binding_mismatch", phase="inspect")
-        comparison = client.get_comparison(project_id, handoff["bundleId"], request["comparisonId"])
+        comparison = client.get_comparison(workspace_id, handoff["bundleId"], request["comparisonId"])
         verdict = check_comparison(comparison=comparison, expected_descriptor=app.descriptor,
             expected_binding=_comparison_binding(request),
             policy=policy["policy"], policy_digest=policy["sha256"])
@@ -544,10 +548,10 @@ def _dispatch(app, command, flags, review, cwd=None):
         pin = "unpinned" if not pinned else "matched" if pinned == policy["sha256"] else "mismatched"
         return (_policy_exit(verdict["verdict"]) or (EXIT_CODES["infrastructure"] if receipt["status"] == "unconfirmed" else 0),
                 {**verdict, "policyPin": pin, "policyReceipt": receipt})
-    client, project_id = _connection(flags, handoff)
-    request = client.get_evaluation(project_id, handoff["bundleId"], handoff["requestId"])
+    client, workspace_id = _connection(flags, handoff)
+    request = client.get_evaluation(workspace_id, handoff["bundleId"], handoff["requestId"])
     _assert_request(request, handoff)
-    return 0, {**_safe_request(request), "progress": _read_progress(client, project_id, handoff["bundleId"], request)}
+    return 0, {**_safe_request(request), "progress": _read_progress(client, workspace_id, handoff["bundleId"], request)}
 
 
 _RECOVERY_HINTS = {

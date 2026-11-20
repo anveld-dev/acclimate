@@ -34,7 +34,12 @@ if sys.version_info < (3, 8):
 
 UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 PHASES = ("doctor", "request", "run", "check", "export", "verify-export")
-HANDOFF = "evaluation-request.json"
+HANDOFF = "handoff.json"
+# The handoff file name acclimate 0.1 used. Its SDK intent records that output path, so a
+# 0.1 generation cannot be resumed by 0.2.0; the wrapper says so instead of reporting a mismatch.
+LEGACY_HANDOFF = "evaluation-request.json"
+LEGACY_GENERATION = ("This CI request directory was started by acclimate 0.1 (" + LEGACY_HANDOFF + "). "
+                     "Finish it with 0.1, or use a new --output-dir to start a fresh request.")
 PYTHON_EVALUATOR_MINIMUM = (3, 11)
 # Wait this long for a graceful stop after the first signal, and this long after a second one.
 DEFAULT_CANCEL_GRACE = 20.0
@@ -496,9 +501,9 @@ def abandon_request(config, token, handoff, reason):
     Abandonment is terminal and fences the attempt's later reports. It never claims the original
     worker stopped. It needs the `evaluate` right, which evaluator tokens hold.
     """
-    base, project = config.get("serviceUrl"), config.get("projectId")
+    base, workspace = config.get("serviceUrl"), config.get("workspaceId")
     bundle, request_id = (handoff or {}).get("bundleId"), (handoff or {}).get("requestId")
-    if not (token and isinstance(base, str) and isinstance(project, str) and project
+    if not (token and isinstance(base, str) and isinstance(workspace, str) and workspace
             and isinstance(bundle, str) and bundle
             and isinstance(request_id, str) and re.fullmatch(UUID, request_id)):
         return None
@@ -506,7 +511,7 @@ def abandon_request(config, token, handoff, reason):
     loopback = url.scheme == "http" and url.hostname in ("localhost", "127.0.0.1", "::1")
     if (url.scheme != "https" and not loopback) or url.username or url.password or url.query or url.fragment:
         return None
-    route = ("/v1/workspaces/" + urllib.parse.quote(project, safe="") + "/bundles/"
+    route = ("/v1/workspaces/" + urllib.parse.quote(workspace, safe="") + "/bundles/"
              + urllib.parse.quote(bundle, safe="") + "/evaluation-requests/" + request_id + "/abandon")
     request = urllib.request.Request(
         base.rstrip("/") + route, method="POST", data=json.dumps({"reason": reason}).encode(),
@@ -530,15 +535,15 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def channel_release(config, token, bundle, channel):
     """Read the channel's current release. Returns a dict, {"empty": True}, or None when unknown."""
-    base, project = config.get("serviceUrl"), config.get("projectId")
-    if not (token and isinstance(base, str) and isinstance(project, str) and project):
+    base, workspace = config.get("serviceUrl"), config.get("workspaceId")
+    if not (token and isinstance(base, str) and isinstance(workspace, str) and workspace):
         return None
     url = urllib.parse.urlsplit(base)
     loopback = url.scheme == "http" and url.hostname in ("localhost", "127.0.0.1", "::1")
     if (url.scheme != "https" and not loopback) or url.username or url.password or url.query or url.fragment:
         return None
     quote = lambda value: urllib.parse.quote(value, safe="")
-    route = "/v1/workspaces/" + quote(project) + "/bundles/" + quote(bundle) + "/channels/" + quote(channel)
+    route = "/v1/workspaces/" + quote(workspace) + "/bundles/" + quote(bundle) + "/channels/" + quote(channel)
     request = urllib.request.Request(base.rstrip("/") + route,
                                      headers={"Authorization": "Bearer " + token, "Accept": "application/json"})
     try:
@@ -574,10 +579,12 @@ def journal_state(config, handoff):
         import fcntl
     except ImportError:
         return "unknown"
-    fields = ("serviceUrl", "projectId", "evaluatorPrincipalId", "journalRoot")
+    fields = ("serviceUrl", "workspaceId", "evaluatorPrincipalId", "journalRoot")
     if not handoff or not all(isinstance(config.get(field), str) for field in fields):
         return "unknown"
-    scope = json.dumps({"serviceUrl": config["serviceUrl"], "projectId": config["projectId"],
+    # The journal directory name is a frozen storage key shared with the SDKs: it still
+    # encodes the workspace ID under "projectId", as 0.1 did, so existing journals are found.
+    scope = json.dumps({"serviceUrl": config["serviceUrl"], "projectId": config["workspaceId"],
                         "bundleId": handoff.get("bundleId"), "requestId": handoff.get("requestId"),
                         "evaluatorPrincipalId": config["evaluatorPrincipalId"]},
                        ensure_ascii=False, separators=(",", ":"))
@@ -839,6 +846,8 @@ def within_chain(handoff, root):
 
 def prior_handoff(value, output, request_dir):
     handoff = output / value
+    if handoff.name == LEGACY_HANDOFF:
+        raise ValueError(LEGACY_GENERATION)
     if not handoff.is_file() or handoff.resolve() != handoff:
         raise ValueError("--rerun-after needs a CI-managed handoff path relative to --output-dir")
     if handoff.name != HANDOFF or not within_chain(handoff, request_dir):
@@ -1003,7 +1012,7 @@ class Pipeline:
             summary["reuse"] = {"status": "unavailable", "reason": "descriptor_unavailable"}
             return fallback
         identity = {field: self.config.get(field)
-                    for field in ("serviceUrl", "projectId", "evaluatorPrincipalId", "journalRoot")}
+                    for field in ("serviceUrl", "workspaceId", "evaluatorPrincipalId", "journalRoot")}
         material = {"schemaVersion": 1, "identity": identity, "bundle": args.bundle, "channel": args.channel,
                     "parent": release, "descriptor": descriptor,
                     "payloadSha256": hashlib.sha256(revision).hexdigest(),
@@ -1074,6 +1083,8 @@ class Pipeline:
             current, failure = self.advance(current)
             if failure:
                 return failure
+            if (current / LEGACY_HANDOFF).is_file() and not (current / HANDOFF).is_file():
+                raise ValueError(LEGACY_GENERATION)
             current.mkdir(parents=True, mode=0o700, exist_ok=True)
             self.generation = current
             intent = current / "request-intent.json"
@@ -1193,7 +1204,7 @@ class Pipeline:
         summary["previousExecutionStatus"] = prior.get("status")
         saved = read_json(handoff, 1024 * 1024)
         described = runner.step("describe")
-        if saved is not None and not runner.code("describe") and described != saved.get("configuration"):
+        if saved is not None and not runner.code("describe") and described != saved.get("descriptor"):
             summary["mismatch"] = "evaluator_definition_changed"
         if not self.args.intent and prior.get("status") in SETTLED:
             summary["nextAction"] = "To evaluate the revised app, rerun this command with --rerun-after and the priorHandoff value."

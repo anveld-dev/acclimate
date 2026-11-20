@@ -12,7 +12,7 @@ def record_policy_receipt(client, handoff, verdict):
               "policy": policy, "verdict": verdict["verdict"], "checks": verdict["checks"]}
     if verdict.get("inference") is not None:
         report["inference"] = verdict["inference"]
-    target = handoff["projectId"], handoff["bundleId"], comparison_id
+    target = handoff["workspaceId"], handoff["bundleId"], comparison_id
     try:
         receipts = client.list_comparison_policy_receipts(*target)
         receipt = next((r for r in receipts["items"] if r["policy"]["sha256"] == policy["sha256"]), None)

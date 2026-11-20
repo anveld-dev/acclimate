@@ -29,7 +29,9 @@ npm run test:bdd -- --dev-console --tags @UI-DRAFT-02
 
 `--skip-build` uses existing builds. Leave it off when checking a code change. Partial runs report the behaviors they didn't exercise; they don't count as complete coverage.
 
-CI builds the service, packages and console once, then runs three shards on separate runners. The shards divide the sorted behavior IDs and keep each scenario's examples together. The `behaviors` job combines their results and requires every reviewed variant to pass. The `behavior-results` artifact contains the combined report and the shard artifacts contain JUnit files and browser failure captures.
+All pushes to `main` run the full workflow. On pull requests, changes limited to the static documentation and its exports run the docs rebuild, link checks and PR quality gate. Public docs content also runs the unit and SDK reference checks. Changes to feature specifications or the reviewed inventory run all behavior shards. These selections combine when a PR touches multiple areas. Runtime, dependency, workflow and unrecognized paths run the full suite.
+
+When behaviors are selected, CI builds the service, packages and console once, then runs three shards on separate runners. The shards divide the sorted behavior IDs and keep each scenario's examples together. The `behaviors` job combines their results and requires every reviewed variant to pass. The `behavior-results` artifact contains the combined report and the shard artifacts contain JUnit files and browser failure captures.
 
 For local parallel runs, `npm run test:bdd -- --parallel` runs `console.feature` alongside the remaining features. Each process starts its own service and PostgreSQL cluster. The runner combines their results in `artifacts/bdd/` and checks the same inventory as the serial run.
 

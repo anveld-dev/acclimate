@@ -61,7 +61,7 @@ function historyFixture() {
   const env = {
     ...consoleEnvironment,
     CONSOLE_SERVICE_TOKEN: 'fixture-only',
-    CONSOLE_PROJECT: 'workspace',
+    CONSOLE_WORKSPACE: 'workspace',
     CONSOLE_BUNDLE: 'bundle',
     CONSOLE_CHANNEL: 'stable',
     CONSOLE_ALLOW_EDITS: 'true',

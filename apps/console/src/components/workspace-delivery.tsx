@@ -97,7 +97,7 @@ export function WorkspaceDelivery({
               <ul>
                 {apps.map((app) => {
                   const href =
-                    home + '?integration=' + encodeURIComponent(app.id) + '#delivery-app';
+                    home + '?connection=' + encodeURIComponent(app.id) + '#delivery-app';
                   return (
                     <li key={app.id}>
                       <a

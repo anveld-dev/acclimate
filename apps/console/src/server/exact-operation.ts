@@ -19,7 +19,7 @@ export type OperationOutcome =
     };
 function canonical(env: Environment, workspaceId: string, path: string) {
   validateOperationTarget(workspaceId, path, {
-    workspaceId: env.CONSOLE_PROJECT,
+    workspaceId: env.CONSOLE_WORKSPACE,
     bundleId: env.CONSOLE_BUNDLE,
     channel: env.CONSOLE_CHANNEL,
   });

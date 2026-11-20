@@ -60,7 +60,7 @@ export const Route = createFileRoute('/w/$')({
             'tab',
             'reviewTab',
             'connectionTab',
-            'integration',
+            'connection',
             'access',
             'bundleId',
           ].includes(key) &&
@@ -89,7 +89,7 @@ export const Route = createFileRoute('/w/$')({
           data: {
             workspaceId: location.workspaceId,
             connectionId:
-              typeof deps.search.integration === 'string' ? deps.search.integration : undefined,
+              typeof deps.search.connection === 'string' ? deps.search.connection : undefined,
           },
         }),
       };
@@ -101,7 +101,7 @@ export const Route = createFileRoute('/w/$')({
           data: {
             workspaceId: location.workspaceId,
             connectionId:
-              typeof deps.search.integration === 'string' ? deps.search.integration : undefined,
+              typeof deps.search.connection === 'string' ? deps.search.connection : undefined,
           },
         }),
       };
@@ -189,7 +189,7 @@ function ScopedPage() {
     return (
       <WorkspaceDelivery
         key={workspaceKey}
-        initialAppId={typeof search.integration === 'string' ? search.integration : undefined}
+        initialAppId={typeof search.connection === 'string' ? search.connection : undefined}
         canManage={navigation?.role === 'admin'}
         workspaceId={data.location.workspaceId}
         initial={data.result}

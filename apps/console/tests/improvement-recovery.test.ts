@@ -45,7 +45,7 @@ test('a frozen proposal needs consent matching exactly the evidence being disclo
 const env = {
   ...consoleEnvironment,
   CONSOLE_SERVICE_TOKEN: 'fixture',
-  CONSOLE_PROJECT: 'project',
+  CONSOLE_WORKSPACE: 'project',
   CONSOLE_BUNDLE: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   CONSOLE_CHANNEL: 'stable',
   CONSOLE_ALLOW_EDITS: 'true',

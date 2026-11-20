@@ -5,14 +5,14 @@ import { bundleHref, parseConsoleLocation } from '../src/navigation';
 
 test('a rendered form keeps its own target even after another tab changes remembered selection', () => {
   const remembered = {
-    CONSOLE_PROJECT: 'other-project',
+    CONSOLE_WORKSPACE: 'other-project',
     CONSOLE_BUNDLE: 'other-bundle',
     CONSOLE_CHANNEL: 'canary',
     CONSOLE_SESSION_TOKEN: 'fixture-person',
   };
   const rendered = { workspaceId: 'work-a', bundleId: 'bundle-a', channel: 'stable' };
   const bound = bundleEnvironment(remembered, rendered);
-  assert.equal(bound.CONSOLE_PROJECT, 'work-a');
+  assert.equal(bound.CONSOLE_WORKSPACE, 'work-a');
   assert.equal(bound.CONSOLE_BUNDLE, 'bundle-a');
   assert.equal(bound.CONSOLE_CHANNEL, 'stable');
   assert.equal(bound.CONSOLE_SESSION_TOKEN, 'fixture-person');
@@ -23,7 +23,7 @@ test('a rendered form keeps its own target even after another tab changes rememb
 
 test('missing or malformed form scope never inherits a remembered bundle', () => {
   const remembered = {
-    CONSOLE_PROJECT: 'work-a',
+    CONSOLE_WORKSPACE: 'work-a',
     CONSOLE_BUNDLE: 'old',
     CONSOLE_CHANNEL: 'stable',
   };

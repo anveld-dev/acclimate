@@ -22,7 +22,7 @@ function JoinWorkspace() {
   return (
     <div className="mx-auto w-full max-w-xl space-y-5 rounded-xl border bg-card p-5 sm:p-8">
       <PageTitle
-        title={invitation ? `Join ${invitation.projectName}` : 'Workspace invitation'}
+        title={invitation ? `Join ${invitation.workspaceName}` : 'Workspace invitation'}
         description=""
       />
       {invitation && (

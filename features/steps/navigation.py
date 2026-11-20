@@ -264,7 +264,7 @@ def prepare_connection(context):
 def cross_tab(context):
     select_other_tab(context.world)
     browser(context).page.get_by_role('button',name='Create connection',exact=True).click()
-    expect(browser(context).page).to_have_url(re.compile(r'/connections\?integration='))
+    expect(browser(context).page).to_have_url(re.compile(r'/connections\?connection='))
 
 
 @then('the created connection remains bound to the first bundle and channel')

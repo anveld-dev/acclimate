@@ -99,7 +99,7 @@ test('delivery screen keeps one receipt identity and separates application and s
       initial: {
         ok: true,
         workspaceId: 'project',
-        projectName: 'Project',
+        workspaceName: 'Project',
         page: {
           items: [
             observation,
@@ -140,14 +140,14 @@ test('delivery links administrators to the exact connection and gives readers bu
         initial: {
           ok: true,
           workspaceId: 'team',
-          projectName: 'Team',
+          workspaceName: 'Team',
           page: { items, nextCursor: null },
         },
       }),
     );
   }
 
-  const settings = '/w/team/connections?integration=' + observation.id;
+  const settings = '/w/team/connections?connection=' + observation.id;
   assert.ok(screen(true, [observation]).includes(settings));
   assert.ok(!screen(false, [observation]).includes(settings));
   assert.match(screen(true, []), /href="\/w\/team\/connections"/);

@@ -232,7 +232,7 @@ async fn preview(
     let row=sqlx::query("SELECT i.*,p.name AS project_name FROM workspace_invitations i JOIN projects p ON p.id=i.project_id WHERE i.id=$1 AND i.email=$2").bind(crate::path(&invite)?).bind(email).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(missing)?;
     let mut value = item(&row);
     value["workspaceId"] = json!(row.get::<String, _>("project_id"));
-    value["projectName"] = json!(row.get::<String, _>("project_name"));
+    value["workspaceName"] = json!(row.get::<String, _>("project_name"));
     Ok(Json(value))
 }
 async fn accept(

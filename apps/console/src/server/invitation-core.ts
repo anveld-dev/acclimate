@@ -9,7 +9,7 @@ export type Invitation = {
   expiresAt: string;
   sentAt: string | null;
   workspaceId?: string;
-  projectName?: string;
+  workspaceName?: string;
 };
 export type InvitationCommand =
   | { kind: 'list'; workspaceId: string }

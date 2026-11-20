@@ -7,7 +7,7 @@ import { requireSession, type Environment } from './selection';
 
 export type DeliveryObservationsResult =
   | { ok: false; message: string }
-  | { ok: true; workspaceId: string; projectName: string; page: Page<ConnectionObservation> };
+  | { ok: true; workspaceId: string; workspaceName: string; page: Page<ConnectionObservation> };
 
 /** Reading app observations deliberately does not enter the admin Connections context. */
 export async function readDeliveryObservationsState(
@@ -60,7 +60,7 @@ export async function readDeliveryObservationsState(
         latestObservation: item.latestObservation ? publicReport(item.latestObservation) : null,
       })),
     };
-    return { ok: true, workspaceId: project.id, projectName: project.name, page };
+    return { ok: true, workspaceId: project.id, workspaceName: project.name, page };
   } catch (error) {
     return {
       ok: false,

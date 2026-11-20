@@ -7,7 +7,7 @@ import { readHistory, readVersion } from '../src/server/version-workflows';
 const env = {
   ...consoleEnvironment,
   CONSOLE_SERVICE_TOKEN: 'secret',
-  CONSOLE_PROJECT: 'fixed-project',
+  CONSOLE_WORKSPACE: 'fixed-project',
   CONSOLE_BUNDLE: 'fixed-bundle',
 };
 const bytes = JSON.stringify({

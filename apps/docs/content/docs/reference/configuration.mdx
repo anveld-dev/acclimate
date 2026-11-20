@@ -98,7 +98,7 @@ Set `ACCLIMATE_SMTP_HOST` to enable application invitation email. Configure Keyc
 | `CONSOLE_OIDC_ISSUER` | Required exact HTTPS realm issuer. Match `ACCLIMATE_OIDC_ISSUER` verbatim. |
 | `CONSOLE_OIDC_CLIENT_ID`, `CONSOLE_OIDC_CLIENT_SECRET` | Required confidential client ID and credential. The bundled realm uses `acclimate-console`. Register the exact `CONSOLE_ORIGIN` plus `/auth/callback`. |
 | `CONSOLE_ALLOW_EDITS` | Set to the literal `true` to enable authoring and connection mutations for authorized users. Defaults to disabled. |
-| `CONSOLE_PROJECT`, `CONSOLE_BUNDLE`, `CONSOLE_CHANNEL` | Optional fallback workspace, bundle and channel for server operations without a saved selection. Many operations use `stable` when a channel is absent. Prefer selecting the scope in the console. |
+| `CONSOLE_WORKSPACE`, `CONSOLE_BUNDLE`, `CONSOLE_CHANNEL` | Optional fallback workspace, bundle and channel for server operations without a saved selection. Many operations use `stable` when a channel is absent. Prefer selecting the scope in the console. |
 | `HOST`, `PORT` | Listener settings. The native console and dev wrappers default to `127.0.0.1` and `3100` and accept port numbers 1–65,535. Compose binds `0.0.0.0:3100` on the private network. |
 | `NODE_ENV` | The console image runs with `production`. |
 

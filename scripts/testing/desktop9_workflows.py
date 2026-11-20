@@ -119,7 +119,7 @@ def selected_facts(w,p,f):
 
 
 def connection_geometry(w,b,e,f):
-    p=b.page;route=b.workspace_path('connections')+'?'+urlencode(dict(integration=f['selected']['id']));results=[]
+    p=b.page;route=b.workspace_path('connections')+'?'+urlencode(dict(connection=f['selected']['id']));results=[]
     for width in (1440,1920,1024):
         p.set_viewport_size(dict(width=width,height=1000));visit(p,b,route);expect(p.locator('.connection-row')).to_have_count(3);selected_facts(w,p,f)
         g=capture(e,p,f'{width}-selected-connections')
@@ -144,7 +144,7 @@ def connection_geometry(w,b,e,f):
     visit(p,b,filtered);expect(p.locator('.connection-row')).to_have_count(2)
     for name,item in ((LONG_APP,f['selected']),(f['other']['displayName'],f['other'])):
         target=row_for(p,name);href=target.get_attribute('href');activate(p,target);expect(p).to_have_url(b.base+href)
-        query=parse_qs(urlsplit(p.url).query);assert query==dict(integration=[item['id']],bundleId=[w.setup['bundle']['id']],channel=[LONG_CHANNEL]),query
+        query=parse_qs(urlsplit(p.url).query);assert query==dict(connection=[item['id']],bundleId=[w.setup['bundle']['id']],channel=[LONG_CHANNEL]),query
         expect(row_for(p,name)).to_have_attribute('aria-current','page')
         expect(p.locator('.connection-detail').get_by_role('heading',name=name,exact=True)).to_be_visible()
     p.get_by_role('link',name='Clear filters',exact=True).click();expect(p).to_have_url(b.base+b.workspace_path('connections'));expect(p.locator('.connection-row')).to_have_count(3)
@@ -154,7 +154,7 @@ def connection_geometry(w,b,e,f):
 
 
 def connection_confirmation(w,b,e,f):
-    p=b.page;p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,b.workspace_path('connections')+'?'+urlencode(dict(integration=f['selected']['id'])))
+    p=b.page;p.set_viewport_size(dict(width=1440,height=1000));visit(p,b,b.workspace_path('connections')+'?'+urlencode(dict(connection=f['selected']['id'])))
     credential=p.get_by_text(w.write_credential['id'],exact=True).locator('xpath=../..')
     revoke=credential.get_by_role('button',name=re.compile(r'^Revoke (read|reporting) credential '));activate(p,revoke)
     dialog=p.get_by_role('dialog',name='Revoke credential?',exact=True);expect(dialog).to_be_visible()
@@ -226,7 +226,7 @@ def native(w,b,e,f):
         try:
             b.sign_in(context);p=context.pages[0];p.set_default_timeout(10000);p.on('pageerror',lambda error:b.errors.append(str(error)))
             visit(p,b,b.workspace_path('connections'));before=p.evaluate('({width:innerWidth,dpr:devicePixelRatio})');p.goto('chrome://settings/appearance',wait_until='domcontentloaded');p.evaluate('chrome.settingsPrivate.setDefaultZoom(2)')
-            route=b.workspace_path('connections')+'?'+urlencode(dict(integration=f['selected']['id']));visit(p,b,route);p.wait_for_function('w=>Math.abs(innerWidth-w)<2',arg=before['width']/2);assert p.evaluate('devicePixelRatio')==before['dpr']*2
+            route=b.workspace_path('connections')+'?'+urlencode(dict(connection=f['selected']['id']));visit(p,b,route);p.wait_for_function('w=>Math.abs(innerWidth-w)<2',arg=before['width']/2);assert p.evaluate('devicePixelRatio')==before['dpr']*2
             cdp=context.new_cdp_session(p)
             try:
                 selected_facts(w,p,f);g=capture(e,p,'native200-selected-connections-stacked',cdp=cdp)

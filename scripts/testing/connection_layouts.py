@@ -37,7 +37,7 @@ def run(args):
         b = w.browser()
         p = b.page
         directory = b.workspace_path('connections')
-        selected = directory + '?integration=' + w.integration['id']
+        selected = directory + '?connection=' + w.integration['id']
         for width in (1440, 1024, 390, 320):
             p.set_viewport_size(dict(width=width, height=900))
             visit(p, b, selected)
@@ -88,12 +88,12 @@ def run(args):
         scoped=selected+'&bundleId='+w.setup['bundle']['id']+'&channel=stable'
         visit(p,b,scoped)
         p.get_by_role('link',name='Back to connections',exact=True).click()
-        query=parse_qs(urlsplit(p.url).query);assert 'integration' not in query and query['bundleId']==[w.setup['bundle']['id']]
+        query=parse_qs(urlsplit(p.url).query);assert 'connection' not in query and query['bundleId']==[w.setup['bundle']['id']]
         p.locator('[id="connection-entry-'+w.empty_connection['id']+'"]').click()
         expect(p.get_by_role('heading', name=w.empty_connection['displayName'], exact=True)).to_be_visible()
-        query=parse_qs(urlsplit(p.url).query);assert query['integration']==[w.empty_connection['id']] and query['bundleId']==[w.setup['bundle']['id']] and query['channel']==['stable']
+        query=parse_qs(urlsplit(p.url).query);assert query['connection']==[w.empty_connection['id']] and query['bundleId']==[w.setup['bundle']['id']] and query['channel']==['stable']
         p.get_by_role('link',name='Back to connections',exact=True).click()
-        query=parse_qs(urlsplit(p.url).query);assert 'integration' not in query and query['bundleId']==[w.setup['bundle']['id']]
+        query=parse_qs(urlsplit(p.url).query);assert 'connection' not in query and query['bundleId']==[w.setup['bundle']['id']]
         other=next(item for item in w.call('GET',w.root+'/bundles')['items'] if item['id']!=w.setup['bundle']['id'])
         outside=selected+'&bundleId='+other['id']+'&channel=stable'
         visit(p,b,outside);expect(p.get_by_role('heading', name=w.integration['displayName'], exact=True)).to_be_visible()
@@ -102,7 +102,7 @@ def run(args):
         p.get_by_role('button',name='1. Bundle & channel',exact=False).click()
         expect(p.get_by_role('link',name='Full setup guide',exact=True)).to_have_attribute('href',b.bundle_path('connect'))
         p.get_by_role('link',name='Clear filters',exact=True).click()
-        query=parse_qs(urlsplit(p.url).query);assert query.get('integration')==[w.integration['id']] and 'bundleId' not in query and 'channel' not in query
+        query=parse_qs(urlsplit(p.url).query);assert query.get('connection')==[w.integration['id']] and 'bundleId' not in query and 'channel' not in query
         checks.append('Directory selection and Back retain origin filters; outside-filter selection and its setup binding remain explicit; clear filters retains selection')
 
         visit(p, b, selected)
@@ -178,7 +178,7 @@ def run(args):
                 try:route.abort('failed')
                 except Exception:pass
         checks.append('Switching connection during a held report response keeps the new connection empty')
-        visit(p, b, directory + '?integration=' + w.empty_connection['id'])
+        visit(p, b, directory + '?connection=' + w.empty_connection['id'])
         expect(p.get_by_role('tab',name='Setup',exact=True)).to_have_attribute('aria-selected','true')
         p.get_by_role('tab',name='Delivery reports',exact=True).click()
         expect(p.get_by_text('No delivery report received; status unknown.', exact=False)).to_be_visible()
@@ -191,7 +191,7 @@ def run(args):
         expect(dialog.get_by_label('Bundle',exact=True)).to_be_visible()
         for _ in range(8):p.keyboard.press('Tab');assert dialog.evaluate('e=>e.contains(document.activeElement)')
         p.keyboard.press('Escape');expect(dialog).to_be_hidden();expect(new_trigger).to_be_focused()
-        visit(p, b, directory + '?integration=' + w.empty_connection['id'])
+        visit(p, b, directory + '?connection=' + w.empty_connection['id'])
         create_read=p.get_by_role('button',name='Create read credential',exact=True)
         create_read.click();secret_dialog=p.get_by_role('dialog',name='Save this credential now',exact=True)
         secret=secret_dialog.get_by_label('One-time credential secret',exact=True)
@@ -219,7 +219,7 @@ def run(args):
         checks.append('Create and revoke dialogs contain focus and cancel to their trigger; one-time reveal/copy is checked only as booleans with masked capture and no sensitive trace')
         reader=b.browser.new_context(ignore_https_errors=True,viewport=dict(width=1440,height=900))
         try:
-            b.sign_in(reader,'opaque-member');rp=reader.new_page();visit(rp,b,directory+'?integration='+w.empty_connection['id'])
+            b.sign_in(reader,'opaque-member');rp=reader.new_page();visit(rp,b,directory+'?connection='+w.empty_connection['id'])
             expect(rp.get_by_text('A workspace administrator manages app connections.',exact=False)).to_be_visible()
             expect(rp.get_by_role('button',name='Create read credential',exact=True)).to_have_count(0)
             expect(rp.get_by_role('region',name='App-reported delivery',exact=True)).to_have_count(0)

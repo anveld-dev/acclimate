@@ -20,7 +20,7 @@ export function scopedEnvironment(env: Environment, scope: ResourceScope): Envir
     throw new Error('Invalid resource scope.');
   return {
     ...env,
-    CONSOLE_PROJECT: scope.workspaceId,
+    CONSOLE_WORKSPACE: scope.workspaceId,
     CONSOLE_BUNDLE: scope.bundleId,
     CONSOLE_CHANNEL: scope.channel,
   };
@@ -78,7 +78,7 @@ export function selectedEnvironment(
     CONSOLE_SESSION_TOKEN: session,
     ...(selection
       ? {
-          CONSOLE_PROJECT: selection.workspaceId,
+          CONSOLE_WORKSPACE: selection.workspaceId,
           CONSOLE_BUNDLE: selection.bundleId,
           CONSOLE_CHANNEL: selection.channel,
         }

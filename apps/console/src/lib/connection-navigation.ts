@@ -7,7 +7,7 @@ export function connectionHref(
   connectionId?: string,
 ) {
   const query = new URLSearchParams();
-  if (connectionId) query.set('integration', connectionId);
+  if (connectionId) query.set('connection', connectionId);
   for (const key of ['bundleId', 'channel'] as const) {
     const value = search[key];
     if (typeof value === 'string' && value) query.set(key, value);

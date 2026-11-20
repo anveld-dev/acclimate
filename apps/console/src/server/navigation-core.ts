@@ -10,14 +10,14 @@ export async function navigationState(
 ) {
   const access = await readAccessState(env, fetcher);
   const location = parseConsoleLocation(path);
-  const workspaceId = location?.workspaceId ?? env.CONSOLE_PROJECT;
+  const workspaceId = location?.workspaceId ?? env.CONSOLE_WORKSPACE;
   const project = access.ok ? access.projects.find((p) => p.id === workspaceId) : undefined;
   const base = {
     access,
     actorScope: actorScope(env),
     location,
     workspaceId: project?.id,
-    projectName: project?.name,
+    workspaceName: project?.name,
     role: project?.role,
     bundleId: location?.bundleId,
     bundleName: undefined as string | undefined,

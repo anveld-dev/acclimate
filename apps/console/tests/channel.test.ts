@@ -7,7 +7,7 @@ import { readChannel } from '../src/server/channel';
 const env = {
   ...consoleEnvironment,
   CONSOLE_SERVICE_TOKEN: 'private-fixture-token',
-  CONSOLE_PROJECT: 'demo',
+  CONSOLE_WORKSPACE: 'demo',
   CONSOLE_BUNDLE: 'bundle',
 };
 const payload = {
@@ -39,7 +39,7 @@ function fixture(content = bytes, role = 'admin', versionDigest = resolution.ver
     const url = String(input);
     if (url.includes('/v1/workspaces?'))
       return Response.json({
-        items: [{ id: env.CONSOLE_PROJECT, name: 'Workspace', role }],
+        items: [{ id: env.CONSOLE_WORKSPACE, name: 'Workspace', role }],
         nextCursor: null,
       });
     if (url.includes('/bundles?'))
@@ -70,7 +70,7 @@ test('unconfigured console makes no network request and returns only missing var
   });
   assert.deepEqual(result, {
     status: 'setup',
-    missing: ['CONSOLE_SERVICE_TOKEN', 'CONSOLE_PROJECT', 'CONSOLE_BUNDLE'],
+    missing: ['CONSOLE_SERVICE_TOKEN', 'CONSOLE_WORKSPACE', 'CONSOLE_BUNDLE'],
   });
 });
 

@@ -40,7 +40,7 @@ def run(args):
     try:
         seed(w);b=w.browser();p=b.page
         routes=dict(bundles=b.workspace_path(),connections=b.workspace_path('connections'),members=b.workspace_path('members'))
-        routes['connection-detail']=routes['connections']+'?integration='+w.integration['id']
+        routes['connection-detail']=routes['connections']+'?connection='+w.integration['id']
         if args.record:
             from scripts.testing.workspace_video import record
             record(w,b,routes,out)

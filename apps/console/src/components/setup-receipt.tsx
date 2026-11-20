@@ -49,7 +49,7 @@ export function SetupReceipt({
             className="inline-flex items-center gap-1 underline"
             href={
               workspaceHref(workspaceId, 'delivery') +
-              '?integration=' +
+              '?connection=' +
               encodeURIComponent(result.appId)
             }
           >

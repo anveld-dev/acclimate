@@ -128,7 +128,7 @@ def admin_connection(context):
     w=context.world
     w.integration=w.call('POST',w.root+'/connections',dict(bundleId=w.setup['bundle']['id'],channel='stable',displayName='Recovery fixture'),actor='admin')
     w.integration_path=w.root+'/connections/'+w.integration['id']
-    w.browser().visit(w.browser().workspace_path('connections')+'?integration='+w.integration['id'])
+    w.browser().visit(w.browser().workspace_path('connections')+'?connection='+w.integration['id'])
 
 @when('the browser loses a successful credential issuance response')
 def lost_credential(context):

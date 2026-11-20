@@ -29,7 +29,7 @@ export type ConsoleState =
       };
       workspaceId: string;
       bundleId: string;
-      projectName?: string;
+      workspaceName?: string;
       bundleName?: string;
       channel: string;
       resolution: ChannelResolution;
@@ -38,7 +38,7 @@ export type ConsoleState =
     };
 
 const observations = new Map<string, string>();
-const required = ['CONSOLE_SERVICE_TOKEN', 'CONSOLE_PROJECT', 'CONSOLE_BUNDLE'] as const;
+const required = ['CONSOLE_SERVICE_TOKEN', 'CONSOLE_WORKSPACE', 'CONSOLE_BUNDLE'] as const;
 
 // This module is imported only inside a server function. Never return env or raw errors.
 export async function readChannel(
@@ -49,7 +49,7 @@ export async function readChannel(
     .update(
       JSON.stringify([
         env.CONSOLE_SESSION_TOKEN,
-        env.CONSOLE_PROJECT,
+        env.CONSOLE_WORKSPACE,
         env.CONSOLE_BUNDLE,
         env.CONSOLE_CHANNEL,
       ]),
@@ -60,7 +60,7 @@ export async function readChannel(
   if (missing.length) return { status: 'setup', missing };
   try {
     requireSession(env);
-    const workspaceId = env.CONSOLE_PROJECT!;
+    const workspaceId = env.CONSOLE_WORKSPACE!;
     const bundleId = env.CONSOLE_BUNDLE!;
     const channel = env.CONSOLE_CHANNEL || 'stable';
     const client = consoleClient(env, fetcher);

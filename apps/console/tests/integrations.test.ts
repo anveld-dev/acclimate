@@ -13,7 +13,7 @@ const key = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const env = {
   ...consoleEnvironment,
   CONSOLE_SERVICE_TOKEN: 'fixture-console',
-  CONSOLE_PROJECT: 'project',
+  CONSOLE_WORKSPACE: 'project',
   CONSOLE_BUNDLE: 'bundle',
   CONSOLE_CHANNEL: 'stable',
   CONSOLE_SESSION_TOKEN: 'fixture-session',
@@ -247,7 +247,7 @@ test('canonical connection create keeps the rendered target when another tab cha
   const result = await connectionCommand(
     {
       ...env,
-      CONSOLE_PROJECT: 'other-project',
+      CONSOLE_WORKSPACE: 'other-project',
       CONSOLE_BUNDLE: 'other-bundle',
       CONSOLE_CHANNEL: 'canary',
     },

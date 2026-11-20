@@ -113,7 +113,7 @@ def verify(w,b,p,routes,out,checks):
     times=p.locator('.connection-report-received time').evaluate_all('els=>els.map(e=>e.dateTime)')
     assert times==sorted(times,reverse=True)
     checks.append('25 independent reports page in received-time order')
-    empty=b.workspace_path('connections')+'?integration='+w.empty_connection['id']
+    empty=b.workspace_path('connections')+'?connection='+w.empty_connection['id']
     visit(p,b,empty)
     expect(p.get_by_role('tab',name='Setup',exact=True)).to_have_attribute('aria-selected','true')
     p.get_by_role('tab',name='Delivery reports',exact=True).click()

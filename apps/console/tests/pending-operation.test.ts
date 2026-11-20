@@ -51,7 +51,7 @@ const env = {
   CONSOLE_SERVICE_TOKEN: 'machine-test',
   CONSOLE_SESSION_TOKEN: 'current-session',
   CONSOLE_ALLOW_EDITS: 'true',
-  CONSOLE_PROJECT: 'p',
+  CONSOLE_WORKSPACE: 'p',
   CONSOLE_BUNDLE: bundle,
 };
 const body = {

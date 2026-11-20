@@ -76,7 +76,7 @@ def main():
         world.sensitive_fixture=True
         browser = world.browser()
         routes = dict(bundles=browser.workspace_path(), members=browser.workspace_path('members'), connections=browser.workspace_path('connections'), changes=browser.bundle_path('changes'))
-        routes['detail'] = routes['connections'] + '?integration=' + world.integration['id']
+        routes['detail'] = routes['connections'] + '?connection=' + world.integration['id']
         run('open', browser.base + '/auth/login')
         run('find', 'label', 'Fixture subject', 'fill', 'operator')
         click('Sign in to fixture')

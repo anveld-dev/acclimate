@@ -107,11 +107,7 @@ def run(args):
 
         visit(p, b, selected)
         p.get_by_role('tab',name='Credentials',exact=True).click()
-        reporting = p.get_by_role('button', name='Optional delivery reports & credentials', exact=True)
-        expect(reporting).to_have_attribute('aria-expanded', 'false')
-        reporting.click()
         expect(p.get_by_label('Issued reporting credentials', exact=True)).to_be_visible()
-        reporting.click()
         p.get_by_role('tab',name='Delivery reports',exact=True).click()
         report = p.get_by_test_id('delivery-report').first
         trigger = report.get_by_role('button')

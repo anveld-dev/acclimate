@@ -759,7 +759,7 @@ def ui_revoke(context):
     submit_and_wait(p,p.get_by_role('dialog').get_by_role('button',name='Revoke',exact=True))
     row=p.locator('code').filter(has_text=re.compile('^'+re.escape(context.world.ui_credential_id)+'$')).locator('../..')
     expect(row.get_by_text('Read credential · Revoked',exact=True)).to_be_visible()
-    expect(row.get_by_role('button',name=re.compile(r'^Revoke (read|reporting) credential '))).to_be_disabled()
+    expect(row.get_by_role('button',name=re.compile(r'^Revoke (read|reporting) credential '))).to_have_count(0)
 
 
 @then('the closed secret is not displayed and its next fetch is denied')

@@ -32,43 +32,45 @@ export function ConnectionReports({
   return (
     <section
       id="delivery-reports"
-      className="workspace-panel connection-reports-panel space-y-4 p-4"
+      className="workspace-panel connection-reports-panel"
       aria-label="App-reported delivery"
     >
-      <div>
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-semibold">App-reported delivery</h2>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{receipts.items.length} reports loaded</Badge>
-            {action}
-          </div>
+      <div className="connection-reports-header">
+        <div className="min-w-0">
+          <h2>App-reported delivery</h2>
+          <p>
+            Each row is an independent observation, ordered by service receipt time. History lasts
+            30 days. It does not establish a completed delivery chain or model consumption.
+          </p>
         </div>
-        <p className="mt-1 break-all text-sm text-muted-foreground">
-          Bundle channel {channel}: revision {currentRevision} · version {currentVersionId}
-        </p>
+        {action}
       </div>
-      <p className="text-sm text-muted-foreground">
-        Each row is an independent observation, ordered by service receipt time. History lasts 30
-        days. It does not establish a completed delivery chain or model consumption.
-      </p>
       {!receipts.items.length ? (
-        <p className="rounded bg-muted/50 p-4">
-          No delivery report received; status unknown.{' '}
-          <ConsoleLink href={`${setupHref}#reporting`} className="underline">
-            Set up reporting
-          </ConsoleLink>
-        </p>
-      ) : (
-        <div className="connection-report-list">
-          <div className="connection-report-columns" aria-hidden="true">
-            <span>App report/source</span>
-            <span>Service received</span>
-            <span>Version</span>
-          </div>
-          {visible.map((receipt) => (
-            <ReceiptFact key={receipt.eventId} receipt={receipt} />
-          ))}
+        <div className="connection-reports-empty">
+          <p>No delivery report received; status unknown.</p>
+          <p>Reports appear here once your app sends them with a reporting credential.</p>
+          <Button asChild variant="outline">
+            <ConsoleLink href={`${setupHref}#reporting`}>Set up reporting</ConsoleLink>
+          </Button>
         </div>
+      ) : (
+        <>
+          <p className="connection-reports-meta">
+            {receipts.items.length} reports loaded · current release is revision {currentRevision},
+            version <code title={currentVersionId}>{currentVersionId.slice(0, 8)}</code> on{' '}
+            {channel}
+          </p>
+          <div className="connection-report-list">
+            <div className="connection-report-columns" aria-hidden="true">
+              <span>App report/source</span>
+              <span>Service received</span>
+              <span>Version</span>
+            </div>
+            {visible.map((receipt) => (
+              <ReceiptFact key={receipt.eventId} receipt={receipt} />
+            ))}
+          </div>
+        </>
       )}
       {receipts.items.length > 3 && (
         <Button variant="outline" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>

@@ -1,4 +1,4 @@
-import type { Operation, PolicyOverride } from './types.js';
+import type { Operation } from './types.js';
 import { AcclimateError, AcclimateUsageError, TransportError } from './errors.js';
 import type { PrepareDeliveryOptions, PreparedDelivery } from './prepare.js';
 import { registerEvaluationMutation } from './internal/http-bridge.js';
@@ -31,8 +31,6 @@ import type {
   LearningOutcomeRequest,
   LearningCorrectionRequest,
   LearningRecheckRequest,
-  LearningReviewReceipt,
-  LearningRestoreRequest,
   LearningRenewalRequest,
   LearningRenewalReceipt,
   LearningWork,
@@ -55,7 +53,6 @@ import type {
   CreateDraftRequest,
   SaveDraftRequest,
   DiscardDraftRequest,
-  PublishDraftRequest,
   DraftSnapshot,
 } from './types.js';
 import type {
@@ -106,7 +103,7 @@ export type ApiErrorCode =
   | 'parent_conflict'
   | 'payload_too_large'
   | 'policy_binding_mismatch'
-  | 'policy_override_required'
+  | 'policy_blocked'
   | 'policy_receipt_conflict'
   | 'resend_unavailable'
   | 'response_too_large'
@@ -583,21 +580,6 @@ export class AcclimateClient {
       key,
     );
   }
-  reviewLearningRound(
-    workspaceId: string,
-    connectionId: string,
-    roundId: string,
-    approve: boolean,
-    key: string,
-    policyOverride?: PolicyOverride,
-  ): Promise<LearningReviewReceipt> {
-    return this.request(
-      'POST',
-      this.learningPath(workspaceId, connectionId) + `/rounds/${this.part(roundId)}/review`,
-      JSON.stringify({ approve, policyOverride }),
-      key,
-    );
-  }
   renewLearning(
     workspaceId: string,
     connectionId: string,
@@ -611,18 +593,10 @@ export class AcclimateClient {
       key,
     );
   }
-  restoreLearning(
-    workspaceId: string,
-    connectionId: string,
-    body: LearningRestoreRequest,
-    key = body.restoreId,
-  ): Promise<Release> {
-    return this.request(
-      'POST',
-      this.learningPath(workspaceId, connectionId) + '/restore',
-      JSON.stringify(body),
-      key,
-    );
+  /** Inspect source history for evaluation and management. Apps resolve their enrolled connection. */
+  async inspectSource(workspaceId: string, bundleId: string, channel: string): Promise<ChannelResolution | null> {
+    const [release] = (await this.listReleases(workspaceId, bundleId, channel, { limit: 1 })).items;
+    return release ? { channel: release.channel, revision: release.revision, version: release.version } : null;
   }
   listReleases(
     workspaceId: string,
@@ -649,6 +623,8 @@ export class AcclimateClient {
     request: CreateReleaseRequest,
     key: string,
   ): Promise<Release> {
+    if (request.expectedRevision !== '0' || !request.unevaluatedReason || 'comparisonId' in request || 'policyOverride' in request)
+      throw new AcclimateUsageError('Only the initial release can be seeded. Subsequent releases use connected learning.', 'expectedRevision');
     return this.request(
       'POST',
       this.path(
@@ -846,21 +822,6 @@ export class AcclimateClient {
     return this.request(
       'POST',
       this.draftPath(workspaceId, bundleId, channel, id) + '/discard',
-      JSON.stringify(request),
-      key,
-    );
-  }
-  publishDraft(
-    workspaceId: string,
-    bundleId: string,
-    channel: string,
-    id: string,
-    request: PublishDraftRequest,
-    key: string,
-  ): Promise<Draft> {
-    return this.request(
-      'POST',
-      this.draftPath(workspaceId, bundleId, channel, id) + '/publish',
       JSON.stringify(request),
       key,
     );

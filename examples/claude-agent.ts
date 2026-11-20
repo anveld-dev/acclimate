@@ -151,15 +151,15 @@ async function main() {
   const { ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE, ACCLIMATE_WORKSPACE, ACCLIMATE_BUNDLE } =
     process.env;
   const jobDirectory = process.env.ACCLIMATE_JOB_DIR;
-  if (!ACCLIMATE_URL || !ACCLIMATE_TOKEN || !ACCLIMATE_SCOPE || !ACCLIMATE_WORKSPACE || !ACCLIMATE_BUNDLE || !jobDirectory || !prompt)
-    throw new Error(
-      'Set ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE, ACCLIMATE_WORKSPACE, ACCLIMATE_BUNDLE and ACCLIMATE_JOB_DIR, and pass a task.',
-    );
-  const client = new AcclimateClient({ baseUrl: ACCLIMATE_URL, token: ACCLIMATE_TOKEN, scope: ACCLIMATE_SCOPE });
-  const receiptToken = process.env.ACCLIMATE_RECEIPT_TOKEN;
   const connectionId = process.env.ACCLIMATE_CONNECTION;
+  if (!ACCLIMATE_URL || !ACCLIMATE_TOKEN || !ACCLIMATE_SCOPE || !ACCLIMATE_WORKSPACE || !ACCLIMATE_BUNDLE || !connectionId || !jobDirectory || !prompt)
+    throw new Error(
+      'Set ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE, ACCLIMATE_WORKSPACE, ACCLIMATE_BUNDLE, ACCLIMATE_CONNECTION and ACCLIMATE_JOB_DIR, and pass a task.',
+    );
+  const client = new AcclimateClient({ baseUrl: ACCLIMATE_URL, token: ACCLIMATE_TOKEN, scope: ACCLIMATE_SCOPE, connectionId });
+  const receiptToken = process.env.ACCLIMATE_RECEIPT_TOKEN;
   const reporter =
-    receiptToken && connectionId
+    receiptToken
       ? createReceiptReporter({
           workspaceId: ACCLIMATE_WORKSPACE,
           connectionId,

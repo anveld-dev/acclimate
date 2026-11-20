@@ -40,23 +40,26 @@ The [Python support agent example](https://github.com/anveld-dev/acclimate/tree/
 
 Python names are snake_case: method names, keyword arguments, and attributes such as `ApiError.request_id` and `ExecuteInput.case_id`. HTTP request and response dictionaries keep the wire contract's camelCase keys, such as `version["parentVersionId"]`, because they are the JSON the service sends and accepts. The TypedDicts in `acclimate.types` describe them.
 
-## Deliver a pinned version to a job
+## Start a job with its connection’s release
 
 ```py
 import os
 from acclimate import AcclimateClient
 
-client = AcclimateClient(os.environ["ACCLIMATE_URL"], os.environ["ACCLIMATE_TOKEN"], "support-agent")
+client = AcclimateClient(
+    os.environ["ACCLIMATE_URL"], os.environ["ACCLIMATE_TOKEN"], "support-agent",
+    connection_id=os.environ["ACCLIMATE_CONNECTION"],
+)
 with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
     result = run_agent(task, instructions=prepared.instructions, skill_files=prepared.skill_files)
     save_job_result(result, version=prepared.version["version"]["id"], digest=prepared.version["version"]["digest"])
 ```
 
-The task, IDs, agent call and result storage belong to your application. Pass `version_id=` instead of `channel=` to request an exact version. For background work, keep the prepared object and call `cleanup()` after the job stops and its result is saved.
+The task, IDs, agent call and result storage belong to your application. For background work, keep the prepared object and call `cleanup()` after the job stops and its result is saved.
 
 | Attribute of the prepared job | Contents |
 | --- | --- |
-| `version` | The verified version: its metadata in `version["version"]`, including `id` and `digest`, the verified `payload`, and resolution details. `version["stale"]` is true when the content came from the offline cache. |
+| `version` | The verified payload, channel resolution and version metadata, including the ID and digest used by the job. |
 | `instructions` | The instruction files joined into one string. |
 | `skill_files`, `files` | Staged skill files, and every staged file, with `path`, `kind` and `absolutePath`. |
 | `directory` | The private job directory. |
@@ -64,14 +67,7 @@ The task, IDs, agent call and result storage belong to your application. Pass `v
 
 The cache defaults to `~/.cache/acclimate/python`. Set `cache_dir` to change it and `destination` to choose the job directory. Keep a separate cache directory for each SDK language.
 
-Preparation resolves online. To fall back to the cache after a transport failure or HTTP 503, pass `offline`, with the same shape and unit as the TypeScript SDK:
-
-```py
-client.prepare(workspace_id, bundle_id, channel="stable", offline={"max_age_ms": 15 * 60 * 1000})
-client.prepare(workspace_id, bundle_id, version_id=pinned, offline={"pinned_version_id": pinned})
-```
-
-A denial, a missing resource or an integrity failure never falls back. `resolve_and_cache(client, workspace_id, bundle_id, cache_dir=..., ...)` and `prepare_files(version, destination)` run the two steps separately. `validate_payload(payload)` checks a bundle payload without contacting the service.
+New jobs resolve their enrolled connection online. Running jobs keep their prepared version. `resolve_and_cache(client, workspace_id, bundle_id, cache_dir=..., ...)` and `prepare_files(version, destination)` run the two steps separately. `validate_payload(payload)` checks a bundle payload without contacting the service.
 
 ## Client
 
@@ -87,13 +83,13 @@ The Python client has every method of the TypeScript client. The method names ar
 | --- | --- |
 | Workspaces and bundles | `list_workspaces`, `list_bundles`, `create_bundle`, `create_bundle_setup` |
 | Versions | `create_version`, `get_version`, `get_payload` |
-| Channels and releases | `list_channels`, `resolve_channel`, `list_releases`, `create_release` |
-| Drafts | `create_draft`, `list_drafts`, `get_draft`, `get_draft_history`, `save_draft`, `discard_draft`, `publish_draft` |
+| Channels and releases | `list_channels`, `resolve_channel`, `inspect_source`, `list_releases`, `create_release` |
+| Drafts | `create_draft`, `list_drafts`, `get_draft`, `get_draft_history`, `save_draft`, `discard_draft` |
 | Proposals and comparisons | `create_proposal`, `get_proposal`, `list_proposals`, `create_comparison`, `get_comparison`, `list_comparisons` |
 | Policy receipts | `report_comparison_policy_receipt`, `list_comparison_policy_receipts`, `list_candidate_policy_receipts` |
 | Evaluation requests | `create_evaluation`, `get_evaluation`, `list_evaluations`, `start_evaluation`, `finish_evaluation`, `interrupt_evaluation`, `abandon_evaluation`, `get_evaluation_capabilities`, `get_evaluation_progress`, `report_evaluation_progress` |
 | Connections and receipts | `create_connection`, `list_connections`, `create_connection_credential`, `revoke_connection`, `revoke_connection_credential`, `report_delivery_receipt`, `list_delivery_receipts`, `list_connection_observations` |
-| Connected learning | `enroll_learning`, `get_learning_enrollment`, `stop_learning`, `renew_learning`, `restore_learning`, `report_learning_outcome`, `get_learning_outcome`, `report_learning_correction`, `report_learning_recheck`, `get_learning_work`, `report_learning_incident_replay`, `get_learning_field_requalification`, `report_learning_field_replay`, `report_learning_field_audit`, `review_learning_round` |
+| Connected learning | `enroll_learning`, `get_learning_enrollment`, `stop_learning`, `renew_learning`, `report_learning_outcome`, `get_learning_outcome`, `report_learning_correction`, `report_learning_recheck`, `get_learning_work`, `report_learning_incident_replay`, `get_learning_field_requalification`, `report_learning_field_replay`, `report_learning_field_audit` |
 | Retained operations | `get_operation`, `close_operation` |
 | Other | `health`, `prepare` |
 
@@ -101,7 +97,7 @@ Differences from the TypeScript client:
 
 - `resolve_channel` returns a `(resolution, etag, not_modified)` tuple.
 - The TypeScript client's `sessionToken` and `fetch` options have no Python equivalent. The session token is only for the console's own server.
-- The learning report methods take the key from the report, as the TypeScript defaults do. `report_learning_outcome`, `report_learning_field_audit`, `renew_learning` and `restore_learning` also accept an explicit key.
+- The learning report methods take the key from the report, as the TypeScript defaults do. `report_learning_outcome`, `report_learning_field_audit`, `renew_learning` also accept an explicit key.
 
 ## Errors
 

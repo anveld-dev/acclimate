@@ -287,18 +287,6 @@ try {
     completed === cases.length * 2 &&
     report.results.every((pair) => pair.candidate.reward === 1 && pair.parent.reward !== null) &&
     report.results.some((pair) => pair.parent.reward === 0);
-  if (eligible)
-    await api.createRelease(
-      workspace,
-      bundle,
-      'stable',
-      {
-        versionId: candidate.id,
-        expectedRevision: parent.resolution!.revision,
-        comparisonId: comparison.id,
-      },
-      randomUUID(),
-    );
   const fresh = await resolveStable();
   const checked = await run(fresh, rows[3], 'change-range', 'fresh-consumer', true);
   const summary = {
@@ -310,7 +298,7 @@ try {
     watchPath,
     parent: parent.version.id,
     candidate: candidate.id,
-    released: eligible,
+    candidatePassed: eligible,
     freshVersion: fresh.version.id,
     freshScore: grade(checked.text, rows[3], 'change-range'),
     pendingReceipts: reporter.pendingCount,

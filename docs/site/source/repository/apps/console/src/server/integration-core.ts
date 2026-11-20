@@ -10,10 +10,8 @@ import type {
   LearningEnrollmentStatus,
   LearningOutcomeStatus,
   LearningReleaseEvidence,
-  LearningRestoreTarget,
   LearningRound,
   Page,
-  PolicyOverride,
 } from '@acclimate/sdk';
 import { requireSession, actorScope, type Environment } from './selection';
 import {
@@ -310,23 +308,15 @@ export type LearningRequest = LearningTarget &
   (
     | { action: 'read' }
     | { action: 'enroll'; setup: LearningSetup }
-    | { action: 'rollout'; automaticRollout: boolean }
+    | { action: 'authorize' }
     | { action: 'rollback'; automaticRollback: boolean }
     | { action: 'stop' }
-    | {
-        action: 'restore';
-        restoreId: string;
-        expectedRevision: string;
-        target: LearningRestoreTarget;
-        reason: string;
-      }
     | {
         action: 'skills';
         createSkillNames: string;
         retireSkillNames: string;
         permittedPaths?: string;
       }
-    | { action: 'review'; roundId: string; approve: boolean; policyOverride?: PolicyOverride }
     | {
         action: 'renew';
         renewalId: string;
@@ -337,17 +327,9 @@ export type LearningRequest = LearningTarget &
         selectionPolicies?: string;
       }
   );
-export type BlockingLearningPolicy = {
-  comparisonId: string;
-  requestId: string;
-  policyId: string;
-  revision: string;
-  policyDigest: string;
-  verdict: 'fail' | 'indeterminate';
-};
 type LearningStatus = Pick<
   LearningEnrollmentStatus,
-  | 'automaticRollout'
+  | 'requiresRolloutAuthorization'
   | 'automaticRollback'
   | 'stoppedAt'
   | 'enabled'
@@ -362,8 +344,7 @@ type LearningStatus = Pick<
   | 'skillPackages'
   | 'permittedPaths'
 > & {
-  rounds: (LearningRound & { blockingPolicies?: BlockingLearningPolicy[] | null })[];
-  restoreTargets: LearningRestoreTarget[];
+  rounds: LearningRound[];
   policySummary?: { development: string; audit: string };
   developmentCommitted: boolean;
 };
@@ -500,13 +481,11 @@ export async function connectionLearning(
     ![
       'read',
       'enroll',
-      'rollout',
+      'authorize',
       'rollback',
       'stop',
-      'review',
       'renew',
       'skills',
-      'restore',
     ].includes(input.action) ||
     !validScopePart(input.workspaceId) ||
     typeof input.connectionId !== 'string' ||
@@ -557,26 +536,16 @@ export async function connectionLearning(
         await client.enrollLearning(workspaceId, id, policy, randomUUID());
         break;
       }
-      case 'rollout':
+      case 'authorize':
       case 'rollback':
       case 'skills': {
-        const desired =
-          input.action === 'rollback'
-            ? input.automaticRollback
-            : input.action === 'rollout'
-              ? input.automaticRollout
-              : undefined;
-        if (input.action !== 'skills' && typeof desired !== 'boolean')
-          return {
-            ok: false,
-            message:
-              input.action === 'rollback'
-                ? 'Choose a post-rollout policy.'
-                : 'Choose a rollout policy.',
-          };
+        if (input.action === 'rollback' && typeof input.automaticRollback !== 'boolean')
+          return { ok: false, message: 'Choose a post-rollout policy.' };
         const current = await inspect();
         if (!current?.enabled || current.stoppedAt || !current.audits?.length)
           return { ok: false, message: 'This learning enrollment is unavailable for editing.' };
+        if (current.requiresRolloutAuthorization && input.action !== 'authorize')
+          return { ok: false, message: 'Authorize automatic releases before changing these settings.' };
         let skills;
         let paths = current.permittedPaths;
         if (input.action === 'skills') {
@@ -591,9 +560,8 @@ export async function connectionLearning(
             };
           }
         }
-        const previous =
-          input.action === 'rollback' ? current.automaticRollback : current.automaticRollout;
-        if (skills || previous !== desired) {
+        if (skills || current.requiresRolloutAuthorization ||
+            (input.action === 'rollback' && current.automaticRollback !== input.automaticRollback)) {
           await client.enrollLearning(
             workspaceId,
             id,
@@ -605,9 +573,7 @@ export async function connectionLearning(
               maxProposalAdmissions: current.maxProposalAdmissions,
               development: current.development,
               audits: current.audits,
-              automaticRollout:
-                input.action === 'rollout' ? input.automaticRollout : current.automaticRollout,
-              expectedAutomaticRollout: current.automaticRollout,
+              maxCorrectionsPerRound: current.maxCorrectionsPerRound,
               ...(input.action === 'rollback'
                 ? { automaticRollback: input.automaticRollback }
                 : {}),
@@ -621,79 +587,9 @@ export async function connectionLearning(
         }
         break;
       }
-      case 'restore': {
-        const target = input.target;
-        if (
-          !uuid.test(input.restoreId) ||
-          !/^[1-9]\d*$/.test(input.expectedRevision) ||
-          !target ||
-          !['delivery', 'source'].includes(target.kind) ||
-          !/^[1-9]\d*$/.test(target.revision) ||
-          !uuid.test(target.versionId) ||
-          typeof input.reason !== 'string' ||
-          !input.reason.trim() ||
-          Buffer.byteLength(input.reason) > 1024
-        )
-          return {
-            ok: false,
-            message: 'Select a reviewed delivery target and enter a reason of up to 1,024 bytes.',
-          };
-        await client.restoreLearning(workspaceId, id, {
-          restoreId: input.restoreId,
-          expectedRevision: input.expectedRevision,
-          target: { kind: target.kind, revision: target.revision, versionId: target.versionId },
-          reason: input.reason.trim(),
-        });
-        break;
-      }
       case 'stop':
         await client.stopLearning(workspaceId, id, randomUUID());
         break;
-      case 'review': {
-        if (
-          typeof input.roundId !== 'string' ||
-          !uuid.test(input.roundId) ||
-          typeof input.approve !== 'boolean'
-        )
-          return { ok: false, message: 'Select a valid round and decision.' };
-        const decision = input.policyOverride;
-        if (
-          decision !== undefined &&
-          (!input.approve ||
-            !decision ||
-            typeof decision.reason !== 'string' ||
-            !decision.reason.trim() ||
-            Buffer.byteLength(decision.reason.trim()) > 1024 ||
-            /[\x00-\x1f\x7f-\x9f]/.test(decision.reason.trim()) ||
-            !Array.isArray(decision.receipts) ||
-            !decision.receipts.length ||
-            decision.receipts.some(
-              (ref) =>
-                !ref ||
-                !uuid.test(ref.comparisonId) ||
-                !/^sha256:[a-f0-9]{64}$/.test(ref.policyDigest),
-            ))
-        )
-          return {
-            ok: false,
-            message: 'Review the blocking policies and enter a reason of up to 1,024 bytes.',
-          };
-        await client.reviewLearningRound(
-          workspaceId,
-          id,
-          input.roundId,
-          input.approve,
-          randomUUID(),
-          decision && {
-            reason: decision.reason.trim(),
-            receipts: decision.receipts.map(({ comparisonId, policyDigest }) => ({
-              comparisonId,
-              policyDigest,
-            })),
-          },
-        );
-        break;
-      }
       case 'renew': {
         if (
           typeof input.renewalId !== 'string' ||
@@ -725,44 +621,12 @@ export async function connectionLearning(
       }
     }
     const status = await inspect();
-    async function blockingPolicies(
-      round: LearningRound,
-    ): Promise<BlockingLearningPolicy[] | null | undefined> {
-      if (round.state !== 'awaiting_review' || !round.candidateVersionId) return;
-      try {
-        const versions = new Set([round.candidateVersionId]);
-        if (round.developmentCandidateVersionId) versions.add(round.developmentCandidateVersionId);
-        const receipts = await Promise.all(
-          [...versions].map((version) =>
-            client.listCandidatePolicyReceipts(workspaceId, bundleId, version),
-          ),
-        );
-        return receipts
-          .flatMap(({ items }) => items)
-          .flatMap(({ comparisonId, requestId, policy, verdict }) =>
-            verdict === 'fail' || verdict === 'indeterminate'
-              ? [
-                  {
-                    comparisonId,
-                    requestId,
-                    policyId: policy.id,
-                    revision: policy.revision,
-                    policyDigest: policy.sha256,
-                    verdict,
-                  },
-                ]
-              : [],
-          );
-      } catch {
-        return null;
-      }
-    }
     return {
       ok: true,
       status: status && {
         enabled: status.enabled,
         stoppedAt: status.stoppedAt,
-        automaticRollout: status.automaticRollout,
+        requiresRolloutAuthorization: status.requiresRolloutAuthorization,
         automaticRollback: status.automaticRollback,
         auditCount: status.auditCount,
         remainingAudits: status.remainingAudits,
@@ -773,11 +637,6 @@ export async function connectionLearning(
         deliveredVersionId: status.deliveredVersionId,
         deliveredRevision: status.deliveredRevision,
         permittedPaths: status.permittedPaths,
-        restoreTargets: (status.restoreTargets ?? []).map(({ kind, revision, versionId }) => ({
-          kind,
-          revision,
-          versionId,
-        })),
         developmentCommitted: status.development.fixtureProtocol === 'installed-v1',
         ...(status.skillPackages
           ? {
@@ -795,9 +654,7 @@ export async function connectionLearning(
               },
             }
           : {}),
-        rounds: await Promise.all(
-          status.rounds.map(async (round) => ({
-            blockingPolicies: await blockingPolicies(round),
+        rounds: status.rounds.map((round) => ({
             id: round.id,
             outcomeId: round.outcomeId,
             incidentReplay: round.incidentReplay,
@@ -822,31 +679,17 @@ export async function connectionLearning(
               rollbackPromotionId: round.fieldAudits.rollbackPromotionId,
             },
           })),
-        ),
       },
     };
   } catch (error) {
     if (error instanceof ApiError) {
-      if (input.action === 'review' && error.code === 'review_already_decided')
-        return { ok: false, message: error.message };
-      if (input.action === 'review' && error.status === 403)
-        return {
-          ok: false,
-          message: 'Use an independent reviewer with permission to promote this candidate.',
-        };
-      if (error.code === 'policy_override_required')
-        return {
-          ok: false,
-          message:
-            'The candidate has blocking policy receipts. Refresh learning status and review the current receipts before approving.',
-        };
       if ([401, 403].includes(error.status))
         return { ok: false, message: 'Learning administration requires current workspace access.' };
       if (error.status === 400)
         return {
           ok: false,
           message:
-            input.action === 'rollout'
+            input.action === 'authorize'
               ? 'Automatic rollout requires a committed development evaluator and a fresh committed audit cohort.'
               : 'Check the fixture commitments, selection policies, permitted paths, skill names and machine grants.',
         };
@@ -854,9 +697,7 @@ export async function connectionLearning(
         return {
           ok: false,
           message:
-            input.action === 'restore'
-              ? 'The release or restore target changed. Refresh and review the current targets.'
-              : input.action === 'renew' || input.action === 'skills'
+            input.action === 'renew' || input.action === 'skills'
                 ? 'Refresh the enrollment. Apply policy changes between rounds and use newly registered audit fixtures.'
                 : 'Refresh the learning state and review the current enrollment settings.',
         };

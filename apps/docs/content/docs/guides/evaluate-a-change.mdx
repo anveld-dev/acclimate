@@ -34,7 +34,7 @@ If both arms return identical output on every pair, the comparison prints a warn
 
 ## Freeze the comparison inputs
 
-In **Changes**, save the exact candidate you want to evaluate. Use the installed evaluator's `describe` output to create the request from **Review release**. When the worker runs it, the parent and candidate use the same case inputs, grader, and repetition inventory. Use fixtures or read-only tools for tasks with external effects.
+Use `acclimate-eval compare` to check the candidate against its parent. Open **Changes** to inspect recorded scores and evidence.
 
 Run `coverage` locally to see what contributes to the evaluator revision. Declare deferred imports, lockfiles, prompts, and runtime-read files in `revisionFiles` (Python `revision_files`). File paths are relative to the adapter. Use `runtime.settings` for app-owned settings such as model deployment and `runtime.artifacts` for external build digests. Start a fresh process after rebuilding dependencies, and create a fresh request when covered inputs change.
 

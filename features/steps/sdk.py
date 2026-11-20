@@ -20,23 +20,15 @@ def selected(context):
     assert w.delivery['version'] == w.original['version']
 
 
-@when('I published the saved draft manually')
-def publish_manual(context):
-    w=context.world
-    current=w.call('GET',w.channel)
-    w.published=w.call('POST',w.draft_path+'/publish',dict(expectedGeneration=w.draft['generation'],expectedRevision=current['revision'],unevaluatedReason='Operator reviewed this edit manually.'))
-
-
 @when('a fresh job requests the original version by ID')
 def pin(context):
     w = context.world
     w.delivery = w.sdk('delivery', versionId=w.original['version']['id'])
 
 
-@then('the latest channel still contains the newer release')
-def current(context):
-    w = context.world
-    assert w.call('GET', w.channel)['version'] == w.draft['snapshotVersion']
+@then('the job rejects the pinned version')
+def rejected_pin(context):
+    assert context.world.delivery['error']['name'] == 'AcclimateUsageError'
 
 
 @when('the service becomes unavailable')

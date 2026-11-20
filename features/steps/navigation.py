@@ -209,12 +209,8 @@ def bookmark_stable(context):
     w=context.world
     p=browser(context).page
     expect(p).to_have_url(w.draft_bookmark)
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Review retries.')
-    open_details(p,'Draft details')
-    details=p.get_by_role('dialog',name='Draft details',exact=True)
-    expect(details).to_contain_text(w.draft['id'])
-    expect(details).to_contain_text(w.draft['snapshotVersion']['id'])
-    close_draft_details(p)
+    expect(p.get_by_text('Saved draft', exact=True)).to_be_visible()
+    expect(p.locator('.content-diff')).to_contain_text('Review retries.')
     expect(p.get_by_role('heading',name='BDD bundle',exact=True)).to_be_visible()
 
 

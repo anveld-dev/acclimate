@@ -29,7 +29,7 @@ const version = {
 
 for (const kind of ['channel', 'version'] as const) {
   for (const stall of ['headers', 'body'] as const) {
-    test(`native HTTP ${stall} timeout permits only explicit verified ${kind} fallback`, async () => {
+    test(`native HTTP ${stall} timeout checks cached ${kind} bytes and delivery freshness`, async () => {
       let mode: 'online' | 'stall' | 'denied' | 'corrupt' = 'online';
       let denial = 403;
       const server = createServer((req, res) => {
@@ -37,7 +37,7 @@ for (const kind of ['channel', 'version'] as const) {
           res.end(mode === 'corrupt' ? Buffer.from('tampered') : bytes);
           return;
         }
-        if (mode === 'stall' || mode === 'corrupt') {
+        if (mode === 'stall' || (mode === 'corrupt' && kind === 'version')) {
           if (stall === 'body') {
             res.writeHead(200, { 'content-type': 'application/json' });
             res.write('{');
@@ -72,7 +72,7 @@ for (const kind of ['channel', 'version'] as const) {
         kind === 'channel'
           ? { workspaceId: 'p', bundleId: 'b', channel: 'stable' }
           : { workspaceId: 'p', bundleId: 'b', versionId: 'v' };
-      const offline = kind === 'channel' ? { maxAgeMs: 60_000 } : { pinnedVersionId: 'v' };
+      const offline = kind === 'channel' ? undefined : { pinnedVersionId: 'v' };
       try {
         await resolveAndCache(client, selection, { cacheDir: dir });
         mode = 'stall';
@@ -86,13 +86,15 @@ for (const kind of ['channel', 'version'] as const) {
             e.cause instanceof DOMException &&
             ['TimeoutError', 'AbortError'].includes(e.cause.name),
         );
-        const cached = await resolveAndCache(client, selection, { cacheDir: dir, offline });
-        assert.equal(cached.stale, true);
-        assert.equal(cached.payload.files[0]!.text, 'Verified guidance');
+        if (kind === 'version') {
+          const cached = await resolveAndCache(client, selection, { cacheDir: dir, offline });
+          assert.equal(cached.stale, true);
+          assert.equal(cached.payload.files[0]!.text, 'Verified guidance');
+        }
         await assert.rejects(
           resolveAndCache(client, selection, {
             cacheDir: dir,
-            offline: kind === 'channel' ? { maxAgeMs: 0 } : { pinnedVersionId: 'other' },
+            offline: { pinnedVersionId: 'other' },
           }),
         );
         mode = 'denied';

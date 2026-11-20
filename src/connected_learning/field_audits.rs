@@ -185,7 +185,6 @@ pub(super) async fn submit(
                 expected_revision: verdict.revision,
                 comparison_id: None,
                 unevaluated_reason: Some(reason),
-                policy_override: None,
             },
             crate::channels::Publication::Restore(&connection.channel),
         )
@@ -204,7 +203,7 @@ pub(super) async fn submit(
         let stale_rounds = sqlx::query(
             "SELECT * FROM connected_learning_rounds
              WHERE (project_id,bundle_id,integration_id,parent_version_id,parent_revision)=($1,$2,$3,$4,$5)
-                 AND state IN ('proposing','development','audit','awaiting_review')",
+                 AND state IN ('proposing','development','audit')",
         )
         .bind(&connection.project).bind(connection.bundle).bind(integration).bind(verdict.version_id).bind(revision)
         .fetch_all(&mut *tx).await.map_err(db)?;

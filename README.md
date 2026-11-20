@@ -2,7 +2,7 @@
 
 **Ship changes to your agent's prompts, skills, and memory like code: versioned, A/B-graded on your own tasks, gated before release, and roll-backable.**
 
-Each change to your agent's instructions, skills, or approved memory becomes an immutable version. Your agent runs the current version and the new one on the same saved tasks, your grader scores both, and the change is released only when the paired results clear your bar. If a release goes wrong, you release the earlier version again.
+Seed a bundle with your agent’s starting instructions, skills, and approved memory. Then enroll your app connection and start its evaluator. When the app reports a correction, Acclimate proposes a change, tests it against the current version on your tasks, and automatically sends it to new jobs if it clears the checks. Failed checks leave the last good version in place. Field audits can roll back a release that regresses.
 
 **How it differs from eval tools.** promptfoo, Braintrust, LangSmith, and Inspect run evaluations and track scores. Acclimate covers what happens around the evaluation. It versions the agent's content, pairs each change with the version it replaces, gates the release on those results, and delivers the released version to your application's next job. Your application still runs the agent and grades its work, so an existing eval suite can serve as the grader.
 
@@ -46,10 +46,10 @@ Python users run the same commands with `acclimate` (or `python -m acclimate`) f
 
 ## After the first comparison
 
-- **Gate releases.** Add a quality policy with `--policy` to check thresholds and measured costs, and run the same check on pull requests. [Evaluate a change](apps/docs/content/docs/guides/evaluate-a-change.mdx) · [Gate pull requests with the GitHub Action or CI wrapper](examples/ci/README.md)
-- **Review and release.** Inspect comparisons in the console, release a version to a channel, or roll back to an earlier one. From a terminal, `acclimate-operator` ships in the SDK. [Review and release](tools/operator/README.md)
+- **Check a proposed change.** Add a quality policy with `--policy` to check thresholds and measured costs on pull requests. [Evaluate a change](apps/docs/content/docs/guides/evaluate-a-change.mdx) · [Gate pull requests with the GitHub Action or CI wrapper](examples/ci/README.md)
+- **Inspect releases.** Open a learning round to see which tests ran, what passed, and which version the app received. [Inspect automatic releases](apps/docs/content/docs/guides/review-and-release.mdx)
 - **Deliver content to jobs.** The SDK fetches and verifies the released version when your application starts a job, and prepares files for agents such as Codex or the Claude Agent SDK. In the console, **App setup** shows the client configuration for a bundle and channel. [Native integration](examples/native-repository/README.md)
-- **Learn from outcomes.** A connection can report job outcomes and approved corrections so the service proposes changes and schedules comparisons. [Connected learning](deploy/README.md#operate-connected-learning)
+- **Enable automatic releases.** Enroll the app, start its evaluator, and report job outcomes and corrections. Passing learning rounds reach new jobs automatically. [Connected learning](deploy/README.md#operate-connected-learning)
 
 ## Operate or develop Acclimate
 

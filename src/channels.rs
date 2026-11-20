@@ -176,7 +176,7 @@ pub(crate) fn visible_policy_override(principal: usize, reviewer: usize) -> Stri
     ) THEN p.policy_override END"
     )
 }
-pub(crate) async fn promote(
+pub(crate) async fn seed(
     State(s): State<AppState>,
     Path((p, b, c)): Path<(String, String, String)>,
     h: HeaderMap,
@@ -206,13 +206,13 @@ pub(crate) async fn promote(
         &c,
         &a.principal,
         req,
-        Publication::Standard,
+        Publication::Seed,
     )
     .await?;
     crate::commands::finish_mutation(command, StatusCode::CREATED, promotion).await
 }
 pub(crate) enum Publication<'a> {
-    Standard,
+    Seed,
     Learning,
     Restore(&'a str),
 }
@@ -232,6 +232,31 @@ pub(crate) async fn promote_in_tx(
             "invalid_content",
             "Specify comparisonId or unevaluatedReason",
         ));
+    }
+    if matches!(publication, Publication::Seed) {
+        // Serialize the first release across every channel name for this bundle.
+        sqlx::query("SELECT id FROM bundles WHERE project_id=$1 AND id=$2 FOR UPDATE")
+            .bind(p)
+            .bind(bid)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(db)?
+            .ok_or_else(|| err(StatusCode::NOT_FOUND, "not_found", "Bundle not found"))?;
+        let seeded: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT FROM channels WHERE project_id=$1 AND bundle_id=$2)",
+        )
+        .bind(p)
+        .bind(bid)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(db)?;
+        if seeded || req.expected_revision != "0" || req.comparison_id.is_some() {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "connected_learning_required",
+                "This endpoint only seeds a new bundle. Subsequent releases use connected learning.",
+            ));
+        }
     }
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("promotion:{p}:{bid}:{c}"))
@@ -256,6 +281,15 @@ pub(crate) async fn promote_in_tx(
         ));
     }
     let vr=sqlx::query("SELECT id,bundle_id,parent_version_id,digest,payload,created_at FROM versions WHERE project_id=$1 AND bundle_id=$2 AND id=$3").bind(p).bind(bid).bind(vid).fetch_optional(&mut **tx).await.map_err(db)?.ok_or_else(||err(StatusCode::NOT_FOUND,"not_found","Version not found"))?;
+    if matches!(publication, Publication::Seed)
+        && vr.get::<Option<Uuid>, _>("parent_version_id").is_some()
+    {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "invalid_seed",
+            "Seed a bundle with a root version.",
+        ));
+    }
     let payload: crate::BundlePayload =
         serde_json::from_slice(&vr.get::<Vec<u8>, _>("payload")).map_err(db)?;
     crate::compatibility::validate_in_tx(tx, p, bid, &payload).await?;
@@ -335,25 +369,12 @@ pub(crate) async fn promote_in_tx(
             "Unevaluated reason required",
         ));
     }
-    if req.policy_override.is_some() && req.comparison_id.is_none() {
-        return Err(err(
-            StatusCode::BAD_REQUEST,
-            "invalid_content",
-            "A policy override requires comparison evidence.",
-        ));
-    }
-    let historical_channel = if let Publication::Restore(channel) = publication {
-        Some(channel)
-    } else {
-        // An ordinary manual rollback can only inherit an existing decision
-        // for this exact version on this channel, outside its original transition.
-        (req.comparison_id.is_none()
-            && previous.is_some()
-            && previous != vr.get::<Option<Uuid>, _>("parent_version_id"))
-        .then_some(c)
+    let historical_channel = match publication {
+        Publication::Restore(channel) => Some(channel),
+        _ => None,
     };
     let (policy_override, approval_id) =
-        policy::approve(tx, p, bid, vid, req.policy_override, historical_channel).await?;
+        policy::approve(tx, p, bid, vid, historical_channel).await?;
     let nr = revision + 1;
     sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(project_id,bundle_id,name) DO UPDATE SET revision=EXCLUDED.revision,version_id=EXCLUDED.version_id").bind(p).bind(bid).bind(c).bind(nr).bind(vid).execute(&mut **tx).await.map_err(db)?;
     let id = Uuid::new_v4();
@@ -435,10 +456,10 @@ mod tests {
         sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'stable',1,$3)")
             .bind(project).bind(bundle).bind(baseline).execute(&mut *tx).await.unwrap();
 
-        for (candidate, publication, allowed) in [
-            (unrelated, Publication::Learning, false),
-            (head, Publication::Standard, false),
-            (head, Publication::Learning, true),
+        for (candidate, publication, expected_error) in [
+            (unrelated, Publication::Learning, Some("parent_conflict")),
+            (head, Publication::Seed, Some("connected_learning_required")),
+            (head, Publication::Learning, None),
         ] {
             let comparison = Uuid::new_v4();
             sqlx::query(
@@ -468,17 +489,16 @@ mod tests {
                     expected_revision: "1".into(),
                     comparison_id: Some(comparison.to_string()),
                     unevaluated_reason: None,
-                    policy_override: None,
                 },
                 publication,
             )
             .await;
-            if allowed {
+            if let Some(code) = expected_error {
+                assert_eq!(result.err().unwrap().1, code);
+            } else {
                 let promotion = result.unwrap();
                 assert_eq!(promotion.version.id, head.to_string());
                 assert_eq!(promotion.version.parent_version_id, Some(step.to_string()));
-            } else {
-                assert_eq!(result.err().unwrap().1, "parent_conflict");
             }
         }
     }

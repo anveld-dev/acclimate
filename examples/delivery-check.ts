@@ -9,6 +9,7 @@ for (const key of [
   'ACCLIMATE_SCOPE',
   'ACCLIMATE_WORKSPACE',
   'ACCLIMATE_BUNDLE',
+  'ACCLIMATE_CONNECTION',
 ]) {
   if (!process.env[key]) throw new Error('Set ' + key);
 }
@@ -16,6 +17,7 @@ const client = new AcclimateClient({
   baseUrl: process.env.ACCLIMATE_URL!,
   token: process.env.ACCLIMATE_TOKEN!,
   scope: process.env.ACCLIMATE_SCOPE!,
+  connectionId: process.env.ACCLIMATE_CONNECTION!,
 });
 const workspaceId = process.env.ACCLIMATE_WORKSPACE!;
 const reporter = optionalReceipts(process.env, workspaceId);

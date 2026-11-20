@@ -29,8 +29,8 @@ class PullTests(unittest.TestCase):
 
             def do_GET(self):
                 route = urlsplit(self.path).path
-                if route.endswith(f"/bundles/{BUNDLE}/channels/stable"):
-                    data, status = json.dumps({"channel": "stable", "revision": "3", "version": version}).encode(), 200
+                if route.endswith(f"/bundles/{BUNDLE}/channels/stable/releases"):
+                    data, status = json.dumps({"items": [{"channel": "stable", "revision": "3", "version": version}]}).encode(), 200
                 elif route.endswith(f"/versions/{VERSION}/payload"):
                     data, status = body, 200
                 elif route.endswith(f"/versions/{VERSION}"):

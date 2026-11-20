@@ -72,9 +72,9 @@ Feature: App-owned evaluation
       | retry-review | 1          | 0.5           | <execution>         | <grading>         | unknown          |
     And the same evaluator finishes the request
     Then the failed request retains the submitted grades and the ungraded candidate arm
-    When I try to publish that draft using its incomplete evidence
+    When I submit that evidence to the retired draft publication endpoint
     Then publication is rejected
-    And applications still resolve the original release
+    And the source still contains only the original release
     Examples:
       | execution             | grading |
       | completed             | missing |

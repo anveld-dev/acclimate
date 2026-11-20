@@ -26,10 +26,11 @@ def reopen(context, text):
     assert w.draft_text(reopened) == text
 
 
-@then('applications still resolve the original release')
+@then('the source still contains only the original release')
 def unchanged_release(context):
     w = context.world
-    assert w.h.call('GET', w.channel) == w.original, 'Draft work changed the published channel'
+    seed, = w.call('GET', w.channel + '/releases')['items']
+    assert seed['version'] == w.original['version'] and seed['revision'] == w.original['revision']
 
 
 @given('I save another generation containing "{text}"')
@@ -142,13 +143,12 @@ def discarded(context):
 @when('I try to publish the saved draft manually')
 def publish_rejected(context):
     w = context.world
-    current = w.call('GET', w.channel)
-    w.call('POST', w.draft_path + '/publish', dict(expectedGeneration=w.draft['generation'], expectedRevision=current['revision'], unevaluatedReason='Explicit manual release.'), expected=409)
+    w.call('POST', w.draft_path + '/publish', dict(expectedGeneration=w.draft['generation'], expectedRevision=w.original['revision'], unevaluatedReason='Manual request'), expected=404)
 
 
 @then('publication is rejected')
 def rejected(context):
-    assert context.world.last_status in (400, 403, 409)
+    assert context.world.last_status == 404
 
 
 @when('I try to save {invalid} content')
@@ -190,12 +190,6 @@ def all_once(context, count):
     w = context.world
     assert len(w.listed) == count
     assert set(w.listed) == set(w.all_drafts)
-
-
-@given('the channel advances while retaining the same published version')
-def advance(context):
-    w = context.world
-    w.manual_release(w.original['version'])
 
 
 @then('the saved draft remains available')

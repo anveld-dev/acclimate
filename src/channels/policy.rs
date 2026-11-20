@@ -8,7 +8,6 @@ pub(super) async fn approve(
     project: &str,
     bundle: Uuid,
     candidate: Uuid,
-    reviewed: Option<PolicyOverride>,
     restore_from: Option<&str>,
 ) -> ApiResult<(Option<Json<PolicyOverride>>, Option<Uuid>)> {
     // Historical copy releases inherit the blocking receipts of the chain head.
@@ -58,26 +57,10 @@ pub(super) async fn approve(
     let blocked = || {
         err(
             StatusCode::CONFLICT,
-            "policy_override_required",
-            "Review the candidate's current blocking policy receipts and acknowledge each with a reason.",
+            "policy_blocked",
+            "Application policy blocks this release.",
         )
     };
-    if let Some(decision) = reviewed.map(PolicyOverride::normalized) {
-        if decision.reason.is_empty()
-            || decision.reason.len() > 1024
-            || decision.reason.chars().any(char::is_control)
-        {
-            return Err(err(
-                StatusCode::BAD_REQUEST,
-                "invalid_content",
-                "Provide a policy override reason of 1 to 1024 bytes.",
-            ));
-        }
-        if blockers.is_empty() || decision.receipts != blockers {
-            return Err(blocked());
-        }
-        return Ok((Some(Json(decision)), None));
-    }
     if blockers.is_empty() {
         return Ok((None, None));
     }

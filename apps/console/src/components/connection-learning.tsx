@@ -3,7 +3,6 @@ import type { FormEvent } from 'react';
 import type { LearningRound } from '@acclimate/sdk';
 import { readConnectionLearning, runConnectionLearning } from '../server/integration-actions';
 import type {
-  BlockingLearningPolicy,
   LearningRequest,
   LearningResult,
 } from '../server/integration-core';
@@ -27,7 +26,6 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import {
-  RestoreDelivery,
   SelectionPoliciesField,
   SkillPermissionFields,
 } from './connection-learning-controls';
@@ -109,15 +107,6 @@ export function ConnectionLearning({
   const { workspaceId, connectionId } = target;
   const { result, busy, error, refreshError, request } = learning;
   const [confirmStop, setConfirmStop] = useState(false);
-  const [decision, setDecision] = useState<{
-    parentVersionId: string;
-    roundId: string;
-    candidateVersionId: string | null;
-    approve: boolean;
-    policies?: BlockingLearningPolicy[] | null;
-  }>();
-  const [overrideReason, setOverrideReason] = useState('');
-  const decisionTrigger = useRef<HTMLElement | null>(null);
   const stopTrigger = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const sectionRef = useRef<HTMLElement>(null);
@@ -203,7 +192,7 @@ export function ConnectionLearning({
       )}
       {result?.ok && !status && (
         <>
-          <p className="text-sm">Learning is off for this connection.</p>
+          <p className="text-sm">Enroll this connection to start serving jobs. Changes that pass screening and evaluation will roll out automatically.</p>
           {editable && (
             <Disclosure>
               <DisclosureTrigger>Set up continuous learning</DisclosureTrigger>
@@ -217,7 +206,7 @@ export function ConnectionLearning({
           )}
         </>
       )}
-      {result?.ok && (
+      {status && (
         <Disclosure>
           <DisclosureTrigger>
             {enabled ? 'Delivery target' : 'Last delivery target'} · revision{' '}
@@ -236,7 +225,7 @@ export function ConnectionLearning({
               {!status.enabled ? 'Connection revoked' : status.stoppedAt ? 'Stopped' : 'Enrolled'}
             </Badge>
             <Badge variant="outline">
-              {status.automaticRollout ? 'Automatic rollout' : 'Manual review'}
+              {status.requiresRolloutAuthorization ? 'Rollout authorization required' : 'Automatic rollout'}
             </Badge>
             <Badge variant="outline">
               {status.automaticRollback ? 'Automatic rollback on' : 'Automatic rollback off'}
@@ -301,24 +290,15 @@ export function ConnectionLearning({
           )}
           {editable && active && (
             <div className="flex flex-wrap gap-2">
+              {status.requiresRolloutAuthorization && (
+                <Button size="sm" disabled={busy} onClick={() => void mutate({ ...target, action: 'authorize' })}>
+                  Authorize automatic releases
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
-                disabled={busy}
-                onClick={() =>
-                  void mutate({
-                    ...target,
-                    action: 'rollout',
-                    automaticRollout: !status.automaticRollout,
-                  })
-                }
-              >
-                {status.automaticRollout ? 'Disable automatic rollout' : 'Enable automatic rollout'}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
+                disabled={busy || status.requiresRolloutAuthorization}
                 onClick={() =>
                   void mutate({
                     ...target,
@@ -359,7 +339,7 @@ export function ConnectionLearning({
               </DisclosureContent>
             </Disclosure>
           )}
-          {editable && active && (
+          {editable && active && !status.requiresRolloutAuthorization && (
             <Disclosure>
               <DisclosureTrigger>Manage skill package permissions</DisclosureTrigger>
               <DisclosureContent>
@@ -405,15 +385,6 @@ export function ConnectionLearning({
               </DisclosureContent>
             </Disclosure>
           )}
-          {editable && status.enabled && (
-            <RestoreDelivery
-              key={status.deliveredRevision}
-              busy={busy}
-              revision={status.deliveredRevision}
-              targets={status.restoreTargets}
-              onSubmit={(settings) => mutate({ ...target, action: 'restore', ...settings })}
-            />
-          )}
           <OutcomeLookup key={connectionId} target={target} />
           <div className="space-y-2">
             <h4 className="text-sm font-semibold">Proposal history</h4>
@@ -425,22 +396,6 @@ export function ConnectionLearning({
                       latest={index === 0}
                       round={round}
                       scope={{ workspaceId, bundleId, channel }}
-                      busy={busy}
-                      onDecision={
-                        editable && active && round.state === 'awaiting_review'
-                          ? (approve, trigger) => {
-                              decisionTrigger.current = trigger;
-                              setOverrideReason('');
-                              setDecision({
-                                parentVersionId: round.parentVersionId,
-                                roundId: round.id,
-                                candidateVersionId: round.candidateVersionId,
-                                approve,
-                                policies: round.blockingPolicies,
-                              });
-                            }
-                          : undefined
-                      }
                     />
                   </li>
                 ))}
@@ -483,114 +438,6 @@ export function ConnectionLearning({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog
-        open={Boolean(decision)}
-        onOpenChange={(open) => {
-          if (!busy && !open) setDecision(undefined);
-        }}
-      >
-        <DialogContent size="decision" returnFocusRef={decisionTrigger}>
-          <DialogHeader>
-            <DialogTitle>
-              {decision?.approve ? 'Roll out this candidate?' : 'Decline this candidate?'}
-            </DialogTitle>
-            <DialogDescription>
-              {decision?.approve
-                ? 'This changes the delivery target for future jobs using this connection.'
-                : 'Keep the current delivery target and record this decision for the proposal.'}
-            </DialogDescription>
-          </DialogHeader>
-          {decision && (
-            <dl className="grid gap-2 text-sm">
-              <div>
-                <dt className="text-muted-foreground">Connection</dt>
-                <dd className="break-words">
-                  {connectionName} / {channel}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Baseline version</dt>
-                <dd className="break-all font-mono">{decision.parentVersionId}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Candidate version</dt>
-                <dd className="break-all font-mono">{decision.candidateVersionId}</dd>
-              </div>
-            </dl>
-          )}
-          {decision?.approve && decision.policies === null && (
-            <p role="status">
-              Policy checks could not be loaded. Refresh learning status to review a blocking
-              policy.
-            </p>
-          )}
-          {decision?.approve && !!decision.policies?.length && (
-            <div className="space-y-2">
-              <p>Review the policies blocking rollout of this candidate.</p>
-              <ul className="list-disc pl-5">
-                {decision.policies.map((policy) => (
-                  <li key={policy.comparisonId + policy.policyDigest}>
-                    <ConsoleLink
-                      className="underline"
-                      href={bundleHref({ workspaceId, bundleId, channel }, 'changes', {
-                        history: 1,
-                        candidate: decision.candidateVersionId ?? undefined,
-                        request: policy.requestId,
-                        comparison: policy.comparisonId,
-                      })}
-                    >
-                      {policy.policyId} · {policy.revision} · {policy.verdict}
-                    </ConsoleLink>
-                  </li>
-                ))}
-              </ul>
-              <Label htmlFor={titleId + '-override'}>Reason for overriding these policies</Label>
-              <Input
-                id={titleId + '-override'}
-                value={overrideReason}
-                maxLength={1024}
-                onChange={(e) => setOverrideReason(e.target.value)}
-              />
-              <p>The release records your reason and the policy checks you reviewed.</p>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" disabled={busy} onClick={() => setDecision(undefined)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={
-                busy ||
-                !decision ||
-                (decision.approve && !!decision.policies?.length && !overrideReason.trim())
-              }
-              onClick={() => {
-                if (!decision) return;
-                setDecision(undefined);
-                void mutate({
-                  ...target,
-                  action: 'review',
-                  roundId: decision.roundId,
-                  approve: decision.approve,
-                  ...(decision.approve && decision.policies?.length
-                    ? {
-                        policyOverride: {
-                          reason: overrideReason.trim(),
-                          receipts: decision.policies.map(({ comparisonId, policyDigest }) => ({
-                            comparisonId,
-                            policyDigest,
-                          })),
-                        },
-                      }
-                    : {}),
-                });
-              }}
-            >
-              {decision?.approve ? 'Roll out candidate' : 'Decline candidate'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </section>
   );
 }
@@ -603,7 +450,6 @@ function EnrollmentForm({
   onSubmit(setup: LearningSetup): void;
 }) {
   const prefix = useId();
-  const [automaticRollout, setAutomaticRollout] = useState(false);
   const [automaticRollback, setAutomaticRollback] = useState(true);
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -618,7 +464,6 @@ function EnrollmentForm({
       selectionPolicies: String(form.get('selectionPolicies') ?? ''),
       createSkillNames: String(form.get('createSkillNames') ?? ''),
       retireSkillNames: String(form.get('retireSkillNames') ?? ''),
-      automaticRollout,
       automaticRollback,
     });
   }
@@ -706,17 +551,7 @@ function EnrollmentForm({
           <SkillPermissionFields busy={busy} />
         </DisclosureContent>
       </Disclosure>
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id={`${prefix}-rollout`}
-          checked={automaticRollout}
-          onCheckedChange={(checked) => setAutomaticRollout(checked === true)}
-          disabled={busy}
-        />
-        <Label htmlFor={`${prefix}-rollout`}>
-          Automatically release versions that pass the independent comparison
-        </Label>
-      </div>
+      <p>Enrolling authorizes automatic releases for this connection after all rollout checks pass.</p>
       <div className="flex items-center gap-2">
         <Checkbox
           id={`${prefix}-rollback`}
@@ -725,8 +560,7 @@ function EnrollmentForm({
           disabled={busy}
         />
         <Label htmlFor={`${prefix}-rollback`}>
-          Automatically restore the comparison version after three regressions in the latest ten
-          eligible post-rollout verdicts
+          Automatically roll back when post-release checks find a regression
         </Label>
       </div>
       <Button type="submit" disabled={busy}>
@@ -846,14 +680,10 @@ function LearningRound({
   round,
   latest,
   scope,
-  busy,
-  onDecision,
 }: {
   round: LearningRound;
   latest: boolean;
   scope: { workspaceId: string; bundleId: string; channel: string };
-  busy: boolean;
-  onDecision?(approve: boolean, trigger: HTMLButtonElement): void;
 }) {
   const fieldAudits = round.promotionId ? round.fieldAudits : undefined;
   return (
@@ -942,25 +772,6 @@ function LearningRound({
             </dl>
           </DisclosureContent>
         </Disclosure>
-        {onDecision && (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={(event) => onDecision(true, event.currentTarget)}
-            >
-              Review rollout
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={(event) => onDecision(false, event.currentTarget)}
-            >
-              Decline candidate
-            </Button>
-          </div>
-        )}
       </DisclosureContent>
     </Disclosure>
   );

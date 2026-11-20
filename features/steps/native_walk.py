@@ -1,18 +1,14 @@
-"""One native-target browser/helper/installed-app/receipt/rollback walkthrough."""
+"""Deliver an imported native bundle through an enrolled, installed application."""
 import json
 import shutil
 import subprocess
 from behave import given, when, then
 from playwright.sync_api import expect
-from scripts.bdd.editor import expect_editor_value
 from scripts.productization.qualify import ROOT
-from features.steps.console import save_browser, saved_draft, external_app, review_publish, restore, install_browser_evaluator
-from features.steps.remediation_recovery import lose_response, records
 from scripts.bdd.interactions import open_details
 
 
 SKILL = '---\nname: retry-review\ndescription: Review payment retries for duplicate charges.\n---\nReview the payment retry path before recommending another attempt.\n'
-REPAIRED_SKILL = SKILL + 'After an ambiguous timeout, reuse the original request idempotency key.\n'
 
 
 def installed_prepare(w, version, payload, pinned=(), deny_receipt=False):
@@ -52,14 +48,14 @@ def native_import(context):
     assert bundle['compatibilityTarget'] == 'codex' and bundle['origin'] == 'imported'
     w.bundle = w.root+'/bundles/'+bundle['id']
     w.channel = w.bundle+'/channels/stable'
-    w.original = w.call('GET', w.channel)
+    seed, = w.call('GET', w.channel + '/releases')['items']
+    w.original = dict(channel='stable', revision=seed['revision'], version=seed['version'])
     w.setup = dict(bundle=bundle, resolution=w.original)
 
 
-@given('an isolated app installs the packed SDK and native plugin and retains its original prepared workspace')
+@when('an isolated app installs the packed SDK and native plugin and retains its original prepared workspace')
 def installed_initial(context):
     w = context.world
-    w.create_integration()
     w.issue('content-read')
     w.issue('receipt-write')
     directory = w.h.dir/'native-installed-app'
@@ -79,102 +75,11 @@ def installed_initial(context):
     assert w.native_old_prepared['appStarted'] and w.native_old_prepared['pending'] == 0
 
 
-@when('I save an incomplete native manifest, reload it, then repair it and recover a lost save response')
-def incomplete_repair(context):
+@then('the connected native job starts on the verified seed and reports its delivery')
+def native_initial_delivered(context):
     w = context.world
-    b = w.browser_fixture
-    p = b.page
-    b.visit(b.bundle_path('changes', draft='new', path='skills/retry-review/SKILL.md'))
-    p.get_by_role('textbox', name='Content', exact=True).fill('# Incomplete manifest retained as a draft.\n')
-    save_browser(context)
-    incomplete = saved_draft(w)
-    assert incomplete['generation'] == 1
-    p.reload()
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), '# Incomplete manifest retained as a draft.\n')
-    expect(p.get_by_text('Native compatibility needs repair before publication.', exact=False)).to_be_visible()
-    p.get_by_role('textbox', name='Content', exact=True).fill(REPAIRED_SKILL)
-    p.get_by_role('treeitem', name='Open AGENTS.md', exact=True).click()
-    p.get_by_role('textbox', name='Content', exact=True).fill('Review code. Reuse the same idempotency key after a lost response.')
-    p.get_by_role('treeitem', name='Open payment-policy.json', exact=True).click()
-    p.get_by_role('textbox', name='Content', exact=True).fill(json.dumps(dict(maxAttempts=2, idempotency='request')))
-    lose_response(p, lambda: p.get_by_role('button', name='Save draft', exact=True).click())
-    committed = saved_draft(w)
-    assert committed['id'] == incomplete['id'] and committed['generation'] == 2
-    p.get_by_role('button', name='Check result', exact=True).click()
-    expect(p.get_by_role('button', name='Check result', exact=True)).to_have_count(0)
-    assert records(p) == [] and saved_draft(w) == committed
-    p.reload()
-    expect(p.get_by_text('Native compatibility needs repair before publication.', exact=False)).to_have_count(0)
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), json.dumps(dict(maxAttempts=2, idempotency='request')))
-    w.browser_saved = committed
-    w.native_candidate_payload = w.call('GET', w.bundle+'/versions/'+committed['snapshotVersion']['id']+'/payload')
-
-
-@when('I request strict evaluation, run the copied private helper, inspect every bound case and deliberately release')
-def strict_helper_release(context):
-    w = context.world
-    p = w.browser_fixture.page
-    p.get_by_role('link', name='Continue to evaluation', exact=True).click()
-    open_details(p, 'Set up evaluation request')
-    expect(p.get_by_role('button', name='Create evaluation request', exact=True)).to_be_disabled()
-    install_browser_evaluator(w, p)
-    p.get_by_role('button', name='Create evaluation request', exact=True).click()
-    expect(p.get_by_role('status').filter(has_text='Evaluation request created. Run it in your app, then return here for the results.')).to_be_visible()
-    w.browser_request = w.call('GET', w.bundle+'/evaluation-requests')['items'][0]
-    assert w.browser_request['requireBoundEvidence'] is True
-    assert w.call('GET', w.channel)['revision'] == '1'
-    external_app(context)
-    request = w.call('GET', w.bundle+'/evaluation-requests/'+w.browser_request['id'])
-    assert request['status'] == 'completed' and request['evaluatorPrincipal'] == 'evaluator'
-    report = w.call('GET', w.bundle+'/comparisons/'+request['comparisonId'])
-    assert report['complete'] and len(report['results']) == len(report['expectedCases']) == 2
-    assert report['evaluation'] == dict(requestId=request['id'], attemptId=request['attemptId'])
-    assert all(pair[side]['executionStatus'] == 'completed' and pair[side]['gradingStatus'] == 'scored'
-               for pair in report['results'] for side in ['parent','candidate'])
-    assert all(pair['candidate']['reward'] == 1 for pair in report['results'])
-    assert any(pair['parent']['reward'] == 0 for pair in report['results'])
-    assert w.call('GET', w.channel)['revision'] == '1', 'App evaluation must not promote automatically'
-    review_publish(context, expected_verdict='pass')
-    p.get_by_role('tab',name='Details',exact=True).click()
-    open_details(p,'Evidence details')
-    expect(p.locator('.comparison-evidence-binding').get_by_text(request['id'],exact=True)).to_be_visible()
-    expect(p.locator('.comparison-evidence-provenance')).to_contain_text('Attempt '+request['attemptId'])
-    frozen=json.loads(p.get_by_role('region',name='Comparison lookup',exact=True).locator('pre').inner_text())
-    assert frozen['evaluation']==dict(requestId=request['id'],attemptId=request['attemptId'])
-    current = w.call('GET', w.channel)
-    assert current['revision'] == '2' and current['version'] == w.browser_saved['snapshotVersion']
-    w.native_released = current
-
-
-@then('the installed app prepares the released native bytes, observes its actual start and records only optional delivery evidence')
-def delivered_release(context):
-    w = context.world
-    w.native_new_prepared = installed_prepare(w, w.native_released['version'], w.native_candidate_payload, [w.native_old_prepared])
-    assert w.native_new_prepared['appStarted'] and w.native_new_prepared['pending'] == 0
-    receipts = w.call('GET', w.integration_path+'/receipts')['items']
-    selected = [row for row in receipts if row['versionId'] == w.native_released['version']['id']]
-    assert {'resolved','verified','prepared','started'} <= {row['stage'] for row in selected}
-    assert all(row['digest'] == w.native_released['version']['digest'] for row in selected)
-    assert all(not any(key in row for key in ['content','memory','prompt','modelConsumed','sessionId']) for row in selected)
-
-
-@when('I roll back through the browser and the next installed job has an unavailable optional reporting credential')
-def rollback_job(context):
-    w = context.world
-    restore(context)
-    current = w.call('GET', w.channel)
-    assert current['revision'] == '3' and current['version'] == w.original['version']
-    w.native_rolled_back = installed_prepare(w, current['version'], w.native_initial_payload,
-                                           [w.native_old_prepared, w.native_new_prepared], deny_receipt=True)
-
-
-@then('rollback delivery succeeds while both earlier prepared workspaces keep their exact pinned bytes')
-def pinned_rollback(context):
-    w = context.world
-    assert w.native_rolled_back['appStarted'] and w.native_rolled_back['pending'] > 0
-    assert w.native_rolled_back['version'] == w.native_old_prepared['version']
-    assert w.native_new_prepared['version'] != w.native_old_prepared['version']
-    for prepared in [w.native_old_prepared, w.native_new_prepared]:
-        for file in prepared['files']:
-            from pathlib import Path
-            assert Path(file['absolutePath']).read_text() == file['text']
+    job = w.native_old_prepared
+    assert job['version'] == w.original['version']
+    receipts = w.call('GET', w.integration_path + '/receipts')['items']
+    assert {item['stage'] for item in receipts} == {'resolved','downloaded','verified','prepared','started'}
+    assert all(item['versionId'] == job['version']['id'] for item in receipts)

@@ -13,7 +13,7 @@ from scripts.bdd.learning import (
 @given('a job missed retry guidance before the connection released that guidance')
 def earlier_failed_job(context):
     w = context.world
-    enroll_reviews(w, automatic=True)
+    enroll_reviews(w, reserve=True)
     job = w.sdk('delivery', actor='content-reader')
     required_guidance = 'retries'
     assert required_guidance not in job['instruction']
@@ -64,9 +64,10 @@ def delayed_recheck(context, evidence):
     requirement = w.private_review_cases.get(assignment['outcomeId'])
     verdict = 'unavailable'
     if requirement is not None:
-        pinned = w.sdk('delivery', actor='content-reader', versionId=assignment['versionId'])
-        assert pinned['version']['digest'] == assignment['digest']
-        verdict = 'resolved' if requirement in pinned['instruction'] else 'reproduced'
+        version = w.bundle + '/versions/' + assignment['versionId']
+        assert w.call('GET', version, actor='evaluator')['digest'] == assignment['digest']
+        files = w.call('GET', version + '/payload', actor='evaluator')['files']
+        verdict = 'resolved' if any(requirement in f['text'] for f in files if f['kind'] == 'instruction') else 'reproduced'
     w.original_recheck = assignment
     w.recheck_receipt = submit_recheck(w, assignment, verdict)
 
@@ -105,7 +106,7 @@ def correction_survives(context):
 def failed_development(context):
     w = context.world
     w.audit_case = 'held-out-verbatim-instruction'
-    enrollment = review_enrollment(w, automatic=True, development={
+    enrollment = review_enrollment(w, reserve=True, development={
         'code-review': 'code', 'retry-review': 'retries', 'logging-review': 'logging',
     }, audit={w.audit_case: 'Review code.', 'held-out-original': 'code.'})
     # The repair has one gain and two ties. Its small-cohort lower bound must
@@ -196,7 +197,7 @@ def private_audit(context):
 def renamed_audit(context):
     w = context.world
     w.review_development = {'development-retry': 'retries', 'development-backoff': 'backoff'}
-    request = review_enrollment(w, automatic=True, development=w.review_development, audit={'held-out-retry': 'retries'})
+    request = review_enrollment(w, reserve=True, development=w.review_development, audit={'held-out-retry': 'retries'})
     w.prepare_browser_identity()
     w.sign_in('admin', 'operator')
     w.overlap_error = w.call('PUT', w.learning_path, request, actor='admin', expected=409)['error']
@@ -207,15 +208,16 @@ def overlapping_enrollment(context):
     w = context.world
     assert 'overlap' in w.overlap_error['message']
     w.call('GET', w.learning_path, expected=404)
-    delivery = w.call('GET', w.channel, actor='content-reader')
-    assert delivery['version'] == w.original['version'] and delivery['revision'] == w.original['revision']
+    assert w.call('GET', w.channel, actor='content-reader', expected=409)['error']['code'] == 'connected_learning_required'
+    seed, = w.call('GET', w.channel + '/releases')['items']
+    assert seed['version'] == w.original['version'] and seed['revision'] == w.original['revision']
     assert not w.provider.requests
 
 
 @when('I replace the audit with a different review task that has the same expected answer')
 def distinct_audit(context):
     w = context.world
-    enroll_reviews(w, automatic=True, development=w.review_development, audit={
+    enroll_reviews(w, reserve=True, development=w.review_development, audit={
         'held-out-duplicates': 'duplicated effects', 'held-out-idempotency': 'idempotency',
     })
     grade_through_audit(w)
@@ -235,61 +237,21 @@ def verified_distinct_audit(context):
     assert w.call('GET', w.channel, actor='content-reader')['version']['id'] == released['candidateVersionId']
 
 
-@when('another recheck is in flight when a reviewer restores the original instructions')
-def restore_with_pending_recheck(context):
+@when('an administrator tries to restore the previous version while a correction is parked')
+def refuse_restore(context):
     w = context.world
-    assert_correction(w, 'private_evidence_unavailable')
-    peer_id = add_late_correction(w)
-    work = w.call('GET', w.learning_path + '/work', actor='evaluator')
-    w.inflight_recheck, = work['rechecks']
-    assert w.inflight_recheck['correctionId'] == peer_id
-    assert w.inflight_recheck['revision'] == w.original_recheck['revision']
-    original = w.original_delivery
-    w.restoration = w.call('POST', w.learning_path + '/restore', dict(
+    w.call('POST', w.learning_path + '/restore', dict(
         restoreId=str(uuid.uuid4()), expectedRevision=w.current_job['revision'],
-        target=dict(kind='delivery', versionId=original['version']['id'], revision=original['revision']),
-        reason='Restore the previously reviewed instructions.'))
+        target=dict(kind='source', revision=w.original['revision'], versionId=w.original['version']['id']),
+        reason='Manual restore'), actor='admin', expected=404)
 
 
-@then('the old recorded verdict is recoverable and a new stale verdict cannot settle either correction')
-def fresh_rechecks(context):
+@then('the connection still serves the automatic release and preserves the parked correction')
+def parked_release(context):
     w = context.world
-    assert submit_recheck(w, w.original_recheck, 'unavailable') == w.recheck_receipt
-    stale = submit_recheck(w, w.inflight_recheck, 'resolved', expected=409)
-    assert 'current delivery' in stale['error']['message']
-    work = w.call('GET', w.learning_path + '/work', actor='evaluator')
-    assignments = {a['correctionId']: a for a in work['rechecks']}
-    assert set(assignments) == {w.correction_id, w.inflight_recheck['correctionId']}
-    assert all(a['revision'] == w.restoration['revision'] and a['versionId'] == w.restoration['version']['id']
-               for a in assignments.values())
-    w.fresh_recheck = assignments[w.correction_id]
-    assert w.call('GET', w.learning_path)['proposalAdmissions'] == w.before_correction['proposalAdmissions']
+    assert w.call('GET', w.channel, actor='content-reader')['version']['id'] == w.current_job['version']['id']
+    assert_correction(w, 'private_evidence_unavailable')
 
-
-@when('the recovered private evidence reproduces the original failure on the restored revision')
-def reproduce_parked_case(context):
-    w = context.world
-    assignment = w.fresh_recheck
-    current = w.sdk('delivery', actor='content-reader')
-    assert current['version']['digest'] == assignment['digest'] and current['revision'] == assignment['revision']
-    w.private_review_cases[w.delayed_job] = 'retries'
-    assert w.private_review_cases[assignment['outcomeId']] not in current['instruction']
-    receipt = submit_recheck(w, assignment, 'reproduced')
-    assert receipt['accepted'] and submit_recheck(w, assignment, 'reproduced') == receipt
-
-
-@then('exactly one proposal is admitted against the newly restored baseline')
-def readmitted_correction(context):
-    w = context.world
-    w.outcome_id = w.delayed_job
-    candidate = wait_for_round(w, 'development')
-    assert candidate['correctionId'] == w.correction_id
-    assert candidate['parentVersionId'] == w.fresh_recheck['versionId']
-    enrollment = w.call('GET', w.learning_path)
-    assert [r['id'] for r in enrollment['rounds'] if r['correctionId'] == w.correction_id] == [candidate['id']]
-    assert enrollment['proposalAdmissions'] == w.before_correction['proposalAdmissions'] + 1
-    assert enrollment['remainingAudits'] == w.before_correction['remainingAudits']
-    assert w.call('GET', w.channel, actor='content-reader')['revision'] == w.restoration['revision']
 
 @when('the fixture screens a managed proposal in {mode} mode')
 def screen_proposal(context, mode):

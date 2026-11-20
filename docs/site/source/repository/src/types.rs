@@ -77,14 +77,6 @@ pub struct PolicyOverride {
     pub receipts: Vec<PolicyReceiptReference>,
 }
 
-impl PolicyOverride {
-    pub(crate) fn normalized(mut self) -> Self {
-        self.reason = self.reason.trim().to_owned();
-        self.receipts.sort();
-        self
-    }
-}
-
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PromoteRequest {
@@ -92,7 +84,6 @@ pub struct PromoteRequest {
     pub expected_revision: String,
     pub comparison_id: Option<String>,
     pub unevaluated_reason: Option<String>,
-    pub policy_override: Option<PolicyOverride>,
 }
 
 #[derive(Clone, Serialize)]

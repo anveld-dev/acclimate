@@ -161,43 +161,6 @@ test('selected request reads optional progress without allowing activity failure
   assert.deepEqual(reads, ['GET', 'GET']);
 });
 
-test('new requests freeze the selected app configuration and immutable content identities', async () => {
-  const { env, fetcher } = historyFixture();
-  const withCurrentParent: typeof fetch = async (input, init) => {
-    const response = await fetcher(input, init);
-    if (new URL(String(input)).pathname.endsWith('/versions/candidate')) {
-      return Response.json({ ...(await response.json()), parentVersionId: 'current' });
-    }
-    return response;
-  };
-  const configuration = {
-    datasetRevision: 'own-data-v3',
-    graderRevision: 'own-grader-v2',
-    runtime: { configId: 'my-runner', configRevision: '7' },
-    expectedCases: [{ caseId: 'real-work', repetition: 0 }],
-  };
-  const result = await improvement(
-    env,
-    {
-      action: 'evaluate',
-      versionId: 'candidate',
-      expectedRevision: '3',
-      key: '11111111-1111-4111-8111-111111111111',
-      configuration,
-    },
-    withCurrentParent,
-  );
-  assert.equal(result.ok, true);
-  if (!result.ok || !result.command) throw Error('missing prepared command');
-  const body = JSON.parse(result.command.body);
-  assert.deepEqual(body.runtime, configuration.runtime);
-  assert.deepEqual(body.expectedCases, configuration.expectedCases);
-  assert.equal(body.parentVersionId, 'current');
-  assert.equal(body.candidateVersionId, 'candidate');
-  assert.match(body.parentDigest, /^sha256:/);
-  assert.equal(body.requireBoundEvidence, true);
-});
-
 test('a historical candidate stays inspectable against its actual parent without becoming releasable', async () => {
   const { env, fetcher } = historyFixture();
   const result = await improvement(env, { action: 'candidate', versionId: 'candidate' }, fetcher);
@@ -239,52 +202,13 @@ test('suggestion and request pagination use independent cursors and do not masqu
   );
 });
 
-test('a new request requires explicit configuration and never supplies an example default', async () => {
-  const { env, fetcher, calls } = historyFixture();
-  const result = await improvement(
-    env,
-    {
-      action: 'evaluate',
-      versionId: 'candidate',
-      expectedRevision: '3',
-      key: '11111111-1111-4111-8111-111111111111',
-    },
-    fetcher,
-  );
-  assert.equal(result.ok, false);
-  if (!result.ok) assert.match(result.message, /public configuration/);
-  assert.equal(calls.length, 0);
-});
-
-test('reviewing a current candidate freezes the explicitly selected public descriptor before any write', async () => {
+test('retired console mutations leave the service unchanged', async () => {
   const { env, fetcher } = historyFixture();
-  let writes = 0;
-  const prepared = await improvement(
-    env,
-    {
-      action: 'evaluate',
-      versionId: 'candidate',
-      expectedRevision: '3',
-      key: '11111111-1111-4111-8111-111111111111',
-      configuration: appDescriptor,
-    },
-    async (input, init) => {
-      if (init?.method === 'POST') writes++;
-      const response = await fetcher(input, init);
-      if (new URL(String(input)).pathname.endsWith('/versions/candidate')) {
-        const metadata = await response.json();
-        return Response.json({ ...metadata, parentVersionId: 'current' });
-      }
-      return response;
-    },
-  );
-  assert.ok(prepared.ok && prepared.command);
-  assert.equal(writes, 0);
-  const body = JSON.parse(prepared.command.body);
-  assert.equal(body.requireBoundEvidence, true);
-  assert.equal(body.runtime.configId, 'app-agent');
-  assert.equal(body.runtime.configRevision, '1');
-  assert.equal(body.expectedCases.length, 4);
-  assert.equal(body.parentVersionId, 'current');
-  assert.equal(body.candidateVersionId, 'candidate');
+  for (const action of ['promote', 'publish', 'propose', 'evaluate', 'retry']) {
+    const result = await improvement(env, { action }, async (url, init) => {
+      assert.equal(init?.method ?? 'GET', 'GET');
+      return fetcher(url, init);
+    });
+    assert(!result.ok);
+  }
 });

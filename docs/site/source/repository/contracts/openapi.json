@@ -49,7 +49,8 @@
       },
       "put": {
         "operationId": "configureConnectionLearning",
-        "summary": "Enroll a connection in connected learning",
+        "summary": "Authorize automatic rollout for a connection",
+        "description": "A signed-in workspace administrator enrolls this connection with committed development and independent audit cases. Passing learning rounds release automatically.",
         "parameters": [
           {
             "name": "workspaceId",
@@ -1037,11 +1038,13 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PromoteRequest"
+                "$ref": "#/components/schemas/SeedReleaseRequest"
               }
             }
           }
-        }
+        },
+        "summary": "Seed the first release of a bundle",
+        "description": "Creates the initial release from a root version. A bundle can be seeded once across all channel names. Connected learning manages all subsequent releases."
       }
     },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/proposals": {
@@ -2783,34 +2786,6 @@
         ]
       }
     },
-    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/restore": {
-      "post": {
-        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/restore",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "workspaceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "connectionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/renew": {
       "post": {
         "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/renew",
@@ -3538,50 +3513,6 @@
         ]
       }
     },
-    "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish": {
-      "post": {
-        "summary": "POST /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "workspaceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundle",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "channel",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "draft",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
     "/v1/workspaces/{workspaceId}/invitations": {
       "get": {
         "summary": "GET /v1/workspaces/{workspaceId}/invitations",
@@ -3695,42 +3626,6 @@
           },
           {
             "name": "connectionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
-    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/rounds/{round}/review": {
-      "post": {
-        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/rounds/{round}/review",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
-        "parameters": [
-          {
-            "name": "workspaceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "connectionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "round",
             "in": "path",
             "required": true,
             "schema": {
@@ -4342,7 +4237,6 @@
                     "development",
                     "developed",
                     "audit",
-                    "awaiting_review",
                     "promoted",
                     "rejected"
                   ]
@@ -4603,66 +4497,6 @@
           "channel",
           "revision",
           "version"
-        ]
-      },
-      "PromoteRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "versionId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "expectedRevision": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$"
-          },
-          "comparisonId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "unevaluatedReason": {
-            "type": "string",
-            "minLength": 1
-          },
-          "policyOverride": {
-            "$ref": "#/components/schemas/PolicyOverride"
-          }
-        },
-        "required": [
-          "versionId",
-          "expectedRevision"
-        ],
-        "oneOf": [
-          {
-            "required": [
-              "comparisonId"
-            ],
-            "not": {
-              "required": [
-                "unevaluatedReason"
-              ]
-            }
-          },
-          {
-            "required": [
-              "unevaluatedReason"
-            ],
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "comparisonId"
-                  ]
-                },
-                {
-                  "required": [
-                    "policyOverride"
-                  ]
-                }
-              ]
-            }
-          }
         ]
       },
       "Promotion": {
@@ -6650,6 +6484,31 @@
           "bundleId",
           "requestId",
           "descriptor"
+        ]
+      },
+      "SeedReleaseRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedRevision": {
+            "type": "string",
+            "enum": [
+              "0"
+            ]
+          },
+          "unevaluatedReason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "versionId",
+          "expectedRevision",
+          "unevaluatedReason"
         ]
       }
     }

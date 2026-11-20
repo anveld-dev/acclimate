@@ -50,7 +50,7 @@ impl ProposalModel for IncompleteModel {
 }
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn native_save_reload_repair_publication_rollback_and_provider_gate() {
+async fn native_drafts_remain_repairable_and_cannot_change_delivery() {
     let url = common::database_url();
     let db = sqlx::postgres::PgPoolOptions::new()
         .max_connections(5)
@@ -123,12 +123,7 @@ async fn native_save_reload_repair_publication_rollback_and_provider_gate() {
         json!({"expectedGeneration":1,"expectedRevision":"1","unevaluatedReason":"review"}),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{failed}");
-    assert_eq!(failed["error"]["code"], "invalid_compatibility");
-    assert_eq!(
-        failed["error"]["details"]["issues"][0]["code"],
-        "skill_metadata"
-    );
+    assert_eq!(status, StatusCode::NOT_FOUND, "{failed}");
     let (status, repaired) = call(
         &app,
         "POST",
@@ -138,10 +133,10 @@ async fn native_save_reload_repair_publication_rollback_and_provider_gate() {
     .await;
     assert_eq!(status, StatusCode::OK, "{repaired}");
     let (status,published)=call(&app,"POST",&publish,json!({"expectedGeneration":2,"expectedRevision":"1","unevaluatedReason":"reviewed repair"})).await;
-    assert_eq!(status, StatusCode::OK, "{published}");
+    assert_eq!(status, StatusCode::NOT_FOUND, "{published}");
     let promotions = format!("{base}/channels/stable/releases");
     let (status,rollback)=call(&app,"POST",&promotions,json!({"versionId":initial,"expectedRevision":"2","unevaluatedReason":"compatible rollback"})).await;
-    assert_eq!(status, StatusCode::CREATED, "{rollback}");
+    assert_eq!(status, StatusCode::CONFLICT, "{rollback}");
     // Immutable versions can also retain incomplete work; every fresh release checks stored policy.
     let (status, version) = call(
         &app,
@@ -152,7 +147,7 @@ async fn native_save_reload_repair_publication_rollback_and_provider_gate() {
     .await;
     assert_eq!(status, StatusCode::CREATED, "{version}");
     let (status,_)=call(&app,"POST",&promotions,json!({"versionId":version["id"],"expectedRevision":"3","unevaluatedReason":"reject incomplete rollback"})).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
     state.runtime.ownership_acquired();
     let worker = tokio::spawn(proposal_worker(state));
     for (bundle, parent_id, expected) in [

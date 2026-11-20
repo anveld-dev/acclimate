@@ -406,7 +406,6 @@ try {
   };
   await api('PUT', learning(connection), {
     installationId,
-    automaticRollout: false,
     permittedPaths: ['AGENTS.md', 'context.md'],
     maxProposalAdmissions: fiveAdmissions ? 5 : replication ? 1 : 3,
     ...(fiveAdmissions ? { maxCorrectionsPerRound: 1 } : {}),
@@ -524,29 +523,21 @@ try {
         return (await view()).rounds.find(
           (item) =>
             item.outcomeId === outcomeId &&
-            (['awaiting_review', 'rejected', 'promoted'].includes(item.state) ||
+            (['rejected', 'promoted'].includes(item.state) ||
               (!expanded && item.state === 'developed')),
         );
       });
       await recordRound(round);
-      if (round.state === 'awaiting_review') {
-        await reviewRound(round.id);
-        break;
-      }
       if (replication || !(await view()).remainingAudits) break;
     }
     const rounds = fiveAdmissions ? await waitFor('five-admission experiment', async () => {
       const status = await view();
       if (status.rounds.some((item) => ['proposing', 'development', 'audit'].includes(item.state))) return undefined;
-      if (status.rounds.some((item) => item.state === 'awaiting_review') ||
-          status.stoppedAt || !status.remainingAudits ||
+      if (status.stoppedAt || !status.remainingAudits ||
           status.proposalAdmissions >= Math.min(5, outcome.length)) return status.rounds;
       return undefined;
     }) : [];
     for (const round of rounds) await recordRound(round);
-    const review = rounds.find((item) => item.state === 'awaiting_review');
-    if (review) await reviewRound(review.id);
-
     async function recordRound(round: LearningEnrollmentStatus['rounds'][number]) {
       console.log(JSON.stringify({ round }));
       for (const id of [
@@ -567,23 +558,6 @@ try {
         );
     }
 
-    async function reviewRound(roundId: string) {
-      const decisionPath = path.join(scratch, 'operator-decision.json');
-      console.log(JSON.stringify({ reviewDecisionFile: decisionPath, roundId }));
-      const decision = await waitFor('operator review', async () => {
-        const data = await readFile(decisionPath, 'utf8').catch((error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT') return undefined;
-          throw error;
-        });
-        if (!data) return undefined;
-        const value = JSON.parse(data);
-        assert.equal(value.roundId, roundId);
-        assert.equal(typeof value.approve, 'boolean');
-        return value as { roundId: string; approve: boolean };
-      });
-      await api('POST', learning(connection) + '/rounds/' + roundId + '/review', { approve: decision.approve });
-      console.log(JSON.stringify({ operatorDecision: decision }));
-    }
     console.log(JSON.stringify({ final: await view() }));
   }
 } finally {

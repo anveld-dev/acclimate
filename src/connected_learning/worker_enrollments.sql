@@ -4,7 +4,7 @@ LEFT JOIN LATERAL (
     SELECT next_tick_at
     FROM connected_learning_rounds r
     WHERE (r.project_id,r.integration_id)=(e.project_id,e.integration_id)
-      AND r.state IN ('proposing','development','audit','awaiting_review')
+      AND r.state IN ('proposing','development','audit')
     ORDER BY r.created_at,r.id
     LIMIT 1
 ) active_round ON true
@@ -26,7 +26,7 @@ WHERE active_round.next_tick_at <= now()
                   IS DISTINCT FROM (head.baseline_version_id,head.baseline_revision,head.source_revision)
         )
         OR (
-            e.stopped_at IS NULL
+            e.stopped_at IS NULL AND e.rollout_authorized
             AND EXISTS (
                 SELECT 1 FROM integrations i
                 WHERE (i.project_id,i.id)=(e.project_id,e.integration_id) AND i.enabled

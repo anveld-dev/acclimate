@@ -228,7 +228,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/v1/workspaces/{project}/bundles/{bundle}/channels/{channel}/releases",
-            get(channels::list_promotions).post(channels::promote),
+            get(channels::list_promotions).post(channels::seed),
         )
         .route(
             "/v1/workspaces/{project}/bundles/{bundle}/comparisons",

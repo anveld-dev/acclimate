@@ -40,7 +40,7 @@ test('release archives contain installed-app source and independent CI runner, e
     const ci = execFileSync('tar', ['-tzf', join(output, metadata.starters[1].file)], { encoding: 'utf8' });
     assert.ok(ci.includes('ci-starter/ci.py'));
     assert.ok(ci.includes('ci-starter/action.yml'));
-    assert.ok(ci.includes('ci-starter/workflows/release.yml'));
+    assert.ok(!ci.includes('ci-starter/workflows/release.yml'));
     assert.ok(!ci.includes('evaluation/'));
     assert.ok(!ci.includes('/test/'));
     const native = execFileSync('tar', ['-tzf', join(output, metadata.starters[2].file)], { encoding: 'utf8' });

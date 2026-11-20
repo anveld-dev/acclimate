@@ -50,15 +50,15 @@ Feature: Learning from application feedback
     And the failed development round consumes no audit or release
 
   @LEARNING-05
-  Scenario: Withdrawn bytes under a new version ID earn a restore by passing every field replay
+  Scenario: Replaying withdrawn content can requalify a candidate without releasing it
     Given I issued a receipt-write credential
     And an independently graded field job triggered automatic rollback
-    When the source republishes the withdrawn bytes under a new version ID
-    Then the eight original field jobs block restoring those bytes
+    When the evaluator stages the withdrawn bytes under a new version ID
+    Then the candidate must replay the eight original field jobs
     When the application repairs its default code check and replays seven original jobs
-    Then the outstanding job still blocks restore on the current delivery revision
-    When the last original job passes and the reviewer retries the restore after restart
-    Then the connection serves the requalified version with exactly one new release
+    Then the outstanding job still blocks requalification on the current delivery revision
+    When the last original job passes and the service restarts
+    Then the candidate is requalified and the connection still serves the automatic rollback
 
   @LEARNING-06
   Scenario Outline: Every protected repetition must meet its latency ceiling before audit
@@ -84,20 +84,17 @@ Feature: Learning from application feedback
       | 80    | 80     | audit    | 0         |
 
   @LEARNING-07
-  Scenario: A parked correction is reconsidered once on the new delivery revision
+  Scenario: A manual restore cannot move the baseline of a parked correction
     Given a job missed retry guidance before the connection released that guidance
     When the evaluator rechecks its correction with unavailable private evidence
-    And another recheck is in flight when a reviewer restores the original instructions
-    Then the old recorded verdict is recoverable and a new stale verdict cannot settle either correction
-    When the recovered private evidence reproduces the original failure on the restored revision
-    Then exactly one proposal is admitted against the newly restored baseline
+    And an administrator tries to restore the previous version while a correction is parked
+    Then the connection still serves the automatic release and preserves the parked correction
 
   @LEARNING-08
-  Scenario: Only the reviewer who declined a rollout can recover that decision
-    Given I signed in as the configured operator
-    And its audited candidate is awaiting rollout with one blocking policy
-    When the signed-in reviewer declines the rollout and repeats the decision after restart
-    Then a competing reviewer sees who declined and the original delivery is still served
+  Scenario: A blocked audit closes permanently and retains its evidence
+    Given a connected audit is blocked by a recorded application policy
+    When a signed-in administrator tries to approve that blocked round
+    Then the rejection and original delivery survive restart
 
   @LEARNING-09
   Scenario Outline: Fenced feedback and bounded screening settle before evaluation

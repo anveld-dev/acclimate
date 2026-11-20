@@ -97,7 +97,7 @@ def _published_base(client, workspace_id, bundle_id, channel):
     """The channel's current release, or a diagnostic that names the missing baseline."""
     empty = EvaluationError("request.channel_empty", phase="claim", next_action="ask_operator")
     try:
-        current = client.resolve_channel(workspace_id, bundle_id, channel)[0]
+        current = client.inspect_source(workspace_id, bundle_id, channel)
     except ApiError as error:
         # Preflight already found the bundle, so a missing resolution is an unpublished channel.
         if error.status == 404 and error.code == "not_found":
@@ -293,7 +293,7 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
             if not state.get("draft"):
                 draft = _recover(client, "createDraft", scope, draft_body, state["keys"]["draft"])
                 if draft is None:
-                    current = client.resolve_channel(config["workspaceId"], bundle_id, channel)[0]
+                    current = client.inspect_source(config["workspaceId"], bundle_id, channel)
                     if not current or current["version"]["id"] != base["versionId"] or current["revision"] != base["revision"]:
                         raise _fail("request.base_conflict")
                     draft = mutate(client, "createDraft", scope, draft_body, state["keys"]["draft"])
@@ -304,7 +304,7 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
             if not draft.get("id") or draft.get("channel") != channel or draft.get("baseVersionId") != base["versionId"] or draft.get("baseRevision") != base["revision"] or version.get("parentVersionId") != base["versionId"] or version.get("bundleId") != bundle_id or draft.get("generation") != 1:
                 raise _fail()
             if not state.get("request"):
-                current = client.resolve_channel(config["workspaceId"], bundle_id, channel)[0]
+                current = client.inspect_source(config["workspaceId"], bundle_id, channel)
                 if not current or current["version"]["id"] != base["versionId"] or current["revision"] != base["revision"]:
                     raise _fail("request.base_conflict")
                 candidate = resolve_and_cache(client, config["workspaceId"], bundle_id, version_id=version["id"], cache_dir=str(Path(config["journalRoot"]) / "command-cache"))

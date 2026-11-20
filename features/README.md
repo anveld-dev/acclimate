@@ -35,25 +35,25 @@ When behaviors are selected, CI builds the service, packages and console once, t
 
 For local parallel runs, `npm run test:bdd -- --parallel` runs `console.feature` alongside the remaining features. Each process starts its own service and PostgreSQL cluster. The runner combines their results in `artifacts/bdd/` and checks the same inventory as the serial run.
 
-`--dev-console` runs the real Vite server and checks UI module imports before the story. This catches Node-only imports that production bundling can hide. CI runs that draft flow in development mode too. Its reports use `artifacts/bdd-dev/` so a focused dev run preserves the full suite's report.
+`--dev-console` runs the real Vite server and checks UI module imports before the story. This catches Node-only imports that production bundling can hide. CI runs the saved-change inspection in development mode too. Its reports use `artifacts/bdd-dev/` so a focused dev run preserves the full suite's report.
 
 | Stories | What actually runs |
 |---|---|
 | [Setup](setup.feature), [drafts](drafts.feature) | Initial publication, scoped reads, saved generations, collisions, invalid edits, service restart |
 | [Proposals](proposals.feature) | Rust proposer against a deterministic local HTTP model fixture, bounded edits and failure paths |
 | [Evaluation](evaluation.feature) | App-owned paired execution through the public SDK, exact snapshot/settings checks, missing results, failures and recovery |
-| [Releases](releases.feature) | Evidence-bound publication, manual reasons, stale writes, history and rollback |
+| [Releases](releases.feature) | One-time seed, rejection of manual publication and unenrolled delivery |
 | [Access](access.feature) | Real Rust sessions, workspace roles, membership changes and sign-out; fixture login authority |
 | [Integrations](integrations.feature) | Scoped credentials, revocation, truthful receipts and retry identity |
-| [TypeScript SDK](sdk_delivery.feature), [Python SDK](python_sdk.feature) | Public clients, real delivery/cache/files, explicit offline policy and reporting; native plugin preparation |
-| [Console](console.feature), [personal access UI](console_access.feature) | Chromium against the built TanStack console, real service and database; desktop/mobile navigation, import, editing, evaluation, release and access actions |
-| [Combined native walkthrough](native_walk.feature) | Browser Codex-target import, incomplete save/reload/repair, lost-response reconciliation, downloaded handoff and installed evaluator, explicit release, outside-checkout installed SDK/native plugin preparation, actual model-free child start, scoped optional receipts, rollback and unchanged pinned workspaces |
-| [Navigation](navigation.feature) | Canonical scope, cross-tab form targets, bookmarks/Back, one editor, role changes, legacy recovery and unsaved-work guards |
+| [TypeScript SDK](sdk_delivery.feature), [Python SDK](python_sdk.feature) | Public clients, verified connected delivery, outages, files and reporting; native plugin preparation |
+| [Console](console.feature), [personal access UI](console_access.feature) | Chromium against the built TanStack console, real service and database; desktop/mobile navigation, import, read-only changes and release evidence, automatic rollout and access actions |
+| [Combined native walkthrough](native_walk.feature) | Browser import, enrolled connection, and delivery through the packed SDK and native plugin |
+| [Navigation](navigation.feature) | Canonical scope, cross-tab form targets, saved change bookmarks, role changes, legacy recovery and unsaved-work guards |
 | [Local recovery](local_recovery.feature) | Real backend/console processes and private PostgreSQL: stalled/dropped ownership connection, exact release after restart, same console process and clean shutdown; real OIDC browser authentication through the private TLS proxy |
 | [Identity boundary](identity.feature) | Public callback handler against real Rust sessions; fixture external identity provider, transaction binding, expiry, logout and cookie flags |
-| [UX refinements](ux_refinement.feature), [reload recovery](recovery_reload.feature) | Invalid draft correction, explicit reload/cancel, missing files, evaluator edits, direct initial file import and lost-save recovery after browser reload |
+| [UX refinements](ux_refinement.feature), [reload recovery](recovery_reload.feature) | Missing files, initial file import and legacy editing bookmarks |
 
-The reviewed [inventory](../scripts/bdd/inventory.json) records 172 behaviors and 221 scenario variants. Every expected variant must run and pass. A missing, skipped, undefined or failing variant leaves that behavior uncovered. The coverage checker has its own regression tests.
+The reviewed [inventory](../scripts/bdd/inventory.json) records the behaviors and their scenario variants. Every expected variant must run and pass. A missing, skipped, undefined or failing variant leaves that behavior uncovered. The coverage checker has its own regression tests.
 
 After a run, open `artifacts/bdd/coverage.md`. Machine results are in `coverage.json`, `results.json` and `junit/`. Browser failures save screenshots and Playwright traces in `failures/`; these contain disposable fixture data and should still be treated as private. To inspect a trace: `.venv-bdd/bin/playwright show-trace artifacts/bdd/failures/<name>.zip`.
 

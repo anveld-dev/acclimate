@@ -111,8 +111,8 @@ async fn browser_reads_work_with_one_pool_connection_and_machine_prefix_still_wo
         .unwrap();
     assert_eq!(
         response.status(),
-        StatusCode::NOT_FOUND,
-        "configured aci_ machine token must reach content lookup"
+        StatusCode::CONFLICT,
+        "configured aci_ machine token must reach the delivery enrollment check"
     );
     state.db.close().await;
 }

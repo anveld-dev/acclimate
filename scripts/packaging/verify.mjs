@@ -351,7 +351,7 @@ export const { execute, grade } = adapter;
 
     run('sh', ['-n', 'ci.sh'], join(extractedStarters, 'ci-starter'));
     run(pythonExecutable, ['ci.py', '--help'], join(extractedStarters, 'ci-starter'));
-    for (const name of ['action.yml', 'workflows/pr-check.yml', 'workflows/release.yml'])
+    for (const name of ['action.yml', 'workflows/pr-check.yml'])
       if (!(await stat(join(extractedStarters, 'ci-starter', name)).catch(() => null))?.isFile())
         throw new Error(`CI starter is missing ${name}`);
     const native = join(extractedStarters, 'native-repository-starter');

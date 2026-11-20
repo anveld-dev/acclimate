@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compare, submitComparison } from '@acclimate/sdk';
-import { ApiError, resolveAndCache } from '@acclimate/sdk';
+import { resolveAndCache } from '@acclimate/sdk';
 import type { VerifiedVersion, ComparisonRequest } from '@acclimate/sdk';
 import {
   batches,
@@ -71,7 +71,7 @@ try {
   const cached = () => ({ cacheDir: path.join(output, 'cache') });
   const parent = await resolveAndCache(
     client,
-    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
+    { workspaceId: project, bundleId: bundle.id, versionId: parentMeta.id },
     cached(),
   );
   await save('parent.json', parent);
@@ -287,7 +287,7 @@ try {
   assert.equal(candidate.version.digest, candidateDigest);
   assert.equal(createHash('sha256').update(JSON.stringify(dataset)).digest('hex'), frozenDigest);
   await save('review.json', {
-    decision: 'approve disposable qualification release',
+    decision: 'candidate passed the held-out comparison',
     parent: parent.version,
     candidate: candidate.version,
     proposalId,
@@ -299,45 +299,12 @@ try {
     limits:
       'Small synthetic gateway-policy experiment. Application feedback and grading are trusted inputs. No broad benchmark or production autonomy claim.',
   });
-  const promotion = await client.createRelease(
-    project,
-    bundle.id,
-    'qualification',
-    {
-      versionId: candidate.version.id,
-      comparisonId: comparison.id,
-      expectedRevision: initial.revision,
-    },
-    randomUUID(),
-  );
-  const refreshed = await resolveAndCache(
-    client,
-    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
-    cached(),
-  );
-  assert.equal(refreshed.version.id, candidate.version.id);
-  assert.equal(refreshed.stale, false);
-  const fresh = await scoreRuns(refreshed, [release[0]!], 'post-release');
+  const fresh = await scoreRuns(candidate, [release[0]!], 'held-out-candidate');
   assert.equal(fresh.correct, fresh.total, 'Fresh SDK job did not retain the learned behavior');
   const pinned = await scoreRuns(parent, [release[0]!], 'pinned-parent-control');
   assert(
     pinned.correct < fresh.correct,
     'The same future job does not distinguish the pinned old setup',
-  );
-  await assert.rejects(
-    () =>
-      client.createRelease(
-        project,
-        bundle.id,
-        'qualification',
-        {
-          versionId: parent.version.id,
-          expectedRevision: initial.revision,
-          unevaluatedReason: 'Must reject stale release',
-        },
-        randomUUID(),
-      ),
-    (error) => error instanceof ApiError && error.status === 409,
   );
   const summary = {
     passed: true,
@@ -355,17 +322,15 @@ try {
       distinctIncidents: audit.reduce((sum, batch) => sum + batch.incidents.length, 0),
       repetitions: 2,
     },
-    postRelease: {
+    heldOutCandidate: {
       correct: fresh.correct,
       total: fresh.total,
       pinnedParentCorrect: pinned.correct,
-      resolvedVersion: refreshed.version.id,
-      cacheRefreshVerified: true,
+      versionId: candidate.version.id,
     },
     proposalId,
     evaluationId: evaluation.id,
     comparisonId: comparison.id,
-    promotion,
     changedFiles: candidate.payload.files
       .filter((file, index) => file.text !== parent.payload.files[index]!.text)
       .map((file) => ({ path: file.path, kind: file.kind })),
@@ -386,7 +351,7 @@ try {
         passed: true,
         training: summary.training,
         audit: summary.audit,
-        postRelease: summary.postRelease,
+        heldOutCandidate: summary.heldOutCandidate,
         lunaCalls: luna.calls,
         output,
       },

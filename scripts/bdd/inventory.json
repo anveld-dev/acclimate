@@ -129,6 +129,256 @@
     "cases": 1,
     "lane": "service"
   },
+  "LEARNING-01": {
+    "name": "A late correction can settle without another proposal on the current revision",
+    "source": "features/connected_learning.feature",
+    "cases": 2,
+    "lane": "service",
+    "examples": [
+      {
+        "evidence": "available",
+        "state": "resolved"
+      },
+      {
+        "evidence": "unavailable",
+        "state": "private_evidence_unavailable"
+      }
+    ]
+  },
+  "LEARNING-02": {
+    "name": "A proposer repairs measured development losses while held-out cases stay private",
+    "source": "features/connected_learning.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "LEARNING-03": {
+    "name": "Only a distinct review task qualifies as a held-out audit",
+    "source": "features/connected_learning.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "LEARNING-04": {
+    "name": "A retry distinguishes a better score from a failed execution",
+    "source": "features/connected_learning.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "LEARNING-05": {
+    "name": "Replaying withdrawn content can requalify a candidate without releasing it",
+    "source": "features/connected_learning.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "LEARNING-06": {
+    "name": "Every protected repetition must meet its latency ceiling before audit",
+    "source": "features/connected_learning.feature",
+    "cases": 2,
+    "lane": "service",
+    "examples": [
+      {
+        "first": "40",
+        "second": "120",
+        "state": "rejected",
+        "remaining": "1"
+      },
+      {
+        "first": "80",
+        "second": "80",
+        "state": "audit",
+        "remaining": "0"
+      }
+    ]
+  },
+  "LEARNING-07": {
+    "name": "A manual restore cannot move the baseline of a parked correction",
+    "source": "features/connected_learning.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "LEARNING-08": {
+    "name": "A blocked audit closes permanently and retains its evidence",
+    "source": "features/connected_learning.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "LEARNING-09": {
+    "name": "Fenced feedback and bounded screening settle before evaluation",
+    "source": "features/connected_learning.feature",
+    "cases": 4,
+    "lane": "service",
+    "examples": [
+      {
+        "mode": "repair",
+        "result": "repaired"
+      },
+      {
+        "mode": "reject",
+        "result": "critic-rejected"
+      },
+      {
+        "mode": "malformed-once",
+        "result": "format-retried"
+      },
+      {
+        "mode": "malformed",
+        "result": "proposal-format-rejected"
+      }
+    ]
+  },
+  "UI-SETUP-01": {
+    "name": "Create content only after an explicit action",
+    "source": "features/console.feature",
+    "cases": 3,
+    "lane": "browser",
+    "examples": [
+      {
+        "source": "Write instructions",
+        "origin": "created"
+      },
+      {
+        "source": "Import JSON",
+        "origin": "imported"
+      },
+      {
+        "source": "Import files",
+        "origin": "imported"
+      }
+    ]
+  },
+  "UI-SETUP-02": {
+    "name": "Correct a rejected setup without getting stuck on a pending operation",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-CONTENT-01": {
+    "name": "Browse, filter and download published content",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-CONTENT-02": {
+    "name": "Published instructions can be inspected from the console",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-DRAFT-02": {
+    "name": "A historical draft bookmark shows its saved change after restart",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-EVAL-02": {
+    "name": "Incomplete evidence shows all missing grades and unknown cost",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-RELEASE-01": {
+    "name": "Inspect the initial release and the absence of manual restore",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-INTEGRATION-01": {
+    "name": "Issue a one-time credential and revoke it through the console",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-LEARNING-01": {
+    "name": "Inspect a blocked release and its rejection reason",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-LEARNING-02": {
+    "name": "Trace a failed job to the withdrawn release and its independent audit",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-LEARNING-03": {
+    "name": "A reviewer traces a rejected rollout to the regressed audit case",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-LEARNING-04": {
+    "name": "Stopping learning during a passing audit prevents a late automatic rollout",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-STATUS-01": {
+    "name": "A failed refresh shows the last observation without displaying stale content as current",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-NAV-01": {
+    "name": "Main routes remain readable and navigable on desktop and mobile",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-SETUP-03": {
+    "name": "Source changes preview real content and cannot conceal an unresolved publication",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-NAV-02": {
+    "name": "App setup and a scoped connection preserve bundle and channel ownership",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-ACCESS-01": {
+    "name": "Workspace members can inspect content and delivery",
+    "source": "features/console_access.feature",
+    "cases": 2,
+    "lane": "browser",
+    "examples": [
+      {
+        "role": "viewer"
+      },
+      {
+        "role": "editor"
+      }
+    ]
+  },
+  "UI-ACCESS-02": {
+    "name": "Confirm a verified person before granting and removing membership",
+    "source": "features/console_access.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-ACCESS-03": {
+    "name": "Create a workspace from the console",
+    "source": "features/console_access.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-ACCESS-04": {
+    "name": "Existing member roles are visible before identity confirmation",
+    "source": "features/console_access.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-ACCESS-05": {
+    "name": "A lost issuance is reconciled before confirmed revocation and replacement",
+    "source": "features/console_access.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-ACCESS-06": {
+    "name": "A storage cleanup failure cannot hide a successfully issued one-time credential",
+    "source": "features/console_access.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
   "DRAFT-01": {
     "name": "Reopen saved work after a service restart",
     "source": "features/drafts.feature",
@@ -207,7 +457,7 @@
     "lane": "service"
   },
   "DRAFT-11": {
-    "name": "Returning a channel to the same version does not revive a stale draft",
+    "name": "A saved draft stays open after a manual publication attempt",
     "source": "features/drafts.feature",
     "cases": 1,
     "lane": "service"
@@ -467,116 +717,20 @@
     "cases": 1,
     "lane": "service"
   },
-  "LEARNING-01": {
-    "name": "A late correction can settle without another proposal on the current revision",
-    "source": "features/connected_learning.feature",
-    "cases": 2,
-    "lane": "service",
-    "examples": [
-      {
-        "evidence": "available",
-        "state": "resolved"
-      },
-      {
-        "evidence": "unavailable",
-        "state": "private_evidence_unavailable"
-      }
-    ]
-  },
-  "LEARNING-02": {
-    "name": "A proposer repairs measured development losses while held-out cases stay private",
-    "source": "features/connected_learning.feature",
+  "RUNTIME-01": {
+    "name": "Recover from a temporary database stall and a dropped ownership connection",
+    "source": "features/local_recovery.feature",
     "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-03": {
-    "name": "Only a distinct review task qualifies as a held-out audit",
-    "source": "features/connected_learning.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-04": {
-    "name": "A retry distinguishes a better score from a failed execution",
-    "source": "features/connected_learning.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-05": {
-    "name": "Withdrawn bytes under a new version ID earn a restore by passing every field replay",
-    "source": "features/connected_learning.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-06": {
-    "name": "Every protected repetition must meet its latency ceiling before audit",
-    "source": "features/connected_learning.feature",
-    "cases": 2,
-    "lane": "service",
-    "examples": [
-      {
-        "first": "40",
-        "second": "120",
-        "state": "rejected",
-        "remaining": "1"
-      },
-      {
-        "first": "80",
-        "second": "80",
-        "state": "audit",
-        "remaining": "0"
-      }
-    ]
-  },
-  "LEARNING-07": {
-    "name": "A parked correction is reconsidered once on the new delivery revision",
-    "source": "features/connected_learning.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-08": {
-    "name": "Only the reviewer who declined a rollout can recover that decision",
-    "source": "features/connected_learning.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-09": {
-    "name": "Fenced feedback and bounded screening settle before evaluation",
-    "source": "features/connected_learning.feature",
-    "cases": 4,
-    "lane": "service",
-    "examples": [
-      {
-        "mode": "repair",
-        "result": "repaired"
-      },
-      {
-        "mode": "reject",
-        "result": "critic-rejected"
-      },
-      {
-        "mode": "malformed-once",
-        "result": "format-retried"
-      },
-      {
-        "mode": "malformed",
-        "result": "proposal-format-rejected"
-      }
-    ]
+    "lane": "runtime"
   },
   "NATIVE-WALK-01": {
-    "name": "Repair, evaluate, release, deliver and roll back one native-target bundle",
+    "name": "Enroll an imported native bundle and run it through the installed SDK",
     "source": "features/native_walk.feature",
     "cases": 1,
     "lane": "browser"
   },
   "NAV-01": {
     "name": "Workspace navigation and bundle tabs have different jobs",
-    "source": "features/navigation.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "NAV-02": {
-    "name": "Edit the selected published entry in one draft editor",
     "source": "features/navigation.feature",
     "cases": 1,
     "lane": "browser"
@@ -619,18 +773,6 @@
   },
   "NAV-09": {
     "name": "Recover a previous browser's unconfirmed bundle creation without duplicating it",
-    "source": "features/navigation.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "NAV-10": {
-    "name": "Browser Back restores the published entry and its search",
-    "source": "features/navigation.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "NAV-11": {
-    "name": "Switching workspace asks before discarding browser edits",
     "source": "features/navigation.feature",
     "cases": 1,
     "lane": "browser"
@@ -696,13 +838,13 @@
     "lane": "sdk"
   },
   "PYTHON-02": {
-    "name": "Python offline delivery requires explicit permission",
+    "name": "Python requires a current connection for each new job",
     "source": "features/python_sdk.feature",
     "cases": 1,
     "lane": "sdk"
   },
   "PYTHON-03": {
-    "name": "Author, evaluate and publish one snapshot through the Python client",
+    "name": "Author and evaluate one snapshot through the Python client",
     "source": "features/python_sdk.feature",
     "cases": 1,
     "lane": "sdk"
@@ -719,59 +861,35 @@
     "cases": 1,
     "lane": "sdk"
   },
+  "UX-06": {
+    "name": "A retired editing bookmark leads to connected learning after reload",
+    "source": "features/recovery_reload.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
   "RELEASE-01": {
-    "name": "Publish exactly the evaluated draft snapshot",
+    "name": "A complete standalone comparison cannot publish a draft",
     "source": "features/releases.feature",
     "cases": 1,
     "lane": "service"
   },
   "RELEASE-02": {
-    "name": "Evidence for an older saved snapshot cannot publish newer text",
+    "name": "An operator cannot send edited content straight to the source channel",
     "source": "features/releases.feature",
     "cases": 1,
     "lane": "service"
   },
   "RELEASE-03": {
-    "name": "An incomplete comparison cannot justify a measured release",
+    "name": "A second channel name cannot bypass initial setup",
     "source": "features/releases.feature",
     "cases": 1,
     "lane": "service"
   },
   "RELEASE-04": {
-    "name": "A manual publication is labelled as unevaluated",
+    "name": "Delivery requires an enrolled connection",
     "source": "features/releases.feature",
     "cases": 1,
     "lane": "service"
-  },
-  "RELEASE-05": {
-    "name": "Manual publication requires a reason",
-    "source": "features/releases.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "RELEASE-06": {
-    "name": "Roll back through another recorded channel revision",
-    "source": "features/releases.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "RELEASE-07": {
-    "name": "History pagination exposes every release once",
-    "source": "features/releases.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "RELEASE-08": {
-    "name": "A reader cannot publish content",
-    "source": "features/releases.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "RUNTIME-01": {
-    "name": "Recover from a temporary database stall and a dropped ownership connection",
-    "source": "features/local_recovery.feature",
-    "cases": 1,
-    "lane": "runtime"
   },
   "SDK-01": {
     "name": "Resolve and prepare real files from a verified release",
@@ -780,7 +898,7 @@
     "lane": "sdk"
   },
   "SDK-02": {
-    "name": "A fresh job can request the original version by ID after publication",
+    "name": "A fresh job cannot select a version by ID",
     "source": "features/sdk_delivery.feature",
     "cases": 1,
     "lane": "sdk"
@@ -792,7 +910,7 @@
     "lane": "sdk"
   },
   "SDK-04": {
-    "name": "Explicit bounded offline permission can reuse a verified cached release",
+    "name": "A legacy offline option cannot bypass the connection",
     "source": "features/sdk_delivery.feature",
     "cases": 1,
     "lane": "sdk"
@@ -961,369 +1079,8 @@
     "cases": 1,
     "lane": "service"
   },
-  "UI-ACCESS-01": {
-    "name": "Content editing follows current workspace membership",
-    "source": "features/console_access.feature",
-    "cases": 2,
-    "lane": "browser",
-    "examples": [
-      {
-        "role": "viewer",
-        "editing": "unavailable"
-      },
-      {
-        "role": "editor",
-        "editing": "available"
-      }
-    ]
-  },
-  "UI-ACCESS-02": {
-    "name": "Confirm a verified person before granting and removing membership",
-    "source": "features/console_access.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-ACCESS-03": {
-    "name": "Create a workspace from the console",
-    "source": "features/console_access.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-ACCESS-04": {
-    "name": "Existing member roles are visible before identity confirmation",
-    "source": "features/console_access.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-ACCESS-05": {
-    "name": "A lost issuance is reconciled before confirmed revocation and replacement",
-    "source": "features/console_access.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-ACCESS-06": {
-    "name": "A storage cleanup failure cannot hide a successfully issued one-time credential",
-    "source": "features/console_access.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-CONTENT-01": {
-    "name": "Browse, filter and download published content",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-CONTENT-02": {
-    "name": "Add, rename, classify and save a new entry",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-CONTENT-03": {
-    "name": "Rename and remove an entire skill package without orphaning support files",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-DRAFT-01": {
-    "name": "Unsaved navigation asks before discarding text",
-    "source": "features/console.feature",
-    "cases": 2,
-    "lane": "browser",
-    "examples": [
-      {
-        "choice": "keep editing",
-        "outcome": "preserved"
-      },
-      {
-        "choice": "leave editor",
-        "outcome": "discarded"
-      }
-    ]
-  },
-  "UI-DRAFT-02": {
-    "name": "Reopen the exact saved generation after closing the browser and restarting Rust",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-DRAFT-03": {
-    "name": "Explicitly leaving edits before refresh really discards those edits",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-DRAFT-04": {
-    "name": "A pristine new draft follows a newly published release on refresh",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-EVAL-01": {
-    "name": "A reviewer overrides a failed policy to publish the evaluated snapshot",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-EVAL-02": {
-    "name": "Incomplete evidence shows all missing grades and unknown cost",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-EVAL-03": {
-    "name": "Select the native app evaluator without launching a model from the browser",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-EVAL-04": {
-    "name": "Freeze an app supplied evaluator configuration after rejecting malformed intent",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-EVAL-05": {
-    "name": "Recording an interruption never supplies a manual publication reason",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-IMPORT-01": {
-    "name": "Folder import previews nested skill paths before applying them",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-IMPORT-02": {
-    "name": "Rejected imports leave the current browser edits intact",
-    "source": "features/console.feature",
-    "cases": 3,
-    "lane": "browser",
-    "examples": [
-      {
-        "invalid": "a collision"
-      },
-      {
-        "invalid": "invalid UTF-8"
-      },
-      {
-        "invalid": "a flat skill"
-      }
-    ]
-  },
-  "UI-INTEGRATION-01": {
-    "name": "Issue a one-time credential and revoke it through the console",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-KEYBOARD-01": {
-    "name": "Search, rename, dismiss a dialog and change tabs using the keyboard",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-LEARNING-01": {
-    "name": "Refresh a stale rollout approval and acknowledge both blocking policies",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-LEARNING-02": {
-    "name": "Trace a failed job to the withdrawn release and its independent audit",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-LEARNING-03": {
-    "name": "A reviewer traces a rejected rollout to the regressed audit case",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-LEARNING-04": {
-    "name": "Stopping learning during a passing audit prevents a late automatic rollout",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-LEARNING-05": {
-    "name": "A competing reviewer sees the decision that already released the candidate",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-NAV-01": {
-    "name": "Main routes remain readable and navigable on desktop and mobile",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-NAV-02": {
-    "name": "App setup and a scoped connection preserve bundle and channel ownership",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-POLL-01": {
-    "name": "Published content updates without a refresh button",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-POLL-02": {
-    "name": "Keep an unsaved edit across publication and see the latest content after discarding it",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-RECOVERY-01": {
-    "name": "Retrying a lost snapshot response preserves later edits in the same editor",
-    "source": "features/console.feature",
-    "cases": 2,
-    "lane": "browser",
-    "examples": [
-      {
-        "command": "create"
-      },
-      {
-        "command": "save"
-      }
-    ]
-  },
-  "UI-RECOVERY-02": {
-    "name": "Authorization loss cannot settle an uncertain browser write",
-    "source": "features/console.feature",
-    "cases": 2,
-    "lane": "browser",
-    "examples": [
-      {
-        "operation": "draft"
-      },
-      {
-        "operation": "restore"
-      }
-    ]
-  },
-  "UI-RECOVERY-03": {
-    "name": "Reverting to older browser text still preserves edits when a lost save is reconciled",
-    "source": "features/console.feature",
-    "cases": 2,
-    "lane": "browser",
-    "examples": [
-      {
-        "command": "create"
-      },
-      {
-        "command": "save"
-      }
-    ]
-  },
-  "UI-RECOVERY-04": {
-    "name": "Recovering a submitted suggestion preserves a later hypothesis and evidence",
-    "source": "features/console.feature",
-    "cases": 2,
-    "lane": "browser",
-    "examples": [
-      {
-        "recovery": "checking its result"
-      },
-      {
-        "recovery": "retrying exactly"
-      }
-    ]
-  },
-  "UI-RECOVERY-05": {
-    "name": "Another bundle page reconciles the original uncertain save before permitting new writes",
-    "source": "features/console.feature",
-    "cases": 2,
-    "lane": "browser",
-    "examples": [
-      {
-        "destination": "Review release"
-      },
-      {
-        "destination": "Releases"
-      }
-    ]
-  },
-  "UI-RELEASE-01": {
-    "name": "Inspect, download and restore a historical release with a reason",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-RELEASE-02": {
-    "name": "Manually release the reviewed saved generation without requesting evaluation",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-RELEASE-03": {
-    "name": "Review the new current release before retrying a stale restore",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-SETUP-01": {
-    "name": "Create content only after an explicit action",
-    "source": "features/console.feature",
-    "cases": 3,
-    "lane": "browser",
-    "examples": [
-      {
-        "source": "Write instructions",
-        "origin": "created"
-      },
-      {
-        "source": "Import JSON",
-        "origin": "imported"
-      },
-      {
-        "source": "Import files",
-        "origin": "imported"
-      }
-    ]
-  },
-  "UI-SETUP-02": {
-    "name": "Correct a rejected setup without getting stuck on a pending operation",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-SETUP-03": {
-    "name": "Source changes preview real content and cannot conceal an unresolved publication",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-STATUS-01": {
-    "name": "A failed refresh shows the last observation without displaying stale content as current",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UX-01": {
-    "name": "Correct an invalid fresh draft without entering submission recovery",
-    "source": "features/ux_refinement.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UX-02": {
-    "name": "Reload the latest saved generation after keeping browser edits once",
-    "source": "features/ux_refinement.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
   "UX-03": {
     "name": "Recover from a bookmarked content path that does not exist",
-    "source": "features/ux_refinement.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UX-04": {
-    "name": "Keep exact custom evaluator JSON when cancelling navigation",
     "source": "features/ux_refinement.feature",
     "cases": 1,
     "lane": "browser"
@@ -1331,12 +1088,6 @@
   "UX-05": {
     "name": "Create an imported bundle from real instruction and skill files",
     "source": "features/ux_refinement.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UX-06": {
-    "name": "Reopen the committed fresh snapshot after its response is lost and the browser reloads",
-    "source": "features/recovery_reload.feature",
     "cases": 1,
     "lane": "browser"
   }

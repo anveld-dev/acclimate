@@ -39,7 +39,15 @@ def main():
             dict(path='instructions/review.md',kind='instruction',text=literal),
             dict(path='skills/retry-review/SKILL.md',kind='skill',text='---\nname: retry-review\ndescription: Review retries.\n---\nCheck for duplicate side effects.'),
             dict(path='memory/project.md',kind='memory',text='Approved memory: use idempotency keys.')])
-        for _ in range(21): w.manual_release(w.original['version'],reason='Explicit private pagination fixture.')
+        # Model release history already present when upgrading this private database.
+        from uuid import UUID
+        bundle = UUID(w.setup['bundle']['id'])
+        w.h.sql(f"""BEGIN;
+            INSERT INTO promotions (id,project_id,bundle_id,channel,revision,version_id,previous_version_id,reviewer,unevaluated_reason)
+            SELECT gen_random_uuid(),p.project_id,p.bundle_id,p.channel,n.revision,p.version_id,p.version_id,p.reviewer,'Historical release'
+            FROM promotions p CROSS JOIN generate_series(2,22) n(revision)
+            WHERE p.bundle_id='{bundle}' AND p.revision=1;
+            UPDATE channels SET revision=22 WHERE bundle_id='{bundle}' AND name='stable'; COMMIT;""")
         b=w.browser()
         page=b.page
         secrets=[*w.h.tokens.values(),w.h.login_token,w.h.console_token,b.identity.client_secret]
@@ -74,11 +82,9 @@ def main():
         expect(page.get_by_test_id('release-decision')).to_have_count(22)
         expect(page.get_by_role('button',name='Load older releases',exact=True)).to_have_count(0)
         assert business_snapshot(w.h)==original,'Read-only browsing changed stored business state'
-        w.manual_release(w.original['version'],reason='Explicit refresh fixture.')
-        after_release=business_snapshot(w.h)
         page.reload(wait_until='networkidle')
-        expect(page.get_by_role('article',name='Revision 23 · Current',exact=True)).to_be_visible()
-        assert business_snapshot(w.h)==after_release,'Refresh wrote business state'
+        expect(page.get_by_role('article',name='Revision 22 · Current',exact=True)).to_be_visible()
+        assert business_snapshot(w.h)==original,'Refresh wrote business state'
         for path in ['/setup','/access','/content','/improvement','/integrations','/releases','/not-a-page']:
             response=page.goto(b.base+path,wait_until='networkidle')
             assert response.status==404, (path,response.status)
@@ -92,7 +98,7 @@ def main():
         expect(page.get_by_role('button',name='Sign in to fixture',exact=True)).to_be_visible()
         expect(page.get_by_test_id('release-decision')).to_have_count(0)
         assert not any(secret in page.content() for secret in secrets+[cookie['value']])
-        assert business_snapshot(w.h)==after_release,'Denied read wrote business state'
+        assert business_snapshot(w.h)==original,'Denied read wrote business state'
         for asset in (ROOT/'apps/console/.output/public').rglob('*.js'):
             content=asset.read_text()
             assert 'node:crypto' not in content and not any(secret in content for secret in secrets)

@@ -72,13 +72,13 @@ Use the [installed-app evaluator](../examples/evaluation-starter/README.md) to c
 
 The service proposer is disabled by default. An authorized request is recorded and then fails clearly if no provider is configured. To enable it, set `ACCLIMATE_MODEL_ENDPOINT` to a full OpenAI-compatible chat-completions URL, `ACCLIMATE_MODEL_TOKEN`, and `ACCLIMATE_MODEL=gpt-6.2-sol` to have Sol draft candidates. Use any model name your endpoint accepts. The service trims the name and requires 1–256 UTF-8 bytes with no control characters. This setting only selects the service proposer. The app selects the runtime model used to evaluate each candidate. The proposer returns bounded JSON containing `schemaVersion:1`, `edits:[{path,oldText,newText}]` and `rationale`. Exact original-text anchors must be unique and nonoverlapping; only text at existing allowed paths can change. The proposer permits three attempts, a 60-second call deadline, 32KiB edit content and a 256KiB transport envelope, with an 8192 completion-token request cap. Large unchanged bundle files do not need to be echoed. Model attempts are bounded, may still incur cost after a timeout, and never run tools.
 
-A reviewer promotes a candidate using its comparison ID and expected current channel revision. Evidence must bind the exact candidate, its parent, and the current channel version. Scores are app-reported; a person decides whether they justify promotion. Seed, manual edit, and rollback use an explicit unevaluated reason.
+An administrator seeds a new bundle and enrolls a connection with committed evaluation fixtures. The connected worker screens each change, checks development and audit evidence, and updates only that connection. Each job resolves its enrolled channel once. [Connected learning](../contracts/learning.md)
 
 ## Request a service-generated edit
 
 With the service's proposer configured, use `npm run example:improve -- run-service --live`. The service requests and persists the candidate; the app makes up to four Luna calls to compare it on the saved cases. This path stops before promotion. `run --live` remains the separate direct-author example.
 
-The operator CLI also exposes `request-proposal`, `proposal`, `review`, `history`, `promote`, and `rollback`. [Review and release commands](../tools/operator/README.md) show the full syntax. History reads require `read` access and support bounded cursor pagination. Treat output references as data; the CLI never fetches arbitrary evidence URLs.
+The operator CLI supports `request-proposal`, `proposal`, `review`, and `history`. [Operator commands](../tools/operator/README.md)
 
 ## Run a real improvement review
 
@@ -90,13 +90,13 @@ npm run example:improve -- run --live
 
 This authorizes one `gpt-6.2-sol` draft and up to four `gpt-6-luna` reviews across two saved cases and both bundle versions. The app uses the Codex SDK and publishes through `createVersion`. Set `ACCLIMATE_CODEX_MODEL` to override the review model with `gpt-5.6-luna`. The grader is separate from version identity. The private output directory contains both payloads, a before/after skill artifact, per-case responses and `summary.json`. Review those files; no candidate is promoted automatically.
 
-To inspect the proposed promotion, use `npm run example:improve -- promote --summary /private/path/summary.json`. Applying it also requires `--apply --expected-revision REV`. The service still rejects incomplete evidence, stale revisions and mismatched parents.
+Open the saved summary to inspect the compared versions and their results. Standalone comparisons provide advisory evidence. Enroll the application to enable automatic release decisions.
 
 For a disposable end-to-end qualification, `EVALUATION_TEST_DATABASE_URL=... python scripts/qualify-improvement.py --live` starts the service against the disposable database, verifies Python delivery, runs the Sol draft and Luna reviews, and stops the service. Evidence is retained privately for review.
 
 ## Qualify the whole roadmap
 
-`npm run qualify:full-roadmap -- --output /new/private/evidence` starts an owned private PostgreSQL cluster and disposable service without using ambient database configuration and runs the full flow with a deterministic backend. Add the explicit `:live` script to authorize one Luna proposer call and four app evaluations. It uses a local authenticated SDK-backed compatibility adapter, not a production gateway or a direct vendor API qualification. The fixture operator then exercises review, promotion, pinned old content, refreshed new content, history pages and rollback only on its newly created channel.
+`npm run qualify:full-roadmap -- --output /new/private/evidence` starts an isolated service, verifies the app-owned comparison, and checks that the source history still contains the seed. The connected-learning qualification exercises actual rollout and rollback.
 
 See [Full qualification](../scripts/full-roadmap/README.md) and [Deploy and restore](../deploy/README.md). Production model credentials, TLS, hosting and retention remain operator choices. External provider, OIDC, HTTPS and container status is recorded separately in the [qualification ledger](architecture/productization/remediation/shipping-evidence.md). Run the opt-in external harness only against explicitly configured qualification resources.
 

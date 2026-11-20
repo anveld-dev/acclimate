@@ -250,9 +250,9 @@ function ScopedPage() {
       </div>
     );
   const description = {
-    content: 'The instructions, skills and memory your app receives.',
-    changes: 'Edit, evaluate and review updates before publishing.',
-    releases: 'See what shipped or restore an earlier release.',
+    content: 'The starting instructions, skills and memory for connected apps.',
+    changes: 'Inspect the changes and evaluation results for this bundle.',
+    releases: 'Inspect the versions released on this channel.',
     connect: 'Use this bundle in your agent app.',
   }[view];
   const identity = `${state.actorScope}:${scope.workspaceId}:${scope.bundleId}:${scope.channel}`;

@@ -109,8 +109,7 @@ fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
         {
             Some(&["promote"])
         }
-        // An evaluator stages its candidate as a draft; saving over, discarding
-        // and publishing drafts still require `write` or `promote`.
+        // Evaluators stage candidates as drafts. Changing or discarding one requires write.
         ["bundles", b, "channels", c, "drafts"] if uuid(b) && crate::channels::valid_channel(c) => {
             Some(&["evaluate"])
         }
@@ -119,6 +118,7 @@ fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
         {
             Some(&["write"])
         }
+        // Historical publication receipts remain inspectable.
         ["bundles", b, "channels", c, "drafts", d, "publish"]
             if uuid(b) && uuid(d) && crate::channels::valid_channel(c) =>
         {
@@ -515,7 +515,6 @@ pub(crate) struct DurableCommand {
     key: String,
     request: Value,
     principal_owned: bool,
-    legacy_request: Option<Value>,
     optional_retry_field: Option<&'static str>,
 }
 
@@ -524,7 +523,6 @@ struct DurableReceipt {
     principal_id: String,
     request: Option<Value>,
     legacy_fingerprint: Option<String>,
-    legacy_normalized: bool,
     response: Value,
 }
 
@@ -544,7 +542,6 @@ impl DurableCommand {
             key: key.to_string(),
             request,
             principal_owned: false,
-            legacy_request: None,
             optional_retry_field: None,
         }
     }
@@ -591,11 +588,6 @@ impl DurableCommand {
         Ok(Json(response))
     }
 
-    pub(crate) fn with_legacy_request(mut self, request: Value) -> Self {
-        self.legacy_request = Some(request);
-        self
-    }
-
     /// Some older clients repeat a report without the attempts sent by the
     /// evaluator. Match that abbreviated retry only when the field is absent.
     pub(crate) fn with_optional_retry_field(mut self, field: &'static str) -> Self {
@@ -609,7 +601,7 @@ impl DurableCommand {
         conflict: impl FnOnce() -> crate::ApiErr,
     ) -> ApiResult<Option<Value>> {
         let stored: Option<DurableReceipt> = sqlx::query_as(
-            "SELECT principal_id,request,legacy_fingerprint,legacy_normalized,response FROM durable_commands
+            "SELECT principal_id,request,legacy_fingerprint,response FROM durable_commands
              WHERE (project_id,scope,key)=($1,$2,$3) AND (NOT $4 OR principal_id=$5)",
         )
         .bind(&self.project)
@@ -630,7 +622,6 @@ impl DurableCommand {
             fingerprint == crate::digest(&serde_json::to_vec(&self.request).map_err(db)?)
         } else {
             stored.request.as_ref() == Some(&self.request)
-                || (stored.legacy_normalized && stored.request == self.legacy_request)
                 || self.optional_retry_field.is_some_and(|field| {
                     if self.request.get(field).is_some() {
                         return false;

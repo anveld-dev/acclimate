@@ -509,7 +509,7 @@ def inspect_case_and_scores(p):
     case = json.loads(workspace.get_by_label('Case evidence JSON').inner_text())
     assert case['comparisonId'] and case['parentVersionId'] and case['candidateVersionId']
     workspace.get_by_role('button',name='View case JSON',exact=True).click()
-    p.get_by_role('tab',name='Details',exact=True).click()
+    p.get_by_role('button',name='Run details',exact=True).click()
     return p.get_by_role('region',name='Observed paired rewards',exact=True)
 
 
@@ -624,7 +624,7 @@ def honest_incomplete(context):
 
 @then('measured publication is unavailable')
 def no_measured(context):
-    expect(page(context).get_by_role('button',name='Review release with this evidence',exact=True)).to_be_disabled()
+    expect(page(context).get_by_role('button',name='Review release with this evidence',exact=True)).to_have_count(0)
 
 
 @when('I inspect the old release and restore it through the console')
@@ -789,7 +789,7 @@ def routes(context):
     # Wait for a data-backed result or route action before measuring each layout.
     routes = {
         '/content': lambda page: page.get_by_test_id('entry-content'),
-        '/improvement': lambda page: page.get_by_role('link', name='New draft', exact=True),
+        '/improvement': lambda page: page.get_by_role('link', name='View connections and learning rounds', exact=True),
         '/releases': lambda page: page.get_by_test_id('release-decision').first,
         '/setup': lambda page: page.get_by_role('link', name='BDD bundle', exact=True),
         '/integrations': lambda page: page.get_by_role('button', name='New connection', exact=True),
@@ -881,3 +881,38 @@ def discarded_to_current(context, text):
     w = context.world
     expect(page(context).get_by_test_id('entry-content')).to_contain_text(text)
     assert w.call('GET', w.channel + '/drafts')['items'] == []
+
+@then('the content shows the instructions without a manual edit action')
+def view_published(context):
+    p = page(context)
+    expect(p.get_by_test_id('entry-content')).to_have_text('Review code.')
+    expect(p.get_by_role('link', name='Edit entry', exact=True)).to_have_count(0)
+
+
+@when('I reopen the saved draft bookmark')
+def reopen_saved_change(context):
+    w = context.world
+    browser = w.browser()
+    browser.visit(browser.bundle_path('changes', draft=w.draft['id']))
+
+
+@then('I can inspect its change without a publication action')
+def inspect_saved_change(context):
+    p = page(context)
+    expect(p.get_by_text('Saved draft', exact=True)).to_be_visible()
+    expect(p.locator('.content-diff')).to_contain_text('Review retries.')
+    expect(p.get_by_role('button', name='Review manual release')).to_have_count(0)
+
+
+@when('I open its release history')
+def open_seed_history(context):
+    browser = context.world.browser()
+    browser.visit(browser.bundle_path('releases'))
+
+
+@then('the console shows the seed and has no restore action')
+def view_seed_history(context):
+    p = page(context)
+    expect(p.get_by_test_id('release-decision')).to_have_count(1)
+    expect(p.get_by_test_id('release-decision')).to_contain_text('Revision 1')
+    expect(p.get_by_role('button', name=re.compile('restore', re.I))).to_have_count(0)

@@ -1,5 +1,6 @@
 .changes-overview {
   container: changes-overview / inline-size;
+  width: 100%;
   max-width: 1440px;
   margin-inline: auto;
   min-width: 0;

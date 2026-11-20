@@ -27,7 +27,8 @@ if (!workspaceId || !baseUrl || !scope)
   throw new Error('Set ACCLIMATE_WORKSPACE, ACCLIMATE_URL and ACCLIMATE_SCOPE.');
 const token = process.env.ACCLIMATE_TOKEN;
 const bundleId = process.env.ACCLIMATE_BUNDLE;
-if (!token || !bundleId) throw new Error('Set ACCLIMATE_TOKEN and ACCLIMATE_BUNDLE.');
+const connectionId = process.env.ACCLIMATE_CONNECTION;
+if (!token || !bundleId || !connectionId) throw new Error('Set ACCLIMATE_TOKEN, ACCLIMATE_BUNDLE and ACCLIMATE_CONNECTION.');
 const model = process.env.ACCLIMATE_CODEX_MODEL ?? 'gpt-6-luna';
 if (!['gpt-6-luna', 'gpt-5.6-luna'].includes(model))
   throw new Error('Only Luna models are allowed.');
@@ -36,6 +37,7 @@ const client = new AcclimateClient({
   baseUrl,
   token,
   scope,
+  connectionId,
 });
 const verified = await resolveAndCache(
   client,

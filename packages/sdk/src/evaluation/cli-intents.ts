@@ -301,14 +301,14 @@ async function publishedBase(
   const empty = () =>
     new EvaluationError('request.channel_empty', { phase: 'claim', nextAction: 'ask_operator' });
   const current = await transport.client
-    .resolveChannel(workspaceId, bundleId, channel)
+    .inspectSource(workspaceId, bundleId, channel)
     .catch((error: unknown) => {
       // Preflight already found the bundle, so a missing resolution is an unpublished channel.
       if (error instanceof ApiError && error.status === 404 && error.code === 'not_found') throw empty();
       throw error;
     });
-  if (!current.resolution) throw empty();
-  return current.resolution;
+  if (!current) throw empty();
+  return current;
 }
 
 /**
@@ -538,10 +538,10 @@ export async function createRequestFromIntent(options: {
           fixed.keys.draft,
         )) ?? undefined;
       if (!fixed.draft) {
-        const current = await transport.client.resolveChannel(config.workspaceId, bundleId, channel);
+        const current = await transport.client.inspectSource(config.workspaceId, bundleId, channel);
         if (
-          current.resolution?.version.id !== fixed.base.versionId ||
-          current.resolution.revision !== fixed.base.revision
+          current?.version.id !== fixed.base.versionId ||
+          current.revision !== fixed.base.revision
         )
           throw fail('request.base_conflict');
         lock.assertOwned();
@@ -566,10 +566,10 @@ export async function createRequestFromIntent(options: {
     )
       throw fail();
     if (!fixed.request) {
-      const current = await transport.client.resolveChannel(config.workspaceId, bundleId, channel);
+      const current = await transport.client.inspectSource(config.workspaceId, bundleId, channel);
       if (
-        current.resolution?.version.id !== fixed.base.versionId ||
-        current.resolution.revision !== fixed.base.revision
+        current?.version.id !== fixed.base.versionId ||
+        current.revision !== fixed.base.revision
       )
         throw fail('request.base_conflict');
       const candidate = await resolveAndCache(

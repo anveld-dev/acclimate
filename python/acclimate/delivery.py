@@ -191,26 +191,14 @@ def _fallback(exc: Exception) -> bool:
     )
 
 
-def _offline_policy(offline: Any) -> tuple[float | None, str | None]:
+def _offline_pin(offline: Any, channel: str | None) -> str | None:
     if offline is None:
-        return None, None
-    if not isinstance(offline, dict) or len(offline) != 1:
-        raise UsageError(
-            'offline must be {"max_age_ms": milliseconds} or {"pinned_version_id": version_id}', "offline"
-        )
-    if "max_age_ms" in offline:
-        age = offline["max_age_ms"]
-        if isinstance(age, bool) or not isinstance(age, (int, float)) or not 0 <= age <= 30 * 86400 * 1000:
-            raise UsageError("offline max_age_ms must be between 0 and 30 days", "offline.max_age_ms")
-        return float(age), None
-    if "pinned_version_id" in offline:
-        pinned = offline["pinned_version_id"]
-        if not isinstance(pinned, str) or not pinned:
-            raise UsageError("offline pinned_version_id must be a version ID", "offline.pinned_version_id")
-        return None, pinned
-    raise UsageError(
-        'offline must be {"max_age_ms": milliseconds} or {"pinned_version_id": version_id}', "offline"
-    )
+        return None
+    if channel is None and isinstance(offline, dict) and set(offline) == {"pinned_version_id"}:
+        pin = offline["pinned_version_id"]
+        if isinstance(pin, str) and pin:
+            return pin
+    raise UsageError("Offline reads require an exact version. New jobs resolve the connection online.", "offline")
 
 
 def resolve_and_cache(
@@ -225,16 +213,10 @@ def resolve_and_cache(
     max_cache_bytes: int = 20 * 1024 * 1024,
     reporter=None,
 ) -> VerifiedVersion:
-    """Resolve online by default.
-
-    ``offline`` permits cached fallback only on a transport failure or HTTP 503.
-    Pass ``{"max_age_ms": n}`` to accept a cached channel resolution up to ``n``
-    milliseconds old, or ``{"pinned_version_id": id}`` to accept that exact
-    cached version. This matches the TypeScript ``offline`` option.
-    """
+    """Resolve a channel online, or inspect an exact version with optional pinned cache fallback."""
     if (channel is None) == (version_id is None):
         raise UsageError("Select exactly one channel or version_id", "selection")
-    offline_max_age_ms, offline_pinned_version = _offline_policy(offline)
+    offline_pinned_version = _offline_pin(offline, channel)
     if not 1 <= max_cache_bytes <= 1024 * 1024 * 1024:
         raise UsageError("invalid max_cache_bytes", "max_cache_bytes")
     fd = _private_dir(cache_dir)
@@ -244,62 +226,34 @@ def resolve_and_cache(
     resolution = None
     try:
         if channel is not None:
-            key = _key(client, workspace_id, bundle_id, "channel", channel)
+            key = _key(client, workspace_id, bundle_id, "learning-channel", channel)
             old = _read(fd, key)
-            try:
-                response, etag, not_modified = client.resolve_channel(
-                    workspace_id,
-                    bundle_id,
-                    channel,
-                    etag=old.get("etag") if isinstance(old, dict) else None,
-                )
-                if not_modified:
-                    if not isinstance(old, dict) or not old.get("resolution"):
-                        raise DeliveryError("cache_miss", "304 without cached mapping")
-                    resolution = old["resolution"]
-                    etag = etag or old.get("etag")
-                else:
-                    resolution = response
-                if (
-                    not isinstance(resolution, dict)
-                    or resolution.get("channel") != channel
-                    or not isinstance(resolution.get("revision"), str)
-                    or not re.fullmatch(r"[0-9]+", resolution["revision"])
-                ):
-                    raise DeliveryError(
-                        "invalid_response", "Malformed channel resolution"
-                    )
-                _version(resolution.get("version"), bundle_id)
-                _write(
-                    fd, key, {"resolution": resolution, "resolvedAt": now, "etag": etag}
-                )
-            except (TransportError, ApiError) as e:
-                if (
-                    not _fallback(e)
-                    or not isinstance(old, dict)
-                    or not isinstance(old.get("resolvedAt"), (int, float))
-                    or not isinstance(old.get("resolution"), dict)
-                ):
-                    raise
+            response, etag, not_modified = client.resolve_channel(
+                workspace_id,
+                bundle_id,
+                channel,
+                etag=old.get("etag") if isinstance(old, dict) else None,
+            )
+            if not_modified:
+                if not isinstance(old, dict) or not old.get("resolution"):
+                    raise DeliveryError("cache_miss", "304 without cached mapping")
                 resolution = old["resolution"]
-                _version(resolution.get("version"), bundle_id)
-                if (
-                    resolution.get("channel") != channel
-                    or not isinstance(resolution.get("revision"), str)
-                    or not re.fullmatch(r"[0-9]+", resolution["revision"])
-                ):
-                    raise DeliveryError("invalid_cache", "Malformed cached resolution")
-                age = max(0, now - old["resolvedAt"])
-                if not (
-                    (offline_max_age_ms is not None and age * 1000 <= offline_max_age_ms)
-                    or (
-                        offline_pinned_version is not None
-                        and resolution["version"]["id"] == offline_pinned_version
-                    )
-                ):
-                    raise
-                stale = True
-                resolved_at = old["resolvedAt"]
+                etag = etag or old.get("etag")
+            else:
+                resolution = response
+            if (
+                not isinstance(resolution, dict)
+                or resolution.get("channel") != channel
+                or not isinstance(resolution.get("revision"), str)
+                or not re.fullmatch(r"[0-9]+", resolution["revision"])
+            ):
+                raise DeliveryError(
+                    "invalid_response", "Malformed channel resolution"
+                )
+            _version(resolution.get("version"), bundle_id)
+            _write(
+                fd, key, {"resolution": resolution, "resolvedAt": now, "etag": etag}
+            )
             version = resolution["version"]
         else:
             assert version_id is not None

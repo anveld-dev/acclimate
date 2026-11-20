@@ -14,6 +14,7 @@ for (const pinned of config.pinned || []) {
 const readClient = new AcclimateClient({
   baseUrl: config.baseUrl,
   token: config.readToken,
+  connectionId: config.connectionId,
   scope: 'native-walk-read-' + config.connectionId,
   retries: 0,
   timeoutMs: 2000,

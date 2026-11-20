@@ -8,7 +8,6 @@ export type LearningSetup = {
   descriptors: string;
   outcomePrincipal: string;
   evaluatorPrincipal: string;
-  automaticRollout: boolean;
   automaticRollback?: boolean;
   selectionPolicies?: string;
   createSkillNames?: string;
@@ -206,7 +205,6 @@ export function learningPolicy(input: unknown): LearningEnrollmentRequest {
     installationId,
     outcomePrincipal,
     evaluatorPrincipal,
-    automaticRollout,
     automaticRollback,
   } = input;
   if (!bounded(installationId, 128))
@@ -227,7 +225,7 @@ export function learningPolicy(input: unknown): LearningEnrollmentRequest {
     maxProposalAdmissions > 100
   )
     throw Error('Enter a proposal limit from 1 to 100.');
-  if (typeof automaticRollout !== 'boolean') throw Error('Choose a rollout policy.');
+  if (input.automaticRollout === false) throw Error('Connected learning requires automatic rollout.');
   if (automaticRollback !== undefined && typeof automaticRollback !== 'boolean')
     throw Error('Choose a post-rollout policy.');
   const imported = parseDescriptors(input.descriptors);
@@ -244,7 +242,6 @@ export function learningPolicy(input: unknown): LearningEnrollmentRequest {
       'Import one development descriptor and 1–32 audit descriptors from your evaluator.',
     );
   if (
-    automaticRollout &&
     [imported.development, ...imported.audits].some(
       (item) => item.fixtureProtocol !== 'installed-v1',
     )
@@ -282,7 +279,6 @@ export function learningPolicy(input: unknown): LearningEnrollmentRequest {
     ...(skills.createSkillNames.length || skills.retireSkillNames.length
       ? { skillPackages: skills }
       : {}),
-    automaticRollout,
     ...(automaticRollback === undefined ? {} : { automaticRollback }),
     outcomePrincipal: outcomePrincipal.trim(),
     evaluatorPrincipal: evaluatorPrincipal.trim(),

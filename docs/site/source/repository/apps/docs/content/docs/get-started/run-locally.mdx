@@ -143,7 +143,7 @@ acclimate compare --config "$EVALUATOR_CONFIG" \
 
 In a terminal the CLI prints the parent and candidate means, pair coverage, and per-case scores. With `--json`, or when output is piped, it writes one JSON object instead. The change appears in the console under **Changes → Ready to review**, labeled `first-change`. The stack has no model provider of its own. Your agent makes any model calls with its own credentials. The Python `acclimate` command and `python -m acclimate` run the same CLI.
 
-The local evaluator credential can compare changes but cannot release them. Release a reviewed change from the console.
+The local evaluator credential can compare changes. For automatic delivery, enroll the app and run its connected evaluator. [Set up connected learning](/docs/guides/connected-learning)
 
 ## Stop or reset
 

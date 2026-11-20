@@ -183,7 +183,7 @@ def qualify(h):
         return comparison
 
     partial = evaluation([], 'failed')
-    h.call('POST', d + '/publish', dict(expectedGeneration=2, expectedRevision='1', comparisonId=partial['id']), status=409)
+    h.call('POST', d + '/publish', dict(expectedGeneration=2, expectedRevision='1', comparisonId=partial['id']), status=404)
     failed_outcome = dict(executionStatus='infrastructure_failed', gradingStatus='failed', reward=None, error='Synthetic executor failure')
     evaluation([dict(caseId='retry', repetition=0, parent=failed_outcome, candidate=failed_outcome)], 'failed')
     interrupted = h.call('POST', b + '/evaluation-requests', dict(**settings, requireBoundEvidence=True))
@@ -198,15 +198,13 @@ def qualify(h):
         reward = int('retries' in content['files'][0]['text'])
         outcomes.append(dict(executionStatus='completed', gradingStatus='scored', reward=reward, usage={'costUsd': 0}))
     complete = evaluation([dict(caseId='retry', repetition=0, parent=outcomes[0], candidate=outcomes[1])], 'completed')
-    newer = h.call('POST', channel + '/drafts', draft_body)
-    newer_path = channel + '/drafts/' + newer['id']
-    h.call('POST', newer_path + '/save', dict(expectedGeneration=1, payload=payload('Unreviewed newer content.')))
-    h.call('POST', newer_path + '/publish', dict(expectedGeneration=2, expectedRevision='1', comparisonId=complete['id']), status=409)
-    h.call('POST', d + '/publish', dict(expectedGeneration=2, expectedRevision='0', comparisonId=complete['id']), status=409)
-    published = h.call('POST', d + '/publish', dict(expectedGeneration=2, expectedRevision='1', comparisonId=complete['id']))
-    assert published['status'] == 'published'
-    assert h.call('GET', channel)['version'] == candidate
-    return dict(bundleId=setup['bundle']['id'], version=candidate, flows=['empty setup', 'second project scope denial', 'draft save and history', 'stale generation denial', 'real service restart/reopen', 'app-owned model-free evaluation', 'partial and failed comparison', 'other evaluator denial', 'interruption', 'revision conflict', 'matching draft publication', 'ambiguous save recovery after cache expiry/restart', 'same-key replay and changed-body denial'])
+    h.call('POST', d + '/publish', dict(expectedGeneration=2, expectedRevision='1', comparisonId=complete['id']), status=404)
+    blocked = h.call('POST', channel + '/releases', dict(versionId=candidate['id'], expectedRevision='1',
+                     comparisonId=complete['id']), status=409)
+    assert blocked['error']['code'] == 'connected_learning_required'
+    seed, = h.call('GET', channel + '/releases')['items']
+    assert seed['version'] == parent
+    return dict(bundleId=setup['bundle']['id'], version=candidate, seed=parent, flows=['empty setup', 'second project scope denial', 'draft save and history', 'stale generation denial', 'real service restart/reopen', 'app-owned model-free evaluation', 'partial and failed comparison', 'other evaluator denial', 'interruption', 'automatic-only release enforcement', 'ambiguous save recovery after cache expiry/restart', 'same-key replay and changed-body denial'])
 
 
 def main():
@@ -229,7 +227,7 @@ def main():
         config.write_text(json.dumps(dict(baseUrl=h.base, token=h.tokens['operator'], project=h.project, **result)))
         config.chmod(0o600)
         subprocess.run(['node', str(consumer / 'consumer.mjs'), str(config)], cwd=consumer, check=True)
-        result['flows'].append('clean packed SDK resolve/pin/prepare')
+        result['flows'].append('packed SDK seed and candidate inspection')
         print(json.dumps(result, indent=2))
     finally:
         h.close()

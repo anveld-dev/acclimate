@@ -1,6 +1,6 @@
 # Acclimate glossary
 
-Versioned delivery is available now. The self-improvement loop ships in a later phase.
+Acclimate combines versioned delivery with a self-improvement loop for enrolled bundles.
 
 | Term | Meaning |
 | --- | --- |
@@ -16,7 +16,7 @@ Versioned delivery is available now. The self-improvement loop ships in a later 
 | Evolve split | The cases the loop learns from. Their scores, traces and errors reach the optimizer. |
 | Held-out split | Fixed cases kept in the evaluator's own store. Their scores are shown for monitoring and never reach the optimizer. |
 | Outcome | An application's result for a task with an expected answer. It becomes an evolve case. |
-| Improvement memory | The optimizer-only record of problems and the attempts that tried to fix them. It is never delivered to jobs. |
+| Improvement memory | The optimizer-only record of problems and adopted attempts, including predicted fixes and measured results. It is never delivered to jobs. |
 | App principal | The machine identity that submits outcomes and evolve cases and runs the evaluator for a loop. |
 
 ## Internal terms

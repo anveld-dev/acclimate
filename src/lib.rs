@@ -18,6 +18,7 @@ pub mod compatibility;
 mod integrations;
 mod invitations;
 mod learning;
+pub use learning::optimizer::{ModelError, ModelFuture, OpenAiModel, OptimizerModel};
 pub use learning::worker::learning_worker;
 mod machine_tokens;
 pub mod mail;
@@ -41,6 +42,7 @@ pub struct AppState {
     pub grants: Arc<Vec<Grant>>,
     pub access: Arc<AccessConfig>,
     pub runtime: Arc<RuntimeStatus>,
+    pub optimizer: Option<Arc<dyn OptimizerModel>>,
 }
 #[derive(Debug)]
 pub(crate) struct ApiErr(StatusCode, &'static str, String, Option<Value>);

@@ -6,4 +6,4 @@ Acclimate stores versioned harness files and resolves a named channel for each j
 
 Publish content in a workspace and grant read access through a connection. New jobs receive the current release. An older version can be released again while active jobs keep their pinned files.
 
-The [self-improvement design](improvement.md) adds an always-on loop with application-run evaluations in a later phase.
+The [self-improvement design](improvement.md) describes the always-on learning loop and its application-run evaluations.

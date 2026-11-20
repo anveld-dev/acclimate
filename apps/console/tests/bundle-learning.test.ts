@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { LearningLoop, LearningLoopRequest, LearningRoundSummary } from '@acclimate/sdk';
+import type {
+  LearningCandidate,
+  LearningLoop,
+  LearningLoopRequest,
+  LearningMemory,
+  LearningRound,
+  LearningRoundSummary,
+} from '@acclimate/sdk';
 import { BundleLearning } from '../src/components/bundle-learning';
 import { activeRoundStates, enrollmentError } from '../src/lib/learning';
 import {
@@ -64,6 +72,9 @@ const empty: Extract<LearningState, { ok: true }> = {
   activeEvaluation: null,
   caseSnapshot: null,
   canManage: true,
+  canEditCases: true,
+  detail: null,
+  memory: null,
 };
 const markup = (state: LearningState) =>
   renderToStaticMarkup(
@@ -104,8 +115,8 @@ test('enrollment and recovery render for the appropriate states and roles', () =
   );
   assert.match(markup({ ...empty, loop: { ...loop, status: 'stopped' } }), />Restart loop</);
   assert.doesNotMatch(
-    markup({ ...empty, canManage: false, loop }),
-    />(Pause|Resume|Stop|Add case)</,
+    markup({ ...empty, canManage: false, canEditCases: false, loop }),
+    />(Pause|Resume|Stop|Add case|Retire case)</,
   );
 });
 
@@ -271,11 +282,8 @@ test('enrollment, pause, resume, stop and setup cases send their exact service s
     if (fixture) return fixture;
     const headers = new Headers(init?.headers);
     const isCase = url.pathname.endsWith('/evolve-cases');
-    assert.equal(headers.get('x-acclimate-session'), isCase ? null : env.CONSOLE_SESSION_TOKEN);
-    assert.equal(
-      headers.get('authorization'),
-      `Bearer ${isCase ? 'app-token' : env.CONSOLE_SERVICE_TOKEN}`,
-    );
+    assert.equal(headers.get('x-acclimate-session'), env.CONSOLE_SESSION_TOKEN);
+    assert.equal(headers.get('authorization'), `Bearer ${env.CONSOLE_SERVICE_TOKEN}`);
     seen.push({
       path: url.pathname,
       method: init?.method,
@@ -294,7 +302,6 @@ test('enrollment, pause, resume, stop and setup cases send their exact service s
     scope,
     {
       action: 'addCase',
-      token: 'app-token',
       caseId: 'setup-1',
       input: '{"key":true}',
       expected: 'null',
@@ -305,6 +312,17 @@ test('enrollment, pause, resume, stop and setup cases send their exact service s
     ok: true,
     receipt: { evolveRevision: 3, added: 1, retired: 0, liveCases: 4 },
   });
+  assert.equal(
+    (
+      await runLearningCommand(
+        env,
+        scope,
+        { action: 'retireCase', caseId: 'outcome:corrected' },
+        fetcher,
+      )
+    ).ok,
+    true,
+  );
   assert.deepEqual(
     seen.map((item) => [item.method, item.path, item.body]),
     [
@@ -317,9 +335,10 @@ test('enrollment, pause, resume, stop and setup cases send their exact service s
         path + '/evolve-cases',
         '{"cases":[{"caseId":"setup-1","input":{"key":true},"expected":null}]}',
       ],
+      ['POST', path + '/evolve-cases', '{"retire":["outcome:corrected"]}'],
     ],
   );
-  assert.equal(new Set(seen.map(({ key }) => key)).size, 5);
+  assert.equal(new Set(seen.map(({ key }) => key)).size, 6);
   for (const { key } of seen) assert.match(key ?? '', /^[a-f0-9-]{36}$/);
 });
 
@@ -349,4 +368,240 @@ test('rejects invalid enrollment before network and preserves conflict guidance'
     ),
   );
   assert.deepEqual(result, { ok: false, message: 'Use enrollment to restart the loop' });
+});
+
+const changes = {
+  edits: [{ path: 'AGENTS.md', oldText: 'Stop', newText: 'Retry' }],
+  files: [],
+};
+const candidate: LearningCandidate = {
+  sample: 2,
+  status: 'evaluated',
+  dropReason: null,
+  diagnosis: { problem: { new: 'Agent stops early' }, predicted: ['case-a', 'case-b'] },
+  rationale: 'Retry after an error',
+  changes,
+  scan: { clean: true, findings: [] },
+  screen: { verdict: 'evaluate', reason: 'Targets the diagnosis' },
+  versionId: 'released-version',
+  evaluationId: 'evaluation',
+  evolveScore: 1,
+};
+const detailRound: LearningRound = {
+  ...round,
+  channel: 'canary',
+  channelRevision: '7',
+  evolveRevision: 2,
+  memoryRevision: 0,
+  memoryDigest: 'memory-digest',
+  historyDigest: null,
+  setting: body.setting,
+  heldOut: body.heldOut,
+  optimizerModel: 'optimizer',
+  adoptedVersionId: candidate.versionId,
+  selection: {
+    decision: 'adopt',
+    sample: 2,
+    reason: 'Fixed the failures',
+    versionId: candidate.versionId,
+    digest: 'digest',
+    model: 'optimizer',
+    inputDigest: 'input-digest',
+  },
+  candidates: [
+    { ...candidate, sample: 1, diagnosis: { problem: { id: 'P1' }, predicted: [] } },
+    candidate,
+    {
+      ...candidate,
+      sample: 3,
+      status: 'dropped',
+      dropReason: 'scanner-rejected',
+      rationale: null,
+      changes: null,
+      diagnosis: null,
+      screen: null,
+      evolveScore: null,
+      scan: { clean: false, findings: [{ rule: 'email', field: 'rationale', path: null }] },
+    },
+    {
+      ...candidate,
+      sample: 4,
+      status: 'screened_out',
+      screen: { verdict: 'skip', reason: 'Repeated a direction' },
+    },
+    { ...candidate, sample: 5, status: 'evaluation_failed', evolveScore: null },
+  ],
+  evaluations: [],
+};
+const provenance = { ...body.setting, round: 1 };
+const memory: LearningMemory = {
+  currentRevision: 2,
+  memoryRevision: 1,
+  memoryDigest: 'memory-digest',
+  improvementMemory: {
+    schemaVersion: 1,
+    memoryRevision: 1,
+    problems: [
+      {
+        id: 'P1',
+        rootCause: 'Agent stops early',
+        openedRound: 1,
+        attempts: [
+          {
+            round: 1,
+            sample: 2,
+            accepted: true,
+            backfilled: false,
+            what: { rationale: 'Keep trying', changes },
+            files: ['AGENTS.md'],
+            predicted: ['case-a', 'case-b'],
+            fixed: ['case-a'],
+            missed: ['case-b'],
+            passed: 9,
+            total: 10,
+            domain: body.setting.domain,
+            provenance,
+          },
+        ],
+      },
+    ],
+  },
+  records: [
+    {
+      revision: 1,
+      problemId: 'P1',
+      roundId: round.id,
+      round: 1,
+      versionId: 'released-version',
+      provenance: {
+        ...provenance,
+        optimizerModel: 'optimizer',
+        evolveRevision: 2,
+        heldOutDigest: body.heldOut.digest,
+      },
+    },
+  ],
+};
+
+test('round detail and historical memory load with the session and render for editors', async () => {
+  const urls: string[] = [];
+  const state = await readLearningState(
+    env,
+    scope,
+    async (input, init) => {
+      const url = new URL(String(input));
+      assert.equal(
+        new Headers(init?.headers).get('x-acclimate-session'),
+        env.CONSOLE_SESSION_TOKEN,
+      );
+      urls.push(url.pathname + url.search);
+      if (url.pathname === path) return response(loop);
+      if (url.pathname === path + '/rounds') return response({ items: [round], next: null });
+      if (url.pathname === path + '/rounds/' + round.id) return response(detailRound);
+      if (url.pathname === path + '/memory') return response(memory);
+      return bundleFixture(url, 'editor') ?? response({}, 500);
+    },
+    { round: round.id, memory: '1' },
+  );
+  assert.ok(state.ok);
+  assert.equal(state.canManage, false);
+  assert.equal(state.canEditCases, true);
+  assert.ok(urls.includes(path + '/memory?revision=1'));
+  const html = markup(state);
+  assert.equal([...html.matchAll(/<h4[^>]*>Sample /g)].length, 5);
+  for (const label of [
+    'Sample 2 · Adopted',
+    'Adopted sample 2',
+    'Fixed the failures',
+    'scanner-rejected',
+    'email · rationale',
+    'Agent stops early',
+    'Targets the diagnosis',
+    'skip · Repeated a direction',
+    'AGENTS.md',
+    '- Stop',
+    '+ Retry',
+    '1 versus 0.9',
+    'released-version',
+    '#revision-8',
+    'Round 1 · sample 2 · Accepted',
+    '9 / 10',
+    'Optimizer model optimizer · evolve revision 2',
+    'Revision 1 of 2',
+    'Add an evolve case',
+    'Retire an evolve case',
+  ])
+    assert.ok(html.includes(label), label);
+  assert.doesNotMatch(html, /appToken|>Pause</);
+});
+
+test('renders keep and empty candidate and memory states', () => {
+  const html = markup({
+    ...empty,
+    loop,
+    detail: {
+      ok: true,
+      parentFiles: null,
+      round: {
+        ...detailRound,
+        candidates: [],
+        decision: 'kept',
+        reason: 'no-survivors',
+        selection: null,
+      },
+    },
+    memory: {
+      ok: true,
+      memory: { ...memory, improvementMemory: { ...memory.improvementMemory, problems: [] } },
+    },
+  });
+  assert.match(html, /No candidates recorded/);
+  assert.match(html, /Kept incumbent.*no-survivors/);
+  assert.match(html, /No problems recorded/);
+});
+
+test('whole-file changes use verified incumbent content for replacements and deletions', async () => {
+  const current = JSON.stringify({
+    schemaVersion: 1,
+    files: [
+      { kind: 'instruction', path: 'AGENTS.md', text: 'Original instructions' },
+      { kind: 'memory', path: 'old.md', text: 'Removed note' },
+    ],
+  });
+  const digest = 'sha256:' + createHash('sha256').update(current).digest('hex');
+  const state = await readLearningState(
+    env,
+    scope,
+    async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === path) return response(loop);
+      if (url.pathname === path + '/rounds') return response({ items: [round], next: null });
+      if (url.pathname === path + '/rounds/' + round.id)
+        return response({
+          ...detailRound,
+          candidates: [
+            {
+              ...candidate,
+              changes: {
+                edits: [],
+                files: [
+                  { op: 'write', path: 'AGENTS.md', text: 'Replacement instructions' },
+                  { op: 'delete', path: 'old.md' },
+                ],
+              },
+            },
+          ],
+        });
+      if (url.pathname === base + '/versions/' + round.parentVersionId)
+        return response({ id: round.parentVersionId, digest });
+      if (url.pathname === base + '/versions/' + round.parentVersionId + '/payload')
+        return new Response(current);
+      return bundleFixture(url) ?? response({}, 500);
+    },
+    { round: round.id },
+  );
+  const html = markup(state);
+  assert.match(html, /- Original instructions/);
+  assert.match(html, /\+ Replacement instructions/);
+  assert.match(html, /- Removed note/);
 });

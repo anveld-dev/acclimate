@@ -48,6 +48,7 @@ async fn fixture(max_connections: u32) -> (AppState, String, Vec<(Uuid, String)>
     let state = AppState {
         access: common::access(),
         runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+        optimizer: None,
         db,
         grants: Arc::new(vec![Grant {
             token: "aci_machine".into(),

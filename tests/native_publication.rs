@@ -47,6 +47,7 @@ async fn native_version_upload_release_compatibility_and_rollback() {
     let state = AppState {
         access: common::access(),
         runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+        optimizer: None,
         db: db.clone(),
         grants: Arc::new(vec![Grant {
             token: "native-fixture".into(),

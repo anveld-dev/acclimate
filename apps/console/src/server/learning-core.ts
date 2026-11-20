@@ -1,4 +1,5 @@
-import { AcclimateClient, ApiError } from '@acclimate/sdk';
+import { ApiError, type AcclimateClient, type LearningRound } from '@acclimate/sdk';
+import { readVersion } from './release-history';
 import { consoleClient } from './console-client';
 import { allPages } from './listing';
 import { accessTransport } from './access-core';
@@ -11,6 +12,7 @@ import {
   type ActiveEvaluation,
   type LearningCommand,
   type LearningScope,
+  type LearningReadOptions,
 } from '../lib/learning';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -35,22 +37,94 @@ async function inspect(api: AcclimateClient, { workspaceId, bundleId }: Learning
   }
 }
 
-function failure(error: unknown, mutation = false, appPrincipal = false) {
+function failure(error: unknown, mutation = false) {
   return {
     ok: false as const,
     message:
       error instanceof ApiError && [401, 403].includes(error.status)
-        ? appPrincipal
-          ? 'The app principal token was refused.'
-          : 'Access denied. Check your workspace access.'
-        : error instanceof ApiError && [400, 409].includes(error.status) && !appPrincipal
+        ? 'Access denied. Check your workspace access.'
+        : error instanceof ApiError && [400, 409].includes(error.status)
           ? error.message
-          : error instanceof ApiError && error.status === 409 && appPrincipal
-            ? 'This case ID is already in use. Choose a new ID for a different case.'
-            : mutation
-              ? 'Could not confirm the change. Refresh the learning page before trying again.'
-              : 'Could not load the learning loop. Refresh to try again.',
+          : mutation
+            ? 'Could not confirm the change. Refresh the learning page before trying again.'
+            : 'Could not load the learning loop. Refresh to try again.',
   };
+}
+
+async function readRoundDetail(
+  env: Environment,
+  { workspaceId, bundleId }: LearningScope,
+  load: () => Promise<LearningRound>,
+  fetcher: typeof fetch,
+) {
+  try {
+    const {
+      number,
+      channel,
+      channelRevision,
+      parentVersionId,
+      incumbentScore,
+      candidates,
+      decision,
+      reason,
+      selection,
+      adoptedSample,
+      adoptedVersionId,
+    } = await load();
+    const paths = new Set(
+      candidates.flatMap(({ changes }) => changes?.files.map(({ path }) => path) ?? []),
+    );
+    const parent = paths.size
+      ? await readVersion(
+          { ...env, CONSOLE_WORKSPACE: workspaceId, CONSOLE_BUNDLE: bundleId },
+          { versionId: parentVersionId },
+          fetcher,
+        )
+      : null;
+    const parentFiles = parent?.ok
+      ? parent.payload.files
+          .filter(({ path }) => paths.has(path))
+          .map(({ path, text }) => ({ path, text }))
+      : null;
+    return {
+      ok: true as const,
+      round: {
+        number,
+        channel,
+        channelRevision,
+        incumbentScore,
+        candidates,
+        decision,
+        reason,
+        selection,
+        adoptedSample,
+        adoptedVersionId,
+      },
+      parentFiles,
+    };
+  } catch {
+    return { ok: false as const, message: 'Could not load this learning round.' };
+  }
+}
+
+async function readMemory(
+  api: AcclimateClient,
+  { workspaceId, bundleId }: LearningScope,
+  revision: string,
+) {
+  const number = revision === 'latest' ? undefined : Number(revision);
+  if (number !== undefined && (!/^\d+$/.test(revision) || !Number.isSafeInteger(number)))
+    return { ok: false as const, message: 'Enter a nonnegative memory revision.' };
+  try {
+    return {
+      ok: true as const,
+      memory: await api.getLearningMemory(workspaceId, bundleId, { revision: number }),
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404)
+      return { ok: false as const, message: 'This memory revision is unavailable.' };
+    return { ok: false as const, message: 'Could not load improvement memory.' };
+  }
 }
 
 export async function readLearningBinding(env: Environment, scope: LearningScope, fetcher = fetch) {
@@ -63,7 +137,12 @@ export async function readLearningBinding(env: Environment, scope: LearningScope
   }
 }
 
-export async function readLearningState(env: Environment, scope: LearningScope, fetcher = fetch) {
+export async function readLearningState(
+  env: Environment,
+  scope: LearningScope,
+  fetcher = fetch,
+  options: LearningReadOptions = {},
+) {
   try {
     validateScope(scope);
     const api = consoleClient(env, fetcher);
@@ -76,7 +155,9 @@ export async function readLearningState(env: Environment, scope: LearningScope, 
     const bundle = bundles.find(({ id }) => id === bundleId);
     if (!workspace || !bundle)
       return { ok: false as const, message: 'This bundle is unavailable.' };
-    const canManage = workspace.role === 'admin' && env.CONSOLE_ALLOW_EDITS === 'true';
+    const editsEnabled = env.CONSOLE_ALLOW_EDITS === 'true';
+    const canManage = workspace.role === 'admin' && editsEnabled;
+    const canEditCases = ['admin', 'editor'].includes(workspace.role) && editsEnabled;
     const [loop, channels] = await Promise.all([
       inspect(api, scope),
       allPages((cursor) => api.listChannels(workspaceId, bundleId, { cursor, limit: 100 })),
@@ -110,11 +191,30 @@ export async function readLearningState(env: Environment, scope: LearningScope, 
       : [];
     const activeId = loop?.activeRound?.id;
     const lastScoredId = rounds.find((round) => round.incumbentScore !== null)?.id;
-    const [active, lastScored] = await Promise.all([
-      activeId ? api.getLearningRound(workspaceId, bundleId, activeId) : null,
-      lastScoredId && lastScoredId !== activeId
-        ? api.getLearningRound(workspaceId, bundleId, lastScoredId)
+    const loadRound = (id: string) => api.getLearningRound(workspaceId, bundleId, id);
+    const activeRead = activeId ? loadRound(activeId) : null;
+    const lastScoredRead =
+      lastScoredId && lastScoredId !== activeId ? loadRound(lastScoredId) : null;
+    const detailId = options.round;
+    const [active, lastScored, detail, memory] = await Promise.all([
+      activeRead,
+      lastScoredRead,
+      loop && detailId
+        ? uuid.test(detailId)
+          ? readRoundDetail(
+              env,
+              scope,
+              () =>
+                (detailId === activeId
+                  ? activeRead
+                  : detailId === lastScoredId
+                    ? lastScoredRead
+                    : null) ?? loadRound(detailId),
+              fetcher,
+            )
+          : { ok: false as const, message: 'Invalid learning round ID.' }
         : null,
+      loop && options.memory ? readMemory(api, scope, options.memory) : null,
     ]);
     const openEvaluation = active?.evaluations.find(
       ({ status }) => status === 'queued' || status === 'running',
@@ -152,6 +252,9 @@ export async function readLearningState(env: Environment, scope: LearningScope, 
       bundleName: bundle.name,
       loop,
       canManage,
+      canEditCases,
+      detail,
+      memory,
       channels: channels.map(({ name }) => name),
       principals,
       rounds,
@@ -209,30 +312,15 @@ export async function runLearningCommand(
       case 'stop':
         await api.stopLearningLoop(workspaceId, bundleId, key);
         break;
-      case 'addCase': {
-        const workspaces = await allPages((cursor) => api.listWorkspaces({ cursor, limit: 100 }));
-        if (!workspaces.some(({ id, role }) => id === scope.workspaceId && role === 'admin'))
-          return {
-            ok: false as const,
-            message: 'Only workspace administrators can submit cases from the console.',
-          };
-        if (typeof command.token !== 'string' || !command.token.trim())
-          return { ok: false as const, message: 'Enter the enrolled app principal token.' };
+      case 'addCase':
+      case 'retireCase': {
         let body;
         try {
           body = evolveCaseBody(command);
         } catch (error) {
           return { ok: false as const, message: (error as Error).message };
         }
-        const app = new AcclimateClient({
-          baseUrl: env.CONSOLE_SERVICE_URL!,
-          token: command.token.trim(),
-          scope: 'learning-case',
-          fetch: fetcher,
-          retries: 0,
-          timeoutMs: 5000,
-        });
-        const receipt = await app.addLearningEvolveCases(workspaceId, bundleId, body, key);
+        const receipt = await api.addLearningEvolveCases(workspaceId, bundleId, body, key);
         return { ok: true as const, receipt };
       }
       default:
@@ -240,6 +328,6 @@ export async function runLearningCommand(
     }
     return { ok: true as const };
   } catch (error) {
-    return failure(error, true, command?.action === 'addCase');
+    return failure(error, true);
   }
 }

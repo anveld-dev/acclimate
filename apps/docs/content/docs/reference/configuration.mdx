@@ -40,6 +40,12 @@ Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from both the Rust and console enviro
 | --- | --- |
 | `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS` | Time allowed to start a queued evaluation. Defaults to 604,800 seconds (7 days). |
 | `ACCLIMATE_LEARNING_EVALUATION_SECONDS` | Time allowed to finish a started evaluation. Defaults to 86,400 seconds (24 hours). |
+| `ACCLIMATE_MODEL_ENDPOINT` | OpenAI-compatible chat completions URL. An unset endpoint leaves the optimizer unavailable. |
+| `ACCLIMATE_MODEL_TOKEN` | Optimizer endpoint credential. Required when the endpoint is set. |
+| `ACCLIMATE_MODEL` | Model for proposing, screening and selecting. Required when the endpoint is set. The round pins this value at its start. |
+| `ACCLIMATE_MODEL_TIMEOUT_SECONDS` | Whole-request timeout in seconds. Integer from 30 to 3,600, defaults to 600. |
+| `ACCLIMATE_MODEL_MAX_COMPLETION_TOKENS` | Value sent as `max_completion_tokens` for each optimizer call. Integer from 1,024 to 262,144, defaults to 32,768. |
+| `ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS` | Consecutive failed rounds before the loop pauses. Defaults to 3. |
 
 ### Invitation email
 

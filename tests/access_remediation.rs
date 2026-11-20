@@ -79,6 +79,7 @@ async fn fixture() -> (sqlx::PgPool, axum::Router, String) {
     let app = router(AppState {
         access: common::access(),
         runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+        optimizer: None,
         db: db.clone(),
         grants: Arc::new(vec![Grant {
             token: "access-fixture".into(),

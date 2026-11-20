@@ -206,6 +206,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
+            optimizer: None,
             runtime: Arc::new(crate::RuntimeStatus::new()),
             db: sqlx::postgres::PgPoolOptions::new()
                 .connect_lazy("postgres://localhost/unused")

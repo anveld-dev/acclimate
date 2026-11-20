@@ -16,6 +16,9 @@ use uuid::Uuid;
 
 mod evaluations;
 mod evolve;
+mod history;
+mod memory;
+pub(super) mod optimizer;
 pub(crate) mod worker;
 
 type Tx<'a> = Transaction<'a, Postgres>;
@@ -44,6 +47,7 @@ pub(crate) fn routes() -> Router<AppState> {
             post(evolve::submit_cases),
         )
         .route(&format!("{PREFIX}/outcomes"), post(evolve::submit_outcome))
+        .route(&format!("{PREFIX}/memory"), get(memory::get))
         .route(&format!("{PREFIX}/work"), get(evaluations::work))
         .route(
             &format!("{PREFIX}/evaluations/{{evaluation}}/start"),
@@ -555,7 +559,7 @@ async fn get_round(
         "memoryDigest": row.get::<Option<String>,_>("memory_digest"), "historyDigest": row.get::<Option<String>,_>("history_digest"),
         "setting": row.get::<Value,_>("setting"), "heldOut": row.get::<Value,_>("held_out"),
         "optimizerModel": row.get::<Option<String>,_>("optimizer_model"), "selection": row.get::<Option<Value>,_>("selection"),
-        "candidates": [], "evaluations": evals
+        "candidates": optimizer::candidates(&mut tx, round).await.map_err(db)?, "evaluations": evals
     });
     result
         .as_object_mut()

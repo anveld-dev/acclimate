@@ -56,9 +56,13 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
             "integration_credentials",
             "integration_receipts",
             "integrations",
+            "learning_candidates",
             "learning_evaluations",
             "learning_evolve_cases",
             "learning_loops",
+            "learning_memory_attempts",
+            "learning_memory_problems",
+            "learning_optimizer_calls",
             "learning_rounds",
             "machine_token_events",
             "machine_tokens",
@@ -81,9 +85,15 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
     .unwrap();
     assert_eq!(views, 0);
     let functions: Vec<String> = sqlx::query_scalar(
-        "SELECT routine_name FROM information_schema.routines WHERE routine_schema=current_schema()",
+        "SELECT routine_name FROM information_schema.routines WHERE routine_schema=current_schema() ORDER BY routine_name",
     ).fetch_all(&mut connection).await.unwrap();
-    assert_eq!(functions, ["machine_token_events_append_only"]);
+    assert_eq!(
+        functions,
+        [
+            "learning_memory_append_only",
+            "machine_token_events_append_only"
+        ]
+    );
     let columns: Vec<String> = sqlx::query_scalar(
         "SELECT column_name FROM information_schema.columns
          WHERE table_schema=current_schema() AND table_name='promotions' ORDER BY ordinal_position",
@@ -156,6 +166,7 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
         db: db.clone(),
         access: common::access(),
         runtime: Arc::default(),
+        optimizer: None,
         grants: Arc::new(vec![Grant {
             token: "upgrade-reader".into(),
             principal_id: "upgrade-reader".into(),

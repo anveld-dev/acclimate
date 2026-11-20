@@ -90,15 +90,15 @@ Differences from the TypeScript client:
 
 ## Learning
 
-Import wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningRoundSummary`, `LearningRound`, `LearningEvaluation` and `LearningWork` from `acclimate.types`. The client methods take the workspace ID and bundle ID first. JSON keys follow the [HTTP contract](/docs/reference/http-api#learning-loop).
+Import wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningRoundSummary`, `LearningRound`, `LearningCandidate`, `LearningSelection`, `LearningMemory`, `LearningEvaluation` and `LearningWork` from `acclimate.types`. The client methods take the workspace ID and bundle ID first. JSON keys follow the [HTTP contract](/docs/reference/http-api#learning-loop).
 
 | Task | Client methods |
 | --- | --- |
 | Enroll and control | `enroll_learning_loop`, `pause_learning_loop`, `resume_learning_loop`, `stop_learning_loop` |
-| Inspect | `get_learning_loop`, `list_learning_rounds`, `get_learning_round` |
+| Inspect | `get_learning_loop`, `list_learning_rounds`, `get_learning_round`, `get_learning_memory` |
 | Add evolve cases or outcomes | `add_learning_evolve_cases`, `report_learning_outcome` |
 | Serve evaluation work | `get_learning_work`, `start_learning_evaluation`, `report_learning_evaluation` |
 
 `acclimate.learning.held_out_digest(cases)` computes the enrollment digest from the evaluator's private case array. A custom Python evaluator can poll, start and report work through the client methods. The packaged learning runner uses the TypeScript SDK.
 
-The SDK also exposes `get_learning_memory` for the phase 4 memory route.
+`get_learning_round` returns candidates and the selector decision. `get_learning_memory` returns the latest improvement memory or a specific revision when you supply `revision`. Read memory as a workspace reader other than the app principal.

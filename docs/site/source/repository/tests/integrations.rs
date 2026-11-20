@@ -99,6 +99,7 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
     let app = router(AppState {
         access: common::access(),
         runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+        optimizer: None,
         db: db.clone(),
         grants: Arc::new(vec![Grant {
             token: "operator".into(),
@@ -336,6 +337,7 @@ async fn fixture() -> Fixture {
         state: AppState {
             access: common::access(),
             runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+            optimizer: None,
             db,
             grants: Arc::new(grants),
         },

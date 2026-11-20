@@ -1,4 +1,6 @@
 mod common;
+#[path = "learning_loop/optimizer.rs"]
+mod optimizer;
 
 use acclimate_service::{AppState, Grant, RuntimeStatus, learning_worker, router};
 use axum::{
@@ -12,7 +14,7 @@ use tokio::task::JoinHandle;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-const DIGEST: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const DIGEST: &str = "sha256:0067f5c5211d303528a731b3b2e4c169935dd62b40e8444c671204605a53557b";
 const HELD_OUT: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 struct Fixture {
@@ -34,7 +36,17 @@ impl Drop for Fixture {
 
 impl Fixture {
     async fn new() -> Self {
-        let db = sqlx::PgPool::connect(&common::database_url())
+        use sqlx::{Connection, postgres::PgConnectOptions};
+        let options: PgConnectOptions = common::database_url().parse().unwrap();
+        let schema = format!("learning_fixture_{}", Uuid::new_v4().simple());
+        let mut connection = sqlx::PgConnection::connect_with(&options).await.unwrap();
+        sqlx::query(&format!("CREATE SCHEMA {schema}"))
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        connection.close().await.unwrap();
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_with(options.options([("search_path", &schema)]))
             .await
             .unwrap();
         sqlx::migrate!("./migrations").run(&db).await.unwrap();
@@ -64,6 +76,7 @@ impl Fixture {
             ),
             access: common::access(),
             runtime: Arc::new(RuntimeStatus::new()),
+            optimizer: Some(Arc::new(optimizer::NoChangeModel("fixture"))),
         };
         let (bundle, version) = Self::create_bundle(&state.db, &project).await;
         let app = router(state.clone());
@@ -456,13 +469,7 @@ async fn round_pins_recovery_monitoring_and_pagination() {
     assert_eq!(first["channel"], "stable");
     assert_eq!(first["heldOut"], enrollment()["heldOut"]);
     assert_eq!(first["memoryRevision"], 0);
-    assert_eq!(
-        first["optimizerModel"],
-        std::env::var("ACCLIMATE_MODEL")
-            .ok()
-            .filter(|m| !m.trim().is_empty())
-            .map_or(Value::Null, Value::String)
-    );
+    assert_eq!(first["optimizerModel"], "fixture");
     assert!(sqlx::query("INSERT INTO learning_rounds(id,project_id,bundle_id,number,state,parent_version_id,channel,
         channel_revision,evolve_revision,memory_revision,setting,held_out)
         SELECT $1,project_id,bundle_id,999,state,parent_version_id,channel,channel_revision,evolve_revision,memory_revision,setting,held_out

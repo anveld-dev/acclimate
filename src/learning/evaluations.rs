@@ -6,7 +6,7 @@ use serde::Serialize;
 use sqlx::types::Json as DbJson;
 use std::collections::{BTreeMap, BTreeSet};
 
-const ROLLOUTS_PER_CASE: usize = 5;
+pub(super) const ROLLOUTS_PER_CASE: usize = 5;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -29,14 +29,14 @@ struct HeldOutRollout {
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CaseReport {
-    case_id: String,
-    rollouts: Vec<Value>,
+pub(super) struct CaseReport {
+    pub case_id: String,
+    pub rollouts: Vec<Value>,
 }
 
 #[derive(Serialize, Deserialize)]
-struct Report {
-    cases: Vec<CaseReport>,
+pub(super) struct Report {
+    pub cases: Vec<CaseReport>,
 }
 
 #[derive(FromRow)]
@@ -106,7 +106,7 @@ impl Evaluation {
         });
         if self.split == "evolve" {
             doc["caseSummaries"] = json!(self.report.cases.iter().map(|case| {
-                let passes = case.rollouts.iter().filter(|r| r["passed"] == true).count();
+                let passes = passed_rollouts(case);
                 json!({"caseId":case.case_id,"passedRollouts":passes,"meanScore":mean_score(case)})
             }).collect::<Vec<_>>());
             if full_report {
@@ -126,7 +126,7 @@ impl Evaluation {
     }
 }
 
-fn mean_score(case: &CaseReport) -> f64 {
+pub(super) fn mean_score(case: &CaseReport) -> f64 {
     case.rollouts
         .iter()
         .map(|r| r["score"].as_f64().expect("validated score"))
@@ -471,4 +471,15 @@ fn apply_cases(
         row.status = "scored".into();
     }
     Ok(())
+}
+
+pub(super) fn passed_rollouts(case: &CaseReport) -> usize {
+    case.rollouts
+        .iter()
+        .filter(|rollout| rollout["passed"] == true)
+        .count()
+}
+
+pub(super) fn case_passes(case: &CaseReport) -> bool {
+    passed_rollouts(case) >= 3
 }

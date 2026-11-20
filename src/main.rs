@@ -183,11 +183,13 @@ async fn run() -> RunResult {
     sqlx::migrate!("./migrations").run(&db).await?;
     let runtime = Arc::new(RuntimeStatus::new());
     runtime.ownership_acquired();
+    let optimizer = acclimate_service::OpenAiModel::from_env()?;
     let state = AppState {
         db: db.clone(),
         grants: Arc::new(grants),
         access,
         runtime: runtime.clone(),
+        optimizer,
     };
     backfill_projects(&state).await?;
     recover_invitation_mail(&state).await?;

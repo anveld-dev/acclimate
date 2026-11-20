@@ -52,6 +52,8 @@ export const Route = createFileRoute('/w/$')({
             'connection',
             'access',
             'bundleId',
+            'round',
+            'memory',
           ].includes(key) &&
           (typeof value === 'string' || typeof value === 'number'),
       ),
@@ -108,7 +110,13 @@ export const Route = createFileRoute('/w/$')({
         kind: 'learning' as const,
         location,
         scope,
-        result: await readLearningLoop({ data: scope }),
+        result: await readLearningLoop({
+          data: {
+            ...scope,
+            round: typeof deps.search.round === 'string' ? deps.search.round : undefined,
+            memory: deps.search.memory === undefined ? undefined : String(deps.search.memory),
+          },
+        }),
       };
     return {
       kind: 'bundle' as const,

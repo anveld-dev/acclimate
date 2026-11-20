@@ -2,7 +2,7 @@
 
 Each workspace and bundle can enroll one learning loop. A running loop with live evolve cases starts a new round as soon as the previous round ends. The service pins the channel, channel revision, parent version, setting, evolve revision and held-out commitment at the start of each round.
 
-In phase 3 the loop scores the incumbent, records `kept` with reason `no-candidates`, then scores the retained channel head on the held-out split. The held-out result is a monitoring point for that round. A held-out failure also completes the round and records the error.
+A round scores its incumbent on evolve cases, proposes five samples, screens generated candidates, evaluates the survivors and selects a candidate or keeps the channel head. Once it records a decision, it scores the retained head on the held-out split. A held-out failure completes the round and records the monitoring error.
 
 ## Routes and authority
 
@@ -15,7 +15,8 @@ All paths below are relative to `/v1/workspaces/{workspaceId}/bundles/{bundleId}
 | `POST /pause`, `/resume`, `/stop` | Administrator | `LearningLoop` |
 | `GET /rounds?before=&limit=` | Reader | `{items, next}`, ordered by round number descending |
 | `GET /rounds/{roundId}?evaluation=` | Reader | `LearningRound`, with an optional full evolve report |
-| `POST /evolve-cases` | App principal | `{evolveRevision, added, retired, liveCases}` |
+| `GET /memory?revision=` | Reader, excluding the app principal | `LearningMemory` |
+| `POST /evolve-cases` | App principal or signed-in workspace member with `write` | `{evolveRevision, added, retired, liveCases}` |
 | `POST /outcomes` | App principal | `{outcomeId, caseId, evolveRevision}` |
 | `GET /work` | App principal | `{bundleId, status, items}` |
 | `POST /evaluations/{evaluationId}/start` | App principal | `{evaluation, cases, heldOut, reportedCaseIds}` |
@@ -59,15 +60,21 @@ The evaluator verifies the digest and count against the round's commitment befor
 
 ## Round history and delivery
 
-Running rounds move through `scoring_incumbent` and `scoring_held_out` to `completed`. Incumbent failure ends the round as `failed` with `incumbent-evaluation-failed`. A stopped round keeps any decision already recorded. Use `before` with the `next` round number returned by the list endpoint. The default page size is 20 and the maximum is 100. Request `?evaluation=<id>` to see one evolve evaluation's full report. A held-out evaluation ID in that parameter returns HTTP 400.
+Rounds with evaluated candidates move through `scoring_incumbent`, `proposing`, `screening`, `evaluating`, `selecting` and `scoring_held_out` to `completed`. A round with zero candidates, survivors or scored candidates skips the remaining optimizer stages and scores the retained head. Incumbent failure ends the round as `failed` with `incumbent-evaluation-failed`. A stopped round keeps any decision already recorded. Use `before` with the `next` round number returned by the list endpoint. The default page size is 20 and the maximum is 100. Request `?evaluation=<id>` to see one evolve evaluation's full report. A held-out evaluation ID in that parameter returns HTTP 400.
 
 Jobs resolve the channel as usual. A manual release becomes the next round's parent. The held-out measurement uses the channel head at decision time.
 
 ## Optimizer and improvement memory
 
-Phase 4 adds proposing, screening, candidate evaluation, selection and improvement memory. A round will generate five candidates and adopt one evaluated survivor or keep the incumbent. An adopt releases that version on the learning channel in the decision transaction. A channel move during the round can produce `kept` / `channel-moved`.
+The service submits five proposals sequentially. Each proposal diagnoses an existing problem or a new root cause and predicts which pinned evolve cases it will fix. The service validates the edits and scans new text for secrets and personal information. Round detail shows each sample's status, diagnosis, changes, scan and screen findings when available, and its evolve evaluation and score. Scanner rejections report the rule, field and safe path, with sensitive text omitted.
 
-The optimizer will receive the whole bundle, evolve feedback with traces and errors, full run history in the setting and improvement memory. Evolve material may leave the service for the optimizer endpoint and is fenced as untrusted data. The output scanner checks secrets and personal information. Held-out results and reports are excluded from optimizer inputs. Improvement memory will have a reader route at `GET /memory?revision=` that excludes the app principal, and it will remain outside delivered payloads.
+The optimizer screens proposals before any candidate version is created. The service creates and evaluates one survivor at a time, then asks the optimizer to weigh performance, complexity, domain specificity and regression risk. The persisted selection records the model, request digest, reason and chosen sample and version when applicable. Adoption releases the selected version and appends one memory attempt in the decision transaction. If the channel revision moved, the round records `kept` with `channel-moved` and retains the original selection for inspection.
+
+Each optimizer request includes the whole harness, current evolve feedback with full traces and errors, all earlier rounds in the current setting, and the round's pinned improvement memory. This material may leave the service for the configured optimizer endpoint. The service fences it as untrusted data and excludes held-out commitments, reports, scores and errors. An optimizer context error pauses the loop with `optimizer-context-too-large`.
+
+`GET /memory` returns the current revision, the rendered revision, the digest of the canonical `improvementMemory` document and operator records for the attempts at that revision. An invalid revision returns 400 and an unknown revision returns 404. The exact snapshot the optimizer receives is in `improvementMemory`. Operator records also include pinned evolve revision, held-out digest and optimizer model. Memory is append-only and per bundle. Only adopted candidates add attempts. Adoption groups identical whitespace-normalized root causes under the same problem ID. Jobs receive the bundle payload through the usual delivery routes.
+
+See the [candidate and selection fixture](fixtures/learning-selection-v1.json) and the [memory fixture](fixtures/learning-memory-v1.json) for sample responses.
 
 ## Retries and errors
 

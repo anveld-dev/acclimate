@@ -3,7 +3,7 @@ title: Enroll a learning loop
 description: Set up an evaluator, add evolve cases, and monitor recurring evaluations of a released bundle.
 ---
 
-An enrolled bundle scores its released version on the evolve and held-out splits. In phase 3, each round keeps the current release. Candidate generation, automatic adoption and improvement memory arrive with the optimizer in phase 4.
+An enrolled bundle runs rounds that propose, evaluate and release improvements to its harness. Configure the service optimizer before enrolling. [Optimizer settings](/docs/reference/configuration)
 
 ## Enroll a bundle
 
@@ -16,13 +16,13 @@ An enrolled bundle scores its released version on the evolve and held-out splits
 acclimate-learning held-out --app ./learning-app.mjs
 ```
 
-The evaluator owns the held-out inputs and expected results. Enrollment sends only their digest and count. The same app principal serves evaluations, adds setup cases and reports outcomes.
+The evaluator owns the held-out inputs and expected results. Enrollment sends only their digest and count. The app principal serves evaluations and reports outcomes.
 
 ## Add evolve cases
 
-Add the first case to start rounds. In **Learning → Evolve cases**, enter a setup case ID, JSON input and JSON expected result, and submit it with the enrolled app principal token. The table shows the case IDs reported by an incumbent evaluation and the revision that evaluation used.
+Add the first case to start rounds. In **Learning → Evolve cases**, enter a setup case ID, JSON input and JSON expected result, and submit it with your signed-in workspace session. Editors and administrators can add or retire cases when console edits are enabled. The table shows the case IDs reported by an incumbent evaluation and the revision that evaluation used.
 
-For batch setup, use the TypeScript SDK with a client authenticated as the app principal.
+For batch setup, use the TypeScript SDK with a client authenticated as the app principal or a workspace member with write access.
 
 ```ts
 import { addEvolveCases } from '@acclimate/sdk/learning';
@@ -36,7 +36,7 @@ await addEvolveCases(client, { workspaceId, bundleId }, {
 });
 ```
 
-Use 1–128 letters, digits or `._:-` characters for each ID. The `outcome:` prefix is reserved. Input and expected result may each be any JSON value up to 64 KiB. Repeating the same live case is a no-op. To change a case, pass its ID in `retire` and add a case with a new ID. A request can add up to 100 cases and retire up to 100 IDs. Each change creates a revision. A round pins its revision at the start.
+Use 1–128 letters, digits or `._:-` characters for each ID. The `outcome:` prefix is reserved. Input and expected result may each be any JSON value up to 64 KiB. Repeating the same live case is a no-op. To change a case, choose **Retire an evolve case** or pass its ID in `retire`, then add a case with a new ID. A request can add up to 100 cases and retire up to 100 IDs. Each change creates a revision. A round pins its revision at the start.
 
 ## Report an outcome
 
@@ -65,8 +65,19 @@ acclimate-learning --config /private/evaluator.json --bundle "$ACCLIMATE_BUNDLE"
 
 The evaluator serves one work item at a time. It runs each case five times, grades each rollout and reports whole cases as they finish. On restart it resumes the journaled attempt and skips cases already reported. See the [evaluator CLI reference](/docs/reference/evaluator-cli) for the module and configuration.
 
+## Follow a round
+
+1. The service pins the channel revision, evolve revision, setting and improvement memory. It scores the incumbent on the evolve split.
+2. The optimizer proposes five candidates. Each has a rationale, a diagnosis tied to an existing problem or a new root cause, predicted case IDs and file changes. The scanner checks new content for secrets and personal information. The selector screens candidates before execution.
+3. The evaluator scores the survivors on the same evolve cases. The selector compares their results and chooses a candidate to adopt or keeps the incumbent. Adoption releases the version immediately on the learning channel and records the attempt in improvement memory.
+4. The evaluator scores the retained version on its fixed held-out split. Held-out scores are for monitoring only. They never influence selection or release and never reach the optimizer.
+
+The optimizer receives the pinned setting, the full incumbent harness, evolve feedback with case IDs, inputs, scores, rollout traces and errors, prior rounds in the current setting with feedback summaries and diffs, and the full pinned improvement memory. Screening and selection also receive the relevant candidates and selection receives their evolve results.
+
 ## Monitor and control rounds
 
-Refresh the **Learning** tab to see progress, recent decisions and historical scores. Each plotted point is the measured score for that round. The evolve score is measured on the incumbent at the start of the round. The held-out score is measured on the retained version for monitoring only. A failed held-out evaluation appears in the round list and the round can still complete.
+Refresh the **Learning** tab to see progress, recent decisions and historical scores. Each plotted point is the measured score for that round. The evolve score is measured on the incumbent at the start of the round. The held-out score is measured on the retained version for monitoring only. A failed held-out evaluation appears in the round list and the round can still complete. Open a round to see candidate diagnoses, diffs, scanner findings, screen verdicts, scores, the selection reason and any adopted release.
 
-**Pause** lets the active round finish and prevents new rounds. **Resume** starts scheduling again. **Stop** cancels open evaluations. To restart a stopped loop, enroll it again from the same tab. The evolve split and round history carry forward.
+Open **Memory** to inspect the latest or a historical revision. Each problem lists its adopted attempts, the files that changed, predicted, fixed and missed cases, passed and total rollouts, and the round, model and evolve revision that produced it. Improvement memory is optimizer input and never delivered to jobs.
+
+**Pause** lets the active round finish and prevents new rounds. **Resume** starts scheduling again. **Stop** cancels open evaluations. To restart a stopped loop, enroll it again from the same tab. The evolve split, round history and improvement memory carry forward. The loop also pauses when it reaches the configured consecutive failure threshold or when the optimizer input exceeds its context limit.

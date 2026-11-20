@@ -20,6 +20,7 @@ async fn fixture() -> (AppState, String) {
         AppState {
             access: common::access(),
             runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+            optimizer: None,
             db,
             grants: Arc::new(vec![Grant {
                 token: "recovery-test".into(),

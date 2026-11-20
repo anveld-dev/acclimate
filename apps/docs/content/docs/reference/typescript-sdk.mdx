@@ -55,12 +55,12 @@ Use `resolveAndCache` when you want a verified version for a native plugin or yo
 
 ## Learning
 
-Import loop wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningRoundSummary`, `LearningRound`, `LearningEvaluation` and `LearningWork` from `@acclimate/sdk`.
+Import loop wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningRoundSummary`, `LearningRound`, `LearningCandidate`, `LearningSelection`, `LearningMemory`, `LearningEvaluation` and `LearningWork` from `@acclimate/sdk`.
 
 | Task | `AcclimateClient` methods |
 | --- | --- |
 | Enroll and control | `enrollLearningLoop`, `pauseLearningLoop`, `resumeLearningLoop`, `stopLearningLoop` |
-| Inspect | `getLearningLoop`, `listLearningRounds`, `getLearningRound` |
+| Inspect | `getLearningLoop`, `listLearningRounds`, `getLearningRound`, `getLearningMemory` |
 | Add evolve cases or outcomes | `addLearningEvolveCases`, `reportLearningOutcome` |
 | Serve evaluation work | `getLearningWork`, `startLearningEvaluation`, `reportLearningEvaluation` |
 
@@ -68,4 +68,4 @@ Each method takes the workspace ID and bundle ID first. See the [HTTP contract](
 
 `@acclimate/sdk/learning` exports `serveLearningLoop`, `heldOutDigest`, `addEvolveCases`, `createLearningOutcomeReporter` and the `LearningLoopApp` and `LearningLoopOptions` types. The `acclimate-learning` bin serves an enrolled bundle. See the [learning evaluator CLI](/docs/reference/evaluator-cli#learning-evaluator).
 
-The SDK also exposes `getLearningMemory` for the phase 4 memory route.
+`getLearningRound` returns candidates and the selector decision. `getLearningMemory` returns the latest improvement memory or a specific revision when you supply `revision`. Read memory as a workspace reader other than the app principal.

@@ -1,10 +1,10 @@
 # Acclimate
 
-**Acclimate versions and delivers your agent’s instructions, skills and memory files.** Its learning loop runs recurring evaluations of a released bundle and records evolve and held-out scores.
+**Acclimate versions and delivers your agent’s instructions, skills and memory files.** Its learning loop proposes, evaluates and releases improvements to enrolled bundles.
 
 Your application still runs the agent and grades its work. Acclimate versions the instructions, skills and memory files it uses, delivers the released version to the next job, and lets you point a channel back at an earlier version.
 
-Phase 3 ships enrollment and baseline evaluation. Candidate generation, automatic adoption and improvement memory arrive with the optimizer in phase 4.
+Each round proposes five candidates, screens them, evaluates the survivors and selects one to adopt or keeps the current release. An adoption releases the version and adds an attempt to improvement memory. The evaluator scores the retained version on private held-out cases for monitoring.
 
 Acclimate is open source under Apache-2.0 and self-hosted. Your agents, prompts, tasks, and model credentials stay in your environment.
 

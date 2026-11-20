@@ -47,7 +47,7 @@ Compute the commitment locally.
 acclimate-learning held-out --app ./learning-app.mjs
 ```
 
-In the console, release a version on the intended channel and open the bundle's **Learning** tab as an administrator. Enroll with the channel, app principal ID, domain, benchmark, policy model and the printed digest and case count. Give the app principal `evaluate` on the workspace and use its ID and token in the evaluator config above. Add setup cases through the console or with `addEvolveCases` from `@acclimate/sdk/learning`. A running loop waits for its first live evolve case.
+In the console, release a version on the intended channel and open the bundle's **Learning** tab as an administrator. Enroll with the channel, app principal ID, domain, benchmark, policy model and the printed digest and case count. Give the app principal `evaluate` on the workspace and use its ID and token in the evaluator config above. Editors and administrators can add or retire evolve cases through the console with their signed-in session. The app principal can send batches with `addEvolveCases` from `@acclimate/sdk/learning`. A running loop waits for its first live evolve case.
 
 ```bash
 acclimate-learning --config /private/evaluator.json --bundle "$ACCLIMATE_BUNDLE" --app ./learning-app.mjs

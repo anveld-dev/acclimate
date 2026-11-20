@@ -5,6 +5,7 @@ import type {
 } from '@acclimate/sdk';
 
 export type LearningScope = { workspaceId: string; bundleId: string };
+export type LearningReadOptions = { round?: string; memory?: string };
 export const activeRoundStates = [
   'scoring_incumbent',
   'proposing',
@@ -21,7 +22,8 @@ export type ActiveEvaluation = Pick<
 export type LearningCommand =
   | { action: 'enroll'; body: LearningLoopRequest }
   | { action: 'pause' | 'resume' | 'stop' }
-  | { action: 'addCase'; token: string; caseId: string; input: string; expected: string };
+  | { action: 'addCase'; caseId: string; input: string; expected: string }
+  | { action: 'retireCase'; caseId: string };
 
 const bytes = (value: string) => new TextEncoder().encode(value).length;
 export function enrollmentError(body: LearningLoopRequest) {
@@ -49,14 +51,12 @@ export function enrollmentError(body: LearningLoopRequest) {
 }
 
 export function evolveCaseBody(
-  command: Extract<LearningCommand, { action: 'addCase' }>,
+  command: Extract<LearningCommand, { action: 'addCase' | 'retireCase' }>,
 ): LearningEvolveCasesRequest {
-  if (
-    typeof command.caseId !== 'string' ||
-    !/^[A-Za-z0-9._:-]{1,128}$/.test(command.caseId) ||
-    command.caseId.startsWith('outcome:')
-  )
-    throw new Error('Enter a valid setup case ID. The outcome: prefix is reserved.');
+  if (typeof command.caseId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(command.caseId))
+    throw new Error('Enter a valid evolve case ID.');
+  if (command.action === 'retireCase') return { retire: [command.caseId] };
+  if (command.caseId.startsWith('outcome:')) throw new Error('The outcome: prefix is reserved.');
   const { input, expected } = command;
   if (
     typeof input !== 'string' ||

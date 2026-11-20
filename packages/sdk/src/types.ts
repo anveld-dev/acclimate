@@ -261,7 +261,7 @@ export interface LearningCandidate {
     files: ({ op: 'write'; path: string; text: string } | { op: 'delete'; path: string })[];
   } | null;
   diagnosis: LearningDiagnosis | null;
-  scan: { clean: boolean; findings: { rule: string; path: string }[] } | null;
+  scan: { clean: boolean; findings: { rule: string; field: 'rationale' | 'rootCause' | 'path' | 'text'; path: string | null }[] } | null;
   screen: { verdict: 'evaluate' | 'skip'; reason: string } | null;
   versionId: string | null;
   evaluationId: string | null;

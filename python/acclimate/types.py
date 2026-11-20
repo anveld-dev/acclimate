@@ -350,7 +350,8 @@ class _LearningChanges(TypedDict):
 
 class _LearningFinding(TypedDict):
     rule: str
-    path: str
+    field: Literal["rationale", "rootCause", "path", "text"]
+    path: str | None
 
 
 class _LearningScan(TypedDict):

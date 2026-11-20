@@ -152,6 +152,7 @@ class ParityTest(unittest.TestCase):
              "GET", "/rounds?before=10&limit=2", None, None),
             (lambda: c.get_learning_round("w", "b", "r", evaluation="x y"),
              "GET", "/rounds/r?evaluation=x+y", None, None),
+            (lambda: c.get_learning_memory("w", "b"), "GET", "/memory", None, None),
             (lambda: c.get_learning_memory("w", "b", revision=0), "GET", "/memory?revision=0", None, None),
             (lambda: c.add_learning_evolve_cases("w", "b", evolve), "POST", "/evolve-cases", None, evolve),
             (lambda: c.report_learning_outcome("w", "b", outcome), "POST", "/outcomes", "outcome-id", outcome),
@@ -167,6 +168,46 @@ class ParityTest(unittest.TestCase):
                 actual = self.last()
                 self.assertEqual((actual["method"], actual["path"], actual["key"], actual["body"]),
                                  (method, prefix + suffix, key, body))
+
+    def test_learning_inspection_preserves_candidate_and_memory_records(self):
+        candidate: types.LearningCandidate = {
+            "sample": 1, "status": "dropped", "dropReason": "scanner-rejected",
+            "rationale": None, "changes": None,
+            "scan": {"clean": False, "findings": [{"rule": "email", "field": "rationale", "path": None}]},
+            "diagnosis": {"problem": {"id": "P1"}, "predicted": ["case-a"]},
+            "screen": None, "versionId": None, "evaluationId": None, "evolveScore": None,
+        }
+        selection: types.LearningSelection = {
+            "decision": "keep", "sample": None, "versionId": None, "digest": None,
+            "reason": "Keep the incumbent", "model": "optimizer", "inputDigest": "sha256:input",
+        }
+        Recorder.response = {"candidates": [candidate], "selection": selection}
+        actual = self.client.get_learning_round("w", "b", "r")
+        self.assertEqual(actual["candidates"], [candidate])
+        self.assertEqual(actual["selection"], selection)
+        provenance: types._LearningMemoryProvenance = {
+            "domain": "support", "benchmark": "tickets", "policyModel": "policy", "round": 1,
+        }
+        memory: types.LearningMemory = {
+            "currentRevision": 2, "memoryRevision": 1, "memoryDigest": "sha256:memory",
+            "improvementMemory": {
+                "schemaVersion": 1, "memoryRevision": 1,
+                "problems": [{"id": "P1", "rootCause": "Stops early", "openedRound": 1, "attempts": [{
+                    "round": 1, "sample": 2, "accepted": True, "backfilled": False,
+                    "what": {"rationale": "Retry", "changes": {"edits": [], "files": []}},
+                    "files": ["AGENTS.md"], "predicted": ["case-a"], "fixed": ["case-a"],
+                    "missed": [], "passed": 5, "total": 5, "domain": "support",
+                    "provenance": provenance,
+                }]}],
+            },
+            "records": [{
+                "revision": 1, "problemId": "P1", "roundId": "r", "round": 1, "versionId": "v",
+                "provenance": {**provenance, "evolveRevision": 2, "heldOutDigest": "sha256:held",
+                               "optimizerModel": "optimizer"},
+            }],
+        }
+        Recorder.response = memory
+        self.assertEqual(self.client.get_learning_memory("w", "b", revision=1), memory)
 
     def test_held_out_commitment_matches_shared_fixture(self):
         fixture = json.loads((FIXTURES / "learning-held-out-v1.json").read_text())
@@ -243,7 +284,9 @@ class OpenApiContractTest(unittest.TestCase):
     def test_learning_schema_fields_and_required_keys(self):
         schemas = json.loads((ROOT / "contracts" / "openapi.json").read_text())["components"]["schemas"]
         for name in ("LearningLoopRequest", "LearningLoop", "LearningEvaluationReport",
-                     "LearningEvaluationReportRequest", "LearningWork", "LearningOutcomeRequest"):
+                     "LearningEvaluationReportRequest", "LearningWork", "LearningOutcomeRequest",
+                     "LearningRound", "LearningCandidate", "LearningDiagnosis", "LearningSelection",
+                     "LearningMemory"):
             with self.subTest(schema=name):
                 schema, typed_dict = schemas[name], getattr(types, name)
                 self.assertEqual(set(schema["properties"]), set(typed_dict.__annotations__))

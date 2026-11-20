@@ -141,6 +141,7 @@ async fn fixture() -> Fixture {
     let app = router(AppState {
         access: common::access(),
         runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+        optimizer: None,
         db: db.clone(),
         grants: Arc::new(grants),
     });

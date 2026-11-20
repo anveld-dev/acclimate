@@ -1,5 +1,7 @@
 import type { LearningLoop, LearningRoundSummary } from '@acclimate/sdk';
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { bundleHref } from '../navigation';
+import { ImprovementMemory, LearningRoundDetail } from './learning-details';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { runLearningLoop } from '../server/learning-loop';
@@ -173,7 +175,6 @@ function AddCase({
       caseId: formValue(data, 'caseId'),
       input: formValue(data, 'input'),
       expected: formValue(data, 'expected'),
-      token: formValue(data, 'appToken'),
     };
     try {
       evolveCaseBody(command);
@@ -181,8 +182,6 @@ function AddCase({
       report((error as Error).message);
       return;
     }
-    const tokenInput = event.currentTarget.elements.namedItem('appToken') as HTMLInputElement;
-    tokenInput.value = '';
     void submit(command);
   }
   return (
@@ -193,16 +192,6 @@ function AddCase({
           <label htmlFor="learning-caseId" className="grid gap-1 text-sm">
             Case ID
             <Input id="learning-caseId" name="caseId" required maxLength={128} />
-          </label>
-          <label htmlFor="learning-appToken" className="grid gap-1 text-sm">
-            Enrolled app principal token
-            <Input
-              type="password"
-              id="learning-appToken"
-              name="appToken"
-              required
-              autoComplete="off"
-            />
           </label>
           <label className="grid gap-1 text-sm">
             Input (JSON)
@@ -337,7 +326,52 @@ export function ScoreCurves({ rounds }: { rounds: LearningRoundSummary[] }) {
   );
 }
 
-function RoundList({ rounds }: { rounds: LearningRoundSummary[] }) {
+function RetireCase({
+  busy,
+  submit,
+  report,
+}: {
+  busy: boolean;
+  submit: (command: LearningCommand) => Promise<void>;
+  report: (message: string) => void;
+}) {
+  function retire(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const command = {
+      action: 'retireCase' as const,
+      caseId: formValue(new FormData(event.currentTarget), 'caseId'),
+    };
+    try {
+      evolveCaseBody(command);
+    } catch (error) {
+      report((error as Error).message);
+      return;
+    }
+    void submit(command);
+  }
+  return (
+    <details>
+      <summary className="cursor-pointer text-sm font-medium">Retire an evolve case</summary>
+      <form method="post" onSubmit={retire} className="mt-4 flex flex-wrap items-end gap-3">
+        <label htmlFor="learning-retire-case" className="grid gap-1 text-sm">
+          Case ID to retire
+          <Input id="learning-retire-case" name="caseId" required maxLength={128} disabled={busy} />
+        </label>
+        <Button type="submit" disabled={busy} variant="outline">
+          Retire case
+        </Button>
+      </form>
+    </details>
+  );
+}
+
+function RoundList({
+  rounds,
+  href,
+}: {
+  rounds: LearningRoundSummary[];
+  href: (id: string) => string;
+}) {
   const [before, setBefore] = useState<number>();
   const page = rounds.filter(({ number }) => before === undefined || number < before).slice(0, 20);
   const last = page.at(-1)?.number;
@@ -364,7 +398,11 @@ function RoundList({ rounds }: { rounds: LearningRoundSummary[] }) {
           <tbody>
             {page.map((round) => (
               <tr key={round.id} className="border-t">
-                <th scope="row">{round.number}</th>
+                <th scope="row">
+                  <a className="underline" href={href(round.id)}>
+                    {round.number}
+                  </a>
+                </th>
                 <td>{stateLabels[round.state]}</td>
                 <td className="capitalize">{round.decision ?? '—'}</td>
                 <td>{round.reason ?? '—'}</td>
@@ -441,11 +479,11 @@ export function BundleLearning({
       }
       setConfirmStop(false);
       if ('receipt' in result && result.receipt) {
-        const { added, evolveRevision } = result.receipt;
+        const { added, retired, evolveRevision } = result.receipt;
         setNotice(
-          added
-            ? `Case added to evolve revision ${evolveRevision}.`
-            : `Case already exists at evolve revision ${evolveRevision}.`,
+          command.action === 'retireCase'
+            ? `Case ${retired ? 'retired' : 'already retired'} at evolve revision ${evolveRevision}.`
+            : `Case ${added ? 'added' : 'already exists'} at evolve revision ${evolveRevision}.`,
         );
       }
       await refresh();
@@ -456,6 +494,12 @@ export function BundleLearning({
     }
   }
   const loop = state.ok ? state.loop : null;
+  function roundHref(round: string) {
+    return (
+      bundleHref({ ...scope, channel: loop?.channel ?? 'stable' }, 'learning', { round }) +
+      '#round-detail'
+    );
+  }
   return (
     <div className="space-y-5">
       <div className="flex justify-end">
@@ -600,7 +644,11 @@ export function BundleLearning({
               <Panel title="Active round">
                 {loop.activeRound ? (
                   <>
-                    <p>Round {loop.activeRound.number}</p>
+                    <p>
+                      <a className="underline" href={roundHref(loop.activeRound.id)}>
+                        Round {loop.activeRound.number}
+                      </a>
+                    </p>
                     <ol className="list-decimal space-y-1 pl-5 text-sm">
                       {activeRoundStates.map((roundState) => (
                         <li
@@ -671,14 +719,72 @@ export function BundleLearning({
                     Case IDs appear after the evaluator reports results.
                   </p>
                 )}
-                {state.canManage && <AddCase busy={busy} submit={submit} report={setError} />}
+                {state.canEditCases && (
+                  <>
+                    <AddCase busy={busy} submit={submit} report={setError} />
+                    <RetireCase busy={busy} submit={submit} report={setError} />
+                  </>
+                )}
               </Panel>
               <Panel title="Scores by round">
                 <ScoreCurves rounds={state.rounds} />
               </Panel>
               <Panel title="Rounds">
-                <RoundList rounds={state.rounds} />
+                <RoundList rounds={state.rounds} href={roundHref} />
+                {state.detail && (
+                  <div id="round-detail">
+                    {state.detail.ok ? (
+                      <LearningRoundDetail scope={scope} detail={state.detail} />
+                    ) : (
+                      <p role="alert">{state.detail.message}</p>
+                    )}
+                  </div>
+                )}
               </Panel>
+              <div id="improvement-memory">
+                <Panel title="Memory">
+                  <p>Improvement memory: what the optimizer sees. Never delivered to jobs.</p>
+                  <a
+                    className="text-sm underline"
+                    href={
+                      bundleHref({ ...scope, channel: loop.channel }, 'learning', {
+                        memory: 'latest',
+                      }) + '#improvement-memory'
+                    }
+                  >
+                    {state.memory ? 'Latest memory revision' : 'View improvement memory'}
+                  </a>
+                  {state.memory && (
+                    <>
+                      {state.memory.ok ? (
+                        <ImprovementMemory memory={state.memory.memory} />
+                      ) : (
+                        <p role="alert">{state.memory.message}</p>
+                      )}
+                      <form
+                        action="#improvement-memory"
+                        method="get"
+                        className="flex flex-wrap items-end gap-3"
+                      >
+                        <label htmlFor="learning-memory-revision" className="grid gap-1 text-sm">
+                          Memory revision
+                          <Input
+                            id="learning-memory-revision"
+                            name="memory"
+                            type="number"
+                            min={0}
+                            max={state.memory.ok ? state.memory.memory.currentRevision : undefined}
+                            required
+                          />
+                        </label>
+                        <Button type="submit" variant="outline">
+                          View revision
+                        </Button>
+                      </form>
+                    </>
+                  )}
+                </Panel>
+              </div>
             </>
           )}
         </>

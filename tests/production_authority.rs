@@ -65,6 +65,7 @@ fn state(db: sqlx::PgPool, project: String) -> AppState {
         grants: Arc::new(grants),
         access: Arc::new(access),
         runtime: Arc::new(RuntimeStatus::new()),
+        optimizer: None,
     }
 }
 async fn fixture() -> (sqlx::PgPool, AppState, String) {

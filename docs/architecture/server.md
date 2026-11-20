@@ -10,4 +10,4 @@ The Rust service runs as one process per PostgreSQL database. Startup validates 
 | `integrations` | Connection settings, scoped credentials and delivery observations. |
 | `commands` | Scoped replay, retained operation results and transactional mutations. |
 
-A release changes only the channel selection. The target version and jobs pinned to it remain immutable. The invitation worker keeps readiness independent of application execution. The [learning loop design](self-improvement-memory/loop.md) describes the worker and data model for a later phase.
+A release changes only the channel selection. The target version and jobs pinned to it remain immutable. The invitation worker keeps readiness independent of application execution. The [learning loop design](self-improvement-memory/loop.md) describes the optimizer, worker and data model.

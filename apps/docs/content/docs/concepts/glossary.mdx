@@ -3,8 +3,6 @@ title: Glossary
 description: Terms used in delivery and the learning loop.
 ---
 
-Phase 3 runs baseline evaluations. The optimizer and automatic adoption arrive in phase 4.
-
 | Term | Meaning |
 | --- | --- |
 | Workspace | The scope for bundles, connections and the people who can access them. |
@@ -19,5 +17,5 @@ Phase 3 runs baseline evaluations. The optimizer and automatic adoption arrive i
 | Evolve split | The cases the loop learns from. Their scores, traces and errors reach the optimizer. |
 | Held-out split | Fixed cases kept in the evaluator's own store. Their scores are shown for monitoring and never reach the optimizer. |
 | Outcome | An application's result for a task with an expected answer. It becomes an evolve case. |
-| Improvement memory | The optimizer-only record of problems and the attempts that tried to fix them. It is never delivered to jobs. |
+| Improvement memory | The optimizer-only record of problems and adopted attempts, including predicted fixes and measured results. It is never delivered to jobs. |
 | App principal | The machine identity that submits outcomes and evolve cases and runs the evaluator for a loop. |

@@ -6,7 +6,7 @@ use std::collections::HashSet;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct EvolveCase {
     pub(super) case_id: String,
-    input: Value,
+    pub(super) input: Value,
     expected: Value,
 }
 
@@ -115,9 +115,18 @@ pub(super) async fn submit_cases(
     raw: Body,
 ) -> Reply {
     let bundle = path(&bundle)?;
-    let (mut tx, actor) = actor_tx(&s, &h, &project, "evaluate").await?;
+    let actor = auth::actor(&h, &s, &project, "evaluate")?;
+    let right = if actor.user_id.is_some() {
+        "write"
+    } else {
+        "evaluate"
+    };
+    let mut tx = s.db.begin().await.map_err(db)?;
+    auth::authorize_transaction(&mut tx, &actor, &project, right).await?;
     let row = require_loop(&mut tx, &project, bundle, true).await?;
-    require_app(&actor, &row.app_principal)?;
+    if actor.user_id.is_none() {
+        require_app(&actor, &row.app_principal)?;
+    }
     let request = body(raw)?;
     let input: CasesRequest = parse(&request)?;
     if (input.cases.is_empty() && input.retire.is_empty())

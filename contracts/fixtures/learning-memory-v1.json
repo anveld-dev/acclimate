@@ -1,0 +1,74 @@
+{
+  "currentRevision": 1,
+  "memoryRevision": 1,
+  "memoryDigest": "sha256:f0aa81909305735401c175ef7d1c9056b13def9d7a78b50a862b5b72e2f882c4",
+  "improvementMemory": {
+    "schemaVersion": 1,
+    "memoryRevision": 1,
+    "problems": [
+      {
+        "id": "P1",
+        "rootCause": "The harness skips eligibility checks",
+        "openedRound": 1,
+        "attempts": [
+          {
+            "round": 1,
+            "sample": 2,
+            "accepted": true,
+            "backfilled": false,
+            "what": {
+              "rationale": "Clarify when to verify eligibility.",
+              "changes": {
+                "edits": [],
+                "files": [
+                  {
+                    "op": "write",
+                    "path": "AGENTS.md",
+                    "text": "Verify the refund policy before proposing an amount.\n"
+                  }
+                ]
+              }
+            },
+            "files": [
+              "AGENTS.md"
+            ],
+            "predicted": [
+              "refund-01"
+            ],
+            "fixed": [
+              "refund-01"
+            ],
+            "missed": [],
+            "passed": 4,
+            "total": 5,
+            "domain": "support",
+            "provenance": {
+              "domain": "support",
+              "benchmark": "refunds-v1",
+              "policyModel": "fixture",
+              "round": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "records": [
+    {
+      "revision": 1,
+      "problemId": "P1",
+      "roundId": "30000000-0000-4000-8000-000000000001",
+      "round": 1,
+      "versionId": "10000000-0000-4000-8000-000000000001",
+      "provenance": {
+        "domain": "support",
+        "benchmark": "refunds-v1",
+        "policyModel": "fixture",
+        "round": 1,
+        "evolveRevision": 1,
+        "heldOutDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "optimizerModel": "fixture"
+      }
+    }
+  ]
+}

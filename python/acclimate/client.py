@@ -399,6 +399,7 @@ class AcclimateClient:
 
     def get_learning_memory(self, workspace_id: str, bundle_id: str, *,
                             revision: int | None = None) -> LearningMemory:
+        """Read the latest optimizer memory or the exact revision requested."""
         path = self._loop_path(workspace_id, bundle_id) + "/memory"
         return self._request("GET", path + self._learning_query(revision=revision))
 

@@ -26,7 +26,7 @@ export async function pullPayload(options: {
   try {
     resolved = await resolveAndCache(
       client,
-      { projectId: config.projectId, bundleId: options.bundleId, channel: options.channel },
+      { workspaceId: config.workspaceId, bundleId: options.bundleId, channel: options.channel },
       { cacheDir: path.join(config.journalRoot, 'command-cache') },
     );
   } catch (error) {

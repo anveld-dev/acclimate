@@ -116,9 +116,14 @@ async function config(filename: string, reader: boolean): Promise<EvaluatorConfi
       );
     throw new EvaluatorConfigError('config.missing');
   }
+  if (Object.hasOwn(value, 'projectId'))
+    throw new EvaluatorConfigError('config.schema', undefined, {
+      field: 'projectId',
+      reason: 'projectId was renamed to workspaceId in 0.2.0',
+    });
   const fields = reader
-    ? ['schemaVersion', 'serviceUrl', 'projectId', 'readToken']
-    : ['schemaVersion', 'serviceUrl', 'projectId', 'evaluatorPrincipalId', 'journalRoot'];
+    ? ['schemaVersion', 'serviceUrl', 'workspaceId', 'readToken']
+    : ['schemaVersion', 'serviceUrl', 'workspaceId', 'evaluatorPrincipalId', 'journalRoot'];
   if (!reader && Object.hasOwn(value, 'captureCallbackErrors')) {
     if (typeof value.captureCallbackErrors !== 'boolean') throw new EvaluatorConfigError();
     fields.push('captureCallbackErrors');
@@ -135,7 +140,7 @@ async function config(filename: string, reader: boolean): Promise<EvaluatorConfi
     value.schemaVersion !== 1 ||
     Object.keys(value).length !== fields.length ||
     Object.keys(value).some((k) => !fields.includes(k)) ||
-    !bounded(value.projectId, 1024)
+    !bounded(value.workspaceId, 1024)
   )
     throw new EvaluatorConfigError();
   assertServiceUrl(value.serviceUrl);

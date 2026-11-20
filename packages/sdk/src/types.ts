@@ -14,7 +14,7 @@ export interface Bundle {
   compatibilityTarget: CompatibilityTarget;
   id: string;
   name: string;
-  projectId: string;
+  workspaceId: string;
   createdAt: string;
   origin: BundleOrigin;
   sourceLabel: string | null;
@@ -98,10 +98,10 @@ export interface EvaluationDescriptor {
 export interface EvaluationHandoff {
   schemaVersion: 1;
   serviceUrl: string;
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   requestId: string;
-  configuration: EvaluationDescriptor;
+  descriptor: EvaluationDescriptor;
 }
 /** Point-in-time machine authorization, never an execution reservation or provider probe. */
 export interface ComparisonPolicyReport {
@@ -152,7 +152,7 @@ export interface ComparisonPolicyReceipt extends ComparisonPolicyReport {
 
 export interface EvaluationCapabilities {
   schemaVersion: 1;
-  projectId: string;
+  workspaceId: string;
   principalId: string;
   checkedAt: string;
   readUnpublished: true;
@@ -243,7 +243,7 @@ export interface VerifiedVersion {
   resolvedAt: number;
   stale: boolean;
   /** Present when the SDK resolved the bundle for an explicitly scoped connection. */
-  connection?: Readonly<{ projectId: string; integrationId: string }>;
+  connection?: Readonly<{ workspaceId: string; connectionId: string }>;
 }
 
 /** Bounded service listing. Cursors are opaque and must be sent back unchanged. */
@@ -372,7 +372,7 @@ export interface Connection {
     revokedAt: string | null;
   }>;
   id: string;
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   channel: string;
   displayName: string;
@@ -424,8 +424,8 @@ export interface LearningEnrollment
   automaticRollback: boolean;
   audits?: LearningEvaluationDescriptor[];
   auditCount: number;
-  projectId: string;
-  integrationId: string;
+  workspaceId: string;
+  connectionId: string;
   bundleId: string;
   channel: string;
   authorizedBy: string;
@@ -732,8 +732,8 @@ export interface LearningWork {
 }
 export interface DeliveryReceiptRequest {
   eventId: string;
-  integrationId: string;
-  projectId: string;
+  connectionId: string;
+  workspaceId: string;
   bundleId: string;
   channel?: string | null;
   revision?: string | null;
@@ -775,25 +775,3 @@ export type Operation =
     }
   | { status: 'not_observed'; operationId: string }
   | { status: 'closed'; operationId: string; path?: string };
-
-/** @deprecated Use Workspace. */
-export type Project = Workspace;
-/** @deprecated Use Release. */
-export type Promotion = Release;
-/** @deprecated Use ReleasePage. */
-export type PromotionPage = ReleasePage;
-/** @deprecated Use CreateReleaseRequest. */
-export type PromoteRequest = CreateReleaseRequest;
-/** @deprecated Use Connection. */
-export type Integration = Connection;
-/** @deprecated Use CreateConnectionRequest. */
-export type CreateIntegrationRequest = CreateConnectionRequest;
-/** @deprecated Use ConnectionCredential. */
-export type IntegrationCredential = ConnectionCredential;
-/** @deprecated Use ConnectionCredentialKind. */
-export type IntegrationCredentialKind = ConnectionCredentialKind;
-/** @deprecated Use ConnectionObservation. */
-export type IntegrationObservation = ConnectionObservation;
-
-/** @deprecated Use VerifiedVersion. */
-export type VerifiedBundle = VerifiedVersion;

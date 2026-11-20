@@ -18,7 +18,7 @@ const commands: Record<string, string[]> = {
   promote: ['version', 'comparison', 'expected-revision', 'key', 'ack-policy', 'override-reason'],
   rollback: ['version', 'reason', 'expected-revision', 'key'],
 };
-const common = ['project', 'bundle', 'channel', 'output'];
+const common = ['workspace', 'bundle', 'channel', 'output'];
 export function parseArgs(args: string[]) {
   const command = args.shift();
   if (!command || !commands[command])
@@ -31,6 +31,7 @@ export function parseArgs(args: string[]) {
       flags.json = ['true'];
       continue;
     }
+    if (arg === '--project') throw new Error('--project was renamed to --workspace in 0.2.0');
     if (!arg.startsWith('--') || ![...common, ...commands[command]].includes(arg.slice(2)))
       throw new Error(`Unknown option: ${arg}`);
     const name = arg.slice(2),
@@ -52,15 +53,15 @@ function env(name: string) {
   if (!value) throw new Error(`${name} is required`);
   return value;
 }
-async function verified(client: AcclimateClient, project: string, bundle: string, id: string) {
-  const version = await client.getVersion(project, bundle, id);
+async function verified(client: AcclimateClient, workspace: string, bundle: string, id: string) {
+  const version = await client.getVersion(workspace, bundle, id);
   if (
     version.id !== id ||
     version.bundleId !== bundle ||
     !/^sha256:[a-f0-9]{64}$/.test(version.digest)
   )
     throw new Error('Invalid version metadata');
-  const bytes = await client.getPayload(project, bundle, id);
+  const bytes = await client.getPayload(workspace, bundle, id);
   try {
     return { version, payload: verifyPayloadBytes(bytes, version.digest) };
   } catch (error) {
@@ -161,7 +162,7 @@ async function savePrivate(path: string, content: string) {
 }
 export async function run(args: string[], client?: AcclimateClient) {
   const { command, flags } = parseArgs([...args]);
-  const project = required(flags, 'project'),
+  const workspace = required(flags, 'workspace'),
     bundle = required(flags, 'bundle');
   client ??= new AcclimateClient({
     baseUrl: env('ACCLIMATE_URL'),
@@ -178,13 +179,13 @@ export async function run(args: string[], client?: AcclimateClient) {
     };
     if (!request.allowedPaths.length) throw new Error('At least one --path is required');
     result = await client.createProposal(
-      project,
+      workspace,
       bundle,
       request,
       one(flags, 'key') ?? randomUUID(),
     );
   } else if (command === 'proposal')
-    result = await client.getProposal(project, bundle, required(flags, 'id'));
+    result = await client.getProposal(workspace, bundle, required(flags, 'id'));
   else if (command === 'history') {
     const limit = one(flags, 'limit');
     if (limit && !/^(?:[1-9]|[1-9][0-9]|100)$/.test(limit))
@@ -192,20 +193,20 @@ export async function run(args: string[], client?: AcclimateClient) {
     const beforeRevision = one(flags, 'before');
     if (beforeRevision && !/^[1-9][0-9]*$/.test(beforeRevision))
       throw new Error('--before must be a positive canonical revision');
-    result = await client.listPromotions(project, bundle, required(flags, 'channel'), {
+    result = await client.listReleases(workspace, bundle, required(flags, 'channel'), {
       ...(limit ? { limit: Number(limit) } : {}),
       ...(beforeRevision ? { beforeRevision } : {}),
     });
   } else if (command === 'review') {
     const channel = required(flags, 'channel'),
-      comparison = await client.getComparison(project, bundle, required(flags, 'comparison'));
+      comparison = await client.getComparison(workspace, bundle, required(flags, 'comparison'));
     if (comparison.id !== required(flags, 'comparison'))
       throw new Error('Comparison identity mismatch');
     const [parent, candidate, current, proposal] = await Promise.all([
-      verified(client, project, bundle, comparison.parentVersionId),
-      verified(client, project, bundle, comparison.candidateVersionId),
-      client.resolveChannel(project, bundle, channel),
-      one(flags, 'proposal') ? client.getProposal(project, bundle, one(flags, 'proposal')!) : null,
+      verified(client, workspace, bundle, comparison.parentVersionId),
+      verified(client, workspace, bundle, comparison.candidateVersionId),
+      client.resolveChannel(workspace, bundle, channel),
+      one(flags, 'proposal') ? client.getProposal(workspace, bundle, one(flags, 'proposal')!) : null,
     ]);
     if (
       parent.version.digest !== comparison.parentDigest ||
@@ -226,8 +227,8 @@ export async function run(args: string[], client?: AcclimateClient) {
     let policyReview;
     try {
       const [receipts, blockers] = await Promise.all([
-        client.listComparisonPolicyReceipts(project, bundle, comparison.id),
-        client.listCandidatePolicyReceipts(project, bundle, candidate.version.id),
+        client.listComparisonPolicyReceipts(workspace, bundle, comparison.id),
+        client.listCandidatePolicyReceipts(workspace, bundle, candidate.version.id),
       ]);
       policyReview = { status: 'available', receipts: receipts.items, blockers: blockers.items };
     } catch (error) {
@@ -235,7 +236,7 @@ export async function run(args: string[], client?: AcclimateClient) {
       policyReview = { status: 'unavailable' };
     }
     result = {
-      project,
+      workspace,
       bundle,
       channel,
       current: current.resolution,
@@ -267,8 +268,8 @@ export async function run(args: string[], client?: AcclimateClient) {
       command === 'promote'
         ? { versionId, expectedRevision, comparisonId: required(flags, 'comparison'), ...(policyOverride ? { policyOverride } : {}) }
         : { versionId, expectedRevision, unevaluatedReason: required(flags, 'reason') };
-    result = await client.promote(
-      project,
+    result = await client.createRelease(
+      workspace,
       bundle,
       channel,
       request,
@@ -285,7 +286,7 @@ export async function run(args: string[], client?: AcclimateClient) {
   return text;
 }
 export const operatorUsage = [
-  'Usage: acclimate-operator COMMAND --project ID --bundle ID [options] [--json] [--output FILE]',
+  'Usage: acclimate-operator COMMAND --workspace ID --bundle ID [options] [--json] [--output FILE]',
   '',
   'Commands:',
   '  request-proposal --parent VERSION --path PATH... --hypothesis TEXT --evidence TEXT... [--key KEY]',

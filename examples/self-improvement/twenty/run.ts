@@ -103,10 +103,10 @@ try {
   );
   const cache = { cacheDir: path.join(output, 'cache') };
   const fetchVersion = (id: string) =>
-    resolveAndCache(client, { projectId: project, bundleId: bundle.id, versionId: id }, cache);
+    resolveAndCache(client, { workspaceId: project, bundleId: bundle.id, versionId: id }, cache);
   const root = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, channel: 'qualification' },
+    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
     cache,
   );
   await save('parent.json', root);
@@ -372,7 +372,7 @@ try {
   // Warm the same channel cache immediately before release, so an old cache entry cannot hide delayed refresh.
   const warm = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, channel: 'qualification' },
+    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
     cache,
   );
   assert.equal(warm.version.id, root.version.id);
@@ -397,7 +397,7 @@ try {
   );
   const refreshed = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, channel: 'qualification' },
+    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
     cache,
   );
   assert.equal(refreshed.version.id, candidate.version.id);

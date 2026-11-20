@@ -6,12 +6,12 @@ import { defineHarness } from '../harnesses.mjs';
 
 export const harness = defineHarness({
   name: 'my-agent',
-  async prepare(bundle) {
-    const staged = await prepareNativeFiles(bundle, {
+  async prepare(version) {
+    const staged = await prepareNativeFiles(version, {
       mapping: { instructionPath: 'AGENTS.md', skillRoot: '.agents/skills', memoryRoot: '.acclimate/memory' },
       prefix: 'my-agent-',
     });
-    return { ...staged, versionId: bundle.version.id, digest: bundle.version.digest };
+    return { ...staged, versionId: version.version.id, digest: version.version.digest };
   },
   async run({ context, acknowledge }) {
     await acknowledge({ kind: 'my-agent', value: String(process.pid) });

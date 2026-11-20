@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import type { AgentOptions } from '@cursor/sdk';
 import { prepare } from '../../src/index.js';
 import { cursorLocalOptions } from '../../src/native.js';
-import type { VerifiedBundle } from '../../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../../sdk/src/types.js';
 
-const bundle: VerifiedBundle = {
+const bundle: VerifiedVersion = {
   version: { id: 'v1', bundleId: 'b', parentVersionId: null, digest: 'digest', createdAt: 'now' },
   resolvedAt: 0,
   stale: false,

@@ -93,8 +93,8 @@ export interface EvaluationGradeResult extends GradeResult {
 }
 /** The argument to an execute callback. */
 export interface ExecuteInput<I = Json> {
-  /** The verified parent or candidate version under test. */
-  bundle: VerifiedVersion;
+  /** The verified parent or candidate version under test. Its metadata is `version.version`. */
+  version: VerifiedVersion;
   caseId: string;
   /** 0-based index of this run of the case. */
   repetition: number;
@@ -162,7 +162,7 @@ export interface EvaluatorConfig {
   captureCallbackErrors?: boolean;
   schemaVersion: 1;
   serviceUrl: string;
-  projectId: string;
+  workspaceId: string;
   evaluatorPrincipalId: string;
   evaluatorToken: string;
   journalRoot: string;
@@ -170,7 +170,7 @@ export interface EvaluatorConfig {
 export interface ReaderConfig {
   schemaVersion: 1;
   serviceUrl: string;
-  projectId: string;
+  workspaceId: string;
   readToken: string;
 }
 export interface PreflightResult {

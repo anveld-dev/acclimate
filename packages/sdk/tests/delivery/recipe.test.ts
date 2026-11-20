@@ -60,17 +60,17 @@ for (const reporting of ['disabled', 'healthy', 'denied', 'stalled'] as const) {
         ACCLIMATE_URL: `http://127.0.0.1:${port}`,
         ACCLIMATE_TOKEN: 'read-only',
         ACCLIMATE_SCOPE: 'test-app',
-        ACCLIMATE_PROJECT: 'p',
+        ACCLIMATE_WORKSPACE: 'p',
         ACCLIMATE_BUNDLE: 'b',
         ACCLIMATE_CHANNEL: 'stable',
         ACCLIMATE_CACHE: join(dir, 'cache'),
         ACCLIMATE_JOB_DIR: join(dir, 'job'),
         ACCLIMATE_RECEIPT_TOKEN: '',
-        ACCLIMATE_INTEGRATION: '',
+        ACCLIMATE_CONNECTION: '',
       };
       if (reporting !== 'disabled') {
         env.ACCLIMATE_RECEIPT_TOKEN = 'receipt-only';
-        env.ACCLIMATE_INTEGRATION = 'i';
+        env.ACCLIMATE_CONNECTION = 'i';
       }
       const child = spawn(process.execPath, ['--import', 'tsx', 'examples/delivery-check.ts'], {
         env,

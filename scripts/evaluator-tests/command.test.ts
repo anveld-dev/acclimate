@@ -8,7 +8,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { atomicPrivateWrite } from '../../packages/sdk/src/evaluation/private-state.js';
 import { parseEvaluatorArguments } from '../evaluate-app.js';
-import { fixture, projectId, bundleId, requestId, evaluatorPrincipalId } from './fixture.js';
+import { fixture, workspaceId, bundleId, requestId, evaluatorPrincipalId } from './fixture.js';
 import { localEvaluationDescriptor } from './descriptors.js';
 
 const identifiers = ['--bundleID', bundleId, '--requestID', requestId];
@@ -57,41 +57,41 @@ test('live checkout command refuses a request for a different evaluator before s
       assert.equal(req.headers.authorization, `Bearer ${token}`);
       const route = req.url ?? '';
       requests.push(route);
-      if (route === `/v1/workspaces/${projectId}/evaluation-capabilities`) {
+      if (route === `/v1/workspaces/${workspaceId}/evaluation-capabilities`) {
         assert.equal(req.method, 'GET');
         res.setHeader('cache-control', 'private, no-store');
-        return send(200, await f.api.getEvaluationCapabilities(projectId));
+        return send(200, await f.api.getEvaluationCapabilities(workspaceId));
       }
-      assert.ok(route.startsWith(`/v1/workspaces/${projectId}/bundles/${bundleId}/`));
+      assert.ok(route.startsWith(`/v1/workspaces/${workspaceId}/bundles/${bundleId}/`));
       let text = '';
       for await (const chunk of req) text += chunk;
       const body = text ? JSON.parse(text) : undefined;
       const key = String(req.headers['idempotency-key'] ?? '');
-      const bundleRoute = `/v1/workspaces/${projectId}/bundles/${bundleId}`;
+      const bundleRoute = `/v1/workspaces/${workspaceId}/bundles/${bundleId}`;
       if (req.method === 'POST') {
         assert.equal(req.headers['x-acclimate-durable-operation'], 'true');
         assert.match(key, /^[\x20-\x7e]{1,128}$/);
       }
       if (req.method === 'GET' && route === `${bundleRoute}/evaluation-requests/${requestId}`)
-        return send(200, await f.api.getEvaluation(projectId, bundleId, requestId));
+        return send(200, await f.api.getEvaluation(workspaceId, bundleId, requestId));
       if (
         req.method === 'POST' &&
         route === `${bundleRoute}/evaluation-requests/${requestId}/start`
       )
-        return send(200, await f.api.startEvaluation(projectId, bundleId, requestId, body, key));
+        return send(200, await f.api.startEvaluation(workspaceId, bundleId, requestId, body, key));
       if (req.method === 'POST' && route === `${bundleRoute}/comparisons`)
-        return send(201, await f.api.createComparison(projectId, bundleId, body, key));
+        return send(201, await f.api.createComparison(workspaceId, bundleId, body, key));
       if (
         req.method === 'POST' &&
         route === `${bundleRoute}/evaluation-requests/${requestId}/finish`
       )
-        return send(200, await f.api.finishEvaluation(projectId, bundleId, requestId, body, key));
+        return send(200, await f.api.finishEvaluation(workspaceId, bundleId, requestId, body, key));
       if (
         req.method === 'GET' &&
         f.request.comparisonId &&
         route === `${bundleRoute}/comparisons/${f.request.comparisonId}`
       )
-        return send(200, await f.api.getComparison(projectId, bundleId, f.request.comparisonId));
+        return send(200, await f.api.getComparison(workspaceId, bundleId, f.request.comparisonId));
       const match = /\/versions\/([^/]+)(\/payload)?$/.exec(route);
       if (match) {
         if (match[2]) {
@@ -114,7 +114,7 @@ test('live checkout command refuses a request for a different evaluator before s
       JSON.stringify({
         schemaVersion: 1,
         serviceUrl: `http://127.0.0.1:${address.port}`,
-        projectId,
+        workspaceId,
         evaluatorToken: token,
         evaluatorPrincipalId,
         journalRoot: path.join(stateRoot, 'evaluations'),

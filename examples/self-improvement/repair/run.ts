@@ -90,7 +90,7 @@ try {
   );
   const cache = { cacheDir: path.join(output, 'cache') };
   const fetch = (versionId: string) =>
-    resolveAndCache(client, { projectId: project, bundleId: bundle.id, versionId }, cache);
+    resolveAndCache(client, { workspaceId: project, bundleId: bundle.id, versionId }, cache);
   await save('parent.json', await fetch(root.id));
   let draft = await fetch(scaffold.id),
     selected: VerifiedVersion | undefined;

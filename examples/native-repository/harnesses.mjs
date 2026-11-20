@@ -39,7 +39,7 @@ export const CREDENTIAL_ENV = Object.freeze({
 });
 
 /**
- * Public harness adapter contract. `prepare(bundle, { approvedMemoryPaths })`
+ * Public harness adapter contract. `prepare(version, { approvedMemoryPaths })`
  * stages the verified version in a new private directory directly under the
  * worker's TMPDIR and returns `{ cwd, versionId, digest, instructionPath,
  * skillPaths, memoryFiles, cleanup }` (see `prepareNativeFiles` in
@@ -50,19 +50,19 @@ export const CREDENTIAL_ENV = Object.freeze({
 export function defineHarness({ name, prepare, run, identity = {} }) {
   if (typeof name !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(name))
     throw new TypeError('defineHarness: name must be a lowercase identifier such as my-agent');
-  if (typeof prepare !== 'function') throw new TypeError('defineHarness: prepare(bundle, options) is required');
+  if (typeof prepare !== 'function') throw new TypeError('defineHarness: prepare(version, options) is required');
   if (typeof run !== 'function') throw new TypeError('defineHarness: run(task) is required');
   return Object.freeze({ name, prepare, run, identity: JSON.parse(JSON.stringify(identity)) });
 }
 
-async function prepareReplay(bundle) {
+async function prepareReplay(version) {
   const { prepareNativeFiles } = await import('@acclimate/sdk/native-files');
-  const staged = await prepareNativeFiles(bundle, {
+  const staged = await prepareNativeFiles(version, {
     mapping: { instructionPath: 'AGENTS.md', skillRoot: '.agents/skills', memoryRoot: '.acclimate/memory' },
     prefix: 'acclimate-replay-',
     target: 'codex',
   });
-  return { ...staged, versionId: bundle.version.id, digest: bundle.version.digest };
+  return { ...staged, versionId: version.version.id, digest: version.version.digest };
 }
 
 /** Application-owned allowlist: no handoff value resolves executable code. */

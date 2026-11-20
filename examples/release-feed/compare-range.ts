@@ -29,15 +29,15 @@ async function readJson(file: string, privateFile = false) {
 const operator = await readJson(operatorFile, true);
 const credentials = await readJson(connectionFile, true);
 const previous = await readJson(previousSummary);
-if (operator.projectId !== previous.project) throw new Error('Workspace mismatch.');
-const project = operator.projectId;
+if (operator.workspaceId !== previous.project) throw new Error('Workspace mismatch.');
+const project = operator.workspaceId;
 const bundle = previous.bundle;
 const integration = previous.integration;
 const api = new AcclimateClient({ ...operator, scope: 'release-feed-evaluator' });
 const consumer = new AcclimateClient({
   baseUrl: operator.baseUrl,
   token: credentials['content-read'],
-  integrationId: integration,
+  connectionId: integration,
   scope: 'release-feed-consumer',
 });
 const reporter = createReceiptReporter({
@@ -46,8 +46,8 @@ const reporter = createReceiptReporter({
     token: credentials['receipt-write'],
     scope: 'release-feed-receipts',
   }),
-  projectId: project,
-  integrationId: integration,
+  workspaceId: project,
+  connectionId: integration,
 });
 function git(...args: string[]) {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -81,11 +81,11 @@ const cacheDir = path.join(dir, 'cache');
 const resolveStable = () =>
   resolveAndCache(
     consumer,
-    { projectId: project, bundleId: bundle, channel: 'stable' },
+    { workspaceId: project, bundleId: bundle, channel: 'stable' },
     { cacheDir, reporter },
   );
 const parent = await resolveStable();
-if (parent.version.id !== previous.freshVersion || parent.connection?.integrationId !== integration)
+if (parent.version.id !== previous.freshVersion || parent.connection?.connectionId !== integration)
   throw new Error('Live connection has moved since the supplied summary.');
 const maxCalls = 12;
 type Row = ReturnType<typeof snapshot>;
@@ -252,7 +252,7 @@ try {
       await progress('executing', caseId);
       const verified = await resolveAndCache(
         api,
-        { projectId: project, bundleId: bundle, versionId: version.version.id },
+        { workspaceId: project, bundleId: bundle, versionId: version.version.id },
         { cacheDir },
       );
       const role = version.version.id === parent.version.id ? 'parent' : 'candidate';

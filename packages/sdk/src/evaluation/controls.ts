@@ -58,7 +58,7 @@ export interface RunSummary {
   gradeRetriesUsed: number;
   /**
    * Pairs where both arms returned output and the canonical JSON was identical.
-   * When every compared pair is identical, the adapter probably ignores `bundle`.
+   * When every compared pair is identical, the adapter probably ignores `version`.
    */
   outputs: { comparedPairs: number; identicalPairs: number };
 }
@@ -227,7 +227,7 @@ export function runWarnings(
     warnings.push(
       digests && digests.parent === digests.candidate
         ? `Parent and candidate are the same payload (${digests.parent}), so identical outputs are expected. Supply a changed candidate to measure a difference.`
-        : `Both arms returned identical output on all ${comparedPairs} compared pair${comparedPairs === 1 ? '' : 's'}. Check that execute uses the bundle argument; an adapter that ignores it compares the agent with itself.`,
+        : `Both arms returned identical output on all ${comparedPairs} compared pair${comparedPairs === 1 ? '' : 's'}. Check that execute uses the version it is given; an adapter that ignores it compares the agent with itself.`,
     );
   }
   if (summary.stopReason === 'deadline')

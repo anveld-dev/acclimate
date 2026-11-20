@@ -129,12 +129,12 @@ function harnessForCase(caseId, input) {
   return [caseId.slice(0, -suffix.length), harnesses.get(name)];
 }
 
-export async function execute({ bundle, context, caseId, repetition, input, signal }) {
+export async function execute({ version, context, caseId, repetition, input, signal }) {
   if (typeof input?.prompt !== 'string' || !input.prompt.trim()) throw new Error('A native case needs input.prompt.');
   const [baseCaseId, harness] = harnessForCase(caseId, input);
   const kind = harness.kind === 'custom' ? harness.name : harness.kind;
   return runRepositoryJob({
-    bundle, context, caseId, repetition, signal, source, resultFiles, selectedMemoryPaths, secrets,
+    version, context, caseId, repetition, signal, source, resultFiles, selectedMemoryPaths, secrets,
     harness: harness.name, prepare: harness.prepare,
     workspaceParent: path.join(stateRoot, 'workspaces'), artifactRoot: path.join(stateRoot, 'artifacts'),
     runHarness: async task => {

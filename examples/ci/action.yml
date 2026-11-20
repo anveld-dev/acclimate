@@ -30,7 +30,7 @@ inputs:
     description: Evaluator config file on the runner. It may omit the token when token or token-file is set.
     default: ''
   config-json:
-    description: Non-secret evaluator config fields as JSON (serviceUrl, projectId, evaluatorPrincipalId, journalRoot), for example from a repository variable. Merged over config.
+    description: Non-secret evaluator config fields as JSON (serviceUrl, workspaceId, evaluatorPrincipalId, journalRoot), for example from a repository variable. Merged over config.
     default: ''
   service-url:
     description: Acclimate service URL. Overrides serviceUrl from config and config-json.

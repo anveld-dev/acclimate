@@ -70,8 +70,8 @@ for (const kind of ['channel', 'version'] as const) {
       });
       const selection =
         kind === 'channel'
-          ? { projectId: 'p', bundleId: 'b', channel: 'stable' }
-          : { projectId: 'p', bundleId: 'b', versionId: 'v' };
+          ? { workspaceId: 'p', bundleId: 'b', channel: 'stable' }
+          : { workspaceId: 'p', bundleId: 'b', versionId: 'v' };
       const offline = kind === 'channel' ? { maxAgeMs: 60_000 } : { pinnedVersionId: 'v' };
       try {
         await resolveAndCache(client, selection, { cacheDir: dir });

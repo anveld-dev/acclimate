@@ -7,7 +7,7 @@ export interface InstalledAdapter {
   describe(): EvaluationDescriptor;
   cases: readonly ComparisonCase<unknown, unknown>[];
   execute(input: {
-    bundle: VerifiedVersion;
+    version: VerifiedVersion;
     caseId: string;
     repetition: number;
     snapshot: unknown;

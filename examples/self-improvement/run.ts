@@ -71,7 +71,7 @@ try {
   const cached = () => ({ cacheDir: path.join(output, 'cache') });
   const parent = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, channel: 'qualification' },
+    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
     cached(),
   );
   await save('parent.json', parent);
@@ -139,7 +139,7 @@ try {
     }
     const value = await resolveAndCache(
       client,
-      { projectId: project, bundleId: bundle.id, versionId: completed.candidate.id },
+      { workspaceId: project, bundleId: bundle.id, versionId: completed.candidate.id },
       cached(),
     );
     screenCandidate(value.payload, [...training, ...selection, ...audit, ...release]);
@@ -312,7 +312,7 @@ try {
   );
   const refreshed = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, channel: 'qualification' },
+    { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
     cached(),
   );
   assert.equal(refreshed.version.id, candidate.version.id);

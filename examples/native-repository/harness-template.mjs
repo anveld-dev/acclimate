@@ -17,14 +17,14 @@ export const harness = defineHarness({
   // Stage the verified version where your agent discovers instructions and skills.
   // prepareNativeFiles validates the payload, writes a private 0700 directory under
   // TMPDIR and returns { cwd, instructionPath, skillPaths, memoryFiles, cleanup }.
-  async prepare(bundle, { approvedMemoryPaths = [] } = {}) {
-    const staged = await prepareNativeFiles(bundle, {
+  async prepare(version, { approvedMemoryPaths = [] } = {}) {
+    const staged = await prepareNativeFiles(version, {
       mapping: { instructionPath: 'AGENTS.md', skillRoot: '.agents/skills', memoryRoot: '.acclimate/memory' },
       prefix: 'my-agent-',
       target: 'codex', // the closest compatibility rules for your agent's layout
     });
     void approvedMemoryPaths; // runRepositoryJob removes unapproved memory after prepare.
-    return { ...staged, versionId: bundle.version.id, digest: bundle.version.digest };
+    return { ...staged, versionId: version.version.id, digest: version.version.digest };
   },
 
   // One fresh turn. It runs in its own process group: when turnTimeoutMs expires the

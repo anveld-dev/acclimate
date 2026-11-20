@@ -17,7 +17,7 @@ import { paymentAdapter } from './payment.js';
 import { localEvaluationDescriptor } from './descriptors.js';
 import {
   fixture,
-  projectId,
+  workspaceId,
   bundleId,
   requestId,
   evaluatorPrincipalId,
@@ -31,7 +31,7 @@ async function disposable() {
     api: f.api,
     adapter: paymentAdapter,
     journalRoot,
-    projectId,
+    workspaceId,
     bundleId,
     requestId,
     evaluatorPrincipalId,
@@ -269,7 +269,7 @@ adapter:{...paymentAdapter,execute:async()=>{process.stdout.write('callback\\n')
 
 test('journal is scoped to service, project, bundle, request and evaluator', async () => {
   const { options, cleanup } = await disposable();
-  const scope = { serviceUrl, projectId, bundleId, requestId, evaluatorPrincipalId };
+  const scope = { serviceUrl, workspaceId, bundleId, requestId, evaluatorPrincipalId };
   try {
     const first = await openJournal(options.journalRoot, scope);
     for (const key of Object.keys(scope) as Array<keyof typeof scope>) {

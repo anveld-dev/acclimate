@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { EVALUATOR_TOKEN_ENV, readEvaluatorConfig } from '../../src/evaluation/config.js';
+import { EVALUATOR_TOKEN_ENV, readEvaluatorConfig, readReaderConfig } from '../../src/evaluation/config.js';
 import { EvaluationError } from '../../src/evaluation/errors.js';
 
 async function fixture() {
@@ -11,7 +11,7 @@ async function fixture() {
   const base = {
     schemaVersion: 1,
     serviceUrl: 'https://acclimate.example/',
-    projectId: 'workspace',
+    workspaceId: 'workspace',
     evaluatorPrincipalId: 'machine:ci',
     journalRoot: path.join(directory, 'journal'),
   };
@@ -110,6 +110,34 @@ test('an evaluator token can come from ACCLIMATE_EVALUATOR_TOKEN when the config
         }),
       ),
       code('config.schema'),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a 0.1 evaluator or reader config with projectId names the rename', async () => {
+  const { directory, base, write } = await fixture();
+  try {
+    const { workspaceId, ...rest } = base;
+    const filename = await write({ ...rest, projectId: workspaceId, evaluatorToken: 'acm_TOKEN_CANARY' });
+    await assert.rejects(
+      readEvaluatorConfig(filename),
+      (error) =>
+        code('config.schema')(error) &&
+        (error as EvaluationError).diagnostic.field === 'projectId' &&
+        (error as EvaluationError).diagnostic.reason === 'projectId was renamed to workspaceId in 0.2.0' &&
+        (error as Error).message.includes('projectId was renamed to workspaceId in 0.2.0'),
+    );
+    const reader = await write({
+      schemaVersion: 1,
+      serviceUrl: base.serviceUrl,
+      projectId: workspaceId,
+      readToken: 'acm_TOKEN_CANARY',
+    });
+    await assert.rejects(
+      readReaderConfig(reader),
+      (error) => code('config.schema')(error) && (error as EvaluationError).diagnostic.field === 'projectId',
     );
   } finally {
     await rm(directory, { recursive: true, force: true });

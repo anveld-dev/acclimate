@@ -152,7 +152,7 @@ for (const prepare of [codex, claude, pi, cursor]) { const staged = await prepar
   await writeFile(
     join(temp, 'consumer.ts'),
     `
-import { AcclimateClient, type VerifiedBundle } from '@acclimate/sdk';
+import { AcclimateClient, type VerifiedVersion } from '@acclimate/sdk';
 import { validatePayload, compatibilityIssues } from '@acclimate/sdk/validation';
 import { defineEvaluation, preflightEvaluation, runEvaluation } from '@acclimate/sdk/evaluation';
 import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
@@ -166,7 +166,7 @@ import { prepare as codex } from '@acclimate/codex-plugin';
 import { prepare as claude } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';
 import { prepare as cursor } from '@acclimate/cursor-plugin';
-declare const bundle: VerifiedBundle;
+declare const bundle: VerifiedVersion;
 validatePayload(bundle.payload);
 void compatibilityIssues(bundle.payload, 'codex');
 void [AcclimateClient, codex(bundle), claude(bundle), pi(bundle), cursor(bundle)];
@@ -226,8 +226,8 @@ import { prepare as pi } from '@acclimate/pi-plugin';
 import { createPiResourceLoader } from '@acclimate/pi-plugin/native';
 import { prepare as cursor } from '@acclimate/cursor-plugin';
 import { cursorLocalOptions } from '@acclimate/cursor-plugin/native';
-import type { VerifiedBundle } from '@acclimate/sdk';
-declare const bundle: VerifiedBundle;
+import type { VerifiedVersion } from '@acclimate/sdk';
+declare const bundle: VerifiedVersion;
 void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiResourceLoader(p)), cursor(bundle).then(cursorLocalOptions)];
 `,
   );

@@ -50,7 +50,7 @@ async function fixture() {
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl: `http://127.0.0.1:${address.port}`,
-      projectId: 'project',
+      workspaceId: 'project',
       evaluatorPrincipalId: 'evaluator',
       evaluatorToken: 'PRIVATE_CANARY',
       journalRoot: path.join(directory, 'journals'),

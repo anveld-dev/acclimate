@@ -37,7 +37,7 @@ test('the learning worker diagnoses local module startup failures before reading
           join(directory, 'absent.json'),
           '--installation',
           'install',
-          '--integration',
+          '--connection',
           'a7100000-0000-0000-0000-000000000001',
         ],
         { encoding: 'utf8', timeout: 15_000 },
@@ -53,4 +53,23 @@ test('the learning worker diagnoses local module startup failures before reading
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('the learning worker names the 0.2.0 rename of --integration', () => {
+  const sourceTest = import.meta.url.endsWith('.ts');
+  const entry = fileURLToPath(
+    new URL('../../src/learning/serve-cli.' + (sourceTest ? 'ts' : 'js'), import.meta.url),
+  );
+  const result = spawnSync(
+    process.execPath,
+    [
+      ...(sourceTest ? ['--import', 'tsx'] : []),
+      entry,
+      '--integration',
+      'a7100000-0000-0000-0000-000000000001',
+    ],
+    { encoding: 'utf8', timeout: 15_000 },
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--integration was renamed to --connection in 0\.2\.0/);
 });

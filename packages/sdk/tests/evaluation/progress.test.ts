@@ -4,7 +4,7 @@ import { AcclimateClient } from '../../src/client.js';
 import { createEvaluationProgressReporter } from '../../src/evaluation/progress.js';
 
 const scope = {
-  projectId: 'p',
+  workspaceId: 'p',
   bundleId: '00000000-0000-0000-0000-000000000001',
   requestId: '00000000-0000-0000-0000-000000000002',
   attemptId: 'attempt',

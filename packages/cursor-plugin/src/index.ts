@@ -20,26 +20,26 @@ export interface PreparedCursorVersion {
 
 /** Prepare native project resources in a private, owned workspace for a fresh local agent. */
 export async function prepare(
-  input: NativeInput,
+  version: NativeInput,
   options: { approvedMemoryPaths?: string[] } = {},
 ): Promise<PreparedCursorVersion> {
-  const { bundle, reportStarted, release } = nativeSource(input);
-  validatePayload(bundle.payload);
+  const { version: verified, reportStarted, release } = nativeSource(version);
+  validatePayload(verified.payload);
   const approved = new Set(options.approvedMemoryPaths ?? []);
   for (const selected of approved) {
-    if (!bundle.payload.files.some((file) => file.kind === 'memory' && file.path === selected))
+    if (!verified.payload.files.some((file) => file.kind === 'memory' && file.path === selected))
       throw new DeliveryError('invalid_payload', `Approved memory not found: ${selected}`);
   }
-  const selectedBundle: VerifiedVersion = {
-    ...bundle,
+  const approvedOnly: VerifiedVersion = {
+    ...verified,
     payload: {
-      ...bundle.payload,
-      files: bundle.payload.files.filter(
+      ...verified.payload,
+      files: verified.payload.files.filter(
         (file) => file.kind !== 'memory' || approved.has(file.path),
       ),
     },
   };
-  const staged = await prepareNativeFiles(selectedBundle, {
+  const staged = await prepareNativeFiles(approvedOnly, {
     mapping: {
       instructionPath: 'AGENTS.md',
       skillRoot: '.cursor/skills',
@@ -50,8 +50,8 @@ export async function prepare(
   });
   return {
     cwd: staged.cwd,
-    versionId: bundle.version.id,
-    digest: bundle.version.digest,
+    versionId: verified.version.id,
+    digest: verified.version.digest,
     settingSources: ['project'],
     instructionPath: staged.instructionPath,
     skillPaths: staged.skillPaths,
@@ -63,6 +63,3 @@ export async function prepare(
     },
   };
 }
-
-/** @deprecated Use PreparedCursorVersion. */
-export type PreparedCursorBundle = PreparedCursorVersion;

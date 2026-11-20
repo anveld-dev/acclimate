@@ -333,7 +333,7 @@ export async function runLocalComparison(options: LocalComparisonOptions): Promi
     captured,
     requestId,
     attemptId,
-    bundles: [parent, candidate],
+    versions: [parent, candidate],
     jobsRoot: path.join(directory, 'jobs'),
     signal: options.signal ?? new AbortController().signal,
     controls: options.controls,
@@ -635,7 +635,7 @@ export async function tryEvaluation(options: TryOptions): Promise<TryResult> {
   const caseIds = captured.cases.map((item) => item.caseId as string);
   const chosen = options.selection ? selectedCaseIds(options.selection, caseIds) : new Set(caseIds.slice(0, 1));
   const payload = options.payload?.payload ?? PLACEHOLDER_PAYLOAD;
-  const bundle = localVersion(payload);
+  const verified = localVersion(payload);
   const requestId = randomUUID(),
     attemptId = randomUUID();
   const signal = options.signal ?? new AbortController().signal;
@@ -685,7 +685,7 @@ export async function tryEvaluation(options: TryOptions): Promise<TryResult> {
     try {
       const { value, durationMs } = await timed((callbackSignal) =>
         captured.execute({
-          bundle: structuredClone(bundle),
+          version: structuredClone(verified),
           caseId: item.caseId,
           repetition: 0,
           input: structuredClone(item.input),
@@ -738,7 +738,7 @@ export async function tryEvaluation(options: TryOptions): Promise<TryResult> {
   return {
     schemaVersion: 1,
     ok: cases.length > 0 && cases.every((row) => row.execute.status === 'ok' && row.grade.status === 'ok'),
-    payload: { digest: bundle.version.digest, source: options.payload?.source ?? null },
+    payload: { digest: verified.version.digest, source: options.payload?.source ?? null },
     cases,
   };
 }

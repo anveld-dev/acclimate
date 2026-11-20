@@ -416,7 +416,7 @@ function validateFrozenSource(source) {
     fail('native.source_snapshot_invalid');
 }
 
-function validateContext(context, bundle) {
+function validateContext(context, version) {
   if (
     !context ||
     !/^[a-f0-9]{64}$/.test(context.jobId) ||
@@ -424,8 +424,8 @@ function validateContext(context, bundle) {
     !context.requestId ||
     !context.attemptId ||
     !path.isAbsolute(context.privateJobDirectory) ||
-    !bundle?.version?.id ||
-    !bundle.version.digest
+    !version?.version?.id ||
+    !version.version.digest
   )
     fail('native.execution_context');
 }
@@ -893,7 +893,7 @@ function classifyRun(run) {
  */
 export async function runRepositoryJob(options) {
   const {
-    bundle,
+    version,
     context,
     source,
     harness,
@@ -909,7 +909,7 @@ export async function runRepositoryJob(options) {
     signal,
     secrets = [],
   } = options;
-  validateContext(context, bundle);
+  validateContext(context, version);
   validateFrozenSource(source);
   validateInventory(resultFiles, LIMITS.resultFiles, { patterns: true });
   const problem = configurationProblem({ harness, prepare, runHarness, caseId, repetition, contextPolicyRevision });
@@ -937,8 +937,8 @@ export async function runRepositoryJob(options) {
     jobId: context.jobId,
     caseId,
     repetition,
-    versionId: bundle.version.id,
-    digest: bundle.version.digest,
+    versionId: version.version.id,
+    digest: version.version.digest,
   };
   if (
     Object.keys(runnerBinding).length !== Object.keys(expectedBinding).length ||
@@ -978,8 +978,8 @@ export async function runRepositoryJob(options) {
     side: context.side,
     caseId,
     repetition,
-    versionId: bundle.version.id,
-    digest: bundle.version.digest,
+    versionId: version.version.id,
+    digest: version.version.digest,
   };
   const selectedMemorySha256 = sha256(jsonBytes([...selectedMemoryPaths].sort()));
   const record = {
@@ -1012,11 +1012,11 @@ export async function runRepositoryJob(options) {
   let retained = false;
   try {
     if (signal?.aborted) fail('native.cancelled_before_start');
-    prepared = await prepare(bundle, { approvedMemoryPaths: selectedMemoryPaths });
+    prepared = await prepare(version, { approvedMemoryPaths: selectedMemoryPaths });
     await canonicalDirectory(prepared.cwd, { private: true });
     if (path.dirname(prepared.cwd) !== workspaceParent)
       fail('native.prepared_parent', { path: prepared.cwd, rule: `prepare must create its workspace directly in ${workspaceParent}` });
-    if (prepared.versionId !== bundle.version.id || prepared.digest !== bundle.version.digest)
+    if (prepared.versionId !== version.version.id || prepared.digest !== version.version.digest)
       fail('native.prepared_binding', { rule: 'prepare returned a different version or digest' });
     record.cwd = prepared.cwd;
     await exclusiveWrite(

@@ -24,11 +24,11 @@ export interface PreparedPiVersion {
 
 /** Stage verified files in a private workspace for a host-owned Pi ResourceLoader/session. */
 export async function prepare(
-  input: NativeInput,
+  version: NativeInput,
   _options: { approvedMemoryPaths?: string[] } = {},
 ): Promise<PreparedPiVersion> {
-  const { bundle, reportStarted, release } = nativeSource(input);
-  const staged = await prepareNativeFiles(bundle, {
+  const { version: verified, reportStarted, release } = nativeSource(version);
+  const staged = await prepareNativeFiles(verified, {
     mapping: {
       instructionPath: 'AGENTS.md',
       skillRoot: '.agents/skills',
@@ -44,8 +44,8 @@ export async function prepare(
   }));
   return {
     cwd: staged.cwd,
-    versionId: bundle.version.id,
-    digest: bundle.version.digest,
+    versionId: verified.version.id,
+    digest: verified.version.digest,
     instructionPath: staged.instructionPath,
     skillPaths: staged.skillPaths,
     memoryFiles: staged.memoryFiles,
@@ -57,6 +57,3 @@ export async function prepare(
     },
   };
 }
-
-/** @deprecated Use PreparedPiVersion. */
-export type PreparedPiBundle = PreparedPiVersion;

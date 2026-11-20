@@ -68,16 +68,16 @@ jobs:
           ACCLIMATE_URL: ${{ vars.ACCLIMATE_URL }}
           ACCLIMATE_TOKEN: ${{ secrets.ACCLIMATE_RELEASE_TOKEN }}
           ACCLIMATE_SCOPE: ${{ vars.ACCLIMATE_RELEASE_PRINCIPAL }}
-          PROJECT: ${{ vars.ACCLIMATE_PROJECT_ID }}
+          WORKSPACE: ${{ vars.ACCLIMATE_WORKSPACE_ID }}
           BUNDLE: ${{ vars.ACCLIMATE_BUNDLE_ID }}
           CANDIDATE: ${{ needs.gate.outputs.candidate-version-id }}
           COMPARISON: ${{ needs.gate.outputs.comparison-id }}
         run: |
           operator="$RUNNER_TEMP/operator/node_modules/.bin/acclimate-operator"
           # Read the channel's current revision from a fresh, read-only review of the comparison.
-          revision="$("$operator" review --json --project "$PROJECT" --bundle "$BUNDLE" --channel stable \
+          revision="$("$operator" review --json --workspace "$WORKSPACE" --bundle "$BUNDLE" --channel stable \
             --comparison "$COMPARISON" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).current.revision))')"
           # The service checks permissions, evidence eligibility and the expected revision.
-          "$operator" promote --json --project "$PROJECT" --bundle "$BUNDLE" --channel stable \
+          "$operator" promote --json --workspace "$WORKSPACE" --bundle "$BUNDLE" --channel stable \
             --version "$CANDIDATE" --comparison "$COMPARISON" --expected-revision "$revision" \
             --key "release-$GITHUB_SHA"

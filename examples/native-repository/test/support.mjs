@@ -29,7 +29,7 @@ export async function fixture(callback) {
         { path: 'memory/no.md', kind: 'memory', text: 'NO-PRIVATE-CANARY' },
       ],
     };
-    const bundle = {
+    const version = {
       version: {
         id: randomUUID(),
         bundleId: randomUUID(),
@@ -58,8 +58,8 @@ export async function fixture(callback) {
         jobId: context.jobId,
         caseId: 'task',
         repetition: 0,
-        versionId: bundle.version.id,
-        digest: bundle.version.digest,
+        versionId: version.version.id,
+        digest: version.version.digest,
       }),
       { mode: 0o600 },
     );
@@ -77,8 +77,8 @@ export async function fixture(callback) {
       }
       return {
         cwd,
-        versionId: bundle.version.id,
-        digest: bundle.version.digest,
+        versionId: version.version.id,
+        digest: version.version.digest,
         instructionPath,
         skillPaths: [],
         memoryFiles,
@@ -95,7 +95,7 @@ export async function fixture(callback) {
       };
     };
     const options = {
-      bundle,
+      version,
       context,
       source,
       harness: 'codex',

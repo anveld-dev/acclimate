@@ -23,7 +23,7 @@ export interface CapturedDefinition<I = unknown, E = unknown, O = unknown> {
   descriptor: EvaluationDescriptor;
   execution: 'model-free' | 'live';
   cases: readonly EvaluationCase<I, E>[];
-  execute: (input: Omit<ExecuteInput<I>, BundleHelper>) => Promise<EvaluationExecutionResult<O>>;
+  execute: (input: Omit<ExecuteInput<I>, VersionHelper>) => Promise<EvaluationExecutionResult<O>>;
   grade: (input: Parameters<EvaluationDefinition<I, E, O>['grade']>[0]) => Promise<EvaluationGradeResult>;
   collection?: CollectionSchedule;
   /** Invocation controls bound by the command line; never part of the descriptor. */
@@ -43,7 +43,7 @@ export function compatibilityTargets(value: unknown): readonly CompatibilityTarg
     );
   return Object.freeze([...new Set(list as CompatibilityTarget[])]);
 }
-type BundleHelper = 'instructions' | 'instructionFiles' | 'skillFiles' | 'memoryFiles';
+type VersionHelper = 'instructions' | 'instructionFiles' | 'skillFiles' | 'memoryFiles';
 const definitions = new WeakMap<object, CapturedDefinition<any, any, any>>();
 function validateJson(value: unknown, maximum: number, root = 'output'): asserts value is Json {
   const active = new Set<object>();
@@ -189,17 +189,17 @@ export function bindEvaluationRepetitions<I, E, O>(
   return bound;
 }
 
-const filesOf = (bundle: ExecuteInput['bundle'], kind: BundleFile['kind']) =>
-  Object.freeze((bundle?.payload?.files ?? []).filter((file) => file.kind === kind));
-/** Add read-only helpers for the bundle's instructions, skills and memory files. */
-function withBundleHelpers<I>(input: Omit<ExecuteInput<I>, BundleHelper>): ExecuteInput<I> {
+const filesOf = (version: ExecuteInput['version'], kind: BundleFile['kind']) =>
+  Object.freeze((version?.payload?.files ?? []).filter((file) => file.kind === kind));
+/** Add read-only helpers for the version's instructions, skills and memory files. */
+function withVersionHelpers<I>(input: Omit<ExecuteInput<I>, VersionHelper>): ExecuteInput<I> {
   const helpers: PropertyDescriptorMap = {
-    instructionFiles: { get: () => filesOf(input.bundle, 'instruction'), enumerable: false },
-    skillFiles: { get: () => filesOf(input.bundle, 'skill'), enumerable: false },
-    memoryFiles: { get: () => filesOf(input.bundle, 'memory'), enumerable: false },
+    instructionFiles: { get: () => filesOf(input.version, 'instruction'), enumerable: false },
+    skillFiles: { get: () => filesOf(input.version, 'skill'), enumerable: false },
+    memoryFiles: { get: () => filesOf(input.version, 'memory'), enumerable: false },
     instructions: {
       get: () =>
-        filesOf(input.bundle, 'instruction')
+        filesOf(input.version, 'instruction')
           .map((file) => file.text)
           .join('\n\n'),
       enumerable: false,
@@ -370,7 +370,7 @@ export function defineEvaluation<I, E, O>(
     descriptor: deepFreeze(descriptor),
     execution: definition.execution,
     cases: deepFreeze(cases),
-    execute: async (input) => execute(withBundleHelpers(input)),
+    execute: async (input) => execute(withVersionHelpers(input)),
     grade: async (input) => grade(input),
     ...(collection ? { collection } : {}),
   });

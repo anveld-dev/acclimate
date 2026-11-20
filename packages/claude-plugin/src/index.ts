@@ -47,11 +47,11 @@ export interface PreparedClaudeVersion {
 
 /** Stage instructions and skills for a fresh Claude project workspace. */
 export async function prepare(
-  input: NativeInput,
+  version: NativeInput,
   options: PrepareClaudeOptions = {},
 ): Promise<PreparedClaudeVersion> {
-  const { bundle, reportStarted, release } = nativeSource(input);
-  const staged = await prepareNativeFiles(bundle, {
+  const { version: verified, reportStarted, release } = nativeSource(version);
+  const staged = await prepareNativeFiles(verified, {
     mapping: {
       instructionPath: 'CLAUDE.md',
       skillRoot: '.claude/skills',
@@ -63,8 +63,8 @@ export async function prepare(
   });
   return {
     cwd: staged.cwd,
-    versionId: bundle.version.id,
-    digest: bundle.version.digest,
+    versionId: verified.version.id,
+    digest: verified.version.digest,
     settingSources: ['project'],
     instructionPath: staged.instructionPath,
     skillPaths: staged.skillPaths,
@@ -77,6 +77,3 @@ export async function prepare(
     },
   };
 }
-
-/** @deprecated Use PreparedClaudeVersion. */
-export type PreparedClaudeBundle = PreparedClaudeVersion;

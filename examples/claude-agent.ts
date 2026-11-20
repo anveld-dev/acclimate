@@ -8,11 +8,11 @@
  *
  * Evaluation: the same module exports `cases`, `execute` and `grade`, so
  * `acclimate-eval describe|doctor|compare` runs the same `runClaude` for each version:
- *   execute({ bundle }) -> prepare(bundle) -> query({ ...claudeSessionOptions(p), model, abortController })
+ *   execute({ version }) -> prepare(version) -> query({ ...claudeSessionOptions(p), model, abortController })
  *   -> cleanup
  *
  * The verified version comes from `client.prepare()` in delivery and from the
- * evaluator's `bundle` argument in evaluation. Both are accepted by `prepare`.
+ * evaluator's `version` argument in evaluation. Both are accepted by `prepare`.
  */
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -25,6 +25,7 @@ import { ExecutionUncertainError } from '@acclimate/sdk/evaluation';
 import type { EvaluationCase, EvaluationExecutionResult } from '@acclimate/sdk/evaluation';
 import { prepare } from '@acclimate/claude-plugin';
 import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
+import { rejectRenamedEnvironment } from './optional-receipts.js';
 
 /** Explicit tool and sandbox policy. Record changes to it as a new runtime revision. */
 const sessionPolicy = {
@@ -110,17 +111,17 @@ export const cases: EvaluationCase<{ prompt: string }, { includes: string }>[] =
 ];
 
 export async function execute({
-  bundle,
+  version,
   input,
   signal,
 }: {
-  bundle: VerifiedVersion;
+  version: VerifiedVersion;
   input: { prompt: string };
   signal: AbortSignal;
 }): Promise<EvaluationExecutionResult<{ answer: string }>> {
   let run: ClaudeRun;
   try {
-    run = await runClaude(bundle, { prompt: input.prompt, model: requiredModel(), signal });
+    run = await runClaude(version, { prompt: input.prompt, model: requiredModel(), signal });
   } catch (cause) {
     // A rejected query does not prove the Claude process stopped.
     throw new ExecutionUncertainError({ cause });
@@ -148,21 +149,22 @@ async function main() {
   if (!process.argv.includes('--live'))
     throw new Error('Pass --live to request a paid Claude session.');
   const prompt = process.argv.slice(2).filter((argument) => argument !== '--live').join(' ').trim();
-  const { ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE, ACCLIMATE_PROJECT, ACCLIMATE_BUNDLE } =
+  rejectRenamedEnvironment();
+  const { ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE, ACCLIMATE_WORKSPACE, ACCLIMATE_BUNDLE } =
     process.env;
   const jobDirectory = process.env.ACCLIMATE_JOB_DIR;
-  if (!ACCLIMATE_URL || !ACCLIMATE_TOKEN || !ACCLIMATE_SCOPE || !ACCLIMATE_PROJECT || !ACCLIMATE_BUNDLE || !jobDirectory || !prompt)
+  if (!ACCLIMATE_URL || !ACCLIMATE_TOKEN || !ACCLIMATE_SCOPE || !ACCLIMATE_WORKSPACE || !ACCLIMATE_BUNDLE || !jobDirectory || !prompt)
     throw new Error(
-      'Set ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE, ACCLIMATE_PROJECT, ACCLIMATE_BUNDLE and ACCLIMATE_JOB_DIR, and pass a task.',
+      'Set ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE, ACCLIMATE_WORKSPACE, ACCLIMATE_BUNDLE and ACCLIMATE_JOB_DIR, and pass a task.',
     );
   const client = new AcclimateClient({ baseUrl: ACCLIMATE_URL, token: ACCLIMATE_TOKEN, scope: ACCLIMATE_SCOPE });
   const receiptToken = process.env.ACCLIMATE_RECEIPT_TOKEN;
-  const integrationId = process.env.ACCLIMATE_INTEGRATION;
+  const connectionId = process.env.ACCLIMATE_CONNECTION;
   const reporter =
-    receiptToken && integrationId
+    receiptToken && connectionId
       ? createReceiptReporter({
-          projectId: ACCLIMATE_PROJECT,
-          integrationId,
+          workspaceId: ACCLIMATE_WORKSPACE,
+          connectionId,
           client: new AcclimateClient({
             baseUrl: ACCLIMATE_URL,
             token: receiptToken,
@@ -174,7 +176,7 @@ async function main() {
       : undefined;
   // cacheDir defaults to defaultCacheDir(): ~/.cache/acclimate/typescript.
   const delivery = await client.prepare({
-    projectId: ACCLIMATE_PROJECT,
+    workspaceId: ACCLIMATE_WORKSPACE,
     bundleId: ACCLIMATE_BUNDLE,
     channel: process.env.ACCLIMATE_CHANNEL ?? 'stable',
     cacheDir: process.env.ACCLIMATE_CACHE,
@@ -186,13 +188,13 @@ async function main() {
     const retained = await open(join(jobDirectory, 'acclimate-agent-result.json'), 'wx', 0o600);
     try {
       await retained.writeFile(
-        JSON.stringify({ versionId: delivery.version.id, digest: delivery.version.digest, ...run }) + '\n',
+        JSON.stringify({ versionId: delivery.version.version.id, digest: delivery.version.version.digest, ...run }) + '\n',
       );
       await retained.sync();
     } finally {
       await retained.close();
     }
-    console.log({ versionId: delivery.version.id, digest: delivery.version.digest, status: run.status });
+    console.log({ versionId: delivery.version.version.id, digest: delivery.version.version.digest, status: run.status });
   } finally {
     await reporter?.flush();
     reporter?.close();

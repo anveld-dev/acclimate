@@ -27,16 +27,16 @@ export type PrepareDeliveryOptions = Selection &
     cacheDir?: string;
     destination?: string;
     reporter?: DeliveryObserver & {
-      reportPrepared?(bundle: VerifiedVersion): unknown;
-      reportStarted?(bundle: VerifiedVersion): unknown;
-      bindStartedReceipt?(bundle: VerifiedVersion): () => Readonly<DeliveryReceiptRequest> | null;
-      reportStartedReceipt?(bundle: VerifiedVersion): Readonly<DeliveryReceiptRequest> | null;
+      reportPrepared?(version: VerifiedVersion): unknown;
+      reportStarted?(version: VerifiedVersion): unknown;
+      bindStartedReceipt?(version: VerifiedVersion): () => Readonly<DeliveryReceiptRequest> | null;
+      reportStartedReceipt?(version: VerifiedVersion): Readonly<DeliveryReceiptRequest> | null;
     };
   };
 export interface PreparedDelivery extends PreparedFiles {
   directory: string;
-  bundle: VerifiedVersion;
-  version: VerifiedVersion['version'];
+  /** The verified version this job runs. Its metadata is `version.version`. */
+  version: VerifiedVersion;
   instructions: string;
   skillFiles: PreparedFile[];
   /** Queue this job's start once. Retain its receipt with the job for field auditing. */
@@ -58,7 +58,7 @@ export async function prepareDelivery(
   options: PrepareDeliveryOptions,
 ): Promise<PreparedDelivery> {
   const {
-    projectId,
+    workspaceId,
     bundleId,
     destination,
     cacheDir,
@@ -67,13 +67,15 @@ export async function prepareDelivery(
     maxCacheBytes,
     maxResolutionAgeMs,
   } = options;
+  if (Object.hasOwn(options, 'projectId'))
+    throw new AcclimateUsageError('projectId was renamed to workspaceId in 0.2.0', 'projectId');
   const hasChannel = 'channel' in options;
   if (hasChannel === 'versionId' in options)
     throw new AcclimateUsageError('Select exactly one channel or versionId', 'selection');
   const selection = hasChannel
-    ? { projectId, bundleId, channel: options.channel }
-    : { projectId, bundleId, versionId: options.versionId };
-  const bundle = await resolveAndCache(client, selection, {
+    ? { workspaceId, bundleId, channel: options.channel }
+    : { workspaceId, bundleId, versionId: options.versionId };
+  const verified = await resolveAndCache(client, selection, {
     cacheDir: cacheDir ?? (await defaultCacheDir()),
     reporter,
     offline,
@@ -94,14 +96,14 @@ export async function prepareDelivery(
   }
   let staged: PreparedFiles;
   try {
-    staged = await prepareFiles(bundle, directory);
+    staged = await prepareFiles(verified, directory);
   } catch (error) {
     await removeOwnedDirectory();
     throw error;
   }
   function observed(stage: 'reportPrepared' | 'reportStarted') {
     try {
-      Promise.resolve(reporter?.[stage]?.(bundle)).catch(() => {});
+      Promise.resolve(reporter?.[stage]?.(verified)).catch(() => {});
     } catch {}
   }
   observed('reportPrepared');
@@ -117,10 +119,9 @@ export async function prepareDelivery(
   }
   return {
     directory,
-    bundle,
-    version: bundle.version,
+    version: verified,
     files: staged.files,
-    instructions: bundle.payload.files
+    instructions: verified.payload.files
       .filter((file) => file.kind === 'instruction')
       .map((file) => file.text)
       .join('\n\n'),
@@ -129,13 +130,13 @@ export async function prepareDelivery(
       if (!started) {
         started = true;
         try {
-          queueBoundStart ??= reporter?.bindStartedReceipt?.(bundle);
+          queueBoundStart ??= reporter?.bindStartedReceipt?.(verified);
           if (queueBoundStart) {
             startedReceipt = queueBoundStart();
             // An explicit queue refusal can be retried. A thrown callback may have sent the event.
             started = startedReceipt !== null;
           } else if (reporter?.reportStartedReceipt) {
-            startedReceipt = reporter.reportStartedReceipt(bundle);
+            startedReceipt = reporter.reportStartedReceipt(verified);
           } else {
             observed('reportStarted');
           }
@@ -183,20 +184,20 @@ async function ensureSafeRoot(input: string): Promise<string> {
   return root;
 }
 export async function prepareFiles(
-  bundle: VerifiedVersion,
+  version: VerifiedVersion,
   destination: string,
   options: PrepareOptions = {},
 ): Promise<PreparedFiles> {
   if (options.collision !== undefined && options.collision !== 'error')
     throw new AcclimateUsageError('Only collision="error" is supported', 'collision');
-  validatePayload(bundle.payload);
+  validatePayload(version.payload);
   const root = await ensureSafeRoot(destination),
     rootReal = await realpath(root);
   const prepared: PreparedFile[] = [],
     createdFiles: string[] = [],
     createdDirs: string[] = [];
   try {
-    for (const file of bundle.payload.files) {
+    for (const file of version.payload.files) {
       const target = resolve(root, ...file.path.split('/'));
       if (!target.startsWith(rootReal + '/'))
         throw new DeliveryError('unsafe_path', 'Bundle path escapes destination');

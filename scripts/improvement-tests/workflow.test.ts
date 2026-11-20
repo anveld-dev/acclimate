@@ -71,7 +71,7 @@ function fakeClient() {
   return { client: client as unknown as AcclimateClient, uploaded: () => uploaded };
 }
 const config = (outputDir: string) => ({
-  project: 'project',
+  workspace: 'workspace',
   bundle: 'bundle',
   channel: 'stable',
   skillPath: 'skills/review/SKILL.md',

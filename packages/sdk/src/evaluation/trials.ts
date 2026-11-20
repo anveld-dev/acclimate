@@ -63,7 +63,7 @@ export interface TrialRunOptions {
   captured: CapturedDefinition<any, any, any>;
   requestId: string;
   attemptId: string;
-  bundles: readonly [VerifiedVersion, VerifiedVersion];
+  versions: readonly [VerifiedVersion, VerifiedVersion];
   jobsRoot: string;
   signal: AbortSignal;
   controls?: RunControls;
@@ -169,7 +169,7 @@ export function scheduling(captured: CapturedDefinition<any, any, any>) {
  * arm order. Results keep inventory order regardless of concurrency.
  */
 export async function runTrials(options: TrialRunOptions): Promise<TrialRunResult> {
-  const { captured, hooks, bundles, requestId, attemptId } = options;
+  const { captured, hooks, versions, requestId, attemptId } = options;
   const controls = validateRunControls(options.controls);
   const { concurrency, gradeRetries } = scheduling(captured);
   const schedule = new Map<string, { pairIndex: number; firstSide: Side }>();
@@ -304,14 +304,14 @@ export async function runTrials(options: TrialRunOptions): Promise<TrialRunResul
         armArtifacts = [];
       }
       await hooks.checkpoint();
-      const bundle = bundles[side === 'parent' ? 0 : 1];
+      const verified = versions[side === 'parent' ? 0 : 1];
       const jobId = createHash('sha256')
         .update(
           JSON.stringify([
             requestId,
             attemptId,
             side,
-            bundle.version.id,
+            verified.version.id,
             item.caseId,
             repetition,
             ...(retry ? [retry] : []),
@@ -346,8 +346,8 @@ export async function runTrials(options: TrialRunOptions): Promise<TrialRunResul
           collection: undefined,
           caseId: item.caseId,
           repetition,
-          versionId: bundle.version.id,
-          digest: bundle.version.digest,
+          versionId: verified.version.id,
+          digest: verified.version.digest,
         }) + '\n',
       );
       if (context.collection) {
@@ -373,7 +373,7 @@ export async function runTrials(options: TrialRunOptions): Promise<TrialRunResul
         hooks.onCallbackStarted();
         execution = await bounded((signal) =>
           captured.execute({
-            bundle: structuredClone(bundle),
+            version: structuredClone(verified),
             caseId: item.caseId,
             repetition,
             input: structuredClone(item.input),
@@ -459,8 +459,8 @@ export async function runTrials(options: TrialRunOptions): Promise<TrialRunResul
             caseId: item.caseId,
             repetition,
             side,
-            versionId: bundle.version.id,
-            digest: bundle.version.digest,
+            versionId: verified.version.id,
+            digest: verified.version.digest,
             role: 'output',
           },
           capturedOutput,
@@ -548,8 +548,8 @@ export async function runTrials(options: TrialRunOptions): Promise<TrialRunResul
                 caseId: item.caseId,
                 repetition,
                 side,
-                versionId: bundle.version.id,
-                digest: bundle.version.digest,
+                versionId: verified.version.id,
+                digest: verified.version.digest,
                 role: 'grader-explanation',
               },
               capturedExplanation,

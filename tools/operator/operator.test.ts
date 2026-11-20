@@ -86,10 +86,14 @@ function fixture(deny = false, parentBytes = p, parentDigest = parent.digest) {
     }),
   };
 }
-const scope = ['--project', 'p', '--bundle', 'b', '--channel', 'live'];
+const scope = ['--workspace', 'p', '--bundle', 'b', '--channel', 'live'];
 test('parser rejects unknown and duplicate flags', () => {
   assert.throws(() => parseArgs(['review', '--unknown', 'x']));
   assert.throws(() => parseArgs(['review', '--comparison', 'a', '--comparison', 'b']));
+  assert.throws(
+    () => parseArgs(['review', '--project', 'p']),
+    /--project was renamed to --workspace in 0\.2\.0/,
+  );
 });
 test('review verifies payloads and never mutates or fetches output references', async () => {
   const { client, calls } = fixture();
@@ -177,7 +181,7 @@ test('the packaged entry prints usage and reports errors as JSON with exit 1', a
   try {
     assert.equal(await operatorMain(['--help']), 0);
     assert.equal(await operatorMain([]), 1);
-    assert.equal(await operatorMain(['promote', '--project', 'p']), 1);
+    assert.equal(await operatorMain(['promote', '--workspace', 'p']), 1);
   } finally {
     process.stdout.write = stdout;
     process.stderr.write = stderr;

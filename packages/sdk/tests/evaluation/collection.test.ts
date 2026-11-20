@@ -17,7 +17,7 @@ import type { EvaluationHandoff } from '../../src/types.js';
 import type { createEvaluationTransport } from '../../src/internal/evaluation-transport.js';
 import {
   fixture,
-  projectId,
+  workspaceId,
   bundleId,
   requestId,
   evaluatorPrincipalId,
@@ -126,7 +126,7 @@ for (const optedIn of [false, true]) {
     const config: EvaluatorConfig = {
       schemaVersion: 1,
       serviceUrl,
-      projectId,
+      workspaceId,
       evaluatorPrincipalId,
       evaluatorToken: 'fixture-only',
       journalRoot: root,
@@ -134,10 +134,10 @@ for (const optedIn of [false, true]) {
     const handoff: EvaluationHandoff = {
       schemaVersion: 1,
       serviceUrl,
-      projectId,
+      workspaceId,
       bundleId,
       requestId,
-      configuration: structuredClone(app.descriptor),
+      descriptor: structuredClone(app.descriptor),
     };
     const transport = {
       client: f.api,
@@ -149,11 +149,11 @@ for (const optedIn of [false, true]) {
       ): Promise<T> => {
         const value = JSON.parse(body);
         if (operation === 'start')
-          return (await f.api.startEvaluation(projectId, bundleId, requestId, value, key)) as T;
+          return (await f.api.startEvaluation(workspaceId, bundleId, requestId, value, key)) as T;
         if (operation === 'submit')
-          return (await f.api.createComparison(projectId, bundleId, value, key)) as T;
+          return (await f.api.createComparison(workspaceId, bundleId, value, key)) as T;
         if (operation === 'finish')
-          return (await f.api.finishEvaluation(projectId, bundleId, requestId, value, key)) as T;
+          return (await f.api.finishEvaluation(workspaceId, bundleId, requestId, value, key)) as T;
         throw new Error('unexpected operation');
       },
     } as ReturnType<typeof createEvaluationTransport>;
@@ -195,7 +195,7 @@ for (const optedIn of [false, true]) {
       }
       const directory = journalDirectory(root, {
         serviceUrl,
-        projectId,
+        workspaceId,
         bundleId,
         requestId,
         evaluatorPrincipalId,

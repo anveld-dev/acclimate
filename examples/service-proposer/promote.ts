@@ -11,7 +11,7 @@ if (!file) throw new Error('--summary is required');
 const summary = JSON.parse(await readFile(file, 'utf8'));
 const revision = value('--expected-revision');
 const plan = {
-  project: summary.project,
+  workspace: summary.workspace,
   bundle: summary.bundle,
   channel: summary.channel,
   versionId: summary.candidate.id,
@@ -41,7 +41,7 @@ else {
   console.log(
     JSON.stringify(
       await client.createRelease(
-        plan.project,
+        plan.workspace,
         plan.bundle,
         plan.channel,
         { versionId: plan.versionId, comparisonId: plan.comparisonId, expectedRevision: revision },

@@ -30,7 +30,7 @@ export async function recordPolicyReceipt(
   };
   try {
     const receipts = await client.listComparisonPolicyReceipts(
-      handoff.projectId,
+      handoff.workspaceId,
       handoff.bundleId,
       comparisonId,
     );
@@ -38,7 +38,7 @@ export async function recordPolicyReceipt(
     const receipt =
       existing ??
       (await client.reportComparisonPolicyReceipt(
-        handoff.projectId,
+        handoff.workspaceId,
         handoff.bundleId,
         comparisonId,
         report,

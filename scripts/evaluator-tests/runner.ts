@@ -15,7 +15,7 @@ export interface CheckoutEvaluationOptions extends JournalScope {
 }
 
 export async function runCheckoutEvaluation(options: CheckoutEvaluationOptions): Promise<Evaluation> {
-  const { api, projectId, bundleId, requestId, adapter } = options;
+  const { api, workspaceId, bundleId, requestId, adapter } = options;
   const execute = adapter.execute.bind(adapter),
     grade = adapter.grade.bind(adapter);
   const descriptor = deepFreeze(structuredClone(adapter.describe()));
@@ -57,12 +57,12 @@ export async function runCheckoutEvaluation(options: CheckoutEvaluationOptions):
     handoff: {
       schemaVersion: 1,
       serviceUrl: options.serviceUrl,
-      projectId,
+      workspaceId,
       bundleId,
       requestId,
-      configuration: descriptor,
+      descriptor: descriptor,
     },
-    transport: evaluationTransportForClient(api, projectId),
+    transport: evaluationTransportForClient(api, workspaceId),
     captured: {
       descriptor,
       execution: 'model-free',
@@ -74,8 +74,8 @@ export async function runCheckoutEvaluation(options: CheckoutEvaluationOptions):
           repetitions: item.repetitions,
         })),
       ),
-      execute: async ({ bundle, caseId, repetition, input }) =>
-        execute({ bundle, caseId, repetition, snapshot: input.snapshot, settings: input.settings }),
+      execute: async ({ version, caseId, repetition, input }) =>
+        execute({ version, caseId, repetition, snapshot: input.snapshot, settings: input.settings }),
       grade: async ({ output, caseId, repetition }) => grade({ output, caseId, repetition }),
     },
   });

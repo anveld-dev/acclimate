@@ -55,8 +55,8 @@ export const paymentAdapter: InstalledAdapter = {
   cases: ['response-lost', 'transient-before-charge', 'clean'].map((caseId) => ({
     caseId, snapshot: { scenario: caseId }, settings: {}, repetitions: 2,
   })),
-  execute: async ({ bundle, snapshot }) => ({
-    output: simulatePayment(bundle.payload, (snapshot as { scenario: string }).scenario),
+  execute: async ({ version, snapshot }) => ({
+    output: simulatePayment(version.payload, (snapshot as { scenario: string }).scenario),
     usage: { costUsd: 0, inputTokens: 0, outputTokens: 0 },
   }),
   grade: async ({ output }) => {
@@ -70,8 +70,8 @@ export const presenceAdapter: InstalledAdapter = {
   cases: ['instructions-present', 'skills-present'].map((caseId) => ({
     caseId, snapshot: { kind: caseId === 'instructions-present' ? 'instruction' : 'skill' }, settings: {}, repetitions: 2,
   })),
-  execute: async ({ bundle, snapshot }) => ({
-    output: { present: bundle.payload.files.some((f) => f.kind === (snapshot as { kind: string }).kind && f.text.trim().length > 0) },
+  execute: async ({ version, snapshot }) => ({
+    output: { present: version.payload.files.some((f) => f.kind === (snapshot as { kind: string }).kind && f.text.trim().length > 0) },
     usage: { costUsd: 0, inputTokens: 0, outputTokens: 0 },
   }),
   grade: async ({ output }) => ({ reward: Number((output as { present: boolean }).present) }),

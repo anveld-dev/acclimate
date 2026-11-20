@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, realpath, link, unlink } from 'node:fs/promises';
+import { lstat, open, realpath, link, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveAndCache } from '../cache.js';
 import { ApiError } from '../client.js';
@@ -50,10 +50,47 @@ const fail = (
   });
 const identity = (config: EvaluatorConfig) => ({
   serviceUrl: config.serviceUrl,
-  projectId: config.projectId,
+  workspaceId: config.workspaceId,
   evaluatorPrincipalId: config.evaluatorPrincipalId,
   journalRoot: config.journalRoot,
 });
+/**
+ * Intent files written by 0.1 name the workspace `projectId`. Recovery reads either spelling
+ * and the next save writes `workspaceId`; nothing else accepts the old key.
+ */
+function recoveredIdentity(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const { projectId, ...rest } = value as Record<string, unknown>;
+  if (projectId === undefined || Object.hasOwn(rest, 'workspaceId')) return value;
+  return { ...rest, workspaceId: projectId };
+}
+/**
+ * The frozen file-name key of an interrupt intent. It keeps the 0.1 encoding, with the
+ * workspace ID under `projectId`, so an interrupt started before the 0.2.0 rename is found
+ * and keeps its idempotency key. It is a storage key, not a wire format; never change it.
+ */
+function interruptFileKey(selection: {
+  identity: ReturnType<typeof identity>;
+  bundleId: string;
+  requestId: string;
+  reason: string;
+}): string {
+  const { workspaceId, ...rest } = selection.identity;
+  return stable({ ...selection, identity: { ...rest, projectId: workspaceId } });
+}
+/** The 0.1 spelling of a handoff the request command wrote, so recovery can replace it in place. */
+function legacyHandoffText(handoff: EvaluationHandoff): string {
+  return (
+    json({
+      schemaVersion: handoff.schemaVersion,
+      serviceUrl: handoff.serviceUrl,
+      projectId: handoff.workspaceId,
+      bundleId: handoff.bundleId,
+      requestId: handoff.requestId,
+      configuration: handoff.descriptor,
+    }) + '\n'
+  );
+}
 function commandFailure(error: unknown): EvaluationError {
   if (error instanceof EvaluationError) return error;
   if (error instanceof ApiError) {
@@ -217,7 +254,10 @@ async function existingIntent(filename: string): Promise<RequestIntent | undefin
     throw error;
   });
   if (!info) return undefined;
-  return (await readPrivateJson(filename, 4 * 1024 * 1024)) as unknown as RequestIntent;
+  const intent = (await readPrivateJson(filename, 4 * 1024 * 1024)) as unknown as RequestIntent;
+  if (intent && typeof intent === 'object')
+    intent.identity = recoveredIdentity(intent.identity) as RequestIntent['identity'];
+  return intent;
 }
 
 async function writeHandoff(filename: string, handoff: EvaluationHandoff) {
@@ -226,9 +266,13 @@ async function writeHandoff(filename: string, handoff: EvaluationHandoff) {
     if (error.code === 'ENOENT') return null;
     throw error;
   });
+  let replace = false;
   if (existing) {
-    if ((await readCommandText(filename)) !== content) throw fail();
-    return;
+    const current = await readCommandText(filename);
+    if (current === content) return;
+    // A run started by 0.1 wrote the same handoff with its old keys; rewrite it in place.
+    if (current !== legacyHandoffText(handoff)) throw fail();
+    replace = true;
   }
   const parent = path.dirname(filename),
     info = await lstat(parent);
@@ -253,12 +297,14 @@ async function writeHandoff(filename: string, handoff: EvaluationHandoff) {
     } finally {
       await handle.close();
     }
-    try {
-      await link(temporary, filename);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      if ((await readCommandText(filename)) !== content) throw fail();
-    }
+    if (replace) await rename(temporary, filename);
+    else
+      try {
+        await link(temporary, filename);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        if ((await readCommandText(filename)) !== content) throw fail();
+      }
     const directory = await open(parent, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       await directory.sync();
@@ -273,12 +319,12 @@ async function writeHandoff(filename: string, handoff: EvaluationHandoff) {
 async function recover<T>(
   transport: ReturnType<typeof createEvaluationTransport>,
   op: 'createDraft' | 'createRequest',
-  scope: { projectId: string; bundleId: string; channel?: string },
+  scope: { workspaceId: string; bundleId: string; channel?: string },
   body: string,
   key: string,
 ): Promise<T | null> {
   const route = evaluationOperationPath(op, scope);
-  const receipt = (await transport.client.getOperation(scope.projectId, key, route)) as unknown as {
+  const receipt = (await transport.client.getOperation(scope.workspaceId, key, route)) as unknown as {
     status: string;
     requestFingerprint?: string;
     result?: T;
@@ -293,14 +339,14 @@ async function recover<T>(
 /** The channel's current release, or a diagnostic that names the missing baseline. */
 async function publishedBase(
   transport: ReturnType<typeof createEvaluationTransport>,
-  projectId: string,
+  workspaceId: string,
   bundleId: string,
   channel: string,
 ) {
   const empty = () =>
     new EvaluationError('request.channel_empty', { phase: 'claim', nextAction: 'ask_operator' });
   const current = await transport.client
-    .resolveChannel(projectId, bundleId, channel)
+    .resolveChannel(workspaceId, bundleId, channel)
     .catch((error: unknown) => {
       // Preflight already found the bundle, so a missing resolution is an unpublished channel.
       if (error instanceof ApiError && error.status === 404 && error.code === 'not_found') throw empty();
@@ -370,14 +416,14 @@ async function claimSuccessor(handoffFile: string, requestId: string, output: st
  */
 async function optionalRequestFields(
   transport: ReturnType<typeof createEvaluationTransport>,
-  projectId: string,
+  workspaceId: string,
   runName: string | undefined,
   retryOf: string | undefined,
   policyDigest: string | undefined,
 ): Promise<{ runName?: string; retryOf?: string; policyDigest?: string }> {
   if (!runName && !retryOf && !policyDigest) return {};
   const capabilities = await transport.client
-    .getEvaluationCapabilities(projectId)
+    .getEvaluationCapabilities(workspaceId)
     .catch(() => undefined);
   return {
     ...(capabilities?.runLabels === true && {
@@ -435,7 +481,7 @@ export async function createRequestFromIntent(options: {
   await privateDirectory(path.dirname(filename));
   const lock = await acquireFileLock(filename + '.lock');
   const transport = createEvaluationTransport(config);
-  const scope = { projectId: config.projectId, bundleId, channel };
+  const scope = { workspaceId: config.workspaceId, bundleId, channel };
   const save = async (value: RequestIntent) => {
     lock.assertOwned();
     const content = json(value) + '\n';
@@ -470,7 +516,7 @@ export async function createRequestFromIntent(options: {
     )
       throw fail();
     if (!state) {
-      const base = await publishedBase(transport, config.projectId, bundleId, channel);
+      const base = await publishedBase(transport, config.workspaceId, bundleId, channel);
       if (prior && (base.version.id !== prior.base.versionId || base.version.digest !== prior.base.digest ||
           base.revision !== prior.base.revision))
         throw fail('request.base_conflict');
@@ -542,7 +588,7 @@ export async function createRequestFromIntent(options: {
           fixed.keys.draft,
         )) ?? undefined;
       if (!fixed.draft) {
-        const current = await transport.client.resolveChannel(config.projectId, bundleId, channel);
+        const current = await transport.client.resolveChannel(config.workspaceId, bundleId, channel);
         if (
           current.resolution?.version.id !== fixed.base.versionId ||
           current.resolution.revision !== fixed.base.revision
@@ -570,7 +616,7 @@ export async function createRequestFromIntent(options: {
     )
       throw fail();
     if (!fixed.request) {
-      const current = await transport.client.resolveChannel(config.projectId, bundleId, channel);
+      const current = await transport.client.resolveChannel(config.workspaceId, bundleId, channel);
       if (
         current.resolution?.version.id !== fixed.base.versionId ||
         current.resolution.revision !== fixed.base.revision
@@ -578,7 +624,7 @@ export async function createRequestFromIntent(options: {
         throw fail('request.base_conflict');
       const candidate = await resolveAndCache(
         transport.client,
-        { projectId: config.projectId, bundleId, versionId: draft.snapshotVersion.id },
+        { workspaceId: config.workspaceId, bundleId, versionId: draft.snapshotVersion.id },
         { cacheDir: path.join(config.journalRoot, 'command-cache') },
       );
       if (
@@ -602,7 +648,7 @@ export async function createRequestFromIntent(options: {
           }
         : await optionalRequestFields(
             transport,
-            config.projectId,
+            config.workspaceId,
             options.runName,
             fixed.retryAfterRequestId,
             options.policyDigest,
@@ -633,10 +679,10 @@ export async function createRequestFromIntent(options: {
     const handoff = validateEvaluationHandoff({
       schemaVersion: 1,
       serviceUrl: config.serviceUrl,
-      projectId: config.projectId,
+      workspaceId: config.workspaceId,
       bundleId,
       requestId: fixed.request.id,
-      configuration: fixed.descriptor,
+      descriptor: fixed.descriptor,
     });
     await writeHandoff(output, handoff);
     return {
@@ -659,7 +705,7 @@ export async function createRequestFromIntent(options: {
 function assertInterruptRequest(request: Evaluation, handoff: EvaluationHandoff) {
   if (request.id !== handoff.requestId || request.requireBoundEvidence !== true)
     throw new EvaluationError('evidence.identity_mismatch', { phase: 'inspect' });
-  if (evaluationDescriptorDifferences(request, handoff.configuration).length)
+  if (evaluationDescriptorDifferences(request, handoff.descriptor).length)
     throw new EvaluationError('descriptor.mismatch', { phase: 'inspect' });
 }
 
@@ -680,7 +726,7 @@ export async function interruptFromIntent(
   };
   const filename = path.join(
     root,
-    `interrupt-${createHash('sha256').update(stable(selection)).digest('hex')}.json`,
+    `interrupt-${createHash('sha256').update(interruptFileKey(selection)).digest('hex')}.json`,
   );
   const lock = await acquireFileLock(filename + '.lock');
   try {
@@ -690,6 +736,11 @@ export async function interruptFromIntent(
         if (error.code === 'ENOENT') return null;
         throw error;
       })) as { selection: typeof selection; key: string; body: string } | null;
+    if (state && typeof state === 'object' && state.selection)
+      state.selection = {
+        ...state.selection,
+        identity: recoveredIdentity(state.selection.identity) as typeof selection.identity,
+      };
     if (!state) {
       state = { selection, key: randomUUID(), body: json({ reason }) };
       await atomicPrivateWrite(filename, json(state) + '\n');
@@ -702,7 +753,7 @@ export async function interruptFromIntent(
       throw fail();
     const transport = createEvaluationTransport(config);
     const before = await transport.client.getEvaluation(
-      config.projectId,
+      config.workspaceId,
       handoff.bundleId,
       handoff.requestId,
     );
@@ -710,12 +761,12 @@ export async function interruptFromIntent(
     lock.assertOwned();
     const result = await transport.mutate<Evaluation>(
       'interrupt',
-      { projectId: config.projectId, bundleId: handoff.bundleId, requestId: handoff.requestId },
+      { workspaceId: config.workspaceId, bundleId: handoff.bundleId, requestId: handoff.requestId },
       state.body,
       state.key,
     );
     const current = await transport.client.getEvaluation(
-      config.projectId,
+      config.workspaceId,
       handoff.bundleId,
       handoff.requestId,
     );

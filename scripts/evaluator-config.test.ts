@@ -18,7 +18,7 @@ test('explicit private app configuration has no missing config, adapter, legacy 
 test('private config enforces schema, bounds, ownership permissions, absolute paths and no symlinks', async () => {
   const root = await mkdtemp(path.join(await realpath(tmpdir()), 'acclimate-private-evaluator-'));
   const filename = path.join(root, 'evaluator.json');
-  const valid = { schemaVersion: 1, serviceUrl: 'https://api.example.test', projectId: 'project', evaluatorPrincipalId: 'evaluator',
+  const valid = { schemaVersion: 1, serviceUrl: 'https://api.example.test', workspaceId: 'project', evaluatorPrincipalId: 'evaluator',
     evaluatorToken: 'private-test-token', journalRoot: path.join(root, 'journals') };
   const save = async (value: unknown) => writeFile(filename, JSON.stringify(value), { mode: 0o600 });
   try {

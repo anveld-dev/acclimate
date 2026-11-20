@@ -89,7 +89,7 @@ test('a symlink cannot pull external state into a release starter', async () => 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-for (const name of ['.env', 'evaluator.json', 'ownership.lock', 'signing.key', 'ci-intent.json.origin.json', 'evaluation-request.json']) {
+for (const name of ['.env', 'evaluator.json', 'ownership.lock', 'signing.key', 'ci-intent.json.origin.json', 'handoff.json']) {
   test(`private state ${name} makes the archive fail closed`, async () => {
     const { root, metadata, output } = await fixture();
     try {

@@ -4,9 +4,9 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { prepare } from '../../src/index.js';
 import { createPiResourceLoader } from '../../src/native.js';
-import type { VerifiedBundle } from '../../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../../sdk/src/types.js';
 
-const bundle: VerifiedBundle = {
+const bundle: VerifiedVersion = {
   version: {
     id: 'native-pi',
     bundleId: 'b',

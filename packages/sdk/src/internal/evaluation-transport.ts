@@ -12,14 +12,14 @@ export type EvaluationMutationOperation =
   | 'createRequest'
   | 'createDraft';
 export interface EvaluationMutationScope {
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   requestId?: string;
   channel?: string;
 }
 export interface EvaluationTransportConfig {
   serviceUrl: string;
-  projectId: string;
+  workspaceId: string;
   evaluatorToken: string;
   evaluatorPrincipalId: string;
   fetch?: typeof fetch;
@@ -33,7 +33,7 @@ export function evaluationOperationPath(
   assertGuidedTarget(scope);
   if (typeof scope.bundleId !== 'string' || !scope.bundleId)
     throw new AcclimateUsageError('Evaluation bundle is required', 'bundleId');
-  const base = `/v1/workspaces/${scope.projectId}/bundles/${scope.bundleId}`;
+  const base = `/v1/workspaces/${scope.workspaceId}/bundles/${scope.bundleId}`;
   if (operation === 'submit') return `${base}/comparisons`;
   if (operation === 'createRequest') return `${base}/evaluation-requests`;
   if (operation === 'createDraft') {
@@ -56,7 +56,7 @@ export function evaluationFingerprint(
 
 export function createEvaluationTransport(config: EvaluationTransportConfig) {
   validateEvaluationServiceUrl(config.serviceUrl);
-  assertGuidedTarget({ projectId: config.projectId, principalId: config.evaluatorPrincipalId });
+  assertGuidedTarget({ workspaceId: config.workspaceId, principalId: config.evaluatorPrincipalId });
   const client = new AcclimateClient({
     baseUrl: config.serviceUrl,
     token: config.evaluatorToken,
@@ -64,10 +64,10 @@ export function createEvaluationTransport(config: EvaluationTransportConfig) {
     maxJsonResponseBytes: 4 * 1024 * 1024,
     ...(config.fetch ? { fetch: config.fetch } : {}),
   });
-  return evaluationTransportForClient(client, config.projectId);
+  return evaluationTransportForClient(client, config.workspaceId);
 }
 
-export function evaluationTransportForClient(client: AcclimateClient, projectId: string) {
+export function evaluationTransportForClient(client: AcclimateClient, workspaceId: string) {
   return {
     client,
     mutate<T>(
@@ -76,7 +76,7 @@ export function evaluationTransportForClient(client: AcclimateClient, projectId:
       body: string,
       key: string,
     ): Promise<T> {
-      if (scope.projectId !== projectId) throw new AcclimateUsageError('Evaluation target mismatch', 'projectId');
+      if (scope.workspaceId !== workspaceId) throw new AcclimateUsageError('Evaluation target mismatch', 'workspaceId');
       if (typeof body !== 'string' || new TextEncoder().encode(body).length > 2 * 1024 * 1024)
         throw new AcclimateUsageError('Evaluation request exceeds its byte budget', 'body');
       return evaluationMutationFor(client)(

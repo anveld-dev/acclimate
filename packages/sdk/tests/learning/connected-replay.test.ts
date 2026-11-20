@@ -19,7 +19,7 @@ async function fixture(t: TestContext, kind: 'recheck' | 'field' | 'incident') {
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl: 'http://localhost:8090',
-      projectId: 'test',
+      workspaceId: 'test',
       evaluatorPrincipalId: 'evaluator',
       evaluatorToken: 'test',
       journalRoot: join(root, 'journal'),
@@ -106,7 +106,7 @@ async function fixture(t: TestContext, kind: 'recheck' | 'field' | 'incident') {
       throw new Error('paired grader unavailable');
     },
   });
-  const integrationId = randomUUID();
+  const connectionId = randomUUID();
   const apps: ConnectedLearningDriverOptions['apps'] = {
     development: app,
     audit: [],
@@ -132,7 +132,7 @@ async function fixture(t: TestContext, kind: 'recheck' | 'field' | 'incident') {
     const codes: string[] = [];
     errors.length = 0;
     await serveConnectedLearning({
-      integrationId,
+      connectionId,
       installationId: 'test',
       configPath,
       apps: {

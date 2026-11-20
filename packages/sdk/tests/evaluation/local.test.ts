@@ -60,8 +60,8 @@ function definition(overrides: Partial<Definition> = {}): Definition {
       { caseId: 'c', input: 3, expected: 3 },
       { caseId: 'd', input: 4, expected: 4 },
     ],
-    execute: async ({ bundle, input }) => ({
-      output: { text: bundle.payload.files[0].text, n: input },
+    execute: async ({ version, input }) => ({
+      output: { text: version.payload.files[0].text, n: input },
     }),
     grade: async ({ output }) => ({ reward: output.text.includes('polite') ? 1 : 0.5 }),
     ...overrides,
@@ -100,13 +100,13 @@ async function capture(work: () => Promise<number>, tty = false) {
 test('local compare runs the counterbalanced schedule on synthetic verified versions', async () => {
   const w = await workspace();
   try {
-    const seen: Array<{ side: string; bundle: VerifiedVersion; first?: string }> = [];
+    const seen: Array<{ side: string; version: VerifiedVersion; first?: string }> = [];
     const app = defineEvaluation(
       definition({
         collection: { protocol: 'seeded-balanced-v1', seed: 'local' },
-        execute: async ({ bundle, input, context }) => {
-          seen.push({ side: context.side, bundle, first: context.collection?.firstSide });
-          return { output: { text: bundle.payload.files[0].text, n: input } };
+        execute: async ({ version, input, context }) => {
+          seen.push({ side: context.side, version, first: context.collection?.firstSide });
+          return { output: { text: version.payload.files[0].text, n: input } };
         },
       }),
     );
@@ -124,7 +124,7 @@ test('local compare runs the counterbalanced schedule on synthetic verified vers
       [['a', 0], ['b', 0], ['b', 1], ['c', 0], ['d', 0]],
     );
     // The same shape the service runner passes: version metadata, payload, resolution time.
-    const candidate = seen.find((item) => item.side === 'candidate')!.bundle;
+    const candidate = seen.find((item) => item.side === 'candidate')!.version;
     assert.deepEqual(Object.keys(candidate).sort(), ['payload', 'resolvedAt', 'stale', 'version']);
     assert.equal(candidate.version.digest, localPayloadDigest(candidatePayload));
     assert.equal(candidate.version.parentVersionId, result.versions.parent.id);
@@ -216,7 +216,7 @@ test('identical outputs on every pair raise the ignored-bundle warning', async (
     });
     assert.deepEqual(result.summary.outputs, { comparedPairs: 5, identicalPairs: 5 });
     assert.equal(result.warnings.length, 1);
-    assert.match(result.warnings[0], /identical output on all 5 compared pairs.*uses the bundle argument/);
+    assert.match(result.warnings[0], /identical output on all 5 compared pairs.*uses the version it is given/);
     const same = await runLocalComparison({
       app,
       parent: parentPayload,
@@ -243,13 +243,13 @@ test('declared concurrency overlaps pairs, keeps arm order and is fingerprinted'
     const app = defineEvaluation(
       definition({
         concurrency: 3,
-        execute: async ({ bundle, input, caseId, context }) => {
+        execute: async ({ version, input, caseId, context }) => {
           order.push(`${caseId}:${context.side}`);
           active++;
           peak = Math.max(peak, active);
           await new Promise((resolve) => setTimeout(resolve, 30));
           active--;
-          return { output: { text: bundle.payload.files[0].text, n: input } };
+          return { output: { text: version.payload.files[0].text, n: input } };
         },
       }),
     );
@@ -294,9 +294,9 @@ test('grade retries recover a flaky judge without repeating execution', async ()
     const app = defineEvaluation(
       definition({
         gradeRetries: 2,
-        execute: async ({ bundle, input }) => {
+        execute: async ({ version, input }) => {
           executions++;
-          return { output: { text: bundle.payload.files[0].text, n: input } };
+          return { output: { text: version.payload.files[0].text, n: input } };
         },
         grade: async ({ caseId, output }) => {
           const key = caseId + output.text;
@@ -322,12 +322,12 @@ test('a per-callback timeout aborts the signal and records a timeout gap', async
     let aborted = 0;
     const app = defineEvaluation(
       definition({
-        execute: async ({ bundle, input, caseId, signal }) => {
+        execute: async ({ version, input, caseId, signal }) => {
           if (caseId === 'c') {
             signal.addEventListener('abort', () => aborted++);
             await new Promise((resolve) => setTimeout(resolve, 2000)); // ignores the signal
           }
-          return { output: { text: bundle.payload.files[0].text, n: input } };
+          return { output: { text: version.payload.files[0].text, n: input } };
         },
       }),
     );
@@ -358,9 +358,9 @@ test('the deadline stops scheduling, abandons slow work and reports a partial re
   try {
     const app = defineEvaluation(
       definition({
-        execute: async ({ bundle, input }) => {
+        execute: async ({ version, input }) => {
           await new Promise((resolve) => setTimeout(resolve, 80));
-          return { output: { text: bundle.payload.files[0].text, n: input } };
+          return { output: { text: version.payload.files[0].text, n: input } };
         },
       }),
     );
@@ -389,9 +389,9 @@ test('the cost limit stops new pairs once reported cost reaches it', async () =>
     let executions = 0;
     const app = defineEvaluation(
       definition({
-        execute: async ({ bundle, input }) => {
+        execute: async ({ version, input }) => {
           executions++;
-          return { output: { text: bundle.payload.files[0].text, n: input }, usage: { costUsd: 0.75 } };
+          return { output: { text: version.payload.files[0].text, n: input }, usage: { costUsd: 0.75 } };
         },
       }),
     );
@@ -606,8 +606,8 @@ test('named grade components travel with outcomes and a policy can gate on one',
     const app = defineEvaluation<number, number, { polite: boolean }>({
       ...(definition() as any),
       cases,
-      execute: async ({ bundle }: { bundle: VerifiedVersion }) => ({
-        output: { polite: bundle.payload.files[0].text.includes('polite') },
+      execute: async ({ version }: { version: VerifiedVersion }) => ({
+        output: { polite: version.payload.files[0].text.includes('polite') },
       }),
       // The scalar reward ignores politeness; the named component measures it.
       grade: async ({ output }: { output: { polite: boolean } }) => ({

@@ -1,13 +1,15 @@
 /** Check the files delivered by the configured service. */
 import { readFile } from 'node:fs/promises';
 import { AcclimateClient } from '@acclimate/sdk';
-import { optionalReceipts, settleOptional } from './optional-receipts.js';
+import { optionalReceipts, rejectRenamedEnvironment, settleOptional } from './optional-receipts.js';
+
+rejectRenamedEnvironment();
 
 for (const key of [
   'ACCLIMATE_URL',
   'ACCLIMATE_TOKEN',
   'ACCLIMATE_SCOPE',
-  'ACCLIMATE_PROJECT',
+  'ACCLIMATE_WORKSPACE',
   'ACCLIMATE_BUNDLE',
 ]) {
   if (!process.env[key]) throw new Error('Set ' + key);
@@ -17,11 +19,11 @@ const client = new AcclimateClient({
   token: process.env.ACCLIMATE_TOKEN!,
   scope: process.env.ACCLIMATE_SCOPE!,
 });
-const projectId = process.env.ACCLIMATE_PROJECT!;
-const reporter = optionalReceipts(process.env, projectId);
+const workspaceId = process.env.ACCLIMATE_WORKSPACE!;
+const reporter = optionalReceipts(process.env, workspaceId);
 try {
   const prepared = await client.prepare({
-    projectId,
+    workspaceId,
     bundleId: process.env.ACCLIMATE_BUNDLE!,
     channel: process.env.ACCLIMATE_CHANNEL ?? 'stable',
     destination: process.env.ACCLIMATE_JOB_DIR,
@@ -32,8 +34,8 @@ try {
     for (const file of prepared.files) await readFile(file.absolutePath);
     console.log(
       JSON.stringify({
-        versionId: prepared.version.id,
-        digest: prepared.version.digest,
+        versionId: prepared.version.version.id,
+        digest: prepared.version.version.digest,
         files: prepared.files.map((file) => file.path),
         checkedFiles: prepared.files.length,
         reporting: reporter ? 'optional' : 'disabled',

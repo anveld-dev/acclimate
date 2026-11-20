@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { AcclimateClient } from '@acclimate/sdk';
 import type { BundlePayload } from '@acclimate/sdk';
+import { rejectRenamedEnvironment } from './optional-receipts.js';
 
 const [file, name, reason] = process.argv.slice(2);
 if (!file || !name?.trim() || !reason?.trim()) {
@@ -14,7 +15,8 @@ function setting(name: string): string {
   return value;
 }
 
-const projectId = setting('ACCLIMATE_PROJECT');
+rejectRenamedEnvironment();
+const workspaceId = setting('ACCLIMATE_WORKSPACE');
 const channel = process.env.ACCLIMATE_CHANNEL ?? 'stable';
 const client = new AcclimateClient({
   baseUrl: setting('ACCLIMATE_URL'),
@@ -23,13 +25,13 @@ const client = new AcclimateClient({
 });
 const payload: BundlePayload = JSON.parse(await readFile(file, 'utf8'));
 const { bundle, version } = await client.createBundleSetup(
-  projectId,
+  workspaceId,
   { name, origin: 'imported', channel, payload, reason },
   process.env.ACCLIMATE_OPERATION_ID ?? randomUUID(),
 );
 console.log(
   JSON.stringify(
-    { projectId, bundleId: bundle.id, versionId: version.id, digest: version.digest, channel },
+    { workspaceId, bundleId: bundle.id, versionId: version.id, digest: version.digest, channel },
     null,
     2,
   ),

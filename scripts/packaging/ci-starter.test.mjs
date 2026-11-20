@@ -78,8 +78,8 @@ before(async () => {
       const handoff = flag('out');
       mkdirSync(dirname(handoff), { recursive: true });
       if (!existsSync(handoff)) writeFileSync(handoff, JSON.stringify({ schemaVersion: 1,
-        serviceUrl: config.serviceUrl ?? 'https://acclimate.invalid/', projectId: config.projectId ?? 'workspace',
-        bundleId: flag('bundle'), requestId: body.requestId, configuration: { runtime: 'old evaluator' } }));
+        serviceUrl: config.serviceUrl ?? 'https://acclimate.invalid/', workspaceId: config.workspaceId ?? 'workspace',
+        bundleId: flag('bundle'), requestId: body.requestId, descriptor: { runtime: 'old evaluator' } }));
     }
     if (command === 'export' && !phase.exit) {
       mkdirSync(flag('out'), { recursive: true });
@@ -601,7 +601,7 @@ test('interrupted and abandoned predecessors are followed headlessly; unstarted 
   try {
   const omitted = ['intent', 'output-dir'];
   const journalRoot = await realpath(await mkdtemp(join(root, 'journal-')));
-  const configValues = { schemaVersion: 1, serviceUrl: service.url, projectId: 'workspace',
+  const configValues = { schemaVersion: 1, serviceUrl: service.url, workspaceId: 'workspace',
     evaluatorPrincipalId: 'ci-evaluator', evaluatorToken: 'secret-token', journalRoot };
   const config = await writeConfig(await mkdtemp(join(root, 'config-')), configValues);
   const status = { requestId, attemptId: candidateVersionId, comparisonId: null };
@@ -615,6 +615,7 @@ test('interrupted and abandoned predecessors are followed headlessly; unstarted 
     return [dir, first.summary.handoff];
   };
   const journal = async (state) => {
+    // The journal directory key is frozen at its 0.1 encoding, with the workspace under projectId.
     const scope = JSON.stringify({ serviceUrl: configValues.serviceUrl, projectId: 'workspace',
       bundleId: 'bundle-under-test', requestId, evaluatorPrincipalId: 'ci-evaluator' });
     const directory = join(journalRoot, createHash('sha256').update(scope).digest('hex'));
@@ -632,7 +633,7 @@ test('interrupted and abandoned predecessors are followed headlessly; unstarted 
     assert.equal(expired.status, 0, expired.stderr);
     assert.equal(expired.summary.requestId, successorId);
     assert.equal(expired.summary.previousExecutionStatus, ended);
-    assert.equal(expired.summary.handoff, handoff.replace(/[^/]+$/, 'after-' + requestId + '/evaluation-request.json'));
+    assert.equal(expired.summary.handoff, handoff.replace(/[^/]+$/, 'after-' + requestId + '/handoff.json'));
   }
   // An explicitly named abandoned predecessor is settled too.
   [dir, handoff] = await setup();
@@ -720,7 +721,7 @@ test('SIGTERM kills an evaluator that ignores it after the grace period, leaving
 
 test('a token from the environment or a private file reaches the evaluator only through its environment', async () => {
   const dir = await mkdtemp(join(root, 'token-config-'));
-  const template = await writeConfig(dir, { schemaVersion: 1, serviceUrl: 'http://127.0.0.1:9/', projectId: 'p',
+  const template = await writeConfig(dir, { schemaVersion: 1, serviceUrl: 'http://127.0.0.1:9/', workspaceId: 'p',
     evaluatorPrincipalId: 'ci', journalRoot: '/tmp/unused' });
   const omitted = ['config'];
   const run = await pipeline('javascript', {}, ['--config', template, '--token-env', 'CI_TEST_TOKEN'], omitted,
@@ -780,7 +781,7 @@ test('an unchanged candidate, release and evaluator reuse their result across co
     await writeFile(join(repo, 'README.md'), 'Docs only\n');
     const second = commitAll(repo, 'Docs only');
     const config = await writeConfig(await mkdtemp(join(root, 'reuse-config-')), { schemaVersion: 1,
-      serviceUrl: `http://127.0.0.1:${port}/`, projectId: 'workspace',
+      serviceUrl: `http://127.0.0.1:${port}/`, workspaceId: 'workspace',
       evaluatorPrincipalId: 'ci', evaluatorToken: 'reuse-token', journalRoot: '/tmp/unused' });
     const output = await mkdtemp(join(root, 'reuse-output-'));
     const omitted = ['payload', 'repo', 'commit', 'config', 'intent', 'output-dir'];

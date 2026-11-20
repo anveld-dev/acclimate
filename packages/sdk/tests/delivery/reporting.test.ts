@@ -52,10 +52,10 @@ test('opt-in delivery reports actual network/cache/offline source and explicit p
   });
   const reporter = createReceiptReporter({
     client: reportingClient,
-    projectId: 'p',
-    integrationId: 'i',
+    workspaceId: 'p',
+    connectionId: 'i',
   });
-  const selection = { projectId: 'p', bundleId: 'b', channel: 'main' };
+  const selection = { workspaceId: 'p', bundleId: 'b', channel: 'main' };
   try {
     const verified = await resolveAndCache(client, selection, { cacheDir: dir, reporter });
     reporter.reportPrepared(verified);
@@ -122,34 +122,34 @@ test('closing optional reporting stops claiming queued events after an in-flight
       return Response.json({});
     },
   });
-  const reporter = createReceiptReporter({ client, projectId: 'p', integrationId: 'i' });
-  const bundle = {
+  const reporter = createReceiptReporter({ client, workspaceId: 'p', connectionId: 'i' });
+  const verified = {
     version,
     payload: { schemaVersion: 1 as const, files: [] },
     resolvedAt: Date.now(),
     stale: false,
   };
   reporter.observeDelivery({
-    selection: { projectId: 'p', bundleId: 'b', versionId: 'v' },
-    bundle,
+    selection: { workspaceId: 'p', bundleId: 'b', versionId: 'v' },
+    version: verified,
     source: 'cache',
     downloaded: false,
   });
   await started;
-  reporter.reportPrepared(bundle);
+  reporter.reportPrepared(verified);
   const inFlight = reporter.flush();
   reporter.close();
   release();
   await inFlight;
   assert.equal(calls, 1);
   assert.equal(reporter.pendingCount, 1);
-  assert.equal(reporter.reportStarted(bundle), false);
+  assert.equal(reporter.reportStarted(verified), false);
   await reporter.flush();
   assert.equal(calls, 1);
 });
 
 test('started receipts return exact event identity and refuse observation from a sibling connection', async () => {
-  const integrationId = 'a7100000-0000-0000-0000-000000000001';
+  const connectionId = 'a7100000-0000-0000-0000-000000000001';
   const sibling = 'a7100000-0000-0000-0000-000000000002';
   const events: DeliveryReceiptRequest[] = [];
   const client = new AcclimateClient({
@@ -161,28 +161,28 @@ test('started receipts return exact event identity and refuse observation from a
       return Response.json({});
     },
   });
-  const reporter = createReceiptReporter({ client, projectId: 'p', integrationId });
-  const bundle = {
+  const reporter = createReceiptReporter({ client, workspaceId: 'p', connectionId });
+  const verified = {
     version,
     payload: { schemaVersion: 1 as const, files: [] },
     resolvedAt: Date.now(),
     stale: false,
     resolution: { channel: 'main', revision: '3', version },
-    connection: { projectId: 'p', integrationId },
+    connection: { workspaceId: 'p', connectionId },
   };
-  const otherBundle = { ...bundle, connection: { projectId: 'p', integrationId: sibling } };
+  const otherVerified = { ...verified, connection: { workspaceId: 'p', connectionId: sibling } };
   const observation = {
-    selection: { projectId: 'p', bundleId: 'b', channel: 'main' },
-    bundle,
+    selection: { workspaceId: 'p', bundleId: 'b', channel: 'main' },
+    version: verified,
     source: 'cache' as const,
     downloaded: false,
   };
-  assert.throws(() => reporter.observeDelivery({ ...observation, bundle: otherBundle }), /scope/);
-  assert.throws(() => reporter.reportStartedReceipt(otherBundle), /has not been observed/);
+  assert.throws(() => reporter.observeDelivery({ ...observation, version: otherVerified }), /scope/);
+  assert.throws(() => reporter.reportStartedReceipt(otherVerified), /has not been observed/);
   reporter.observeDelivery(observation);
-  const started = reporter.reportStartedReceipt(bundle);
+  const started = reporter.reportStartedReceipt(verified);
   assert.ok(started);
-  assert.equal(started.integrationId, integrationId);
+  assert.equal(started.connectionId, connectionId);
   assert.equal(started.revision, '3');
   assert.equal(started.stage, 'started');
   assert(Object.isFrozen(started));
@@ -191,7 +191,7 @@ test('started receipts return exact event identity and refuse observation from a
     events.find((event) => event.stage === 'started'),
     started,
   );
-  assert(events.every((event) => event.integrationId === integrationId));
+  assert(events.every((event) => event.connectionId === connectionId));
 });
 
 test('a prepared job retries a refused start at its original time and queues it once', async () => {
@@ -223,14 +223,14 @@ test('a prepared job retries a refused start at its original time and queues it 
   let clock = Date.now();
   const reporter = createReceiptReporter({
     client: writer,
-    projectId: 'p',
-    integrationId: 'i',
+    workspaceId: 'p',
+    connectionId: 'i',
     maxPending: 1,
     now: () => clock,
   });
   try {
     await using job = await reader.prepare({
-      projectId: 'p',
+      workspaceId: 'p',
       bundleId: 'b',
       channel: 'main',
       cacheDir: dir,

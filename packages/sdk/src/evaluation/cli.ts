@@ -410,7 +410,33 @@ async function readHandoff(filename: string, flag: string, name?: string): Promi
       throw new EvaluationError(error.code, { ...error.diagnostic, field: flag });
     throw error;
   }
-  return validateEvaluationHandoff(value);
+  return validateEvaluationHandoff(name ? recoveredNamedHandoff(value) : value);
+}
+
+/**
+ * A named run's handoff lives in the private journal root. One written by 0.1 uses the old
+ * `projectId` and `configuration` keys; read it so a run started before the upgrade can be
+ * inspected, exported or retried. A handoff passed with --handoff is never translated.
+ */
+function recoveredNamedHandoff(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const { projectId, configuration, ...rest } = value as Record<string, unknown>;
+  if (
+    projectId === undefined ||
+    configuration === undefined ||
+    Object.hasOwn(rest, 'workspaceId') ||
+    Object.hasOwn(rest, 'descriptor')
+  )
+    return value;
+  return {
+    schemaVersion: rest.schemaVersion,
+    serviceUrl: rest.serviceUrl,
+    workspaceId: projectId,
+    bundleId: rest.bundleId,
+    requestId: rest.requestId,
+    descriptor: configuration,
+    ...rest,
+  };
 }
 
 async function handoffFile(flags: Parsed['flags']): Promise<EvaluationHandoff> {
@@ -422,7 +448,7 @@ async function readConnection(flags: Parsed['flags'], handoff: EvaluationHandoff
   exactlyOne(flags, 'config', 'read-config');
   if (flags['read-config']) {
     const config = await readReaderConfig(required(flags, 'read-config'));
-    if (config.serviceUrl !== handoff.serviceUrl || config.projectId !== handoff.projectId)
+    if (config.serviceUrl !== handoff.serviceUrl || config.workspaceId !== handoff.workspaceId)
       throw new EvaluationError('version.binding_mismatch');
     return {
       client: new AcclimateClient({
@@ -430,11 +456,11 @@ async function readConnection(flags: Parsed['flags'], handoff: EvaluationHandoff
         token: config.readToken,
         scope: 'review-reader',
       }),
-      projectId: config.projectId,
+      workspaceId: config.workspaceId,
     };
   }
   const config = await readEvaluatorConfig(required(flags, 'config'));
-  if (config.serviceUrl !== handoff.serviceUrl || config.projectId !== handoff.projectId)
+  if (config.serviceUrl !== handoff.serviceUrl || config.workspaceId !== handoff.workspaceId)
     throw new EvaluationError('version.binding_mismatch');
   return {
     client: new AcclimateClient({
@@ -442,7 +468,7 @@ async function readConnection(flags: Parsed['flags'], handoff: EvaluationHandoff
       token: config.evaluatorToken,
       scope: config.evaluatorPrincipalId,
     }),
-    projectId: config.projectId,
+    workspaceId: config.workspaceId,
   };
 }
 
@@ -474,7 +500,7 @@ function assertRequest(
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
         request.comparisonId,
       )) ||
-    evaluationDescriptorDifferences(request, handoff.configuration).length ||
+    evaluationDescriptorDifferences(request, handoff.descriptor).length ||
     (app && evaluationDescriptorDifferences(request, app.descriptor).length)
   )
     throw new EvaluationError('descriptor.mismatch', { phase: 'inspect' });
@@ -488,7 +514,7 @@ const safeRequest = (request: Evaluation) => ({
 });
 async function readProgress(
   client: AcclimateClient,
-  projectId: string,
+  workspaceId: string,
   bundleId: string,
   request: Evaluation,
 ) {
@@ -497,7 +523,7 @@ async function readProgress(
     typeof value === 'string' &&
     /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)$/.test(value);
   try {
-    const view = await client.getEvaluationProgress(projectId, bundleId, request.id);
+    const view = await client.getEvaluationProgress(workspaceId, bundleId, request.id);
     if (
       view.schemaVersion !== 1 ||
       view.requestId !== request.id ||
@@ -615,7 +641,7 @@ async function createRequest(
   const config = await readEvaluatorConfig(configPath);
   const bundleId = required(flags, 'bundle'),
     channel = required(flags, 'channel');
-  assertGuidedTarget({ projectId: config.projectId, bundleId });
+  assertGuidedTarget({ workspaceId: config.workspaceId, bundleId });
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(channel))
     throw new EvaluationError('guided_target_unsupported', {
       field: '--channel',
@@ -724,8 +750,8 @@ async function dispatch(
           field: '--bundle',
           reason: 'The prior run used a different bundle.',
         });
-      const { client, projectId } = await readConnection(flags, prior);
-      const request = await client.getEvaluation(projectId, prior.bundleId, prior.requestId);
+      const { client, workspaceId } = await readConnection(flags, prior);
+      const request = await client.getEvaluation(workspaceId, prior.bundleId, prior.requestId);
       assertRequest(request, prior);
       assertSettledPredecessor(request);
       predecessor = { handoffFile, request };
@@ -890,7 +916,7 @@ async function readEvidence({ command, flags }: Parsed) {
     const reason = required(flags, 'reason');
     const handoff = await handoffFile(flags);
     const config = await readEvaluatorConfig(configPath);
-    if (config.serviceUrl !== handoff.serviceUrl || config.projectId !== handoff.projectId)
+    if (config.serviceUrl !== handoff.serviceUrl || config.workspaceId !== handoff.workspaceId)
       throw new EvaluationError('version.binding_mismatch', {
         field: '--handoff',
         reason: 'The handoff names a different service or workspace than the config.',
@@ -924,14 +950,14 @@ async function readEvidence({ command, flags }: Parsed) {
     throw new EvaluationUsageError('usage.unknown_command', { field: JSON.stringify(command) });
   exactlyOne(flags, 'config', 'read-config');
   const handoff = await handoffFile(flags);
-  const { client, projectId } = await readConnection(flags, handoff);
-  const request = await client.getEvaluation(projectId, handoff.bundleId, handoff.requestId);
+  const { client, workspaceId } = await readConnection(flags, handoff);
+  const request = await client.getEvaluation(workspaceId, handoff.bundleId, handoff.requestId);
   assertRequest(request, handoff);
   return {
     status: 0,
     result: {
       ...safeRequest(request),
-      progress: await readProgress(client, projectId, handoff.bundleId, request),
+      progress: await readProgress(client, workspaceId, handoff.bundleId, request),
     },
   };
 }
@@ -950,8 +976,8 @@ async function checkPolicyCommand(
     await readCommandText(required(flags, 'policy')),
     descriptor,
   );
-  const { client, projectId } = await readConnection(flags, handoff);
-  const request = await client.getEvaluation(projectId, handoff.bundleId, handoff.requestId);
+  const { client, workspaceId } = await readConnection(flags, handoff);
+  const request = await client.getEvaluation(workspaceId, handoff.bundleId, handoff.requestId);
   assertRequest(request, handoff, { descriptor });
   if (!['completed', 'failed'].includes(request.status) || !request.comparisonId)
     return {
@@ -964,8 +990,8 @@ async function checkPolicyCommand(
       },
     };
   const [parent, candidate] = await Promise.all([
-    client.getVersion(projectId, handoff.bundleId, request.parentVersionId),
-    client.getVersion(projectId, handoff.bundleId, request.candidateVersionId),
+    client.getVersion(workspaceId, handoff.bundleId, request.parentVersionId),
+    client.getVersion(workspaceId, handoff.bundleId, request.candidateVersionId),
   ]);
   if (
     parent.id !== request.parentVersionId ||
@@ -978,7 +1004,7 @@ async function checkPolicyCommand(
   )
     throw new EvaluationError('version.binding_mismatch', { phase: 'inspect' });
   const comparison: Comparison = await client.getComparison(
-    projectId,
+    workspaceId,
     handoff.bundleId,
     request.comparisonId,
   );

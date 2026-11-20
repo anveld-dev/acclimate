@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { prepare } from '../../src/index.js';
 import { claudeSessionOptions } from '../../src/native.js';
-import type { VerifiedBundle } from '../../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../../sdk/src/types.js';
 
-const bundle: VerifiedBundle = {
+const bundle: VerifiedVersion = {
   version: {
     id: 'native-claude',
     bundleId: 'b',

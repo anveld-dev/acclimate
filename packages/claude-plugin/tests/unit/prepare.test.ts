@@ -4,9 +4,9 @@ import { readFile, access, mkdir, mkdtemp, rm, stat, symlink, writeFile } from '
 import os from 'node:os';
 import path from 'node:path';
 import { CLAUDE_PROJECT_OVERLAY, prepare } from '../../src/index.js';
-import type { VerifiedBundle } from '../../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../../sdk/src/types.js';
 
-const verified: VerifiedBundle = {
+const verified: VerifiedVersion = {
   version: { id: 'v2', bundleId: 'b', parentVersionId: null, digest: 'd', createdAt: 'now' },
   resolvedAt: 0,
   stale: false,

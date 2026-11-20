@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import {
   AcclimateClient,
   type DeliveryReceiptRequest,
-  type VerifiedBundle,
+  type VerifiedVersion,
 } from '../../src/index.js';
 import {
   createLearningFieldAuditor,
@@ -15,8 +15,8 @@ import {
   type LearningFieldGrade,
 } from '../../src/learning/index.js';
 
-const projectId = 'test-project';
-const integrationId = 'a7100000-0000-0000-0000-000000000001';
+const workspaceId = 'test-project';
+const connectionId = 'a7100000-0000-0000-0000-000000000001';
 const outcomeId = 'a7100000-0000-0000-0000-000000000002';
 const version = {
   id: 'version',
@@ -25,12 +25,12 @@ const version = {
   digest: 'sha256:' + 'e'.repeat(64),
   createdAt: '2026-11-13T00:00:00Z',
 };
-const bundle: VerifiedBundle = {
+const bundle: VerifiedVersion = {
   version,
   payload: { schemaVersion: 1, files: [] },
   resolvedAt: Date.now(),
   stale: false,
-  connection: { projectId, integrationId },
+  connection: { workspaceId, connectionId },
   resolution: { channel: 'stable', revision: '2', version },
 };
 
@@ -45,7 +45,7 @@ test('terminal reporter binds outcomes to fresh delivery and sends only bounded 
       return Response.json({ outcomeId, accepted: true, eligible: true });
     },
   });
-  const report = createLearningOutcomeReporter({ client, projectId, integrationId });
+  const report = createLearningOutcomeReporter({ client, workspaceId, connectionId });
   const outcome = {
     outcomeId,
     status: 'failed' as const,
@@ -56,7 +56,7 @@ test('terminal reporter binds outcomes to fresh delivery and sends only bounded 
   const request = requests[0]!;
   assert.equal(
     new URL(request.url).pathname,
-    '/v1/workspaces/' + projectId + '/connections/' + integrationId + '/learning/outcomes',
+    '/v1/workspaces/' + workspaceId + '/connections/' + connectionId + '/learning/outcomes',
   );
   assert.equal(request.headers.get('idempotency-key'), outcomeId);
   assert.equal(request.headers.get('authorization'), 'Bearer outcome-principal');
@@ -68,8 +68,8 @@ test('terminal reporter binds outcomes to fresh delivery and sends only bounded 
     deliveryRevision: '2',
     feedback: { expected: 'validated', observed: 'skipped' },
   });
-  await assert.rejects(report({ ...bundle, stale: true }, outcome), /fresh bundle/);
-  await assert.rejects(report({ ...bundle, connection: undefined }, outcome), /fresh bundle/);
+  await assert.rejects(report({ ...bundle, stale: true }, outcome), /fresh version/);
+  await assert.rejects(report({ ...bundle, connection: undefined }, outcome), /fresh version/);
   await assert.rejects(
     report(bundle, {
       ...outcome,
@@ -105,8 +105,8 @@ test('field auditor links the exact started receipt and grades only the authoriz
     digest: 'sha256:' + createHash('sha256').update(payload).digest('hex'),
   };
   const startedReceipt: DeliveryReceiptRequest = {
-    projectId,
-    integrationId,
+    workspaceId,
+    connectionId,
     eventId,
     bundleId: version.bundleId,
     versionId: version.id,
@@ -144,7 +144,7 @@ test('field auditor links the exact started receipt and grades only the authoriz
   });
   const cacheDir = await mkdtemp(join(await realpath(tmpdir()), 'acclimate-field-audit-'));
   t.after(() => rm(cacheDir, { recursive: true, force: true }));
-  const outcomeReporter = createLearningOutcomeReporter({ client, projectId, integrationId });
+  const outcomeReporter = createLearningOutcomeReporter({ client, workspaceId, connectionId });
   const outcome = await outcomeReporter(bundle, { outcomeId, status: 'failed', startedReceipt });
   assert.deepEqual(await requests[0]!.json(), {
     outcomeId,
@@ -155,7 +155,7 @@ test('field auditor links the exact started receipt and grades only the authoriz
     deliveryRevision: '2',
   });
   const sample = { job: 'private input', startedReceipt, outcome };
-  const options = { client, projectId, integrationId, cacheDir, samplePercent: 100 };
+  const options = { client, workspaceId, connectionId, cacheDir, samplePercent: 100 };
   let grades: { served: LearningFieldGrade; predecessor: LearningFieldGrade } = {
     served: 'incorrect',
     predecessor: 'correct',
@@ -198,7 +198,7 @@ test('field auditor links the exact started receipt and grades only the authoriz
     verdict: 'loss',
   });
   assert.equal(executions, 1);
-  await client.reportLearningFieldAudit(projectId, integrationId, body!);
+  await client.reportLearningFieldAudit(workspaceId, connectionId, body!);
   assert.equal(requests.at(-1)!.headers.get('idempotency-key'), outcomeId);
   assert.deepEqual(await requests.at(-1)!.json(), body);
   grades = { served: 'incorrect', predecessor: 'incorrect' };
@@ -229,8 +229,8 @@ test('enrollment PUT preserves an explicit false rollout precondition', async ()
     expectedCases: [{ caseId: 'case', repetition: 0 }],
   };
   await client.enrollLearning(
-    projectId,
-    integrationId,
+    workspaceId,
+    connectionId,
     {
       installationId: 'app-installation',
       permittedPaths: ['instructions/main.md'],
@@ -278,9 +278,9 @@ test('corrections and rechecks use independent stable ids against their original
     digest: version.digest,
     verdict: 'reproduced' as const,
   };
-  await client.reportLearningCorrection(projectId, integrationId, correction);
-  await client.reportLearningRecheck(projectId, integrationId, recheck);
-  const prefix = '/v1/workspaces/' + projectId + '/connections/' + integrationId + '/learning/';
+  await client.reportLearningCorrection(workspaceId, connectionId, correction);
+  await client.reportLearningRecheck(workspaceId, connectionId, recheck);
+  const prefix = '/v1/workspaces/' + workspaceId + '/connections/' + connectionId + '/learning/';
   assert.deepEqual(
     requests.map((r) => new URL(r.url).pathname),
     [prefix + 'corrections', prefix + 'rechecks'],

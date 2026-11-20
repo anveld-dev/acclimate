@@ -231,7 +231,7 @@ function assertTarget(config: EvaluatorConfig, handoff: EvaluationHandoff) {
   validateEvaluationHandoff(handoff);
   try {
     assertGuidedTarget({
-      projectId: config.projectId,
+      workspaceId: config.workspaceId,
       bundleId: handoff.bundleId,
       requestId: handoff.requestId,
       principalId: config.evaluatorPrincipalId,
@@ -239,16 +239,16 @@ function assertTarget(config: EvaluatorConfig, handoff: EvaluationHandoff) {
   } catch {
     throw new EvaluationError('guided_target_unsupported');
   }
-  if (handoff.serviceUrl !== config.serviceUrl || handoff.projectId !== config.projectId)
+  if (handoff.serviceUrl !== config.serviceUrl || handoff.workspaceId !== config.workspaceId)
     throw new EvaluationError('auth.principal_mismatch');
 }
 export async function verifyEvaluatorAuthority(
   api: AcclimateClient,
-  config: Pick<EvaluatorConfig, 'projectId' | 'evaluatorPrincipalId'>,
+  config: Pick<EvaluatorConfig, 'workspaceId' | 'evaluatorPrincipalId'>,
 ) {
   let capabilities;
   try {
-    capabilities = await api.getEvaluationCapabilities(config.projectId);
+    capabilities = await api.getEvaluationCapabilities(config.workspaceId);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404)
       throw new EvaluationError('capabilities.unsupported');
@@ -257,7 +257,7 @@ export async function verifyEvaluatorAuthority(
   if (capabilities.schemaVersion !== 1 || capabilities.retainedEvaluationOperations !== true)
     throw new EvaluationError('capabilities.unsupported');
   if (
-    capabilities.projectId !== config.projectId ||
+    capabilities.workspaceId !== config.workspaceId ||
     capabilities.principalId !== config.evaluatorPrincipalId
   )
     throw new EvaluationError('auth.principal_mismatch');
@@ -266,7 +266,7 @@ export async function verifyEvaluatorAuthority(
 }
 async function verified(
   api: AcclimateClient,
-  config: Pick<EvaluatorConfig, 'projectId'>,
+  config: Pick<EvaluatorConfig, 'workspaceId'>,
   bundleId: string,
   request: Evaluation,
   cacheDir: string,
@@ -274,12 +274,12 @@ async function verified(
 ): Promise<[VerifiedVersion, VerifiedVersion]> {
   const parent = await resolveAndCache(
     api,
-    { projectId: config.projectId, bundleId, versionId: request.parentVersionId },
+    { workspaceId: config.workspaceId, bundleId, versionId: request.parentVersionId },
     { cacheDir },
   );
   const candidate = await resolveAndCache(
     api,
-    { projectId: config.projectId, bundleId, versionId: request.candidateVersionId },
+    { workspaceId: config.workspaceId, bundleId, versionId: request.candidateVersionId },
     { cacheDir },
   );
   if (
@@ -292,7 +292,7 @@ async function verified(
     const seen = new Set([candidate.version.id]);
     while (ancestor && ancestor !== parent.version.id && cumulative && !seen.has(ancestor)) {
       seen.add(ancestor);
-      const version = await api.getVersion(config.projectId, bundleId, ancestor);
+      const version = await api.getVersion(config.workspaceId, bundleId, ancestor);
       if (version.id !== ancestor || version.bundleId !== bundleId)
         throw new EvaluationError('version.binding_mismatch');
       ancestor = version.parentVersionId;
@@ -302,11 +302,11 @@ async function verified(
   return [deepFreeze(parent), deepFreeze(candidate)];
 }
 /** An empty request/channel listing does not establish bundle existence. */
-async function assertBundleExists(api: AcclimateClient, projectId: string, bundleId: string) {
+async function assertBundleExists(api: AcclimateClient, workspaceId: string, bundleId: string) {
   let cursor: string | undefined;
   const seen = new Set<string>();
   for (let pages = 0; pages < 100; pages++) {
-    const page = await api.listBundles(projectId, { limit: 100, ...(cursor ? { cursor } : {}) });
+    const page = await api.listBundles(workspaceId, { limit: 100, ...(cursor ? { cursor } : {}) });
     if (
       !page ||
       !Array.isArray(page.items) ||
@@ -339,11 +339,11 @@ export async function preflightEvaluation<I, E, O>(
   const requestId = 'handoff' in target ? target.handoff.requestId : target.requestId;
   if ('handoff' in target) {
     assertTarget(config, target.handoff);
-    assertDescriptor(target.handoff.configuration, captured.descriptor);
+    assertDescriptor(target.handoff.descriptor, captured.descriptor);
   }
   try {
     assertGuidedTarget({
-      projectId: config.projectId,
+      workspaceId: config.workspaceId,
       bundleId,
       requestId,
       principalId: config.evaluatorPrincipalId,
@@ -384,11 +384,11 @@ export async function preflightEvaluation<I, E, O>(
     pass('serviceIdentity');
     pass('evaluatorAccess');
     currentCheck = 'targetBundle';
-    await assertBundleExists(api, config.projectId, bundleId);
+    await assertBundleExists(api, config.workspaceId, bundleId);
     pass('targetBundle');
     if (requestId) {
       currentCheck = 'targetRequest';
-      const request = await api.getEvaluation(config.projectId, bundleId, requestId);
+      const request = await api.getEvaluation(config.workspaceId, bundleId, requestId);
       if (request.id !== requestId || request.requireBoundEvidence !== true)
         throw new EvaluationError('evidence.identity_mismatch');
       pass('targetRequest');
@@ -447,7 +447,7 @@ export async function runEvaluationRequest<I, E, O>(
     config = await readEvaluatorConfig(options.configPath),
     handoff = validateEvaluationHandoff(options.handoff);
   assertTarget(config, handoff);
-  assertDescriptor(handoff.configuration, captured.descriptor);
+  assertDescriptor(handoff.descriptor, captured.descriptor);
   if ((captured.execution === 'live') !== (options.allowLive === true))
     throw new EvaluationError('config.schema', {
       field: 'allowLive',
@@ -476,7 +476,7 @@ export async function runCapturedEvaluation(options: {
   captured: CapturedDefinition<any, any, any>;
   config: Pick<
     EvaluatorConfig,
-    'serviceUrl' | 'projectId' | 'evaluatorPrincipalId' | 'journalRoot' | 'captureCallbackErrors'
+    'serviceUrl' | 'workspaceId' | 'evaluatorPrincipalId' | 'journalRoot' | 'captureCallbackErrors'
   >;
   handoff: EvaluationHandoff;
   transport: ReturnType<typeof createEvaluationTransport>;
@@ -490,7 +490,7 @@ export async function runCapturedEvaluation(options: {
     api = transport.client;
   const scope: JournalScope = {
     serviceUrl: config.serviceUrl,
-    projectId: config.projectId,
+    workspaceId: config.workspaceId,
     bundleId: handoff.bundleId,
     requestId: handoff.requestId,
     evaluatorPrincipalId: config.evaluatorPrincipalId,
@@ -514,7 +514,7 @@ export async function runCapturedEvaluation(options: {
       : state?.executionStarted
         ? 'may_have_started'
         : 'not_started';
-    let request = await api.getEvaluation(scope.projectId, scope.bundleId, scope.requestId);
+    let request = await api.getEvaluation(scope.workspaceId, scope.bundleId, scope.requestId);
     if (request.id !== scope.requestId || request.requireBoundEvidence !== true)
       throw new EvaluationError('evidence.identity_mismatch');
     assertDescriptor(request, captured.descriptor);
@@ -583,7 +583,7 @@ export async function runCapturedEvaluation(options: {
     }
     const check = async () => {
       journal.assertOwned();
-      const latest = await api.getEvaluation(scope.projectId, scope.bundleId, scope.requestId);
+      const latest = await api.getEvaluation(scope.workspaceId, scope.bundleId, scope.requestId);
       journal.assertOwned();
       assertFrozen(latest, scope.requestId, state!.request);
       if (
@@ -601,7 +601,7 @@ export async function runCapturedEvaluation(options: {
     if (!state.report) {
       signal.throwIfAborted();
       phase = 'verify';
-      const bundles = await verified(
+      const versions = await verified(
         api,
         config,
         scope.bundleId,
@@ -661,7 +661,7 @@ export async function runCapturedEvaluation(options: {
         captured,
         requestId: scope.requestId,
         attemptId,
-        bundles,
+        versions,
         jobsRoot: path.join(journal.directory, 'jobs'),
         signal,
         controls: { ...captured.controls, ...options.controls },
@@ -764,7 +764,7 @@ export async function runCapturedEvaluation(options: {
       finished.comparisonId !== state.comparisonId
     )
       throw new EvaluationError('evidence.identity_mismatch');
-    request = await api.getEvaluation(scope.projectId, scope.bundleId, scope.requestId);
+    request = await api.getEvaluation(scope.workspaceId, scope.bundleId, scope.requestId);
     assertFrozen(request, scope.requestId, state.request);
     // An abandoned attempt is settled like an interruption: nothing more is reported.
     if (request.status === 'interrupted' || request.status === 'abandoned')
@@ -866,7 +866,7 @@ async function terminal(
       (state.comparisonId && state.comparisonId !== request.comparisonId))
   )
     throw new EvaluationError('evidence.identity_mismatch');
-  const comparison = await api.getComparison(scope.projectId, scope.bundleId, request.comparisonId);
+  const comparison = await api.getComparison(scope.workspaceId, scope.bundleId, request.comparisonId);
   assertReport(comparison, request, request.attemptId);
   if (comparison.id !== request.comparisonId || comparison.submitter !== request.evaluatorPrincipal)
     throw new EvaluationError('evidence.identity_mismatch');

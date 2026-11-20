@@ -47,20 +47,28 @@ const read = async (file) => {
 async function fromJournal(name, configFile) {
   if (!/^[a-zA-Z0-9_-]{1,80}$/.test(name)) throw new InputError('analysis.run_name_invalid', { name });
   const config = await read(configFile);
-  if (!config?.serviceUrl || !config?.projectId || !config?.evaluatorToken || !config?.journalRoot)
+  if (config && typeof config === 'object' && Object.hasOwn(config, 'projectId'))
+    throw new InputError('analysis.config_invalid', {
+      file: configFile,
+      field: 'projectId',
+      reason: 'projectId was renamed to workspaceId in 0.2.0',
+    });
+  if (!config?.serviceUrl || !config?.workspaceId || !config?.evaluatorToken || !config?.journalRoot)
     throw new InputError('analysis.config_invalid', { file: configFile });
   const handoffFile = path.join(config.journalRoot, 'comparisons', name, 'request.json');
   const handoff = await read(handoffFile);
+  // A run started before 0.2.0 recorded its workspace as projectId in this journal file.
+  const workspaceId = handoff.workspaceId ?? handoff.projectId;
   const client = new AcclimateClient({
     baseUrl: config.serviceUrl,
     token: config.evaluatorToken,
     scope: config.evaluatorPrincipalId ?? 'evaluator',
   });
-  const request = await client.getEvaluation(handoff.projectId, handoff.bundleId, handoff.requestId);
+  const request = await client.getEvaluation(workspaceId, handoff.bundleId, handoff.requestId);
   if (!request.comparisonId || !request.attemptId)
     throw new InputError('evidence.not_terminal', { requestId: request.id, status: request.status });
   const comparison = await client.getComparison(
-    handoff.projectId,
+    workspaceId,
     handoff.bundleId,
     request.comparisonId,
   );

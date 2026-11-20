@@ -10,8 +10,9 @@ import { Agent } from '@cursor/sdk';
 import { AcclimateClient } from '@acclimate/sdk';
 import { prepare } from '@acclimate/cursor-plugin';
 import { cursorLocalOptions } from '@acclimate/cursor-plugin/native';
-import { optionalReceipts, settleOptional } from './optional-receipts.js';
+import { optionalReceipts, rejectRenamedEnvironment, settleOptional } from './optional-receipts.js';
 
+rejectRenamedEnvironment();
 if (!process.argv.includes('--live')) throw new Error('Pass --live to request a paid Cursor session.');
 const token = process.env.ACCLIMATE_TOKEN;
 const bundleId = process.env.ACCLIMATE_BUNDLE;
@@ -20,8 +21,8 @@ const model = process.env.CURSOR_MODEL;
 const jobDirectory = process.env.ACCLIMATE_JOB_DIR;
 if (!token || !bundleId || !apiKey || !model || !jobDirectory)
   throw new Error('Set ACCLIMATE_TOKEN, ACCLIMATE_BUNDLE, CURSOR_API_KEY, CURSOR_MODEL and ACCLIMATE_JOB_DIR.');
-const projectId = process.env.ACCLIMATE_PROJECT ?? 'demo';
-const reporter = optionalReceipts(process.env, projectId);
+const workspaceId = process.env.ACCLIMATE_WORKSPACE ?? 'demo';
+const reporter = optionalReceipts(process.env, workspaceId);
 const client = new AcclimateClient({
   baseUrl: process.env.ACCLIMATE_URL ?? 'http://127.0.0.1:3000',
   token,
@@ -29,7 +30,7 @@ const client = new AcclimateClient({
 });
 // cacheDir defaults to defaultCacheDir(): ~/.cache/acclimate/typescript.
 const delivery = await client.prepare({
-  projectId,
+  workspaceId,
   bundleId,
   channel: process.env.ACCLIMATE_CHANNEL ?? 'stable',
   cacheDir: process.env.ACCLIMATE_CACHE,

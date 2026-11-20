@@ -10,6 +10,7 @@ import type {
 } from './types.js';
 import { validatePayload, DeliveryError } from './cache.js';
 import { compatibilityIssues } from './compatibility.js';
+import { AcclimateUsageError } from './errors.js';
 
 export interface NativeFile {
   sourcePath: string;
@@ -59,7 +60,7 @@ export interface PreparedNativeFiles extends NativePreparation {
  * verified version so `reportStarted()` receipts survive native preparation.
  */
 export interface DeliveredVersion {
-  bundle: VerifiedVersion;
+  version: VerifiedVersion;
   reportStarted(): Readonly<DeliveryReceiptRequest> | null;
   cleanup(): Promise<void>;
 }
@@ -67,19 +68,21 @@ export type NativeInput = VerifiedVersion | DeliveredVersion;
 
 /** Split plugin input into the verified version plus its optional delivery receipt hooks. */
 export function nativeSource(input: NativeInput): {
-  bundle: VerifiedVersion;
+  version: VerifiedVersion;
   reportStarted(): Readonly<DeliveryReceiptRequest> | null;
   release(): Promise<void>;
 } {
-  if ('bundle' in input && typeof (input as DeliveredVersion).reportStarted === 'function') {
+  // A VerifiedVersion also has a `version` field (its metadata), so a delivered
+  // input is recognised by its receipt hook rather than by that key.
+  if (typeof (input as Partial<DeliveredVersion>).reportStarted === 'function') {
     const delivery = input as DeliveredVersion;
     return {
-      bundle: delivery.bundle,
+      version: delivery.version,
       reportStarted: () => delivery.reportStarted(),
       release: () => delivery.cleanup(),
     };
   }
-  return { bundle: input as VerifiedVersion, reportStarted: () => null, release: async () => {} };
+  return { version: input as VerifiedVersion, reportStarted: () => null, release: async () => {} };
 }
 
 const OVERLAY_FILES = 256;
@@ -142,31 +145,19 @@ async function copyOverlay(
  * Claude, Pi and Cursor plugins are thin wrappers around it.
  */
 export async function prepareNativeFiles(
-  bundle: VerifiedVersion,
+  version: VerifiedVersion,
   options: PrepareNativeFilesOptions,
-): Promise<PreparedNativeFiles>;
-/** @deprecated Pass `{ mapping, prefix, target }`. */
-export async function prepareNativeFiles(
-  bundle: VerifiedVersion,
-  mapping: NativePathMapping,
-  prefix: string,
-  target?: NativeTarget,
-): Promise<PreparedNativeFiles>;
-export async function prepareNativeFiles(
-  bundle: VerifiedVersion,
-  optionsOrMapping: PrepareNativeFilesOptions | NativePathMapping,
-  legacyPrefix?: string,
-  legacyTarget?: NativeTarget,
 ): Promise<PreparedNativeFiles> {
-  const options: PrepareNativeFilesOptions =
-    'mapping' in optionsOrMapping
-      ? optionsOrMapping
-      : { mapping: optionsOrMapping, prefix: legacyPrefix, target: legacyTarget };
+  if (typeof options !== 'object' || options === null || !('mapping' in options))
+    throw new AcclimateUsageError(
+      'prepareNativeFiles(version, { mapping, prefix, target }) takes an options object',
+      'options',
+    );
   const { mapping, prefix = 'acclimate-native-', target = 'codex', overlay } = options;
   if (process.platform === 'win32')
     throw new DeliveryError('unsupported_platform', 'Private filesystem helpers require POSIX');
-  validatePayload(bundle.payload);
-  const issues = compatibilityIssues(bundle.payload, target);
+  validatePayload(version.payload);
+  const issues = compatibilityIssues(version.payload, target);
   if (issues.length)
     throw Object.assign(
       new DeliveryError(
@@ -181,7 +172,7 @@ export async function prepareNativeFiles(
   let overlayFiles: PreparedNativeFiles['overlayFiles'] = [];
   try {
     if (overlay) overlayFiles = await copyOverlay(root, overlay);
-    for (const source of bundle.payload.files) {
+    for (const source of version.payload.files) {
       let mappedPath: string;
       if (source.kind === 'instruction') mappedPath = mapping.instructionPath;
       else if (source.kind === 'skill') {

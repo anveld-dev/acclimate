@@ -17,7 +17,7 @@ export interface Model {
   ): Promise<{ text: string; usage: { inputTokens?: number; outputTokens?: number } | null }>;
 }
 export interface Config {
-  project: string;
+  workspace: string;
   bundle: string;
   channel: string;
   skillPath: string;
@@ -42,7 +42,7 @@ export async function improve(client: AcclimateClient, config: Config, model: Mo
   const cacheDir = path.join(outputDir, 'cache');
   const parent = await resolveAndCache(
     client,
-    { projectId: config.project, bundleId: config.bundle, channel: config.channel },
+    { workspaceId: config.workspace, bundleId: config.bundle, channel: config.channel },
     { cacheDir },
   );
   if (!parent.resolution) throw new Error('Channel resolution missing');
@@ -50,7 +50,7 @@ export async function improve(client: AcclimateClient, config: Config, model: Mo
   if (!skill || !config.skillPath.endsWith('/SKILL.md'))
     throw new Error('Allowed path must be an existing skill manifest');
   const proposal = await client.createProposal(
-    config.project,
+    config.workspace,
     config.bundle,
     {
       parentVersionId: parent.version.id,
@@ -64,14 +64,14 @@ export async function improve(client: AcclimateClient, config: Config, model: Mo
   const deadline = Date.now() + 65_000;
   while (final.status !== 'succeeded' && final.status !== 'failed' && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 200));
-    final = await client.getProposal(config.project, config.bundle, proposal.id);
+    final = await client.getProposal(config.workspace, config.bundle, proposal.id);
   }
   if (final.status !== 'succeeded' || !final.candidate)
     throw new Error(`Service proposal did not succeed: ${final.status}: ${final.error ?? ''}`);
   const metadata = final.candidate;
   const candidate = await resolveAndCache(
     client,
-    { projectId: config.project, bundleId: config.bundle, versionId: metadata.id },
+    { workspaceId: config.workspace, bundleId: config.bundle, versionId: metadata.id },
     { cacheDir },
   );
   if (
@@ -148,13 +148,13 @@ export async function improve(client: AcclimateClient, config: Config, model: Mo
   });
   const comparison = await submitComparison(
     client,
-    config.project,
+    config.workspace,
     config.bundle,
     report,
     randomUUID(),
   );
   const summary = {
-    project: config.project,
+    workspace: config.workspace,
     bundle: config.bundle,
     channel: config.channel,
     channelRevision: parent.resolution.revision,

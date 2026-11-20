@@ -89,12 +89,12 @@ try {
   const cache = { cacheDir: path.join(output, 'cache') };
   const parent = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, versionId: parentMeta.id },
+    { workspaceId: project, bundleId: bundle.id, versionId: parentMeta.id },
     cache,
   );
   const candidate = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, versionId: candidateMeta.id },
+    { workspaceId: project, bundleId: bundle.id, versionId: candidateMeta.id },
     cache,
   );
   await save('parent.json', parent);
@@ -285,7 +285,7 @@ try {
   if (verifyDelivery && initial && frozen.future) {
     const warm = await resolveAndCache(
       client,
-      { projectId: project, bundleId: bundle.id, channel: 'qualification' },
+      { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
       cache,
     );
     assert.equal(warm.version.id, parent.version.id);
@@ -308,7 +308,7 @@ try {
     );
     const fetched = await resolveAndCache(
       client,
-      { projectId: project, bundleId: bundle.id, channel: 'qualification' },
+      { workspaceId: project, bundleId: bundle.id, channel: 'qualification' },
       cache,
     );
     assert.equal(fetched.version.id, candidate.version.id);

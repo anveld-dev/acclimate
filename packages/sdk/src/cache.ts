@@ -20,8 +20,8 @@ import { DeliveryError } from './validation.js';
 import { verifyPayloadBytes } from './verification.js';
 export { DeliveryError, validatePayload } from './validation.js';
 export type Selection =
-  | { projectId: string; bundleId: string; channel: string }
-  | { projectId: string; bundleId: string; versionId: string };
+  | { workspaceId: string; bundleId: string; channel: string }
+  | { workspaceId: string; bundleId: string; versionId: string };
 export type OfflinePolicy = false | { maxAgeMs: number } | { pinnedVersionId: string };
 export interface CachePolicy {
   cacheDir: string;
@@ -81,9 +81,9 @@ async function ensurePrivateDir(path: string): Promise<void> {
     );
 }
 function keyFor(client: AcclimateClient, parts: string[]): string {
-  if (client.integrationId) {
+  if (client.connectionId) {
     return createHash('sha256')
-      .update(JSON.stringify([client.baseUrl, client.scope, client.integrationId, ...parts]))
+      .update(JSON.stringify([client.baseUrl, client.scope, client.connectionId, ...parts]))
       .digest('hex');
   }
   return createHash('sha256')
@@ -123,6 +123,8 @@ export async function resolveAndCache(
   selection: Selection,
   policy: CachePolicy,
 ): Promise<VerifiedVersion> {
+  if (selection && Object.hasOwn(selection, 'projectId'))
+    throw new AcclimateUsageError('projectId was renamed to workspaceId in 0.2.0', 'projectId');
   const now = Date.now(),
     maxAge = policy.maxResolutionAgeMs ?? 0,
     offline = policy.offline ?? false;
@@ -157,14 +159,14 @@ export async function resolveAndCache(
   if ('channel' in selection) {
     const mapDir = join(
       resolve(policy.cacheDir),
-      keyFor(client, [selection.projectId, selection.bundleId, 'channel', selection.channel]),
+      keyFor(client, [selection.workspaceId, selection.bundleId, 'channel', selection.channel]),
     );
     const old = await loadEntry(mapDir);
     const age =
       old && typeof old.resolvedAt === 'number' ? Math.max(0, now - old.resolvedAt) : Infinity;
     try {
       const response = await client.resolveChannel(
-        selection.projectId,
+        selection.workspaceId,
         selection.bundleId,
         selection.channel,
         { etag: old?.etag },
@@ -226,7 +228,7 @@ export async function resolveAndCache(
       );
     try {
       version = await client.getVersion(
-        selection.projectId,
+        selection.workspaceId,
         selection.bundleId,
         selection.versionId,
       );
@@ -239,7 +241,7 @@ export async function resolveAndCache(
       const index = await loadEntry(
         join(
           resolve(policy.cacheDir),
-          keyFor(client, [selection.projectId, selection.bundleId, 'version', selection.versionId]),
+          keyFor(client, [selection.workspaceId, selection.bundleId, 'version', selection.versionId]),
         ),
       );
       if (!index?.version || !Number.isFinite(index.cachedAt))
@@ -257,7 +259,7 @@ export async function resolveAndCache(
     );
   const entryDir = join(
     resolve(policy.cacheDir),
-    keyFor(client, [selection.projectId, selection.bundleId, version.id, version.digest]),
+    keyFor(client, [selection.workspaceId, selection.bundleId, version.id, version.digest]),
   );
   let downloaded = false;
   let payload: BundlePayload | undefined;
@@ -271,7 +273,7 @@ export async function resolveAndCache(
     }
   }
   if (!payload) {
-    const bytes = await client.getPayload(selection.projectId, selection.bundleId, version.id);
+    const bytes = await client.getPayload(selection.workspaceId, selection.bundleId, version.id);
     if (bytes.byteLength > MAX_PAYLOAD)
       throw new DeliveryError('invalid_payload', 'Downloaded payload exceeds size limit');
     try {
@@ -292,7 +294,7 @@ export async function resolveAndCache(
     await saveEntry(
       join(
         resolve(policy.cacheDir),
-        keyFor(client, [selection.projectId, selection.bundleId, 'version', version.id]),
+        keyFor(client, [selection.workspaceId, selection.bundleId, 'version', version.id]),
       ),
       { version, cachedAt: now },
     );
@@ -306,11 +308,11 @@ export async function resolveAndCache(
     resolution,
     resolvedAt: pinnedOffline ? pinnedAt : resolvedAt,
     stale: stale || pinnedOffline,
-    ...(client.integrationId
+    ...(client.connectionId
       ? {
           connection: Object.freeze({
-            projectId: selection.projectId,
-            integrationId: client.integrationId,
+            workspaceId: selection.workspaceId,
+            connectionId: client.connectionId,
           }),
         }
       : {}),
@@ -318,7 +320,7 @@ export async function resolveAndCache(
   if (policy.reporter) {
     const observation: DeliveryObservation = {
       selection: { ...selection },
-      bundle: verified,
+      version: verified,
       source: downloaded ? 'network' : verified.stale ? 'offline' : 'cache',
       downloaded,
     };

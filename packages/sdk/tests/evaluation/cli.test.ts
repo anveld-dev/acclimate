@@ -136,7 +136,7 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
       if (route.endsWith('/evaluation-capabilities'))
         return reply({
           schemaVersion: 1,
-          projectId: 'project',
+          workspaceId: 'project',
           principalId: 'evaluator',
           checkedAt: now,
           readUnpublished: true,
@@ -304,7 +304,7 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl,
-      projectId: 'project',
+      workspaceId: 'project',
       evaluatorPrincipalId: 'evaluator',
       evaluatorToken: 'PRIVATE_CANARY',
       journalRoot: path.join(directory, 'journals'),
@@ -316,7 +316,7 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl,
-      projectId: 'project',
+      workspaceId: 'project',
       readToken: 'PRIVATE_READER_CANARY',
     }),
     { mode: 0o600 },
@@ -343,10 +343,10 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
     runtime: { model: 'none' },
     execution,
     cases: [{ caseId: 'case', input: { task: 'saved' }, expected: true }],
-    execute: async ({ bundle }) => {
+    execute: async ({ version }) => {
       state.executions++;
       return {
-        output: { correct: bundle.payload.files[0].text === (state.flip ? 'bad' : 'good') },
+        output: { correct: version.payload.files[0].text === (state.flip ? 'bad' : 'good') },
       };
     },
     grade: async ({ output, expected }) => {
@@ -982,7 +982,7 @@ test('headless interrupt remains usable while the evaluator scope lock is held',
     const config = JSON.parse(await readFile(f.config, 'utf8'));
     journal = await openJournal(config.journalRoot, {
       serviceUrl: config.serviceUrl,
-      projectId: 'project',
+      workspaceId: 'project',
       bundleId,
       requestId,
       evaluatorPrincipalId: 'evaluator',
@@ -1249,10 +1249,10 @@ test('doctor verifies bundle existence and reports missing request with exit 1 b
       JSON.stringify({
         schemaVersion: 1,
         serviceUrl: config.serviceUrl,
-        projectId: 'project',
+        workspaceId: 'project',
         bundleId,
         requestId,
-        configuration: f.app.descriptor,
+        descriptor: f.app.descriptor,
       }),
     );
     const missingRequest = await invoke(f.app, [
@@ -1282,7 +1282,7 @@ test('interrupt rejects a valid handoff whose descriptor differs before mutating
   try {
     assert.equal((await invoke(f.app, f.requestArgs)).status, 0);
     const handoff = JSON.parse(await readFile(f.handoff, 'utf8'));
-    handoff.configuration.graderRevision = 'another-grader';
+    handoff.descriptor.graderRevision = 'another-grader';
     await writeFile(f.handoff, JSON.stringify(handoff));
     const result = await invoke(f.app, [
       'interrupt',
@@ -1339,6 +1339,56 @@ test('creation recovery survives same-principal token rotation and retains crede
     const intent = await readFile(f.intent, 'utf8');
     assert.ok(!intent.includes('PRIVATE_CANARY'));
     assert.ok(!recovered.out.includes('PRIVATE_CANARY'));
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('request writes a 0.2.0 handoff, recovers 0.1 intent state, and --handoff rejects 0.1 keys', async () => {
+  const f = await fixture();
+  try {
+    assert.equal((await invoke(f.app, f.requestArgs)).status, 0);
+    const current = await readFile(f.handoff, 'utf8');
+    const handoff = JSON.parse(current);
+    assert.deepEqual(Object.keys(handoff), [
+      'schemaVersion',
+      'serviceUrl',
+      'workspaceId',
+      'bundleId',
+      'requestId',
+      'descriptor',
+    ]);
+    // A run started by 0.1 left its intent and handoff with the old keys.
+    const intent = JSON.parse(await readFile(f.intent, 'utf8'));
+    const { workspaceId, ...identity } = intent.identity;
+    await writeFile(f.intent, JSON.stringify({ ...intent, identity: { ...identity, projectId: workspaceId } }) + '\n');
+    const legacy = JSON.stringify({
+      schemaVersion: 1,
+      serviceUrl: handoff.serviceUrl,
+      projectId: handoff.workspaceId,
+      bundleId: handoff.bundleId,
+      requestId: handoff.requestId,
+      configuration: handoff.descriptor,
+    });
+    await writeFile(f.handoff, legacy + '\n');
+    const recovered = await invoke(f.app, f.requestArgs);
+    assert.equal(recovered.status, 0, recovered.err);
+    assert.equal(recovered.result.requestId, requestId);
+    assert.equal(f.state.requests, 1);
+    assert.equal(await readFile(f.handoff, 'utf8'), current);
+    // A handoff supplied with --handoff is never translated.
+    for (const [file, field, renamed] of [
+      [legacy, 'projectId', 'workspaceId'],
+      [current.replace('"descriptor"', '"configuration"'), 'configuration', 'descriptor'],
+    ]) {
+      const old = path.join(f.directory, 'old-handoff.json');
+      await writeFile(old, file);
+      const rejected = await invoke(undefined, ['status', '--read-config', f.reader, '--handoff', old]);
+      assert.equal(rejected.status, 1);
+      assert.equal(rejected.error.error.code, 'config.schema');
+      assert.equal(rejected.error.error.field, field);
+      assert.equal(rejected.error.error.reason, `${field} was renamed to ${renamed} in 0.2.0`);
+    }
   } finally {
     await f.cleanup();
   }
@@ -1495,7 +1545,7 @@ test('service compare binds run controls from flags, streams progress and flags 
     assert.equal(compared.result.run.costUsd, 0.5);
     assert.equal(compared.result.run.deadlineMs, 3_600_000);
     assert.deepEqual(compared.result.run.outputs, { comparedPairs: 1, identicalPairs: 1 });
-    assert.match(compared.result.warnings[0], /identical output on all 1 compared pair\. Check that execute uses the bundle/);
+    assert.match(compared.result.warnings[0], /identical output on all 1 compared pair\. Check that execute uses the version it is given/);
   } finally {
     await f.cleanup();
   }

@@ -29,10 +29,10 @@ const descriptor = () => ({
 const handoff = () => ({
   schemaVersion: 1,
   serviceUrl: 'https://api.example',
-  projectId: 'project',
+  workspaceId: 'project',
   bundleId,
   requestId,
-  configuration: descriptor(),
+  descriptor: descriptor(),
 });
 
 test('public descriptor validation isolates caller mutation and detects inventory drift', () => {
@@ -68,8 +68,8 @@ test('public handoff rejects private fields and malformed targets without echoin
   const canary = 'private-token-canary-do-not-print';
   for (const invalid of [
     { ...handoff(), evaluatorToken: canary },
-    { ...handoff(), projectId: '../other' },
-    { ...handoff(), configuration: { ...descriptor(), privatePath: canary } },
+    { ...handoff(), workspaceId: '../other' },
+    { ...handoff(), descriptor: { ...descriptor(), privatePath: canary } },
     { ...handoff(), serviceUrl: `https://${canary}@api.example` },
   ])
     assert.throws(
@@ -86,6 +86,23 @@ test('public handoff rejects private fields and malformed targets without echoin
     () => validateEvaluationHandoff(accessor),
     (error) => error instanceof Error && !error.message.includes(canary),
   );
+});
+
+test('a 0.1 handoff names the renamed key instead of being accepted', () => {
+  const { workspaceId, descriptor: configuration, ...rest } = handoff();
+  for (const [legacy, field, current] of [
+    [{ ...rest, projectId: workspaceId, descriptor: configuration }, 'projectId', 'workspaceId'],
+    [{ ...rest, workspaceId, configuration }, 'configuration', 'descriptor'],
+    [{ ...rest, projectId: workspaceId, configuration }, 'projectId', 'workspaceId'],
+  ] as const)
+    assert.throws(
+      () => validateEvaluationHandoff(legacy),
+      (error: any) =>
+        error.code === 'config.schema' &&
+        error.field === field &&
+        error.reason === `${field} was renamed to ${current} in 0.2.0` &&
+        error.message.includes(`${field} was renamed to ${current} in 0.2.0`),
+    );
 });
 
 test('public inventory rejects accessors and custom arrays without invoking app code', () => {
@@ -114,13 +131,13 @@ test('public inventory rejects accessors and custom arrays without invoking app 
 });
 
 test('guided grammar never advertises legacy long, Unicode, encoded or non-string targets', () => {
-  assert.doesNotThrow(() => assertGuidedTarget({ projectId: 'p-1.valid', bundleId, requestId }));
-  for (const projectId of ['', '.', '..', 'p'.repeat(129), 'café', 'a%2Fb', 'a/b', undefined, 123])
-    assert.throws(() => assertGuidedTarget({ projectId: projectId as string }));
+  assert.doesNotThrow(() => assertGuidedTarget({ workspaceId: 'p-1.valid', bundleId, requestId }));
+  for (const workspaceId of ['', '.', '..', 'p'.repeat(129), 'café', 'a%2Fb', 'a/b', undefined, 123])
+    assert.throws(() => assertGuidedTarget({ workspaceId: workspaceId as string }));
   assert.throws(() =>
-    assertGuidedTarget({ projectId: 'p', bundleId: bundleId.toUpperCase().replace('1', 'A') }),
+    assertGuidedTarget({ workspaceId: 'p', bundleId: bundleId.toUpperCase().replace('1', 'A') }),
   );
-  assert.throws(() => assertGuidedTarget({ projectId: 'p', principalId: '\ud800' }));
+  assert.throws(() => assertGuidedTarget({ workspaceId: 'p', principalId: '\ud800' }));
   assert.equal(validateEvaluationServiceUrl('https://API.EXAMPLE/'), 'https://API.EXAMPLE/');
   assert.equal(validateEvaluationServiceUrl('http://127.0.0.1:3000'), 'http://127.0.0.1:3000');
   for (const value of [
@@ -136,7 +153,7 @@ test('retained transport retries exact Unicode request bytes and the same author
   const sent: Array<{ path: string; body: unknown; headers: Headers }> = [];
   const transport = createEvaluationTransport({
     serviceUrl: 'https://api.example',
-    projectId: 'project',
+    workspaceId: 'project',
     evaluatorPrincipalId: 'evaluator',
     evaluatorToken: 'fixture-token',
     fetch: async (input, init) => {
@@ -145,7 +162,7 @@ test('retained transport retries exact Unicode request bytes and the same author
       return Response.json({ status: 'running' });
     },
   });
-  const scope = { projectId: 'project', bundleId, requestId };
+  const scope = { workspaceId: 'project', bundleId, requestId };
   assert.deepEqual(await transport.mutate('start', scope, body, 'same-key'), { status: 'running' });
   assert.equal(sent.length, 2);
   for (const call of sent) {
@@ -162,10 +179,10 @@ test('retained transport retries exact Unicode request bytes and the same author
         .update('POST\0' + path.replace(/^\/v1\/workspaces\//, '/v1/projects/') + '\0' + body)
         .digest('hex'),
   );
-  assert.throws(() => transport.mutate('start', { ...scope, projectId: 'other' }, body, 'key'));
-  assert.throws(() => evaluationOperationPath('start', { projectId: 'project', bundleId }));
+  assert.throws(() => transport.mutate('start', { ...scope, workspaceId: 'other' }, body, 'key'));
+  assert.throws(() => evaluationOperationPath('start', { workspaceId: 'project', bundleId }));
   assert.throws(() =>
-    evaluationOperationPath('createDraft', { projectId: 'project', bundleId, channel: '../other' }),
+    evaluationOperationPath('createDraft', { workspaceId: 'project', bundleId, channel: '../other' }),
   );
 });
 

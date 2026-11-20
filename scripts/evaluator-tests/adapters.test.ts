@@ -6,7 +6,7 @@ import path from 'node:path';
 import { nativeReviewAdapter } from '../../examples/service-proposer/evaluation-adapter.js';
 import { runCheckoutEvaluation } from './runner.js';
 import { simulatePayment } from './payment.js';
-import { fixture, projectId, bundleId, requestId, evaluatorPrincipalId, serviceUrl } from './fixture.js';
+import { fixture, workspaceId, bundleId, requestId, evaluatorPrincipalId, serviceUrl } from './fixture.js';
 import type { BundlePayload, ComparisonRequest } from '../../packages/sdk/src/types.js';
 
 const payload = (idempotency: string, maxAttempts = 2): BundlePayload => ({ schemaVersion: 1, files: [
@@ -37,7 +37,7 @@ test('native dataset and independent grader run through the same interface with 
   const f = fixture(adapter.describe());
   const journalRoot = await mkdtemp(path.join(await realpath(tmpdir()), 'acclimate-native-wiring-'));
   try {
-    const result = await runCheckoutEvaluation({ api: f.api, adapter, journalRoot, projectId, bundleId, requestId, evaluatorPrincipalId, serviceUrl });
+    const result = await runCheckoutEvaluation({ api: f.api, adapter, journalRoot, workspaceId, bundleId, requestId, evaluatorPrincipalId, serviceUrl });
     assert.equal(turns, 4);
     assert.equal(result.status, 'completed');
     const report = f.events.find((e) => e.kind === 'submit')!.body as ComparisonRequest;

@@ -10,7 +10,7 @@ import type {
 } from '../../packages/sdk/src/index.js';
 import type { EvaluationDescriptor } from '../../examples/evaluation/descriptor.js';
 
-export const projectId = '10000000-0000-4000-8000-000000000001';
+export const workspaceId = '10000000-0000-4000-8000-000000000001';
 export const bundleId = '20000000-0000-4000-8000-000000000002';
 export const requestId = '30000000-0000-4000-8000-000000000003';
 export const evaluatorPrincipalId = '40000000-0000-4000-8000-000000000004';
@@ -77,7 +77,7 @@ export function fixture(
     scope: evaluatorPrincipalId,
     getEvaluationCapabilities: async () => ({
       schemaVersion: 1,
-      projectId,
+      workspaceId,
       principalId: evaluatorPrincipalId,
       checkedAt: new Date().toISOString(),
       readUnpublished: true,
@@ -145,11 +145,11 @@ export function fixture(
   registerEvaluationMutation(api, async (operationPath, body, key) => {
     const value = JSON.parse(body);
     if (operationPath.endsWith('/comparisons'))
-      return api.createComparison(projectId, bundleId, value, key);
+      return api.createComparison(workspaceId, bundleId, value, key);
     if (operationPath.endsWith('/start'))
-      return api.startEvaluation(projectId, bundleId, requestId, value, key);
+      return api.startEvaluation(workspaceId, bundleId, requestId, value, key);
     if (operationPath.endsWith('/finish'))
-      return api.finishEvaluation(projectId, bundleId, requestId, value, key);
+      return api.finishEvaluation(workspaceId, bundleId, requestId, value, key);
     throw new Error('Unexpected fixture mutation');
   });
   return {

@@ -49,7 +49,7 @@ jobs:
           policy: examples/ci/test/policy.json
           bundle: offline-bundle
           bundle-dir: examples/ci/test/bundle
-          config-json: '{"serviceUrl":"http://127.0.0.1:9/","projectId":"offline","evaluatorPrincipalId":"offline-ci"}'
+          config-json: '{"serviceUrl":"http://127.0.0.1:9/","workspaceId":"offline","evaluatorPrincipalId":"offline-ci"}'
           token: offline-token
       - name: Check the gate outputs
         env:

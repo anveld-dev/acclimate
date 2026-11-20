@@ -7,7 +7,7 @@ import type { DeliveryReceiptRequest } from './types.js';
 
 export interface DeliveryObservation {
   selection: Selection;
-  bundle: VerifiedVersion;
+  version: VerifiedVersion;
   source: DeliveryReceiptRequest['source'];
   downloaded: boolean;
 }
@@ -16,8 +16,8 @@ export interface DeliveryObserver {
 }
 export interface ReceiptReporterOptions {
   client: AcclimateClient;
-  projectId: string;
-  integrationId: string;
+  workspaceId: string;
+  connectionId: string;
   maxPending?: number;
   now?: () => number;
 }
@@ -36,11 +36,11 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
     Omit<DeliveryReceiptRequest, 'eventId' | 'stage' | 'occurredAt'>
   >();
   function createStageReceipt(
-    bundle: VerifiedVersion,
+    verified: VerifiedVersion,
     stage: DeliveryReceiptRequest['stage'],
   ): Readonly<DeliveryReceiptRequest> {
-    const binding = bindings.get(bundle);
-    if (!binding) throw new AcclimateUsageError('Bundle has not been observed by this reporter', 'bundle');
+    const binding = bindings.get(verified);
+    if (!binding) throw new AcclimateUsageError('Version has not been observed by this reporter', 'version');
     return Object.freeze({
       ...binding,
       eventId: randomUUID(),
@@ -53,48 +53,48 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
     void flush();
     return accepted ? receipt : null;
   }
-  function reportStage(bundle: VerifiedVersion, stage: DeliveryReceiptRequest['stage']) {
-    return queueReceipt(createStageReceipt(bundle, stage));
+  function reportStage(verified: VerifiedVersion, stage: DeliveryReceiptRequest['stage']) {
+    return queueReceipt(createStageReceipt(verified, stage));
   }
-  function observeDelivery({ selection, bundle, source, downloaded }: DeliveryObservation): void {
+  function observeDelivery({ selection, version: verified, source, downloaded }: DeliveryObservation): void {
     if (
-      selection.projectId !== options.projectId ||
-      bundle.version.bundleId !== selection.bundleId ||
-      (bundle.connection &&
-        (bundle.connection.projectId !== options.projectId ||
-          bundle.connection.integrationId.toLowerCase() !== options.integrationId.toLowerCase()))
+      selection.workspaceId !== options.workspaceId ||
+      verified.version.bundleId !== selection.bundleId ||
+      (verified.connection &&
+        (verified.connection.workspaceId !== options.workspaceId ||
+          verified.connection.connectionId.toLowerCase() !== options.connectionId.toLowerCase()))
     )
       throw new AcclimateUsageError('Delivery scope must match reporter scope', 'scope');
     const binding: Omit<DeliveryReceiptRequest, 'eventId' | 'stage' | 'occurredAt'> = {
-      integrationId: options.integrationId,
-      projectId: selection.projectId,
+      connectionId: options.connectionId,
+      workspaceId: selection.workspaceId,
       bundleId: selection.bundleId,
-      versionId: bundle.version.id,
-      digest: bundle.version.digest,
+      versionId: verified.version.id,
+      digest: verified.version.digest,
       source,
-      ...(bundle.resolution
+      ...(verified.resolution
         ? {
-            channel: bundle.resolution.channel,
-            revision: bundle.resolution.revision,
-            resolvedAt: new Date(bundle.resolvedAt).toISOString(),
-            stale: bundle.stale,
+            channel: verified.resolution.channel,
+            revision: verified.resolution.revision,
+            resolvedAt: new Date(verified.resolvedAt).toISOString(),
+            stale: verified.stale,
           }
         : {}),
     };
-    bindings.set(bundle, binding);
-    if (bundle.resolution) reportStage(bundle, 'resolved');
+    bindings.set(verified, binding);
+    if (verified.resolution) reportStage(verified, 'resolved');
     if (downloaded) {
       // This stage reports network bytes even when an older mapping was permitted offline.
       const original = binding.source;
       binding.source = 'network';
-      reportStage(bundle, 'downloaded');
+      reportStage(verified, 'downloaded');
       binding.source = original;
     }
-    reportStage(bundle, 'verified');
+    reportStage(verified, 'verified');
   }
   function enqueue(receipt: DeliveryReceiptRequest): boolean {
     if (closed) return false;
-    if (receipt.projectId !== options.projectId || receipt.integrationId !== options.integrationId)
+    if (receipt.workspaceId !== options.workspaceId || receipt.connectionId !== options.connectionId)
       throw new AcclimateUsageError('Receipt scope must match reporter scope', 'scope');
     if (pending.has(receipt.eventId)) return false;
     if (pending.size >= maxPending) return false;
@@ -118,8 +118,8 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
           }
           try {
             await options.client.reportDeliveryReceipt(
-              options.projectId,
-              options.integrationId,
+              options.workspaceId,
+              options.connectionId,
               item.receipt,
               id,
             );
@@ -138,16 +138,16 @@ export function createReceiptReporter(options: ReceiptReporterOptions) {
     enqueue,
     flush,
     observeDelivery,
-    reportPrepared: (bundle: VerifiedVersion) => reportStage(bundle, 'prepared') !== null,
-    reportStarted: (bundle: VerifiedVersion) => reportStage(bundle, 'started') !== null,
+    reportPrepared: (verified: VerifiedVersion) => reportStage(verified, 'prepared') !== null,
+    reportStarted: (verified: VerifiedVersion) => reportStage(verified, 'started') !== null,
     /** Bind a single job's first observed start time and event ID across queue refusals. */
-    bindStartedReceipt(bundle: VerifiedVersion) {
-      const receipt = createStageReceipt(bundle, 'started');
+    bindStartedReceipt(verified: VerifiedVersion) {
+      const receipt = createStageReceipt(verified, 'started');
       let queued: Readonly<DeliveryReceiptRequest> | null = null;
       return () => (queued ??= queueReceipt(receipt));
     },
     /** Queue a started receipt and return its exact body for a durable job handoff. */
-    reportStartedReceipt: (bundle: VerifiedVersion) => reportStage(bundle, 'started'),
+    reportStartedReceipt: (verified: VerifiedVersion) => reportStage(verified, 'started'),
     /** Stop claiming events. An already in-flight request may still finish. */
     close() {
       closed = true;

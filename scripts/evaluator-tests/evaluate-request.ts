@@ -12,6 +12,6 @@ export async function evaluateRequest(
   state: { journalRoot: string; serviceUrl: string; evaluatorPrincipalId: string },
 ) {
   return runCheckoutEvaluation({
-    ...state, api, projectId: project, bundleId: bundle, requestId: id, adapter: presenceAdapter,
+    ...state, api, workspaceId: project, bundleId: bundle, requestId: id, adapter: presenceAdapter,
   });
 }

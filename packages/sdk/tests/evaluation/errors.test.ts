@@ -191,7 +191,7 @@ test('execute input exposes the bundle instructions, skills and memory files', a
     },
   });
   await captureDefinition(app).execute({
-    bundle: {
+    version: {
       version: {} as never,
       payload: {
         schemaVersion: 1,

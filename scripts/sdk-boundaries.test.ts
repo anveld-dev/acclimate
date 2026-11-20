@@ -94,7 +94,7 @@ async function harness() {
 test('offline fallback uses same scoped mapping, permits unavailable only and never denial or missing', async () => {
   const h = await harness();
   try {
-    const selection = { projectId: 'p', bundleId: 'b1', channel: 'stable' };
+    const selection = { workspaceId: 'p', bundleId: 'b1', channel: 'stable' };
     const first = await resolveAndCache(h.client, selection, h.policy);
     h.mode(503);
     const cached = await resolveAndCache(h.client, selection, {
@@ -121,7 +121,7 @@ test('concurrent readers publish one usable private cache and complete payloads'
   try {
     const all = await Promise.all(
       Array.from({ length: 8 }, () =>
-        resolveAndCache(h.client, { projectId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
+        resolveAndCache(h.client, { workspaceId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
       ),
     );
     assert.ok(
@@ -144,7 +144,7 @@ test('pinned selection rejects a different version returned by the service', asy
   try {
     h.wrong();
     await assert.rejects(
-      resolveAndCache(h.client, { projectId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
+      resolveAndCache(h.client, { workspaceId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
       /version|metadata/i,
     );
   } finally {
@@ -159,7 +159,7 @@ test('a cache directory symlink cannot redirect private writes', async () => {
     await mkdir(outside, { mode: 0o700 });
     await symlink(outside, h.policy.cacheDir);
     await assert.rejects(
-      resolveAndCache(h.client, { projectId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
+      resolveAndCache(h.client, { workspaceId: 'p', bundleId: 'b1', versionId: 'v1' }, h.policy),
       /symlink|unsafe/i,
     );
     assert.deepEqual(await readdir(outside), []);
@@ -175,7 +175,7 @@ test('offline cache age must be finite and bounded before fetching', async () =>
       await assert.rejects(
         resolveAndCache(
           h.client,
-          { projectId: 'p', bundleId: 'b1', channel: 'stable' },
+          { workspaceId: 'p', bundleId: 'b1', channel: 'stable' },
           { ...h.policy, offline: { maxAgeMs } },
         ),
         /offline.maxAgeMs/,
@@ -196,7 +196,7 @@ test('existing public cache and preparation directories are rejected without chm
     await assert.rejects(
       resolveAndCache(
         h.client,
-        { projectId: 'p', bundleId: 'b1', versionId: 'v1' },
+        { workspaceId: 'p', bundleId: 'b1', versionId: 'v1' },
         { cacheDir: shared },
       ),
       /private/,

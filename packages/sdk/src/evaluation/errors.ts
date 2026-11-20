@@ -1,5 +1,6 @@
 import { ApiError } from '../client.js';
 import { AcclimateError, AcclimateUsageError, TransportError } from '../errors.js';
+import { EvaluationConfigurationError } from '../evaluation-validation.js';
 
 /**
  * Every diagnostic code the evaluator can report. `EVALUATION_ERROR_CODES` holds the
@@ -410,6 +411,13 @@ export function toSafeDiagnostic(
       executionState,
       serviceUrl: error.serviceUrl,
       hint: `Could not reach ${error.serviceUrl}. Check that the Acclimate service is running and that serviceUrl in the config is correct, then retry the same command.`,
+    }).diagnostic;
+  else if (error instanceof EvaluationConfigurationError)
+    return new EvaluationError(error.code, {
+      phase,
+      executionState,
+      field: error.field,
+      reason: error.reason,
     }).diagnostic;
   else if (error instanceof AcclimateUsageError)
     return new EvaluationError('internal.error', {

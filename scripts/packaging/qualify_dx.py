@@ -248,11 +248,11 @@ def qualify(release, pg_bin):
         # Add a real project-read-only machine principal for second-reader verification.
         h.tokens['viewer'] = secrets.token_hex(32)
         grants = json.loads(h.env['ACCLIMATE_AUTH'])
-        grants.append({'token': h.tokens['viewer'], 'principalId': 'viewer', 'projectId': h.project, 'rights': ['read']})
+        grants.append({'token': h.tokens['viewer'], 'principalId': 'viewer', 'workspaceId': h.project, 'rights': ['read']})
         h.env['ACCLIMATE_AUTH'] = json.dumps(grants)
         h.start()
         proxy = ResponseLossProxy(h)
-        base = '/v1/projects/' + h.project
+        base = '/v1/workspaces/' + h.project
         payload = json.loads((FIXTURE / 'baseline.json').read_text())
         setup = h.call('POST', base + '/bundle-setups', {
             'name': 'Installed evaluator qualification', 'origin': 'example',
@@ -292,11 +292,11 @@ def qualify(release, pg_bin):
             assert len(descriptor['expectedCases']) == 2
             private = h.dir / language / 'private'
             private.mkdir(mode=0o700)
-            config, reader, intent, handoff = private / 'config' / 'evaluator.json', private / 'config' / 'reader.json', private / 'intent.json', app / 'evaluation-request.json'
-            private_json(config, {'schemaVersion': 1, 'serviceUrl': proxy.base, 'projectId': h.project,
+            config, reader, intent, handoff = private / 'config' / 'evaluator.json', private / 'config' / 'reader.json', private / 'intent.json', app / 'handoff.json'
+            private_json(config, {'schemaVersion': 1, 'serviceUrl': proxy.base, 'workspaceId': h.project,
                                  'evaluatorPrincipalId': 'evaluator', 'evaluatorToken': h.tokens['evaluator'],
                                  'journalRoot': str(private / 'journals')})
-            private_json(reader, {'schemaVersion': 1, 'serviceUrl': proxy.base, 'projectId': h.project, 'readToken': h.tokens['viewer']})
+            private_json(reader, {'schemaVersion': 1, 'serviceUrl': proxy.base, 'workspaceId': h.project, 'readToken': h.tokens['viewer']})
             run(command + ['doctor', '--config', str(config), '--bundle', bundle, '--policy', str(app / 'quality-policy.json')], cwd=app, env=app_env)
             creation = ['request', '--config', str(config), '--bundle', bundle, '--channel', 'stable',
                         '--payload', str(app / 'candidate.json'), '--intent', str(intent), '--out', str(handoff)]
@@ -383,7 +383,7 @@ def qualify(release, pg_bin):
         replacement_token = secrets.token_hex(32)
         h.tokens['replacement'] = replacement_token
         replacement_grant = {'token': replacement_token, 'principalId': 'evaluator',
-                             'projectId': h.project, 'rights': ['read', 'write']}
+                             'workspaceId': h.project, 'rights': ['read', 'write']}
         overlapping = grants + [replacement_grant]
 
         def validate_grants(value):

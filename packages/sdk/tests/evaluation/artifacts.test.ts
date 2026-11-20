@@ -115,7 +115,7 @@ async function fixture() {
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl,
-      projectId: 'project',
+      workspaceId: 'project',
       evaluatorPrincipalId: 'evaluator',
       evaluatorToken: 'config-token-canary',
       journalRoot: journals,
@@ -127,7 +127,7 @@ async function fixture() {
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl,
-      projectId: 'project',
+      workspaceId: 'project',
       readToken: 'read-token-canary',
     }),
     { mode: 0o600 },
@@ -135,14 +135,14 @@ async function fixture() {
   const handoff: EvaluationHandoff = {
     schemaVersion: 1,
     serviceUrl,
-    projectId: 'project',
+    workspaceId: 'project',
     bundleId: ids.bundle,
     requestId: ids.request,
-    configuration: descriptor,
+    descriptor: descriptor,
   };
   const scope: JournalScope = {
     serviceUrl,
-    projectId: 'project',
+    workspaceId: 'project',
     bundleId: ids.bundle,
     requestId: ids.request,
     evaluatorPrincipalId: 'evaluator',
@@ -347,6 +347,79 @@ test('verifier rejects inspection claims inconsistent with role selection', asyn
   }
 });
 
+test('a 0.1 journal with scope.projectId keeps its directory and is recovered', async () => {
+  const f = await fixture();
+  try {
+    const { directory } = await localEvidence(f);
+    // The directory key keeps the 0.1 encoding, so a journal written before the rename is found.
+    const legacyKey = JSON.stringify({
+      serviceUrl,
+      projectId: 'project',
+      bundleId: ids.bundle,
+      requestId: ids.request,
+      evaluatorPrincipalId: 'evaluator',
+    });
+    assert.equal(path.basename(directory), createHash('sha256').update(legacyKey).digest('hex'));
+    const file = path.join(directory, 'attempt.json');
+    const saved = JSON.parse(await readFile(file, 'utf8'));
+    const { workspaceId, ...rest } = saved.scope;
+    await writeFile(file, JSON.stringify({ ...saved, scope: { ...rest, projectId: workspaceId } }) + '\n');
+    const journal = await openJournal(f.journals, f.scope);
+    try {
+      const recovered = (await journal.read())!;
+      assert.deepEqual(recovered.scope, f.scope);
+      await journal.save(recovered);
+    } finally {
+      await journal.close();
+    }
+    const rewritten = JSON.parse(await readFile(file, 'utf8'));
+    assert.equal(rewritten.scope.workspaceId, 'project');
+    assert.equal(Object.hasOwn(rewritten.scope, 'projectId'), false);
+    // Export reads the same journal.
+    const exported = await exportReviewEvidence({
+      configPath: f.configPath,
+      handoff: f.handoff,
+      outputDirectory: path.join(f.root, 'legacy-journal'),
+      selection: select('output'),
+      toReviewArtifact: async () => ({ mediaType: 'text/plain', text: 'redacted' }),
+    });
+    assert.equal(JSON.parse(await readFile(exported.manifestPath, 'utf8')).localInspection, 'validated');
+    // A scope with both spellings is not a 0.1 journal.
+    await writeFile(file, JSON.stringify({ ...saved, scope: { ...saved.scope, projectId: workspaceId } }) + '\n');
+    const both = await openJournal(f.journals, f.scope);
+    try {
+      await assert.rejects(both.read(), { code: 'journal.invalid' });
+    } finally {
+      await both.close();
+    }
+  } finally {
+    await f.close();
+  }
+});
+
+test('verifying an export written by 0.1 names the projectId rename', async () => {
+  const f = await fixture();
+  try {
+    const exported = await exportReviewEvidence({
+      readConfigPath: f.readConfigPath,
+      handoff: f.handoff,
+      outputDirectory: path.join(f.root, 'legacy-export'),
+    });
+    await verifyReviewExport({ manifestPath: exported.manifestPath });
+    const manifest = JSON.parse(await readFile(exported.manifestPath, 'utf8'));
+    const { workspaceId, ...rest } = manifest;
+    await writeFile(exported.manifestPath, JSON.stringify({ ...rest, projectId: workspaceId }));
+    await assert.rejects(verifyReviewExport({ manifestPath: exported.manifestPath }), (error: any) =>
+      error instanceof EvaluationError &&
+      error.code === 'artifact.integrity' &&
+      error.diagnostic.field === 'projectId' &&
+      error.diagnostic.reason === 'projectId was renamed to workspaceId in 0.2.0',
+    );
+  } finally {
+    await f.close();
+  }
+});
+
 test('export budget stops mapping as soon as released bytes exceed the limit', async () => {
   const originalCases = [...descriptor.expectedCases];
   const originalResults = [...report.results];
@@ -447,7 +520,7 @@ test('scalar-only survives absent journals and a read-only teammate verifies ind
         manifestPath: result.manifestPath,
         online: {
           readConfigPath: f.readConfigPath,
-          expectedHandoff: { ...f.handoff, projectId: 'different' },
+          expectedHandoff: { ...f.handoff, workspaceId: 'different' },
         },
       }),
       { code: 'evidence.identity_mismatch' },

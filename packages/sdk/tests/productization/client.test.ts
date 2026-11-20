@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AcclimateClient } from '../../src/index.js';
+import { AcclimateClient, AcclimateUsageError } from '../../src/index.js';
 
 test('product commands retry identical bytes and keys with explicit server session', async () => {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -116,4 +116,42 @@ test('abandonEvaluation posts a reason with the caller idempotency key', async (
   assert.equal(calls[0].init.body, JSON.stringify({ reason: 'CI job cancelled' }));
   assert.equal(new Headers(calls[0].init.headers).get('idempotency-key'), 'abandon-key');
   await assert.rejects(client.abandonEvaluation('p', 'b', 'e', { reason: 'x' }, ''), /idempotency key/);
+});
+
+test('0.1 option and selection names fail with the 0.2.0 rename before any request', async () => {
+  let requests = 0;
+  const fetch = async () => {
+    requests++;
+    return Response.json({});
+  };
+  assert.throws(
+    () =>
+      new AcclimateClient({
+        baseUrl: 'https://example.test',
+        token: 't',
+        scope: 's',
+        fetch,
+        integrationId: 'a7100000-0000-0000-0000-000000000001',
+      } as never),
+    (error: any) =>
+      error instanceof AcclimateUsageError &&
+      error.field === 'integrationId' &&
+      error.message === 'integrationId was renamed to connectionId in 0.2.0',
+  );
+  const client = new AcclimateClient({
+    baseUrl: 'https://example.test',
+    token: 't',
+    scope: 's',
+    fetch,
+    connectionId: 'a7100000-0000-0000-0000-000000000001',
+  });
+  assert.equal(client.connectionId, 'a7100000-0000-0000-0000-000000000001');
+  await assert.rejects(
+    client.prepare({ projectId: 'p', bundleId: 'b', channel: 'stable' } as never),
+    (error: any) =>
+      error instanceof AcclimateUsageError &&
+      error.field === 'projectId' &&
+      error.message === 'projectId was renamed to workspaceId in 0.2.0',
+  );
+  assert.equal(requests, 0);
 });

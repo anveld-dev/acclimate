@@ -6,7 +6,7 @@ import { gzipSync } from 'node:zlib';
 const inventories = JSON.parse(await readFile(new URL('./starter-files.json', import.meta.url), 'utf8'));
 
 const excluded = new Set(['node_modules', '__pycache__', '.cache', '.local', 'dist', '.DS_Store']);
-const privateNames = new Set(['evaluator.json', 'reader.json', 'intent.json', 'attempt.json', 'attempt.python.json', 'ownership.lock', 'job.json', 'evaluation-request.json']);
+const privateNames = new Set(['evaluator.json', 'reader.json', 'intent.json', 'attempt.json', 'attempt.python.json', 'ownership.lock', 'job.json', 'handoff.json']);
 
 async function checkSource(directory, inventory, omitted, relative = '') {
   const root = await lstat(directory);

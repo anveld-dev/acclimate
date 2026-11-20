@@ -23,14 +23,14 @@ import {
   journalDirectory,
   openJournal,
   sha256,
-  serializeScope,
+  journalDirectoryKey,
 } from '../../src/evaluation/journal.js';
 import type { AttemptJournal, JournalScope } from '../../src/evaluation/journal.js';
 import type { EvaluationDefinition, EvaluatorConfig } from '../../src/evaluation/types.js';
 import type { Comparison, EvaluationHandoff, ComparisonRequest } from '../../src/types.js';
 import {
   fixture,
-  projectId,
+  workspaceId,
   bundleId,
   requestId,
   evaluatorPrincipalId,
@@ -100,21 +100,21 @@ async function setup(definition = defaultDefinition()) {
     mutate: async <T>(op: string, _scope: unknown, body: string, key: string): Promise<T> => {
       const value = JSON.parse(body);
       if (op === 'start')
-        return (await api.startEvaluation(projectId, bundleId, requestId, value, key)) as T;
+        return (await api.startEvaluation(workspaceId, bundleId, requestId, value, key)) as T;
       if (op === 'submit') {
         submitted.push({ key, body });
-        comparison = await api.createComparison(projectId, bundleId, value, key);
+        comparison = await api.createComparison(workspaceId, bundleId, value, key);
         return comparison as T;
       }
       if (op === 'finish')
-        return (await api.finishEvaluation(projectId, bundleId, requestId, value, key)) as T;
+        return (await api.finishEvaluation(workspaceId, bundleId, requestId, value, key)) as T;
       throw new Error('unexpected operation');
     },
   } as ReturnType<typeof createEvaluationTransport>;
   const config: EvaluatorConfig = {
     schemaVersion: 1,
     serviceUrl,
-    projectId,
+    workspaceId,
     evaluatorPrincipalId,
     evaluatorToken: 'private-token-canary',
     journalRoot: root,
@@ -122,13 +122,13 @@ async function setup(definition = defaultDefinition()) {
   const handoff: EvaluationHandoff = {
     schemaVersion: 1,
     serviceUrl,
-    projectId,
+    workspaceId,
     bundleId,
     requestId,
-    configuration: structuredClone(app.descriptor),
+    descriptor: structuredClone(app.descriptor),
   };
   const options = { captured: captureDefinition(app), config, handoff, transport };
-  const scope: JournalScope = { serviceUrl, projectId, bundleId, requestId, evaluatorPrincipalId };
+  const scope: JournalScope = { serviceUrl, workspaceId, bundleId, requestId, evaluatorPrincipalId };
   return {
     app,
     f,
@@ -238,19 +238,19 @@ test('installed runner isolates verified bundles and uses exact full-side callba
     definition = defaultDefinition();
   let original = '';
   definition.execute = async (args) => {
-    const side = args.bundle.version.parentVersionId ? 'candidate' : 'parent';
+    const side = args.version.version.parentVersionId ? 'candidate' : 'parent';
     trace.push(side + '-execute-' + args.repetition);
     assert.equal('expected' in args, false);
-    assert.equal(args.bundle.payload.files[0].text, original || args.bundle.payload.files[0].text);
-    original = args.bundle.payload.files[0].text;
+    assert.equal(args.version.payload.files[0].text, original || args.version.payload.files[0].text);
+    original = args.version.payload.files[0].text;
     assert.equal(
       JSON.parse(
         await readFile(path.join(args.context.privateJobDirectory, 'binding.json'), 'utf8'),
       ).requestId,
       requestId,
     );
-    args.bundle.payload.files[0].text = 'mutation';
-    args.bundle.version.digest = 'mutated';
+    args.version.payload.files[0].text = 'mutation';
+    args.version.version.digest = 'mutated';
     args.input.task = 'mutation';
     return { output: { answer: 'private-answer' } };
   };
@@ -1039,9 +1039,10 @@ test('foreign Python journal refuses ownership and scope serialization is explic
       runCapturedEvaluation(s.options),
       (error) => error instanceof EvaluationError && error.code === 'journal.foreign',
     );
+    // The directory key is frozen at its 0.1 encoding, so 0.1 journals are still found.
     assert.equal(
-      serializeScope(s.scope),
-      JSON.stringify({ serviceUrl, projectId, bundleId, requestId, evaluatorPrincipalId }),
+      journalDirectoryKey(s.scope),
+      JSON.stringify({ serviceUrl, projectId: workspaceId, bundleId, requestId, evaluatorPrincipalId }),
     );
     assert.equal(s.f.events.length, 0);
   } finally {
@@ -1101,14 +1102,14 @@ test('public config/handoff preflight and run work through bounded authenticated
         }
         value = {
           schemaVersion: 1,
-          projectId,
+          workspaceId,
           principalId: evaluatorPrincipalId,
           checkedAt: new Date().toISOString(),
           readUnpublished: true,
           writeEvaluation: true,
           retainedEvaluationOperations: true,
         };
-      } else if (req.method === 'GET' && pathname === `/v1/workspaces/${projectId}/bundles`) {
+      } else if (req.method === 'GET' && pathname === `/v1/workspaces/${workspaceId}/bundles`) {
         const cursor = new URL(req.url!, 'http://localhost').searchParams.get('cursor');
         value =
           inventoryMode === 'loop'
@@ -1139,11 +1140,11 @@ test('public config/handoff preflight and run work through bounded authenticated
         const body = JSON.parse(text),
           key = String(req.headers['idempotency-key']);
         if (pathname.endsWith('/start'))
-          value = await f.api.startEvaluation(projectId, bundleId, requestId, body, key);
+          value = await f.api.startEvaluation(workspaceId, bundleId, requestId, body, key);
         else if (pathname.endsWith('/finish'))
-          value = await f.api.finishEvaluation(projectId, bundleId, requestId, body, key);
+          value = await f.api.finishEvaluation(workspaceId, bundleId, requestId, body, key);
         else if (pathname.endsWith('/comparisons'))
-          value = comparison = await f.api.createComparison(projectId, bundleId, body, key);
+          value = comparison = await f.api.createComparison(workspaceId, bundleId, body, key);
         else throw new Error('Unexpected mutation');
       } else throw new Error('Unexpected path');
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -1162,7 +1163,7 @@ test('public config/handoff preflight and run work through bounded authenticated
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl: origin,
-      projectId,
+      workspaceId,
       evaluatorPrincipalId,
       evaluatorToken: 'private-public-test-token',
       journalRoot,
@@ -1172,10 +1173,10 @@ test('public config/handoff preflight and run work through bounded authenticated
   const handoff: EvaluationHandoff = {
     schemaVersion: 1,
     serviceUrl: origin,
-    projectId,
+    workspaceId,
     bundleId,
     requestId,
-    configuration: structuredClone(app.descriptor),
+    descriptor: structuredClone(app.descriptor),
   };
   try {
     const before = reads;
@@ -1273,12 +1274,12 @@ test('missing python3 blocks public preflight and run before claim or callbacks 
       res.end('{}');
       return;
     }
-    if (req.method === 'GET' && req.url === `/v1/workspaces/${projectId}/evaluation-capabilities`) {
+    if (req.method === 'GET' && req.url === `/v1/workspaces/${workspaceId}/evaluation-capabilities`) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(
         JSON.stringify({
           schemaVersion: 1,
-          projectId,
+          workspaceId,
           principalId: evaluatorPrincipalId,
           checkedAt: new Date().toISOString(),
           readUnpublished: true,
@@ -1301,7 +1302,7 @@ test('missing python3 blocks public preflight and run before claim or callbacks 
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl,
-      projectId,
+      workspaceId,
       evaluatorPrincipalId,
       evaluatorToken: token,
       journalRoot,
@@ -1314,7 +1315,7 @@ import {defineEvaluation,preflightEvaluation,runEvaluation} from ${JSON.stringif
 let callbacks=0;
 const app=defineEvaluation({configId:'no-python',configRevision:'1',datasetRevision:'fixture1',graderRevision:'fixture1',runtime:{app:'fixture'},execution:'model-free',cases:[{caseId:'one',input:null,expected:null}],execute:async()=>{callbacks++;return{output:null};},grade:async()=>{callbacks++;return{reward:1};}});
 const configPath=${JSON.stringify(configPath)};
-const handoff={schemaVersion:1,serviceUrl:${JSON.stringify(serviceUrl)},projectId:${JSON.stringify(projectId)},bundleId:${JSON.stringify(bundleId)},requestId:${JSON.stringify(requestId)},configuration:app.descriptor};
+const handoff={schemaVersion:1,serviceUrl:${JSON.stringify(serviceUrl)},workspaceId:${JSON.stringify(workspaceId)},bundleId:${JSON.stringify(bundleId)},requestId:${JSON.stringify(requestId)},descriptor:app.descriptor};
 const preflight=await preflightEvaluation({app,configPath,target:{handoff}});
 assert.equal(preflight.status,'blocked');
 assert.ok(preflight.checks.some(check=>check.code==='runtime.unsupported'));
@@ -1380,7 +1381,7 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
     path.join(await realpath(tmpdir()), 'acclimate-response-budget-'),
   );
   const token = 'response-budget-fixture-token',
-    base = `/v1/workspaces/${projectId}/bundles/${bundleId}`;
+    base = `/v1/workspaces/${workspaceId}/bundles/${bundleId}`;
   const submitted: Array<{ key: string; body: string }> = [],
     retained = new Map<string, { body: string; comparison: Comparison }>();
   const handlerErrors: unknown[] = [];
@@ -1395,11 +1396,11 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
     try {
       assert.equal(req.headers.authorization, `Bearer ${token}`);
       const route = new URL(req.url!, 'http://localhost').pathname;
-      if (req.method === 'GET' && route === `/v1/workspaces/${projectId}/evaluation-capabilities`)
-        return send(200, await f.api.getEvaluationCapabilities(projectId));
+      if (req.method === 'GET' && route === `/v1/workspaces/${workspaceId}/evaluation-capabilities`)
+        return send(200, await f.api.getEvaluationCapabilities(workspaceId));
       assert.ok(route.startsWith(base + '/'));
       if (req.method === 'GET' && route === `${base}/evaluation-requests/${requestId}`)
-        return send(200, await f.api.getEvaluation(projectId, bundleId, requestId));
+        return send(200, await f.api.getEvaluation(workspaceId, bundleId, requestId));
       if (
         req.method === 'GET' &&
         originalComparison &&
@@ -1423,9 +1424,9 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
       for await (const chunk of req) body += chunk;
       const value = JSON.parse(body);
       if (route === `${base}/evaluation-requests/${requestId}/start`)
-        return send(200, await f.api.startEvaluation(projectId, bundleId, requestId, value, key));
+        return send(200, await f.api.startEvaluation(workspaceId, bundleId, requestId, value, key));
       if (route === `${base}/evaluation-requests/${requestId}/finish`)
-        return send(200, await f.api.finishEvaluation(projectId, bundleId, requestId, value, key));
+        return send(200, await f.api.finishEvaluation(workspaceId, bundleId, requestId, value, key));
       assert.equal(route, `${base}/comparisons`);
       submitted.push({ key, body });
       const saved = retained.get(key);
@@ -1433,7 +1434,7 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
         assert.equal(body, saved.body);
         return send(201, saved.comparison);
       }
-      originalComparison = await f.api.createComparison(projectId, bundleId, value, key);
+      originalComparison = await f.api.createComparison(workspaceId, bundleId, value, key);
       retained.set(key, { body, comparison: structuredClone(originalComparison) });
       // The write has committed. A tiny compressed response expands beyond the
       // decoded 4 MiB client budget, so Content-Length is not a sufficient guard.
@@ -1465,7 +1466,7 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
     JSON.stringify({
       schemaVersion: 1,
       serviceUrl: origin,
-      projectId,
+      workspaceId,
       evaluatorPrincipalId,
       evaluatorToken: token,
       journalRoot,
@@ -1475,14 +1476,14 @@ test('committed submit with oversized decoded HTTP response recovers exact repor
   const handoff: EvaluationHandoff = {
     schemaVersion: 1,
     serviceUrl: origin,
-    projectId,
+    workspaceId,
     bundleId,
     requestId,
-    configuration: structuredClone(app.descriptor),
+    descriptor: structuredClone(app.descriptor),
   };
   const scope: JournalScope = {
     serviceUrl: origin,
-    projectId,
+    workspaceId,
     bundleId,
     requestId,
     evaluatorPrincipalId,

@@ -12,7 +12,7 @@ import {
 import { EvaluationError } from './errors.js';
 export interface JournalScope {
   serviceUrl: string;
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   requestId: string;
   evaluatorPrincipalId: string;
@@ -76,17 +76,35 @@ export interface AttemptJournal {
 }
 export const sha256 = (value: string | Uint8Array) =>
   'sha256:' + createHash('sha256').update(value).digest('hex');
-export function serializeScope(scope: JournalScope): string {
+/**
+ * The frozen storage key for a journal directory: `sha256(journalDirectoryKey(scope))`.
+ * It keeps the 0.1 encoding byte for byte, including the `projectId` key that holds the
+ * workspace ID, so journals written before the 0.2.0 rename are still found. The Python
+ * evaluator computes the same key. Never change it; it is not a wire format.
+ */
+export function journalDirectoryKey(scope: JournalScope): string {
   return JSON.stringify({
     serviceUrl: scope.serviceUrl,
-    projectId: scope.projectId,
+    projectId: scope.workspaceId,
     bundleId: scope.bundleId,
     requestId: scope.requestId,
     evaluatorPrincipalId: scope.evaluatorPrincipalId,
   });
 }
 export function journalDirectory(root: string, scope: JournalScope): string {
-  return path.join(root, createHash('sha256').update(serializeScope(scope)).digest('hex'));
+  return path.join(root, createHash('sha256').update(journalDirectoryKey(scope)).digest('hex'));
+}
+/**
+ * Read a journal scope written by this version (`workspaceId`) or by 0.1 (`projectId`),
+ * so a run in flight across the upgrade can be recovered. Only journal recovery accepts
+ * the old key; the next save writes `workspaceId`.
+ */
+export function readJournalScope(value: unknown): JournalScope | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const { projectId, ...rest } = value as Record<string, unknown>;
+  if (projectId === undefined) return rest as unknown as JournalScope;
+  if (Object.hasOwn(rest, 'workspaceId')) return undefined;
+  return { ...rest, workspaceId: projectId } as unknown as JournalScope;
 }
 const LOCK = `import fcntl,os,stat,sys
 p=sys.argv[1]
@@ -167,7 +185,7 @@ export async function openJournal(root: string, scope: JournalScope) {
     throw new EvaluationError('config.permissions');
   const directory = journalDirectory(root, scope),
     journalRoot = path.resolve(root),
-    identity = serializeScope(scope);
+    identity = journalDirectoryKey(scope);
   await privateDirectory(directory);
   const lock = await acquireFileLock(path.join(directory, 'ownership.lock'));
   try {
@@ -184,7 +202,7 @@ export async function openJournal(root: string, scope: JournalScope) {
       typeof value !== 'object' ||
       !value.scope ||
       value.schemaVersion !== 1 ||
-      serializeScope(value.scope) !== identity ||
+      journalDirectoryKey(value.scope) !== identity ||
       !value.attemptId ||
       !value.keys?.start ||
       !value.keys.submit ||
@@ -217,6 +235,9 @@ export async function openJournal(root: string, scope: JournalScope) {
       }
       const value = (await readPrivateJson(filename, 4 * 1024 * 1024)) as unknown as AttemptJournal;
       if (!value?.journalRoot) throw new EvaluationError('journal.invalid');
+      const recovered = readJournalScope(value.scope);
+      if (!recovered) throw new EvaluationError('journal.invalid');
+      value.scope = recovered;
       check(value);
       return value;
     },

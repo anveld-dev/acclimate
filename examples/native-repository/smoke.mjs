@@ -39,17 +39,17 @@ async function main() {
       candidate: verifiedVersion('Keep payment retries request-scoped.\n'),
     };
     const results = {};
-    for (const [side, bundle] of Object.entries(versions)) {
+    for (const [side, version] of Object.entries(versions)) {
       for (const item of app.cases) {
         const context = { requestId: randomUUID(), attemptId: randomUUID(), side, jobId: digest(randomUUID()) };
         context.privateJobDirectory = path.join(base, 'journal', context.jobId);
         await mkdir(context.privateJobDirectory, { mode: 0o700 });
         await writeFile(path.join(context.privateJobDirectory, 'binding.json'), JSON.stringify({
           requestId: context.requestId, attemptId: context.attemptId, side, jobId: context.jobId,
-          caseId: item.caseId, repetition: 0, versionId: bundle.version.id, digest: bundle.version.digest,
+          caseId: item.caseId, repetition: 0, versionId: version.version.id, digest: version.version.digest,
         }), { mode: 0o600 });
         const signal = new AbortController().signal;
-        const execution = await app.execute({ bundle, context, caseId: item.caseId, repetition: 0, input: item.input, signal });
+        const execution = await app.execute({ version, context, caseId: item.caseId, repetition: 0, input: item.input, signal });
         const grade = await app.grade({ output: execution.output, expected: item.expected, caseId: item.caseId, repetition: 0, signal });
         results[side] = {
           ...results[side],

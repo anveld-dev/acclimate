@@ -16,8 +16,8 @@ export function nativeReviewAdapter(model: Model, { wiringOnly = false } = {}): 
   return {
     describe: () => structuredClone(descriptor),
     cases,
-    execute: async ({ bundle, snapshot }) => {
-      const response = await model.review(bundle, snapshot as { diff: string });
+    execute: async ({ version, snapshot }) => {
+      const response = await model.review(version, snapshot as { diff: string });
       return { output: response.text, usage: response.usage };
     },
     grade: async ({ output, caseId }) => gradeFinding(caseId, output as string),
@@ -33,9 +33,9 @@ export async function codexLunaAdapter(): Promise<InstalledAdapter> {
   const codex = new Codex();
   let turns = 0;
   return nativeReviewAdapter({
-    review: async (bundle, snapshot) => {
+    review: async (version, snapshot) => {
       if (++turns > 4) throw new Error('Installed Luna adapter turn limit exceeded');
-      const prepared = await prepare(bundle);
+      const prepared = await prepare(version);
       return withNativeSessionInputs(prepared, async () => {
         const thread = codex.startThread({
           model: 'gpt-6-luna',

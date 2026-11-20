@@ -11,7 +11,7 @@ import {
   ApiError,
   prepareFiles,
   resolveAndCache,
-  type VerifiedBundle,
+  type VerifiedVersion,
 } from '../../src/index.js';
 
 const payloadBytes = await readFile(
@@ -57,7 +57,7 @@ test('mutation retry preserves exact bytes and idempotency key; errors retain re
       keys.push(req.headers['idempotency-key']);
       if (++count === 1)
         send(res, 503, { error: { code: 'unavailable', message: 'retry', requestId: 'req-1' } });
-      else send(res, 201, { id: 'b1', name: 'x', projectId: 'p', createdAt: 'now' });
+      else send(res, 201, { id: 'b1', name: 'x', workspaceId: 'p', createdAt: 'now' });
     });
   });
   try {
@@ -116,14 +116,14 @@ test('conditional channel and exact-byte digest cache; explicit stale fallback n
     const policy = { cacheDir: join(dir, 'cache') };
     const first = await resolveAndCache(
       client,
-      { projectId: 'p', bundleId: 'b1', channel: 'stable' },
+      { workspaceId: 'p', bundleId: 'b1', channel: 'stable' },
       policy,
     );
     assert.equal(first.version.digest, digest);
     assert.equal(first.stale, false);
     const second = await resolveAndCache(
       client,
-      { projectId: 'p', bundleId: 'b1', channel: 'stable' },
+      { workspaceId: 'p', bundleId: 'b1', channel: 'stable' },
       policy,
     );
     assert.equal(
@@ -134,7 +134,7 @@ test('conditional channel and exact-byte digest cache; explicit stale fallback n
     channelFailure = 503;
     const stale = await resolveAndCache(
       client,
-      { projectId: 'p', bundleId: 'b1', channel: 'stable' },
+      { workspaceId: 'p', bundleId: 'b1', channel: 'stable' },
       { ...policy, offline: { maxAgeMs: 99999 } },
     );
     assert.equal(stale.stale, true);
@@ -143,7 +143,7 @@ test('conditional channel and exact-byte digest cache; explicit stale fallback n
       await assert.rejects(
         resolveAndCache(
           client,
-          { projectId: 'p', bundleId: 'b1', channel: 'stable' },
+          { workspaceId: 'p', bundleId: 'b1', channel: 'stable' },
           { ...policy, offline: { maxAgeMs: 99999 } },
         ),
         ApiError,
@@ -157,7 +157,7 @@ test('conditional channel and exact-byte digest cache; explicit stale fallback n
 
 test('preparation refuses collisions and cleans only its own files', async () => {
   const dir = await mkdtemp(join(await realpath(tmpdir()), 'acclimate-prepare-'));
-  const verified: VerifiedBundle = {
+  const verified: VerifiedVersion = {
     version,
     payload: {
       schemaVersion: 1,
@@ -195,11 +195,11 @@ test('an explicitly pinned cached version is available offline after a prior ver
   try {
     const c = new AcclimateClient({ baseUrl: f.baseUrl, token: 'secret', scope: 'principal' });
     const policy = { cacheDir: join(dir, 'cache') };
-    await resolveAndCache(c, { projectId: 'p', bundleId: 'b1', versionId: 'v1' }, policy);
+    await resolveAndCache(c, { workspaceId: 'p', bundleId: 'b1', versionId: 'v1' }, policy);
     online = false;
     const bundle = await resolveAndCache(
       c,
-      { projectId: 'p', bundleId: 'b1', versionId: 'v1' },
+      { workspaceId: 'p', bundleId: 'b1', versionId: 'v1' },
       { ...policy, offline: { pinnedVersionId: 'v1' } },
     );
     assert.equal(bundle.stale, true);
@@ -228,19 +228,19 @@ test('promotion history encodes its query, returns a page and preserves typed er
   try {
     const c = new AcclimateClient({ baseUrl: f.baseUrl, token: 'secret', scope: 'principal' });
     assert.deepEqual(
-      await c.listPromotions('p', 'b', 'stable', { limit: 100, beforeRevision: 'a&b' }),
+      await c.listReleases('p', 'b', 'stable', { limit: 100, beforeRevision: 'a&b' }),
       { items: [], nextBeforeRevision: null },
     );
     assert.match(paths[0], /limit=100&beforeRevision=a%26b$/);
     await assert.rejects(
-      c.listPromotions('p', 'b', 'stable', { limit: 0 }),
+      c.listReleases('p', 'b', 'stable', { limit: 0 }),
       (e: unknown) => e instanceof ApiError && e.status === 400 && e.code === 'invalid_content',
     );
     await assert.rejects(
-      c.listPromotions('p', 'b', 'stable', { beforeRevision: 'denied' }),
+      c.listReleases('p', 'b', 'stable', { beforeRevision: 'denied' }),
       (e: unknown) => e instanceof ApiError && e.status === 403 && e.code === 'denied',
     );
-    assert.throws(() => c.listPromotions('..', 'b', 'stable'), AcclimateUsageError);
+    assert.throws(() => c.listReleases('..', 'b', 'stable'), AcclimateUsageError);
   } finally {
     await f.close();
   }
@@ -263,7 +263,7 @@ test('redirect responses are errors and cannot silently forward credentials', as
       scope: 'principal',
     });
     await assert.rejects(
-      c.listPromotions('p', 'b', 'stable'),
+      c.listReleases('p', 'b', 'stable'),
       (e: unknown) => e instanceof ApiError && e.status === 302,
     );
     assert.equal(reached, false);
@@ -280,7 +280,7 @@ test('connection-qualified delivery isolates conditional and offline entries for
   const seen: Array<{ path: string; connection?: string; etag?: string }> = [];
   let offline = false;
   const service = await fixture((req, res) => {
-    const connection = req.headers['x-acclimate-integration-id'] as string | undefined;
+    const connection = req.headers['x-acclimate-connection-id'] as string | undefined;
     seen.push({ path: req.url, connection, etag: req.headers['if-none-match'] });
     if (offline) return send(res, 503, {});
     if (req.url.endsWith('/channels/stable')) {
@@ -301,18 +301,18 @@ test('connection-qualified delivery isolates conditional and offline entries for
   });
   const dir = await mkdtemp(join(await realpath(tmpdir()), 'acclimate-connection-cache-'));
   try {
-    const make = (integrationId?: string) =>
+    const make = (connectionId?: string) =>
       new AcclimateClient({
         baseUrl: service.baseUrl,
         token: 'shared-reader',
         scope: 'project-reader',
-        integrationId,
+        connectionId,
       });
     const policy = { cacheDir: dir, offline: { maxAgeMs: 60_000 } };
-    const selection = { projectId: 'p', bundleId: 'b1', channel: 'stable' };
+    const selection = { workspaceId: 'p', bundleId: 'b1', channel: 'stable' };
     const resolved = await resolveAndCache(make(enrolled), selection, policy);
     assert.equal(resolved.version.id, 'candidate');
-    assert.deepEqual(resolved.connection, { projectId: 'p', integrationId: enrolled });
+    assert.deepEqual(resolved.connection, { workspaceId: 'p', connectionId: enrolled });
     assert.equal((await resolveAndCache(make(sibling), selection, policy)).version.id, 'v1');
     assert.deepEqual(
       seen.map((call) => call.connection),
@@ -341,7 +341,7 @@ test('client.prepare pins a real selection, owns per-job files and reports obser
   try {
     const client = new AcclimateClient({ baseUrl: f.baseUrl, token: 'read', scope: 'app' });
     const stages: string[] = [];
-    const options = { projectId: 'p', bundleId: 'b1', cacheDir: join(root, 'cache') };
+    const options = { workspaceId: 'p', bundleId: 'b1', cacheDir: join(root, 'cache') };
     const first = await client.prepare({
       ...options,
       channel: 'stable',
@@ -357,10 +357,10 @@ test('client.prepare pins a real selection, owns per-job files and reports obser
         },
       },
     });
-    assert.equal(first.version.digest, digest);
+    assert.equal(first.version.version.digest, digest);
     assert.equal(
       first.instructions,
-      first.bundle.payload.files
+      first.version.payload.files
         .filter((f) => f.kind === 'instruction')
         .map((f) => f.text)
         .join('\n\n'),
@@ -371,7 +371,7 @@ test('client.prepare pins a real selection, owns per-job files and reports obser
     );
     assert.equal(
       await readFile(first.files[0]!.absolutePath, 'utf8'),
-      first.bundle.payload.files[0]!.text,
+      first.version.payload.files[0]!.text,
     );
     assert.deepEqual(stages, ['verified', 'prepared']);
     assert.equal(first.reportStarted(), null);
@@ -381,7 +381,7 @@ test('client.prepare pins a real selection, owns per-job files and reports obser
     await first.cleanup();
     await assert.rejects(readFile(first.files[0]!.absolutePath), { code: 'ENOENT' });
     const second = await client.prepare({ ...options, versionId: version.id });
-    assert.equal(second.version.id, version.id);
+    assert.equal(second.version.version.id, version.id);
     assert.notEqual(second.directory, first.directory);
     await second.cleanup();
   } finally {

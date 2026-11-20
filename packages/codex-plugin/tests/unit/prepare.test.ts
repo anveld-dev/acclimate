@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { access, readFile, stat } from 'node:fs/promises';
 import { prepare } from '../../src/index.js';
-import type { VerifiedBundle } from '../../../sdk/src/types.js';
+import type { VerifiedVersion } from '../../../sdk/src/types.js';
 
-const bundle = (): VerifiedBundle => ({
+const bundle = (): VerifiedVersion => ({
   version: {
     id: 'v1',
     bundleId: 'b1',
@@ -160,7 +160,7 @@ test('accepts client.prepare() output so start receipts survive native preparati
   let started = 0;
   let released = 0;
   const delivery = {
-    bundle: bundle(),
+    version: bundle(),
     reportStarted() {
       started++;
       return receipt;

@@ -36,7 +36,7 @@ jobs:
           channel: stable
           bundle-dir: agent
           memory: none
-          # {"serviceUrl":"https://acclimate.example.com/","projectId":"...","evaluatorPrincipalId":"..."}
+          # {"serviceUrl":"https://acclimate.example.com/","workspaceId":"...","evaluatorPrincipalId":"..."}
           config-json: ${{ vars.ACCLIMATE_EVALUATOR_CONFIG }}
           # A workspace evaluator token with only the evaluate right. It cannot release.
           token: ${{ secrets.ACCLIMATE_EVALUATE_TOKEN }}

@@ -1,4 +1,5 @@
 """Check a reviewed behavior inventory against an actual Behave JSON result."""
+import argparse
 import json
 import re
 from collections import defaultdict
@@ -76,3 +77,36 @@ def write_report(inventory_path,result_path,directory):
         lines.append(f"| [{identifier}](../../{row['source']}) | {row['lane']} | {row['passed']} / {row['cases']} | {'Passed' if row['covered'] else 'Uncovered'} | {row['name']} |")
     (directory/'coverage.md').write_text('\n'.join(lines)+'\n')
     return complete==len(coverage)
+
+
+def merge_shards(paths):
+    features = {}
+    for path in paths:
+        for feature in json.loads(path.read_text()):
+            location = feature['location']
+            combined = features.setdefault(location, dict(feature, elements=[]))
+            # Tag-filtered runs emit skipped placeholders for the other shards.
+            for row in feature['elements']:
+                if row.get('status') == 'skipped':
+                    continue
+                if row.get('type') == 'background' and row in combined['elements']:
+                    continue
+                combined['elements'].append(row)
+    return list(features.values())
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Combine behavior shards and require full coverage.')
+    parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('results', nargs='+', type=Path)
+    args = parser.parse_args()
+    args.output.mkdir(parents=True, exist_ok=True)
+    results = args.output / 'results.json'
+    results.write_text(json.dumps(merge_shards(args.results), indent=2) + '\n')
+    inventory = Path(__file__).with_name('inventory.json')
+    if not write_report(inventory, results, args.output):
+        parser.exit(1, 'Full coverage failed. See ' + str(args.output / 'coverage.md') + '\n')
+
+
+if __name__ == '__main__':
+    main()

@@ -7,7 +7,62 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      full: ${{ steps.select.outputs.full }}
+      unit: ${{ steps.select.outputs.unit }}
+      bdd: ${{ steps.select.outputs.bdd }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The tested PR merge commit and its base parent.
+          fetch-depth: 2
+      - run: python3 -m unittest scripts.ci.test_affected
+      - id: select
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/affected.py
+      - name: Verify documentation and generated exports on selective runs
+        if: steps.select.outputs.full == 'false'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/docs-env"
+          "$RUNNER_TEMP/docs-env/bin/pip" install -r scripts/docs-requirements.txt
+          "$RUNNER_TEMP/docs-env/bin/python" scripts/build_docs.py
+          python3 scripts/check_docs.py
+          git diff --exit-code -- docs/site
+          test -z "$(git ls-files --others --exclude-standard -- docs/site)"
+  build:
+    needs: changes
+    if: needs.changes.outputs.bdd == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --prefer-offline --no-audit
+      - run: cargo build --locked
+      - run: npm run build
+      - name: Archive the integration builds
+        run: |
+          tar --zstd -cf "$RUNNER_TEMP/integration-build.tar.zst" \
+            target/debug/acclimate-service dist packages/*/dist apps/console/.output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: integration-build
+          path: ${{ runner.temp }}/integration-build.tar.zst
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
   unit:
+    needs: changes
+    if: needs.changes.outputs.unit == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -63,6 +118,8 @@ jobs:
           test "$CANDIDATE" = 00000000-0000-4000-8000-000000000002
           python3 -c 'import json, sys; summary = json.load(open(sys.argv[1])); assert summary["commit"] == sys.argv[2], summary' "$SUMMARY" "$GITHUB_SHA"
   test:
+    needs: [changes, build]
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -89,6 +146,11 @@ jobs:
           tar -xzf actionlint.tar.gz -C acclimate-lint-bin actionlint
           printf '%s\n' "$RUNNER_TEMP/acclimate-lint-bin" >> "$GITHUB_PATH"
       - run: npm ci --ignore-scripts --prefer-offline --no-audit
+      - uses: actions/download-artifact@v4
+        with:
+          name: integration-build
+          path: ${{ runner.temp }}
+      - run: tar --zstd -xf "$RUNNER_TEMP/integration-build.tar.zst"
       - run: npm run lint
       - name: Install PostgreSQL test binaries
         run: |
@@ -97,14 +159,10 @@ jobs:
             sudo apt-get install -y postgresql-16
           fi
           /usr/lib/postgresql/16/bin/initdb --version
-      - run: npm run build
       - name: Test built console entrypoints
         run: npx --no-install tsx --tsconfig apps/console/tsconfig.json --test apps/console/tests/console-entrypoints.integration.ts
       - run: npm run pack:verify -- --skip-build --console-runtime
       - run: python scripts/productization/rust_tests.py --pg-bin /usr/lib/postgresql/16/bin
-      - run: cargo build
-      - name: Qualify connected learning against PostgreSQL
-        run: python scripts/productization/connected_learning.py --skip-build --pg-bin /usr/lib/postgresql/16/bin
       - run: npm run test:e2e -- --skip-build --pg-bin /usr/lib/postgresql/16/bin
       - run: npm run qualify:full-roadmap -- --skip-build --pg-bin /usr/lib/postgresql/16/bin
       - run: python -m unittest discover -s scripts/productization -p 'test_external.py' -v
@@ -116,11 +174,25 @@ jobs:
             artifacts/releases/
             artifacts/production-only/
           if-no-files-found: error
-  behaviors:
+  connected-learning:
+    needs: [changes, build]
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: integration-build
+          path: ${{ runner.temp }}
+      - run: tar --zstd -xf "$RUNNER_TEMP/integration-build.tar.zst"
+      - run: npm ci --ignore-scripts --prefer-offline --no-audit
       - name: Install PostgreSQL test binaries
         run: |
           if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
@@ -128,10 +200,30 @@ jobs:
             sudo apt-get install -y postgresql-16
           fi
           /usr/lib/postgresql/16/bin/initdb --version
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - name: Qualify connected learning against PostgreSQL
+        run: python scripts/productization/connected_learning.py --skip-build --pg-bin /usr/lib/postgresql/16/bin
+  behavior-shard:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          cache-on-failure: true
+          name: integration-build
+          path: ${{ runner.temp }}
+      - run: tar --zstd -xf "$RUNNER_TEMP/integration-build.tar.zst"
+      - name: Install PostgreSQL test binaries
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-16
+          fi
+          /usr/lib/postgresql/16/bin/initdb --version
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -143,10 +235,15 @@ jobs:
           cache-dependency-path: scripts/bdd/requirements.txt
       - run: npm ci --ignore-scripts --prefer-offline --no-audit
       - run: python -m pip install -r scripts/bdd/requirements.txt
-      - run: python -m playwright install --with-deps --only-shell chromium
+      - uses: ./.github/actions/install-browser
       - run: python -m unittest scripts.bdd.test_editor -v
-      - run: npm run test:bdd -- --parallel --pg-bin /usr/lib/postgresql/16/bin
+        if: matrix.shard == 3
+      - name: Run behavior shard
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: npm run test:bdd -- --skip-build --shard "$SHARD" 3 --pg-bin /usr/lib/postgresql/16/bin
       - name: Check the read-only console, sign-in protocol and Vite draft flow
+        if: matrix.shard == 3
         run: |
           python scripts/test_console_browser.py --pg-bin /usr/lib/postgresql/16/bin > artifacts/bdd/console-readonly.log &
           readonly_pid=$!
@@ -159,16 +256,48 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          name: behavior-shard-${{ matrix.shard }}
+          path: artifacts/
+          if-no-files-found: error
+          overwrite: true
+  behaviors:
+    needs: [changes, behavior-shard]
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.bdd == 'true') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful check selection
+        env:
+          RESULT: ${{ needs.changes.result }}
+        run: test "$RESULT" = success
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: behavior-shard-*
+          path: artifacts/shards
+      - name: Require every reviewed behavior variant
+        run: python3 -m scripts.bdd.coverage --output artifacts/bdd artifacts/shards/behavior-shard-*/bdd/results.json
+      - name: Require all shard checks
+        env:
+          RESULT: ${{ needs.behavior-shard.result }}
+        run: test "$RESULT" = success
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
           name: behavior-results
-          path: |
-            artifacts/bdd/
-            artifacts/bdd-dev/
-            artifacts/production-only/
+          path: artifacts/bdd/
+          overwrite: true
   keycloak:
+    needs: [changes, build]
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: integration-build
+          path: ${{ runner.temp }}
+      - run: tar --zstd -xf "$RUNNER_TEMP/integration-build.tar.zst"
       - name: Install PostgreSQL test binaries
         run: |
           if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
@@ -176,10 +305,6 @@ jobs:
             sudo apt-get install -y postgresql-16
           fi
           /usr/lib/postgresql/16/bin/initdb --version
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -195,9 +320,7 @@ jobs:
           java-version: '21'
       - run: npm ci --ignore-scripts --prefer-offline --no-audit
       - run: python -m pip install -r scripts/bdd/requirements.txt
-      - run: python -m playwright install --with-deps --only-shell chromium
-      - run: cargo build --locked
-      - run: npm run build
+      - uses: ./.github/actions/install-browser
       - run: npm run build:theme
       - run: npm run test:email -- --pg-bin /usr/lib/postgresql/16/bin --report artifacts/keycloak/email-protocol.json
       - run: python scripts/testing/member_live_updates.py --pg-bin /usr/lib/postgresql/16/bin --report artifacts/keycloak/members-auto.json

@@ -103,7 +103,7 @@
     "deploy/keycloak/acclimate-realm.json": "cfbde0e6cf14f0c903bcb45b0e2746ead36ca254a7b25536f6b5b5fea46a92fc",
     "deploy/mailpit.md": "ecc3402d40cdbe99da3b21d8d523bd95308bcd2b03ab39e6342ce3f3019ee8a4",
     "docs/architecture/deepening-review.md": "d4f176faa59b9928de20b1730b990dc2ba28f66d0469541248dd5595cf58e029",
-    "docs/architecture/self-improvement-memory/README.md": "686cfdd4b5c018336bb91eed48ea2c0969de93eff0d259df32e43b17bb179f63",
+    "docs/architecture/self-improvement-memory/README.md": "69b5968d7f02d40300b63640481c75f0f8cb9e3f60660740f34610c6badcc7cd",
     "docs/architecture/self-improvement-memory/decisions.md": "75de1f3a64cb9d150aab842dbac62155af90b6958fb5abdb93968416fd6ae67b",
     "docs/architecture/self-improvement-memory/evaluator-and-contracts.md": "98bc4b4ca9d0d54b730c03ca1e15f5a394621d5ca0e4a66913fa725dd5e585d2",
     "docs/architecture/self-improvement-memory/experiment.md": "b49de1a16c2ae968014348f77be80bed0ea29828f9a5ccfec2e6b33e5835890a",

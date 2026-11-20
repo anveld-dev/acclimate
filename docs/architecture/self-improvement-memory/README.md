@@ -227,18 +227,26 @@ Every phase ends with `npm run lint`, `npm run typecheck` and the listed tests, 
 | 5. Experiment tooling | The driver, held-out fixtures, analysis and `tests/` in `examples/self-improvement-memory/`, with the `test:sim-experiment` script. No product change. | none | Driver tests | 4 |
 | 6. Paper-sized experiment | 10 source runs, the cross-model transition, Full SIM, Harness Transfer and Cold Start, and the analysis | none | The integrity checks in experiment.md | 5 |
 
+## Deferred after the MVP
+
+The maintainer deferred these on 2026-11-20. The MVP ships without them; revisit after the paper-sized experiment.
+
+| Topic | MVP behavior |
+| --- | --- |
+| **Auto-revert.** Revert the channel or pause the loop on a held-out drop or an app-reported failure rate. | The loop never reverts an adopted release (D3). The held-out curve is shown only. |
+| **Trace privacy, size and retention.** Redaction and retention for evolve inputs, expected answers, traces and errors; what to do when full history and memory outgrow the optimizer's context. | No service cap beyond the 2 MiB request limit; the SDK runner captures 16 KiB of trace and 4 KiB of error per rollout by default. A round that does not fit pauses the loop with `optimizer-context-too-large`; nothing is truncated. |
+| **Large responses.** Round details, memory snapshots and evolve assignments can exceed the SDK clients' 4 MiB JSON response limit. | Requests over the limit fail with the existing client error. |
+
 ## Open questions
 
 Each design file lists the questions it owns. These need a maintainer answer.
 
-1. **Auto-revert.** The loop never reverts an adopted release (D3). Should a held-out drop, or an app-reported failure rate, revert the channel or pause the loop? Today the held-out curve is only shown.
-2. **Pointing a channel at an earlier version.** The default keeps the channel release route as a delivery primitive. A manual release on the learning channel becomes the next round's parent, and an adopt that finds the channel moved records `kept` / `channel-moved`. Should the loop also record the manual move in run history, or forbid manual releases on the learning channel?
-3. **Multiple loops per bundle.** One loop per workspace + bundle. Two apps with different settings on one bundle would share one memory and one learning channel. Should a loop be keyed per channel or per setting, and should memory stay per bundle?
-4. **Trace privacy and size.** Evolve inputs, expected answers, traces and errors are stored in the service and traces go to the optimizer. The service has no trace or error cap beyond the 2 MiB request limit, and the SDK runner captures 16 KiB of trace by default. Which redaction and retention apply, and what happens when the full history and memory no longer fit the optimizer's context? The design pauses the loop with `optimizer-context-too-large` and never truncates.
-5. **Data archive.** Phase 2 drops connected-learning rounds, proposals, comparisons and receipts. Should operators export them first, and should rounds, evaluations and traces from the new loop expire?
-6. **Expected answers in optimizer input.** `feedback` carries each evolve case's input and rollouts, not its `expected` value. Should the proposer see expected answers, as some of the paper's benchmarks expose test results?
-7. **Held-out on every round.** The retained version is scored on the held-out split every round, even after a keep, as the paper does. Should a keep reuse the previous score instead?
-8. **`backfilled`.** The paper lists the field and does not define it. Memory starts empty and is never backfilled (D6), so every stored attempt has `backfilled = false`. Keep the field for paper fidelity?
-9. **Sibling conditioning.** The five samples are independent and see the same input. The paper does not say whether later samples see earlier ones.
-10. **Evolve split growth.** Every outcome with an expected result adds a case, and every case is scored 5 times on every evaluation. Should near-duplicate outcomes merge, or should the split have a size limit?
-11. **Run history across a setting change.** The design follows the paper: `history` holds only earlier rounds in the current `setting`, so after a model or benchmark change the earlier rounds reach the optimizer only through memory. D5 says "all prior rounds", which this design reads as all prior rounds of the run, with no truncation ([decisions.md](decisions.md#paper-readings-that-still-hold)). Please confirm, or say that `history` should cross setting changes, in which case experiment.md's Full SIM arm measures inherited memory plus inherited history.
+1. **Pointing a channel at an earlier version.** The default keeps the channel release route as a delivery primitive. A manual release on the learning channel becomes the next round's parent, and an adopt that finds the channel moved records `kept` / `channel-moved`. Should the loop also record the manual move in run history, or forbid manual releases on the learning channel?
+2. **Multiple loops per bundle.** One loop per workspace + bundle. Two apps with different settings on one bundle would share one memory and one learning channel. Should a loop be keyed per channel or per setting, and should memory stay per bundle?
+3. **Data archive.** Phase 2 drops connected-learning rounds, proposals, comparisons and receipts. Should operators export them first, and should rounds, evaluations and traces from the new loop expire?
+4. **Expected answers in optimizer input.** `feedback` carries each evolve case's input and rollouts, not its `expected` value. Should the proposer see expected answers, as some of the paper's benchmarks expose test results?
+5. **Held-out on every round.** The retained version is scored on the held-out split every round, even after a keep, as the paper does. Should a keep reuse the previous score instead?
+6. **`backfilled`.** The paper lists the field and does not define it. Memory starts empty and is never backfilled (D6), so every stored attempt has `backfilled = false`. Keep the field for paper fidelity?
+7. **Sibling conditioning.** The five samples are independent and see the same input. The paper does not say whether later samples see earlier ones.
+8. **Evolve split growth.** Every outcome with an expected result adds a case, and every case is scored 5 times on every evaluation. Should near-duplicate outcomes merge, or should the split have a size limit?
+9. **Run history across a setting change.** The design follows the paper: `history` holds only earlier rounds in the current `setting`, so after a model or benchmark change the earlier rounds reach the optimizer only through memory. D5 says "all prior rounds", which this design reads as all prior rounds of the run, with no truncation ([decisions.md](decisions.md#paper-readings-that-still-hold)). Please confirm, or say that `history` should cross setting changes, in which case experiment.md's Full SIM arm measures inherited memory plus inherited history.

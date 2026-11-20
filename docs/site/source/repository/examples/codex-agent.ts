@@ -7,11 +7,8 @@ import {
   optionalReceipts,
   observeOptional,
   observeStartOnce,
-  rejectRenamedEnvironment,
   settleOptional,
 } from './optional-receipts.js';
-
-rejectRenamedEnvironment();
 
 if (!process.argv.includes('--live'))
   throw new Error('Pass --live to request a paid Luna session.');

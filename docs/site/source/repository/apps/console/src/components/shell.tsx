@@ -267,14 +267,14 @@ export function Shell({ children }: { children: ReactNode }) {
       ? [detailLabel, viewLabel, nav.bundleName].filter(Boolean).join(' · ')
       : mainRef.current?.querySelector('h1')?.textContent || 'Welcome';
     let title = page;
-    for (const label of [nav?.projectName, 'Acclimate']) {
+    for (const label of [nav?.workspaceName, 'Acclimate']) {
       if (!label) continue;
       const suffix = title.toLowerCase();
       const identity = label.toLowerCase();
       if (suffix !== identity && !suffix.endsWith(' · ' + identity)) title += ' · ' + label;
     }
     document.title = title;
-  }, [nav?.workspaceId, nav?.projectName, nav?.bundleName, detailLabel, viewLabel, pathname]);
+  }, [nav?.workspaceId, nav?.workspaceName, nav?.bundleName, detailLabel, viewLabel, pathname]);
   const projects = nav?.access.ok ? nav.access.projects : [];
   const canCreate = nav?.access.ok && nav.access.canCreateWorkspace;
   function workspaceRole(role: string) {
@@ -392,13 +392,13 @@ export function Shell({ children }: { children: ReactNode }) {
                         size="icon"
                         className="workspace-rail-control workspace-rail-workspaces"
                         disabled={!hydrated}
-                        title={nav?.projectName}
-                        aria-label={nav?.projectName ? `Workspaces ${nav.projectName}` : 'Workspaces'}
+                        title={nav?.workspaceName}
+                        aria-label={nav?.workspaceName ? `Workspaces ${nav.workspaceName}` : 'Workspaces'}
                       >
                         <Building2 aria-hidden="true" className="size-[18px]" />
                         <span className="sr-only workspace-rail-label">
                           <small>Workspaces</small>{' '}
-                          <strong>{nav?.projectName ?? 'Choose workspace'}</strong>
+                          <strong>{nav?.workspaceName ?? 'Choose workspace'}</strong>
                         </span>
                         <ChevronsUpDown className="workspace-scope-indicator" aria-hidden="true" />
                       </Button>
@@ -411,7 +411,7 @@ export function Shell({ children }: { children: ReactNode }) {
                     className="workspace-rail-tooltip"
                   >
                     <span className="font-medium">Workspaces</span>
-                    <span className="opacity-75">{nav?.projectName ?? 'Choose a workspace'}</span>
+                    <span className="opacity-75">{nav?.workspaceName ?? 'Choose a workspace'}</span>
                   </TooltipContent>
                 </Tooltip>
                 <DropdownMenuContent

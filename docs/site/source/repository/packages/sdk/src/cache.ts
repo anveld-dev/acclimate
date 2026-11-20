@@ -123,8 +123,6 @@ export async function resolveAndCache(
   selection: Selection,
   policy: CachePolicy,
 ): Promise<VerifiedVersion> {
-  if (selection && Object.hasOwn(selection, 'projectId'))
-    throw new AcclimateUsageError('projectId was renamed to workspaceId in 0.2.0', 'projectId');
   const now = Date.now(),
     maxAge = policy.maxResolutionAgeMs ?? 0,
     offline = policy.offline ?? false;

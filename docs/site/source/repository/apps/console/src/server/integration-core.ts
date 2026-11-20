@@ -101,8 +101,8 @@ function issuedMetadata(value: unknown): IssuedCredentialMetadata | undefined {
   };
 }
 async function context(env: Environment, fetcher: typeof fetch) {
-  if (!env.CONSOLE_PROJECT || !env.CONSOLE_BUNDLE) throw Error('Select a workspace');
-  const workspace = await workspaceContext(env, env.CONSOLE_PROJECT, fetcher);
+  if (!env.CONSOLE_WORKSPACE || !env.CONSOLE_BUNDLE) throw Error('Select a workspace');
+  const workspace = await workspaceContext(env, env.CONSOLE_WORKSPACE, fetcher);
   const bundleId = env.CONSOLE_BUNDLE,
     channel = env.CONSOLE_CHANNEL || 'stable';
   return {
@@ -292,7 +292,7 @@ export async function connectionCommand(
   return integrationCommand(
     {
       ...env,
-      CONSOLE_PROJECT: input.workspaceId,
+      CONSOLE_WORKSPACE: input.workspaceId,
       CONSOLE_BUNDLE: input.bundleId,
       CONSOLE_CHANNEL: input.channel,
     },
@@ -877,7 +877,7 @@ export type ConnectionBundle = {
 export type ConnectionsState = {
   workspaceId: string;
   publicApiUrl: string;
-  projectName: string;
+  workspaceName: string;
   actorScope: string;
   canManage: boolean;
   integrations: Connection[];
@@ -967,7 +967,7 @@ export async function readConnectionsState(
       state: {
         workspaceId: c.workspaceId,
         publicApiUrl: env.CONSOLE_PUBLIC_API_URL!,
-        projectName: c.project.name,
+        workspaceName: c.project.name,
         actorScope: actorScope(env),
         canManage: c.canManage,
         integrations: c.integrations,

@@ -63,7 +63,7 @@ function ConnectionPage({
   search: Record<string, unknown>;
   initial?: ConnectionsResult;
 }) {
-  const selectedId = typeof search.integration === 'string' ? search.integration : undefined;
+  const selectedId = typeof search.connection === 'string' ? search.connection : undefined;
   const pendingFocus = useRef('');
   const [result, setResult] = useState<ConnectionsResult>(
     initial ?? { ok: false, message: 'Loading connections…' },
@@ -558,7 +558,7 @@ function ConnectionWorkspace({
           A connection groups an app’s credentials for one bundle and channel. Creating one does not
           connect a running app. SDK clients can fetch content without a connection.
         </p>
-        <p className="break-words">Workspace: {state.projectName}</p>
+        <p className="break-words">Workspace: {state.workspaceName}</p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span>Workspace ID:</span>
           <code className="break-all">{state.workspaceId}</code>
@@ -1090,7 +1090,7 @@ function ConnectionWorkspace({
                       <ConsoleLink
                         href={
                           workspaceHref(state.workspaceId, 'delivery') +
-                          '?integration=' +
+                          '?connection=' +
                           encodeURIComponent(selected.id)
                         }
                       >
@@ -1137,7 +1137,7 @@ function ConnectionWorkspace({
                     <dl className="connection-identities">
                       <div>
                         <dt>Workspace</dt>
-                        <dd>{state.projectName}</dd>
+                        <dd>{state.workspaceName}</dd>
                       </div>
                       <div>
                         <dt>Workspace ID</dt>

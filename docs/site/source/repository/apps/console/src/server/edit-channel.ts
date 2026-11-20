@@ -37,18 +37,18 @@ export async function editChannel(
     return { ok: false, message: 'Invalid edit request.' };
   try {
     requireSession(env);
-    const operationPath = `/v1/workspaces/${encodeURIComponent(env.CONSOLE_PROJECT || '')}/bundles/${encodeURIComponent(env.CONSOLE_BUNDLE || '')}/channels/${encodeURIComponent(env.CONSOLE_CHANNEL || 'stable')}/releases`;
+    const operationPath = `/v1/workspaces/${encodeURIComponent(env.CONSOLE_WORKSPACE || '')}/bundles/${encodeURIComponent(env.CONSOLE_BUNDLE || '')}/channels/${encodeURIComponent(env.CONSOLE_CHANNEL || 'stable')}/releases`;
     if (command.action !== 'save') {
       const prior = await lookupOperation(
         env,
-        { workspaceId: env.CONSOLE_PROJECT!, operationPath, key: command.key },
+        { workspaceId: env.CONSOLE_WORKSPACE!, operationPath, key: command.key },
         fetcher,
       );
       if (prior.status === 'committed') {
         const confirmed = await exactOperation<{ version: VersionMetadata; revision: string }>(
           env,
           {
-            workspaceId: env.CONSOLE_PROJECT!,
+            workspaceId: env.CONSOLE_WORKSPACE!,
             operationPath,
             key: command.key,
             body: JSON.stringify({

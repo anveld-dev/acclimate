@@ -69,7 +69,6 @@ import { ComparisonEvidence, comparisonIncompleteReason } from './comparison-evi
 import { reviewNextStep } from '../lib/review-next-step';
 import { mergeHistory, refreshKnownActive } from '../lib/improvement-history';
 import { requestEvidence } from '../lib/evaluation-history';
-import { canonicalOperationPath } from '../lib/operation-target';
 import { evaluationRequestLabels } from '../lib/evaluation-request-labels';
 import {
   freezePending,
@@ -795,7 +794,7 @@ export function ImprovementWorkspace({
       const parsed = current.body ? JSON.parse(current.body) : null;
       const wrapped =
         typeof parsed?.operationPath === 'string' &&
-        canonicalOperationPath(parsed.operationPath) === current.action &&
+        parsed.operationPath === current.action &&
         typeof parsed.body === 'string';
       const operationPath = current.action;
       const body = wrapped ? parsed.body : current.body;

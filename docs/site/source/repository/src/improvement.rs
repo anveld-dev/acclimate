@@ -130,8 +130,8 @@ pub async fn create_comparison(
             "Malformed request",
         )
     })?;
-    // Internal operation key, not a route: see commands::internal_operation_path.
-    let route = format!("/v1/projects/{p}/bundles/{b}/comparisons");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/bundles/{b}/comparisons");
     let mut command = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),
@@ -262,8 +262,8 @@ pub async fn create_proposal(
             "Malformed request",
         )
     })?;
-    // Internal operation key, not a route: see commands::internal_operation_path.
-    let route = format!("/v1/projects/{p}/bundles/{b}/proposals");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/bundles/{b}/proposals");
     let mut command = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),

@@ -223,7 +223,7 @@ def main():
         (consumer / 'package.json').write_text('{"private":true,"type":"module"}')
         subprocess.run(['npm', 'run', 'build:packages'], cwd=ROOT, check=True)
         subprocess.run(['npm', 'pack', '--offline', '--pack-destination', str(consumer), '--workspace', '@acclimate/sdk'], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
-        subprocess.run(['npm', 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', str(consumer / 'acclimate-sdk-0.2.0.tgz')], cwd=consumer, check=True)
+        subprocess.run(['npm', 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', str(consumer / 'acclimate-sdk-0.1.0.tgz')], cwd=consumer, check=True)
         shutil.copy(ROOT / 'scripts/productization/consumer.mjs', consumer / 'consumer.mjs')
         config = consumer / 'config.json'
         config.write_text(json.dumps(dict(baseUrl=h.base, token=h.tokens['operator'], project=h.project, **result)))

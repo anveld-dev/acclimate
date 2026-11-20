@@ -12,9 +12,9 @@ There are two ways in:
 Install the verified SDK in the environment that runs your agent. The TypeScript SDK needs Node 22.22+ and Python 3 with `fcntl`. The Python SDK needs Python 3.11+. Both need POSIX and a private persistent directory for the evaluator journal.
 
 ```sh
-npm install --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.2.0.tgz
+npm install --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
 # Or use Python 3.11+
-python -m pip install --no-deps /absolute/path/to/release/acclimate_sdk-0.2.0-py3-none-any.whl
+python -m pip install --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
 ```
 
 [Install the SDKs](../apps/docs/content/docs/get-started/install.mdx) · [Release metadata](../scripts/packaging/release-metadata.json)
@@ -74,7 +74,7 @@ python -m acclimate check --config "$EVALUATOR_CONFIG" --name first-change --pol
 python -m acclimate export --config "$EVALUATOR_CONFIG" --name first-change --out review
 ```
 
-To require a non-decreasing mean reward and zero regression on each case, save this policy as `quality-policy.json` and pass `--policy quality-policy.json`:
+To require statistical evidence that the mean reward improved, with zero regression on each case you list in `requiredCases`, save this policy as `quality-policy.json` and pass `--policy quality-policy.json`. The default test needs at least 10 cases with two repetitions each:
 
 ```json
 {

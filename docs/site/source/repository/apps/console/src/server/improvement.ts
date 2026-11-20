@@ -67,7 +67,7 @@ export async function improvement(
   try {
     // A frozen command reconciles before reading mutable channel/draft state.
     if (['submitFrozen', 'lookupFrozen', 'closeFrozen'].includes(String(input.action))) {
-      const p = env.CONSOLE_PROJECT,
+      const p = env.CONSOLE_WORKSPACE,
         b = env.CONSOLE_BUNDLE,
         channel = env.CONSOLE_CHANNEL;
       if (!p || !b || !channel || env.CONSOLE_ALLOW_EDITS !== 'true') throw Error('scope');

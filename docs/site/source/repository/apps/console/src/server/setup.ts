@@ -32,10 +32,10 @@ export async function listSetup(
   try {
     const client = setupClient(env, fetcher);
     const projects = await allPages((cursor) => client.listWorkspaces({ limit: 100, cursor }));
-    if (workspaceOnly && !projects.some((p) => p.id === env.CONSOLE_PROJECT))
+    if (workspaceOnly && !projects.some((p) => p.id === env.CONSOLE_WORKSPACE))
       throw new ApiError(403, 'denied', 'Workspace unavailable', '');
-    const selectedProject = projects.some((p) => p.id === env.CONSOLE_PROJECT)
-      ? env.CONSOLE_PROJECT
+    const selectedProject = projects.some((p) => p.id === env.CONSOLE_WORKSPACE)
+      ? env.CONSOLE_WORKSPACE
       : projects[0]?.id;
     const channels = (
       await Promise.all(

@@ -38,15 +38,3 @@ export function validateOperationTarget(
   if (parts[2] === 'channels' && scope.channel && scope.channel !== parts[3])
     throw Error('Operation channel changed.');
 }
-
-// Browser recovery records written before 0.2.0 may hold the removed `/v1/projects/...`
-// spelling (with `promotions` for releases). Only local-state reads canonicalise them.
-export function canonicalOperationPath(path: string): string {
-  return path.replace(/^\/v1\/projects\//, '/v1/workspaces/').replace(/\/promotions$/, '/releases');
-}
-
-// The service's internal retained-operation key, not a route: it fingerprints operations under
-// the pre-0.2.0 `/v1/projects/...` path (with `promotions` for releases). Never send this path.
-export function operationFingerprintPath(path: string): string {
-  return path.replace(/^\/v1\/workspaces\//, '/v1/projects/').replace(/\/releases$/, '/promotions');
-}

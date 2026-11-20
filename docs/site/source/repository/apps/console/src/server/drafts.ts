@@ -37,7 +37,7 @@ export async function draftCommand(
   );
   if (mutating && env.CONSOLE_ALLOW_EDITS !== 'true')
     return failure('Editing is disabled for this console.');
-  if (!env.CONSOLE_SERVICE_TOKEN || !env.CONSOLE_PROJECT || !env.CONSOLE_BUNDLE)
+  if (!env.CONSOLE_SERVICE_TOKEN || !env.CONSOLE_WORKSPACE || !env.CONSOLE_BUNDLE)
     return failure('Select a configured workspace first.');
   if (
     !input ||
@@ -65,7 +65,7 @@ export async function draftCommand(
     }
     if (input.action === 'validate') return { ok: true as const, validated: true };
     const client = consoleClient(env, fetcher);
-    const p = env.CONSOLE_PROJECT,
+    const p = env.CONSOLE_WORKSPACE,
       b = env.CONSOLE_BUNDLE,
       c = env.CONSOLE_CHANNEL || 'stable';
     if (input.action === 'list')

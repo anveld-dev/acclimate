@@ -74,13 +74,13 @@ const prepared = await prepareNativeFiles(verifiedVersion, {
 
 ## Stage a repository for evaluation
 
-Use the native repository starter from the release to compare a coding agent on an existing repository. Try it offline first: `node smoke.mjs` in the extracted starter compares two versions with the bundled replay harness and fixture repository, with no provider SDK or credentials. Then install the verified SDK and the plugin for your harness together. This example uses Codex and release 0.1.0.
+Use the native repository starter from the release to compare a coding agent on an existing repository. Try it offline first: `node smoke.mjs` in the extracted starter compares two versions with the bundled replay harness and fixture repository, with no provider SDK or credentials. Then install the verified SDK and the plugin for your harness together. This example uses Codex and release 0.2.0.
 
 ```sh
 release=/absolute/path/to/verified-release
 app=/absolute/path/to/native-repository-starter
 npm install --prefix "$app" --workspaces=false --offline --ignore-scripts --no-audit --no-fund --save-exact \
-  "$release/acclimate-sdk-0.1.0.tgz" "$release/acclimate-codex-plugin-0.1.0.tgz"
+  "$release/acclimate-sdk-0.2.0.tgz" "$release/acclimate-codex-plugin-0.2.0.tgz"
 node "$app/verify-install.mjs" codex
 ```
 

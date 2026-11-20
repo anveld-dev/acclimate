@@ -7,9 +7,9 @@ This entry point calls your application's agent and independent grader on the pa
 Install the SDK into your existing application or evaluator image. The package includes the CLI. JavaScript needs Node 22.22+ and Python 3 with fcntl for durable worker locks. Python needs 3.11+. Both runners use POSIX and persistent local journal storage.
 
 ```sh
-npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
+npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.2.0.tgz
 # Or for Python
-python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
+python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.2.0-py3-none-any.whl
 ```
 
 Put `application.mjs` or `application.mts` in your Node app directory, or `application.py` in your Python app directory. Run the CLI there. Import your existing agent, scorer and cases. Use modules that only start work when their callbacks are called.

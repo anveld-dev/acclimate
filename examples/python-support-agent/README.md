@@ -22,7 +22,7 @@ python3.11 -m venv .venv
 pip install -r requirements.txt
 ```
 
-To use the SDK from this checkout instead, run `pip install ../../python`. For an air-gapped machine, install the release wheel with `pip install --no-index --no-deps /path/to/acclimate_sdk-0.1.0-py3-none-any.whl`.
+To use the SDK from this checkout instead, run `pip install ../../python`. For an air-gapped machine, install the release wheel with `pip install --no-index --no-deps /path/to/acclimate_sdk-0.2.0-py3-none-any.whl`.
 
 ## Describe the evaluation
 

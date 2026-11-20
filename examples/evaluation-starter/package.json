@@ -1,9 +1,9 @@
 {
   "name": "acclimate-evaluation-starter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": { "node": ">=22.22.0" },
   "scripts": { "describe": "node acclimate-eval.mjs describe" },
-  "dependencies": { "@acclimate/sdk": "0.1.0" }
+  "dependencies": { "@acclimate/sdk": "0.2.0" }
 }

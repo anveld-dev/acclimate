@@ -16,12 +16,12 @@ For a small deployment with Keycloak on the same host, start with 4 vCPUs, 8 GiB
 
 Create DNS records for three distinct names, such as `console.example.com`, `api.example.com` and `auth.example.com`. Point each A record at the server. Add AAAA records only if the server is reachable over IPv6. Allow inbound TCP 80 and 443 for Caddy and certificate issuance. Keep ports 3000, 3100, 8080, 9000 and both database listeners private. Allow outbound DNS and HTTPS for image pulls, ACME and OIDC. Allow egress to a model endpoint or SMTP relay only if you configure one.
 
-Clone the repository on the server. Check out the release you plan to run so its Compose files, Caddy configuration and Keycloak realm template match the application images. The commands use release 0.1.0 as an example.
+Clone the repository on the server. Check out the release you plan to run so its Compose files, Caddy configuration and Keycloak realm template match the application images. The commands use release 0.2.0 as an example.
 
 ```sh
 git clone https://github.com/anveld-dev/acclimate.git
 cd acclimate
-git switch --detach v0.1.0
+git switch --detach v0.2.0
 ```
 
 </Step>
@@ -151,7 +151,7 @@ In `service.env`, replace `REPLACE_WITH_USER_UUID` in `ACCLIMATE_OPERATORS` with
 Set `ACCLIMATE_VERSION` to the exact GHCR tag for your checkout's release, without the Git tag's leading `v`. Keep the pin with your deployment settings. The co-hosted Keycloak image was built in the previous step.
 
 ```sh
-export ACCLIMATE_VERSION=0.1.0
+export ACCLIMATE_VERSION=0.2.0
 docker compose pull postgres service console proxy
 docker compose up -d --no-build --wait
 ```

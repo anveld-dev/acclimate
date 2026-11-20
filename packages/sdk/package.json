@@ -1,6 +1,6 @@
 {
   "name": "@acclimate/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TypeScript SDK for Acclimate: deliver versioned agent instructions, skills and memory, and evaluate changes against saved cases.",
   "keywords": [
     "agents",

@@ -46,7 +46,7 @@ For a complete agent you can run without a model provider, see the [Python suppo
 `pip install acclimate-sdk` installs from PyPI. For an air-gapped machine, verify the release files against `SHA256SUMS` and install the wheel without an index:
 
 ```sh
-python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
+python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.2.0-py3-none-any.whl
 ```
 
 To build a wheel from a checkout, run `python3.11 -m pip wheel --no-deps --wheel-dir /tmp/acclimate-wheel ./python` or `uv build --wheel --out-dir /tmp/acclimate-wheel ./python`. Neither writes build files into the checkout, and neither needs Node.js. Importing the package on Python 3.10 or earlier fails with a message naming the version found.

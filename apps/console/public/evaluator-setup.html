@@ -4,7 +4,7 @@
 <body><main><h1>Application evaluator setup</h1><nav aria-label="Evaluator language"><a href="#javascript">Node.js</a> · <a href="#python">Python</a></nav>
 <section id="javascript"><h2>Node.js evaluator</h2>
 <p>Install the SDK release in the application environment. Substitute the path to your release artifact.</p>
-<pre><code>npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz</code></pre>
+<pre><code>npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.2.0.tgz</code></pre>
 <p>In the directory where you run your agent, create <code>application.mjs</code>. Replace the imports with your existing agent, independent grader and saved cases. Each case supplies a unique public <code>caseId</code>, private <code>input</code> and private <code>expected</code>.</p>
 <pre><code>// application.mjs
 import { runAgent, scoreResult, savedCases } from &#x27;./dist/support-agent.mjs&#x27;;
@@ -27,7 +27,7 @@ npx --no-install acclimate-eval compare --config /private/evaluator.json --hando
 <p><code>--live</code> runs your agent and grader for both versions. Supplying a policy reports its verdict to the console. Omit <code>--policy</code> to collect comparison evidence alone.</p></section>
 <section id="python"><h2>Python evaluator</h2>
 <p>Install the SDK release in the application environment. Substitute the path to your release artifact.</p>
-<pre><code>python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl</code></pre>
+<pre><code>python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.2.0-py3-none-any.whl</code></pre>
 <p>In the directory where you run your agent, create <code>application.py</code>. Replace the imports with your existing agent, independent grader and saved cases. Each case supplies a unique public <code>caseId</code>, private <code>input</code> and private <code>expected</code>.</p>
 <pre><code># application.py
 from acclimate.evaluation import ExecutionResult, GradeResult

@@ -257,24 +257,6 @@ try {
     { versionId: parent.id, expectedRevision: '0', unevaluatedReason: 'Initial fixture seed' },
     'seed-channel',
   );
-  // The 0.1 /v1/projects routes were removed in 0.2.0: neither a write nor a read reaches the release.
-  const oldReleasePath = `/v1/projects/${project}/bundles/${bundle.id}/channels/stable/promotions`;
-  const oldRelease = await fetch(base + oldReleasePath, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'Idempotency-Key': 'seed-channel',
-    },
-    body: JSON.stringify({
-      versionId: parent.id,
-      expectedRevision: '0',
-      unevaluatedReason: 'Initial fixture seed',
-    }),
-  });
-  assert.equal(oldRelease.status, 404);
-  await oldRelease.body?.cancel();
-  assert.equal((await fetchError(base + oldReleasePath, token)).status, 404);
   const channel = await client.resolveChannel(project, bundle.id, 'stable');
   assert.equal(channel.resolution?.version.id, parent.id);
   assert(channel.etag);

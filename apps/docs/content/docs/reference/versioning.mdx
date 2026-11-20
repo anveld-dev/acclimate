@@ -1,6 +1,6 @@
 ---
 title: Versioning and compatibility
-description: How releases are numbered, which SDK and service versions work together, and how the wire contract and deprecated names change.
+description: How releases are numbered, which SDK and service versions work together, and how the wire contract and deprecated names change from the first release.
 ---
 
 ## One version for every artifact
@@ -9,7 +9,7 @@ Each Acclimate release has one `major.minor.patch` version. The service and cons
 
 ## What a version number promises
 
-Acclimate is at `0.x`. Until `1.0.0`:
+Acclimate is at `0.x`, and `0.1.0` is the first release. These rules apply from that release on. Until `1.0.0`:
 
 | Release | May contain |
 | --- | --- |
@@ -22,8 +22,6 @@ From `1.0.0`, Acclimate follows [Semantic Versioning](https://semver.org): break
 
 Use the SDK release that matches your service's minor version. The service also accepts requests from SDKs and evaluators of the previous minor release, so you can upgrade the service first and then roll out applications and evaluators. An SDK newer than the service isn't supported, because it can call routes or send fields the older service rejects.
 
-`0.2.0` is an exception: a `0.2` service doesn't accept `0.1` SDKs or evaluators. See [upgrading from 0.1](#upgrading-from-01).
-
 | Service | SDK `0.N.x` | SDK `0.(N-1).x` | SDK `0.(N+1).x` |
 | --- | --- | --- | --- |
 | `0.N.x` | Supported | Supported during the upgrade | Not supported |
@@ -32,7 +30,7 @@ Upgrade in this order:
 
 1. Upgrade the service and console. See [upgrades and recovery](/docs/operate/upgrades-and-recovery).
 2. Upgrade evaluators and applications to the matching SDK.
-3. Finish or recover any evaluation that started before the upgrade with the SDK language and release that started it. A run's private journal belongs to that release. Runs started by `0.1` are the exception; see [upgrading from 0.1](#upgrading-from-01).
+3. Finish or recover any evaluation that started before the upgrade with the SDK language and release that started it. A run's private journal belongs to that release.
 
 Evaluators also check the service's capabilities before they write. `GET /v1/workspaces/{workspaceId}/evaluation-capabilities` returns what the caller may do, and the release manifest lists the capability names the release supports, such as `retained-evaluation-operations-v1`. An evaluator stops with a setup error when a capability it needs is missing.
 
@@ -61,50 +59,12 @@ Several JSON documents carry a `schemaVersion` field: bundle payloads, evaluatio
 - Stored bundle versions are immutable and keep the schema version they were written with. The service keeps reading every schema version it has stored.
 - When a new schema version arrives, the service keeps accepting the previous one for writes for at least one minor release.
 
-The evaluation handoff, the evaluator config and the evaluator journal kept `schemaVersion: 1` through the `0.2.0` renames. A reader that finds a renamed key reports the rename instead of a schema version mismatch.
-
 ## Deprecation
 
-A deprecated name keeps working until it is removed. Deprecations are announced in the changelog with their replacements, and removal waits at least one minor release after the announcement.
+From the first release, a deprecated name keeps working until it is removed. Deprecations are announced in the changelog with their replacements, and removal waits at least one minor release after the announcement.
 
 | Where | How deprecation appears |
 | --- | --- |
 | TypeScript | A `@deprecated` tag that editors and type checkers show. |
 | Python | A `Deprecated.` comment on the alias, also listed in the [Python SDK reference](/docs/reference/python-sdk). |
 | HTTP | The [HTTP reference](/docs/reference/http-api) lists deprecated routes with their replacements. |
-
-## Upgrading from 0.1
-
-`0.2.0` renames the project and integration names to workspace and connection everywhere, and removes the names deprecated in `0.1`. The renames have no deprecation period and no aliases. Where the SDKs, evaluators or service can detect an old name, they fail with an error that names its replacement.
-
-| 0.1 | 0.2 |
-| --- | --- |
-| `projectId` (Python `project_id`) in SDK arguments, request and response bodies, the evaluator config, reader configs and `VerifiedVersion.connection` | `workspaceId` (Python `workspace_id`) |
-| `integrationId` (Python `integration_id`) in SDK arguments and bodies, and the client option `integrationId` (Python `integration_id=`) | `connectionId` (Python `connection_id`) |
-| `ACCLIMATE_PROJECT`, `ACCLIMATE_INTEGRATION` | `ACCLIMATE_WORKSPACE`, `ACCLIMATE_CONNECTION` |
-| `X-Acclimate-Integration-Id` header | `X-Acclimate-Connection-Id` |
-| `acclimate-operator --project`, `acclimate-learning --integration` | `--workspace`, `--connection` |
-| `/v1/projects/{projectId}/...`, including `integrations`, `integration-observations` and `promotions` | `/v1/workspaces/{workspaceId}/...` with `connections`, `connection-observations` and `releases`. The old routes return 404. |
-| Handoff `projectId` and `configuration` | `workspaceId` and `descriptor` |
-| `evaluation-request.json` download | `handoff.json` |
-| `execute({ bundle })` (Python `run.bundle`) | `execute({ version })` (Python `run.version`) |
-| `PreparedDelivery.bundle` and `PreparedDelivery.version` | `prepared.version` is the verified version; its metadata is `prepared.version.version` (Python `prepared.version["version"]`) |
-| Plugin `prepare(bundle, options)`, `PreparedCodexBundle`, `PreparedClaudeBundle`, `PreparedPiBundle`, `PreparedCursorBundle` | `prepare(version, options)`, `PreparedCodexVersion`, `PreparedClaudeVersion`, `PreparedPiVersion`, `PreparedCursorVersion` |
-| `prepareNativeFiles(bundle, mapping, ...)` positional form | `prepareNativeFiles(version, { mapping, prefix, target })` |
-| `listProjects`, `listPromotions`, `promote`, `createIntegration`, `listIntegrations`, `createIntegrationCredential`, `revokeIntegration`, `revokeIntegrationCredential`, `listIntegrationObservations` and their Python equivalents | `listWorkspaces`, `listReleases`, `createRelease` and the matching `Connection` methods |
-| `Project`, `Promotion`, `PromotionPage`, `PromoteRequest`, `VerifiedBundle` and the `Integration*` types | `Workspace`, `Release`, `ReleasePage`, `CreateReleaseRequest`, `VerifiedVersion` and the `Connection*` types |
-| `ACCLIMATE_AUTH` grant `projectId` | `workspaceId`: `{token, principalId, workspaceId, rights}` |
-
-What happens to existing files and settings:
-
-- An evaluator config, reader config or handoff that still has `projectId` or `configuration` fails with a `config.schema` error naming the rename, such as `projectId was renamed to workspaceId in 0.2.0`. Rename the key; nothing else in the file changes. You can also download the handoff again.
-- An `ACCLIMATE_AUTH` grant with `projectId` stops the service from starting, with an error naming the rename.
-- `ACCLIMATE_PROJECT` or `ACCLIMATE_INTEGRATION` set without the new variable fails with `ACCLIMATE_PROJECT was renamed to ACCLIMATE_WORKSPACE in 0.2.0` or the `ACCLIMATE_INTEGRATION` equivalent. The TypeScript SDK reports a `projectId` selection or an `integrationId` client option the same way.
-- Evaluator journals written by `0.1` are still read, so a run that was in flight during the upgrade can be recovered with the `0.2` evaluator of the same language.
-
-This release is an exception to the previous-minor-release promise in [match SDK and service versions](#match-sdk-and-service-versions): `0.1` SDKs and evaluators can't talk to a `0.2` service, because the routes and fields they use are gone. Plan one maintenance window:
-
-1. Let running evaluations finish, or stop them.
-2. Upgrade the service and console, renaming the grant key in `ACCLIMATE_AUTH` in the same change.
-3. Upgrade applications and evaluators to the `0.2` SDKs. Rename the keys in their configs, saved handoffs, environment variables and code. Until an application is upgraded, it can only serve from its offline cache, if you enabled one.
-4. Recover any stopped evaluation with the `0.2` evaluator of the language that started it.

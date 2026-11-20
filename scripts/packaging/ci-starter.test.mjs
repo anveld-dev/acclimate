@@ -353,7 +353,6 @@ test('CI explains a pull_request merge checkout and prints required flags in hel
     assert.ok(required.includes(flag), flag);
   }
   assert.match(help.stdout, /--rerun-after HANDOFF/);
-  assert.doesNotMatch(help.stdout, /--retry-after/);
 });
 
 test('directory input binds committed source edits, memory choices, and retries', async () => {
@@ -528,12 +527,6 @@ test('one successor per settled request; uncertain, unrelated and unverified pre
   assert.notEqual(retried.summary.handoff, previous);
   assert.equal(retried.summary.previousRequestId, requestId);
   assert.equal(replay.summary.requestId, successorId);
-  // The deprecated wrapper spelling still works and names the replacement.
-  const alias = await pipeline('javascript', { status: { body: { ...status, requestId: successorId } }, ...successor },
-    [...common, '--retry-after', previous], omitted);
-  assert.equal(alias.status, 0, alias.stderr);
-  assert.match(alias.stderr, /--retry-after is deprecated for the CI wrapper; use --rerun-after/);
-  assert.equal(alias.summary.handoff, retried.summary.handoff);
   // A plain rerun follows the chain to the latest generation.
   const plain = await pipeline('javascript', { status: { body: { ...status, requestId: successorId } }, ...successor },
     common, omitted);
@@ -615,8 +608,8 @@ test('interrupted and abandoned predecessors are followed headlessly; unstarted 
     return [dir, first.summary.handoff];
   };
   const journal = async (state) => {
-    // The journal directory key is frozen at its 0.1 encoding, with the workspace under projectId.
-    const scope = JSON.stringify({ serviceUrl: configValues.serviceUrl, projectId: 'workspace',
+    // The journal directory key the SDKs compute from the canonical scope.
+    const scope = JSON.stringify({ serviceUrl: configValues.serviceUrl, workspaceId: 'workspace',
       bundleId: 'bundle-under-test', requestId, evaluatorPrincipalId: 'ci-evaluator' });
     const directory = join(journalRoot, createHash('sha256').update(scope).digest('hex'));
     await mkdir(directory, { recursive: true, mode: 0o700 });

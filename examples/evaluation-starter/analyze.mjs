@@ -47,18 +47,11 @@ const read = async (file) => {
 async function fromJournal(name, configFile) {
   if (!/^[a-zA-Z0-9_-]{1,80}$/.test(name)) throw new InputError('analysis.run_name_invalid', { name });
   const config = await read(configFile);
-  if (config && typeof config === 'object' && Object.hasOwn(config, 'projectId'))
-    throw new InputError('analysis.config_invalid', {
-      file: configFile,
-      field: 'projectId',
-      reason: 'projectId was renamed to workspaceId in 0.2.0',
-    });
   if (!config?.serviceUrl || !config?.workspaceId || !config?.evaluatorToken || !config?.journalRoot)
     throw new InputError('analysis.config_invalid', { file: configFile });
   const handoffFile = path.join(config.journalRoot, 'comparisons', name, 'request.json');
   const handoff = await read(handoffFile);
-  // A run started before 0.2.0 recorded its workspace as projectId in this journal file.
-  const workspaceId = handoff.workspaceId ?? handoff.projectId;
+  const workspaceId = handoff.workspaceId;
   const client = new AcclimateClient({
     baseUrl: config.serviceUrl,
     token: config.evaluatorToken,

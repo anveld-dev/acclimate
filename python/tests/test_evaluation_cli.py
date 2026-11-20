@@ -96,7 +96,7 @@ class CommandTests(unittest.TestCase):
                         return self.reply(receipt)
                     key = self.headers["Idempotency-Key"]
                     owner.assertEqual(self.headers["X-Acclimate-Durable-Operation"], "true")
-                    fingerprint = "sha256:" + hashlib.sha256(b"POST\0" + route.replace("/v1/workspaces/", "/v1/projects/", 1).encode() + b"\0" + raw).hexdigest()
+                    fingerprint = "sha256:" + hashlib.sha256(b"POST\0" + route.encode() + b"\0" + raw).hexdigest()
                     result = state["receipts"].get(key, {}).get("result")
                     if result is not None:
                         owner.assertEqual(state["receipts"][key]["requestFingerprint"], fingerprint)
@@ -206,40 +206,6 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(self.invoke(["export", *handle, "--out", str(destination)])[0], 0)
         self.assertEqual(self.invoke(["verify-export", "--manifest", str(destination / "manifest.json")])[0], 0)
         self.assertEqual(self.state["executions"], 2)
-
-    @staticmethod
-    def downgrade_to_0_1(directory):
-        """Rewrite a run's intent and handoff exactly as 0.1 wrote them, before the key renames."""
-        handoff = json.loads((directory / "request.json").read_bytes())
-        legacy = {"schemaVersion": 1, "serviceUrl": handoff["serviceUrl"], "projectId": handoff["workspaceId"],
-                  "bundleId": handoff["bundleId"], "requestId": handoff["requestId"], "configuration": handoff["descriptor"]}
-        (directory / "request.json").write_bytes(encoded(legacy))
-        intent = json.loads((directory / "intent.json").read_bytes())
-        intent["identity"] = {("projectId" if key == "workspaceId" else key): value for key, value in intent["identity"].items()}
-        (directory / "intent.json").write_bytes(encoded(intent))
-        return handoff
-
-    def test_a_0_1_named_run_recovers_and_an_old_handoff_flag_fails_with_the_rename(self):
-        handle = ["--config", str(self.config), "--name", "first-run"]
-        compare = ["compare", *handle, "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
-        code, first, error = self.invoke(compare)
-        self.assertEqual(code, 0, error)
-        run = self.root / "journals" / "comparisons" / "first-run"
-        handoff = self.downgrade_to_0_1(run)
-        legacy_bytes = (run / "request.json").read_bytes()
-        outside = self.root / "old-handoff.json"
-        outside.write_bytes(legacy_bytes)
-        status, _, error = self.invoke(["status", "--config", str(self.config), "--handoff", str(outside)])
-        self.assertEqual((status, error["error"]["code"], error["error"]["field"]), (1, "config.schema", "projectId"))
-        self.assertIn("projectId was renamed to workspaceId in 0.2.0", error["error"]["reason"])
-        self.assertEqual(outside.read_bytes(), legacy_bytes)
-        _, again, error = self.invoke(compare)
-        self.assertEqual(again["invocation"], {"callbacksStarted": 0, "reusedEvidence": True}, error)
-        self.assertEqual(again["requestId"], first["requestId"])
-        self.assertEqual(json.loads((run / "request.json").read_bytes()), handoff)
-        self.downgrade_to_0_1(run)
-        self.assertEqual(self.invoke(["status", *handle])[1]["requestId"], first["requestId"])
-        self.assertEqual(json.loads((run / "request.json").read_bytes()), handoff)
 
     def test_fresh_attempt_requires_settled_predecessor_and_matching_target(self):
         inputs = ["compare", "--config", str(self.config), "--bundle", BUNDLE, "--channel", "stable", "--payload", str(self.payload_file)]
@@ -562,7 +528,7 @@ class CommandTests(unittest.TestCase):
             self.assertEqual(self.state["executions"],executions)
             self.assertEqual(len(submitted),2)
             route=f"/v1/workspaces/project/bundles/{BUNDLE}/comparisons"
-            fingerprint="sha256:"+hashlib.sha256(b"POST\0"+route.replace("/v1/workspaces/", "/v1/projects/", 1).encode()+b"\0"+body).hexdigest()
+            fingerprint="sha256:"+hashlib.sha256(b"POST\0"+route.encode()+b"\0"+body).hexdigest()
             self.assertEqual(submitted,[(submit_key,fingerprint),(submit_key,fingerprint)])
             final=json.loads(attempt_file.read_bytes())
             self.assertEqual(final["keys"]["submit"],submit_key)

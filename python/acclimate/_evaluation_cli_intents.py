@@ -75,17 +75,6 @@ def _identity(config):
     return {key: config[key] for key in ("serviceUrl", "workspaceId", "evaluatorPrincipalId", "journalRoot")}
 
 
-def _legacy_identity(identity):
-    """The 0.1 spelling of an intent identity, which recorded the workspace ID as projectId."""
-    return {("projectId" if key == "workspaceId" else key): value for key, value in identity.items()}
-
-
-def _current_identity(value):
-    # Recovery only: an intent written by 0.1 recorded identity.projectId.
-    if type(value) is dict and "projectId" in value and "workspaceId" not in value:
-        return {("workspaceId" if key == "projectId" else key): item for key, item in value.items()}
-    return value
-
 
 def _fail(code="request.intent_mismatch"):
     return EvaluationError(code, phase="claim", next_action=("retry_same_command" if code == "submission.unconfirmed" else "review_terminal_evidence" if code == "request.base_conflict" else "fix_config"))
@@ -135,56 +124,21 @@ def _read_intent(filename):
         path.lstat()
     except FileNotFoundError:
         return None
-    state = parse_json(read_private_bytes(path, 4 * 1024 * 1024))
-    if type(state) is dict:
-        if "identity" in state:
-            state["identity"] = _current_identity(state["identity"])
-        if type(state.get("selection")) is dict and "identity" in state["selection"]:
-            state["selection"]["identity"] = _current_identity(state["selection"]["identity"])
-    return state
+    return parse_json(read_private_bytes(path, 4 * 1024 * 1024))
 
-
-def _legacy_handoff_bytes(handoff):
-    """The bytes 0.1 wrote for this handoff, before projectId and configuration were renamed."""
-    legacy = {"schemaVersion": handoff["schemaVersion"], "serviceUrl": handoff["serviceUrl"], "projectId": handoff["workspaceId"],
-              "bundleId": handoff["bundleId"], "requestId": handoff["requestId"], "configuration": handoff["descriptor"]}
-    return json_bytes(legacy) + b"\n"
-
-
-def read_owned_handoff(filename):
-    """Read a handoff this CLI wrote under the journal root, upgrading one written by 0.1.
-
-    Only the journal's own run files are upgraded, so an in-flight named run recovers after
-    the rename. A handoff supplied with --handoff is never rewritten and must use 0.2.0 keys.
-    """
-    data = read_command_bytes(filename)
-    value = parse_json(data)
-    if type(value) is dict and "projectId" in value and "workspaceId" not in value and "configuration" in value and "descriptor" not in value:
-        renamed = {"workspaceId" if key == "projectId" else "descriptor" if key == "configuration" else key: item for key, item in value.items()}
-        handoff = validate_handoff(renamed)
-        # Upgrade only the exact bytes 0.1 wrote; anything else reports the rename below.
-        if data == _legacy_handoff_bytes(handoff):
-            _write_handoff(filename, handoff)
-            return handoff
-    return validate_handoff(value)
 
 
 def _write_handoff(filename, handoff):
     target = Path(os.path.abspath(filename))
     content = json_bytes(handoff) + b"\n"
-    upgrade = False
     try:
         target.lstat()
     except FileNotFoundError:
         pass
     else:
-        existing = read_command_bytes(target)
-        if existing == content:
+        if read_command_bytes(target) == content:
             return
-        # A 0.1 recovery: this intent already wrote the same handoff with the old keys. Replace it.
-        if existing != _legacy_handoff_bytes(handoff):
-            raise _fail()
-        upgrade = True
+        raise _fail()
     parent = target.parent
     info = parent.lstat()
     if parent.resolve() != parent or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
@@ -196,14 +150,11 @@ def _write_handoff(filename, handoff):
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
-        if upgrade:
-            os.replace(temporary, target)
-        else:
-            try:
-                os.link(temporary, target, follow_symlinks=False)
-            except FileExistsError:
-                if read_command_bytes(target) != content:
-                    raise _fail()
+        try:
+            os.link(temporary, target, follow_symlinks=False)
+        except FileExistsError:
+            if read_command_bytes(target) != content:
+                raise _fail()
         directory = os.open(parent, os.O_RDONLY | os.O_NOFOLLOW)
         try:
             os.fsync(directory)
@@ -220,9 +171,7 @@ def _recover(client, operation, scope, body, key):
         raise _fail()
     if receipt.get("status") != "committed":
         return None
-    # The service keys retained operations by the original internal path /v1/projects/...; this is a
-    # stored fingerprint key, not a route, so it keeps that spelling.
-    fingerprint = "sha256:" + hashlib.sha256(b"POST\0" + route.replace("/v1/workspaces/", "/v1/projects/", 1).encode() + b"\0" + body).hexdigest()
+    fingerprint = "sha256:" + hashlib.sha256(b"POST\0" + route.encode() + b"\0" + body).hexdigest()
     if receipt.get("requestFingerprint") != fingerprint or not isinstance(receipt.get("result"), dict):
         raise _fail()
     return receipt["result"]
@@ -234,12 +183,8 @@ def _assert_request(request, state):
         raise _fail()
 
 
-def _claim_successor(handoff_file, request_id, output):
+def _claim_successor(handoff_file, output):
     """A settled run has at most one retry, whatever name the retry was given."""
-    # Retries made before --retry-after accepted --name always used after-<request ID>.
-    legacy = handoff_file.parent.parent / ("after-" + request_id) / "request.json"
-    if str(legacy) != output and (legacy.parent / "intent.json").exists():
-        raise _fail()
     marker = handoff_file.parent / "successor.json"
     try:
         fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
@@ -321,7 +266,7 @@ def create_request_from_intent(*, app, config, bundle_id, channel, payload_file,
                               or current["revision"] != prior["base"]["revision"]):
                     raise _fail("request.base_conflict")
                 if prior:
-                    _claim_successor(Path(prior["output"]), prior["request"]["id"], output)
+                    _claim_successor(Path(prior["output"]), output)
                 state = {"schemaVersion": 1, "kind": "acclimate-request-intent", "identity": _identity(config), "bundleId": bundle_id, "channel": channel, "output": output, "payload": payload, "descriptor": app.descriptor,
                     "base": {"versionId": current["version"]["id"], "digest": current["version"]["digest"], "revision": current["revision"]},
                     "keys": {"draft": str(uuid.uuid4()), "request": str(uuid.uuid4())},
@@ -413,9 +358,7 @@ def interrupt_from_intent(config, handoff, reason):
         raise EvaluationError("config.schema")
     root = ensure_private_directory(Path(config["journalRoot"]) / "command-intents")
     selection = {"identity": _identity(config), "bundleId": handoff["bundleId"], "requestId": handoff["requestId"], "reason": reason}
-    # The file name is a frozen storage key: it hashes the 0.1 encoding, with projectId, so an
-    # interrupt intent written before the rename is found again.
-    digest = hashlib.sha256(json_bytes({**selection, "identity": _legacy_identity(selection["identity"])})).hexdigest()
+    digest = hashlib.sha256(json_bytes(selection)).hexdigest()
     filename = root / ("interrupt-" + digest + ".json")
     with command_lock(str(filename) + ".lock"):
         state = _read_intent(filename)

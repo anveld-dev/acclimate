@@ -190,7 +190,7 @@ async function fixture(execution: 'live' | 'model-free' = 'model-free') {
       const fingerprint =
         'sha256:' +
         createHash('sha256')
-          .update('POST\0' + route.replace(/^\/v1\/workspaces\//, '/v1/projects/') + '\0' + raw)
+          .update('POST\0' + route + '\0' + raw)
           .digest('hex');
       if (route.endsWith('/comparisons')) state.comparisonSubmissions.push({ key, body: raw });
       let result = state.receipts.get(key)?.result;
@@ -1344,12 +1344,11 @@ test('creation recovery survives same-principal token rotation and retains crede
   }
 });
 
-test('request writes a 0.2.0 handoff, recovers 0.1 intent state, and --handoff rejects 0.1 keys', async () => {
+test('request writes a handoff with the canonical keys in order', async () => {
   const f = await fixture();
   try {
     assert.equal((await invoke(f.app, f.requestArgs)).status, 0);
-    const current = await readFile(f.handoff, 'utf8');
-    const handoff = JSON.parse(current);
+    const handoff = JSON.parse(await readFile(f.handoff, 'utf8'));
     assert.deepEqual(Object.keys(handoff), [
       'schemaVersion',
       'serviceUrl',
@@ -1358,37 +1357,6 @@ test('request writes a 0.2.0 handoff, recovers 0.1 intent state, and --handoff r
       'requestId',
       'descriptor',
     ]);
-    // A run started by 0.1 left its intent and handoff with the old keys.
-    const intent = JSON.parse(await readFile(f.intent, 'utf8'));
-    const { workspaceId, ...identity } = intent.identity;
-    await writeFile(f.intent, JSON.stringify({ ...intent, identity: { ...identity, projectId: workspaceId } }) + '\n');
-    const legacy = JSON.stringify({
-      schemaVersion: 1,
-      serviceUrl: handoff.serviceUrl,
-      projectId: handoff.workspaceId,
-      bundleId: handoff.bundleId,
-      requestId: handoff.requestId,
-      configuration: handoff.descriptor,
-    });
-    await writeFile(f.handoff, legacy + '\n');
-    const recovered = await invoke(f.app, f.requestArgs);
-    assert.equal(recovered.status, 0, recovered.err);
-    assert.equal(recovered.result.requestId, requestId);
-    assert.equal(f.state.requests, 1);
-    assert.equal(await readFile(f.handoff, 'utf8'), current);
-    // A handoff supplied with --handoff is never translated.
-    for (const [file, field, renamed] of [
-      [legacy, 'projectId', 'workspaceId'],
-      [current.replace('"descriptor"', '"configuration"'), 'configuration', 'descriptor'],
-    ]) {
-      const old = path.join(f.directory, 'old-handoff.json');
-      await writeFile(old, file);
-      const rejected = await invoke(undefined, ['status', '--read-config', f.reader, '--handoff', old]);
-      assert.equal(rejected.status, 1);
-      assert.equal(rejected.error.error.code, 'config.schema');
-      assert.equal(rejected.error.error.field, field);
-      assert.equal(rejected.error.error.reason, `${field} was renamed to ${renamed} in 0.2.0`);
-    }
   } finally {
     await f.cleanup();
   }

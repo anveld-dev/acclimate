@@ -23,22 +23,8 @@ def serialize_scope(scope: dict) -> bytes:
 
 
 def journal_directory_key(scope: dict) -> str:
-    """The journal directory name: a frozen storage key shared with the TypeScript SDK.
-
-    It hashes the 0.1 scope encoding byte for byte, with the workspace ID under
-    ``projectId``, so journals written before the 0.2.0 rename are still found.
-    Never change it.
-    """
-    return hashlib.sha256(json_bytes({"serviceUrl":scope["serviceUrl"],"projectId":scope["workspaceId"],
-        "bundleId":scope["bundleId"],"requestId":scope["requestId"],
-        "evaluatorPrincipalId":scope["evaluatorPrincipalId"]})).hexdigest()
-
-
-def _recorded_scope(value):
-    # Recovery only: a 0.1 journal recorded the workspace ID as scope.projectId.
-    if type(value) is dict and "projectId" in value and "workspaceId" not in value:
-        return {("workspaceId" if key == "projectId" else key): item for key, item in value.items()}
-    return value
+    """The journal directory name: a storage key the TypeScript SDK computes byte for byte."""
+    return hashlib.sha256(serialize_scope(scope)).hexdigest()
 
 
 class Journal:
@@ -97,8 +83,6 @@ class Journal:
         if not path.exists() and not path.is_symlink():
             return None
         state=parse_json(read_private_bytes(path,4*MIB),code="journal.invalid")
-        if type(state) is dict:
-            state["scope"]=_recorded_scope(state.get("scope"))
         if type(state) is not dict or state.get("format")!="acclimate-python-evaluation-1" or state.get("scope")!=self.scope:
             raise EvaluationError("journal.invalid",phase="claim")
         if state.get("journalRoot")!=str(self.root):

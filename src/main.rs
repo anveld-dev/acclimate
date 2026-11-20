@@ -66,12 +66,6 @@ fn check_grants(input: impl Read) -> ExitCode {
     if parsed.is_ok() {
         println!(r#"{{"schemaVersion":1,"valid":true}}"#);
         ExitCode::SUCCESS
-    } else if parsed == Err(RENAMED_GRANT_PROJECT) {
-        // Fixed text only: the rename names a key, never operator input.
-        eprintln!(
-            r#"{{"schemaVersion":1,"valid":false,"code":"grants.invalid","message":"projectId was renamed to workspaceId in 0.2.0"}}"#
-        );
-        ExitCode::FAILURE
     } else {
         // Do not render serde/I/O errors: they can carry operator input.
         eprintln!(r#"{{"schemaVersion":1,"valid":false,"code":"grants.invalid"}}"#);
@@ -80,8 +74,6 @@ fn check_grants(input: impl Read) -> ExitCode {
 }
 
 const INVALID_GRANTS: &str = "invalid ACCLIMATE_AUTH JSON";
-const RENAMED_GRANT_PROJECT: &str =
-    "invalid ACCLIMATE_AUTH JSON: projectId was renamed to workspaceId in 0.2.0";
 
 fn parse_grants(bytes: &[u8]) -> Result<Vec<Grant>, &'static str> {
     const INVALID: &str = INVALID_GRANTS;
@@ -92,12 +84,6 @@ fn parse_grants(bytes: &[u8]) -> Result<Vec<Grant>, &'static str> {
         // Serde also accepts positional arrays for structs. Static grants require named fields.
         if !entry.get().starts_with('{') {
             return Err(INVALID);
-        }
-        // Name the 0.2.0 rename instead of a generic unknown-field error.
-        if serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(entry.get())
-            .is_ok_and(|fields| fields.contains_key("projectId"))
-        {
-            return Err(RENAMED_GRANT_PROJECT);
         }
         grants.push(serde_json::from_str(entry.get()).map_err(|_| INVALID)?);
     }

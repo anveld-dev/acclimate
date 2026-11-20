@@ -77,15 +77,13 @@ export interface AttemptJournal {
 export const sha256 = (value: string | Uint8Array) =>
   'sha256:' + createHash('sha256').update(value).digest('hex');
 /**
- * The frozen storage key for a journal directory: `sha256(journalDirectoryKey(scope))`.
- * It keeps the 0.1 encoding byte for byte, including the `projectId` key that holds the
- * workspace ID, so journals written before the 0.2.0 rename are still found. The Python
- * evaluator computes the same key. Never change it; it is not a wire format.
+ * The storage key for a journal directory: `sha256(journalDirectoryKey(scope))`. The Python
+ * evaluator computes the same bytes. It is a storage key, not a wire format.
  */
 export function journalDirectoryKey(scope: JournalScope): string {
   return JSON.stringify({
     serviceUrl: scope.serviceUrl,
-    projectId: scope.workspaceId,
+    workspaceId: scope.workspaceId,
     bundleId: scope.bundleId,
     requestId: scope.requestId,
     evaluatorPrincipalId: scope.evaluatorPrincipalId,
@@ -94,18 +92,7 @@ export function journalDirectoryKey(scope: JournalScope): string {
 export function journalDirectory(root: string, scope: JournalScope): string {
   return path.join(root, createHash('sha256').update(journalDirectoryKey(scope)).digest('hex'));
 }
-/**
- * Read a journal scope written by this version (`workspaceId`) or by 0.1 (`projectId`),
- * so a run in flight across the upgrade can be recovered. Only journal recovery accepts
- * the old key; the next save writes `workspaceId`.
- */
-export function readJournalScope(value: unknown): JournalScope | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const { projectId, ...rest } = value as Record<string, unknown>;
-  if (projectId === undefined) return rest as unknown as JournalScope;
-  if (Object.hasOwn(rest, 'workspaceId')) return undefined;
-  return { ...rest, workspaceId: projectId } as unknown as JournalScope;
-}
+
 const LOCK = `import fcntl,os,stat,sys
 p=sys.argv[1]
 fd=os.open(p,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
@@ -235,9 +222,6 @@ export async function openJournal(root: string, scope: JournalScope) {
       }
       const value = (await readPrivateJson(filename, 4 * 1024 * 1024)) as unknown as AttemptJournal;
       if (!value?.journalRoot) throw new EvaluationError('journal.invalid');
-      const recovered = readJournalScope(value.scope);
-      if (!recovered) throw new EvaluationError('journal.invalid');
-      value.scope = recovered;
       check(value);
       return value;
     },

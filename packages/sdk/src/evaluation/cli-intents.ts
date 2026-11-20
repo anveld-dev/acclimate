@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, realpath, link, rename, unlink } from 'node:fs/promises';
+import { lstat, open, realpath, link, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveAndCache } from '../cache.js';
 import { ApiError } from '../client.js';
@@ -54,43 +54,7 @@ const identity = (config: EvaluatorConfig) => ({
   evaluatorPrincipalId: config.evaluatorPrincipalId,
   journalRoot: config.journalRoot,
 });
-/**
- * Intent files written by 0.1 name the workspace `projectId`. Recovery reads either spelling
- * and the next save writes `workspaceId`; nothing else accepts the old key.
- */
-function recoveredIdentity(value: unknown): unknown {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const { projectId, ...rest } = value as Record<string, unknown>;
-  if (projectId === undefined || Object.hasOwn(rest, 'workspaceId')) return value;
-  return { ...rest, workspaceId: projectId };
-}
-/**
- * The frozen file-name key of an interrupt intent. It keeps the 0.1 encoding, with the
- * workspace ID under `projectId`, so an interrupt started before the 0.2.0 rename is found
- * and keeps its idempotency key. It is a storage key, not a wire format; never change it.
- */
-function interruptFileKey(selection: {
-  identity: ReturnType<typeof identity>;
-  bundleId: string;
-  requestId: string;
-  reason: string;
-}): string {
-  const { workspaceId, ...rest } = selection.identity;
-  return stable({ ...selection, identity: { ...rest, projectId: workspaceId } });
-}
-/** The 0.1 spelling of a handoff the request command wrote, so recovery can replace it in place. */
-function legacyHandoffText(handoff: EvaluationHandoff): string {
-  return (
-    json({
-      schemaVersion: handoff.schemaVersion,
-      serviceUrl: handoff.serviceUrl,
-      projectId: handoff.workspaceId,
-      bundleId: handoff.bundleId,
-      requestId: handoff.requestId,
-      configuration: handoff.descriptor,
-    }) + '\n'
-  );
-}
+
 function commandFailure(error: unknown): EvaluationError {
   if (error instanceof EvaluationError) return error;
   if (error instanceof ApiError) {
@@ -254,10 +218,7 @@ async function existingIntent(filename: string): Promise<RequestIntent | undefin
     throw error;
   });
   if (!info) return undefined;
-  const intent = (await readPrivateJson(filename, 4 * 1024 * 1024)) as unknown as RequestIntent;
-  if (intent && typeof intent === 'object')
-    intent.identity = recoveredIdentity(intent.identity) as RequestIntent['identity'];
-  return intent;
+  return (await readPrivateJson(filename, 4 * 1024 * 1024)) as unknown as RequestIntent;
 }
 
 async function writeHandoff(filename: string, handoff: EvaluationHandoff) {
@@ -266,13 +227,9 @@ async function writeHandoff(filename: string, handoff: EvaluationHandoff) {
     if (error.code === 'ENOENT') return null;
     throw error;
   });
-  let replace = false;
   if (existing) {
-    const current = await readCommandText(filename);
-    if (current === content) return;
-    // A run started by 0.1 wrote the same handoff with its old keys; rewrite it in place.
-    if (current !== legacyHandoffText(handoff)) throw fail();
-    replace = true;
+    if ((await readCommandText(filename)) === content) return;
+    throw fail();
   }
   const parent = path.dirname(filename),
     info = await lstat(parent);
@@ -297,14 +254,12 @@ async function writeHandoff(filename: string, handoff: EvaluationHandoff) {
     } finally {
       await handle.close();
     }
-    if (replace) await rename(temporary, filename);
-    else
-      try {
-        await link(temporary, filename);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        if ((await readCommandText(filename)) !== content) throw fail();
-      }
+    try {
+      await link(temporary, filename);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      if ((await readCommandText(filename)) !== content) throw fail();
+    }
     const directory = await open(parent, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       await directory.sync();
@@ -385,12 +340,7 @@ function assertRequest(request: Evaluation, intent: RequestIntent) {
 }
 
 /** A settled run has at most one retry, whatever name the retry was given. */
-async function claimSuccessor(handoffFile: string, requestId: string, output: string) {
-  const runs = path.dirname(path.dirname(handoffFile));
-  // Retries made before --retry-after accepted --name always used after-<request ID>.
-  const legacy = path.join(runs, 'after-' + requestId, 'request.json');
-  if (legacy !== output && (await lstat(path.join(path.dirname(legacy), 'intent.json')).catch(() => null)))
-    throw fail();
+async function claimSuccessor(handoffFile: string, output: string) {
   const marker = path.join(path.dirname(handoffFile), 'successor.json');
   try {
     const handle = await open(
@@ -520,7 +470,7 @@ export async function createRequestFromIntent(options: {
       if (prior && (base.version.id !== prior.base.versionId || base.version.digest !== prior.base.digest ||
           base.revision !== prior.base.revision))
         throw fail('request.base_conflict');
-      if (prior) await claimSuccessor(prior.output, prior.request!.id, output);
+      if (prior) await claimSuccessor(prior.output, output);
       state = {
         schemaVersion: 1,
         kind: 'acclimate-request-intent',
@@ -726,7 +676,7 @@ export async function interruptFromIntent(
   };
   const filename = path.join(
     root,
-    `interrupt-${createHash('sha256').update(interruptFileKey(selection)).digest('hex')}.json`,
+    `interrupt-${createHash('sha256').update(stable(selection)).digest('hex')}.json`,
   );
   const lock = await acquireFileLock(filename + '.lock');
   try {
@@ -736,11 +686,6 @@ export async function interruptFromIntent(
         if (error.code === 'ENOENT') return null;
         throw error;
       })) as { selection: typeof selection; key: string; body: string } | null;
-    if (state && typeof state === 'object' && state.selection)
-      state.selection = {
-        ...state.selection,
-        identity: recoveredIdentity(state.selection.identity) as typeof selection.identity,
-      };
     if (!state) {
       state = { selection, key: randomUUID(), body: json({ reason }) };
       await atomicPrivateWrite(filename, json(state) + '\n');

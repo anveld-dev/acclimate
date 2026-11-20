@@ -670,20 +670,11 @@ async fn paginated_history_is_scoped_stable_and_includes_rollback() {
 
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn removed_project_routes_are_not_found_and_legacy_operation_paths_are_rejected() {
+async fn only_canonical_route_spellings_exist_and_other_operation_paths_are_rejected() {
     let h = Harness::new().await;
     let bundle = h.bundle().await;
     let p = &h.project;
-    let legacy = format!("/v1/projects/{p}/bundles/{bundle}");
     for (method, uri) in [
-        ("GET", "/v1/projects".to_owned()),
-        ("POST", format!("/v1/projects/{p}/bundles")),
-        ("GET", format!("{legacy}/channels/stable")),
-        ("POST", format!("{legacy}/channels/stable/promotions")),
-        ("GET", format!("/v1/projects/{p}/evaluation-capabilities")),
-        ("GET", format!("/v1/projects/{p}/integrations")),
-        ("GET", format!("/v1/projects/{p}/operations/key")),
-        // Only the canonical connection and release spellings exist under workspaces.
         ("GET", format!("/v1/workspaces/{p}/integrations")),
         (
             "POST",
@@ -698,7 +689,7 @@ async fn removed_project_routes_are_not_found_and_legacy_operation_paths_are_rej
         assert_eq!(body["error"]["code"], "not_found", "{method} {uri}");
     }
     for path in [
-        format!("{legacy}/versions"),
+        format!("v1/workspaces/{p}/bundles/{bundle}/versions"),
         format!("/v1/workspaces/{p}/bundles/{bundle}/channels/stable/promotions"),
         "/v1/workspaces".to_owned(),
     ] {

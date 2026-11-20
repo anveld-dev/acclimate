@@ -67,8 +67,6 @@ export async function prepareDelivery(
     maxCacheBytes,
     maxResolutionAgeMs,
   } = options;
-  if (Object.hasOwn(options, 'projectId'))
-    throw new AcclimateUsageError('projectId was renamed to workspaceId in 0.2.0', 'projectId');
   const hasChannel = 'channel' in options;
   if (hasChannel === 'versionId' in options)
     throw new AcclimateUsageError('Select exactly one channel or versionId', 'selection');

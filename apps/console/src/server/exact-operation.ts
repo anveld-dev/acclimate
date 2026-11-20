@@ -1,4 +1,4 @@
-import { operationFingerprintPath, validateOperationTarget } from '../lib/operation-target';
+import { validateOperationTarget } from '../lib/operation-target';
 import { createHash } from 'node:crypto';
 import { ApiError } from '@acclimate/sdk';
 import { requireSession, type Environment } from './selection';
@@ -124,7 +124,7 @@ export async function exactOperation<T>(
   // Receipt precedes every fresh client preflight. The server checks revisions only on first execution.
   const known = await lookupOperation(env, input, fetcher);
   if (known.status === 'committed') {
-    const fingerprint = `sha256:${createHash('sha256').update('POST\0').update(operationFingerprintPath(input.operationPath)).update('\0').update(input.body).digest('hex')}`;
+    const fingerprint = `sha256:${createHash('sha256').update('POST\0').update(input.operationPath).update('\0').update(input.body).digest('hex')}`;
     if (
       known.path !== input.operationPath ||
       (known.requestFingerprint && known.requestFingerprint !== fingerprint)

@@ -82,15 +82,13 @@ test('each page sees submissions from another editor only as related operations'
   resolvePending(storage, original.scope);
   assert.equal(findRelatedPending(storage, otherPage), null);
 });
-// The service's internal retained-operation key, not a route.
+// The service fingerprints the exact route and body.
 function fingerprint(path: string, body: string) {
   return (
     'sha256:' +
     createHash('sha256')
       .update('POST\0')
-      .update(
-        path.replace(/^\/v1\/workspaces\//, '/v1/projects/').replace(/\/releases$/, '/promotions'),
-      )
+      .update(path)
       .update('\0')
       .update(body)
       .digest('hex')
@@ -361,43 +359,6 @@ test('canonical operation families preserve exact bytes through browser freezing
   }
 });
 
-test('records stored before 0.2.0 recover under the canonical route and internal fingerprint', async () => {
-  const exact = '{"expectedRevision":4}';
-  const legacy = `/v1/projects/p/bundles/${bundle}/channels/stable/promotions`;
-  const canonical = `/v1/workspaces/p/bundles/${bundle}/channels/stable/releases`;
-  const storage = new MemoryStorage();
-  const record = freezePendingExact(
-    storage,
-    { ...scope, owner: 'releases' },
-    canonical,
-    exact,
-    key,
-  );
-  const slot = storage.key(0)!;
-  storage.setItem(slot, JSON.stringify({ ...record, action: legacy }));
-  const loaded = loadPending(storage, { ...scope, owner: 'releases' })!;
-  assert.equal(loaded.action, canonical);
-  assert.equal(findRelatedPending(storage, scope)?.action, canonical);
-  const sent: string[] = [];
-  const result = await exactOperation<{ id: string }>(
-    { ...env, CONSOLE_CHANNEL: 'stable' },
-    { workspaceId: 'p', operationPath: loaded.action, body: loaded.body!, key },
-    async (url) => {
-      sent.push(new URL(String(url)).pathname + new URL(String(url)).search);
-      return Response.json({
-        status: 'committed',
-        operationId: key,
-        path: canonical,
-        requestFingerprint: fingerprint(canonical, exact),
-        result: { id: 'release' },
-      });
-    },
-  );
-  assert.deepEqual(result, { id: 'release' });
-  assert.equal(sent.length, 1);
-  assert.ok(!sent[0].includes('projects') && !sent[0].includes('promotions'));
-  assert.equal(forgetPending(storage, { ...scope, owner: 'releases' })?.action, canonical);
-});
 
 test('invalid operation targets never enter recovery storage or reach transport', async () => {
   let calls = 0;
@@ -419,8 +380,6 @@ test('invalid operation targets never enter recovery storage or reach transport'
     path.replace('stable', '..'),
     path.replace('stable', 'a\\b'),
     path.replace('/drafts/', '/credentials/'),
-    // Removed 0.1 route spellings are never frozen or sent.
-    path.replace('/v1/workspaces/', '/v1/projects/'),
     `/v1/workspaces/p/bundles/${bundle}/channels/stable/promotions`,
   ];
   for (const operationPath of invalid) {

@@ -121,7 +121,7 @@ A changed evaluator descriptor already gets a new request. To deliberately run t
 
 The wrapper checks that the handoff belongs to this commit, source, target, release and evaluator, then reads the request's service state. A completed or failed request with a bound comparison, or an interrupted or abandoned request, permits one successor. A `requested` or `running` request is interrupted for you when this host's journal shows execution never started. Otherwise the wrapper stops unless you pass `--abandon-uncertain`, which abandons it through the service's abandon route. The successor compares against the channel's current release. Repeating the command resumes the successor, and later plain runs follow it.
 
-`--retry-after` is a deprecated spelling of `--rerun-after`. Unlike `compare --retry-after`, which keeps the original parent, the wrapper always compares against the current release.
+Unlike the evaluator's `compare --retry-after`, which keeps the original parent, `--rerun-after` always compares against the current release.
 
 To manage your own request intent, pass its absolute path with `--intent` and keep its output directory. `--intent` disables reuse and automatic successors.
 

@@ -410,33 +410,7 @@ async function readHandoff(filename: string, flag: string, name?: string): Promi
       throw new EvaluationError(error.code, { ...error.diagnostic, field: flag });
     throw error;
   }
-  return validateEvaluationHandoff(name ? recoveredNamedHandoff(value) : value);
-}
-
-/**
- * A named run's handoff lives in the private journal root. One written by 0.1 uses the old
- * `projectId` and `configuration` keys; read it so a run started before the upgrade can be
- * inspected, exported or retried. A handoff passed with --handoff is never translated.
- */
-function recoveredNamedHandoff(value: unknown): unknown {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const { projectId, configuration, ...rest } = value as Record<string, unknown>;
-  if (
-    projectId === undefined ||
-    configuration === undefined ||
-    Object.hasOwn(rest, 'workspaceId') ||
-    Object.hasOwn(rest, 'descriptor')
-  )
-    return value;
-  return {
-    schemaVersion: rest.schemaVersion,
-    serviceUrl: rest.serviceUrl,
-    workspaceId: projectId,
-    bundleId: rest.bundleId,
-    requestId: rest.requestId,
-    descriptor: configuration,
-    ...rest,
-  };
+  return validateEvaluationHandoff(value);
 }
 
 async function handoffFile(flags: Parsed['flags']): Promise<EvaluationHandoff> {

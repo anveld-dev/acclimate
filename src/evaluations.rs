@@ -288,8 +288,8 @@ async fn create(
     let a = crate::auth::actor(&h, &s, &p, "evaluate")?;
     let q: CreateEvaluationRequest =
         serde_json::from_slice(&body).map_err(|_| invalid("Malformed request"))?;
-    // Internal operation key, not a route: see commands::internal_operation_path.
-    let route = format!("/v1/projects/{p}/bundles/{b}/evaluation-requests");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/bundles/{b}/evaluation-requests");
     let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),
@@ -482,8 +482,8 @@ async fn transition(
     action: &str,
 ) -> ApiResult<Response> {
     let a = crate::auth::actor(&h, &s, &p, "evaluate")?;
-    // Internal operation key, not a route: see commands::internal_operation_path.
-    let route = format!("/v1/projects/{p}/bundles/{b}/evaluation-requests/{id}/{action}");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/{action}");
     let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),

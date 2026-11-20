@@ -69,8 +69,8 @@ async fn postgres_bundle_scope_and_immutable_payload() {
     )
     .unwrap();
     let bid = bundle["id"].as_str().unwrap();
-    // Stored operation keys keep the internal `/v1/projects/...` spelling.
-    sqlx::query("UPDATE idempotency SET expires_at=now()-interval '1 second' WHERE project_id='project-a' AND path='/v1/projects/project-a/bundles' AND key=$1").bind(&bundle_key).execute(&db).await.unwrap();
+    // Stored operation keys are the canonical route.
+    sqlx::query("UPDATE idempotency SET expires_at=now()-interval '1 second' WHERE project_id='project-a' AND path='/v1/workspaces/project-a/bundles' AND key=$1").bind(&bundle_key).execute(&db).await.unwrap();
     let reused = app
         .clone()
         .oneshot(

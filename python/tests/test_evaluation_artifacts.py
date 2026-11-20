@@ -107,17 +107,6 @@ class ArtifactTests(unittest.TestCase):
         wrong = {**self.handoff, "workspaceId": "wrong"}
         self.assert_code("evidence.identity_mismatch", lambda: verify_review_export(manifest_path=result["manifestPath"], online={"readConfigPath": self.read_config_path, "expectedHandoff": wrong}))
 
-    def test_verifying_a_0_1_export_names_the_renamed_field(self):
-        result = export_review_evidence(read_config_path=self.read_config_path, handoff=self.handoff, output_directory=self.root / "export")
-        manifest_path = Path(result["manifestPath"])
-        manifest = json.loads(manifest_path.read_text())
-        legacy = {("projectId" if key == "workspaceId" else key): value for key, value in manifest.items()}
-        manifest_path.write_bytes(json_bytes(legacy))
-        with self.assertRaises(EvaluationError) as raised:
-            verify_review_export(manifest_path=manifest_path)
-        self.assertEqual((raised.exception.code, raised.exception.field, raised.exception.reason),
-                         ("artifact.integrity", "projectId", "projectId was renamed to workspaceId in 0.2.0"))
-
     def test_content_mapper_is_role_only_and_mixed_statuses_verify(self):
         self.local_evidence()
         calls = []

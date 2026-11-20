@@ -102,21 +102,6 @@ fn grants_check_rejects_malformed_unknown_duplicate_and_invalid_input_without_ec
 }
 
 #[test]
-fn grants_check_names_the_project_id_rename_without_echo() {
-    let input = format!(
-        r#"[{{"token":"{CANARY}","principalId":"worker","projectId":"{CANARY}","rights":["read"]}}]"#
-    );
-    let output = check(&["--check-grants"], input.as_bytes());
-    assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.is_empty());
-    assert_eq!(
-        output.stderr,
-        b"{\"schemaVersion\":1,\"valid\":false,\"code\":\"grants.invalid\",\"message\":\"projectId was renamed to workspaceId in 0.2.0\"}\n"
-    );
-    assert_private(&output);
-}
-
-#[test]
 fn unknown_check_arguments_fail_before_reading_or_runtime_configuration() {
     for args in [
         vec!["--check-grants", CANARY],

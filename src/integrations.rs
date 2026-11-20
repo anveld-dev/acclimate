@@ -97,8 +97,8 @@ async fn create(
     if a.user_id.is_none() {
         crate::auth::actor(&h, &s, &p, "promote")?;
     }
-    // Internal operation key, not a route: see commands::internal_operation_path.
-    let route = format!("/v1/projects/{p}/integrations");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/connections");
     let mut command =
         match crate::commands::begin_admin_mutation(&s, &a, &p, &route, &h, &body).await? {
             crate::commands::MutationStart::Execute(command) => command,
@@ -454,7 +454,7 @@ async fn receive(
     State(s): State<AppState>,
     Path((p, i)): Path<(String, Uuid)>,
     h: HeaderMap,
-    crate::RenamedJson(b): crate::RenamedJson<Receipt>,
+    Json(b): Json<Receipt>,
 ) -> ApiResult<Json<Value>> {
     let r = credential(&s, &h).await?.ok_or_else(denied)?;
     if r.get::<String, _>("kind") != "receipt-write"

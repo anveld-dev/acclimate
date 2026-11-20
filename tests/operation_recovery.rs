@@ -5,6 +5,7 @@ use axum::{
     http::Request,
 };
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -166,11 +167,16 @@ async fn added_routes_adopt_legacy_receipts_preserve_exact_replay_and_keep_names
     .await;
     assert_eq!(recovered.0, 200);
     assert_eq!(recovered.1["result"], original.1);
-    assert!(
-        recovered.1["requestFingerprint"]
-            .as_str()
-            .unwrap()
-            .starts_with("sha256:")
+    // The stored key and fingerprint are the exact canonical route the client called.
+    assert_eq!(recovered.1["path"], promotions);
+    let mut fingerprint = Sha256::new();
+    fingerprint.update(b"POST\0");
+    fingerprint.update(promotions.as_bytes());
+    fingerprint.update([0]);
+    fingerprint.update(body.to_string().as_bytes());
+    assert_eq!(
+        recovered.1["requestFingerprint"],
+        format!("sha256:{}", hex::encode(fingerprint.finalize()))
     );
     let changed = call(
         &app,

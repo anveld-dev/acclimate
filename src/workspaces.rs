@@ -345,7 +345,7 @@ async fn create_project(
         .execute(&mut *tx)
         .await
         .map_err(db)?;
-    audit(&mut tx, &v.id, user, &service(&h, &s), "/v1/projects").await?;
+    audit(&mut tx, &v.id, user, &service(&h, &s), "/v1/workspaces").await?;
     tx.commit().await.map_err(db)?;
     Ok(Json(json!({"id":v.id,"name":v.name,"role":"admin"})))
 }
@@ -434,7 +434,7 @@ async fn change_membership(
         &project,
         a.user_id.unwrap(),
         &a.service_principal,
-        &format!("/v1/projects/{project}/memberships/{target}"),
+        &format!("/v1/workspaces/{project}/memberships/{target}"),
     )
     .await?;
     tx.commit().await.map_err(db)?;
@@ -452,8 +452,8 @@ fn service(h: &HeaderMap, s: &AppState) -> String {
         .map(|g| g.principal_id.clone())
         .unwrap_or_else(|| "console".into())
 }
-// `path` is an internal audit key in the retained-operation grammar
-// (`/v1/projects/...`), not a public route.
+// `path` is the audited operation key: the canonical route
+// (`/v1/workspaces/...`).
 pub(crate) async fn audit(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     project: &str,
@@ -563,7 +563,7 @@ struct Adoption {
 async fn adopt_workspace(
     State(s): State<AppState>,
     h: HeaderMap,
-    crate::RenamedJson(v): crate::RenamedJson<Adoption>,
+    Json(v): Json<Adoption>,
 ) -> ApiResult<Json<Value>> {
     machine(&h, &s)?;
     let (user, session) = identity(&h)?;

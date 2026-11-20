@@ -59,8 +59,6 @@ for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE',
   'ACCLIMATE_JOB_DIR', 'AGENT_TASK']) {
   if (!process.env[key]) throw new Error('Set ' + key);
 }
-if (process.env.ACCLIMATE_INTEGRATION && !process.env.ACCLIMATE_CONNECTION)
-  throw new Error('ACCLIMATE_INTEGRATION was renamed to ACCLIMATE_CONNECTION in 0.2.0');
 const client = new AcclimateClient({ baseUrl: process.env.ACCLIMATE_URL,
   token: process.env.ACCLIMATE_TOKEN, scope: process.env.ACCLIMATE_SCOPE,
   connectionId: process.env.ACCLIMATE_CONNECTION });
@@ -97,8 +95,6 @@ from application import run_agent
 for key in ('ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE',
             'ACCLIMATE_JOB_DIR', 'AGENT_TASK'):
     if not os.environ.get(key): raise ValueError('Set ' + key)
-if os.environ.get('ACCLIMATE_INTEGRATION') and not os.environ.get('ACCLIMATE_CONNECTION'):
-    raise ValueError('ACCLIMATE_INTEGRATION was renamed to ACCLIMATE_CONNECTION in 0.2.0')
 client = AcclimateClient(os.environ['ACCLIMATE_URL'], os.environ['ACCLIMATE_TOKEN'], os.environ['ACCLIMATE_SCOPE'],
                          connection_id=os.environ.get('ACCLIMATE_CONNECTION'))
 prepared = client.prepare(${JSON.stringify(selection.workspaceId)}, ${JSON.stringify(selection.bundleId)},
@@ -212,8 +208,6 @@ export function deliveryRecipes(selection: {
 
 export function createAppReporter() {
   const connectionId = process.env.ACCLIMATE_CONNECTION;
-  if (process.env.ACCLIMATE_INTEGRATION && !connectionId)
-    throw new Error('ACCLIMATE_INTEGRATION was renamed to ACCLIMATE_CONNECTION in 0.2.0');
   const token = process.env.ACCLIMATE_RECEIPT_TOKEN;
   if (!connectionId || !token) return;
   try {
@@ -234,8 +228,6 @@ from acclimate import AcclimateClient, DeliveryReporter
 
 def create_app_reporter():
     connection_id = os.environ.get("ACCLIMATE_CONNECTION")
-    if os.environ.get("ACCLIMATE_INTEGRATION") and not connection_id:
-        raise ValueError("ACCLIMATE_INTEGRATION was renamed to ACCLIMATE_CONNECTION in 0.2.0")
     token = os.environ.get("ACCLIMATE_RECEIPT_TOKEN")
     if not connection_id or not token:
         return None

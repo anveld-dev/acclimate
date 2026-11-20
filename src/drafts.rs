@@ -146,8 +146,8 @@ async fn create(
     }
     let a = crate::auth::actor(&h, &s, &p, "evaluate")?;
     let req: Create = decode(&body)?;
-    // Internal operation key, not a route: see commands::internal_operation_path.
-    let route = format!("/v1/projects/{p}/bundles/{b}/channels/{c}/drafts");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/bundles/{b}/channels/{c}/drafts");
     let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),
@@ -236,8 +236,8 @@ async fn change(
     {
         return Err(invalid());
     }
-    // Internal operation key, not a route: see commands::internal_operation_path.
-    let route = format!("/v1/projects/{p}/bundles/{b}/channels/{c}/drafts/{d}/{kind}");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/bundles/{b}/channels/{c}/drafts/{d}/{kind}");
     let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),
@@ -452,8 +452,8 @@ async fn setup(
     let a = crate::auth::actor(&h, &s, &p, "write")?;
     crate::auth::actor(&h, &s, &p, "promote")?;
     let req: Setup = decode(&body)?;
-    // Internal operation key, not a route: see commands::internal_operation_path.
-    let route = format!("/v1/projects/{p}/bundle-setups");
+    // Operation key: the canonical route, see commands::operation_path.
+    let route = format!("/v1/workspaces/{p}/bundle-setups");
     let mut cmd = match crate::commands::begin_mutation(&s, &a, &p, &route, &h, &body).await? {
         crate::commands::MutationStart::Execute(command) => command,
         crate::commands::MutationStart::Replay(response) => return Ok(response),

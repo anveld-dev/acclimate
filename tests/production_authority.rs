@@ -216,20 +216,6 @@ async fn adoption_is_explicit_serialized_immutable_and_never_regrants() {
     let b = login(&app, "other-operator", None).await;
     let ordinary = login(&app, "ordinary-user", None).await;
     let adopt = json!({"workspaceId":p,"reason":"Reviewed cutover ownership"});
-    let renamed = call(
-        &app,
-        "POST",
-        "/v1/auth/workspace-adoptions",
-        common::CONSOLE_TOKEN,
-        a["secret"].as_str(),
-        json!({"projectId":p,"reason":"Reviewed cutover ownership"}),
-    )
-    .await;
-    assert_eq!(renamed.0, StatusCode::BAD_REQUEST);
-    assert_eq!(
-        renamed.1["error"]["message"],
-        "projectId was renamed to workspaceId in 0.2.0"
-    );
     assert_eq!(
         call(
             &app,

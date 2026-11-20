@@ -78,7 +78,6 @@ test('optional observation recipes bind the workspace and leave start reporting 
   for (const recipe of Object.values(code)) {
     assert.match(recipe, /private-workspace/);
     assert.match(recipe, /ACCLIMATE_RECEIPT_TOKEN/);
-    assert.match(recipe, /ACCLIMATE_INTEGRATION was renamed to ACCLIMATE_CONNECTION in 0\.2\.0/);
     assert.match(recipe, /client\.prepare/);
     assert.doesNotMatch(recipe, /spawn|subprocess/);
   }

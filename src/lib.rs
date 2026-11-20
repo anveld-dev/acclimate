@@ -161,46 +161,6 @@ pub(crate) fn digest(b: &[u8]) -> String {
     format!("sha256:{}", hex::encode(Sha256::digest(b)))
 }
 
-/// Public JSON keys renamed in 0.2.0, as (old, new).
-pub(crate) const RENAMED_KEYS: [(&str, &str); 2] = [
-    ("projectId", "workspaceId"),
-    ("integrationId", "connectionId"),
-];
-
-/// A JSON body extractor for request bodies whose keys were renamed in 0.2.0.
-/// An old key gets a 400 that names the rename; anything else behaves like `Json`.
-pub(crate) struct RenamedJson<T>(pub(crate) T);
-
-impl<S: Send + Sync, T: serde::de::DeserializeOwned> axum::extract::FromRequest<S>
-    for RenamedJson<T>
-{
-    type Rejection = Response;
-
-    async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Response> {
-        let Json(value) = Json::<Value>::from_request(req, state)
-            .await
-            .map_err(IntoResponse::into_response)?;
-        if let Some((old, new)) = RENAMED_KEYS
-            .iter()
-            .find(|(old, _)| value.get(old).is_some())
-        {
-            return Err(err(
-                StatusCode::BAD_REQUEST,
-                "invalid_content",
-                format!("{old} was renamed to {new} in 0.2.0"),
-            )
-            .into_response());
-        }
-        serde_json::from_value(value).map(RenamedJson).map_err(|e| {
-            (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                format!("Failed to deserialize the JSON body into the target type: {e}"),
-            )
-                .into_response()
-        })
-    }
-}
-
 pub(crate) fn path(s: &str) -> ApiResult<Uuid> {
     Uuid::parse_str(s).map_err(|_| err(StatusCode::BAD_REQUEST, "invalid_content", "Invalid UUID"))
 }

@@ -2,7 +2,6 @@ import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { AcclimateClient } from '@acclimate/sdk';
 import type { BundlePayload } from '@acclimate/sdk';
-import { rejectRenamedEnvironment } from './optional-receipts.js';
 
 const [file, name, reason] = process.argv.slice(2);
 if (!file || !name?.trim() || !reason?.trim()) {
@@ -15,7 +14,6 @@ function setting(name: string): string {
   return value;
 }
 
-rejectRenamedEnvironment();
 const workspaceId = setting('ACCLIMATE_WORKSPACE');
 const channel = process.env.ACCLIMATE_CHANNEL ?? 'stable';
 const client = new AcclimateClient({

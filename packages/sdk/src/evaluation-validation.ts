@@ -168,21 +168,7 @@ export function validateEvaluationServiceUrl(value: unknown): string {
   return value; // Exact configured spelling is part of durable journal identity.
 }
 
-/** 0.1 handoff keys and their 0.2.0 names. A handoff that still uses one is rejected, never translated. */
-const RENAMED_HANDOFF_KEYS = [
-  ['projectId', 'workspaceId'],
-  ['configuration', 'descriptor'],
-] as const;
-
 export function validateEvaluationHandoff(value: unknown): EvaluationHandoff {
-  if (object(value))
-    for (const [old, current] of RENAMED_HANDOFF_KEYS)
-      if (Object.hasOwn(value, old))
-        throw new EvaluationConfigurationError(
-          'config.schema',
-          old,
-          `${old} was renamed to ${current} in 0.2.0`,
-        );
   if (
     !object(value) ||
     value.schemaVersion !== 1 ||

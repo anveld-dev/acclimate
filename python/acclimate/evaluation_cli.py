@@ -22,7 +22,6 @@ from ._evaluation_shared import (
 )
 from ._evaluation_cli_intents import (
     assert_settled_predecessor, create_request_from_intent, interrupt_from_intent, read_command_bytes,
-    read_owned_handoff,
     read_command_json,
 )
 from .evaluation_analysis import analyze_comparison, policy_analysis_metric
@@ -246,9 +245,6 @@ def _read_handoff(filename, flag, name=None):
     try:
         if not os.path.lexists(filename):
             raise EvaluationError("config.missing")
-        # A named run's file belongs to the journal, so one written by 0.1 is upgraded in place.
-        if name is not None:
-            return read_owned_handoff(filename)
         value = read_command_json(filename)
     except EvaluationError as error:
         if error.code == "config.missing":

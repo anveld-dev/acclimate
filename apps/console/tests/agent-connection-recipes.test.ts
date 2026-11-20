@@ -14,7 +14,7 @@ import {
 // No provider, service or repository implementation imports are needed.
 async function runFixture(
   language: 'typescript' | 'python',
-  behavior: 'success' | 'rejected' | 'uncertain' | 'collision' | 'renamed',
+  behavior: 'success' | 'rejected' | 'uncertain' | 'collision',
 ) {
   const root = await mkdtemp(join(tmpdir(), 'acclimate-console-agent-'));
   const job = join(root, 'job');
@@ -105,17 +105,10 @@ def run_agent(*, instruction, skill_files, approved_memory, task):
         ACCLIMATE_CACHE: join(root, 'cache'),
         ACCLIMATE_JOB_DIR: job,
         AGENT_TASK: 'Check the latest receipt',
-        ...(behavior === 'renamed'
-          ? { ACCLIMATE_INTEGRATION: 'old-connection', ACCLIMATE_CONNECTION: '' }
-          : {}),
       },
     });
     assert.ifError(child.error);
-    if (behavior === 'renamed') {
-      assert.notEqual(child.status, 0);
-      assert.match(child.stderr, /ACCLIMATE_INTEGRATION was renamed to ACCLIMATE_CONNECTION in 0\.2\.0/);
-      await assert.rejects(access(instructionPath), { code: 'ENOENT' });
-    } else if (behavior === 'success') {
+    if (behavior === 'success') {
       assert.equal(child.status, 0, child.stderr);
       const result = JSON.parse(await readFile(resultPath, 'utf8'));
       assert.equal(result.versionId, 'version-one');
@@ -142,7 +135,7 @@ for (const language of ['typescript', 'python'] as const) {
   test(`${language} copied agent recipe retains a private bound result before input cleanup`, () =>
     runFixture(language, 'success'));
   test(`${language} copied agent recipe preserves inputs when termination or retention is unresolved`, async () => {
-    for (const behavior of ['rejected', 'uncertain', 'collision', 'renamed'] as const)
+    for (const behavior of ['rejected', 'uncertain', 'collision'] as const)
       await runFixture(language, behavior);
   });
 }

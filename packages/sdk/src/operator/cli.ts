@@ -31,7 +31,6 @@ export function parseArgs(args: string[]) {
       flags.json = ['true'];
       continue;
     }
-    if (arg === '--project') throw new Error('--project was renamed to --workspace in 0.2.0');
     if (!arg.startsWith('--') || ![...common, ...commands[command]].includes(arg.slice(2)))
       throw new Error(`Unknown option: ${arg}`);
     const name = arg.slice(2),

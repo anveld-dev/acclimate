@@ -88,22 +88,6 @@ test('public handoff rejects private fields and malformed targets without echoin
   );
 });
 
-test('a 0.1 handoff names the renamed key instead of being accepted', () => {
-  const { workspaceId, descriptor: configuration, ...rest } = handoff();
-  for (const [legacy, field, current] of [
-    [{ ...rest, projectId: workspaceId, descriptor: configuration }, 'projectId', 'workspaceId'],
-    [{ ...rest, workspaceId, configuration }, 'configuration', 'descriptor'],
-    [{ ...rest, projectId: workspaceId, configuration }, 'projectId', 'workspaceId'],
-  ] as const)
-    assert.throws(
-      () => validateEvaluationHandoff(legacy),
-      (error: any) =>
-        error.code === 'config.schema' &&
-        error.field === field &&
-        error.reason === `${field} was renamed to ${current} in 0.2.0` &&
-        error.message.includes(`${field} was renamed to ${current} in 0.2.0`),
-    );
-});
 
 test('public inventory rejects accessors and custom arrays without invoking app code', () => {
   let invoked = 0;
@@ -176,7 +160,7 @@ test('retained transport retries exact Unicode request bytes and the same author
     evaluationFingerprint('start', scope, body),
     'sha256:' +
       createHash('sha256')
-        .update('POST\0' + path.replace(/^\/v1\/workspaces\//, '/v1/projects/') + '\0' + body)
+        .update('POST\0' + path + '\0' + body)
         .digest('hex'),
   );
   assert.throws(() => transport.mutate('start', { ...scope, workspaceId: 'other' }, body, 'key'));

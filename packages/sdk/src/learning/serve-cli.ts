@@ -44,7 +44,6 @@ async function main() {
     options: {
       config: { type: 'string' },
       connection: { type: 'string' },
-      integration: { type: 'string' },
       installation: { type: 'string' },
       apps: { type: 'string' },
       live: { type: 'boolean' },
@@ -53,11 +52,6 @@ async function main() {
   });
   if (values.help) {
     console.log(usage);
-    return;
-  }
-  if (values.integration !== undefined) {
-    console.error('--integration was renamed to --connection in 0.2.0');
-    process.exitCode = 1;
     return;
   }
   if (!values.config || !values.connection || !values.installation || !values.apps) {

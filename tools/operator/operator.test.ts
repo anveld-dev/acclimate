@@ -90,10 +90,6 @@ const scope = ['--workspace', 'p', '--bundle', 'b', '--channel', 'live'];
 test('parser rejects unknown and duplicate flags', () => {
   assert.throws(() => parseArgs(['review', '--unknown', 'x']));
   assert.throws(() => parseArgs(['review', '--comparison', 'a', '--comparison', 'b']));
-  assert.throws(
-    () => parseArgs(['review', '--project', 'p']),
-    /--project was renamed to --workspace in 0\.2\.0/,
-  );
 });
 test('review verifies payloads and never mutates or fetches output references', async () => {
   const { client, calls } = fixture();

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, open, readFile, realpath, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import {
   defineEvaluation,
   ExecutionUncertainError,
@@ -1039,10 +1040,24 @@ test('foreign Python journal refuses ownership and scope serialization is explic
       runCapturedEvaluation(s.options),
       (error) => error instanceof EvaluationError && error.code === 'journal.foreign',
     );
-    // The directory key is frozen at its 0.1 encoding, so 0.1 journals are still found.
     assert.equal(
       journalDirectoryKey(s.scope),
-      JSON.stringify({ serviceUrl, projectId: workspaceId, bundleId, requestId, evaluatorPrincipalId }),
+      JSON.stringify({ serviceUrl, workspaceId, bundleId, requestId, evaluatorPrincipalId }),
+    );
+    // The Python evaluator pins the same digest for this scope.
+    assert.equal(
+      createHash('sha256')
+        .update(
+          journalDirectoryKey({
+            requestId: '44444444-4444-4444-8444-444444444444',
+            bundleId: '33333333-3333-4333-8333-333333333333',
+            serviceUrl: 'https://fixture.example',
+            workspaceId: 'café',
+            evaluatorPrincipalId: 'evaluator',
+          }),
+        )
+        .digest('hex'),
+      '0f5583cf11d8613c3b08cc4b3219f22d3ce14927f5610e0289a8bce87a909d71',
     );
     assert.equal(s.f.events.length, 0);
   } finally {

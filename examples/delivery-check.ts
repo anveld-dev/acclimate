@@ -1,9 +1,7 @@
 /** Check the files delivered by the configured service. */
 import { readFile } from 'node:fs/promises';
 import { AcclimateClient } from '@acclimate/sdk';
-import { optionalReceipts, rejectRenamedEnvironment, settleOptional } from './optional-receipts.js';
-
-rejectRenamedEnvironment();
+import { optionalReceipts, settleOptional } from './optional-receipts.js';
 
 for (const key of [
   'ACCLIMATE_URL',

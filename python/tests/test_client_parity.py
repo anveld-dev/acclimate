@@ -201,9 +201,6 @@ class ParityTest(unittest.TestCase):
         self.assertIsNone(self.last()["connection"])
         with self.assertRaisesRegex(ValueError, "connection_id must be a UUID"):
             AcclimateClient(self.url, "token", "scope", connection_id="not-a-uuid")
-        # The option renamed in 0.2.0 is rejected, not silently ignored.
-        with self.assertRaises(TypeError):
-            AcclimateClient(self.url, "token", "scope", integration_id=connection)  # type: ignore[call-arg]
 
     def test_offline_policy_matches_the_typescript_shape(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -237,7 +234,7 @@ class ReferenceDocsTest(unittest.TestCase):
             if callable(value) and not name.startswith("_")
         }
         self.assertEqual(sorted(public - documented), [])
-        self.assertEqual(sorted(aliases), [], "0.2.0 removed the deprecated method aliases")
+        self.assertEqual(sorted(aliases), [], "the deprecated method aliases are gone")
 
 
 class NamespaceTest(unittest.TestCase):

@@ -2242,9 +2242,9 @@ async fn review(
             "A declined review cannot override an application policy",
         ));
     }
-    // Internal operation key, not a route: see commands::internal_operation_path.
+    // Operation key: the canonical route, see commands::operation_path.
     let route = format!(
-        "/v1/projects/{}/integrations/{integration}/learning/rounds/{round_id}/review",
+        "/v1/workspaces/{}/connections/{integration}/learning/rounds/{round_id}/review",
         connection.project
     );
     if state == "rejected" && round_decision.as_deref() == Some("review_declined") {

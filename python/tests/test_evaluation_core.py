@@ -883,57 +883,23 @@ class EvaluationCoreTests(unittest.TestCase):
                 pass
         self.assertEqual(caught.exception.code,"journal.foreign")
 
-    def test_scope_serialization_is_exact_legacy_order_with_unicode(self):
+    def test_scope_serialization_is_exact_canonical_order_with_unicode(self):
         scope={"requestId":REQUEST,"bundleId":BUNDLE,"serviceUrl":"https://fixture.example",
             "workspaceId":"caf\u00e9","evaluatorPrincipalId":"line\\quote\""}
         expected=(f'{{"serviceUrl":"https://fixture.example","workspaceId":"caf\u00e9","bundleId":"{BUNDLE}",'
             f'"requestId":"{REQUEST}","evaluatorPrincipalId":"line\\\\quote\\\""}}').encode()
         self.assertEqual(serialize_scope(scope),expected)
 
-    def test_journal_directory_key_is_the_frozen_0_1_encoding(self):
-        scope={"serviceUrl":"https://fixture.example","workspaceId":"caf\u00e9","bundleId":BUNDLE,
-            "requestId":REQUEST,"evaluatorPrincipalId":"evaluator"}
-        legacy=(f'{{"serviceUrl":"https://fixture.example","projectId":"caf\u00e9","bundleId":"{BUNDLE}",'
+    def test_journal_directory_key_hashes_the_canonical_scope_like_typescript(self):
+        scope={"requestId":REQUEST,"bundleId":BUNDLE,"serviceUrl":"https://fixture.example",
+            "workspaceId":"caf\u00e9","evaluatorPrincipalId":"evaluator"}
+        canonical=(f'{{"serviceUrl":"https://fixture.example","workspaceId":"caf\u00e9","bundleId":"{BUNDLE}",'
             f'"requestId":"{REQUEST}","evaluatorPrincipalId":"evaluator"}}').encode()
-        self.assertEqual(journal_directory_key(scope),hashlib.sha256(legacy).hexdigest())
+        self.assertEqual(journal_directory_key(scope),hashlib.sha256(canonical).hexdigest())
+        # The TypeScript evaluator pins the same digest for this scope.
+        self.assertEqual(journal_directory_key(scope),"0f5583cf11d8613c3b08cc4b3219f22d3ce14927f5610e0289a8bce87a909d71")
         with Journal(self.journal_root,scope) as journal:
-            self.assertEqual(journal.directory.name,hashlib.sha256(legacy).hexdigest())
-
-    def test_a_0_1_journal_recovers_from_the_same_directory_and_is_rewritten(self):
-        calls=[]
-        app=self.app(lambda run:(calls.append(run.version["version"]["id"]) or ExecutionResult({"ok":True})))
-        service=FakeService(app)
-        service.lose_once="comparisons"
-        with self.assertRaises(EvaluationError):
-            self.run_app(app,service)
-        [state_file]=self.journal_root.glob("*/attempt.python.json")
-        state=json.loads(state_file.read_bytes())
-        # Rewrite the saved state as 0.1 wrote it: the workspace ID under scope.projectId.
-        state["scope"]={("projectId" if key=="workspaceId" else key):value for key,value in state["scope"].items()}
-        state_file.write_bytes(json_bytes(state))
-        result=self.run_app(app,service)
-        self.assertEqual(result["comparison"]["id"],COMPARISON)
-        self.assertEqual(calls,[PARENT,CANDIDATE])
-        self.assertEqual(json.loads(state_file.read_bytes())["scope"]["workspaceId"],"project")
-        self.assertNotIn("projectId",json.loads(state_file.read_bytes())["scope"])
-
-    def test_old_config_and_handoff_keys_fail_with_the_rename(self):
-        config=json.loads(self.config.read_bytes())
-        legacy={("projectId" if key=="workspaceId" else key):value for key,value in config.items()}
-        self.config.write_bytes(json_bytes(legacy))
-        with self.assertRaises(EvaluationError) as caught:
-            read_evaluator_config(str(self.config))
-        self.assertEqual((caught.exception.code,caught.exception.field,caught.exception.reason),
-            ("config.schema","projectId","projectId was renamed to workspaceId in 0.2.0"))
-        self.assertIn("projectId was renamed to workspaceId in 0.2.0",str(caught.exception))
-        handoff=self.handoff(self.app())
-        for old,new in (("projectId","workspaceId"),("configuration","descriptor")):
-            with self.subTest(old=old):
-                renamed={(old if key==new else key):value for key,value in handoff.items()}
-                with self.assertRaises(EvaluationError) as caught:
-                    validate_handoff(renamed)
-                self.assertEqual((caught.exception.code,caught.exception.field,caught.exception.reason),
-                    ("config.schema",old,f"{old} was renamed to {new} in 0.2.0"))
+            self.assertEqual(journal.directory.name,hashlib.sha256(canonical).hexdigest())
 
     def test_private_directory_flushes_new_ancestor_entries_before_returning(self):
         existing=self.root/"existing"

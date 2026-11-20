@@ -116,11 +116,6 @@ async function config(filename: string, reader: boolean): Promise<EvaluatorConfi
       );
     throw new EvaluatorConfigError('config.missing');
   }
-  if (Object.hasOwn(value, 'projectId'))
-    throw new EvaluatorConfigError('config.schema', undefined, {
-      field: 'projectId',
-      reason: 'projectId was renamed to workspaceId in 0.2.0',
-    });
   const fields = reader
     ? ['schemaVersion', 'serviceUrl', 'workspaceId', 'readToken']
     : ['schemaVersion', 'serviceUrl', 'workspaceId', 'evaluatorPrincipalId', 'journalRoot'];

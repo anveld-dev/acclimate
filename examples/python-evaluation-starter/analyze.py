@@ -41,14 +41,10 @@ def from_journal(name, config_file):
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", name):
         raise InputError("analysis.run_name_invalid", name=name)
     config = read(config_file)
-    if isinstance(config, dict) and "projectId" in config:
-        raise InputError("analysis.config_invalid", file=str(config_file), field="projectId",
-                         reason="projectId was renamed to workspaceId in 0.2.0")
     if not isinstance(config, dict) or not all(config.get(key) for key in ("serviceUrl", "workspaceId", "evaluatorToken", "journalRoot")):
         raise InputError("analysis.config_invalid", file=str(config_file))
     handoff = read(Path(config["journalRoot"]) / "comparisons" / name / "request.json")
-    # A run started before 0.2.0 recorded its workspace as projectId in this journal file.
-    workspace_id = handoff.get("workspaceId", handoff.get("projectId"))
+    workspace_id = handoff["workspaceId"]
     client = AcclimateClient(config["serviceUrl"], config["evaluatorToken"], config.get("evaluatorPrincipalId", "evaluator"))
     request = client.get_evaluation(workspace_id, handoff["bundleId"], handoff["requestId"])
     if not request.get("comparisonId") or not request.get("attemptId"):

@@ -6,15 +6,7 @@ import sys
 from acclimate import AcclimateClient, DeliveryReporter
 
 
-def check_renamed_environment():
-    # 0.2.0 renamed these variables. Fail rather than ignore a setting from an older setup.
-    for old, new in (("ACCLIMATE_PROJECT", "ACCLIMATE_WORKSPACE"), ("ACCLIMATE_INTEGRATION", "ACCLIMATE_CONNECTION")):
-        if os.environ.get(old) and not os.environ.get(new):
-            raise ValueError(f"{old} was renamed to {new} in 0.2.0")
-
-
 def main():
-    check_renamed_environment()
     for key in ("ACCLIMATE_URL", "ACCLIMATE_TOKEN", "ACCLIMATE_SCOPE", "ACCLIMATE_WORKSPACE", "ACCLIMATE_BUNDLE"):
         if not os.environ.get(key):
             raise ValueError("Set " + key)

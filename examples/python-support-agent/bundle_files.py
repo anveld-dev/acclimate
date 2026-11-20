@@ -46,8 +46,6 @@ def main(argv=None):
         print()
         return 0
 
-    if os.environ.get("ACCLIMATE_PROJECT") and not os.environ.get("ACCLIMATE_WORKSPACE"):
-        raise SystemExit("ACCLIMATE_PROJECT was renamed to ACCLIMATE_WORKSPACE in 0.2.0")
     client = AcclimateClient(os.environ["ACCLIMATE_URL"], os.environ["ACCLIMATE_TOKEN"], "python-support-agent")
     setup = client.create_bundle_setup(
         os.environ["ACCLIMATE_WORKSPACE"],

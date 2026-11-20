@@ -109,18 +109,6 @@ function fail(code: SafeCode = 'artifact.integrity'): never {
 }
 const obj = (x: unknown): x is Record<string, unknown> =>
   !!x && typeof x === 'object' && !Array.isArray(x);
-/** A review export written by 0.1 names the workspace `projectId`. Name the rename instead of calling it corrupt. */
-function rejectRenamedExport(value: unknown): void {
-  if (obj(value) && Object.hasOwn(value, 'projectId'))
-    throw new EvaluationError('artifact.integrity', {
-      phase: 'export',
-      executionState: 'finished',
-      nextAction: 'review_terminal_evidence',
-      field: 'projectId',
-      reason: 'projectId was renamed to workspaceId in 0.2.0',
-      hint: 'Export the run again with this version of acclimate-eval, or verify it with the version that wrote it.',
-    });
-}
 const keys = (
   x: unknown,
   required: readonly string[],
@@ -977,7 +965,6 @@ export async function verifyReviewExport(options: {
   try {
     const manifestBytes = await readFile(options.manifestPath, MAX_MANIFEST);
     const m = parseJson(manifestBytes);
-    rejectRenamedExport(m);
     if (
       !keys(m, [
         'schemaVersion',
@@ -1030,7 +1017,6 @@ export async function verifyReviewExport(options: {
     )
       fail('artifact.hash_mismatch');
     const p = parseJson(projectedBytes);
-    rejectRenamedExport(p);
     if (
       !keys(p, [
         'schemaVersion',

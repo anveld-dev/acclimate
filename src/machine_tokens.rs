@@ -247,8 +247,8 @@ async fn event(
     sqlx::query("INSERT INTO machine_token_events(project_id,token_id,action,actor_principal,reason,detail) VALUES($1,$2,$3,$4,$5,$6)")
         .bind(project).bind(token).bind(action).bind(&actor.principal).bind(reason).bind(detail)
         .execute(&mut **tx).await.map_err(db)?;
-    // Internal operation key, not a route: see commands::internal_operation_path.
-    let path = format!("/v1/projects/{project}/machine-tokens/{token}/{action}");
+    // Operation key: the canonical route, see commands::operation_path.
+    let path = format!("/v1/workspaces/{project}/machine-tokens/{token}/{action}");
     crate::workspaces::audit(
         tx,
         project,

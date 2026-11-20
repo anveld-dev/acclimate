@@ -10,9 +10,8 @@ import { Agent } from '@cursor/sdk';
 import { AcclimateClient } from '@acclimate/sdk';
 import { prepare } from '@acclimate/cursor-plugin';
 import { cursorLocalOptions } from '@acclimate/cursor-plugin/native';
-import { optionalReceipts, rejectRenamedEnvironment, settleOptional } from './optional-receipts.js';
+import { optionalReceipts, settleOptional } from './optional-receipts.js';
 
-rejectRenamedEnvironment();
 if (!process.argv.includes('--live')) throw new Error('Pass --live to request a paid Cursor session.');
 const token = process.env.ACCLIMATE_TOKEN;
 const bundleId = process.env.ACCLIMATE_BUNDLE;

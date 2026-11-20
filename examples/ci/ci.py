@@ -35,11 +35,6 @@ if sys.version_info < (3, 8):
 UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 PHASES = ("doctor", "request", "run", "check", "export", "verify-export")
 HANDOFF = "handoff.json"
-# The handoff file name acclimate 0.1 used. Its SDK intent records that output path, so a
-# 0.1 generation cannot be resumed by 0.2.0; the wrapper says so instead of reporting a mismatch.
-LEGACY_HANDOFF = "evaluation-request.json"
-LEGACY_GENERATION = ("This CI request directory was started by acclimate 0.1 (" + LEGACY_HANDOFF + "). "
-                     "Finish it with 0.1, or use a new --output-dir to start a fresh request.")
 PYTHON_EVALUATOR_MINIMUM = (3, 11)
 # Wait this long for a graceful stop after the first signal, and this long after a second one.
 DEFAULT_CANCEL_GRACE = 20.0
@@ -186,7 +181,6 @@ def arguments(argv):
     operation.add_argument("--rerun-after", metavar="HANDOFF",
                            help="Start one fresh request against the current channel release after this settled "
                                 "handoff, relative to --output-dir")
-    operation.add_argument("--retry-after", dest="retry_after_alias", metavar="HANDOFF", help=argparse.SUPPRESS)
     recovery.add_argument("--abandon-uncertain", action="store_true",
                           help="Abandon an earlier attempt that may have started executing (the service's abandon "
                                "route, which needs the evaluate right), then start a fresh request")
@@ -203,10 +197,6 @@ def arguments(argv):
                            help="Append result, verdict and IDs to this file, such as $GITHUB_OUTPUT")
     args = parser.parse_args(argv)
 
-    if args.retry_after_alias:
-        print("--retry-after is deprecated for the CI wrapper; use --rerun-after. "
-              "It starts a fresh request against the channel's current release.", file=sys.stderr)
-        args.rerun_after = args.retry_after_alias
     if not Path(args.output_dir).is_absolute() or (args.intent and not Path(args.intent).is_absolute()):
         raise ValueError("--output-dir and --intent must be absolute")
     for name in ("commit", "base_commit"):
@@ -582,9 +572,8 @@ def journal_state(config, handoff):
     fields = ("serviceUrl", "workspaceId", "evaluatorPrincipalId", "journalRoot")
     if not handoff or not all(isinstance(config.get(field), str) for field in fields):
         return "unknown"
-    # The journal directory name is a frozen storage key shared with the SDKs: it still
-    # encodes the workspace ID under "projectId", as 0.1 did, so existing journals are found.
-    scope = json.dumps({"serviceUrl": config["serviceUrl"], "projectId": config["workspaceId"],
+    # The journal directory name is the storage key the SDKs compute from the canonical scope.
+    scope = json.dumps({"serviceUrl": config["serviceUrl"], "workspaceId": config["workspaceId"],
                         "bundleId": handoff.get("bundleId"), "requestId": handoff.get("requestId"),
                         "evaluatorPrincipalId": config["evaluatorPrincipalId"]},
                        ensure_ascii=False, separators=(",", ":"))
@@ -846,8 +835,6 @@ def within_chain(handoff, root):
 
 def prior_handoff(value, output, request_dir):
     handoff = output / value
-    if handoff.name == LEGACY_HANDOFF:
-        raise ValueError(LEGACY_GENERATION)
     if not handoff.is_file() or handoff.resolve() != handoff:
         raise ValueError("--rerun-after needs a CI-managed handoff path relative to --output-dir")
     if handoff.name != HANDOFF or not within_chain(handoff, request_dir):
@@ -1083,8 +1070,6 @@ class Pipeline:
             current, failure = self.advance(current)
             if failure:
                 return failure
-            if (current / LEGACY_HANDOFF).is_file() and not (current / HANDOFF).is_file():
-                raise ValueError(LEGACY_GENERATION)
             current.mkdir(parents=True, mode=0o700, exist_ok=True)
             self.generation = current
             intent = current / "request-intent.json"

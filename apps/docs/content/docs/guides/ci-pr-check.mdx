@@ -159,7 +159,7 @@ A changed evaluator descriptor already gets a new request. To deliberately evalu
 --rerun-after "$(jq -r '.priorHandoff // .handoff' previous-result.json)"
 ```
 
-The wrapper accepts one successor per finished request and compares it against the channel's current release. A predecessor can be completed, failed, interrupted or abandoned. A predecessor that is still `requested` or `running` is interrupted for you when its journal shows that execution never started. Otherwise pass `--abandon-uncertain` to abandon it through the service. `--retry-after` is the deprecated spelling of `--rerun-after`. Unlike `compare --retry-after`, which keeps the original parent, the wrapper always uses the channel's current release.
+The wrapper accepts one successor per finished request and compares it against the channel's current release. A predecessor can be completed, failed, interrupted or abandoned. A predecessor that is still `requested` or `running` is interrupted for you when its journal shows that execution never started. Otherwise pass `--abandon-uncertain` to abandon it through the service. Unlike the evaluator's `compare --retry-after`, which keeps the original parent, `--rerun-after` always uses the channel's current release.
 
 ## Clean up
 

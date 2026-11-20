@@ -449,20 +449,7 @@ def validate_service_url(value: Any) -> None:
         raise EvaluationError("config.url") from None
 
 
-# Keys that 0.2.0 renamed in the handoff and config files. An old file fails
-# loudly with the new name instead of being read with a guessed meaning.
-_RENAMED_KEYS = (("projectId", "workspaceId"), ("configuration", "descriptor"))
-
-
-def reject_renamed_keys(value: Any, renamed=_RENAMED_KEYS) -> None:
-    if type(value) is dict:
-        for old, new in renamed:
-            if old in value:
-                raise EvaluationError("config.schema", field=old, reason=f"{old} was renamed to {new} in 0.2.0")
-
-
 def validate_handoff(value: Any) -> dict:
-    reject_renamed_keys(value)
     if type(value) is not dict or set(value) != {"schemaVersion","serviceUrl","workspaceId","bundleId","requestId","descriptor"} or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1:
         raise EvaluationError("config.schema")
     validate_service_url(value["serviceUrl"])
@@ -635,7 +622,6 @@ def _read_config(path: str | Path, reader: bool) -> dict:
     filename = _canonical_path(path, alias_issue="configAlias")
     _private_parent(filename)
     value = parse_json(read_private_bytes(filename, config_file=True))
-    reject_renamed_keys(value, _RENAMED_KEYS[:1])
     fields = {"schemaVersion","serviceUrl","workspaceId","readToken"} if reader else {"schemaVersion","serviceUrl","workspaceId","evaluatorPrincipalId","journalRoot"}
     # The evaluator token is inline, in a private file, or in ACCLIMATE_EVALUATOR_TOKEN.
     optional = set() if reader else {"captureCallbackErrors","evaluatorToken","evaluatorTokenFile"}

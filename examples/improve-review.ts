@@ -7,14 +7,12 @@ import { prepare } from '@acclimate/codex-plugin';
 import type { VerifiedVersion } from '@acclimate/sdk';
 import { improve, type Model } from './improvement/workflow.js';
 import { improve as improveService } from './service-proposer/workflow.js';
-import { rejectRenamedEnvironment } from './optional-receipts.js';
 
 const args = process.argv.slice(2);
 const flag = (name: string) => {
   const i = args.indexOf(name);
   return i < 0 ? undefined : args[i + 1];
 };
-rejectRenamedEnvironment();
 const required = (name: string, alias?: string) => {
   const value = process.env[name] ?? (alias ? process.env[alias] : undefined);
   if (!value) throw new Error(`${name} is required`);

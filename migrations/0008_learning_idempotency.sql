@@ -74,8 +74,8 @@ WHERE o.verdict IS NOT NULL;
 ALTER TABLE connected_learning_rounds ADD COLUMN reviewer_principal text;
 UPDATE connected_learning_rounds r SET reviewer_principal=(
     SELECT a.principal_id FROM mutation_audit a WHERE a.project_id=r.project_id
-        AND a.operation_key=r.id::text AND a.path='/v1/projects/'||r.project_id||
-            '/integrations/'||r.integration_id||'/learning/rounds/'||r.id||'/review'
+        AND a.operation_key=r.id::text AND a.path='/v1/workspaces/'||r.project_id||
+            '/connections/'||r.integration_id||'/learning/rounds/'||r.id||'/review'
     ORDER BY a.id DESC LIMIT 1)
 WHERE r.decision='review_declined';
 

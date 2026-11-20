@@ -25,7 +25,6 @@ import { ExecutionUncertainError } from '@acclimate/sdk/evaluation';
 import type { EvaluationCase, EvaluationExecutionResult } from '@acclimate/sdk/evaluation';
 import { prepare } from '@acclimate/claude-plugin';
 import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
-import { rejectRenamedEnvironment } from './optional-receipts.js';
 
 /** Explicit tool and sandbox policy. Record changes to it as a new runtime revision. */
 const sessionPolicy = {
@@ -149,7 +148,6 @@ async function main() {
   if (!process.argv.includes('--live'))
     throw new Error('Pass --live to request a paid Claude session.');
   const prompt = process.argv.slice(2).filter((argument) => argument !== '--live').join(' ').trim();
-  rejectRenamedEnvironment();
   const { ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE, ACCLIMATE_WORKSPACE, ACCLIMATE_BUNDLE } =
     process.env;
   const jobDirectory = process.env.ACCLIMATE_JOB_DIR;

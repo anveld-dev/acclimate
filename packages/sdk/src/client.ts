@@ -201,11 +201,6 @@ export class AcclimateClient {
       );
     this.baseUrl = url.toString().replace(/\/$/, '');
     this.scope = options.scope;
-    if (Object.hasOwn(options, 'integrationId'))
-      throw new AcclimateUsageError(
-        'integrationId was renamed to connectionId in 0.2.0',
-        'integrationId',
-      );
     if (
       options.connectionId !== undefined &&
       !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(options.connectionId)

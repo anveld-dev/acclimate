@@ -149,14 +149,6 @@ def _fail(code="artifact.integrity"):
                           next_action="review_terminal_evidence")
 
 
-def _reject_legacy_export(value):
-    # A 0.1 export recorded projectId. Name the rename instead of reporting a generic integrity failure.
-    if type(value) is dict and "projectId" in value:
-        raise EvaluationError("artifact.integrity", phase="export", execution_state="finished",
-                              next_action="review_terminal_evidence", field="projectId",
-                              reason="projectId was renamed to workspaceId in 0.2.0")
-
-
 def _keys(value, required, optional=()):
     return type(value) is dict and set(required) <= value.keys() and value.keys() <= set(required) | set(optional)
 
@@ -636,7 +628,6 @@ def verify_review_export(*, manifest_path, online=None) -> ReviewVerificationRes
         manifest_path = Path(manifest_path)
         manifest_bytes = _read_file(manifest_path, MAX_MANIFEST)
         m = _parse(manifest_bytes)
-        _reject_legacy_export(m)
         fields = ("schemaVersion", "kind", "workspaceId", "bundleId", "requestId", "attemptId", "comparisonId", "parent", "candidate", "localInspection", "projection", "entries", "exporter")
         if not _keys(m, fields) or type(m["schemaVersion"]) is not int or m["schemaVersion"] != 1 or m["kind"] != "acclimate-review-export" or m["localInspection"] not in ("not_requested", "validated", "unavailable") or type(m["entries"]) is not list or len(m["entries"]) > 2000 or not _keys(m["exporter"], ("name", "version")) or m["exporter"]["name"] != "acclimate-evidence" or not _text(m["exporter"]["version"], 128):
             _fail()
@@ -653,7 +644,6 @@ def verify_review_export(*, manifest_path, online=None) -> ReviewVerificationRes
         if len(projected_bytes) != m["projection"]["bytes"] or not _hash_matches(projected_bytes, m["projection"]["sha256"]):
             _fail("artifact.hash_mismatch")
         p = _parse(projected_bytes)
-        _reject_legacy_export(p)
         if not _keys(p, ("schemaVersion", "kind", "workspaceId", "bundleId", "requestId", "attemptId", "comparisonId", "parent", "candidate", "complete", "expectedCases", "results", "missingness")) or p["schemaVersion"] != 1 or p["kind"] != "acclimate-comparison-review" or type(p["complete"]) is not bool:
             _fail()
         if any(m[key] != p[key] for key in ("workspaceId", "bundleId", "requestId", "attemptId", "comparisonId", "parent", "candidate")):

@@ -218,20 +218,6 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
         call(&app, "GET", &receipt, write, Value::Null).await.0,
         StatusCode::UNAUTHORIZED
     );
-    for (old, new) in [
-        ("connectionId", "integrationId"),
-        ("workspaceId", "projectId"),
-    ] {
-        let mut renamed = event.clone();
-        let value = renamed.as_object_mut().unwrap().remove(old).unwrap();
-        renamed[new] = value;
-        let rejected = call(&app, "POST", &receipt, write, renamed).await;
-        assert_eq!(rejected.0, StatusCode::BAD_REQUEST);
-        assert_eq!(
-            rejected.1["error"]["message"],
-            format!("{new} was renamed to {old} in 0.2.0")
-        );
-    }
     let mut bad = event.clone();
     bad["stage"] = json!("downloaded");
     assert_eq!(

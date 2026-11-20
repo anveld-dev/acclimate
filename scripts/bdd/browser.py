@@ -64,7 +64,7 @@ class BrowserFixture:
                 # Dev ESM loads barrel exports eagerly; production tree shaking
                 # can hide Node-only SDK exports accidentally imported by UI.
                 self.page.evaluate('''async () => {
-                    for (const name of ['bundle-library', 'import-content', 'draft-workspace', 'improvement-workspace'])
+                    for (const name of ['bundle-library', 'import-content', 'bundle-changes', 'connection-learning'])
                         await import('/src/components/' + name + '.tsx');
                 }''')
                 assert not self.errors, 'Development browser errors: ' + '\n'.join(self.errors)

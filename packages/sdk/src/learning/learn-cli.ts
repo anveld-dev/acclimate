@@ -3,7 +3,6 @@ import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { tsImport } from 'tsx/esm/api';
 import { ApiError, AcclimateClient, TransportError } from '../index.js';
 import { assertServiceUrl, readEvaluatorConfig } from '../evaluation/config.js';
 import { EvaluationError, toSafeDiagnostic } from '../evaluation/errors.js';
@@ -50,9 +49,13 @@ async function main(argv: string[]) {
   const directory = path.dirname(filename);
   let definition;
   try {
-    definition = (await tsImport(pathToFileURL(filename).href, import.meta.url)).default;
+    // Node 22.22+ strips erasable TypeScript natively, so a .ts config needs no loader dependency.
+    definition = (await import(pathToFileURL(filename).href)).default;
   } catch {
-    throw new Error('Cannot load the loop config. Check its default export, module format and imports.');
+    throw new Error(
+      'Cannot load the loop config. Check its default export, module format and imports. ' +
+        'A .ts config must use erasable TypeScript only (no enums or namespaces); otherwise use .mjs.',
+    );
   }
   const loop = await loadLoop(definition ?? {}, directory);
   const evaluator = values['evaluator-config']

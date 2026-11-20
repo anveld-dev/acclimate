@@ -12,7 +12,7 @@ npm install @acclimate/sdk
 export OPENAI_BASE_URL=http://127.0.0.1:8317/v1
 ```
 
-In an ESM project (`"type": "module"`), save this as `acclimate.loop.ts`. Ask the agent for a final JSON object with an `action` field.
+In an ESM project (`"type": "module"`), save this as `acclimate.loop.ts`. Node.js 22.22+ loads it directly by stripping types, so no TypeScript loader is needed; use erasable syntax only (no `enum` or `namespace`), or name it `acclimate.loop.mjs`. Ask the agent for a final JSON object with an `action` field.
 
 ```ts
 import { defineLoop, exact, openai } from '@acclimate/sdk/learning';

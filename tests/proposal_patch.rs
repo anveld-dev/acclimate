@@ -165,10 +165,25 @@ fn scoped_skill_mutations_require_complete_packages_and_exact_parent_inventory()
         .unwrap()
         .push(json!({"relativePath":"scripts/helper.sh","text":"echo helper"}));
     assert!(scoped(&p, json!([script])).is_err());
-    let mut tool_permission = create.clone();
-    tool_permission["files"][0]["text"] =
-        json!(manifest.replace("description:", "allowed-tools: Bash\ndescription:"));
-    assert!(scoped(&p, json!([tool_permission])).is_err());
+    // Generated frontmatter is an allowlist of name and description.
+    for extra in [
+        "allowed-tools: Bash",
+        "hooks:\n  PreToolUse: run.sh",
+        "model: opus",
+        "license: MIT",
+        "Name: other",
+    ] {
+        let mut restricted = create.clone();
+        restricted["files"][0]["text"] =
+            json!(manifest.replace("description:", &format!("{extra}\ndescription:")));
+        assert!(scoped(&p, json!([restricted])).is_err(), "{extra}");
+    }
+    let mut block = create.clone();
+    block["files"][0]["text"] = json!(manifest.replace(
+        "description: Classify a settlement",
+        "description: |\n  Classify a settlement\n  in two lines"
+    ));
+    assert!(scoped(&p, json!([block])).is_ok());
     let (created, _) = scoped(&p, json!([create.clone()])).unwrap();
     assert_eq!(created.files[2].path, "skills/settlement/SKILL.md");
     assert!(scoped(&created, json!([create.clone()])).is_err());
@@ -224,4 +239,38 @@ fn proposal_growth_is_measured_against_encoded_parent() {
         reconstruct(&parent, &request(), &edit).err().unwrap(),
         "Candidate exceeds proposal byte-growth limit"
     );
+}
+
+#[test]
+fn generated_skill_edits_change_only_name_and_description_frontmatter() {
+    let skill = |frontmatter: &str, body: &str| -> BundlePayload {
+        serde_json::from_value(json!({"schemaVersion":1,"files":[{"path":"skills/settle/SKILL.md","kind":"skill","text":format!("---\nname: settle\n{frontmatter}description: Settle a claim\n---\n{body}")}]})).unwrap()
+    };
+    let mut request = request();
+    request.allowed_paths = vec!["skills/settle/SKILL.md".into()];
+    let edit = |parent: &BundlePayload, old: &str, new: &str| {
+        reconstruct(
+            parent,
+            &request,
+            &patch(json!([{"path":"skills/settle/SKILL.md","oldText":old,"newText":new}])),
+        )
+    };
+    let plain = skill("", "Use the ledger.");
+    assert!(edit(&plain, "Use the ledger.", "Use the ledger twice.").is_ok());
+    assert!(edit(&plain, "Settle a claim", "Settle a disputed claim").is_ok());
+    for added in [
+        "allowed-tools: Bash\n",
+        "hooks:\n  Stop: run.sh\n",
+        "model: opus\n",
+    ] {
+        assert!(
+            edit(&plain, "description:", &format!("{added}description:")).is_err(),
+            "{added}"
+        );
+    }
+    // An author's own permissions stay exactly as written; the body can still change.
+    let authored = skill("allowed-tools: Read\n", "Use the ledger.");
+    assert!(edit(&authored, "Use the ledger.", "Use the ledger twice.").is_ok());
+    assert!(edit(&authored, "allowed-tools: Read", "allowed-tools: Bash").is_err());
+    assert!(edit(&authored, "allowed-tools: Read\n", "").is_err());
 }

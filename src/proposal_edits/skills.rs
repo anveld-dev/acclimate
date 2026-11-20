@@ -227,7 +227,11 @@ pub(crate) fn validate_changes(
             {
                 return Err("Invalid skill package".into());
             }
-            if file.kind == "skill" && grants_tools(&next.text) && !grants_tools(&file.text) {
+            // A generated edit may change only `name` and `description` frontmatter.
+            // Anything else an author declared, such as `allowed-tools`, stays as written.
+            if file.kind == "skill"
+                && restricted_frontmatter(&next.text) != restricted_frontmatter(&file.text)
+            {
                 return Err("Invalid skill package".into());
             }
             changed |= file.text != next.text;
@@ -290,26 +294,46 @@ pub(crate) fn validate_changes(
         };
         // A generic bundle also needs a usable SKILL.md in a newly created package.
         compatibility::validate(&package, "codex").map_err(|_| "Invalid skill package")?;
-        // Authored packages may bundle scripts and tool permissions; a model-written
-        // proposal may not add executable helpers or grant itself tools.
-        if package
-            .files
-            .iter()
-            .any(|file| !file.path.ends_with(".md") || grants_tools(&file.text))
-        {
+        // Authored packages may bundle scripts, tool permissions, hooks or a model;
+        // a generated package is Markdown whose frontmatter is only `name` and
+        // `description`, so it cannot grant itself tools or permissions.
+        if package.files.iter().any(|file| {
+            !file.path.ends_with(".md") || !restricted_frontmatter(&file.text).is_empty()
+        }) {
             return Err("Invalid skill package".into());
         }
     }
     Ok(())
 }
 
-/// True when a SKILL.md frontmatter declares tool permissions (`allowed-tools:`).
-fn grants_tools(text: &str) -> bool {
+/// Frontmatter keys a service-generated proposal may write.
+const PROPOSAL_FRONTMATTER: [&str; 2] = ["name", "description"];
+
+/// The frontmatter lines outside the proposal allowlist: every key other than
+/// `name` and `description` (such as `allowed-tools`, `hooks` or `model`), with
+/// its indented continuation lines, and any line that is not a key at all.
+fn restricted_frontmatter(text: &str) -> Vec<String> {
     let normalized = text.replace("\r\n", "\n");
     let Some(rest) = normalized.strip_prefix("---\n") else {
-        return false;
+        return Vec::new();
     };
-    rest.split('\n')
-        .take_while(|line| *line != "---")
-        .any(|line| line.to_ascii_lowercase().starts_with("allowed-tools:"))
+    let mut restricted = Vec::new();
+    let mut inside_restricted = false;
+    for line in rest.split('\n').take_while(|line| *line != "---") {
+        if line.trim().is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with([' ', '\t']) {
+            if inside_restricted {
+                restricted.push(line.to_owned());
+            }
+            continue;
+        }
+        let key = line.split_once(':').map(|(key, _)| key.trim_end());
+        inside_restricted = !key.is_some_and(|key| PROPOSAL_FRONTMATTER.contains(&key));
+        if inside_restricted {
+            restricted.push(line.to_owned());
+        }
+    }
+    restricted
 }

@@ -83,12 +83,8 @@ def verify(w,b,p,routes,out,checks):
     visit(p,b,routes['connection-detail'])
     p.get_by_role('tab',name='Credentials',exact=True).click()
     expect(p.get_by_label('Issued read credentials',exact=True).get_by_text('Read credential · Active',exact=True)).to_be_visible()
-    reporting=p.get_by_role('button',name='Optional delivery reports & credentials',exact=True)
-    expect(reporting).to_have_attribute('aria-expanded','false')
-    reporting.focus();p.keyboard.press('Enter')
     expect(p.get_by_label('Issued reporting credentials',exact=True)).to_be_visible()
     capture_layout(p,out,'connection-reporting-open')
-    reporting.click()
     p.get_by_role('tab',name='Delivery reports',exact=True).click()
     report=p.get_by_test_id('delivery-report').first
     trigger=report.get_by_role('button')

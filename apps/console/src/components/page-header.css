@@ -162,3 +162,14 @@ button.member-actions-trigger {
   opacity: 0.5;
   cursor: wait;
 }
+/* A title accessory (status or channel) sits on the title's line and wraps under it when tight. */
+.page-header-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+}
+.page-header-title-row h1 {
+  min-width: 0;
+}

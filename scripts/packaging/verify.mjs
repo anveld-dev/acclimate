@@ -326,6 +326,13 @@ export const { execute, grade } = adapter;
         !isDeepStrictEqual(typed.expectedCases, descriptor.expectedCases))
       throw new Error('Native TypeScript adapter lost application identity or case inventory');
     const analysisFixture = JSON.parse(await readFile(join(root, 'contracts/fixtures/evaluation-analysis/vectors.json'), 'utf8'));
+    // Vector 0's expected result is computed on the shared input with its patches applied.
+    for (const patch of analysisFixture.vectors[0].patches) {
+      let target = analysisFixture.input;
+      for (const segment of patch.path.slice(0, -1)) target = target[segment];
+      if (patch.remove) delete target[patch.path.at(-1)];
+      else target[patch.path.at(-1)] = patch.value;
+    }
     const analysisInput = join(temp, 'analysis-input');
     await mkdir(analysisInput, { mode: 0o700 });
     const analysisArgs = [];

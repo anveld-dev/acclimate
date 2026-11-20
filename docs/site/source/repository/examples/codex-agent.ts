@@ -1,16 +1,17 @@
 import { Codex } from '@openai/codex-sdk';
-import { resolve, join } from 'node:path';
-import { realpath } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { AcclimateClient, resolveAndCache } from '../packages/sdk/src/index.js';
-import { prepare } from '../packages/codex-plugin/src/index.js';
+import { resolve } from 'node:path';
+import { AcclimateClient, defaultCacheDir, resolveAndCache } from '@acclimate/sdk';
+import { prepare } from '@acclimate/codex-plugin';
 import { withNativeSessionInputs } from './native-session-lifetime.js';
 import {
   optionalReceipts,
   observeOptional,
   observeStartOnce,
+  rejectRenamedEnvironment,
   settleOptional,
 } from './optional-receipts.js';
+
+rejectRenamedEnvironment();
 
 if (!process.argv.includes('--live'))
   throw new Error('Pass --live to request a paid Luna session.');
@@ -21,19 +22,19 @@ const prompt = process.argv
   .trim();
 if (!prompt) throw new Error('Supply the task for your Codex session.');
 const {
-  ACCLIMATE_PROJECT: projectId,
+  ACCLIMATE_WORKSPACE: workspaceId,
   ACCLIMATE_URL: baseUrl,
   ACCLIMATE_SCOPE: scope,
 } = process.env;
-if (!projectId || !baseUrl || !scope)
-  throw new Error('Set ACCLIMATE_PROJECT, ACCLIMATE_URL and ACCLIMATE_SCOPE.');
+if (!workspaceId || !baseUrl || !scope)
+  throw new Error('Set ACCLIMATE_WORKSPACE, ACCLIMATE_URL and ACCLIMATE_SCOPE.');
 const token = process.env.ACCLIMATE_TOKEN;
 const bundleId = process.env.ACCLIMATE_BUNDLE;
 if (!token || !bundleId) throw new Error('Set ACCLIMATE_TOKEN and ACCLIMATE_BUNDLE.');
 const model = process.env.ACCLIMATE_CODEX_MODEL ?? 'gpt-6-luna';
 if (!['gpt-6-luna', 'gpt-5.6-luna'].includes(model))
   throw new Error('Only Luna models are allowed.');
-const reporter = optionalReceipts(process.env, projectId);
+const reporter = optionalReceipts(process.env, workspaceId);
 const client = new AcclimateClient({
   baseUrl,
   token,
@@ -42,15 +43,13 @@ const client = new AcclimateClient({
 const verified = await resolveAndCache(
   client,
   {
-    projectId,
+    workspaceId,
     bundleId,
     channel: process.env.ACCLIMATE_CHANNEL ?? 'stable',
   },
   {
     reporter,
-    cacheDir: resolve(
-      process.env.ACCLIMATE_CACHE ?? join(await realpath(homedir()), '.cache', 'acclimate'),
-    ),
+    cacheDir: resolve(process.env.ACCLIMATE_CACHE ?? (await defaultCacheDir())),
   },
 );
 const prepared = await prepare(verified);

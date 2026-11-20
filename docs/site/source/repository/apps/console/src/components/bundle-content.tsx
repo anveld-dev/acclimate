@@ -40,7 +40,7 @@ export function BundleContent({
   const router = useRouter();
   const [query, setQuery] = useState(typeof search.q === 'string' ? search.q : '');
   useEffect(() => setQuery(typeof search.q === 'string' ? search.q : ''), [search.q]);
-  const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
+  const scope = { workspaceId: state.workspaceId, bundleId: state.bundleId, channel: state.channel };
   const [view, setView] = useState('source');
   const requestedSourceFocus = useRef<string | null>(null);
   const [wrap, setWrap] = useState(true);
@@ -72,7 +72,7 @@ export function BundleContent({
   const fileReference = selected
     ? JSON.stringify(
         {
-          projectId: scope.projectId,
+          workspaceId: scope.workspaceId,
           bundleId: scope.bundleId,
           versionId: version.id,
           versionDigest: version.digest,
@@ -172,7 +172,7 @@ export function BundleContent({
             selectedId={selected?.path}
             scopeKey={JSON.stringify([
               state.actorScope,
-              state.projectId,
+              state.workspaceId,
               state.bundleId,
               state.channel,
             ])}

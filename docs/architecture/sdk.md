@@ -49,7 +49,7 @@ Preparation makes job-local copies or native inputs, leaving cached bytes immuta
 
 Use Codex for the live check, with Claude/Pi mappings to test whether the same verified version boundary is useful. Each plugin validates what it can map, returns prepared locations and native options, and reports unsupported content. It must not claim a skill was invoked merely because it was delivered. Memory is bundle content, not an assumed native memory option. Prompt replacement requires explicit app policy.
 
-The shared [native preparation module](../../packages/sdk/src/internal/native-files.ts) owns staging and the common instruction, skill-manifest, and original-memory-path projections. Each native adapter retains its harness-specific mapping and policy: Claude/Cursor settings, Cursor's approved-memory selection, and Pi's resource list. Plugin result shapes and application-owned cleanup remain unchanged.
+The shared [native preparation module](../../packages/sdk/src/native-files.ts) owns staging and the common instruction, skill-manifest, and original-memory-path projections. Each native adapter retains its harness-specific mapping and policy: Claude/Cursor settings, Cursor's approved-memory selection, and Pi's resource list. Plugin result shapes and application-owned cleanup remain unchanged.
 
 Consult the current [native SDK research](../research/sdk-file-delivery.md) for discovery and configuration routes; pin and validate the actual native SDK version in each example. Do not invent native option fields. Test fresh and resumed sessions separately: refresh affects future preparations, while a running session changes only through an explicit app action supported by its SDK. Paths with spaces and existing files deserve separate checks.
 

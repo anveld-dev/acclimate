@@ -12,7 +12,7 @@ The proposed package exports record schemas and two pure functions. There is del
 // Proposed @acclimate/learning-protocol, not a current package export.
 type Digest = `sha256:${string}`;
 type Ref = { digest: Digest; bytes: number; mediaType: string };
-type Scope = { serviceOrigin: string; projectId: string; bundleId: string };
+type Scope = { serviceOrigin: string; workspaceId: string; bundleId: string };
 
 type ProtocolInput = {
   scope: Scope;

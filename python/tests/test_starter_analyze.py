@@ -6,10 +6,11 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# The distributed starter's analysis recipe, exercised against the shared repo fixtures.
+# This test lives outside the starter so the archive ships no checkout-only test.
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "examples/evaluation-starter"))
 from analyze import main
-
-ROOT = Path(__file__).resolve().parents[3]
 INPUT = json.loads((ROOT / "contracts/fixtures/evaluation-analysis/vectors.json").read_text())["input"]
 
 

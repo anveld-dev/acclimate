@@ -27,7 +27,7 @@ import { randomUUID } from 'node:crypto';
 
 type Entry = { integration: Connection; receipts: Page<DeliveryReceipt> };
 export type IntegrationState = {
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   channel: string;
   currentVersionId: string;
@@ -114,40 +114,41 @@ async function context(env: Environment, fetcher: typeof fetch) {
     ),
   };
 }
-async function workspaceContext(env: Environment, projectId: string, fetcher: typeof fetch) {
+async function workspaceContext(env: Environment, workspaceId: string, fetcher: typeof fetch) {
   requireSession(env);
-  if (!validScopePart(projectId) || !env.CONSOLE_SERVICE_TOKEN) throw Error('Select a workspace');
+  if (!validScopePart(workspaceId) || !env.CONSOLE_SERVICE_TOKEN) throw Error('Select a workspace');
   const client = consoleClient(env, fetcher);
   const projects = await allPages(
     (cursor) => client.listWorkspaces({ limit: 100, cursor }),
     MAX_LISTING_PAGES,
   );
-  const project = projects.find((p) => p.id === projectId);
+  const project = projects.find((p) => p.id === workspaceId);
   if (!project) throw new ApiError(403, 'denied', 'Workspace unavailable', '');
   // The list itself is an admin route. Recheck live rights for every server command.
   const admin = project.role === 'admin';
   if (!admin) throw new ApiError(403, 'denied', 'Administrator required', '');
   const integrations = await allPages(
-    (cursor) => client.listConnections(projectId, { limit: 100, cursor }),
+    (cursor) => client.listConnections(workspaceId, { limit: 100, cursor }),
     MAX_LISTING_PAGES,
   );
-  if (integrations.some((i) => i.projectId !== projectId)) throw Error('Connection scope mismatch');
+  if (integrations.some((i) => i.workspaceId !== workspaceId))
+    throw Error('Connection scope mismatch');
   return {
     client,
-    projectId,
+    workspaceId,
     project,
     integrations,
     canManage: admin && env.CONSOLE_ALLOW_EDITS === 'true',
   };
 }
 async function readReceiptPage(client: AcclimateClient, integration: Connection, cursor?: string) {
-  const { projectId, id, bundleId } = integration;
-  const receipts = await client.listDeliveryReceipts(projectId, id, { limit: 20, cursor });
+  const { workspaceId, id, bundleId } = integration;
+  const receipts = await client.listDeliveryReceipts(workspaceId, id, { limit: 20, cursor });
   if (
     receipts.items.some(
       (receipt) =>
-        receipt.projectId !== projectId ||
-        receipt.integrationId !== id ||
+        receipt.workspaceId !== workspaceId ||
+        receipt.connectionId !== id ||
         receipt.bundleId !== bundleId,
     )
   )
@@ -161,7 +162,7 @@ export async function readIntegrationState(
 ): Promise<IntegrationResult> {
   try {
     const c = await context(env, fetcher);
-    const resolution = (await c.client.resolveChannel(c.projectId, c.bundleId, c.channel))
+    const resolution = (await c.client.resolveChannel(c.workspaceId, c.bundleId, c.channel))
       .resolution;
     if (!resolution) throw Error('Channel missing');
     const entries = await Promise.all(
@@ -173,7 +174,7 @@ export async function readIntegrationState(
     return {
       ok: true,
       state: {
-        projectId: c.projectId,
+        workspaceId: c.workspaceId,
         bundleId: c.bundleId,
         channel: c.channel,
         currentVersionId: resolution.version.id,
@@ -212,7 +213,7 @@ export async function integrationCommand(
       )
         return { ok: false, message: 'Use a display name of 1–120 characters.' };
       const integration = await c.client.createConnection(
-        c.projectId,
+        c.workspaceId,
         { bundleId: c.bundleId, channel: c.channel, displayName: input.displayName.trim() },
         input.key,
       );
@@ -245,7 +246,7 @@ export async function integrationCommand(
             };
         }
         const credential = await c.client.createConnectionCredential(
-          c.projectId,
+          c.workspaceId,
           input.id,
           { kind: input.kind },
           input.key,
@@ -253,11 +254,11 @@ export async function integrationCommand(
         return { ok: true, credential };
       }
       if (input.action === 'revoke')
-        await c.client.revokeConnection(c.projectId, input.id, input.key);
+        await c.client.revokeConnection(c.workspaceId, input.id, input.key);
       if (input.action === 'revokeCredential') {
         if (!uuid.test(input.credentialId)) return { ok: false, message: 'Invalid credential ID.' };
         await c.client.revokeConnectionCredential(
-          c.projectId,
+          c.workspaceId,
           input.id,
           input.credentialId,
           input.key,
@@ -272,7 +273,7 @@ export async function integrationCommand(
 
 /** Canonical workspace commands bind the destination rendered with the form. */
 export type ConnectionCommand = IntegrationCommand & {
-  projectId: string;
+  workspaceId: string;
   bundleId: string;
   channel: string;
 };
@@ -283,7 +284,7 @@ export async function connectionCommand(
 ): Promise<IntegrationResult> {
   if (
     !input ||
-    !validScopePart(input.projectId) ||
+    !validScopePart(input.workspaceId) ||
     !validScopePart(input.bundleId) ||
     !validScopePart(input.channel)
   )
@@ -291,7 +292,7 @@ export async function connectionCommand(
   return integrationCommand(
     {
       ...env,
-      CONSOLE_PROJECT: input.projectId,
+      CONSOLE_PROJECT: input.workspaceId,
       CONSOLE_BUNDLE: input.bundleId,
       CONSOLE_CHANNEL: input.channel,
     },
@@ -304,7 +305,7 @@ function validScopePart(value: unknown): value is string {
   return typeof value === 'string' && /^[^\x00-\x20\x7f/]{1,200}$/.test(value);
 }
 
-type LearningTarget = { projectId: string; integrationId: string };
+type LearningTarget = { workspaceId: string; connectionId: string };
 export type LearningRequest = LearningTarget &
   (
     | { action: 'read' }
@@ -409,16 +410,16 @@ export async function lookupLearningOutcome(
 ): Promise<OutcomeLookupResult> {
   if (
     !input ||
-    !validScopePart(input.projectId) ||
-    !uuid.test(input.integrationId) ||
+    !validScopePart(input.workspaceId) ||
+    !uuid.test(input.connectionId) ||
     !uuid.test(input.outcomeId)
   )
     return { ok: false, message: 'Enter the outcome UUID your application reported.' };
   try {
     requireSession(env);
     const result = await consoleClient(env, fetcher).getLearningOutcome(
-      input.projectId,
-      input.integrationId,
+      input.workspaceId,
+      input.connectionId,
       input.outcomeId,
     );
     if (result.outcomeId !== input.outcomeId.toLowerCase()) throw Error('Outcome mismatch');
@@ -507,29 +508,29 @@ export async function connectionLearning(
       'skills',
       'restore',
     ].includes(input.action) ||
-    !validScopePart(input.projectId) ||
-    typeof input.integrationId !== 'string' ||
-    !uuid.test(input.integrationId)
+    !validScopePart(input.workspaceId) ||
+    typeof input.connectionId !== 'string' ||
+    !uuid.test(input.connectionId)
   )
     return { ok: false, message: 'Select a connection in this workspace.' };
   if (input.action !== 'read' && env.CONSOLE_ALLOW_EDITS !== 'true')
     return { ok: false, message: 'Editing is disabled for this console.' };
 
   try {
-    const { client, integrations, projectId } = await workspaceContext(
+    const { client, integrations, workspaceId } = await workspaceContext(
       env,
-      input.projectId,
+      input.workspaceId,
       fetcher,
     );
-    const integration = integrations.find((item) => item.id === input.integrationId);
+    const integration = integrations.find((item) => item.id === input.connectionId);
     if (!integration) return { ok: false, message: 'Connection not found in this workspace.' };
     const { id, bundleId, channel } = integration;
     async function inspect() {
       try {
-        const status = await client.getLearningEnrollment(projectId, id);
+        const status = await client.getLearningEnrollment(workspaceId, id);
         if (
-          status.projectId !== projectId ||
-          status.integrationId !== id ||
+          status.workspaceId !== workspaceId ||
+          status.connectionId !== id ||
           status.bundleId !== bundleId ||
           status.channel !== channel
         )
@@ -553,7 +554,7 @@ export async function connectionLearning(
             message: error instanceof Error ? error.message : 'Invalid learning setup.',
           };
         }
-        await client.enrollLearning(projectId, id, policy, randomUUID());
+        await client.enrollLearning(workspaceId, id, policy, randomUUID());
         break;
       }
       case 'rollout':
@@ -594,7 +595,7 @@ export async function connectionLearning(
           input.action === 'rollback' ? current.automaticRollback : current.automaticRollout;
         if (skills || previous !== desired) {
           await client.enrollLearning(
-            projectId,
+            workspaceId,
             id,
             {
               installationId: current.installationId,
@@ -637,7 +638,7 @@ export async function connectionLearning(
             ok: false,
             message: 'Select a reviewed delivery target and enter a reason of up to 1,024 bytes.',
           };
-        await client.restoreLearning(projectId, id, {
+        await client.restoreLearning(workspaceId, id, {
           restoreId: input.restoreId,
           expectedRevision: input.expectedRevision,
           target: { kind: target.kind, revision: target.revision, versionId: target.versionId },
@@ -646,7 +647,7 @@ export async function connectionLearning(
         break;
       }
       case 'stop':
-        await client.stopLearning(projectId, id, randomUUID());
+        await client.stopLearning(workspaceId, id, randomUUID());
         break;
       case 'review': {
         if (
@@ -678,7 +679,7 @@ export async function connectionLearning(
             message: 'Review the blocking policies and enter a reason of up to 1,024 bytes.',
           };
         await client.reviewLearningRound(
-          projectId,
+          workspaceId,
           id,
           input.roundId,
           input.approve,
@@ -715,7 +716,7 @@ export async function connectionLearning(
             message: error instanceof Error ? error.message : 'Invalid renewal settings.',
           };
         }
-        await client.renewLearning(projectId, id, {
+        await client.renewLearning(workspaceId, id, {
           ...settings,
           renewalId: input.renewalId,
           expectedRevision: input.expectedRevision,
@@ -733,7 +734,7 @@ export async function connectionLearning(
         if (round.developmentCandidateVersionId) versions.add(round.developmentCandidateVersionId);
         const receipts = await Promise.all(
           [...versions].map((version) =>
-            client.listCandidatePolicyReceipts(projectId, bundleId, version),
+            client.listCandidatePolicyReceipts(workspaceId, bundleId, version),
           ),
         );
         return receipts
@@ -874,7 +875,7 @@ export type ConnectionBundle = {
   channels: { name: string; revision: string }[];
 };
 export type ConnectionsState = {
-  projectId: string;
+  workspaceId: string;
   publicApiUrl: string;
   projectName: string;
   actorScope: string;
@@ -899,20 +900,20 @@ export type ConnectionsResult =
 
 export async function readConnectionsState(
   env: Environment,
-  input: { projectId: string; integrationId?: string },
+  input: { workspaceId: string; connectionId?: string },
   fetcher: typeof fetch = fetch,
 ): Promise<ConnectionsResult> {
   try {
-    const c = await workspaceContext(env, input.projectId, fetcher);
+    const c = await workspaceContext(env, input.workspaceId, fetcher);
     const [summaries, observations] = await Promise.all([
       allPages(
-        (cursor) => c.client.listBundles(c.projectId, { limit: 100, cursor }),
+        (cursor) => c.client.listBundles(c.workspaceId, { limit: 100, cursor }),
         MAX_LISTING_PAGES,
       ),
-      input.integrationId
+      input.connectionId
         ? undefined
         : allPages(
-            (cursor) => c.client.listConnectionObservations(c.projectId, { limit: 100, cursor }),
+            (cursor) => c.client.listConnectionObservations(c.workspaceId, { limit: 100, cursor }),
             MAX_LISTING_PAGES,
           ).catch(() => undefined),
     ]);
@@ -932,15 +933,15 @@ export async function readConnectionsState(
         name: bundle.name,
         compatibilityTarget: bundle.compatibilityTarget,
         channels: await allPages(
-          (cursor) => c.client.listChannels(c.projectId, bundle.id, { limit: 100, cursor }),
+          (cursor) => c.client.listChannels(c.workspaceId, bundle.id, { limit: 100, cursor }),
           MAX_LISTING_PAGES,
         ),
       })),
     );
-    const integration = input.integrationId
-      ? c.integrations.find((item) => item.id === input.integrationId)
+    const integration = input.connectionId
+      ? c.integrations.find((item) => item.id === input.connectionId)
       : undefined;
-    if (input.integrationId && !integration)
+    if (input.connectionId && !integration)
       return {
         ok: false,
         message: 'Connection not found in this workspace.',
@@ -950,7 +951,7 @@ export async function readConnectionsState(
     if (integration) {
       const [receipts, result] = await Promise.all([
         readReceiptPage(c.client, integration),
-        c.client.resolveChannel(c.projectId, integration.bundleId, integration.channel),
+        c.client.resolveChannel(c.workspaceId, integration.bundleId, integration.channel),
       ]);
       if (!result.resolution) throw Error('Channel unavailable');
       selected = {
@@ -964,7 +965,7 @@ export async function readConnectionsState(
     return {
       ok: true,
       state: {
-        projectId: c.projectId,
+        workspaceId: c.workspaceId,
         publicApiUrl: env.CONSOLE_PUBLIC_API_URL!,
         projectName: c.project.name,
         actorScope: actorScope(env),

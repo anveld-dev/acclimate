@@ -56,7 +56,7 @@ import {
   closeSetup,
 } from '../server/setup-actions';
 type LibraryState = Awaited<ReturnType<typeof readWorkspaceBundles>>;
-export function BundleLibrary({ state, projectId }: { state: LibraryState; projectId: string }) {
+export function BundleLibrary({ state, workspaceId }: { state: LibraryState; workspaceId: string }) {
   const router = useRouter();
   const mounted = useRef(true);
   useEffect(() => {
@@ -72,7 +72,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
   const [storageReady, setStorageReady] = useState(false);
   const [name, setName] = useState('');
   const [bundleQuery, setBundleQuery] = useState('');
-  const entries = state.ok ? state.entries.filter((entry) => entry.projectId === projectId) : [];
+  const entries = state.ok ? state.entries.filter((entry) => entry.workspaceId === workspaceId) : [];
   const [targetFilter, setTargetFilter] = useState('');
   const targets = Array.from(
     new Set(entries.map(({ bundle }) => bundle.compatibilityTarget)),
@@ -134,12 +134,12 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
     clearBrowserText();
     setShowCreate(false);
   }, [discardVersion]);
-  type Pending = { key: string; projectId: string; body?: string };
+  type Pending = { key: string; workspaceId: string; body?: string };
   const recoveryScope: PendingScope = {
     owner: 'library',
     actorScope: state.ok ? state.actorScope : 'unauthenticated',
     serviceIdentity: state.ok ? state.serviceIdentity : '',
-    projectId,
+    workspaceId,
   };
   const [operation, setOperation] = useState<Pending>();
   const [confirmed, setConfirmed] = useState(false);
@@ -147,14 +147,14 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
     setStorageReady(false);
     try {
       const frozen = loadPending(sessionStorage, recoveryScope);
-      setOperation(frozen ? { key: frozen.key, projectId, body: frozen.body } : undefined);
+      setOperation(frozen ? { key: frozen.key, workspaceId, body: frozen.body } : undefined);
       setStorageReady(true);
     } catch {
       setMessage(
         'Creation recovery data could not be read. Enable browser storage before creating content.',
       );
     }
-  }, [recoveryScope.actorScope, recoveryScope.serviceIdentity, projectId]);
+  }, [recoveryScope.actorScope, recoveryScope.serviceIdentity, workspaceId]);
   let preview: { path: string; kind: string; text: string }[] | undefined;
   let validationError = '';
   let importIssues: CompatibilityIssue[] = [];
@@ -225,7 +225,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
     setMessage('');
     try {
       const payload = operation ? undefined : creationPayload();
-      const reviewed = { projectId, name, channel, origin, payload, compatibilityTarget };
+      const reviewed = { workspaceId, name, channel, origin, payload, compatibilityTarget };
       if (operation) {
         const stored = loadPending(sessionStorage, recoveryScope);
         if (!stored?.body) {
@@ -246,13 +246,13 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
           const frozen = freezePending(
             sessionStorage,
             recoveryScope,
-            `/v1/workspaces/${encodeURIComponent(projectId)}/bundle-setups`,
+            `/v1/workspaces/${encodeURIComponent(workspaceId)}/bundle-setups`,
             setupRequest(reviewed),
           );
-          return { key: frozen.key, projectId, body: frozen.body };
+          return { key: frozen.key, workspaceId, body: frozen.body };
         })();
       setOperation(current);
-      const request = { ...JSON.parse(current.body!), projectId } as Parameters<
+      const request = { ...JSON.parse(current.body!), workspaceId } as Parameters<
         typeof createWorkspaceContent
       >[0]['data'];
       if (operation) {
@@ -384,7 +384,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                 onClick={async () => {
                   setPending(true);
                   try {
-                    const result = await closeSetup({ data: { projectId, key: operation.key } });
+                    const result = await closeSetup({ data: { workspaceId, key: operation.key } });
                     if (result.ok && result.operation.status === 'closed') {
                       resolvePending(sessionStorage, recoveryScope);
                       setOperation(undefined);
@@ -410,7 +410,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
             <h2 className="text-lg font-semibold">Sign in to open this workspace</h2>
             <p className="text-muted-foreground">Sign in to view your bundles and saved changes.</p>
             <Button asChild>
-              <a href={signInHref(workspaceHref(projectId, 'bundles'))}>Sign in</a>
+              <a href={signInHref(workspaceHref(workspaceId, 'bundles'))}>Sign in</a>
             </Button>
           </section>
         ) : (
@@ -502,7 +502,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                       (channel) => channel !== primary && !matchingChannels.includes(channel),
                     );
                     const channelLink = ({ name, revision }: (typeof channels)[number]) => {
-                      const scope = { projectId, bundleId: bundle.id, channel: name };
+                      const scope = { workspaceId, bundleId: bundle.id, channel: name };
                       return (
                         <span key={name} className="bundle-published-channel">
                           <ConsoleLink
@@ -535,7 +535,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                                     className="bundle-directory-link underline-offset-4 hover:underline"
                                     aria-description={`Opens the ${primary.name} channel`}
                                     href={bundleHref(
-                                      { projectId, bundleId: bundle.id, channel: primary.name },
+                                      { workspaceId, bundleId: bundle.id, channel: primary.name },
                                       'content',
                                     )}
                                   >
@@ -589,7 +589,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                           <DisclosureContent className="bundle-reference-details">
                             <dl className="grid gap-4 sm:grid-cols-2">
                               {[
-                                ['Workspace ID', projectId, 'Copy workspace ID'],
+                                ['Workspace ID', workspaceId, 'Copy workspace ID'],
                                 ['Bundle ID', bundle.id, 'Copy bundle ID'],
                               ].map(([label, value, copyLabel]) => (
                                 <div key={label} className="min-w-0">
@@ -629,7 +629,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                                       <ConsoleLink
                                         aria-label={`App setup for ${channel.name}`}
                                         href={bundleHref(
-                                          { projectId, bundleId: bundle.id, channel: channel.name },
+                                          { workspaceId, bundleId: bundle.id, channel: channel.name },
                                           'connect',
                                         )}
                                       >
@@ -897,7 +897,7 @@ export function BundleLibrary({ state, projectId }: { state: LibraryState; proje
                   disabled={
                     pending ||
                     readingFiles ||
-                    !projectId ||
+                    !workspaceId ||
                     !name.trim() ||
                     !channel.trim() ||
                     !preview ||

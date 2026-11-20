@@ -1,0 +1,6657 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Acclimate content service",
+    "version": "0.2.0",
+    "description": "Acclimate content service: versioned agent bundles, channels and releases, paired comparisons, evaluation requests run by application-owned evaluators, and connected learning. This document is the source of truth for routes, fields, status codes and error codes. Compatibility and deprecation rules are in the versioning and compatibility reference."
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning": {
+      "get": {
+        "operationId": "getLearningEnrollment",
+        "summary": "Inspect the connection’s delivery and private development incumbent",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enrollment status and recent rounds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningEnrollmentInspection"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "configureConnectionLearning",
+        "summary": "Enroll a connection in connected learning",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxCorrectionsPerRound": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "default": 5
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Enrollment settings and status"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles": {
+      "post": {
+        "operationId": "createBundle",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "description": "Replay same key and exact request bytes within 24h. Different bytes conflict."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bundle"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBundleRequest"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listBundles",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/versions": {
+      "post": {
+        "operationId": "createVersion",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "description": "Replay same key and exact request bytes within 24h. Different bytes conflict."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionMetadata"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVersionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/versions/{versionId}": {
+      "get": {
+        "operationId": "getVersion",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "X-Acclimate-Connection-Id",
+            "in": "header",
+            "required": false,
+            "description": "Qualify the read by this connection's delivery. A scoped delivery credential implies its own connection.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionMetadata"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/versions/{versionId}/payload": {
+      "get": {
+        "operationId": "getPayload",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "X-Acclimate-Connection-Id",
+            "in": "header",
+            "required": false,
+            "description": "Qualify the read by this connection's delivery. A scoped delivery credential implies its own connection.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exact immutable UTF-8 payload bytes; hash these bytes before JSON parsing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BundlePayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/channels/{channel}": {
+      "get": {
+        "operationId": "resolveChannel",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Acclimate-Connection-Id",
+            "in": "header",
+            "required": false,
+            "description": "Qualify the read by this connection's delivery. A scoped delivery credential implies its own connection.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelResolution"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Opaque channel validator; retain the server value."
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged mapping, no response body.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/channels/{channel}/releases": {
+      "get": {
+        "operationId": "listReleases",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "beforeRevision",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "description": "Exclusive older-than bound. Opaque cursor, newest revision first."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createRelease",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "description": "Replay same key and exact request bytes within 24h. Different bytes conflict."
+          },
+          {
+            "name": "X-Acclimate-Durable-Operation",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            },
+            "description": "Retain the audited command outcome. Matching closed fences apply to marked and unmarked retries."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Promotion"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/proposals": {
+      "post": {
+        "operationId": "createProposal",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "description": "Replay same key and exact request bytes within 24h. Different bytes conflict."
+          },
+          {
+            "name": "X-Acclimate-Durable-Operation",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            },
+            "description": "Retain the audited command outcome. Matching closed fences apply to marked and unmarked retries."
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposalRequest"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listProposals",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/proposals/{proposalId}": {
+      "get": {
+        "operationId": "getProposal",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "proposalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/comparisons": {
+      "post": {
+        "operationId": "createComparison",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "description": "Replay same key and exact request bytes within 24h. Different bytes conflict."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comparison"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComparisonRequest"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listComparisons",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/comparisons/{comparisonId}": {
+      "get": {
+        "operationId": "getComparison",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "comparisonId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comparison"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Process liveness."
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/evaluation-requests": {
+      "post": {
+        "operationId": "createEvaluation",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Acclimate-Durable-Operation",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            },
+            "description": "Retain the audited command outcome. Matching closed fences apply to marked and unmarked retries."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationRequest"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listEvaluations",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Chronological created_at/id keyset pagination. Pass the scoped nextCursor returned by the preceding page."
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/evaluation-requests/{evaluationId}": {
+      "get": {
+        "operationId": "getEvaluation",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "evaluationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/start": {
+      "post": {
+        "operationId": "startEvaluation",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "evaluationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartEvaluationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/finish": {
+      "post": {
+        "operationId": "finishEvaluation",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "evaluationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinishEvaluationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/interrupt": {
+      "post": {
+        "operationId": "interruptEvaluation",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "evaluationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterruptEvaluationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/evaluation-requests/{evaluationId}/abandon": {
+      "post": {
+        "operationId": "abandonEvaluation",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "evaluationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbandonEvaluationRequest"
+              }
+            }
+          }
+        },
+        "description": "Abandon a requested or running attempt whose outcome is unknown, such as a cancelled CI job. Requires `evaluate` (or a workspace editor). The attempt's later reports are refused, promotion rejects comparisons bound to it, and a new request for the same candidate may start. It never claims the original worker stopped. Connected-learning requests return `managed_evaluation`."
+      }
+    },
+    "/v1/workspaces/{workspaceId}/operations/{operationId}": {
+      "get": {
+        "operationId": "getOperation",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operationPath",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Setup/draft lookup by key or route lookup by canonical operationPath. Rechecks effective current action authority before returning a result."
+      }
+    },
+    "/v1/workspaces/{workspaceId}/operations/{operationId}/close": {
+      "post": {
+        "operationId": "closeOperation",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseOperationRequest"
+              }
+            }
+          }
+        },
+        "description": "Existing commit wins; otherwise fence the matching global or route-scoped identity. Repeatable; late marked and unmarked writes cannot pass the fence."
+      }
+    },
+    "/v1/workspaces/{workspaceId}/memberships": {
+      "get": {
+        "operationId": "listWorkspaceMembers",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceMemberPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Current browser administrator only; not a global directory or machine-token grant."
+      }
+    },
+    "/v1/workspaces/{workspaceId}/users/{userId}": {
+      "get": {
+        "operationId": "lookupVerifiedUser",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifiedUser"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Current browser administrator only. Null role means verified identity with no membership in this workspace."
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/comparisons/{comparisonId}/policy-receipts": {
+      "get": {
+        "operationId": "listComparisonPolicyReceipts",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "comparisonId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComparisonPolicyReceipts"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read policy verdicts reported by the evaluator for this comparison."
+      },
+      "post": {
+        "operationId": "reportComparisonPolicyReceipt",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "comparisonId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComparisonPolicyReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Record a policy verdict from the evaluator that submitted this terminal comparison. Repeated reports for the same comparison and policy digest return the original receipt.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComparisonPolicyReport"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/versions/{versionId}/policy-receipts": {
+      "get": {
+        "operationId": "listCandidatePolicyReceipts",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComparisonPolicyReceipts"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid content, unsupported schema, or invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace right denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scoped record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, parent, or mutation-key conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read visible failed or indeterminate policy verdicts for the candidate version."
+      }
+    },
+    "/v1/workspaces/{p}/evaluation-capabilities": {
+      "get": {
+        "summary": "GET /v1/workspaces/{p}/evaluation-capabilities",
+        "responses": {
+          "200": {
+            "description": "Point-in-time machine authority snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationCapabilities"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "p",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/corrections": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/corrections",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/rechecks": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/rechecks",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/stop": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/stop",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/restore": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/restore",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/renew": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/renew",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/outcomes": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/outcomes",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/outcomes/{outcome}": {
+      "get": {
+        "summary": "GET /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/outcomes/{outcome}",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/incident-replays": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/incident-replays",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/work": {
+      "get": {
+        "operationId": "getLearningWork",
+        "summary": "Get assigned evaluator work",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connected evaluator assignments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningWork"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connection-observations": {
+      "get": {
+        "summary": "GET /v1/workspaces/{workspaceId}/connection-observations",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections": {
+      "get": {
+        "summary": "GET /v1/workspaces/{workspaceId}/connections",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/revoke": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/revoke",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/credentials": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/credentials",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/credentials/{credential}/revoke": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/credentials/{credential}/revoke",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "credential",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/receipts": {
+      "get": {
+        "summary": "GET /v1/workspaces/{workspaceId}/connections/{connectionId}/receipts",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/receipts",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces": {
+      "get": {
+        "summary": "GET /v1/workspaces",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /v1/workspaces",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels": {
+      "get": {
+        "summary": "GET /v1/workspaces/{workspaceId}/bundles/{bundle}/channels",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/memberships/{user}": {
+      "put": {
+        "summary": "PUT /v1/workspaces/{workspaceId}/memberships/{user}",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "summary": "DELETE /v1/workspaces/{workspaceId}/memberships/{user}",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundle-setups": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/bundle-setups",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts": {
+      "get": {
+        "summary": "GET /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}": {
+      "get": {
+        "summary": "GET /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/history": {
+      "get": {
+        "summary": "GET /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/history",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/save": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/save",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/discard": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/discard",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/bundles/{bundle}/channels/{channel}/drafts/{draft}/publish",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/invitations": {
+      "get": {
+        "summary": "GET /v1/workspaces/{workspaceId}/invitations",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/invitations",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/invitations/{invite}/resend": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/invitations/{invite}/resend",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "invite",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/field-requalifications": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/field-requalifications",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/field-audits": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/field-audits",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/connections/{connectionId}/learning/rounds/{round}/review": {
+      "post": {
+        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/learning/rounds/{round}/review",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "round",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/progress": {
+      "get": {
+        "summary": "GET /v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/progress",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "p",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "b",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /v1/workspaces/{p}/bundles/{b}/evaluation-requests/{id}/progress",
+        "responses": {
+          "default": {
+            "description": "Service response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "p",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "b",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{workspaceId}/machine-tokens": {
+      "get": {
+        "operationId": "listMachineTokens",
+        "description": "Newest 200 machine tokens. Secrets are never returned. Requires a browser session for a workspace administrator; machine tokens cannot manage tokens.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineTokenPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "issueMachineToken",
+        "description": "Issue an expiring machine token. The secret is returned once and stored only as a SHA-256 digest. Its principal is `machine:{name}`. Requires a browser session for a workspace administrator; machine tokens cannot manage tokens.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueMachineTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedMachineToken"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/machine-tokens/{tokenId}/rotate": {
+      "post": {
+        "operationId": "rotateMachineToken",
+        "description": "Issue a successor with the same principal and rights. With `overlapSeconds` 0 the old token is revoked; otherwise its expiry is shortened to the overlap. Only an active token can be rotated (`machine_token_inactive`). Requires a browser session for a workspace administrator; machine tokens cannot manage tokens.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tokenId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateMachineTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedMachineToken"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/machine-tokens/{tokenId}/revoke": {
+      "post": {
+        "operationId": "revokeMachineToken",
+        "description": "Revoke a token. Idempotent; the first reason is retained. Applies to the token's next request. Requires a browser session for a workspace administrator; machine tokens cannot manage tokens.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tokenId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeMachineTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineTokenEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/machine-token-events": {
+      "get": {
+        "operationId": "listMachineTokenEvents",
+        "description": "Newest 200 entries of the append-only token audit trail. Requires a browser session for a workspace administrator; machine tokens cannot manage tokens.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineTokenEventPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Scoped authorization/validation/conflict failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "LearningPowerProjection": {
+        "type": "object",
+        "properties": {
+          "caseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "effectiveRepetitions": {
+            "type": "number"
+          },
+          "projectedMde": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "lowerMde": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "upperMde": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "stop",
+              "warn",
+              "admit"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "powerAtEffect": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "effect": {
+            "type": "number"
+          },
+          "casesNeededAtTarget": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "pairedTrials": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "caseCount",
+          "effectiveRepetitions",
+          "projectedMde",
+          "powerAtEffect",
+          "effect",
+          "casesNeededAtTarget",
+          "pairedTrials"
+        ]
+      },
+      "LearningEnrollmentInspection": {
+        "type": "object",
+        "required": [
+          "deliveredVersionId",
+          "deliveredRevision",
+          "developmentIncumbent",
+          "rounds"
+        ],
+        "properties": {
+          "noiseCalibration": {
+            "type": "object",
+            "required": [
+              "requestId",
+              "status"
+            ],
+            "properties": {
+              "requestId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "status": {
+                "description": "Evaluated means the comparison was submitted and the worker decision is pending. Completed includes calibration statistics, the repetition plan and power projections. A power guard rejection publishes those fields with stopped and stoppedReason.",
+                "enum": [
+                  "queued",
+                  "requested",
+                  "running",
+                  "evaluated",
+                  "completed",
+                  "failed",
+                  "interrupted",
+                  "stopped"
+                ]
+              },
+              "failedAttempts": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "stoppedReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "caseCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "flipRate": {
+                "type": "number"
+              },
+              "pairedStandardDeviation": {
+                "type": "number"
+              },
+              "effectiveRepetitions": {
+                "type": "number"
+              },
+              "standardError": {
+                "type": "number"
+              },
+              "minimumDetectableEffect": {
+                "type": "number"
+              },
+              "warning": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "powerGuardObservations": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "caseVariability": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              "plan": {
+                "type": "object",
+                "properties": {
+                  "developmentRepetitions": {
+                    "description": "Assigned repetitions per development case, shared with cumulative comparisons. New plans use equal counts for unscheduled inventories.",
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "auditRepetitions": {
+                    "description": "Uniform count per unscheduled audit cohort in enrollment order. Earlier plans recorded a repetition floor.",
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "flakyCaseCount": {
+                    "description": "Development cases with observed A/A disagreement.",
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "pairBudget": {
+                    "description": "Pair budget per evaluation before the report size limit.",
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "trialBudget": {
+                    "description": "Twice the pair budget, before retries.",
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "maxRepetitions": {
+                    "description": "Cap on the planned uniform repetition count.",
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "developmentRepetitions",
+                  "auditRepetitions",
+                  "flakyCaseCount",
+                  "pairBudget",
+                  "trialBudget",
+                  "maxRepetitions"
+                ]
+              },
+              "developmentProjection": {
+                "$ref": "#/components/schemas/LearningPowerProjection"
+              },
+              "cumulativeProjection": {
+                "$ref": "#/components/schemas/LearningPowerProjection"
+              },
+              "auditProjections": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LearningPowerProjection"
+                }
+              }
+            }
+          },
+          "deliveredVersionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deliveredRevision": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "developmentIncumbent": {
+            "type": "object",
+            "required": [
+              "versionId",
+              "chainLength",
+              "cumulativeEstimate",
+              "cumulativeLowerBound",
+              "nextAuditTrigger"
+            ],
+            "properties": {
+              "versionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "chainLength": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cumulativeEstimate": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "cumulativeLowerBound": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "nextAuditTrigger": {
+                "type": "object",
+                "required": [
+                  "state",
+                  "acceptedStepsRemaining"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "awaitingSteps",
+                      "checkingCumulative",
+                      "auditPending",
+                      "awaitingReview",
+                      "unavailable"
+                    ]
+                  },
+                  "acceptedStepsRemaining": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "rounds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "enum": [
+                    "proposing",
+                    "development",
+                    "developed",
+                    "audit",
+                    "awaiting_review",
+                    "promoted",
+                    "rejected"
+                  ]
+                },
+                "developmentParentVersionId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "developmentCandidateVersionId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "cumulativeDevelopmentRequestId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "cumulativeDevelopmentComparisonId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "batchSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                },
+                "includedCorrections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "correctionId",
+                      "outcomeId",
+                      "attempt"
+                    ],
+                    "properties": {
+                      "correctionId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "outcomeId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "attempt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2
+                      }
+                    }
+                  }
+                },
+                "parentSourceComparisonId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                }
+              },
+              "cumulativeDevelopmentEstimate": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "cumulativeDevelopmentLowerBound": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          },
+          "maxCorrectionsPerRound": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 5
+          }
+        }
+      },
+      "BundlePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "files"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "kind",
+                "text"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 240
+                },
+                "kind": {
+                  "enum": [
+                    "instruction",
+                    "skill",
+                    "memory"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 262144
+                }
+              }
+            }
+          }
+        }
+      },
+      "Bundle": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "compatibilityTarget": {
+            "$ref": "#/components/schemas/CompatibilityTarget"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "workspaceId",
+          "createdAt",
+          "compatibilityTarget"
+        ]
+      },
+      "VersionMetadata": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bundleId": {
+            "type": "string"
+          },
+          "parentVersionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "bundleId",
+          "parentVersionId",
+          "digest",
+          "createdAt"
+        ]
+      },
+      "CreateBundleRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "compatibilityTarget": {
+            "$ref": "#/components/schemas/CompatibilityTarget"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "CreateVersionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "parentVersionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "payload": {
+            "$ref": "#/components/schemas/BundlePayload"
+          }
+        },
+        "required": [
+          "parentVersionId",
+          "payload"
+        ]
+      },
+      "ChannelResolution": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "version": {
+            "$ref": "#/components/schemas/VersionMetadata"
+          }
+        },
+        "required": [
+          "channel",
+          "revision",
+          "version"
+        ]
+      },
+      "PromoteRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedRevision": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "comparisonId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "unevaluatedReason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "policyOverride": {
+            "$ref": "#/components/schemas/PolicyOverride"
+          }
+        },
+        "required": [
+          "versionId",
+          "expectedRevision"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "comparisonId"
+            ],
+            "not": {
+              "required": [
+                "unevaluatedReason"
+              ]
+            }
+          },
+          {
+            "required": [
+              "unevaluatedReason"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "comparisonId"
+                  ]
+                },
+                {
+                  "required": [
+                    "policyOverride"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "Promotion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "version": {
+            "$ref": "#/components/schemas/VersionMetadata"
+          },
+          "previousVersionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparisonId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unevaluatedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "policyOverride": {
+            "$ref": "#/components/schemas/PolicyOverride"
+          },
+          "policyApprovalPromotionId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "channel",
+          "revision",
+          "version",
+          "previousVersionId",
+          "comparisonId",
+          "unevaluatedReason",
+          "reviewer",
+          "createdAt"
+        ]
+      },
+      "PromotionPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Promotion"
+            }
+          },
+          "nextBeforeRevision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextBeforeRevision"
+        ]
+      },
+      "ProposalRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "parentVersionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "allowedPaths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "maxItems": 128,
+            "uniqueItems": true
+          },
+          "hypothesis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "parentVersionId",
+          "allowedPaths",
+          "hypothesis",
+          "evidence"
+        ]
+      },
+      "Proposal": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "parentVersionId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "screening": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "stage",
+                "result",
+                "rationale",
+                "changes"
+              ],
+              "properties": {
+                "stage": {
+                  "enum": [
+                    "initial",
+                    "repair"
+                  ]
+                },
+                "result": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "verdict",
+                        "objections"
+                      ],
+                      "properties": {
+                        "verdict": {
+                          "enum": [
+                            "accept",
+                            "reject"
+                          ]
+                        },
+                        "objections": {
+                          "type": "array",
+                          "maxItems": 8,
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "rationale": {
+                  "type": "string"
+                },
+                "changes": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "path",
+                      "before",
+                      "after"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "before": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "after": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "parentVersionId",
+          "status",
+          "attempts",
+          "candidate",
+          "rationale",
+          "error",
+          "createdAt"
+        ]
+      },
+      "CaseKey": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "repetition": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "caseId",
+          "repetition"
+        ]
+      },
+      "Usage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inputTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "outputTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "costUsd": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": []
+      },
+      "Outcome": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "executionStatus": {
+            "enum": [
+              "completed",
+              "task_failed",
+              "infrastructure_failed"
+            ]
+          },
+          "gradingStatus": {
+            "enum": [
+              "scored",
+              "missing",
+              "failed"
+            ]
+          },
+          "reward": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outputRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "components": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^[A-Za-z0-9_.:-]{1,64}$"
+            },
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Optional named numeric grade components on a scored outcome, such as correctness. A quality policy can gate on one with metric.component. Omitted when the grader reports none."
+          }
+        },
+        "required": [
+          "executionStatus",
+          "gradingStatus",
+          "reward",
+          "outputRef",
+          "error",
+          "usage"
+        ]
+      },
+      "CasePair": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "repetition": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "parent": {
+            "$ref": "#/components/schemas/Outcome"
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/Outcome"
+          }
+        },
+        "required": [
+          "caseId",
+          "repetition",
+          "parent",
+          "candidate"
+        ]
+      },
+      "ComparisonRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "parentVersionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "candidateVersionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parentDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "candidateDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "datasetRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runtime": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "minProperties": 1
+          },
+          "graderRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedCases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseKey"
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "uniqueItems": true
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CasePair"
+            },
+            "maxItems": 1000
+          },
+          "evaluation": {
+            "$ref": "#/components/schemas/EvaluationBinding"
+          },
+          "parentSourceComparisonId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Source comparison for a cached development parent arm. Omitted for fresh pairs."
+          }
+        },
+        "required": [
+          "parentVersionId",
+          "candidateVersionId",
+          "parentDigest",
+          "candidateDigest",
+          "datasetRevision",
+          "runtime",
+          "graderRevision",
+          "expectedCases",
+          "results"
+        ]
+      },
+      "Comparison": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "parentVersionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "candidateVersionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parentDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "candidateDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "datasetRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runtime": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "minProperties": 1
+          },
+          "graderRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedCases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseKey"
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "uniqueItems": true
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CasePair"
+            },
+            "maxItems": 1000
+          },
+          "id": {
+            "type": "string"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "submitter": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluation": {
+            "$ref": "#/components/schemas/EvaluationBinding"
+          },
+          "parentSourceComparisonId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Source comparison for a cached development parent arm. Omitted for fresh pairs."
+          }
+        },
+        "required": [
+          "parentVersionId",
+          "candidateVersionId",
+          "parentDigest",
+          "candidateDigest",
+          "datasetRevision",
+          "runtime",
+          "graderRevision",
+          "expectedCases",
+          "results",
+          "id",
+          "complete",
+          "submitter",
+          "createdAt"
+        ]
+      },
+      "ApiError": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "requestId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Optional typed metadata, never credential secrets. credential_already_issued carries credentialId, kind and revokedAt."
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "requestId"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "CompatibilityTarget": {
+        "type": "string",
+        "enum": [
+          "generic",
+          "codex",
+          "claude",
+          "pi",
+          "cursor"
+        ],
+        "default": "generic"
+      },
+      "EvaluationBinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "requestId",
+          "attemptId"
+        ]
+      },
+      "EvaluationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "parentVersionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "candidateVersionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parentDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "candidateDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "datasetRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runtime": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "minProperties": 1
+          },
+          "graderRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedCases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseKey"
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "uniqueItems": true
+          },
+          "proposalId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "requireBoundEvidence": {
+            "type": "boolean",
+            "const": true,
+            "default": true,
+            "description": "Completing an evaluation requires a comparison bound to its request and attempt."
+          },
+          "runName": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$",
+            "description": "The evaluator's label for this run, such as the CLI --name. Display only. Omitted when unset."
+          },
+          "retryOf": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An earlier request on the same parent and candidate content that this run supersedes. Omitted when unset."
+          },
+          "policyDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "description": "Digest of the quality policy chosen before the run. Policy receipts record whether they match it."
+          }
+        },
+        "required": [
+          "parentVersionId",
+          "candidateVersionId",
+          "parentDigest",
+          "candidateDigest",
+          "datasetRevision",
+          "runtime",
+          "graderRevision",
+          "expectedCases"
+        ]
+      },
+      "Evaluation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "parentVersionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "candidateVersionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parentDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "candidateDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "datasetRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runtime": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "minProperties": 1
+          },
+          "graderRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedCases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseKey"
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "uniqueItems": true
+          },
+          "proposalId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "requireBoundEvidence": {
+            "type": "boolean",
+            "const": true,
+            "default": true,
+            "description": "Completing an evaluation requires a comparison bound to its request and attempt."
+          },
+          "runName": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$",
+            "description": "The evaluator's label for this run, such as the CLI --name. Display only. Omitted when unset."
+          },
+          "retryOf": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An earlier request on the same parent and candidate content that this run supersedes. Omitted when unset."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "enum": [
+              "requested",
+              "running",
+              "completed",
+              "failed",
+              "interrupted",
+              "abandoned"
+            ]
+          },
+          "evaluatorPrincipal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attemptId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "comparisonId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastActivityAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last start, progress report or bound comparison from the current attempt."
+          },
+          "abandonedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "abandonedBy": {
+            "type": "string",
+            "description": "Abandoning principal, or `service:evaluation-expiry` after inactivity."
+          },
+          "policyDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "description": "Digest of the quality policy chosen before the run. Policy receipts record whether they match it."
+          }
+        },
+        "required": [
+          "parentVersionId",
+          "candidateVersionId",
+          "parentDigest",
+          "candidateDigest",
+          "datasetRevision",
+          "runtime",
+          "graderRevision",
+          "expectedCases",
+          "requireBoundEvidence",
+          "proposalId",
+          "id",
+          "status",
+          "evaluatorPrincipal",
+          "attemptId",
+          "comparisonId",
+          "error",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "StartEvaluationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "attemptId"
+        ]
+      },
+      "FinishEvaluationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "attemptId": {
+            "type": "string"
+          },
+          "comparisonId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "attemptId",
+          "comparisonId"
+        ]
+      },
+      "InterruptEvaluationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "Operation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "not_observed"
+              },
+              "operationId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "operationId"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "closed"
+              },
+              "operationId": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "operationId"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "committed"
+              },
+              "operationId": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "result": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "requestFingerprint": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "status",
+              "operationId",
+              "path",
+              "result"
+            ]
+          }
+        ]
+      },
+      "WorkspaceMember": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "viewer",
+              "editor",
+              "admin"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "issuer",
+          "subject",
+          "role"
+        ]
+      },
+      "VerifiedUser": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "viewer",
+              "editor",
+              "admin",
+              null
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "issuer",
+          "subject",
+          "role"
+        ]
+      },
+      "EvaluationPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Evaluation"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "WorkspaceMemberPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceMember"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "CloseOperationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationPath": {
+            "type": "string"
+          }
+        },
+        "required": []
+      },
+      "PolicyOverride": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reason",
+          "receipts"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "receipts": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "comparisonId",
+                "policyDigest"
+              ],
+              "properties": {
+                "comparisonId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "policyDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ComparisonPolicyReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "policy": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "revision": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "id",
+              "revision",
+              "sha256"
+            ]
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "fail",
+              "indeterminate"
+            ]
+          },
+          "checks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2048,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "result": {
+                  "enum": [
+                    "pass",
+                    "fail",
+                    "unknown"
+                  ]
+                }
+              },
+              "required": [
+                "code",
+                "result"
+              ]
+            }
+          },
+          "inference": {
+            "type": "object",
+            "description": "Statistics behind the mean-difference check as reported by the SDK verdict: method, estimand, confidence, n, sd, sdFloor, df, criticalValue, lowerBound, threshold and imputed counts. At most 4096 bytes."
+          }
+        },
+        "required": [
+          "requestId",
+          "attemptId",
+          "policy",
+          "verdict",
+          "checks"
+        ]
+      },
+      "ComparisonPolicyReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "policy": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "revision": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "id",
+              "revision",
+              "sha256"
+            ]
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "fail",
+              "indeterminate"
+            ]
+          },
+          "checks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2048,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "result": {
+                  "enum": [
+                    "pass",
+                    "fail",
+                    "unknown"
+                  ]
+                }
+              },
+              "required": [
+                "code",
+                "result"
+              ]
+            }
+          },
+          "comparisonId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reportedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "inference": {
+            "type": "object",
+            "description": "Statistics behind the mean-difference check as reported by the SDK verdict: method, estimand, confidence, n, sd, sdFloor, df, criticalValue, lowerBound, threshold and imputed counts. At most 4096 bytes."
+          },
+          "policyPin": {
+            "enum": [
+              "matched",
+              "mismatched",
+              "unpinned"
+            ],
+            "description": "Whether the receipt's policy digest matches the one pinned on the evaluation request."
+          }
+        },
+        "required": [
+          "requestId",
+          "attemptId",
+          "policy",
+          "verdict",
+          "checks",
+          "comparisonId",
+          "reportedBy",
+          "receivedAt"
+        ]
+      },
+      "ComparisonPolicyReceipts": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComparisonPolicyReceipt"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "LearningWork": {
+        "type": "object",
+        "required": [
+          "installationId",
+          "bundleId",
+          "active",
+          "items"
+        ],
+        "properties": {
+          "installationId": {
+            "type": "string"
+          },
+          "bundleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "evaluationRequestId",
+                "roundId",
+                "phase",
+                "status"
+              ],
+              "properties": {
+                "evaluationRequestId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "roundId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "phase": {
+                  "enum": [
+                    "calibration",
+                    "development",
+                    "audit"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "requested",
+                    "running"
+                  ]
+                },
+                "cumulative": {
+                  "type": "boolean"
+                },
+                "cachedParent": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "required": [
+                    "comparisonId",
+                    "results"
+                  ],
+                  "properties": {
+                    "comparisonId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "caseId",
+                          "repetition",
+                          "parent"
+                        ],
+                        "properties": {
+                          "caseId": {
+                            "type": "string"
+                          },
+                          "repetition": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "parent": {
+                            "$ref": "#/components/schemas/Outcome"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "AbandonEvaluationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "MachineTokenRight": {
+        "type": "string",
+        "enum": [
+          "read",
+          "evaluate",
+          "write",
+          "propose",
+          "promote"
+        ]
+      },
+      "MachineToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "workspaceId",
+          "name",
+          "principalId",
+          "rights",
+          "secretPrefix",
+          "status",
+          "createdBy",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "revokedBy",
+          "revokeReason",
+          "rotatedFrom"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "principalId": {
+            "type": "string",
+            "pattern": "^machine:"
+          },
+          "rights": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineTokenRight"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "secretPrefix": {
+            "type": "string",
+            "description": "First 12 characters of the secret, for identification."
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ]
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Coarse; updated at most once a minute."
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revokedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revokeReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rotatedFrom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "MachineTokenPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineToken"
+            }
+          }
+        }
+      },
+      "MachineTokenEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "$ref": "#/components/schemas/MachineToken"
+          }
+        }
+      },
+      "IssuedMachineToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token",
+          "secret"
+        ],
+        "properties": {
+          "token": {
+            "$ref": "#/components/schemas/MachineToken"
+          },
+          "secret": {
+            "type": "string",
+            "pattern": "^acm_",
+            "description": "Returned once. Never stored or listed."
+          },
+          "previous": {
+            "$ref": "#/components/schemas/MachineToken",
+            "description": "Rotation only: the predecessor after its revocation or shortened expiry."
+          }
+        }
+      },
+      "IssueMachineTokenRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "rights": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineTokenRight"
+            },
+            "minItems": 1,
+            "uniqueItems": true,
+            "default": [
+              "evaluate"
+            ]
+          },
+          "expiresInDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "default": 90
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      },
+      "RotateMachineTokenRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "overlapSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 604800,
+            "default": 0
+          },
+          "expiresInDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "default": 90
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      },
+      "RevokeMachineTokenRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      },
+      "MachineTokenEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tokenId",
+          "tokenName",
+          "action",
+          "actorPrincipal",
+          "reason",
+          "detail",
+          "createdAt"
+        ],
+        "properties": {
+          "tokenId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tokenName": {
+            "type": "string"
+          },
+          "action": {
+            "enum": [
+              "issued",
+              "rotated",
+              "revoked"
+            ]
+          },
+          "actorPrincipal": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MachineTokenEventPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineTokenEvent"
+            }
+          }
+        }
+      },
+      "EvaluationCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "workspaceId",
+          "principalId",
+          "checkedAt",
+          "readUnpublished",
+          "writeEvaluation",
+          "retainedEvaluationOperations"
+        ],
+        "description": "Point-in-time authority for a machine principal, not a lease or provider readiness.",
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "readUnpublished": {
+            "const": true
+          },
+          "writeEvaluation": {
+            "type": "boolean",
+            "description": "True when the principal holds `evaluate` (implied by `write`)."
+          },
+          "retainedEvaluationOperations": {
+            "const": true
+          },
+          "rights": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "read",
+              "evaluate",
+              "write",
+              "propose",
+              "promote"
+            ],
+            "properties": {
+              "read": {
+                "type": "boolean"
+              },
+              "evaluate": {
+                "type": "boolean"
+              },
+              "write": {
+                "type": "boolean"
+              },
+              "propose": {
+                "type": "boolean"
+              },
+              "promote": {
+                "type": "boolean"
+              }
+            }
+          },
+          "credential": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "static"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "id",
+                  "expiresAt"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "machineToken"
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            ]
+          },
+          "abandonment": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "explicit",
+              "inactivitySeconds"
+            ],
+            "properties": {
+              "explicit": {
+                "type": "boolean"
+              },
+              "inactivitySeconds": {
+                "type": "integer",
+                "minimum": 60
+              }
+            }
+          },
+          "runLabels": {
+            "const": true,
+            "description": "Evaluation requests accept runName and retryOf. Absent on older services."
+          },
+          "policyPins": {
+            "const": true,
+            "description": "Evaluation requests accept policyDigest, pinning the quality policy before the run. Absent on older services."
+          }
+        }
+      },
+      "EvaluationDescriptor": {
+        "type": "object",
+        "description": "Public evaluator identity: revisions, runtime identity and the fixed case inventory. Case inputs, expected answers, callbacks and credentials never appear here.",
+        "additionalProperties": false,
+        "properties": {
+          "datasetRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "graderRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runtime": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "minProperties": 1
+          },
+          "expectedCases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseKey"
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "datasetRevision",
+          "graderRevision",
+          "runtime",
+          "expectedCases"
+        ]
+      },
+      "EvaluationHandoff": {
+        "type": "object",
+        "description": "The handoff file the console downloads as handoff.json for an evaluation request. The evaluator CLI's request command writes it and --handoff reads it. It names the evaluation request and its frozen descriptor. It carries no credential or private path.",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "serviceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,128}$",
+            "not": {
+              "enum": [
+                ".",
+                ".."
+              ]
+            }
+          },
+          "bundleId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "descriptor": {
+            "$ref": "#/components/schemas/EvaluationDescriptor"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "serviceUrl",
+          "workspaceId",
+          "bundleId",
+          "requestId",
+          "descriptor"
+        ]
+      }
+    }
+  }
+}

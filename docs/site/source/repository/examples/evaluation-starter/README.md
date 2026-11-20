@@ -7,9 +7,9 @@ This entry point calls your application's agent and independent grader on the pa
 Install the SDK into your existing application or evaluator image. The package includes the CLI. JavaScript needs Node 22.22+ and Python 3 with fcntl for durable worker locks. Python needs 3.11+. Both runners use POSIX and persistent local journal storage.
 
 ```sh
-npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
+npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.2.0.tgz
 # Or for Python
-python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
+python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.2.0-py3-none-any.whl
 ```
 
 Put `application.mjs` or `application.mts` in your Node app directory, or `application.py` in your Python app directory. Run the CLI there. Import your existing agent, scorer and cases. Use modules that only start work when their callbacks are called.
@@ -21,8 +21,8 @@ import { runAgent, scoreResult, savedCases } from './dist/support-agent.mjs';
 export const cases = savedCases;
 export const revisionFiles = ['package-lock.json'];
 
-export async function execute({ bundle, input, signal, context }) {
-  const result = await runAgent({ bundle, task: input, signal, job: context });
+export async function execute({ version, input, signal, context }) {
+  const result = await runAgent({ version, task: input, signal, job: context });
   return { output: result.answer, usage: result.measuredUsage };
 }
 
@@ -40,7 +40,7 @@ cases = saved_cases
 revision_files = ["support_agent.py", "requirements.lock"]
 
 async def execute(run):
-    result = await run_agent(bundle=run.bundle, task=run.input, cancellation=run.cancellation)
+    result = await run_agent(version=run.version, task=run.input, cancellation=run.cancellation)
     return ExecutionResult(output=result.answer, usage=result.measured_usage)
 
 def grade(run):
@@ -54,9 +54,24 @@ The SDK hashes your cases, application module and local source imports reached a
 
 Supply plain bounded JSON as the gradeable output. Map SDK response objects to the fields your grader needs. `usage` accepts measured `inputTokens`, `outputTokens` and `costUsd`. Omit fields you cannot measure. The cost policy reports unknown when it requires a missing measurement. Return `executionStatus: 'task_failed'` (Python `execution_status="task_failed"`) for a failed task with gradeable output. Await the actual tool, stream or background job through termination and preserve its inputs if termination is uncertain. The SDK provides `ExecutionUncertainError` for that case.
 
-Python accepts synchronous and coroutine callbacks. The worker keeps one asyncio loop for all coroutine callbacks during a CLI invocation. Create loop-bound clients on that loop and await their work. To embed the synchronous evaluator lifetime in an existing async application, await `async_eval.run_evaluation_async(config_path=..., handoff=..., allow_live=True)`. Caller cancellation signals the worker and waits for it to finish. Your callback can observe `run.cancellation` while waiting on external work.
+Python accepts synchronous and coroutine callbacks. The worker keeps one asyncio loop per worker thread for the whole CLI invocation. With the default `concurrency = 1` and no `--case-timeout`, every coroutine callback shares one loop. Create loop-bound clients lazily per loop and await their work. To embed the evaluator in an existing async application, await `run_evaluation_async(app=..., config_path=..., handoff=..., allow_live=True)` from `acclimate.evaluation`. Caller cancellation signals the worker and waits for it to finish. Your callback can observe `run.cancellation` while waiting on external work. [async_eval.py](async_eval.py) shows the call with the installed application.
 
 TypeScript apps can implement `application.mts` with erasable types and run the same Node CLI directly. Import `ApplicationAdapter` from `@acclimate/sdk/evaluation` as a type for the callback signatures. The source loader resolves relative NodeNext imports such as `./agent.js` to `agent.ts` when the emitted file is absent. To run a compiled build or select a module outside the current directory, use `acclimate-eval describe --app dist/application.mjs` and pass the same `--app` to compare. Revision files resolve relative to that module. When both files exist, the CLI uses `application.mjs`. Run a fresh CLI process after rebuilding an imported dependency so the language runtime loads the new code.
+
+## Try it locally first
+
+Before you ask for a service config, check the adapter and score a change on your machine. These commands need no service, config or handoff. Put the current bundle in one folder and the change in another. Files under `skills/` become skills, files under `memory/` become memory, and other files become instructions. A payload JSON file also works.
+
+```sh
+# Node
+acclimate-eval try --live --payload candidate
+acclimate-eval compare --local --parent parent --candidate candidate --live --policy quality-policy.json
+# Python
+python -m acclimate try --live --payload candidate
+python -m acclimate compare --local --parent parent --candidate candidate --live --policy quality-policy.json
+```
+
+`try` runs one case (or `--case ID,ID`) through `execute` and `grade`. It prints the output and flags shapes a real run would drop, such as non-JSON output, unknown `usage` keys, a non-finite reward, or an invalid `executionStatus`. `compare --local` runs every case with the same pairing and grading as a service run. It prints the per-case table and writes an advisory `local-report.json` under `.acclimate/local/`. It warns when both arms return identical output on every pair, which usually means `execute` ignores `bundle`. The local report is never a release receipt. Replay its `candidate.payload.json` with the headless `compare` below to gate a release.
 
 ## Describe and run
 
@@ -69,7 +84,7 @@ acclimate-eval doctor --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --polic
 
 To keep cases in a separate JSON file, set `ACCLIMATE_EVALUATOR_CASES` to its absolute path and give it mode 0600. This array overrides the module's cases. Only the grader receives the expected answer.
 
-Use `python -m acclimate` in your Python environment. Ask the service operator for the evaluator's workspace read/write principal and private configuration file. Keep its service URL, principal and canonical journal root stable across retries. Copy [quality-policy.example.json](quality-policy.example.json) to `quality-policy.json` and edit it for your application. The example checks that both the equal-case mean and each case reward hold steady or improve. List release-critical case IDs in `requiredCases`. Add a measured cost ceiling with `"cost": {"maximumCandidateUsd": 1}` if that is your budget. Pass the edited file explicitly with `--policy`.
+Use `python -m acclimate` in your Python environment. Ask the service operator for the evaluator's workspace read/write principal and private configuration file. Keep its service URL, principal and canonical journal root stable across retries. Copy [quality-policy.example.json](quality-policy.example.json) to `quality-policy.json` and edit it for your application. The example is a statistical non-inferiority gate: it passes when the one-sided 95% lower confidence bound on the equal-case mean difference is above −0.05, so the candidate is unlikely to be more than 5 points worse on tasks like these. It needs at least 10 cases with 2 repetitions each, so set `repetitions: 2` (or more) on your cases. With fewer, the verdict is indeterminate (exit 3), never a pass. Set `minimumMeanImprovement` to 0 or above to require evidence of improvement instead. List release-critical case IDs in `requiredCases`; with `"perCaseChecks": "protected-cases"` the per-case regression and task-failure limits apply to those cases. Run `acclimate-eval plan --policy quality-policy.json` first to see the smallest effect your cases can detect and how often the gate passes at no improvement. The Methodology page in the documentation (Concepts) and [ANALYSIS.md](ANALYSIS.md) describe the test, the defaults and their error rates. Add a measured cost ceiling with `"cost": {"maximumCandidateUsd": 1}` if that is your budget. Pass the edited file explicitly with `--policy`.
 
 From the console, select your saved immutable candidate, paste the public `describe` output and download its handoff. Run the comparison and apply your policy with one command:
 
@@ -93,12 +108,15 @@ acclimate-eval export --config "$EVALUATOR_CONFIG" --name "$RUN_NAME" --out "$NE
 
 For another machine or a read-only reviewer, share the public handoff at `comparisons/RUN_NAME/request.json` inside the evaluator's configured journal root. Copy that one JSON file and use `--handoff` with the reviewer's credentials.
 
+Bound a run with `--deadline 30m`, `--case-timeout 2m` or `--max-cost-usd 5`. Run part of the inventory with `--cases ID,ID` or `--shard 1/4`. A stopped or partial run never counts as complete coverage. Add `--progress` to stream one stderr line per finished arm in CI. To run pairs in parallel or retry a flaky judge, export `concurrency` and `gradeRetries` (Python `grade_retries`) from the application module. Both are part of the descriptor.
+
 Omit `--policy` when you only need paired evidence. `--live` authorizes both evaluation arms and their graders, including provider costs and tool side effects. For separately scheduled stages, the same CLI provides `request`, `run` and `check`. A complete comparison can contain a losing candidate. An authorized release reviewer decides whether to promote the change.
 
 ## Review evidence and recover
 
 With a policy, `compare` and `check` exit 0 for pass, 2 for a known violation,
-and 3 for an indeterminate decision. A known threshold violation still fails
+and 3 for an indeterminate decision. A run that finishes as failed exits 4. See the
+[exit codes](../../apps/docs/content/docs/reference/evaluator-cli.mdx#errors-and-exit-codes). A known threshold violation still fails
 when required cost measurements are missing. Inspect the individual checks for
 both conditions. In JSON output, `evidenceGaps` identifies each affected case,
 repetition, arm and stage, up to 32 entries with the total count. Complete cases
@@ -106,11 +124,12 @@ retain their scores when another case is incomplete.
 
 A policy check with `--config` computes the verdict locally and records a receipt for release review. A passing policy returns exit 0 only when the service confirms that receipt. If `policyReceipt.status` is `unconfirmed`, retry `check` with the same evaluator config and policy. A reviewer can use `--read-config` with a public handoff to compute an independent verdict. Its receipt status is `read_only`.
 
-To debug an unexpected agent or grader exception, set `"captureCallbackErrors": true`
-in the private evaluator configuration before execution. Inspect `callback-error.json`
-in the affected arm's private job directory for the phase, exception type, and up to
-eight stack frame locations. The public comparison identifies the stage and reason
-through `evidenceGaps`. Private diagnostics omit exception messages and local variables.
+When an agent or grader callback raises, the evaluator writes `callback-error.json`
+to the affected arm's private job directory with the phase, exception type, redacted
+message and stack trace. The `compare` output names the first failure and its file.
+The file never leaves the machine. Set `"captureCallbackErrors": false` in the private
+evaluator configuration to opt out. The public comparison identifies the stage and
+reason through `evidenceGaps`.
 
 To deliberately rerun the same candidate after a completed or failed comparison, substitute `--retry-after "$RUN_NAME"` for `--name "$RUN_NAME"` in the headless compare command. The SDK verifies the original target, candidate payload and channel base, then creates one new run under a name derived from the prior request ID. The new attempt can use a repaired adapter, different case set or different policy. Repeat the same command to recover that successor. For policy-only changes, `check` can score the retained evidence without any new execution. Requests still marked requested, running or interrupted cannot serve as predecessors.
 

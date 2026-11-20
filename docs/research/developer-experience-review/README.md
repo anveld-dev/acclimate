@@ -84,7 +84,7 @@ Evidence: [descriptor matching](../../../examples/evaluation/adapter.ts), [CLI e
 
 Native plugins prepare private temporary working directories containing mapped bundle resources. Native integration instructions use that directory as the session working directory; cleanup removes it. Generic preparation exists, but there is no adjacent end-to-end recipe for composing native resources with an existing coding repository, its pre-existing instructions, and durable outputs.
 
-Evidence: [native integration guide](../../../examples/native-integration.md), [Codex preparation API](../../../packages/codex-plugin/src/index.ts), [shared native file staging](../../../packages/sdk/src/internal/native-files.ts).
+Evidence: [native integration guide](../../../examples/native-integration.md), [Codex preparation API](../../../packages/codex-plugin/src/index.ts), [shared native file staging](../../../packages/sdk/src/native-files.ts).
 
 **Developer consequence:** the resource-only smoke path is clearer than the common job of modifying an existing codebase. Developers must decide repository staging, instruction precedence, output retention, and cleanup themselves. The documented cleanup lifetime is intentional; this review does not establish a data-loss bug.
 

@@ -107,7 +107,7 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
         }]),
         provider: None,
     });
-    let base = format!("/v1/projects/{p}/integrations");
+    let base = format!("/v1/workspaces/{p}/connections");
     let mut ids = vec![];
     for _ in 0..2 {
         let (status, r) = call(
@@ -208,7 +208,7 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
     .await;
     let read = read["secret"].as_str().unwrap();
     let write = write["secret"].as_str().unwrap();
-    let mut event = json!({"eventId":Uuid::new_v4(),"integrationId":ids[0],"projectId":p,"bundleId":b,"versionId":v,"digest":digest,"stage":"verified","source":"cache","occurredAt":chrono::Utc::now()});
+    let mut event = json!({"eventId":Uuid::new_v4(),"connectionId":ids[0],"workspaceId":p,"bundleId":b,"versionId":v,"digest":digest,"stage":"verified","source":"cache","occurredAt":chrono::Utc::now()});
     let receipt = format!("{endpoint}/receipts");
     assert_eq!(
         call(&app, "POST", &receipt, read, event.clone()).await.0,
@@ -218,6 +218,20 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
         call(&app, "GET", &receipt, write, Value::Null).await.0,
         StatusCode::UNAUTHORIZED
     );
+    for (old, new) in [
+        ("connectionId", "integrationId"),
+        ("workspaceId", "projectId"),
+    ] {
+        let mut renamed = event.clone();
+        let value = renamed.as_object_mut().unwrap().remove(old).unwrap();
+        renamed[new] = value;
+        let rejected = call(&app, "POST", &receipt, write, renamed).await;
+        assert_eq!(rejected.0, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            rejected.1["error"]["message"],
+            format!("{new} was renamed to {old} in 0.2.0")
+        );
+    }
     let mut bad = event.clone();
     bad["stage"] = json!("downloaded");
     assert_eq!(
@@ -246,7 +260,7 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
         StatusCode::CONFLICT
     );
     event["eventId"] = json!(Uuid::new_v4());
-    event["integrationId"] = json!(ids[1]);
+    event["connectionId"] = json!(ids[1]);
     assert_eq!(
         call(
             &app,
@@ -259,13 +273,13 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
         .0,
         StatusCode::FORBIDDEN
     );
-    event["integrationId"] = json!(ids[0]);
+    event["connectionId"] = json!(ids[0]);
     event["versionId"] = json!(candidate);
     assert_eq!(
         call(&app, "POST", &receipt, write, event.clone()).await.0,
         StatusCode::FORBIDDEN
     );
-    let payload = format!("/v1/projects/{p}/bundles/{b}/versions/{candidate}");
+    let payload = format!("/v1/workspaces/{p}/bundles/{b}/versions/{candidate}");
     assert_eq!(
         call(&app, "GET", &payload, read, Value::Null).await.0,
         StatusCode::FORBIDDEN
@@ -363,8 +377,8 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         .bind(format!("sha256:{}",hex::encode(Sha256::digest(secret.as_bytes()))))
         .execute(&db).await.unwrap();
     let app = router(state.clone());
-    let connection = format!("/v1/projects/{p}/integrations/{enrollment_id}");
-    let sibling = format!("/v1/projects/{p}/integrations/{sibling_id}");
+    let connection = format!("/v1/workspaces/{p}/connections/{enrollment_id}");
+    let sibling = format!("/v1/workspaces/{p}/connections/{sibling_id}");
     let enrollment = format!("{connection}/learning");
     let descriptor = |cohort: &str| {
         // The API test's private input is the cohort string itself; the driver qualification
@@ -400,7 +414,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
             .0,
         StatusCode::FORBIDDEN
     );
-    let legacy_endpoint = format!("/v1/projects/{p}/integrations/{legacy_id}/learning");
+    let legacy_endpoint = format!("/v1/workspaces/{p}/connections/{legacy_id}/learning");
     let dev = descriptor("legacy-dev");
     let audit = descriptor("legacy-audit");
     let mut legacy = settings.clone();
@@ -825,7 +839,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         .bind(proposal).bind(replacement).bind(development_id).bind(development_comparison).bind(audit_id)
         .execute(&db).await.unwrap();
 
-    let bundle_path = format!("/v1/projects/{p}/bundles/{bundle}");
+    let bundle_path = format!("/v1/workspaces/{p}/bundles/{bundle}");
     for (path, visible_id, audit_id) in [
         ("evaluation-requests", development_id, audit_id),
         ("comparisons", development_comparison, audit_comparison),
@@ -1095,7 +1109,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     .await
     .unwrap();
     let calibration = calibration_work(&previous).await;
-    let bundle_path = format!("/v1/projects/{p}/bundles/{bundle}");
+    let bundle_path = format!("/v1/workspaces/{p}/bundles/{bundle}");
     let calibration_path = format!("{bundle_path}/evaluation-requests/{calibration}");
     let attempt = Uuid::new_v4().to_string();
     let response = call(
@@ -1261,7 +1275,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     let source_change = call(
         &app,
         "POST",
-        &format!("/v1/projects/{p}/bundles/{bundle}/channels/stable/promotions"),
+        &format!("/v1/workspaces/{p}/bundles/{bundle}/channels/stable/releases"),
         owner,
         json!({"expectedRevision":"1","versionId":baseline,"unevaluatedReason":"Review source again"}),
     )
@@ -1406,7 +1420,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
     let timestamp = chrono::Utc::now();
     for (id, stale) in [(stale_id, true), (started, false)] {
         let accepted = call(&app, "POST", &receipt_route, receipt_token, json!({
-            "eventId":id,"integrationId":enrollment_id,"projectId":p,"bundleId":bundle,
+            "eventId":id,"connectionId":enrollment_id,"workspaceId":p,"bundleId":bundle,
             "channel":"stable","revision":"2","versionId":replacement,"digest":digest,
             "stage":"started","occurredAt":timestamp,"resolvedAt":timestamp,"stale":stale,"source":"network",
         })).await;
@@ -1455,7 +1469,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         call(&app, "POST", &outcomes, "outcome", field_outcome).await,
         accepted
     );
-    let channels = format!("/v1/projects/{p}/bundles/{bundle}/channels");
+    let channels = format!("/v1/workspaces/{p}/bundles/{bundle}/channels");
     // Public learn-* channels stay navigable, including when private names sort onto the first page.
     sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES($1,$2,'learn-public',1,$3)")
         .bind(&p).bind(bundle).bind(baseline).execute(&db).await.unwrap();
@@ -1506,7 +1520,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         .0,
         StatusCode::NOT_FOUND
     );
-    let content = format!("/v1/projects/{p}/bundles/{bundle}/versions/{replacement}/payload");
+    let content = format!("/v1/workspaces/{p}/bundles/{bundle}/versions/{replacement}/payload");
     assert_eq!(
         call(&app, "GET", &content, &read_tokens[0], Value::Null)
             .await
@@ -1575,7 +1589,7 @@ async fn learning_admission_and_delivery_are_connection_scoped() {
         "restoreId":Uuid::new_v4(), "expectedRevision":"3", "reason":"Adopt an operator-reviewed source correction",
         "target":{"kind":"source", "revision":"1", "versionId":replacement}
     });
-    let published = call(&app, "POST", &format!("{resolve}/promotions"), owner,
+    let published = call(&app, "POST", &format!("{resolve}/releases"), owner,
         json!({"expectedRevision":"2","versionId":replacement,"unevaluatedReason":"Reviewed source update"})).await;
     assert_eq!(published.0, StatusCode::CREATED, "{}", published.1);
     assert_eq!(

@@ -47,7 +47,7 @@ The shared types, migration, auth, mutation helper, and fixtures unblock feature
 
 ## Public routes and storage
 
-Routes are relative to `/v1`. The service also accepts the previous route spellings for existing callers.
+Routes are relative to `/v1`. The earlier `/v1/projects` spellings, with `integrations`, `integration-observations` and `promotions`, were removed in 0.2.0. PostgreSQL tables and columns keep the earlier names, such as `project_id` and `integration_id`. Retained operation records also store the operation's internal `/v1/projects/...` path as their key, but the service returns the canonical path.
 
 | Public term | Canonical route | PostgreSQL table |
 | --- | --- | --- |

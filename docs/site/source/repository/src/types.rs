@@ -7,6 +7,7 @@ use uuid::Uuid;
 pub struct Grant {
     pub token: String,
     pub principal_id: String,
+    #[serde(rename = "workspaceId")]
     pub project_id: String,
     pub rights: Vec<String>,
 }
@@ -32,6 +33,7 @@ pub struct Bundle {
     pub compatibility_target: String,
     pub id: String,
     pub name: String,
+    #[serde(rename = "workspaceId")]
     pub project_id: String,
     pub created_at: String,
 }
@@ -194,6 +196,10 @@ pub struct Outcome {
     pub output_ref: Option<String>,
     pub error: Option<String>,
     pub usage: Option<Usage>,
+    /// Optional named numeric grade components, such as correctness and citations. A policy
+    /// can gate on one with `metric.component`. Omitted when the grader reports none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub components: Option<std::collections::BTreeMap<String, f64>>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

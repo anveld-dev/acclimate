@@ -26,11 +26,15 @@ export function BundleChanges({
 }) {
   const router = useRouter();
   const savedDraftFocus = useRef<string | null>(null);
-  const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
+  const scope = {
+    workspaceId: state.workspaceId,
+    bundleId: state.bundleId,
+    channel: state.channel,
+  };
   const draft = text(search.draft),
     proposal = text(search.proposal),
     candidate = text(search.candidate);
-  const storageScope = `${state.actorScope}:${state.projectId}:${state.bundleId}:${state.channel}`;
+  const storageScope = `${state.actorScope}:${state.workspaceId}:${state.bundleId}:${state.channel}`;
   const history = String(search.history) === '1';
   const detail =
     !history && Boolean(draft || proposal || candidate || search.comparison || search.request);
@@ -146,22 +150,26 @@ export function BundleChanges({
   );
 }
 function ChangeLists({ state, search }: { state: Ready; search: Record<string, unknown> }) {
-  const scope = { projectId: state.projectId, bundleId: state.bundleId, channel: state.channel };
-  const { actorScope, projectId, creationRecoveryServiceIdentity } = state;
+  const scope = {
+    workspaceId: state.workspaceId,
+    bundleId: state.bundleId,
+    channel: state.channel,
+  };
+  const { actorScope, workspaceId, creationRecoveryServiceIdentity } = state;
   const [pendingCreation, setPendingCreation] = useState(false);
   useEffect(() => {
     try {
       const operation = loadPending(sessionStorage, {
         owner: 'library',
         actorScope,
-        projectId,
+        workspaceId,
         serviceIdentity: creationRecoveryServiceIdentity,
       });
       setPendingCreation(Boolean(operation));
     } catch {
       setPendingCreation(false);
     }
-  }, [actorScope, projectId, creationRecoveryServiceIdentity]);
+  }, [actorScope, workspaceId, creationRecoveryServiceIdentity]);
   const [drafts, setDrafts] = useState<Draft[]>([]),
     [proposals, setProposals] = useState<Proposal[]>([]);
   const [draftCursor, setDraftCursor] = useState<string | null>(null),
@@ -272,7 +280,7 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
       epoch.current++;
       clearTimeout(timer);
     };
-  }, [state.actorScope, state.projectId, state.bundleId, state.channel]);
+  }, [state.actorScope, state.workspaceId, state.bundleId, state.channel]);
   const overview = (
     <ChangesOverview
       state={state}
@@ -332,7 +340,7 @@ function ChangeLists({ state, search }: { state: Ready; search: Record<string, u
         <div className="workspace-panel flex flex-wrap items-center justify-between gap-2 p-4">
           <p role="status">A bundle publication is still unresolved.</p>
           <Button asChild variant="outline">
-            <ConsoleLink href={workspaceHref(projectId)}>Open creation recovery</ConsoleLink>
+            <ConsoleLink href={workspaceHref(workspaceId)}>Open creation recovery</ConsoleLink>
           </Button>
         </div>
       )}

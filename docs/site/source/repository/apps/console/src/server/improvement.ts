@@ -1,4 +1,3 @@
-import { canonicalOperationPath } from '../lib/operation-target';
 import { ApiError } from '@acclimate/sdk';
 import { consoleClient } from './console-client';
 import { evaluationConfiguration } from '../lib/evaluation-config';
@@ -75,27 +74,26 @@ export async function improvement(
       const prefix = `/v1/workspaces/${encodeURIComponent(p)}/bundles/${encodeURIComponent(b)}`;
       const operationPath = String(input.operationPath),
         key = String(input.key);
-      const target = canonicalOperationPath(operationPath);
       const allowed = [
         prefix + '/proposals',
         prefix + '/evaluation-requests',
         prefix + `/channels/${encodeURIComponent(channel)}/releases`,
       ];
       const draftPublish =
-        target.startsWith(prefix + `/channels/${encodeURIComponent(channel)}/drafts/`) &&
+        operationPath.startsWith(prefix + `/channels/${encodeURIComponent(channel)}/drafts/`) &&
         /^[-a-f0-9]{36}\/publish$/i.test(
-          target.slice((prefix + `/channels/${encodeURIComponent(channel)}/drafts/`).length),
+          operationPath.slice((prefix + `/channels/${encodeURIComponent(channel)}/drafts/`).length),
         );
-      if (!allowed.includes(target) && !draftPublish) throw Error('route');
+      if (!allowed.includes(operationPath) && !draftPublish) throw Error('route');
       if (input.action === 'lookupFrozen')
         return {
           ok: true as const,
-          outcome: await lookupOperation(env, { projectId: p, operationPath, key }, fetcher),
+          outcome: await lookupOperation(env, { workspaceId: p, operationPath, key }, fetcher),
         };
       if (input.action === 'closeFrozen')
         return {
           ok: true as const,
-          outcome: await closeOperation(env, { projectId: p, operationPath, key }, fetcher),
+          outcome: await closeOperation(env, { workspaceId: p, operationPath, key }, fetcher),
         };
       if (typeof input.body !== 'string') throw Error('body');
       const parsed = JSON.parse(input.body);
@@ -118,7 +116,7 @@ export async function improvement(
 
       const value = await exactOperation<Proposal | Evaluation | Release>(
         env,
-        { projectId: p, operationPath, key, body: input.body },
+        { workspaceId: p, operationPath, key, body: input.body },
         fetcher,
       );
       return {
@@ -140,7 +138,7 @@ export async function improvement(
     if (state.status !== 'ready')
       return { ok: false as const, message: 'Select a configured channel first.' };
     const api = client(env, fetcher),
-      p = state.projectId,
+      p = state.workspaceId,
       b = state.bundleId;
     if (input.action === 'list' || input.action === 'proposals' || input.action === 'requests')
       return {
@@ -316,6 +314,16 @@ export async function improvement(
           { reason: input.reason.trim() },
           key,
         ),
+      };
+    if (
+      input.action === 'abandon' &&
+      typeof input.id === 'string' &&
+      typeof input.reason === 'string' &&
+      input.reason.trim()
+    )
+      return {
+        ok: true as const,
+        request: await api.abandonEvaluation(p, b, input.id, { reason: input.reason.trim() }, key),
       };
     throw new Error('invalid');
   } catch (error) {

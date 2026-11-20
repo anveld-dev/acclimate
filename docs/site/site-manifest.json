@@ -361,6 +361,46 @@
     "kind": "source"
   },
   {
+    "source": "docs/architecture/self-improvement-memory/README.md",
+    "route": "source/architecture/self-improvement-memory/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/decisions.md",
+    "route": "source/architecture/self-improvement-memory/decisions.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/evaluator-and-contracts.md",
+    "route": "source/architecture/self-improvement-memory/evaluator-and-contracts.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/experiment.md",
+    "route": "source/architecture/self-improvement-memory/experiment.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/loop.md",
+    "route": "source/architecture/self-improvement-memory/loop.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/memory.md",
+    "route": "source/architecture/self-improvement-memory/memory.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/optimizer.md",
+    "route": "source/architecture/self-improvement-memory/optimizer.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/removal.md",
+    "route": "source/architecture/self-improvement-memory/removal.md",
+    "kind": "source"
+  },
+  {
     "source": "docs/design/compact-layouts/README.md",
     "route": "source/design/compact-layouts/README.md",
     "kind": "source"

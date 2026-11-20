@@ -6,6 +6,8 @@ The [deepening review](deepening-review.md) records the latest committee decisio
 
 Current work: [production-only plan](production-only/plan.md), [review](production-only/review.md), [parallel ownership](production-only/parallel-work.md) and [evidence](production-only/evidence.md). PostgreSQL and verified OIDC are the only app path.
 
+Current work: [self-improvement memory](self-improvement-memory/README.md), the paper-first plan to replace connected learning with the always-on self-improvement loop of arXiv 2611.18856 (five candidates per round, adopt as release, optimizer-only improvement memory), with its removal phases and experiment plan.
+
 **Implementation map.** This breaks the [small service design](../design/README.md) into modules and parallel work packages. The first implementation now exists; [run locally](../development.md) describes setup and validation. Codex is the live native test target; Claude and Pi have preparation checks.
 
 The next work is the [console productization plan](productization/README.md): durable drafts, the improvement UI, real selection/access and optional delivery reports. The [SDK release milestone](../implementation/next-milestone.md) is an earlier implementation record.

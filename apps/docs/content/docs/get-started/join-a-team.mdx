@@ -48,7 +48,7 @@ python -m acclimate describe
 </Tab>
 </Tabs>
 
-In the console, open the saved change under **Changes**, select **Review release**, and paste the `describe` output. Download the **evaluation request**, `evaluation-request.json`. The CLI calls this file a handoff.
+In the console, open the saved change under **Changes**, select **Review release**, and paste the `describe` output to create an evaluation request. Download its handoff, `handoff.json`.
 
 </Step>
 <Step>
@@ -59,14 +59,14 @@ In the console, open the saved change under **Changes**, select **Review release
 <Tab value="TypeScript">
 
 ```sh
-./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff handoff.json --live
 ```
 
 </Tab>
 <Tab value="Python">
 
 ```sh
-python -m acclimate compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+python -m acclimate compare --config "$EVALUATOR_CONFIG" --handoff handoff.json --live
 ```
 
 </Tab>

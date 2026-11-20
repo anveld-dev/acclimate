@@ -185,7 +185,7 @@ def library_fixtures(w):
     setups=[]
     for name in ('Review library alpha','Review library beta'):
         setups.append(w.call('POST',w.root+'/bundle-setups',dict(name=name,origin='created',channel='stable',payload=dict(schemaVersion=1,files=FILES),reason='Disposable library inventory fixture.')))
-    w.call('POST',w.bundle+'/channels/preview/promotions',dict(versionId=w.original['version']['id'],expectedRevision='0',unevaluatedReason='Disposable second channel fixture.'))
+    w.call('POST',w.bundle+'/channels/preview/releases',dict(versionId=w.original['version']['id'],expectedRevision='0',unevaluatedReason='Disposable second channel fixture.'))
     empty=w.call('POST',w.root+'/bundles',dict(name='Review library no channels'))
     expected={w.setup['bundle']['id']:('BDD bundle',['stable','preview']),**{s['bundle']['id']:(s['bundle']['name'],['stable']) for s in setups},empty['id']:('Review library no channels',[])}
     return expected

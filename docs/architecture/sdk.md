@@ -2,7 +2,7 @@
 
 [Architecture guide](README.md) · [Shared contracts](contracts.md)
 
-**First implementation.** The TypeScript SDK delivers a verified bundle to an application. Small native plugin packages map that content into inputs supported by a particular native SDK. The application owns execution, credentials, sessions, and cleanup timing.
+**First implementation.** The TypeScript SDK delivers a verified version to an application. Small native plugin packages map that content into inputs supported by a particular native SDK. The application owns execution, credentials, sessions, and cleanup timing.
 
 ## File ownership and boundaries
 
@@ -23,17 +23,17 @@ The SDK owner owns `client.ts`, `cache.ts`, `prepare.ts`, and `index.ts`. Coordi
 These sketches describe responsibilities; use the implemented TypeScript types for exact arguments:
 
 ```ts
-client.resolveChannel(project, bundle, channel, options) // mapping or not-modified
-client.getPayload(project, bundle, version)              // exact bytes
-resolveAndCache(client, selection, cachePolicy)           // verified bundle + resolution metadata
-prepareFiles(verifiedBundle, destination, collisionPolicy) // locations + cleanup
-claudePlugin.prepare(verifiedBundle, appContext)          // native options + cleanup
+client.resolveChannel(workspace, bundle, channel, options) // mapping or not-modified
+client.getPayload(workspace, bundle, version)              // exact bytes
+resolveAndCache(client, selection, cachePolicy)             // verified version + resolution metadata
+prepareFiles(verifiedVersion, destination)                  // locations + cleanup
+claudePlugin.prepare(verifiedVersion, appContext)           // native options + cleanup
 compare(parent, candidate, cases, execute, grade)         // comparison report
 ```
 
-The client also exposes the R0 version, proposal, comparison and promotion operations. It returns typed errors with service codes and request IDs. Mutations take an idempotency key; any permitted retry uses the same serialized request bytes and key within the contract's retention window. Keep raw HTTP separate from caching so callers can use either. Exact arguments and response shapes follow the shared contract when frozen.
+The client also exposes the R0 version, proposal, comparison and release operations. It returns typed errors with service codes and request IDs. Mutations take an idempotency key; any permitted retry uses the same serialized request bytes and key within the contract's retention window. Keep raw HTTP separate from caching so callers can use either. Exact arguments and response shapes follow the shared contract when frozen.
 
-A verified bundle view carries version ID, digest, parsed content and resolution metadata. Hash the downloaded bytes against the metadata **before** parsing and validating the schema. Never derive the digest from reserialized JSON. Channel revisions and version IDs are opaque strings. A conditional `304` confirms the cached mapping; it does not create a version.
+A verified version view carries version ID, digest, parsed content and resolution metadata. Hash the downloaded bytes against the metadata **before** parsing and validating the schema. Never derive the digest from reserialized JSON. Channel revisions and version IDs are opaque strings. A conditional `304` confirms the cached mapping; it does not create a version.
 
 The Node-side [verification module](../../packages/sdk/src/verification.ts) owns this exact-byte verification sequence behind `verifyPayloadBytes`: digest, strict UTF-8 decoding, JSON parsing, then payload validation. Cache reads, console channel/version reads, and operator review use the same interface. Transport, metadata identity, download limits, freshness, cache repair, and caller-facing error messages remain with their existing callers. Browser content validation uses the separate browser-safe validation entry point.
 
@@ -47,7 +47,7 @@ Preparation makes job-local copies or native inputs, leaving cached bytes immuta
 
 ## Native mapping and comparison
 
-Use Codex for the live check, with Claude/Pi mappings to test whether the same verified bundle boundary is useful. Each plugin validates what it can map, returns prepared locations and native options, and reports unsupported content. It must not claim a skill was invoked merely because it was delivered. Memory is bundle content, not an assumed native memory option. Prompt replacement requires explicit app policy.
+Use Codex for the live check, with Claude/Pi mappings to test whether the same verified version boundary is useful. Each plugin validates what it can map, returns prepared locations and native options, and reports unsupported content. It must not claim a skill was invoked merely because it was delivered. Memory is bundle content, not an assumed native memory option. Prompt replacement requires explicit app policy.
 
 The shared [native preparation module](../../packages/sdk/src/internal/native-files.ts) owns staging and the common instruction, skill-manifest, and original-memory-path projections. Each native adapter retains its harness-specific mapping and policy: Claude/Cursor settings, Cursor's approved-memory selection, and Pi's resource list. Plugin result shapes and application-owned cleanup remain unchanged.
 
@@ -57,7 +57,7 @@ The optional comparison helper accepts ordinary app `execute` and `grade` functi
 
 ## Parallel work and integration
 
-The coordinator first freezes R0 schemas, TypeScript types and exact-byte/digest fixtures. While Rust endpoints are under construction, the SDK owner runs a fixture HTTP server implementing those responses, conditional reads and errors. Plugin authors start from the same verified bundle fixture and can test preparation without a server. Contract changes go through the coordinator and update schemas, types and fixtures together.
+The coordinator first freezes R0 schemas, TypeScript types and exact-byte/digest fixtures. While Rust endpoints are under construction, the SDK owner runs a fixture HTTP server implementing those responses, conditional reads and errors. Plugin authors start from the same verified version fixture and can test preparation without a server. Contract changes go through the coordinator and update schemas, types and fixtures together.
 
 Tests should observe user-visible behavior: fixture bytes verify across languages; an unchanged channel reuses cached content; interrupted downloads leave a usable prior entry; denial cannot fall back offline; malformed paths and collisions fail without overwriting files; retries preserve key and bytes. Comparison tests use complete and incomplete shared reports rather than reproducing helper internals. Native integration tests verify actual resource discovery, not just generated options.
 

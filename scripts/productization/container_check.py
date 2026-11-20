@@ -156,11 +156,11 @@ https://127.0.0.1 {
                     assert response.status==303
                     assert not any(c['name']=='acclimate_session' for c in browser_context.cookies())
                 finally: browser.close()
-            setup = json.loads(call(api, '/v1/projects/'+project+'/bundle-setups', {
+            setup = json.loads(call(api, '/v1/workspaces/'+project+'/bundle-setups', {
                 'name':'Disposable full-stack release', 'origin':'created', 'channel':'stable',
                 'payload':{'schemaVersion':1,'files':[{'path':'instructions.md','kind':'instruction','text':'Disposable lifecycle marker.'}]},
                 'reason':'Container qualification only'}))
-            path = '/v1/projects/'+project+'/bundles/'+setup['bundle']['id']+'/channels/stable'
+            path = '/v1/workspaces/'+project+'/bundles/'+setup['bundle']['id']+'/channels/stable'
             before = call(api, path)
             compose('restart', 'service', 'console')
             ready()

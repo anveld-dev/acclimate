@@ -92,8 +92,8 @@ class BrowserFixture:
         self.page.set_default_timeout(10000)
         self.page.on('pageerror',lambda error:self.errors.append(str(error)))
 
-    def workspace_path(self, view='bundles', project_id=None):
-        project=quote(project_id or self.world.h.project,safe='')
+    def workspace_path(self, view='bundles', workspace_id=None):
+        project=quote(workspace_id or self.world.h.project,safe='')
         return '/w/'+project+('/settings/members' if view=='members' else '/'+view)
 
     def bundle_path(self, view='content', bundle_id=None, channel='stable', **search):

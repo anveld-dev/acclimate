@@ -18,8 +18,8 @@ Inspect any recorded policy verdicts. A failed or indeterminate verdict can bloc
 Use the [operator CLI](/docs/reference/operator-cli) with a scoped credential. Review the comparison and take the current channel revision from the result. Run the promotion separately once you approve it.
 
 ```sh
-npm run operator -- review --project PROJECT --bundle BUNDLE --channel live --comparison COMPARISON
-npm run operator -- promote --project PROJECT --bundle BUNDLE --channel live \
+npm run operator -- review --workspace WORKSPACE --bundle BUNDLE --channel live --comparison COMPARISON
+npm run operator -- promote --workspace WORKSPACE --bundle BUNDLE --channel live \
   --version CANDIDATE --comparison COMPARISON --expected-revision REVISION
 ```
 
@@ -30,7 +30,7 @@ If the revision conflicts, read the channel again and review the current target 
 Open **Releases** in the console, select a retained version, and enter the reason for restoring it. The terminal equivalent is:
 
 ```sh
-npm run operator -- rollback --project PROJECT --bundle BUNDLE --channel live \
+npm run operator -- rollback --workspace WORKSPACE --bundle BUNDLE --channel live \
   --version PREVIOUS --reason 'Regression observed' --expected-revision REVISION
 ```
 

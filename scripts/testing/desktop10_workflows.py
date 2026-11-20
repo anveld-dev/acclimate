@@ -63,10 +63,10 @@ def save_candidate(w,label):
 def fixtures(w):
     w.publish_initial('',files=FILES)
     first=w.call('GET',w.channel);second_draft,_=save_candidate(w,'Desktop10 manually reviewed second release.')
-    w.call('POST',w.channel+'/promotions',dict(versionId=second_draft['snapshotVersion']['id'],expectedRevision=first['revision'],unevaluatedReason='Explicit desktop10 second release with a preserved reason and immutable content.'))
+    w.call('POST',w.channel+'/releases',dict(versionId=second_draft['snapshotVersion']['id'],expectedRevision=first['revision'],unevaluatedReason='Explicit desktop10 second release with a preserved reason and immutable content.'))
     w.original=w.call('GET',w.channel);w.draft,_=save_candidate(w,'Desktop10 evidence-bound third release.');w.draft_path=w.channel+'/drafts/'+w.draft['id']
     w.request_evaluation();w.start_attempt();w.comparison();w.finish();w.publish_evidence()
-    history=w.call('GET',w.channel+'/promotions')['items'];assert len(history)==3
+    history=w.call('GET',w.channel+'/releases')['items'];assert len(history)==3
     w.original=w.call('GET',w.channel);draft,payload=save_candidate(w,'Desktop10 saved candidate awaiting its app-owned evaluation.')
     return dict(history=history,draft=draft,payload=payload,initialRequests=w.call('GET',w.bundle+'/evaluation-requests')['items'])
 
@@ -295,7 +295,7 @@ def main():
     try:
         if args.expected_build_hash:assert before==args.expected_build_hash,'Frozen build hash differs from GO'
         w.start();w.fresh_scenario(SimpleNamespace(effective_tags=[]));f=fixtures(w);b=w.browser();p=b.page
-        initial=dict(release=w.call('GET',w.channel),history=w.call('GET',w.channel+'/promotions')['items'],drafts=w.call('GET',w.channel+'/drafts?status=all')['items'])
+        initial=dict(release=w.call('GET',w.channel),history=w.call('GET',w.channel+'/releases')['items'],drafts=w.call('GET',w.channel+'/drafts?status=all')['items'])
         if args.tooltip_focus_only:e.run('native200-submit-tooltip-keyboard-focus',p,lambda:native_tooltip_focus(w,b,e))
         else:
             e.run('published-search-url-filter-and-narrow-rail',p,lambda:search_matrix(w,b,e))
@@ -303,7 +303,7 @@ def main():
             e.run('evaluation-first-use-requested-completed-review',p,lambda:evaluations(w,b,e,f))
             if 'report' in f:e.run('actual-native200-published-releases-and-evidence',p,lambda:native(w,b,e,f))
             if 'report' in f:e.run('zero-match-request-cursor-with-real-pagination',p,lambda:cursor_branch(w,b,e,f))
-        final=dict(release=w.call('GET',w.channel),history=w.call('GET',w.channel+'/promotions')['items'],drafts=w.call('GET',w.channel+'/drafts?status=all')['items'])
+        final=dict(release=w.call('GET',w.channel),history=w.call('GET',w.channel+'/releases')['items'],drafts=w.call('GET',w.channel+'/drafts?status=all')['items'])
         assert final==initial,'Browser review changed saved content or release history'
         all_requests=w.call('GET',w.bundle+'/evaluation-requests?limit=100')['items'];assert len(all_requests)==len(f['initialRequests'])+(0 if args.tooltip_focus_only else 1)+len(f.get('cursorFixtureRequests',[])),'Unexpected number of evaluation requests'
         if not args.tooltip_focus_only:assert any(row['id']==f['request']['id'] and row['candidateVersionId']==f['draft']['snapshotVersion']['id'] for row in all_requests)

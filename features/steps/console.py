@@ -446,7 +446,7 @@ def external_app(context):
     config_root=w.evaluator_app
     config_root.mkdir(mode=0o700,exist_ok=True)
     config_path=config_root/'evaluator.json'
-    config=dict(schemaVersion=1,serviceUrl=w.browser_fixture.base,projectId=w.h.project,
+    config=dict(schemaVersion=1,serviceUrl=w.browser_fixture.base,workspaceId=w.h.project,
                 evaluatorToken=w.h.tokens['evaluator'],evaluatorPrincipalId='evaluator',
                 journalRoot=str(config_root/'journal'))
     config_path.write_text(json.dumps(config))
@@ -460,16 +460,16 @@ def external_app(context):
     assert guide.ok and 'def execute(run)' in guide.text() and 'def grade(run)' in guide.text()
     p.get_by_role('button',name='Copy request ID',exact=True).click()
     assert p.evaluate('navigator.clipboard.readText()') == w.browser_request['id']
-    p.get_by_role('button',name='Copy request JSON',exact=True).click()
+    p.get_by_role('button',name='Copy handoff JSON',exact=True).click()
     handoff=json.loads(p.evaluate('navigator.clipboard.readText()'))
-    assert handoff['projectId']==w.h.project and handoff['bundleId']==w.setup['bundle']['id']
+    assert handoff['workspaceId']==w.h.project and handoff['bundleId']==w.setup['bundle']['id']
     assert handoff['requestId']==w.browser_request['id']
     assert not any(key in handoff for key in ('evaluatorToken','journalRoot','consoleToken','loginToken'))
     with p.expect_download() as pending_download:
-        p.get_by_role('button',name='Download request JSON',exact=True).click()
+        p.get_by_role('button',name='Download handoff',exact=True).click()
     download=pending_download.value
-    assert download.suggested_filename=='evaluation-request.json'
-    downloaded_path=config_root/'downloaded-evaluation-request.json'
+    assert download.suggested_filename=='handoff.json'
+    downloaded_path=config_root/'downloaded-handoff.json'
     download.save_as(downloaded_path)
     downloaded_text=downloaded_path.read_text()
     downloaded=json.loads(downloaded_text)
@@ -489,7 +489,7 @@ def external_app(context):
     p.get_by_role('button', name='Copy evaluator run command', exact=True).click()
     command=shlex.split(p.evaluate('navigator.clipboard.readText()'))
     assert command == ['python','-m','acclimate','compare','--config','/absolute/private/evaluator.json',
-                       '--handoff','evaluation-request.json','--live']
+                       '--handoff','handoff.json','--live']
     command[0]=sys.executable
     command[command.index('--config')+1]=str(config_path)
     command[command.index('--handoff')+1]=str(downloaded_path)
@@ -538,11 +538,11 @@ def review_publish(context, expected_verdict='fail'):
     policy.get_by_role('button',name='Copy policy check command',exact=True).click()
     command=shlex.split(p.evaluate('navigator.clipboard.readText()'))
     assert command == ['python','-m','acclimate','check','--config','/absolute/private/evaluator.json',
-                       '--handoff','evaluation-request.json','--policy','quality-policy.json']
+                       '--handoff','handoff.json','--policy','quality-policy.json']
     w=context.world
     command[0]=sys.executable
     command[command.index('--config')+1]=str(w.evaluator_app/'evaluator.json')
-    command[command.index('--handoff')+1]=str(w.evaluator_app/'downloaded-evaluation-request.json')
+    command[command.index('--handoff')+1]=str(w.evaluator_app/'downloaded-handoff.json')
     result=subprocess.run(command,cwd=w.evaluator_app,env=w.evaluator_env,capture_output=True,text=True,timeout=60)
     assert result.returncode=={'fail':2,'pass':0}[expected_verdict] and json.loads(result.stdout)['verdict']==expected_verdict
     policy.get_by_role('button',name='Refresh policy checks',exact=True).click()

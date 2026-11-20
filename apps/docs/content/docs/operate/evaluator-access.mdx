@@ -86,7 +86,7 @@ The evaluator config is a private JSON file with mode 0600 in an owner-only dire
 {
   "schemaVersion": 1,
   "serviceUrl": "https://api.example.com",
-  "projectId": "YOUR_WORKSPACE_ID",
+  "workspaceId": "YOUR_WORKSPACE_ID",
   "evaluatorPrincipalId": "machine:ci-evaluator",
   "evaluatorToken": "acm_...",
   "journalRoot": "/absolute/private/evaluation-journals"
@@ -107,7 +107,7 @@ In CI, write the token-free config at job start and pass the token from your sec
 umask 077
 mkdir -p "$RUNNER_TEMP/acclimate"
 cat > "$RUNNER_TEMP/acclimate/evaluator.json" <<EOF
-{"schemaVersion":1,"serviceUrl":"$ACCLIMATE_URL","projectId":"$ACCLIMATE_WORKSPACE",
+{"schemaVersion":1,"serviceUrl":"$ACCLIMATE_URL","workspaceId":"$ACCLIMATE_WORKSPACE",
  "evaluatorPrincipalId":"machine:ci-evaluator","journalRoot":"$RUNNER_TEMP/acclimate/journal"}
 EOF
 ACCLIMATE_EVALUATOR_TOKEN="$CI_EVALUATOR_TOKEN" \
@@ -117,7 +117,7 @@ ACCLIMATE_EVALUATOR_TOKEN="$CI_EVALUATOR_TOKEN" \
 
 Pass the path as `--config`. Relative paths resolve against the current directory. A remote service URL requires HTTPS. The worker records a failed callback's redacted message and stack trace in its private job directory. Add `"captureCallbackErrors": false` to opt out. When recovering an attempt, use the exact URL, workspace, principal, canonical journal root, and originating SDK language and release. On a durable worker, keep the journal on one authoritative physical volume across restarts.
 
-For a separate reader, provide a private config with `schemaVersion`, `serviceUrl`, `projectId`, and `readToken`. A read-only policy check sends no verdict.
+For a separate reader, provide a private config with `schemaVersion`, `serviceUrl`, `workspaceId`, and `readToken`. A read-only policy check sends no verdict.
 
 ## Rotate a token without restarting
 
@@ -153,7 +153,7 @@ The service still accepts static machine grants in the private `ACCLIMATE_AUTH` 
   {
     "token": "REPLACE_PRIVATELY",
     "principalId": "support-evaluator",
-    "projectId": "YOUR_WORKSPACE_ID",
+    "workspaceId": "YOUR_WORKSPACE_ID",
     "rights": ["evaluate"]
   }
 ]

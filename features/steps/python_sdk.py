@@ -54,7 +54,7 @@ def released(context):
 @when('Python prepares and explicitly reports its own session start')
 def reporting(context):
     w=context.world
-    w.python_result=w.sdk('pythonDelivery',actor='content-reader',reporting=True,integrationId=w.integration['id'],receiptToken=w.write_credential['secret'],observerToken=w.h.tokens['operator'])
+    w.python_result=w.sdk('pythonDelivery',actor='content-reader',reporting=True,connectionId=w.integration['id'],receiptToken=w.write_credential['secret'],observerToken=w.h.tokens['operator'])
 
 
 @then('Python observations identify the verified version without content')
@@ -69,7 +69,7 @@ def reports(context):
 @when('Python starts its application with an unavailable reporting credential')
 def reporting_denied(context):
     w = context.world
-    w.python_result = w.sdk('pythonDelivery', reporting=True, integrationId=w.integration['id'])
+    w.python_result = w.sdk('pythonDelivery', reporting=True, connectionId=w.integration['id'])
 
 
 @then('Python delivery and app start succeed with pending optional observations')

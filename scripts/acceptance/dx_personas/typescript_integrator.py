@@ -76,11 +76,11 @@ const app = defineEvaluation<Input, Expected, Output>({
   ...manifest.definition,
   datasetRevision: process.argv.includes('--changed-dataset') ? 'changed-private-dataset' : manifest.definition.datasetRevision,
   execute: async args => {
-    const { bundle, input, context, signal } = args;
+    const { version, input, context, signal } = args;
     signal.throwIfAborted();
     if ('expected' in args || input.visited.length || !Object.isFrozen(context)) throw Error('isolation');
     input.visited.push('mutated locally');
-    const prepared = await prepareFiles(bundle, path.join(context.privateJobDirectory, 'prepared'));
+    const prepared = await prepareFiles(version, path.join(context.privateJobDirectory, 'prepared'));
     const instruction = prepared.files.find(f => f.kind === 'instruction')!;
     let lifetimeRead = false;
     let priority = '';
@@ -94,14 +94,14 @@ const app = defineEvaluation<Input, Expected, Output>({
       const negated = new RegExp(settings.negationPattern, 'i').test(input.text);
       priority = urgent && !(policy.includes('Respect negated urgency') && negated) ? 'high' : 'normal';
       // The next side/repetition must still receive the original verified content.
-      bundle.payload.files[0]!.text = 'MUTATED only within this callback';
+      version.payload.files[0]!.text = 'MUTATED only within this callback';
     } finally { await prepared.cleanup(); }
     let cleaned = false;
     try { await access(instruction.absolutePath); } catch { cleaned = true; }
     if (!cleaned) throw Error('cleanup');
-    const output = { priority, versionId: bundle.version.id, digest: bundle.version.digest, lifetimeRead, cleaned };
+    const output = { priority, versionId: version.version.id, digest: version.version.digest, lifetimeRead, cleaned };
     const reporter = createEvaluationProgressReporter(progressClient!, {
-      projectId: target.projectId, bundleId: target.bundleId, requestId: context.requestId, attemptId: context.attemptId,
+      workspaceId: target.workspaceId, bundleId: target.bundleId, requestId: context.requestId, attemptId: context.attemptId,
     });
     const progressReported = await reporter.report({ sequence: ++sequence, phase: 'executing', completed: sequence, total: 12,
       case: { caseId: args.caseId, repetition: args.repetition } });
@@ -233,7 +233,7 @@ def main():
             reader = json.loads(f.reader_config.read_text())
             reader['serviceUrl'] = proxy.base
             replace_private_json(f.reader_config, reader)
-            handoff = app / 'evaluation-request.json'
+            handoff = app / 'handoff.json'
             f.run(command + ['doctor', '--config', f.evaluator_config, '--bundle', bundle,
                             '--policy', app / 'quality-policy.json'], cwd=app)
             creation = ['request', '--config', f.evaluator_config, '--bundle', bundle, '--channel', 'stable',
@@ -258,7 +258,7 @@ def main():
             assert len(executions) == len(grades) == 12
             assert all(e['lifetimeRead'] and e['cleaned'] and e['expectedAbsent'] for e in executions)
             assert all(e['expectedWasClean'] for e in grades)
-            route = '/v1/projects/' + f.project + '/bundles/' + bundle + '/evaluation-requests/' + frozen['requestId']
+            route = '/v1/workspaces/' + f.project + '/bundles/' + bundle + '/evaluation-requests/' + frozen['requestId']
             first = f.h.call('GET', route, actor='evaluator')
             assert first['status'] == 'completed'
             assert {e['attemptId'] for e in executions} == {first['attemptId']}
@@ -267,7 +267,7 @@ def main():
             assert losses['submit']['id'] == first['comparisonId']
             assert losses['request']['id'] == frozen['requestId']
             check = f.run(command + ['check', *target, '--policy', app / 'quality-policy.json'], cwd=app)
-            comparison = f.h.call('GET', '/v1/projects/' + f.project + '/bundles/' + bundle + '/comparisons/' + first['comparisonId'], actor='evaluator')
+            comparison = f.h.call('GET', '/v1/workspaces/' + f.project + '/bundles/' + bundle + '/comparisons/' + first['comparisonId'], actor='evaluator')
             f.write_json(app / 'analysis-input.json', {'comparison': comparison, 'expectedBinding': check['expectedBinding']})
             analysis = f.run(command + ['analysis-check'], cwd=app)
             assert analysis['metrics'][0]['counts']['comparablePairs'] == 6

@@ -17,11 +17,11 @@ def seed(w, verify=False):
     w.h.identity().next_token_claims={'name':'Morgan Lee'}
     b=w.browser();extra=[]
     for i,name in enumerate(['Research team','Payment operations','Research team','Support production','Code review','Background agents','A very long workspace name for engineering and reliability teams'] + (['Scrolling workspace '+str(n) for n in range(12)] if verify else [])):
-        extra.append(w.call('POST','/v1/projects',dict(id='nav-'+str(i)+'-'+uuid.uuid4().hex[:8],name=name),actor='_browser-operator'))
+        extra.append(w.call('POST','/v1/workspaces',dict(id='nav-'+str(i)+'-'+uuid.uuid4().hex[:8],name=name),actor='_browser-operator'))
     if verify:
         w.sign_in('role-admin','role-admin')
-        w.call('PUT','/v1/projects/'+extra[2]['id']+'/memberships/'+w.sessions['role-admin']['userId'],dict(role='admin'),actor='_browser-operator')
-        w.call('PUT','/v1/projects/'+extra[2]['id']+'/memberships/'+w.sessions['_browser-operator']['userId'],dict(role='editor'),actor='_browser-operator')
+        w.call('PUT','/v1/workspaces/'+extra[2]['id']+'/memberships/'+w.sessions['role-admin']['userId'],dict(role='admin'),actor='_browser-operator')
+        w.call('PUT','/v1/workspaces/'+extra[2]['id']+'/memberships/'+w.sessions['_browser-operator']['userId'],dict(role='editor'),actor='_browser-operator')
     return b,extra
 
 
@@ -68,18 +68,18 @@ def verify(w,b,extra,out,checks):
             sheet=p.get_by_role('dialog',name='Acclimate',exact=True)
             expect(sheet).to_be_visible()
             select=sheet.get_by_label('Workspace',exact=True)
-            for project_id in duplicates:
-                expect(select.locator('option').filter(has_text=project_id)).to_have_count(1)
+            for workspace_id in duplicates:
+                expect(select.locator('option').filter(has_text=workspace_id)).to_have_count(1)
             p.keyboard.press('Escape');expect(sheet).to_have_count(0)
             expect(p.get_by_role('button',name='Open navigation',exact=True)).to_be_focused()
         else:
             trigger=p.get_by_role('button',name='Workspaces');trigger.click()
             menu=p.get_by_role('menu');expect(menu).to_be_visible()
-            for project_id in duplicates:
-                item=menu.locator('[data-workspace-id="'+project_id+'"]')
-                expect(item).to_contain_text(project_id)
-            for project_id,project in by_id.items():
-                item=menu.locator('[data-workspace-id="'+project_id+'"]')
+            for workspace_id in duplicates:
+                item=menu.locator('[data-workspace-id="'+workspace_id+'"]')
+                expect(item).to_contain_text(workspace_id)
+            for workspace_id,project in by_id.items():
+                item=menu.locator('[data-workspace-id="'+workspace_id+'"]')
                 expect(item).to_contain_text(project['name'])
                 expect(item).to_contain_text({'admin':'Administrator','editor':'Editor','viewer':'Viewer'}[project['role']])
             current=menu.locator('[data-workspace-id="'+w.h.project+'"]')
@@ -142,7 +142,7 @@ def verify(w,b,extra,out,checks):
     original=p.url;history=p.evaluate('history.length');current.click()
     assert p.url==original and p.evaluate('history.length')==history
     trigger.click();p.get_by_role('menu').locator('[data-workspace-id="'+duplicates[0]+'"]').click()
-    expect(p).to_have_url(b.base+b.workspace_path(project_id=duplicates[0]))
+    expect(p).to_have_url(b.base+b.workspace_path(workspace_id=duplicates[0]))
     trigger.click();expect(p.get_by_role('menu').locator('[data-workspace-id="'+duplicates[0]+'"]')).to_have_attribute('aria-checked','true')
     p.keyboard.press('Escape');p.go_back(wait_until='networkidle');expect(p).to_have_url(original)
     trigger.click();expect(p.get_by_role('menu').locator('[data-workspace-id="'+w.h.project+'"]')).to_have_attribute('aria-checked','true')
@@ -165,7 +165,7 @@ def verify(w,b,extra,out,checks):
     p.get_by_role('button',name='Open navigation',exact=True).click()
     p.get_by_role('combobox',name='Workspace',exact=True).select_option(duplicates[0])
     p.get_by_role('button',name='Leave editor',exact=True).click()
-    expect(p).to_have_url(b.base+b.workspace_path(project_id=duplicates[0]))
+    expect(p).to_have_url(b.base+b.workspace_path(workspace_id=duplicates[0]))
     checks.append('Cancelled native switch restores original choice and unsaved text; confirmed switch navigates')
 
     # A fresh OIDC login with no name claim uses the neutral fallback.

@@ -110,7 +110,7 @@ def execute(run):
     event("execute", caseId=run.case_id, side=run.context.side)
     assert "expected" not in run.input
     destination=Path(run.context.private_job_directory)/"agent-context"
-    with prepare_files(run.bundle, str(destination)) as prepared:
+    with prepare_files(run.version, str(destination)) as prepared:
         # Application policy attaches instruction, registers skill and selects memory.
         attached={item["kind"]:Path(item["absolutePath"]).read_text() for item in prepared.files}
         instructions=attached["instruction"]
@@ -163,13 +163,13 @@ config_path=sys.argv[1]
 handoff=json.loads(Path(sys.argv[2]).read_text())
 config=json.loads(Path(config_path).read_text())
 client=AcclimateClient(config["serviceUrl"],token=config["evaluatorToken"],scope=config["evaluatorPrincipalId"])
-request=client.get_evaluation(config["projectId"],handoff["bundleId"],handoff["requestId"])
+request=client.get_evaluation(config["workspaceId"],handoff["bundleId"],handoff["requestId"])
 def count():
     return len(EVENTS.read_text().splitlines()) if EVENTS.exists() else 0
 def request_for(definition):
     body={**definition.descriptor, **{key:request[key] for key in ("parentVersionId","parentDigest","candidateVersionId","candidateDigest")},"requireBoundEvidence":True}
-    result=client.create_evaluation(config["projectId"],handoff["bundleId"],body,str(uuid.uuid4()))
-    return {**handoff,"requestId":result["id"],"configuration":definition.descriptor}
+    result=client.create_evaluation(config["workspaceId"],handoff["bundleId"],body,str(uuid.uuid4()))
+    return {**handoff,"requestId":result["id"],"descriptor":definition.descriptor}
 def run(definition, target, **kwargs):
     return run_evaluation(app=definition,config_path=config_path,handoff=target,**kwargs)
 
@@ -215,7 +215,7 @@ def slow_execute(run_input):
     lockpath=job/"app.lock"
     with lockpath.open("w") as owner:
         fcntl.flock(owner,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        with prepare_files(run_input.bundle,str(job/"retained-context")) as prepared:
+        with prepare_files(run_input.version,str(job/"retained-context")) as prepared:
             inputpath=Path(prepared.files[0]["absolutePath"])
             active.extend([inputpath,lockpath])
             started.set()

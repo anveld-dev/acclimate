@@ -21,8 +21,8 @@ import { runAgent, scoreResult, savedCases } from './dist/support-agent.mjs';
 export const cases = savedCases;
 export const revisionFiles = ['package-lock.json'];
 
-export async function execute({ bundle, input, signal, context }) {
-  const result = await runAgent({ bundle, task: input, signal, job: context });
+export async function execute({ version, input, signal, context }) {
+  const result = await runAgent({ version, task: input, signal, job: context });
   return { output: result.answer, usage: result.measuredUsage };
 }
 
@@ -40,7 +40,7 @@ cases = saved_cases
 revision_files = ["support_agent.py", "requirements.lock"]
 
 async def execute(run):
-    result = await run_agent(bundle=run.bundle, task=run.input, cancellation=run.cancellation)
+    result = await run_agent(version=run.version, task=run.input, cancellation=run.cancellation)
     return ExecutionResult(output=result.answer, usage=result.measured_usage)
 
 def grade(run):

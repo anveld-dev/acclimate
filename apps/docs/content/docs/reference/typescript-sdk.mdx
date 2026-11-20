@@ -37,7 +37,7 @@ The root entry also exports every wire type, such as `Bundle`, `VersionMetadata`
 
 ## Deliver a pinned version
 
-Construct `AcclimateClient` with `baseUrl`, `token`, and a stable `scope` that identifies the authenticated application. Use the connection UUID as `integrationId` when resolving for a connection. Call `client.prepare` with `projectId`, `bundleId`, and exactly one of `channel` or `versionId`. It returns the pinned `version`, the verified `bundle`, `directory`, `instructions`, `skillFiles`, and `cleanup()`.
+Construct `AcclimateClient` with `baseUrl`, `token`, and a stable `scope` that identifies the authenticated application. Use the connection UUID as `connectionId` when resolving for a connection. Call `client.prepare` with `workspaceId`, `bundleId`, and exactly one of `channel` or `versionId`. It returns the verified `version` (its metadata is `version.version`), `directory`, `instructions`, `skillFiles`, `reportStarted()`, and `cleanup()`.
 
 The default preparation cache is `~/.cache/acclimate/typescript`. Set `cacheDir` to override it and `destination` to select an application-owned staging directory. Start jobs with an online resolution by default. For a bounded cached channel fallback, pass `offline: { maxAgeMs: ... }`. For exact version fallback, pass `offline: { pinnedVersionId: ... }`. The Python SDK takes the same policy as `offline={"max_age_ms": ...}` or `offline={"pinned_version_id": ...}`. Access denial and integrity errors fail preparation.
 
@@ -59,4 +59,4 @@ Use `resolveAndCache` when you want a verified version for a native plugin or yo
 | `ExecutionUncertainError`, `CallbackCancelled` | Thrown from your callbacks: when external work might still be running, or after the callback stops for cooperative cancellation. |
 | `EvaluationConfigurationError`, `PolicyError`, `AnalysisError` | A descriptor, handoff, quality policy or analysis input is invalid. |
 
-[Versioning and compatibility](/docs/reference/versioning) covers which SDK versions work with which service versions and how deprecated names are removed.
+[Versioning and compatibility](/docs/reference/versioning) covers which SDK versions work with which service versions, how deprecated names are removed, and how to upgrade from `0.1`.

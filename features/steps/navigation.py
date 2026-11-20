@@ -462,8 +462,8 @@ def leave_workspace(context):
 def switched_without_save(context):
     w=context.world
     b=browser(context)
-    expect(b.page).to_have_url(b.base+b.workspace_path(project_id=w.extra_workspace['id']))
-    expect(b.page.get_by_role('navigation',name='Main navigation',exact=True).filter(visible=True).get_by_role('link',name='Bundles',exact=True)).to_have_attribute('href',b.workspace_path(project_id=w.extra_workspace['id']))
+    expect(b.page).to_have_url(b.base+b.workspace_path(workspace_id=w.extra_workspace['id']))
+    expect(b.page.get_by_role('navigation',name='Main navigation',exact=True).filter(visible=True).get_by_role('link',name='Bundles',exact=True)).to_have_attribute('href',b.workspace_path(workspace_id=w.extra_workspace['id']))
     expect(b.page.get_by_role('textbox', name='Content', exact=True)).to_have_count(0)
     assert w.call('GET',w.channel+'/drafts')['items']==[]
     assert w.call('GET',w.channel)['version']==w.original['version']

@@ -79,7 +79,7 @@ def main():
         # Borrow the BDD browser identity/console fixtures without another database.
         w = World.__new__(World)
         w.h, w.actor, w.sessions = f.h, 'operator', {}
-        w.root = '/v1/projects/'+f.project
+        w.root = '/v1/workspaces/'+f.project
         w.setup, w.original = setup, setup['resolution']
         w.bundle = w.root+'/bundles/'+setup['bundle']['id']
         w.channel = w.bundle+'/channels/stable'
@@ -125,13 +125,13 @@ def main():
             check('browser request freezes custom grader', request['graderRevision'], descriptor['graderRevision'])
             check('browser request freezes declared case inventory', request['expectedCases'], descriptor['expectedCases'])
             check('browser request requires bound evidence', request['requireBoundEvidence'], True)
-            p.get_by_role('button',name='Copy request JSON',exact=True).click()
+            p.get_by_role('button',name='Copy handoff JSON',exact=True).click()
             copied = json.loads(p.evaluate('navigator.clipboard.readText()'))
             with p.expect_download() as download_event:
-                p.get_by_role('button',name='Download request JSON',exact=True).click()
+                p.get_by_role('button',name='Download handoff',exact=True).click()
             download = download_event.value
-            check('actual public download filename', download.suggested_filename, 'evaluation-request.json')
-            handoff_path = app/'browser-downloaded-evaluation-request.json'
+            check('actual public download filename', download.suggested_filename, 'handoff.json')
+            handoff_path = app/'browser-downloaded-handoff.json'
             download.save_as(handoff_path)
             handoff_path.chmod(0o600)
             handoff_bytes = handoff_path.read_bytes()

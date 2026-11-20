@@ -53,7 +53,7 @@ class ExternalGateTests(unittest.TestCase):
              patch.object(external, 'request', side_effect=response) as request, \
              contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(external.main(['--execute','--gate','https','--url','https://api.example',
-                '--project','fixture','--token-env','FIXTURE_TOKEN']), 0)
+                '--workspace','fixture','--token-env','FIXTURE_TOKEN']), 0)
         self.assertEqual([row.args[0] for row in request.call_args_list], [
             'https://api.example/health','https://api.example/ready','https://api.example/v1/workspaces/fixture/bundles'])
         self.assertNotIn('private-fixture', output.getvalue())

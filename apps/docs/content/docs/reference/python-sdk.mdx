@@ -17,7 +17,7 @@ from support_agent import run_agent, score_result, saved_cases
 cases = saved_cases  # [{"caseId": ..., "input": ..., "expected": ...}]
 
 def execute(run):
-    result = run_agent(files=run.bundle["payload"]["files"], task=run.input)
+    result = run_agent(files=run.version["payload"]["files"], task=run.input)
     return ExecutionResult(output=result.answer, usage={"inputTokens": result.tokens_in})
 
 def grade(run):
@@ -49,18 +49,17 @@ from acclimate import AcclimateClient
 client = AcclimateClient(os.environ["ACCLIMATE_URL"], os.environ["ACCLIMATE_TOKEN"], "support-agent")
 with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
     result = run_agent(task, instructions=prepared.instructions, skill_files=prepared.skill_files)
-    save_job_result(result, version=prepared.version["id"], digest=prepared.version["digest"])
+    save_job_result(result, version=prepared.version["version"]["id"], digest=prepared.version["version"]["digest"])
 ```
 
 The task, IDs, agent call and result storage belong to your application. Pass `version_id=` instead of `channel=` to request an exact version. For background work, keep the prepared object and call `cleanup()` after the job stops and its result is saved.
 
 | Attribute of the prepared job | Contents |
 | --- | --- |
-| `version` | The pinned version's metadata, including `id` and `digest`. |
+| `version` | The verified version: its metadata in `version["version"]`, including `id` and `digest`, the verified `payload`, and resolution details. `version["stale"]` is true when the content came from the offline cache. |
 | `instructions` | The instruction files joined into one string. |
 | `skill_files`, `files` | Staged skill files, and every staged file, with `path`, `kind` and `absolutePath`. |
 | `directory` | The private job directory. |
-| `bundle` | The verified payload and resolution metadata. `bundle["stale"]` is true when the content came from the offline cache. |
 | `report_started()` | Reports the job's start when the client has a `DeliveryReporter`. |
 
 The cache defaults to `~/.cache/acclimate/python`. Set `cache_dir` to change it and `destination` to choose the job directory. Keep a separate cache directory for each SDK language.
@@ -72,13 +71,13 @@ client.prepare(workspace_id, bundle_id, channel="stable", offline={"max_age_ms":
 client.prepare(workspace_id, bundle_id, version_id=pinned, offline={"pinned_version_id": pinned})
 ```
 
-A denial, a missing resource or an integrity failure never falls back. `resolve_and_cache(client, workspace_id, bundle_id, cache_dir=..., ...)` and `prepare_files(bundle, destination)` run the two steps separately. `validate_payload(payload)` checks a bundle payload without contacting the service.
+A denial, a missing resource or an integrity failure never falls back. `resolve_and_cache(client, workspace_id, bundle_id, cache_dir=..., ...)` and `prepare_files(version, destination)` run the two steps separately. `validate_payload(payload)` checks a bundle payload without contacting the service.
 
 ## Client
 
-`AcclimateClient(base_url, token, scope, *, retries=2, timeout=30, max_payload_bytes=1048576, max_json_response_bytes=4194304, integration_id=None)`
+`AcclimateClient(base_url, token, scope, *, retries=2, timeout=30, max_payload_bytes=1048576, max_json_response_bytes=4194304, connection_id=None)`
 
-`scope` is a stable name for the authenticated application. It namespaces the cache and must never be a token. Set `integration_id` to the connection UUID when the application reads content for a connection. The client is synchronous, rejects redirects so the token never leaves the configured origin, and bounds every response.
+`scope` is a stable name for the authenticated application. It namespaces the cache and must never be a token. Set `connection_id` to the connection UUID when the application reads content for a connection. The client is synchronous, rejects redirects so the token never leaves the configured origin, and bounds every response.
 
 Every mutation takes an explicit idempotency key of 1–128 printable ASCII characters. Retry a lost write with the same key and the same request. Listing methods take `cursor=` and `limit=` keyword arguments and return `{"items": [...], "nextCursor": ...}`; pass `nextCursor` back as `cursor` to read the next page.
 
@@ -102,7 +101,6 @@ Differences from the TypeScript client:
 
 - `resolve_channel` returns a `(resolution, etag, not_modified)` tuple.
 - The TypeScript client's `sessionToken` and `fetch` options have no Python equivalent. The session token is only for the console's own server.
-- Python has no `list_projects`, the TypeScript client's deprecated alias of `list_workspaces`.
 - The learning report methods take the key from the report, as the TypeScript defaults do. `report_learning_outcome`, `report_learning_field_audit`, `renew_learning` and `restore_learning` also accept an explicit key.
 
 ## Errors
@@ -146,7 +144,7 @@ The CLI fingerprints `application.py`, the local modules it imports and the file
 | Class | Fields |
 | --- | --- |
 | `Case(case_id, input, expected, repetitions=1)` | One saved case. |
-| `ExecuteInput` | `bundle` (the verified version under test), `input`, `case_id`, `repetition`, `cancellation`, `context`. The `instructions`, `instruction_files`, `skill_files` and `memory_files` properties read the bundle's content. |
+| `ExecuteInput` | `version` (the verified version under test), `input`, `case_id`, `repetition`, `cancellation`, `context`. The `instructions`, `instruction_files`, `skill_files` and `memory_files` properties read its content. |
 | `ExecutionContext` | `request_id`, `attempt_id`, `side` (`parent` or `candidate`), `job_id`, `private_job_directory`. |
 | `CancellationContext` | `is_cancelled()` and `raise_if_cancelled()`. Check it while waiting on external work. |
 | `ExecutionResult(output, execution_status="completed", error=None, output_ref=None, usage=None)` | Gradeable JSON output. Set `execution_status="task_failed"` for a failed task that still produced output. `usage` takes measured `inputTokens`, `outputTokens` and `costUsd` (or `input_tokens`, `output_tokens` and `cost_usd`). Any other key marks the output invalid. |
@@ -181,16 +179,6 @@ The client, delivery helpers and `run_evaluation` are synchronous. In an asyncio
 
 ## Reporters
 
-`DeliveryReporter(client, project_id, integration_id, *, max_queue=100)` reports delivery stages for a connection from a background thread. Pass it to `client.prepare(..., reporter=reporter)` and call `prepared.report_started()` when the job starts. Report failures never block delivery. Call `wait(timeout)` and then `close(timeout)` before a short-lived process exits.
+`DeliveryReporter(client, workspace_id, connection_id, *, max_queue=100)` reports delivery stages for a connection from a background thread. Pass it to `client.prepare(..., reporter=reporter)` and call `prepared.report_started()` when the job starts. Report failures never block delivery. Call `wait(timeout)` and then `close(timeout)` before a short-lived process exits.
 
-`EvaluationProgressReporter(client, *, project_id, bundle_id, request_id, attempt_id)` reports optional progress for a running evaluation with `report(sequence=..., phase=..., completed=..., total=...)`. It returns `False` instead of raising when a report fails.
-
-## Deprecated names
-
-These aliases still work and will be removed under the [deprecation rules](/docs/reference/versioning#deprecation).
-
-| Deprecated | Use |
-| --- | --- |
-| `list_promotions`, `promote` | `list_releases`, `create_release` |
-| `create_integration`, `list_integrations`, `create_integration_credential`, `revoke_integration`, `revoke_integration_credential`, `list_integration_observations` | The matching `*_connection*` method |
-| `Promotion`, `PromotionPage`, `PromoteRequest`, `VerifiedBundle`, `IntegrationObservation`, `IntegrationLatestObservation`, `IntegrationObservationPage` | `Release`, `ReleasePage`, `CreateReleaseRequest`, `VerifiedVersion`, `ConnectionObservation`, `ConnectionLatestObservation`, `ConnectionObservationPage` |
+`EvaluationProgressReporter(client, *, workspace_id, bundle_id, request_id, attempt_id)` reports optional progress for a running evaluation with `report(sequence=..., phase=..., completed=..., total=...)`. It returns `False` instead of raising when a report fails.

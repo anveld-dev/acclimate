@@ -303,7 +303,7 @@ def write_application(state, values, subject, ports=DEFAULT):
         ACCLIMATE_CONSOLE_TOKEN=values['console'],
         ACCLIMATE_OPERATORS=json.dumps([dict(issuer=ports.issuer, subject=str(UUID(subject)))]),
         ACCLIMATE_AUTH=json.dumps([dict(token=values['evaluator'], principalId=PRINCIPAL,
-                                        projectId=PROJECT, rights=['read', 'write'])]),
+                                        workspaceId=PROJECT, rights=['read', 'write'])]),
         ACCLIMATE_CONSOLE_ORIGIN=ports.console,
         ACCLIMATE_SMTP_HOST='mailpit',
         ACCLIMATE_SMTP_PORT=1025,
@@ -321,7 +321,7 @@ def write_application(state, values, subject, ports=DEFAULT):
         CONSOLE_SERVICE_TOKEN=values['console'],
         CONSOLE_ALLOW_EDITS='true',
     ))
-    config = dict(schemaVersion=1, serviceUrl=ports.api, projectId=PROJECT,
+    config = dict(schemaVersion=1, serviceUrl=ports.api, workspaceId=PROJECT,
                   evaluatorPrincipalId=PRINCIPAL, evaluatorToken=values['evaluator'],
                   journalRoot=str(state / 'evaluator-journal'))
     write_file(state / 'evaluator.json', (json.dumps(config, indent=2) + '\n').encode())
@@ -478,7 +478,7 @@ def api(opener, ports, method, route, token, session=None, body=None, mutation=F
 
 def seed_example(call):
     """Publish a small example bundle so the first comparison has a parent."""
-    scope = f'/v1/projects/{PROJECT}/bundles'
+    scope = f'/v1/workspaces/{PROJECT}/bundles'
     bundles = call('GET', scope + '?limit=100')['items']
     bundle = next((item for item in bundles if item['name'] == EXAMPLE_BUNDLE), None)
     if bundle is None:
@@ -489,7 +489,7 @@ def seed_example(call):
     channels = call('GET', bundle_scope + '/channels?limit=100')['items']
     if not any(channel['name'] == EXAMPLE_CHANNEL for channel in channels):
         version = call('POST', bundle_scope + '/versions', body=dict(payload=EXAMPLE_PAYLOAD), mutation=True)
-        call('POST', f'{bundle_scope}/channels/{EXAMPLE_CHANNEL}/promotions', mutation=True, body=dict(
+        call('POST', f'{bundle_scope}/channels/{EXAMPLE_CHANNEL}/releases', mutation=True, body=dict(
             versionId=version['id'], expectedRevision='0',
             unevaluatedReason='Example bundle published by npm run local:up'))
     return bundle['id']
@@ -510,7 +510,7 @@ def bootstrap_workspace(opener, values, subject, ports):
 
     try:
         try:
-            call('POST', '/v1/auth/workspace-adoptions', dict(projectId=PROJECT, reason=ADOPTION_REASON))
+            call('POST', '/v1/auth/workspace-adoptions', dict(workspaceId=PROJECT, reason=ADOPTION_REASON))
         except HTTPError as error:
             if error.code != 409:
                 raise

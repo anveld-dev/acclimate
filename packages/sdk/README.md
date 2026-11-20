@@ -20,8 +20,8 @@ import { runAgent, scoreResult, savedCases } from './support-agent.mjs';
 
 export const cases = savedCases; // [{ caseId, input, expected }]
 
-export async function execute({ bundle, input, signal }) {
-  const result = await runAgent({ files: bundle.payload.files, task: input, signal });
+export async function execute({ version, input, signal }) {
+  const result = await runAgent({ files: version.payload.files, task: input, signal });
   return { output: result.answer, usage: result.usage };
 }
 
@@ -45,7 +45,7 @@ const client = new AcclimateClient({
   token: process.env.ACCLIMATE_TOKEN!,
   scope: 'support-agent',
 });
-const prepared = await client.prepare({ projectId, bundleId, channel: 'stable' });
+const prepared = await client.prepare({ workspaceId, bundleId, channel: 'stable' });
 try {
   await runAgent({ instructions: prepared.instructions, skillFiles: prepared.skillFiles });
 } finally {

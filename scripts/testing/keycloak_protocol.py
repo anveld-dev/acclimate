@@ -296,7 +296,7 @@ def qualify(args, prepared_home, build_env):
                 record_check('password and service-account grants rejected by the real confidential client')
                 project = 'keycloak-'+uuid.uuid4().hex
                 stage = 'operator-workspace'
-                created = api(admin_context, operator, 'POST', '/v1/projects', dict(id=project, name='Keycloak qualification'))
+                created = api(admin_context, operator, 'POST', '/v1/workspaces', dict(id=project, name='Keycloak qualification'))
                 assert created.status in (200, 201)
                 viewer = login('viewer')
                 stage = 'viewer-membership'
@@ -304,13 +304,13 @@ def qualify(args, prepared_home, build_env):
                 viewer_person = api(viewer_context, viewer, 'GET', '/v1/auth/session').json()
                 assert viewer_person['subject'] == users['viewer']
                 assert viewer_person['canCreateWorkspace'] is False
-                assert api(viewer_context, viewer, 'GET', f'/v1/projects/{project}/bundles').status == 403
+                assert api(viewer_context, viewer, 'GET', f'/v1/workspaces/{project}/bundles').status == 403
                 membership = api(admin_context, operator, 'PUT',
-                    f'/v1/projects/{project}/memberships/{viewer_person["userId"]}',
+                    f'/v1/workspaces/{project}/memberships/{viewer_person["userId"]}',
                     dict(role='viewer'))
                 assert membership.status in (200, 201, 204)
-                assert api(viewer_context, viewer, 'GET', f'/v1/projects/{project}/bundles').status == 200
-                assert api(viewer_context, viewer, 'POST', '/v1/projects',
+                assert api(viewer_context, viewer, 'GET', f'/v1/workspaces/{project}/bundles').status == 200
+                assert api(viewer_context, viewer, 'POST', '/v1/workspaces',
                            dict(id=project+'-denied', name='Denied')).status == 403
                 record_check('ordinary verified user denied before membership, viewer read and creation denial')
                 if getattr(args, 'email', False):
@@ -321,9 +321,9 @@ def qualify(args, prepared_home, build_env):
                         admin_secret=operator, record=record_check, output=args.report.parent/(args.runtime+'-emails'))
                 stage = 'membership-removal'
                 removed = api(admin_context, operator, 'DELETE',
-                    f'/v1/projects/{project}/memberships/{viewer_person["userId"]}')
+                    f'/v1/workspaces/{project}/memberships/{viewer_person["userId"]}')
                 assert removed.status == 204
-                assert api(viewer_context, viewer, 'GET', f'/v1/projects/{project}/bundles').status == 403
+                assert api(viewer_context, viewer, 'GET', f'/v1/workspaces/{project}/bundles').status == 403
                 assert api(viewer_context, viewer, 'GET', '/v1/auth/session').status == 200
                 record_check('membership removal denies workspace access immediately with the same valid Keycloak-backed session')
                 stage = 'restart-keycloak'

@@ -28,9 +28,9 @@ def run(args):
         seed(w)
         w.sensitive_fixture = True
         duplicate_name='Duplicate background worker '+('long identity '*4)
-        duplicates=[w.call('POST',w.root+'/integrations',dict(displayName=duplicate_name,bundleId=w.setup['bundle']['id'],channel='stable')) for _ in range(2)]
+        duplicates=[w.call('POST',w.root+'/connections',dict(displayName=duplicate_name,bundleId=w.setup['bundle']['id'],channel='stable')) for _ in range(2)]
         newer=w.call('POST',w.root+'/bundles/'+w.setup['bundle']['id']+'/versions',dict(parentVersionId=w.original['version']['id'],payload=dict(schemaVersion=1,files=[dict(path='AGENTS.md',kind='instruction',text='New current published fixture.')])) )
-        w.call('POST',w.channel+'/promotions',dict(versionId=newer['id'],expectedRevision=w.original['revision'],unevaluatedReason='Advance fixture for historical report distinction.'))
+        w.call('POST',w.channel+'/releases',dict(versionId=newer['id'],expectedRevision=w.original['revision'],unevaluatedReason='Advance fixture for historical report distinction.'))
         delayed=w.delivery_event();now=datetime.now(timezone.utc)
         delayed.update(source='offline',stage='started',channel='stable',revision=w.original['revision'],stale=True,occurredAt=(now-timedelta(minutes=10)).isoformat(),resolvedAt=(now-timedelta(minutes=20)).isoformat())
         w.call('POST',w.integration_path+'/receipts',delayed,actor='receipt-writer')
@@ -200,14 +200,14 @@ def run(args):
         assert p.evaluate('async()=>{const e=document.querySelector("[data-sensitive=true]");return !!e && await navigator.clipboard.readText()===e.value}')
         p.screenshot(path=str(out/'one-time-credential-masked.png'),full_page=True,mask=[p.locator('[data-sensitive=true]')])
         p.keyboard.press('Escape');expect(secret_dialog).to_be_hidden();expect(secret).to_have_count(0);expect(create_read).to_be_focused()
-        issued=w.call('GET',w.root+'/integrations')['items'];entry=next(item for item in issued if item['id']==w.empty_connection['id']);public_id=entry['credentials'][0]['id']
+        issued=w.call('GET',w.root+'/connections')['items'];entry=next(item for item in issued if item['id']==w.empty_connection['id']);public_id=entry['credentials'][0]['id']
         revoke=p.get_by_role('button',name='Revoke read credential '+public_id,exact=True)
         revoke.click();confirmation=p.get_by_role('dialog');expect(confirmation).to_contain_text(public_id)
         expect(confirmation).to_contain_text(w.setup['bundle']['id'])
         expect(confirmation.get_by_role('button',name='Cancel',exact=True)).to_be_focused()
         p.screenshot(path=str(out/'revoke-target-confirmation.png'),full_page=True,mask=[p.locator('[data-sensitive=true]')])
         p.keyboard.press('Escape');expect(confirmation).to_be_hidden();expect(revoke).to_be_focused()
-        w.call('POST',w.root+'/integrations/'+w.empty_connection['id']+'/credentials/'+public_id+'/revoke',{})
+        w.call('POST',w.root+'/connections/'+w.empty_connection['id']+'/credentials/'+public_id+'/revoke',{})
         p.get_by_role('tab',name='Credentials',exact=True).click()
         p.reload(wait_until='networkidle')
         p.get_by_role('button',name='Advanced credential actions',exact=True).click()
@@ -225,7 +225,7 @@ def run(args):
             expect(rp.get_by_role('region',name='App-reported delivery',exact=True)).to_have_count(0)
             rp.screenshot(path=str(out/'readonly-connection.png'),full_page=True,mask=[rp.locator('[data-sensitive=true]')])
         finally:reader.close()
-        w.call('POST',w.root+'/integrations/'+w.empty_connection['id']+'/revoke',{})
+        w.call('POST',w.root+'/connections/'+w.empty_connection['id']+'/revoke',{})
         p.reload(wait_until='networkidle');expect(p.get_by_text('Access revoked',exact=True)).to_be_visible()
         expect(p.get_by_role('button',name='Create read credential',exact=True)).to_be_disabled()
         expect(p.get_by_text('This connection is revoked; new credentials cannot be issued.',exact=True)).to_be_visible()

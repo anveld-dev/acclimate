@@ -16,7 +16,7 @@ Score a change on your own machine before you set up the service. A local run ne
 [Install the SDK](/docs/get-started/install) in your agent's project. In your agent's project, create `application.mjs` (or `application.mts`) for Node.js, or `application.py` for Python. Export three things:
 
 - `cases`: saved tasks, each with a unique `caseId`, an `input`, and an `expected` answer.
-- `execute`: calls your agent with the bundle it is given and the case input, and returns the output.
+- `execute`: calls your agent with the version it is given and the case input, and returns the output.
 - `grade`: scores an output against the expected answer and returns a numeric `reward`.
 
 <Tabs items={['TypeScript', 'Python']}>
@@ -28,8 +28,8 @@ import { runAgent, scoreResult, savedCases } from './dist/support-agent.mjs';
 export const cases = savedCases;
 export const revisionFiles = ['package-lock.json'];
 
-export async function execute({ bundle, input, signal, context }) {
-  const result = await runAgent({ bundle, task: input, signal, job: context });
+export async function execute({ version, input, signal, context }) {
+  const result = await runAgent({ version, task: input, signal, job: context });
   return { output: result.answer, usage: result.measuredUsage };
 }
 
@@ -49,7 +49,7 @@ cases = saved_cases
 revision_files = ["support_agent.py", "requirements.lock"]
 
 async def execute(run):
-    result = await run_agent(bundle=run.bundle, task=run.input, cancellation=run.cancellation)
+    result = await run_agent(version=run.version, task=run.input, cancellation=run.cancellation)
     return ExecutionResult(output=result.answer, usage=result.measured_usage)
 
 def grade(run):
@@ -62,7 +62,7 @@ def grade(run):
 
 Replace the imports with your own agent, cases, and grader. List the files your agent reads at run time in `revisionFiles` (Python `revision_files`). If the agent's tools have side effects, give each run a fresh, isolated job.
 
-`execute` must pass `bundle` to your agent. If it ignores the bundle, both arms behave the same, and the comparison warns that every output was identical.
+`execute` must pass `version` to your agent. If it ignores the version, both arms behave the same, and the comparison warns that every output was identical.
 
 ### Compare two versions
 

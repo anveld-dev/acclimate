@@ -64,7 +64,7 @@ The step fails when the check doesn't pass. It writes a Markdown summary to the 
 | `app`, `policy`, `bundle` | Required. The evaluator directory, the quality policy and the bundle ID. |
 | `bundle-dir` or `payload` | The committed bundle source. `bundle-dir` defaults to `agent`. |
 | `memory` | Approved `memory/` files, one per line, or `none`. |
-| `config`, `config-json`, `service-url` | Where the evaluator config comes from. `config-json` holds the non-secret fields `serviceUrl`, `projectId`, `evaluatorPrincipalId` and optionally `journalRoot`. |
+| `config`, `config-json`, `service-url` | Where the evaluator config comes from. `config-json` holds the non-secret fields `serviceUrl`, `workspaceId`, `evaluatorPrincipalId` and optionally `journalRoot`. |
 | `token`, `token-file` | The evaluator token. Pass a secret; it is never written to the job log. |
 | `live` | Allows model-backed execution. It defaults to `false`. |
 | `deadline`, `case-timeout`, `max-cost-usd`, `shard`, `cases` | Passed to the evaluator's `run` command as `--deadline`, `--case-timeout`, `--max-cost-usd`, `--shard` and `--cases`. Concurrency is declared in the evaluator definition instead. |
@@ -113,7 +113,7 @@ A cancelled run isn't a verdict. Rerunning the same commit starts a fresh reques
 Copy `workflows/release.yml` to release the candidate after a merge to `main`. The `gate` job runs the same check on `main`. When the bundle, release and evaluator are unchanged since the PR, it reuses the PR's request, so the released candidate is the one that was reviewed. The `release` job runs only when the gate passes. It uses a protected `acclimate-release` environment that holds the releasing token, installs the SDK release, and promotes with the operator CLI:
 
 ```sh
-acclimate-operator promote --project "$PROJECT" --bundle "$BUNDLE" --channel stable \
+acclimate-operator promote --workspace "$WORKSPACE" --bundle "$BUNDLE" --channel stable \
   --version "$CANDIDATE" --comparison "$COMPARISON" --expected-revision "$REVISION" --key "release-$GITHUB_SHA"
 ```
 

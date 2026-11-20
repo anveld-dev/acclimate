@@ -118,9 +118,9 @@ def run(args):
             expect(trigger).to_have_attribute('aria-expanded','false')
             capture_layout(p,out,'another-request-collapsed')
             article.get_by_role('button',name='Copy request ID',exact=True).click();assert p.evaluate('navigator.clipboard.readText()')==request['id']
-            article.get_by_role('button',name='Copy request JSON',exact=True).click();handoff=json.loads(p.evaluate('navigator.clipboard.readText()'));assert handoff['requestId']==request['id'] and handoff['configuration']==valid
+            article.get_by_role('button',name='Copy handoff JSON',exact=True).click();handoff=json.loads(p.evaluate('navigator.clipboard.readText()'));assert handoff['requestId']==request['id'] and handoff['configuration']==valid
             trigger.click();editor.fill(json.dumps(configuration(7)))
-            article.get_by_role('button',name='Copy request JSON',exact=True).click();assert json.loads(p.evaluate('navigator.clipboard.readText()'))['configuration']==valid
+            article.get_by_role('button',name='Copy handoff JSON',exact=True).click();assert json.loads(p.evaluate('navigator.clipboard.readText()'))['descriptor']==valid
             capture_layout(p,out,'created-frozen-custom-handoff')
             assert w.call('GET',w.bundle+'/comparisons')['items']==[]
             assert w.call('GET',w.bundle+'/evaluation-requests/'+request['id'])==request
@@ -175,7 +175,7 @@ def run(args):
                 capture_layout(rp,out,'read-only-setup-reason')
             finally:readonly.close()
             alternative=w.call('POST',w.bundle+'/versions',dict(parentVersionId=w.original['version']['id'],payload=dict(schemaVersion=1,files=[dict(f,text=f['text']+' Different current parent.') for f in FILES])))
-            w.call('POST',w.channel+'/promotions',dict(versionId=alternative['id'],expectedRevision=w.original['revision'],unevaluatedReason='Advance disposable evaluation setup fixture.'))
+            w.call('POST',w.channel+'/releases',dict(versionId=alternative['id'],expectedRevision=w.original['revision'],unevaluatedReason='Advance disposable evaluation setup fixture.'))
             # The successful recovery accepted the current form, so leaving doesn't discard edits.
             visit(p,b,route_path);expect(section.locator('.evaluation-setup-blocked-reason')).to_contain_text('current release')
             trigger.click();expect(create).to_be_disabled();capture_layout(p,out,'stale-parent-setup-reason')

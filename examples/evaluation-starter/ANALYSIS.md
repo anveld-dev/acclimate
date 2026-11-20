@@ -157,7 +157,7 @@ Freeze a full case inventory, exact parent and candidate IDs/digests, grader,
 model/tool settings, collection protocol, and metric definitions before splitting
 the cases. Retain a private manifest and independent trusted binding for each
 partition. Select the same saved candidate for each request in the console, or
-call `client.create_evaluation(project_id, bundle_id, body, partition_key)`
+call `client.create_evaluation(workspace_id, bundle_id, body, partition_key)`
 (`client.createEvaluation` in TypeScript). Construct `body` from the partition's
 public descriptor plus the four frozen version ID/digest fields and
 `requireBoundEvidence: true`. Keep an individual idempotency key for each

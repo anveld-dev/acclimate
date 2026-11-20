@@ -25,7 +25,7 @@ def seed(w):
     for stage in ['verified','prepared','started']:
         w.call('POST',w.integration_path+'/receipts',dict(w.delivery_event(),stage=stage),actor='receipt-writer')
     for name in ['Review worker','Support production','Nightly research']:
-        w.empty_connection=w.call('POST',w.root+'/integrations',dict(displayName=name,bundleId=w.setup['bundle']['id'],channel='stable'))
+        w.empty_connection=w.call('POST',w.root+'/connections',dict(displayName=name,bundleId=w.setup['bundle']['id'],channel='stable'))
     for actor,name,role in [('member','Alex Rivera','viewer'),('other','Alex Rivera','editor'),('guest','Taylor Chen','viewer')]:
         w.sign_in(actor,'opaque-'+actor)
         user=w.call('POST','/v1/auth/sessions',dict(issuer=w.issuer,subject='opaque-'+actor,displayName=name,email=actor+'@example.test',emailVerified=True),actor='login-authority')

@@ -79,7 +79,7 @@ with os.fdopen(fd, "w") as file:
 restored = restore_evaluation_manifest(private_path.read_text())
 
 def execute(run):
-    program = json.loads(run.bundle["payload"]["files"][0]["text"])
+    program = json.loads(run.version["payload"]["files"][0]["text"])
     if manifest["settings"].get("stochastic"):
         # Separate pseudorandom stream per fixed-task pair; both sides share
         # uniforms for pairing, with no adaptive stopping or reused outputs.
@@ -285,7 +285,7 @@ def run(output):
         higher = command("check", "--read-config", f.reader_config, "--handoff", handoff_path, "--policy", high_path, expected=2)
         lower = command("check", "--read-config", f.reader_config, "--handoff", handoff_path, "--policy", low_path)
         unknown_cost = command("check", "--read-config", f.reader_config, "--handoff", handoff_path, "--policy", cost_path, expected=3)
-        base = "/v1/projects/" + f.project + "/bundles/" + bundle_id
+        base = "/v1/workspaces/" + f.project + "/bundles/" + bundle_id
         comparison = f.h.call("GET", base + "/comparisons/" + completed["comparisonId"], actor="viewer")
         observed = [{"caseId": pair["caseId"], "repetition": pair["repetition"], "parent": pair["parent"]["reward"], "candidate": pair["candidate"]["reward"]} for pair in comparison["results"]]
         # Independent derivation over returned service evidence, without SDK math.

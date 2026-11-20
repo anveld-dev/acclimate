@@ -66,7 +66,7 @@ class StackTests(unittest.TestCase):
                              [{'issuer': stack.ISSUER, 'subject': SUBJECT}])
             self.assertEqual(json.loads(service['ACCLIMATE_AUTH']), [
                 {'token': evaluator['evaluatorToken'], 'principalId': evaluator['evaluatorPrincipalId'],
-                 'projectId': evaluator['projectId'], 'rights': ['read', 'write']},
+                 'workspaceId': evaluator['workspaceId'], 'rights': ['read', 'write']},
             ])
             self.assertEqual(console['CONSOLE_PUBLIC_API_URL'], evaluator['serviceUrl'])
             self.assertEqual((state / 'postgres-password').read_text().strip(), values['postgres'])
@@ -280,7 +280,7 @@ class StackTests(unittest.TestCase):
         opener = Mock()
         responses = [
             {'secret': 'session-secret', 'sessionId': 's', 'userId': 'u'},
-            {'projectId': stack.PROJECT, 'alreadyAdopted': False},
+            {'workspaceId': stack.PROJECT, 'alreadyAdopted': False},
             {'items': []},
             {'id': 'bundle-1', 'name': stack.EXAMPLE_BUNDLE},
             {'items': []},
@@ -303,10 +303,10 @@ class StackTests(unittest.TestCase):
             self.assertEqual(request.get_header('Authorization'), 'Bearer console-token')
             self.assertEqual(request.get_header('X-acclimate-session'), 'session-secret')
         self.assertEqual(adopt.full_url, stack.API + '/v1/auth/workspace-adoptions')
-        self.assertEqual(json.loads(adopt.data), {'projectId': 'local-demo', 'reason': 'local stack bootstrap'})
+        self.assertEqual(json.loads(adopt.data), {'workspaceId': 'local-demo', 'reason': 'local stack bootstrap'})
         self.assertEqual(json.loads(create.data), {'name': stack.EXAMPLE_BUNDLE})
         self.assertEqual(json.loads(version.data), {'payload': stack.EXAMPLE_PAYLOAD})
-        self.assertTrue(promote.full_url.endswith('/bundles/bundle-1/channels/stable/promotions'))
+        self.assertTrue(promote.full_url.endswith('/bundles/bundle-1/channels/stable/releases'))
         self.assertEqual(json.loads(promote.data)['versionId'], 'version-1')
         self.assertEqual(json.loads(promote.data)['expectedRevision'], '0')
         for request in (create, version, promote):
@@ -329,7 +329,7 @@ class StackTests(unittest.TestCase):
             return {'items': [{'id': 'mine', 'name': 'Support agent'}]}
 
         self.assertIsNone(stack.seed_example(call))
-        self.assertEqual(calls, [('GET', '/v1/projects/local-demo/bundles?limit=100')])
+        self.assertEqual(calls, [('GET', '/v1/workspaces/local-demo/bundles?limit=100')])
 
     def test_client_files_merge_the_system_bundle_and_export_settings(self):
         with tempfile.TemporaryDirectory() as temporary:

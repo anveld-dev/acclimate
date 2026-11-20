@@ -33,7 +33,7 @@ def run(args):
         current = world.call('GET', world.channel)
         next_payload = dict(schemaVersion=1, files=[dict(f, text=f['text'] + '\nKeep the reviewed receipt with each operation.\n') for f in FILES])
         draft = world.call('POST', world.channel + '/drafts', dict(baseVersionId=current['version']['id'], baseRevision=current['revision'], payload=next_payload))
-        world.call('POST', world.channel + '/promotions', dict(versionId=draft['snapshotVersion']['id'], expectedRevision=current['revision'], unevaluatedReason='Manual policy clarification. No evaluation is claimed for this revision.'))
+        world.call('POST', world.channel + '/releases', dict(versionId=draft['snapshotVersion']['id'], expectedRevision=current['revision'], unevaluatedReason='Manual policy clarification. No evaluation is claimed for this revision.'))
         browser = world.browser()
         page = browser.page
         routes = dict(releases=browser.bundle_path('releases'), setup=browser.bundle_path('connect'))
@@ -124,7 +124,7 @@ def run(args):
             current = world.call('GET', world.channel)
             for index in range(49):
                 version = world.original['version']['id'] if index % 2 == 0 else draft['snapshotVersion']['id']
-                current = world.call('POST', world.channel + '/promotions', dict(versionId=version, expectedRevision=str(3 + index), unevaluatedReason='Repeated-content history fixture. ' + ('Long policy rationale. ' * 30 if index == 47 else '')))
+                current = world.call('POST', world.channel + '/releases', dict(versionId=version, expectedRevision=str(3 + index), unevaluatedReason='Repeated-content history fixture. ' + ('Long policy rationale. ' * 30 if index == 47 else '')))
             visit(page, browser, routes['releases'])
             expect(page.get_by_test_id('release-decision')).to_have_count(20)
             page.get_by_role('button', name='Load older releases', exact=True).click()

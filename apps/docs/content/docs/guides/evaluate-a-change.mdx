@@ -30,7 +30,7 @@ python -m acclimate compare --local --parent parent --candidate candidate \
 </Tab>
 </Tabs>
 
-If both arms return identical output on every pair, the comparison prints a warning. This usually means `execute` doesn't pass `bundle` to the agent. The exception is when the parent and candidate payloads are the same.
+If both arms return identical output on every pair, the comparison prints a warning. This usually means `execute` doesn't pass `version` to the agent. The exception is when the parent and candidate payloads are the same.
 
 ## Freeze the comparison inputs
 
@@ -78,14 +78,14 @@ acclimate-eval plan --policy quality-policy.json
 `plan` reports the minimum detectable effect and simulated pass rates, and exits 3 when the inventory is too small for the policy.
 
 ```sh
-acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json \
+acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff handoff.json \
   --policy quality-policy.json --live
 ```
 
 Use `python -m acclimate` for the Python evaluator. Review pair coverage, per-case scores, known usage and the `Inference` lines, which show the lower bound, threshold, cases, SD and any imputed trials. Too few cases or repetitions, too many missing trials, or missing required cost measurements make the verdict indeterminate. To apply a policy to retained results, use `check`. It reuses the comparison without calling the agent.
 
 ```sh
-acclimate-eval check --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json \
+acclimate-eval check --config "$EVALUATOR_CONFIG" --handoff handoff.json \
   --policy quality-policy.json
 ```
 
@@ -171,7 +171,7 @@ After a completed, failed, interrupted or abandoned named comparison, you can me
 Export scalar evidence to a fresh private directory. An application can separately allowlist review artifacts through `toReviewArtifact` (Python `to_review_artifact`) and name the case, repetition, side, and role in a selection file.
 
 ```sh
-acclimate-eval export --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --out review
+acclimate-eval export --config "$EVALUATOR_CONFIG" --handoff handoff.json --out review
 acclimate-eval verify-export --manifest review/manifest.json
 ```
 

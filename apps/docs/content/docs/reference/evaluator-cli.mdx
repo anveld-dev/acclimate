@@ -19,11 +19,11 @@ The CLI checks your command line first. Then, for commands that run callbacks, i
 | `doctor` | Yes | Check setup with `--config` and a `--bundle`, `--handoff`, or named run. With `--policy`, `policyReadiness` reports whether the cases and repetitions meet the policy and its minimum detectable effect. |
 | `plan` | Yes | Size an evaluation for `--policy` before running it: minimum detectable effect and simulated pass rates. Accepts `--aa` with an A/A comparison, `--effects`, `--simulations` and `--seed`. Exits 3 when the inventory is too small for the policy. |
 | `compare` | Yes | Run a downloaded handoff, or create and run a named comparison from a complete bundle payload. Use `compare --local --parent PAYLOAD --candidate PAYLOAD` to compare two payload files or folders without a service. The local result is advisory. |
-| `request` | Yes | Create a handoff from a bundle, channel, payload, and durable `--intent`. Write the handoff with `--out`. |
-| `run` | Yes | Execute an existing request with the evaluator config and handoff or name. |
+| `request` | Yes | Create an evaluation request from a bundle, channel, payload, and durable `--intent`, and write its handoff to `--out`. |
+| `run` | Yes | Execute an existing evaluation request with the evaluator config and its handoff or name. |
 | `check` | Yes | Apply a policy to the retained comparison. An evaluator config can record the verdict. |
 | `export` | Yes | Write review evidence to a new private directory. |
-| `status` | No | Inspect request state and optional reported activity. |
+| `status` | No | Inspect the evaluation request's state and optional reported activity. |
 | `interrupt` | No | Record interruption with an explicit `--reason`. Check the original worker separately for termination. |
 | `verify-export` | No | Validate a review export through its `--manifest`. |
 | `pull` | No | Save a channel's published version as a payload file to edit, with `--config`, `--bundle`, optional `--channel` (default `stable`) and `--out`. |
@@ -36,18 +36,18 @@ Run from the installed application environment. Add `--live` when your callbacks
 <Tab value="TypeScript">
 
 ```sh
-acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
-acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
-acclimate-eval status --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
+acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff handoff.json
+acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff handoff.json --live
+acclimate-eval status --config "$EVALUATOR_CONFIG" --handoff handoff.json
 ```
 
 </Tab>
 <Tab value="Python">
 
 ```sh
-acclimate doctor --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
-acclimate compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
-acclimate status --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
+acclimate doctor --config "$EVALUATOR_CONFIG" --handoff handoff.json
+acclimate compare --config "$EVALUATOR_CONFIG" --handoff handoff.json --live
+acclimate status --config "$EVALUATOR_CONFIG" --handoff handoff.json
 ```
 
 </Tab>
@@ -103,7 +103,7 @@ Paths can be relative. The CLI resolves them against the current directory.
 | --- | --- | --- |
 | `--config CONFIG` | all except `coverage`, `describe`, `verify-export` | Private evaluator config. See [evaluator access](/docs/operate/evaluator-access#configure-the-worker). |
 | `--read-config READER` | `status`, `check`, `export`, `verify-export` | Private reader config. Use instead of `--config`. |
-| `--handoff FILE` | `compare`, `doctor`, `run`, `status`, `check`, `export`, `interrupt`, `verify-export` | The request handoff JSON from the console or `request --out`. |
+| `--handoff FILE` | `compare`, `doctor`, `run`, `status`, `check`, `export`, `interrupt`, `verify-export` | The handoff (`handoff.json`) from the console or `request --out`. |
 | `--name RUN_NAME` | `compare`, `doctor`, `run`, `status`, `check`, `export`, `interrupt` | A run name of 1–80 letters, digits, underscores or hyphens. Use instead of `--handoff`. |
 | `--retry-after PRIOR_NAME` | `compare` | Start a fresh attempt after a finished run. Use instead of `--name`. |
 | `--bundle ID` | `compare`, `doctor`, `request` | Bundle ID. |
@@ -168,7 +168,7 @@ Set `ACCLIMATE_EVALUATOR_CASES` to the absolute path of a private JSON case arra
 
 ### Execute input
 
-The execute callback receives the case `input`, `caseId`, `repetition`, a cancellation `signal` (Python `cancellation`), a private job `context`, and the verified `bundle`. Read the bundle's content with these helpers instead of filtering `bundle.payload.files` by kind:
+The execute callback receives the case `input`, `caseId`, `repetition`, a cancellation `signal` (Python `cancellation`), a private job `context`, and the verified `version` under test. Read its content with these helpers instead of filtering `version.payload.files` by kind:
 
 | TypeScript | Python | Value |
 | --- | --- | --- |

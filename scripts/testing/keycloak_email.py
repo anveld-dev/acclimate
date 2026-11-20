@@ -124,19 +124,19 @@ def check_email_join(*, browser, admin_context, console_origin, issuer, project,
         expect(page.get_by_role('button',name='Join workspace',exact=True)).to_be_visible(timeout=30000)
         assert '/invitations/'+invite_id in page.url
         secret=next(cookie['value'] for cookie in guest.cookies(console_origin) if cookie['name']=='acclimate_session')
-        before=api(guest,secret,'GET',f'/v1/projects/{project}/bundles')
+        before=api(guest,secret,'GET',f'/v1/workspaces/{project}/bundles')
         assert before.status==403
         page.wait_for_load_state('networkidle')
         assert not runtime_errors, 'Invitation page had a browser runtime error'
         phase='accept invitation'
         page.get_by_role('button',name='Join workspace',exact=True).click()
         page.wait_for_url(console_origin+f'/w/{project}/bundles',timeout=15000)
-        assert api(guest,secret,'GET',f'/v1/projects/{project}/bundles').status==200
+        assert api(guest,secret,'GET',f'/v1/workspaces/{project}/bundles').status==200
         person=api(guest,secret,'GET','/v1/auth/session').json()
-        members=api(admin_context,admin_secret,'GET',f'/v1/projects/{project}/memberships').json()['items']
+        members=api(admin_context,admin_secret,'GET',f'/v1/workspaces/{project}/memberships').json()['items']
         assert next(member for member in members if member['id']==person['userId'])['role']=='editor'
         record('Verified signup returns to the invitation; explicit Join grants editor membership in PostgreSQL')
-        listed=api(admin_context,admin_secret,'GET',f'/v1/projects/{project}/invitations').json()['items']
+        listed=api(admin_context,admin_secret,'GET',f'/v1/workspaces/{project}/invitations').json()['items']
         assert not any(value['id']==invite_id for value in listed)
         admin.bring_to_front()
         expect(dialog.get_by_label('Email',exact=True)).to_have_value(draft_email)

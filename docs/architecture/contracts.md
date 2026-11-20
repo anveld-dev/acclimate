@@ -55,7 +55,7 @@ A client may select an explicit version using the metadata/payload reads; it nee
 
 ## Proposed route set
 
-All paths start with `/v1/projects/{projectId}`. Access is checked for that project on every operation.
+All paths start with `/v1/workspaces/{workspaceId}`. Access is checked for that workspace on every operation.
 
 | Route | Command / result |
 | --- | --- |
@@ -64,7 +64,7 @@ All paths start with `/v1/projects/{projectId}`. Access is checked for that proj
 | `GET /bundles/{bundleId}/versions/{versionId}` | Read version metadata. |
 | `GET /bundles/{bundleId}/versions/{versionId}/payload` | Return exact stored payload bytes. |
 | `GET /bundles/{bundleId}/channels/{channel}` | Resolve revision/version/digest; ETag and `If-None-Match` support. |
-| `POST /bundles/{bundleId}/channels/{channel}/promotions` | Select a retained version using `expectedRevision`. Creates history; also handles rollback. |
+| `POST /bundles/{bundleId}/channels/{channel}/releases` | Select a retained version using `expectedRevision`. Creates history; also handles rollback. |
 | `POST /bundles/{bundleId}/proposals` | Accept a bounded proposal request; return a proposal ID and status. |
 | `GET /bundles/{bundleId}/proposals/{proposalId}` | Read status, rationale, and candidate metadata when complete; the app can diff the immutable parent/candidate payloads. |
 | `POST /bundles/{bundleId}/comparisons` | Record application-supplied comparison evidence. |
@@ -94,6 +94,6 @@ C1 validates comparison identities by reading immutable comparison rows under th
 
 ## How agents use R0
 
-The server owner implements these commands. The SDK owner implements their client behavior against a fixture HTTP server. Plugin owners consume the SDK's verified bundle view, not their own HTTP/parser copy. Report helpers use the same comparison fixture as the server validator.
+The server owner implements these commands. The SDK owner implements their client behavior against a fixture HTTP server. Plugin owners consume the SDK's verified version view, not their own HTTP/parser copy. Report helpers use the same comparison fixture as the server validator.
 
 A contract change has one owner: update schema/types/fixtures together, state which work packages are affected, then have those owners update. Don't silently fork the DTOs or generate code during every feature task.

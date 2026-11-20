@@ -278,7 +278,7 @@ def create_workspace(w,b,p,e):
     project='navigation-'+uuid.uuid4().hex
     p.get_by_label('Workspace ID',exact=True).fill(project)
     p.get_by_role('button',name='Create workspace',exact=True).click()
-    expect(p).to_have_url(b.base+b.workspace_path(project_id=project))
+    expect(p).to_have_url(b.base+b.workspace_path(workspace_id=project))
     p.get_by_role('button',name='Workspaces').click()
     expect(p.locator('[data-workspace-id="'+project+'"]')).to_have_attribute('aria-checked','true')
     p.keyboard.press('Escape')
@@ -296,8 +296,8 @@ def main():
         w.start();w.fresh_scenario(SimpleNamespace(effective_tags=[]))
         w.sign_in('admin','operator');w.browser_actor='admin'
         project='navigation-singleton-'+uuid.uuid4().hex
-        w.call('POST','/v1/projects',dict(id=project,name=NAME),actor='admin')
-        w.h.project=project;w.root='/v1/projects/'+project
+        w.call('POST','/v1/workspaces',dict(id=project,name=NAME),actor='admin')
+        w.h.project=project;w.root='/v1/workspaces/'+project
         b=w.browser();p=b.page;p.set_viewport_size(dict(width=1440,height=900))
         e.check('fresh-singleton-membership',len(w.personal_projects('admin'))==1)
         e.run('desktop-singleton',p,lambda:singleton(p,b,e,'desktop',tooltip=True))

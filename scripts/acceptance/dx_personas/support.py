@@ -98,7 +98,7 @@ class PersonaFixture:
         self.h.tokens['viewer'] = secrets.token_hex(32)
         grants = json.loads(self.h.env['ACCLIMATE_AUTH'])
         grants.append(dict(token=self.h.tokens['viewer'], principalId='viewer',
-                           projectId=self.h.project, rights=['read']))
+                           workspaceId=self.h.project, rights=['read']))
         self.h.env['ACCLIMATE_AUTH'] = json.dumps(grants)
         self.project, self.base_url = self.h.project, self.h.base
         self.evaluator_config = self.root / 'private/config/evaluator.json'
@@ -116,11 +116,11 @@ class PersonaFixture:
             self.h.start()
             self._entered = True
             self.write_json(self.evaluator_config, dict(
-                schemaVersion=1, serviceUrl=self.base_url, projectId=self.project,
+                schemaVersion=1, serviceUrl=self.base_url, workspaceId=self.project,
                 evaluatorPrincipalId='evaluator', evaluatorToken=self.h.tokens['evaluator'],
                 journalRoot=str(self.root / 'private/journals')))
             self.write_json(self.reader_config, dict(
-                schemaVersion=1, serviceUrl=self.base_url, projectId=self.project,
+                schemaVersion=1, serviceUrl=self.base_url, workspaceId=self.project,
                 readToken=self.h.tokens['viewer']))
             self.write_json(self.root / 'private/fixture.json', dict(
                 schemaVersion=1, name=self.name, serviceBinarySha256=self.service_sha256,
@@ -188,7 +188,7 @@ class PersonaFixture:
     def bootstrap(self, payload=None, name='Disposable developer persona fixture'):
         if payload is None:
             payload = json.loads((FIXTURE / 'baseline.json').read_text())
-        return self.h.call('POST', '/v1/projects/' + self.project + '/bundle-setups', dict(
+        return self.h.call('POST', '/v1/workspaces/' + self.project + '/bundle-setups', dict(
             name=name, origin='example', sourceLabel='Disposable model-free persona acceptance',
             channel='stable', payload=payload, reason='Explicit disposable seed fixture'))
 

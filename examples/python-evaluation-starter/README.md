@@ -26,7 +26,7 @@ Copy `application.example.py` to `application.py` and replace its imports with y
 | Export | Purpose |
 | --- | --- |
 | `cases` | A list of `{"caseId", "input", "expected"}` dictionaries, with optional `"repetitions"`. Case IDs are public. Inputs and expected answers stay private. |
-| `execute(run)` | Runs your agent with `run.bundle`, the version under test, on `run.input`. Returns `ExecutionResult(output=..., usage=...)`. |
+| `execute(run)` | Runs your agent with `run.version`, the version under test, on `run.input`. Returns `ExecutionResult(output=..., usage=...)`. |
 | `grade(run)` | Scores `run.output` against `run.expected`. Returns `GradeResult(reward=..., explanation=...)` with a reward between 0 and 1. |
 
 Callbacks can be synchronous functions or coroutines. Return `ExecutionResult(output=..., execution_status="task_failed")` when the task fails but still produces output you can grade. Raise `ExecutionUncertainError` from `acclimate.evaluation` when external work might still be running.

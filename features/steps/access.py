@@ -187,14 +187,14 @@ def machine_not_owner(context):
 @when('I explicitly adopt that memberless workspace with a reason')
 def adopt(context):
     w=context.world
-    w.adoption=w.call('POST','/v1/auth/workspace-adoptions',dict(projectId=w.h.project,reason='Reviewed fixture ownership cutover.'),actor='admin')
+    w.adoption=w.call('POST','/v1/auth/workspace-adoptions',dict(workspaceId=w.h.project,reason='Reviewed fixture ownership cutover.'),actor='admin')
 
 
 @then('my administrator membership and immutable adoption audit preserve the original release')
 def adopted_exact(context):
     w=context.world
     row=w.adoption
-    assert row['projectId']==w.h.project and row['userId']==w.sessions['admin']['userId']
+    assert row['workspaceId']==w.h.project and row['userId']==w.sessions['admin']['userId']
     assert row['reason']=='Reviewed fixture ownership cutover.' and row['currentRole']=='admin'
     assert row['alreadyAdopted'] is False and row['createdAt']
     assert w.call('GET',w.channel,actor='admin')==w.original
@@ -214,7 +214,7 @@ def transferred_adoption(context):
 @when('I retry the original adoption with a different reason')
 def retry_adoption(context):
     w=context.world
-    w.adoption=w.call('POST','/v1/auth/workspace-adoptions',dict(projectId=w.h.project,reason='This must not replace the audit.'),actor='admin')
+    w.adoption=w.call('POST','/v1/auth/workspace-adoptions',dict(workspaceId=w.h.project,reason='This must not replace the audit.'),actor='admin')
 
 
 @then('the original audit is returned without restoring my removed membership')
@@ -228,7 +228,7 @@ def historical_only(context):
 @when('I attempt to adopt that already owned workspace')
 def owned_adoption(context):
     w=context.world
-    w.call('POST','/v1/auth/workspace-adoptions',dict(projectId=w.h.project,reason='Cannot override membership ownership.'),actor='admin',expected=409)
+    w.call('POST','/v1/auth/workspace-adoptions',dict(workspaceId=w.h.project,reason='Cannot override membership ownership.'),actor='admin',expected=409)
 
 
 @then('existing workspace ownership is preserved')

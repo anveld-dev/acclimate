@@ -37,7 +37,7 @@ Never evaluate forked or otherwise untrusted pull requests on a self-hosted runn
     comment: true
 ```
 
-`config-json` holds the non-secret config fields `serviceUrl`, `projectId`, `evaluatorPrincipalId` and optionally `journalRoot` (default `~/.acclimate-ci/journal`). Alternatively, set `config` to a config file on the runner. The token comes from a secret, ideally a workspace evaluator token that holds only the `evaluate` right (**Settings → Members → Evaluator tokens**). The action writes a step summary and annotations, optionally keeps one PR comment up to date, and outputs `result`, `verdict`, `comparison-id`, `request-id`, `candidate-version-id`, `candidate-digest`, `parent-version-id`, `exit-code` and `summary-json`. See `action.yml` for every input.
+`config-json` holds the non-secret config fields `serviceUrl`, `workspaceId`, `evaluatorPrincipalId` and optionally `journalRoot` (default `~/.acclimate-ci/journal`). Alternatively, set `config` to a config file on the runner. The token comes from a secret, ideally a workspace evaluator token that holds only the `evaluate` right (**Settings → Members → Evaluator tokens**). The action writes a step summary and annotations, optionally keeps one PR comment up to date, and outputs `result`, `verdict`, `comparison-id`, `request-id`, `candidate-version-id`, `candidate-digest`, `parent-version-id`, `exit-code` and `summary-json`. See `action.yml` for every input.
 
 ## Wrapper
 
@@ -136,7 +136,7 @@ After each run, the wrapper exports review evidence once per request to `reviews
 An authorized reviewer, or the job in `workflows/release.yml`, releases the evaluated candidate with the operator CLI from the SDK:
 
 ```sh
-acclimate-operator promote --project "$PROJECT" --bundle "$BUNDLE" --channel stable \
+acclimate-operator promote --workspace "$WORKSPACE" --bundle "$BUNDLE" --channel stable \
   --version "$CANDIDATE" --comparison "$COMPARISON" --expected-revision "$REVISION"
 ```
 

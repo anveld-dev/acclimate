@@ -26,6 +26,7 @@ These names apply to service operations and contracts.
 | Operation result | A stored mutation response used to recover a request by its original key and bytes. |
 | Delivery receipt | An application report of content preparation or job startup. |
 | Evaluation request | An assignment for an application to run and grade a comparison. |
+| Handoff | The file (`handoff.json`) that gives an evaluator one evaluation request: the service URL, workspace, bundle, request ID and descriptor. |
 | Learning enrollment | The administrator’s authorization for a connection to accept outcomes, generate proposals, request comparisons and release versions under configured limits. |
 | Round | The service’s tracked work on an admitted improvement, from proposal through comparisons and any release decision. |
 | Policy epoch | A span of rounds using the same selection and evaluation policy. |

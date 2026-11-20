@@ -118,7 +118,7 @@ def other(context):
 @when('the first credential tries to report for the second integration')
 def another(context):
     w = context.world
-    event = dict(w.delivery_event(), integrationId=w.other_integration['id'])
+    event = dict(w.delivery_event(), connectionId=w.other_integration['id'])
     w.call('POST', w.root + '/connections/' + w.other_integration['id'] + '/receipts', event, actor='receipt-writer', expected=403)
 
 

@@ -14,9 +14,9 @@ These variables are used by the repository's app setup recipes and command-line 
 | `ACCLIMATE_URL` | Public HTTPS API base URL. |
 | `ACCLIMATE_TOKEN` | Scoped machine token for the operation. Use a delivery read token in the application. |
 | `ACCLIMATE_SCOPE` | Stable app or authenticated principal identity for cache scoping. Keep it distinct from the token. |
-| `ACCLIMATE_PROJECT`, `ACCLIMATE_BUNDLE`, `ACCLIMATE_CHANNEL` | Workspace ID, bundle ID, and channel used by the delivery examples. |
+| `ACCLIMATE_WORKSPACE`, `ACCLIMATE_BUNDLE`, `ACCLIMATE_CHANNEL` | Workspace ID, bundle ID, and channel used by the delivery examples. |
 | `ACCLIMATE_CACHE`, `ACCLIMATE_JOB_DIR` | Cache and staging directory overrides in the console recipes. |
-| `ACCLIMATE_INTEGRATION`, `ACCLIMATE_RECEIPT_TOKEN` | Connection ID and separate optional delivery reporting credential. |
+| `ACCLIMATE_CONNECTION`, `ACCLIMATE_RECEIPT_TOKEN` | Connection ID and separate optional delivery reporting credential. |
 | `ACCLIMATE_EVALUATOR_TOKEN` | Evaluator token used when the private evaluator config names neither `evaluatorToken` nor `evaluatorTokenFile`. Use it to pass a CI secret. |
 | `ACCLIMATE_EVALUATOR_CASES` | Absolute path to a private JSON array that overrides the installed adapter's cases. Use mode 0600. |
 | `AGENT_TASK` | Task input for the console's connected agent recipe. |
@@ -34,7 +34,7 @@ These variables are used by the repository's app setup recipes and command-line 
 | `ACCLIMATE_LOGIN_TOKEN` | Required login authority token. Match `CONSOLE_LOGIN_TOKEN`. |
 | `ACCLIMATE_CONSOLE_TOKEN` | Required console transport token. Match `CONSOLE_SERVICE_TOKEN`. Use a different token from the login authority and every machine grant. The login authority and machine tokens must also be distinct. |
 | `ACCLIMATE_OPERATORS` | Required nonempty JSON array of objects with `issuer` and `subject`. Each pair must be unique, use the exact configured issuer and have a nonempty subject of at most 512 bytes. |
-| `ACCLIMATE_AUTH` | Required JSON array of static machine grants with `token`, `principalId`, `projectId` and `rights`. Use `[]` when every machine token is issued from the console. Rights are `read`, `evaluate`, `write`, `propose` and `promote`. `evaluate` includes `read`, and `write` includes `evaluate`. A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. Changing this value requires a restart; console-issued [evaluator tokens](/docs/operate/evaluator-access) do not. |
+| `ACCLIMATE_AUTH` | Required JSON array of static machine grants with `token`, `principalId`, `workspaceId` and `rights`. Use `[]` when every machine token is issued from the console. Rights are `read`, `evaluate`, `write`, `propose` and `promote`. `evaluate` includes `read`, and `write` includes `evaluate`. A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. Changing this value requires a restart; console-issued [evaluator tokens](/docs/operate/evaluator-access) do not. |
 | `ACCLIMATE_EVALUATION_ABANDON_SECONDS` | Whole seconds without a start, progress report or bound report after which the service abandons a running evaluation attempt. Defaults to 7,200. Values below 60 or invalid values use the default. Connected-learning evaluations use their own deadlines. |
 | `ACCLIMATE_SERVICE_BINARY` | Absolute path to the executable used by the native `npm start` wrapper. Defaults to `target/release/acclimate-service` under the checkout. |
 

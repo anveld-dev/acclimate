@@ -10,7 +10,7 @@ Acclimate is open source under Apache-2.0 and self-hosted. Your agents, prompts,
 
 ## Try it locally, no server
 
-Install the SDK in your agent's project (Node.js 22.22+, or Python 3.11+ for the Python SDK; see [install](apps/docs/content/docs/get-started/install.mdx)). Add an application module, `application.mjs` or `application.py`, that exports your saved `cases`, an `execute` function that calls your agent with the bundle it is given, and a `grade` function that returns a numeric reward. Put the current instructions in a `parent` folder and your edit in a `candidate` folder. Each folder is a [payload](apps/docs/content/docs/concepts/glossary.mdx): files under `skills/` become skills, files under `memory/` become memory, and the rest become instructions.
+Install the SDK in your agent's project (Node.js 22.22+, or Python 3.11+ for the Python SDK; see [install](apps/docs/content/docs/get-started/install.mdx)). Add an application module, `application.mjs` or `application.py`, that exports your saved `cases`, an `execute` function that calls your agent with the version it is given, and a `grade` function that returns a numeric reward. Put the current instructions in a `parent` folder and your edit in a `candidate` folder. Each folder is a [payload](apps/docs/content/docs/concepts/glossary.mdx): files under `skills/` become skills, files under `memory/` become memory, and the rest become instructions.
 
 ```sh
 ./node_modules/.bin/acclimate-eval try --live --payload candidate
@@ -33,7 +33,7 @@ The first start pulls the released images, or builds from source in 10 to 20 min
 
 ## Run your first live comparison
 
-Add an application module to your agent's project. It exports your saved `cases`, an `execute` function that calls your agent with the bundle it is given, and a `grade` function that returns a numeric reward. Then save the published version, edit it, and compare:
+Add an application module to your agent's project. It exports your saved `cases`, an `execute` function that calls your agent with the version it is given, and a `grade` function that returns a numeric reward. Then save the published version, edit it, and compare:
 
 ```sh
 ./node_modules/.bin/acclimate-eval pull --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID" --out candidate.json

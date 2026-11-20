@@ -8,7 +8,7 @@ To use an adapter included in this checkout, install and configure the checkout 
 {
   "schemaVersion": 1,
   "serviceUrl": "https://api.example.com",
-  "projectId": "YOUR_PROJECT_ID",
+  "workspaceId": "YOUR_WORKSPACE_ID",
   "evaluatorPrincipalId": "YOUR_DEDICATED_EVALUATOR_PRINCIPAL",
   "evaluatorToken": "YOUR_SCOPED_EVALUATOR_TOKEN",
   "journalRoot": "/absolute/private/evaluation-journals"
@@ -27,7 +27,7 @@ npm run evaluate:app -- --config /absolute/private/evaluator.json --bundleID UUI
 For the policy decision on the saved request, download its public JSON from the console and run:
 
 ```sh
-npm run --silent evaluate:app -- check --config /absolute/private/evaluator.json --handoff evaluation-request.json --policy /path/to/your/quality-policy.json
+npm run --silent evaluate:app -- check --config /absolute/private/evaluator.json --handoff handoff.json --policy /path/to/your/quality-policy.json
 ```
 
 This installed adapter prepares each immutable bundle using the Codex plugin, then runs the existing `service-proposer` saved review cases and independent exact-finding grader. It authorizes at most four Luna turns, each with a 110-second timeout, read-only filesystem, disabled network and no approvals. Use it only when paid execution is intended and Codex authentication is already configured.

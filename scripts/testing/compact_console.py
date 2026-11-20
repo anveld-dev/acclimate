@@ -401,7 +401,7 @@ def evaluation_acceptance(w, b, failures, output):
             expect(page.get_by_label('Saved change review',exact=True)).to_contain_text('A request is ready. Run the evaluator in your app with its request ID and frozen configuration.')
             handoff=page.get_by_label('Evaluation request '+request['id'],exact=True)
             expect(handoff.get_by_role('button',name='Copy request ID',exact=True)).to_be_visible()
-            expect(handoff.get_by_role('button',name='Copy request JSON',exact=True)).to_be_visible()
+            expect(handoff.get_by_role('button',name='Copy handoff JSON',exact=True)).to_be_visible()
             expect(handoff).to_contain_text('Run in your app with the request ID and frozen public configuration.')
             handoff.scroll_into_view_if_needed()
             checked_capture(failures,page,output,prefix+'-evaluation-requested-handoff',coarse=coarse)
@@ -417,7 +417,7 @@ def evaluation_acceptance(w, b, failures, output):
             expect(handoff.get_by_role('region',name='Evaluator activity')).to_contain_text(f'grading · 1 / {total}', timeout=25000)
             expect(handoff).to_contain_text('Check the original worker before retrying.')
             expect(handoff).not_to_contain_text('Run in your app with the request ID and frozen public configuration.')
-            expect(handoff.get_by_role('button',name='Copy request JSON',exact=True)).to_be_visible()
+            expect(handoff.get_by_role('button',name='Copy handoff JSON',exact=True)).to_be_visible()
             expect(page.get_by_role('button',name='Create another evaluation request',exact=True)).to_have_attribute('aria-expanded','false')
             handoff.scroll_into_view_if_needed()
             checked_capture(failures,page,output,prefix+'-evaluation-running-handoff',coarse=coarse)
@@ -444,7 +444,7 @@ def main():
         w.request_evaluation();w.start_attempt();w.comparison();w.finish()
         w.create_integration()
         w.sign_in('_capture-operator','operator')
-        w.call('POST','/v1/projects',dict(id='compact-secondary-'+w.h.project,name='Second fixture workspace'),actor='_capture-operator')
+        w.call('POST','/v1/workspaces',dict(id='compact-secondary-'+w.h.project,name='Second fixture workspace'),actor='_capture-operator')
         b=w.browser();p=b.page
         keyboard=None;sdk_checks={};file_navigation={};geometry={}
         routes=dict(draft=b.bundle_path('changes',draft=w.draft['id'],path='AGENTS.md'),

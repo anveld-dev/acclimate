@@ -3,21 +3,21 @@ title: Glossary
 description: Learn the terms used in the console, SDKs, CLI, and Acclimate documentation.
 ---
 
-Each term has one meaning across the console, SDKs, CLI, and these docs. Where the API or SDK uses an older name for the same thing, the entry says so. It is the same record, not a second concept.
+Each term has one meaning across the console, SDKs, CLI, and these docs.
 
 ## Content and delivery
 
 | Term | Meaning |
 | --- | --- |
-| Workspace | The scope for bundles, connections, evaluators, and the people who can access them. SDK arguments and routes call its ID `projectId` (Python `project_id`). |
+| Workspace | The scope for bundles, connections, evaluators, and the people who can access them. Its ID is `workspaceId` (Python `workspace_id`). |
 | Bundle | A named collection of the instructions, skills, and approved memory one agent uses. |
 | Payload | The JSON form of a bundle's files. It has `schemaVersion: 1` and a `files` list, each with a `path`, a `kind` of `instruction`, `skill`, or `memory`, and its `text`. `compare --payload` and `pull` read and write this format. |
 | Version | An immutable snapshot of a bundle's payload. Its SHA-256 **digest** identifies the exact bytes a client verifies before using them. |
 | Channel | A named pointer, such as `stable`, to the version new jobs should use. A **release** moves it. |
-| Connection | The link between one application and the workspace, bundle, and channel it uses. SDK arguments call its ID `integrationId`. |
+| Connection | The link between one application and the workspace, bundle, and channel it uses. Its ID is `connectionId` (Python `connection_id`). Applications send it in the `X-Acclimate-Connection-Id` header. |
 | Release | A decision to point a channel at a version. Restoring an earlier version creates a new release. Some console pages say *publish* for a bundle's first release. |
 | Outcome | Your application's result for one task on a specific version. It can carry a correction your application approves for future proposals. |
-| Verified version | A version whose bytes the SDK checked against its digest. `client.prepare()`, `resolveAndCache` and the evaluator's `bundle` argument all supply one. Older SDK types call it `VerifiedBundle`. |
+| Verified version | A version whose bytes the SDK checked against its digest. `client.prepare()`, `resolveAndCache` and the evaluator's `version` argument all supply one. |
 | Harness | The coding agent that runs a job, such as Codex, Claude, Cursor or Pi, together with the adapter that starts it. |
 | Native plugin | A package that stages a verified version where one harness discovers instructions and skills, for example `CLAUDE.md` and `.claude/skills/`. |
 | Quarantined job | A job whose agent process could not be confirmed stopped. Its files stay in place until an operator confirms termination and cleans it up. |
@@ -38,7 +38,8 @@ Each term has one meaning across the console, SDKs, CLI, and these docs. Where t
 | Application module | The `application.mjs`, `application.mts`, or `application.py` file that exports your `cases`, an `execute` function that runs your agent, and a `grade` function. |
 | Descriptor | The public summary of your evaluator: its case IDs and the revision hashes of its code, cases, and grader. The `describe` command prints it. A comparison is only accepted from an evaluator whose descriptor matches. |
 | Evaluator config | The private JSON file (`evaluator.json`) that tells an evaluator which service and workspace to use, its machine credential, and where its journal lives. The examples call its path `EVALUATOR_CONFIG`. |
-| Handoff | A request to evaluate one candidate against its parent, saved as `evaluation-request.json`. Handoff and **evaluation request** are the same thing: the console and API say evaluation request, and the CLI flag is `--handoff`. |
+| Evaluation request | The service's record of a request to evaluate one candidate against its parent, with the descriptor the evaluator must match. The console creates one under **Review release**, and the CLI's `request` command creates one from the command line. |
+| Handoff | The file that gives an evaluator one evaluation request: `handoff.json`, which the console downloads and the CLI's `request` command writes. It holds the service URL, `workspaceId`, `bundleId`, `requestId` and the `descriptor`. Evaluator commands read it with `--handoff`. |
 | Run name | The name you give a CLI comparison with `--name`. Reusing it resumes that comparison. The console shows it on the change. |
 | Journal | The evaluator's private local record of a comparison in progress, kept under the evaluator config's `journalRoot`. It lets an interrupted comparison resume without running finished work again. |
 | `--live` | The CLI flag that allows a comparison to call your agent with real model or tool access, using your application's own credentials. Commands that would make those calls refuse to start without it. |
@@ -54,4 +55,4 @@ Each term has one meaning across the console, SDKs, CLI, and these docs. Where t
 | Administrator | A workspace member who manages that workspace's people and settings. |
 | Adoption | An operator taking administrator membership of an existing workspace that has no members yet, with a recorded reason. `npm run local:up` adopts `local-demo` for you. |
 
-Older SDK arguments and routes say `projectId` for the workspace ID and `integrationId` for the connection ID. The [HTTP API overview](/docs/reference/http-api) lists the corresponding routes.
+The [HTTP API overview](/docs/reference/http-api) lists the routes for each of these records.

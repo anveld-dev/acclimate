@@ -9,7 +9,7 @@ The SDKs ship the same shapes. In TypeScript, import the types from `@acclimate/
 
 ## Workspace routes
 
-The canonical prefix is `/v1/workspaces/{workspaceId}`. Some SDK arguments and wire fields still use `projectId`. The server also supports the earlier `/v1/projects` routes, including the older `integrations` and `promotions` path spellings on those routes.
+Every workspace route starts with `/v1/workspaces/{workspaceId}`. The `0.1` `/v1/projects` routes were removed in `0.2.0`; see [upgrading from 0.1](/docs/reference/versioning#upgrading-from-01).
 
 | Operation | Method and path relative to the workspace prefix |
 | --- | --- |

@@ -39,6 +39,8 @@ docker compose stop console service
 
 Use the new checkout and set `ACCLIMATE_VERSION` to its published tag. Validate the Compose configuration and pull the application images. If you build from source, build the new service and console from that checkout instead. Use the same Compose project name and existing volume mapping when switching checkouts. Bring up the upgraded service and console while public traffic is still paused.
 
+From `0.1`, rename `projectId` to `workspaceId` in every `ACCLIMATE_AUTH` grant before starting the service, and plan the SDK and evaluator upgrade for the same window. See [upgrading from 0.1](/docs/reference/versioning#upgrading-from-01).
+
 ```sh
 docker compose config --quiet
 docker compose pull service console

@@ -2,7 +2,7 @@
 
 The connected application turns repository merges into JSON entries. Release engineers can request a change-range entry that includes the Git range from the first parent to the merge. Standard entries keep the three-field format. A local grader checks the actual merge number, SHA and second-parent title from Git, plus the exact range when requested.
 
-Run from the repository root with Node, installed npm packages, a signed-in Codex CLI and a running Acclimate deployment. The operator JSON provides `baseUrl`, `projectId`, `scope` and `token` for a machine grant with read, write and promote permission. The connection JSON provides separate `content-read` and `receipt-write` tokens issued to the release-feed connection. Both credential files need owner-only permissions. The prior run summary supplies `project`, `bundle`, `integration` and `freshVersion`. The delivered bundle must contain `instructions/release-feed.md`.
+Run from the repository root with Node, installed npm packages, a signed-in Codex CLI and a running Acclimate deployment. The operator JSON provides `baseUrl`, `workspaceId`, `scope` and `token` for a machine grant with read, write and promote permission. The connection JSON provides separate `content-read` and `receipt-write` tokens issued to the release-feed connection. Both credential files need owner-only permissions. The prior run summary supplies `project`, `bundle`, `integration` and `freshVersion`. The delivered bundle must contain `instructions/release-feed.md`.
 
 ```sh
 ./node_modules/.bin/tsx examples/release-feed/compare-range.ts \

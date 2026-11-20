@@ -24,7 +24,7 @@ The repository includes explicit probes for live deployment. Run the following f
 
 ```sh
 python3 scripts/productization/external.py --execute --gate https \
-  --url "$ACCLIMATE_URL" --project "$WORKSPACE_ID" --token-env ACCLIMATE_TOKEN \
+  --url "$ACCLIMATE_URL" --workspace "$WORKSPACE_ID" --token-env ACCLIMATE_TOKEN \
   --output /absolute/private/https-check.json
 ```
 

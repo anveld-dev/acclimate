@@ -14,9 +14,9 @@ The deployment operator sets `ACCLIMATE_MODEL_ENDPOINT` to the full OpenAI-compa
 Run the [operator CLI](/docs/reference/operator-cli) with the workspace's proposal authority. Explicitly name each permitted existing path. Repeat `--evidence` for each approved summary.
 
 ```sh
-npm run operator -- request-proposal --project PROJECT --bundle BUNDLE --parent VERSION \
+npm run operator -- request-proposal --workspace WORKSPACE --bundle BUNDLE --parent VERSION \
   --path skills/retry-review/SKILL.md --hypothesis 'Improve review' --evidence 'Observed failure'
-npm run operator -- proposal --project PROJECT --bundle BUNDLE --id PROPOSAL
+npm run operator -- proposal --workspace WORKSPACE --bundle BUNDLE --id PROPOSAL
 ```
 
 The first command submits asynchronous work. Use the returned proposal ID to read its status. With no provider configured, an accepted request fails during processing.

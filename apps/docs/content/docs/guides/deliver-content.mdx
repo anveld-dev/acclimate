@@ -3,7 +3,7 @@ title: Deliver content to jobs
 description: Prepare a pinned version for each job and stage an existing repository for a native coding agent.
 ---
 
-Prepare a verified bundle version when your application starts a job. In the console, open the bundle's **App setup** guide for the API URL, workspace ID, bundle ID, channel, and SDK recipe. Use a scoped read credential.
+Prepare a verified version when your application starts a job. In the console, open the bundle's **App setup** guide for the API URL, workspace ID, bundle ID, channel, and SDK recipe. Use a scoped read credential.
 
 ## Prepare the job's content
 
@@ -21,21 +21,21 @@ const client = new AcclimateClient({
   token: ACCLIMATE_TOKEN,
   scope: ACCLIMATE_SCOPE,
 });
-const prepared = await client.prepare({ projectId, bundleId, channel: 'stable' });
+const prepared = await client.prepare({ workspaceId, bundleId, channel: 'stable' });
 ```
 
 The snippet uses app-provided IDs and environment values. For a job that runs to completion in this call, await its work and result retention in a `try` block and await `prepared.cleanup()` in `finally`. For background work, keep the files available until the actual job stops. The [Python SDK recipe](/docs/reference/python-sdk) uses a context manager for a job that completes before the block exits.
 
 ## Report job starts
 
-If your connection tracks deliveries, give the app a separate receipt credential in `ACCLIMATE_RECEIPT_TOKEN` and the connection ID in `ACCLIMATE_INTEGRATION`. Build a reporter with its own client, using the receipt token and connection ID your app reads from those variables, and pass it to `prepare` as `reporter`. The console's **App setup** recipe shows the same pattern for Python with `DeliveryReporter`.
+If your connection tracks deliveries, give the app a separate receipt credential in `ACCLIMATE_RECEIPT_TOKEN` and the connection ID in `ACCLIMATE_CONNECTION`. Build a reporter with its own client, using the receipt token and connection ID your app reads from those variables, and pass it to `prepare` as `reporter`. The console's **App setup** recipe shows the same pattern for Python with `DeliveryReporter`.
 
 ```ts
 import { AcclimateClient, createReceiptReporter } from '@acclimate/sdk';
 
 const reporter = createReceiptReporter({
-  projectId,
-  integrationId,
+  workspaceId,
+  connectionId,
   client: new AcclimateClient({
     baseUrl: ACCLIMATE_URL,
     token: receiptToken,
@@ -44,7 +44,7 @@ const reporter = createReceiptReporter({
     retries: 0,
   }),
 });
-const prepared = await client.prepare({ projectId, bundleId, channel: 'stable', reporter });
+const prepared = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
 ```
 
 At the job's real start event, call `prepared.reportStarted()` (Python `prepared.report_started()`) and retain the returned receipt with its job ID. It returns `null` when reporting is unavailable. When the job ends, `await reporter.flush()` and call `reporter.close()`. [Connected learning](/docs/guides/connected-learning) can use that receipt to bind later field evidence to the release.
@@ -89,15 +89,15 @@ Install the native SDK separately as described in its [integration guide](/docs/
 - Include every original file your grader needs in `sourceFiles`, or set `sourceInventory` with include and exclude globs to list them with `git ls-files`. The starter copies regular text files and rejects symlinks, existing `AGENTS.md` or `CLAUDE.md`, and dot-prefixed paths you have not listed in `allowDotPaths`. Each error names the path and rule.
 - List writable solution paths or globs, such as `src/**`, in `resultFiles` and original protected tests in `testFiles`. The default grader runs the frozen Node tests against retained solution files in a fresh tree and reports per-test counts. Set `reward` to `"fraction"` to score passed tests over total tests. Files the agent creates outside `resultFiles` are reported as undeclared changes.
 - Set `repetitions` on a case to run its pair more than once.
-- Set `approvedMemoryPaths` for memory the agent may receive. The version digest still identifies the whole verified bundle.
+- Set `approvedMemoryPaths` for memory the agent may receive. The version digest still identifies the whole verified version.
 - Set the worker's `TMPDIR` to the private persistent workspace parent before starting the evaluator. Keep the checkout fixed through evaluation or regrading.
 
 The starter's case shape uses `caseId`, `input.prompt`, and `expected: null` when the expected behavior lives in the frozen tests. Run these commands from the starter directory. Use the public descriptor to create and download a request before running `doctor` or `compare`.
 
 ```sh
 ./node_modules/.bin/acclimate-eval describe
-./node_modules/.bin/acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
-./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+./node_modules/.bin/acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff handoff.json
+./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff handoff.json --live
 ```
 
 Each job runs with its own `HOME` that holds only authentication, so global harness configuration does not affect either version. Each agent turn runs in its own process group. When `turnTimeoutMs` expires, the starter kills the group and records a failed task with `reason: 'timeout'`, keeping the partial changes for grading. A provider error keeps its redacted message in a private `failure.json`. Only work whose stop cannot be confirmed is quarantined, and then only that case's result is lost; the rest of the comparison continues. Use `node native.mjs jobs list`, `jobs inspect JOB_ID` and `jobs cleanup JOB_ID --confirm-stopped` for recovery, and `node native.mjs check-bundle payload.json` to check a candidate's compatibility before a live run. See `examples/native-repository/README.md` and the [evaluator access guide](/docs/operate/evaluator-access).

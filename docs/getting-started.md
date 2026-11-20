@@ -101,16 +101,16 @@ To measure a fixed evaluator or collect another sample after a finished named ru
 
 When a team runs the service, the operator gives you an SDK release, a workspace login, and a private evaluator config for the workspace. The evaluator config identifies the service, workspace, machine principal and journal directory. An evaluator needs the `evaluate` right to read unpublished candidates and submit paired evidence. A workspace administrator issues an evaluator token under **Settings → Members → Evaluator tokens** and can download a ready `evaluator.json` there. Delivery and release use separate credentials. [Evaluator configuration and recovery](evaluator-operations.md)
 
-From the application directory, print the evaluator's public descriptor with `./node_modules/.bin/acclimate-eval describe` or `python -m acclimate describe`. In the console, open the saved change, paste the descriptor under **Review release** and download the evaluation request. The CLI calls it a handoff. Run it in the same application environment:
+From the application directory, print the evaluator's public descriptor with `./node_modules/.bin/acclimate-eval describe` or `python -m acclimate describe`. In the console, open the saved change, paste the descriptor under **Review release** to create an evaluation request, and download its handoff, `handoff.json`. Run it in the same application environment:
 
 ```sh
-./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff handoff.json --live
 # Or
-python -m acclimate compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+python -m acclimate compare --config "$EVALUATOR_CONFIG" --handoff handoff.json --live
 ```
 
 [Join a team's workspace](../apps/docs/content/docs/get-started/join-a-team.mdx)
 
 ## Deliver content to jobs
 
-For ordinary traffic, open **App setup** on your bundle and channel to configure the client. In JavaScript, `await client.prepare({ projectId, bundleId, channel: 'stable' })` returns the verified instructions, skill files and pinned version. Python exposes the same operation as `client.prepare(project_id, bundle_id, channel="stable")`. Keep the prepared files until the job finishes, save its pinned version with the result, then clean up. If your connection tracks jobs after release, configure reporting and save the startup record returned by `prepared.reportStarted()` (Python `prepared.report_started()`) when the job starts. The [native repository guide](../examples/native-repository/README.md) covers coding agents that need a writable workspace and frozen grading tests. To use outcomes for future proposals, use the [connected learning setup](../deploy/README.md#operate-connected-learning).
+For ordinary traffic, open **App setup** on your bundle and channel to configure the client. In JavaScript, `await client.prepare({ workspaceId, bundleId, channel: 'stable' })` returns the verified instructions, skill files and pinned version. Python exposes the same operation as `client.prepare(workspace_id, bundle_id, channel="stable")`. Keep the prepared files until the job finishes, save its pinned version with the result, then clean up. If your connection tracks jobs after release, configure reporting and save the startup record returned by `prepared.reportStarted()` (Python `prepared.report_started()`) when the job starts. The [native repository guide](../examples/native-repository/README.md) covers coding agents that need a writable workspace and frozen grading tests. To use outcomes for future proposals, use the [connected learning setup](../deploy/README.md#operate-connected-learning).

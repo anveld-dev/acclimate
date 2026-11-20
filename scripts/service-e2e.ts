@@ -35,13 +35,13 @@ const auth = JSON.stringify([
   {
     token,
     principalId: principal,
-    projectId: project,
+    workspaceId: project,
     rights: ['read', 'write', 'propose', 'promote'],
   },
   {
     token: noReadToken,
     principalId: `e2e-limited-${randomUUID()}`,
-    projectId: project,
+    workspaceId: project,
     rights: ['write', 'propose', 'promote'],
   },
 ]);
@@ -257,7 +257,7 @@ try {
     { versionId: parent.id, expectedRevision: '0', unevaluatedReason: 'Initial fixture seed' },
     'seed-channel',
   );
-  // A retry using the previous URL must recover the same release.
+  // The 0.1 /v1/projects routes were removed in 0.2.0: neither a write nor a read reaches the release.
   const oldReleasePath = `/v1/projects/${project}/bundles/${bundle.id}/channels/stable/promotions`;
   const oldRelease = await fetch(base + oldReleasePath, {
     method: 'POST',
@@ -272,12 +272,9 @@ try {
       unevaluatedReason: 'Initial fixture seed',
     }),
   });
-  assert(oldRelease.ok);
-  assert.deepEqual(await oldRelease.json(), seeded);
-  assert.deepEqual(
-    (await fetchError(base + oldReleasePath, token)).body,
-    await client.listReleases(project, bundle.id, 'stable'),
-  );
+  assert.equal(oldRelease.status, 404);
+  await oldRelease.body?.cancel();
+  assert.equal((await fetchError(base + oldReleasePath, token)).status, 404);
   const channel = await client.resolveChannel(project, bundle.id, 'stable');
   assert.equal(channel.resolution?.version.id, parent.id);
   assert(channel.etag);
@@ -288,13 +285,13 @@ try {
   const cacheDir = path.join(temp, 'verified-cache');
   const verified = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, channel: 'stable' },
+    { workspaceId: project, bundleId: bundle.id, channel: 'stable' },
     { cacheDir },
   );
   assert.equal(verified.version.id, parent.id);
   const explicit = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, versionId: parent.id },
+    { workspaceId: project, bundleId: bundle.id, versionId: parent.id },
     { cacheDir: path.join(temp, 'explicit-cache') },
   );
   assert.equal(explicit.version.digest, parent.digest);
@@ -432,7 +429,7 @@ try {
   assert.equal(rollback.previousVersionId, candidate.id);
   const active = await resolveAndCache(
     client,
-    { projectId: project, bundleId: bundle.id, channel: 'stable' },
+    { workspaceId: project, bundleId: bundle.id, channel: 'stable' },
     { cacheDir: path.join(temp, 'active-cache') },
   );
   const pinned = await prepareCodex(active);
@@ -444,12 +441,12 @@ try {
   }
 
   const denied = await fetchError(
-    `${base}/v1/projects/${project}/bundles/${bundle.id}/versions/${parent.id}`,
+    `${base}/v1/workspaces/${project}/bundles/${bundle.id}/versions/${parent.id}`,
     noReadToken,
   );
   assert.equal(denied.status, 403);
   const unknown = await fetchError(
-    `${base}/v1/projects/${project}/bundles/${bundle.id}/versions/${parent.id}`,
+    `${base}/v1/workspaces/${project}/bundles/${bundle.id}/versions/${parent.id}`,
     `unknown-${randomUUID()}`,
   );
   assert.equal(unknown.status, 401);
@@ -464,7 +461,7 @@ try {
     () =>
       resolveAndCache(
         cacheDeniedClient,
-        { projectId: project, bundleId: bundle.id, versionId: parent.id },
+        { workspaceId: project, bundleId: bundle.id, versionId: parent.id },
         { cacheDir: path.join(temp, 'explicit-cache'), offline: { pinnedVersionId: parent.id } },
       ),
     (e) => e instanceof ApiError && e.status === 403,

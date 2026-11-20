@@ -43,7 +43,7 @@ To compare harnesses, list them: `"harnesses": ["codex", "claude"]`. Every case 
 
 Copy `harness-template.mjs`, implement `run()`, and select it with `"harness": { "name": "my-agent", "module": "./my-agent-harness.mjs" }` (or add the object to `harnesses`). The contract is `defineHarness({ name, prepare, run, identity })`:
 
-- `prepare(bundle, { approvedMemoryPaths })` stages the version in a new private directory directly under `TMPDIR`. Use `prepareNativeFiles` from `@acclimate/sdk/native-files` with your agent's layout.
+- `prepare(version, { approvedMemoryPaths })` stages the version in a new private directory directly under `TMPDIR`. Use `prepareNativeFiles` from `@acclimate/sdk/native-files` with your agent's layout.
 - `run({ context, prompt, policy, signal, acknowledge, progress })` runs one fresh turn in `context.cwd` and resolves `{ stopped: true, output, usage? }`, `{ stopped: true, executionStatus: 'task_failed', … }`, `{ stopped: true, infrastructureFailure: true, error: { code, message } }`, or `{ stopped: false }` when it cannot confirm a remote job stopped.
 - `identity` is JSON describing versions and flags; it is hashed into the runtime identity, and so is the module file.
 
@@ -112,8 +112,8 @@ mkdir -p -m 700 "$state" "$state/workspaces" "$state/artifacts"
 export TMPDIR="$state/workspaces"
 
 ./node_modules/.bin/acclimate-eval describe
-./node_modules/.bin/acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json
-./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff evaluation-request.json --live
+./node_modules/.bin/acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff handoff.json
+./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff handoff.json --live
 ```
 
 Use the public `describe` output in the console to create the evaluation request before running `doctor` or `compare`. The installed CLI loads the named `cases`, `execute` and `grade` exports. Only the live comparison launches Codex. Supply your application’s approved authentication and run the worker in the sandbox you use for executing candidate code.

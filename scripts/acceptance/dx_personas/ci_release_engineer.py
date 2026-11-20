@@ -39,7 +39,7 @@ def acceptance(output):
         f.write_json('private/personal-criteria.json', CRITERIA)
         setup = f.bootstrap(name='Release engineer private CI acceptance')
         bundle = setup['bundle']['id']
-        route = '/v1/projects/' + f.project + '/bundles/' + bundle
+        route = '/v1/workspaces/' + f.project + '/bundles/' + bundle
         channel = route + '/channels/stable'
         initial = f.h.call('GET', channel)
         ci = f.install_js(name='ci-app', starter='ci')
@@ -89,8 +89,8 @@ def acceptance(output):
                        '--policy', str(app / 'quality-policy.json'), '--selection', str(app / 'share-selection.json'),
                        '--summary-json', str(summary_file)]
                 f._execute(cmd, ci, expected, parse_json=False)
-                handoff = json.loads((result_dir / 'evaluation-request.json').read_text())
-                request = f.h.call('GET', '/v1/projects/' + f.project + '/bundles/' + target_bundle + '/evaluation-requests/' + handoff['requestId'], actor='evaluator')
+                handoff = json.loads((result_dir / 'handoff.json').read_text())
+                request = f.h.call('GET', '/v1/workspaces/' + f.project + '/bundles/' + target_bundle + '/evaluation-requests/' + handoff['requestId'], actor='evaluator')
                 summary = json.loads(summary_file.read_text())
                 assert summary['result'] == result and summary['exitCode'] == expected, summary
                 assert summary['requestId'] == handoff['requestId'], summary
@@ -104,14 +104,14 @@ def acceptance(output):
             assert phases['submit']['id'] == passed['comparisonId']
             before_count = len((app / 'execution-count.log').read_text().splitlines())
             assert before_count == 4
-            before_handoff = (passed_dir / 'evaluation-request.json').read_bytes()
+            before_handoff = (passed_dir / 'handoff.json').read_bytes()
             f.h.sql("UPDATE idempotency SET expires_at=now()-interval '25 hours'")
             f._execute(retry_cmd, ci, 0, parse_json=False)
-            assert (passed_dir / 'evaluation-request.json').read_bytes() == before_handoff
+            assert (passed_dir / 'handoff.json').read_bytes() == before_handoff
             replayed = f.h.call('GET', route + '/evaluation-requests/' + passed['id'], actor='evaluator')
             assert replayed['comparisonId'] == passed['comparisonId']
             assert len((app / 'execution-count.log').read_text().splitlines()) == before_count
-            target = ['--config', str(config_path), '--handoff', str(passed_dir / 'evaluation-request.json')]
+            target = ['--config', str(config_path), '--handoff', str(passed_dir / 'handoff.json')]
             verdict = f.run(command + ['check', *target, '--policy', str(app / 'quality-policy.json')], cwd=app)
             evidence.append(dict(id='CI-PASS-REPLAY', exitCodes=[0, 0], requestId=passed['id'], comparisonId=passed['comparisonId'],
                                  lostCommittedPhases=sorted(phases), committedResponseIds=phases, transientDedupAgeHours=25,
@@ -120,14 +120,14 @@ def acceptance(output):
             losing_setup = f.bootstrap(payload=json.loads((app / 'candidate.json').read_text()), name='Known-good baseline for concrete regression')
             losing_dir, losing_handoff, losing, _ = pipeline('losing', losing_payload, 2, losing_setup['bundle']['id'], 'quality_failed')
             assert losing['status'] == 'completed'
-            losing_verdict = f.run(command + ['check', '--config', str(config_path), '--handoff', str(losing_dir / 'evaluation-request.json'), '--policy', str(app / 'quality-policy.json')], cwd=app, expected=2)
+            losing_verdict = f.run(command + ['check', '--config', str(config_path), '--handoff', str(losing_dir / 'handoff.json'), '--policy', str(app / 'quality-policy.json')], cwd=app, expected=2)
             assert losing_verdict['summary']['orientedMeanImprovement'] < 0
             evidence.append(dict(id='CI-LOSING', exitCode=2, requestId=losing['id'], comparisonId=losing['comparisonId'], status=losing['status'], verdict=losing_verdict))
             incomplete_payload = f.write_json('private/incomplete.json', dict(schemaVersion=1, files=[dict(path='instructions.md',kind='instruction',text='CI_INCOMPLETE')]))
             # A failed run exits 4 (run or service failed); a quality regression keeps 2.
             incomplete_dir, _, incomplete, _ = pipeline('incomplete', incomplete_payload, 4, result='execution_failed')
             assert incomplete['status'] == 'failed'
-            incomplete_verdict = f.run(command + ['check', '--config', str(config_path), '--handoff', str(incomplete_dir / 'evaluation-request.json'), '--policy', str(app / 'quality-policy.json')], cwd=app, expected=3)
+            incomplete_verdict = f.run(command + ['check', '--config', str(config_path), '--handoff', str(incomplete_dir / 'handoff.json'), '--policy', str(app / 'quality-policy.json')], cwd=app, expected=3)
             evidence.append(dict(id='CI-INCOMPLETE', exitCode=4, checkExitCode=3, requestId=incomplete['id'], comparisonId=incomplete['comparisonId'], status=incomplete['status'], verdict=incomplete_verdict))
             (app / 'deny-review.flag').write_text('Private application declines required review artifact')
             failed_export_dir, _, export_request, _ = pipeline('required-export-unavailable', app / 'candidate.json', 3,
@@ -206,15 +206,15 @@ def acceptance(output):
             # A session resolves its fixed immutable old version through the installed SDK.
             pin_config = f.write_json('private/config/pin-reader.json', dict(baseUrl=f.base_url,token=f.h.tokens['viewer'],project=f.project,bundle=bundle,version=passed['parentVersionId']))
             pin_script = app / 'pin.mjs'
-            pin_script.write_text("import {readFile} from 'node:fs/promises'; import {AcclimateClient,resolveAndCache} from '@acclimate/sdk'; const c=JSON.parse(await readFile(process.argv[2],'utf8')); const client=new AcclimateClient({baseUrl:c.baseUrl,token:c.token,scope:'review-reader'}); const p=await resolveAndCache(client,{projectId:c.project,bundleId:c.bundle,versionId:c.version},{cacheDir:new URL('./session-cache',import.meta.url).pathname}); console.log(JSON.stringify({versionId:p.version.id,digest:p.version.digest}));\n")
+            pin_script.write_text("import {readFile} from 'node:fs/promises'; import {AcclimateClient,resolveAndCache} from '@acclimate/sdk'; const c=JSON.parse(await readFile(process.argv[2],'utf8')); const client=new AcclimateClient({baseUrl:c.baseUrl,token:c.token,scope:'review-reader'}); const p=await resolveAndCache(client,{workspaceId:c.project,bundleId:c.bundle,versionId:c.version},{cacheDir:new URL('./session-cache',import.meta.url).pathname}); console.log(JSON.stringify({versionId:p.version.id,digest:p.version.digest}));\n")
             old_pin = f.run(['node', str(pin_script), str(pin_config)], cwd=app)
             promotion_body = dict(versionId=passed['candidateVersionId'], expectedRevision=initial['revision'], comparisonId=passed['comparisonId'])
-            denied = f.h.call('POST', channel + '/promotions', promotion_body, actor='evaluator',status=403)
-            promoted = f.h.call('POST', channel + '/promotions', promotion_body)
-            stale = f.h.call('POST', channel + '/promotions', promotion_body, status=409)
+            denied = f.h.call('POST', channel + '/releases', promotion_body, actor='evaluator',status=403)
+            promoted = f.h.call('POST', channel + '/releases', promotion_body)
+            stale = f.h.call('POST', channel + '/releases', promotion_body, status=409)
             assert stale['error']['code'] == 'revision_conflict'
             assert f.run(['node', str(pin_script), str(pin_config)], cwd=app) == old_pin
-            rolled = f.h.call('POST', channel + '/promotions', dict(versionId=passed['parentVersionId'],expectedRevision=promoted['revision'],unevaluatedReason='Private acceptance rollback to previously released baseline after explicit review'))
+            rolled = f.h.call('POST', channel + '/releases', dict(versionId=passed['parentVersionId'],expectedRevision=promoted['revision'],unevaluatedReason='Private acceptance rollback to previously released baseline after explicit review'))
             assert f.run(['node', str(pin_script), str(pin_config)], cwd=app) == old_pin
             assert f.h.call('GET', channel)['version']['id'] == old_pin['versionId']
             evidence.append(dict(id='RELEASE-ROLLBACK', operatorPrincipal=promoted['reviewer'],evaluatorHttpStatus=403,evaluatorDeniedCode=denied['error']['code'], staleHttpStatus=409,staleErrorCode=stale['error']['code'],
@@ -228,7 +228,7 @@ def acceptance(output):
             download = reader_app / 'downloaded-review'
             shutil.copytree(export, download)
             handoff_copy = reader_app / 'downloaded-handoff.json'
-            shutil.copyfile(passed_dir / 'evaluation-request.json', handoff_copy)
+            shutil.copyfile(passed_dir / 'handoff.json', handoff_copy)
             journal = Path(config['journalRoot'])
             shutil.rmtree(journal)
             verified = f.run(['node',str(reader_app / 'acclimate-eval.mjs'),'verify-export','--manifest',str(download / 'manifest.json'),'--read-config',str(reader_path),'--handoff',str(handoff_copy)],cwd=reader_app)

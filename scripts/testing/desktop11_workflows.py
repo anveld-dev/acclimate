@@ -85,7 +85,7 @@ def fixtures(w):
     w.sign_in('admin','operator');w.browser_actor='admin';w.create_workspace();w.publish_initial('',files=FILES)
     assert urlsplit(w.provider.url).hostname=='127.0.0.1','Only localhost provider fixture is allowed'
     preview=w.call('POST',w.bundle+'/versions',dict(parentVersionId=w.original['version']['id'],payload=dict(schemaVersion=1,files=[dict(f,text=f['text']+'\nPreview scope.\n' if f['path']=='AGENTS.md' else f['text']) for f in FILES])))
-    w.call('POST',w.bundle+'/channels/preview/promotions',dict(versionId=preview['id'],expectedRevision='0',unevaluatedReason='Explicit alternate-channel fixture.'))
+    w.call('POST',w.bundle+'/channels/preview/releases',dict(versionId=preview['id'],expectedRevision='0',unevaluatedReason='Explicit alternate-channel fixture.'))
     beta=w.call('POST',w.root+'/bundle-setups',dict(name='Desktop11 library beta',origin='created',channel='stable',payload=dict(schemaVersion=1,files=FILES),reason='Explicit library fixture.'))
     long=w.call('POST',w.root+'/bundle-setups',dict(name=LONG_NAME,origin='created',channel='stable',payload=dict(schemaVersion=1,files=FILES+[dict(path=LONG_PATH,kind='memory',text='# Approved long-path reusable context\nRetain the full path.\n')]),reason='Explicit long path fixture.'))
     empty=w.call('POST',w.root+'/bundles',dict(name='Desktop11 without channels'))
@@ -103,7 +103,7 @@ def fixtures(w):
 
 
 def snapshot(w,f):
-    return dict(stable=w.call('GET',w.channel),preview=w.call('GET',w.bundle+'/channels/preview'),stablePromotions=w.call('GET',w.channel+'/promotions')['items'],previewPromotions=w.call('GET',w.bundle+'/channels/preview/promotions')['items'],drafts=w.call('GET',w.channel+'/drafts?status=all&limit=100')['items'],previewDrafts=w.call('GET',w.bundle+'/channels/preview/drafts?status=all&limit=100')['items'],bundles={item['id']:item for item in w.call('GET',w.root+'/bundles?limit=100')['items']})
+    return dict(stable=w.call('GET',w.channel),preview=w.call('GET',w.bundle+'/channels/preview'),stablePromotions=w.call('GET',w.channel+'/releases')['items'],previewPromotions=w.call('GET',w.bundle+'/channels/preview/releases')['items'],drafts=w.call('GET',w.channel+'/drafts?status=all&limit=100')['items'],previewDrafts=w.call('GET',w.bundle+'/channels/preview/drafts?status=all&limit=100')['items'],bundles={item['id']:item for item in w.call('GET',w.root+'/bundles?limit=100')['items']})
 
 
 def library(w,b,e,f):
@@ -139,7 +139,7 @@ def creation(w,b,e,f):
     form.get_by_role('button',name='Create and publish',exact=True).click();expect(p.get_by_test_id('entry-content')).to_have_text(CREATED_TEXT);expect(p.get_by_role('heading',name=CREATED_NAME,exact=True)).to_be_visible()
     bundles=w.call('GET',w.root+'/bundles')['items'];created=[item for item in bundles if item['name']==CREATED_NAME];assert len(created)==1 and created[0]['compatibilityTarget']=='codex',created;f['createdBundle']=created[0]
     base=w.root+'/bundles/'+created[0]['id'];resolution=w.call('GET',base+'/channels/review');assert resolution['revision']=='1';payload=w.call('GET',base+'/versions/'+resolution['version']['id']+'/payload');assert payload['files']==[dict(path='AGENTS.md',kind='instruction',text=CREATED_TEXT)],payload
-    assert len(w.call('GET',base+'/channels/review/promotions')['items'])==1;capture(e,p,'1440-real-created-bundle-fixed-codex-target')
+    assert len(w.call('GET',base+'/channels/review/releases')['items'])==1;capture(e,p,'1440-real-created-bundle-fixed-codex-target')
     return dict(sourceModes=['Write instructions','Import files','Import JSON'],inline=True,dirtyCancelPreservedThenDiscarded=True,filesAndJsonRequireConfirmation=True,independentImportPreviews=True,exactlyOneUiBundleCreated=created[0]['id'],fixedTarget='codex',initialChannel='review',initialRevision='1')
 
 
@@ -222,7 +222,7 @@ def coarse_proposal_only(args,output):
     e=Evidence(output,False);w=World(pg_bin(args.pg_bin));before=build_fingerprint();initial=final=None;labels={};unchanged=False;b=None
     def facts():
         resolution=w.call('GET',w.channel);version=resolution['version']
-        return dict(resolution=resolution,payload=w.call('GET',w.bundle+'/versions/'+version['id']+'/payload'),promotions=w.call('GET',w.channel+'/promotions')['items'],proposals=w.call('GET',w.bundle+'/proposals')['items'],versionCount=int(w.h.sql("SELECT count(*) FROM versions WHERE project_id='"+w.h.project+"'")))
+        return dict(resolution=resolution,payload=w.call('GET',w.bundle+'/versions/'+version['id']+'/payload'),promotions=w.call('GET',w.channel+'/releases')['items'],proposals=w.call('GET',w.bundle+'/proposals')['items'],versionCount=int(w.h.sql("SELECT count(*) FROM versions WHERE project_id='"+w.h.project+"'")))
     try:
         assert before==args.expected_build_hash,'Frozen build differs from GO';w.start();w.fresh_scenario(SimpleNamespace(effective_tags=[]));w.publish_initial('',files=FILES[:1]+[dict(path=LONG_PATH,kind='memory',text='# Private coarse fixture\nApproved reusable context.\n')]);b=w.browser();initial=facts()
         context=b.browser.new_context(ignore_https_errors=True,viewport=dict(width=390,height=844),has_touch=True,storage_state=b.context.storage_state())

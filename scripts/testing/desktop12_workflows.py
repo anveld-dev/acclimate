@@ -34,7 +34,7 @@ PROTOTYPES=ROOT/'docs/design/desktop-layouts-v12/experiments'
 
 def fixture(w):
     w.sign_in('admin','operator');w.browser_actor='admin';project='desktop12-'+w.h.project.removeprefix('bdd-')
-    w.call('POST','/v1/projects',dict(id=project,name=WORKSPACE_NAME),actor='admin');w.h.project=project;w.root='/v1/projects/'+project;w.actor='admin'
+    w.call('POST','/v1/workspaces',dict(id=project,name=WORKSPACE_NAME),actor='admin');w.h.project=project;w.root='/v1/workspaces/'+project;w.actor='admin'
     files=FILES+[dict(path=f'memory/release-guidelines/production-retry-contracts/provider-specific-evidence/fixture-{i:02d}.md',kind='memory',text=f'# Fixture {i:02d}\nPreserve real file selection and browser-only review.\n') for i in range(5,25)]
     setup=w.call('POST',w.root+'/bundle-setups',dict(name=BUNDLE_NAME,origin='created',channel=CHANNEL,payload=dict(schemaVersion=1,files=files),reason='Explicit disposable v12 geometry fixture.'))
     w.setup=setup;w.bundle=w.root+'/bundles/'+setup['bundle']['id'];w.channel=w.bundle+'/channels/'+CHANNEL;w.original=setup['resolution']
@@ -229,7 +229,7 @@ def main():
     e=Experiment(output);w=World(pg_bin(args.pg_bin));before=build_fingerprint();errors=[];persisted=False;runtime_errors=[]
     try:
         assert before==args.expected_build_hash==e.manifest['sourceBuildSha256'],'Frozen build differs from GO/manifest';w.start();w.fresh_scenario(SimpleNamespace(effective_tags=[]));f=fixture(w);b=w.browser();p=b.page;p.set_default_timeout(3000);p.on('pageerror',lambda error:runtime_errors.append(str(error)))
-        initial=dict(release=w.call('GET',w.channel),promotions=w.call('GET',w.channel+'/promotions')['items'],draft=w.call('GET',f['draftPath']),payload=w.call('GET',w.bundle+'/versions/'+f['draft']['snapshotVersion']['id']+'/payload'),requests=w.call('GET',w.bundle+'/evaluation-requests')['items'])
+        initial=dict(release=w.call('GET',w.channel),promotions=w.call('GET',w.channel+'/releases')['items'],draft=w.call('GET',f['draftPath']),payload=w.call('GET',w.bundle+'/versions/'+f['draft']['snapshotVersion']['id']+'/payload'),requests=w.call('GET',w.bundle+'/evaluation-requests')['items'])
         coarse=b.browser.new_context(ignore_https_errors=True,viewport=dict(width=1024,height=700),has_touch=True,storage_state=b.context.storage_state());phone=coarse.new_page();phone.set_default_timeout(3000);phone.on('pageerror',lambda error:runtime_errors.append(str(error)))
         try:
             for width,height,touch,page in (() if args.narrow_only else (((1440,900,False,p),(1440,700,False,p)) if args.final_supplement_only else ((1440,900,False,p),(1440,700,False,p),(1024,700,True,phone)))):
@@ -262,7 +262,7 @@ def main():
         finally:coarse.close()
         if args.final_supplement_only:tiny_reach_guards(w,b,e,f)
         if not args.visibility_supplement_only:narrow_guards(w,b,e,f)
-        final=dict(release=w.call('GET',w.channel),promotions=w.call('GET',w.channel+'/promotions')['items'],draft=w.call('GET',f['draftPath']),payload=w.call('GET',w.bundle+'/versions/'+f['draft']['snapshotVersion']['id']+'/payload'),requests=w.call('GET',w.bundle+'/evaluation-requests')['items']);assert initial==final,'Browser experiment mutated persisted fixture state';persisted=True
+        final=dict(release=w.call('GET',w.channel),promotions=w.call('GET',w.channel+'/releases')['items'],draft=w.call('GET',f['draftPath']),payload=w.call('GET',w.bundle+'/versions/'+f['draft']['snapshotVersion']['id']+'/payload'),requests=w.call('GET',w.bundle+'/evaluation-requests')['items']);assert initial==final,'Browser experiment mutated persisted fixture state';persisted=True
     except Exception as error:errors.append(dict(check='fixture-or-invariants',error=str(error).split('Call log:')[0][:900]))
     finally:
         after=build_fingerprint();w.close()

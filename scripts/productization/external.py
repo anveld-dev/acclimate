@@ -82,11 +82,11 @@ def run(args):
     if gate == 'https':
         base = https_url(args.url)
         token = os.environ.get(args.token_env) if args.token_env else None
-        if not token or not args.project:
-            raise Blocked('Requires --token-env and --project for authenticated readiness')
+        if not token or not args.workspace:
+            raise Blocked('Requires --token-env and --workspace for authenticated readiness')
         assert request(base + '/health') == b'ok'
         assert json.loads(request(base + '/ready')) == {'ready': True}
-        data = json.loads(request(base + '/v1/workspaces/' + quote(args.project, safe='') + '/bundles', token))
+        data = json.loads(request(base + '/v1/workspaces/' + quote(args.workspace, safe='') + '/bundles', token))
         assert isinstance(data.get('items'), list)
         return ['verified certificate/hostname', 'process liveness', 'database/owner/worker readiness', 'authenticated scoped bundle read']
     if gate == 'remote-model':
@@ -166,7 +166,7 @@ def main(argv=None):
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--live', action='store_true')
     parser.add_argument('--interactive', action='store_true')
-    for flag in ('url', 'issuer', 'project', 'token-env'):
+    for flag in ('url', 'issuer', 'workspace', 'token-env'):
         parser.add_argument('--' + flag)
     parser.add_argument('--driver', nargs='+')
     parser.add_argument('--output', type=Path)

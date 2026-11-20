@@ -207,7 +207,7 @@ def automatic_rollback(context):
     for index in range(8):
         path = f'src/review-{index}.ts'
         job = dict(changedPaths=[path, 'CHANGELOG.md'], expectedPaths=[path])
-        grade = w.sdk('gradeFieldJob', actor='evaluator', integrationId=w.integration['id'],
+        grade = w.sdk('gradeFieldJob', actor='evaluator', connectionId=w.integration['id'],
                       readerToken=w.read_credential['secret'], receiptToken=w.write_credential['secret'],
                       outcomeToken=w.h.tokens['other'], fieldJob=job)
         assert grade.get('verdict') == 'loss', grade

@@ -18,7 +18,7 @@ import { AcclimateClient } from '@acclimate/sdk';
 import { prepare } from '@acclimate/claude-plugin';
 import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
 
-const delivery = await client.prepare({ projectId, bundleId, channel: 'stable', reporter });
+const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
 const prepared = await prepare(delivery); // or prepare(verifiedVersion) from resolveAndCache / the evaluator
 const abortController = new AbortController();
 try {
@@ -35,7 +35,7 @@ try {
 ```
 
 - `prepare(input, { baseDir })` accepts a verified version or the result of `client.prepare()`. With a delivery, `prepared.reportStarted()` queues its start receipt and `cleanup()` also releases the delivery directory.
-- `claudeSessionOptions` returns `cwd`, `settingSources: ['project']` and the bundle's skill names. It omits `skills` when the bundle has none, because an empty list disables every skill in the Agent SDK.
+- `claudeSessionOptions` returns `cwd`, `settingSources: ['project']` and the version's skill names. It omits `skills` when the version has none, because an empty list disables every skill in the Agent SDK.
 - Memory is not an Agent SDK option. Give the session only the memory files you approve.
 
 ## Use your repository's Claude settings

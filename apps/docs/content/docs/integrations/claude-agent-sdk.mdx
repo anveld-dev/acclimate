@@ -11,18 +11,18 @@ Prepare a Claude project workspace using `@acclimate/claude-plugin`. Install the
 
 - In a job, `client.prepare()` resolves the channel, verifies the digest and returns a delivery. Pass the delivery itself so its start receipt survives.
 - With `resolveAndCache(client, selection, { cacheDir })` you get the verified version directly.
-- In evaluation, the evaluator passes it to your `execute` function as `bundle`.
+- In evaluation, the evaluator passes it to your `execute` function as `version`.
 
 ## Run a job
 
-The plugin writes the instruction to `CLAUDE.md`, skills to `.claude/skills/<name>/` with their supporting files, and memory files to `.acclimate/memory/`. `claudeSessionOptions` returns `cwd`, `settingSources: ['project']` and the bundle's skill names. It leaves out `skills` when the bundle has none, because an empty list disables every skill.
+The plugin writes the instruction to `CLAUDE.md`, skills to `.claude/skills/<name>/` with their supporting files, and memory files to `.acclimate/memory/`. `claudeSessionOptions` returns `cwd`, `settingSources: ['project']` and the version's skill names. It leaves out `skills` when the version has none, because an empty list disables every skill.
 
 ```ts
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { prepare } from '@acclimate/claude-plugin';
 import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
 
-const delivery = await client.prepare({ projectId, bundleId, channel: 'stable', reporter });
+const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
 const prepared = await prepare(delivery);
 const abortController = new AbortController();
 for await (const message of query({
@@ -60,8 +60,8 @@ Export `cases`, `execute` and `grade` from the module that runs Claude, so `accl
 ```ts
 import { ExecutionUncertainError } from '@acclimate/sdk/evaluation';
 
-export async function execute({ bundle, input, signal }) {
-  const prepared = await prepare(bundle);
+export async function execute({ version, input, signal }) {
+  const prepared = await prepare(version);
   const abortController = new AbortController();
   signal.addEventListener('abort', () => abortController.abort(signal.reason), { once: true });
   let answer = '';

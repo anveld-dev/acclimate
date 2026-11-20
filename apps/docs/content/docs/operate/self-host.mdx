@@ -185,7 +185,7 @@ openssl rand -hex 32 > "$private_dir/evaluator-token"
 Replace `ACCLIMATE_AUTH=[]` in `service.env` with the following entry on one line. Replace the token placeholder and use your exact workspace ID. `principalId` is the evaluator's stable machine identity.
 
 ```ini
-ACCLIMATE_AUTH=[{"token":"REPLACE_WITH_EVALUATOR_TOKEN","principalId":"support-evaluator","projectId":"support","rights":["read","write"]}]
+ACCLIMATE_AUTH=[{"token":"REPLACE_WITH_EVALUATOR_TOKEN","principalId":"support-evaluator","workspaceId":"support","rights":["read","write"]}]
 ```
 
 Drain the service and recreate its container so it reads the updated file.
